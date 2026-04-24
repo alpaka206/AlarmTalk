@@ -804,6 +804,18 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 780/780)
 
+## P103 — Auth 미들웨어 단위 테스트 ✅ (2026-04-25)
+
+- [x] `test/auth-middleware.test.ts` 신규 — 24 tests
+  - Authorization header 검증 (5건): 누락, 비-Bearer, 공백, 비3파트, 2파트
+  - App JWT 경로 (6건): 유효, 서명실패, 만료, audience 불일치, issuer 불일치, name 없음
+  - Google 토큰 경로 (5건): 유효, API 에러, audience 불일치, 만료, 네트워크 에러
+  - Apple 토큰 경로 (3건): 유효, 만료, email 없음
+  - 토큰 발급자 분기 (3건): 알수없는 issuer→Google, voice-alarm→앱JWT, Apple→Apple
+  - base64url 엣지 케이스 (2건): 패딩 없는 인코딩, JSON 파싱 실패
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 872/872, +24 신규)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
