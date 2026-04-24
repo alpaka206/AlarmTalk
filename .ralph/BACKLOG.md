@@ -499,6 +499,16 @@
 
 ---
 
+## P21 — 미테스트 모듈 테스트 커버리지 100% ✅ (2026-04-24)
+
+- [x] `test/stats.test.ts` — 14 tests (GET /stats 통계 6건 + GET /stats/activity 활동 8건)
+- [x] `test/elevenlabs.test.ts` — 14 tests (listVoices, TTS, clone, diarize, deleteVoice + 에러 처리)
+- [x] `test/perso.test.ts` — 13 tests (전체 메서드 + 204 처리 + static toFileUrl)
+- [x] 전체 647/647 통과 (기존 606 + P21 41)
+- [x] 모든 routes (16/16) + lib (16/16) 모듈 테스트 존재 — 100% 모듈 커버리지
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
