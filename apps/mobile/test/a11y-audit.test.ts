@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Colors } from '../src/constants/theme';
 
 const MIN_TOUCH_TARGET = 44;
 const WCAG_AA_NORMAL = 4.5;
@@ -41,43 +42,8 @@ function meetsAA(fg: string, bg: string, isLargeText = false): boolean {
   return ratio >= (isLargeText ? WCAG_AA_LARGE : WCAG_AA_NORMAL);
 }
 
-const LightColors = {
-  primary: '#FF7F6B',
-  primaryLight: '#FFB4A8',
-  primaryDark: '#E05A47',
-  secondary: '#FFCBA4',
-  accent: '#FF6B8A',
-  background: '#FFF5F3',
-  surface: '#FFFFFF',
-  surfaceVariant: '#FFF0ED',
-  text: '#2D2D2D',
-  textSecondary: '#6B7280',
-  textTertiary: '#9CA3AF',
-  border: '#F2E8E5',
-  success: '#34C759',
-  warning: '#FF9500',
-  error: '#FF3B30',
-  shadow: 'rgba(255, 127, 107, 0.15)',
-} as const;
-
-const DarkColors = {
-  primary: '#FF8F7D',
-  primaryLight: '#FFAA99',
-  primaryDark: '#E06A58',
-  secondary: '#FFD4B3',
-  accent: '#FF7B96',
-  background: '#1A1A2E',
-  surface: '#232340',
-  surfaceVariant: '#2D2D4A',
-  text: '#E8E8F0',
-  textSecondary: '#8E8E93',
-  textTertiary: '#6B6B82',
-  border: '#3A3A55',
-  success: '#30D158',
-  warning: '#FF9F0A',
-  error: '#FF453A',
-  shadow: 'rgba(0, 0, 0, 0.3)',
-} as const;
+const LightColors = Colors.light;
+const DarkColors = Colors.dark;
 
 function findTsxFiles(dir: string): string[] {
   const results: string[] = [];
@@ -357,7 +323,7 @@ describe('WCAG AA 색상 대비 검증', () => {
 });
 
 describe('접근성 인프라 무결성', () => {
-  test('packages/ui a11y 모듈이 필요한 export를 제공한다', () => {
+  test('a11y 유틸리티가 올바르게 정의되어 있다', () => {
     expect(typeof MIN_TOUCH_TARGET).toBe('number');
     expect(typeof meetsAA).toBe('function');
   });

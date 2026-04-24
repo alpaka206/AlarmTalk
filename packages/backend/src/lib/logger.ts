@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { SentryClient } from '../types';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono Context is invariant on Env; this accepts both pre-auth and post-auth contexts
 export function logRouteError(c: Context<any>, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join(' | ') : undefined;

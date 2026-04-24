@@ -1097,3 +1097,19 @@
 - [x] **전체 API error_code 일관성 100% 달성** — 모든 라우트 파일 적용 완료
 - [x] typecheck 통과 (backend 0 errors)
 - [x] 전체 테스트 통과 (backend 684/684)
+
+## P74 — WCAG AA 색상 대비 버그 수정 + a11y 테스트 정확성 ✅ (2026-04-25)
+
+- [x] `test/a11y-audit.test.ts` — 하드코딩 stale LightColors/DarkColors → `Colors` import (실제 앱 색상으로 검증)
+- [x] `src/constants/theme.ts` — textSecondary WCAG AA 달성 (light #8E8E93→#6B7280, dark #8E8E93→#98989D)
+- [x] `packages/backend/src/lib/logger.ts` — eslint-disable 주석에 Hono Context 불변성 이유 문서화
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 724/724, mobile 625/625)
+
+---
+
+## P75 — packages/ui ↔ mobile/constants/theme 색상 동기화 (미착수)
+
+- [ ] `packages/ui/src/tokens.ts`의 LightColors/DarkColors와 `apps/mobile/src/constants/theme.ts`의 Colors 값 불일치 해소
+- [ ] 단일 소스(source of truth) 결정: UI 패키지를 모바일 의존성으로 추가하거나, 역방향 동기화
+- [ ] WCAG AA 대비비 유지 검증

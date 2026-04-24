@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P73 family-alarm 라우트 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P73 완료**
+- 마지막 루프: 2026-04-25 — P74 WCAG AA 색상 대비 버그 수정
+- 현재 Phase: **R0~R6 전체 완료 + P11~P74 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 724/724, mobile 625/625)
 
@@ -73,6 +73,7 @@
 - **P71**: API error_code Final Batch — voice.ts 35건 + dub.ts 7건 + auth.ts error_code alias + voice.test.ts 28 assertions (전체 API error_code 100% 달성)
 - **P72**: Notes 페이지네이션 완성 (total/limit/offset 추가) + Migration 19 복합 DB 인덱스 6개 (friendships, gifts, alarms)
 - **P73**: family-alarm 라우트 테스트 40건 (POST /alarms TTS 20 + POST /alarms/voice 20, 전체 검증 경로 커버)
+- **P74**: WCAG AA 색상 대비 버그 수정 — a11y 테스트 stale 하드코딩 색상 → 실제 앱 Colors import + textSecondary WCAG AA 달성 (light #6B7280, dark #98989D)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
