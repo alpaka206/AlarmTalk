@@ -597,7 +597,7 @@
 - ~~t() 폴백 문자열 패턴 정리~~ → P32 완료
 - ~~백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)~~ → P33 완료
 - ~~접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)~~ → P34 완료
-- 백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)
+- ~~백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)~~ → P42 완료
 - 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 - ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
@@ -744,6 +744,17 @@
 - [x] `test/alarmPlayback.test.ts` — 테스트 6건 업데이트 (i18n 키 매칭)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 395/395)
+
+---
+
+## P42 — API 응답 시간 벤치마크 테스트 ✅ (2026-04-24)
+
+- [x] `test/api-latency.test.ts` 신규 — 19 tests (10 라우트 그룹)
+  - GET 엔드포인트 레이턴시 기준선 (alarm, character, library, friend, stats, notes, user, gift)
+  - POST 엔드포인트 레이턴시 기준선 (alarm, friend, push, code)
+  - Validation fast-path 검증 (alarm, friend, push)
+  - Sustained throughput: 50회 연속 요청 avg + p95
+- [x] 전체 672/672 통과 (기존 653 + P42 19)
 
 ---
 
