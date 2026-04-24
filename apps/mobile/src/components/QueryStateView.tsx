@@ -1,17 +1,8 @@
 import { useMemo } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Spacing, FontSize, BorderRadius, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
-
-export function LoadingView() {
-  const { colors } = useTheme();
-  return (
-    <View style={staticStyles.center}>
-      <ActivityIndicator size="large" color={colors.primary} />
-    </View>
-  );
-}
 
 export function ErrorView({ message, onRetry }: { message?: string; onRetry?: () => void }) {
   const { t } = useTranslation();
@@ -27,26 +18,6 @@ export function ErrorView({ message, onRetry }: { message?: string; onRetry?: ()
           <Text style={dynStyles.retryText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       )}
-    </View>
-  );
-}
-
-export function EmptyView({
-  emoji,
-  title,
-  subtitle,
-}: {
-  emoji: string;
-  title: string;
-  subtitle?: string;
-}) {
-  const { colors } = useTheme();
-  const dynStyles = useMemo(() => createStyles(colors), [colors]);
-  return (
-    <View style={staticStyles.center}>
-      <Text style={staticStyles.emoji}>{emoji}</Text>
-      <Text style={dynStyles.title}>{title}</Text>
-      {subtitle && <Text style={dynStyles.subtitle}>{subtitle}</Text>}
     </View>
   );
 }

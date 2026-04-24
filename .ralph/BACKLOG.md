@@ -601,7 +601,7 @@
 - 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 - ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
-- 미사용 export/함수 감사 (dead code 탐지 + 정리)
+- ~~미사용 export/함수 감사 (dead code 탐지 + 정리)~~ → P38 완료
 - 백엔드 billing 라우트 테스트 커버리지 (결제 스텁 검증)
 - 모바일 화면 컴포넌트 인터랙션 테스트 (voices add menu, alarm create form 등)
 - ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)
@@ -684,6 +684,16 @@
   - `friend/[id].tsx`: `['receivedGifts']` → `['gifts-received']`
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 382/382)
+
+---
+
+## P38 — 미사용 export/함수 감사 (dead code 정리) ✅ (2026-04-24)
+
+- [x] 백엔드 + 모바일 전체 export 감사 (67+ export 검증)
+- [x] `packages/backend/src/types.ts` — 7개 미사용 인터페이스 삭제 (VoiceProfile, Message, Alarm, UserProfile, Friendship, Gift, DubJob)
+- [x] `apps/mobile/src/components/QueryStateView.tsx` — LoadingView, EmptyView 미사용 컴포넌트 삭제
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 392/392)
 
 ---
 
