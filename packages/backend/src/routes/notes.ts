@@ -21,7 +21,7 @@ notes.post('/', async (c) => {
   const db = getDB(c.env);
 
   const senderPk = await resolveUserPk(db, userId);
-  if (!senderPk) return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+  if (!senderPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
   const body = await c.req
     .json<{ receiver_id?: unknown; text?: unknown }>()
@@ -30,17 +30,17 @@ notes.post('/', async (c) => {
   const receiverId = typeof body.receiver_id === 'string' ? body.receiver_id.trim() : '';
   const text = typeof body.text === 'string' ? body.text.trim() : '';
 
-  if (!receiverId) return c.json({ error: 'receiver_id 는 필수입니다' }, 400);
-  if (!text) return c.json({ error: 'text 는 필수입니다' }, 400);
-  if (text.length > 500) return c.json({ error: 'text 는 최대 500자입니다' }, 400);
-  if (receiverId === senderPk) return c.json({ error: '자기 자신에게는 보낼 수 없습니다' }, 400);
+  if (!receiverId) return c.json({ error: 'receiver_id 는 필수입니다', error_code: 'RECEIVER_REQUIRED' }, 400);
+  if (!text) return c.json({ error: 'text 는 필수입니다', error_code: 'TEXT_REQUIRED' }, 400);
+  if (text.length > 500) return c.json({ error: 'text 는 최대 500자입니다', error_code: 'TEXT_TOO_LONG' }, 400);
+  if (receiverId === senderPk) return c.json({ error: '자기 자신에게는 보낼 수 없습니다', error_code: 'SELF_NOTE' }, 400);
 
   const receiverRes = await db.execute({
     sql: 'SELECT id FROM users WHERE id = ?',
     args: [receiverId],
   });
   if (receiverRes.rows.length === 0) {
-    return c.json({ error: '수신자를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '수신자를 찾을 수 없습니다', error_code: 'RECEIVER_NOT_FOUND' }, 404);
   }
 
   const memberCheck = await db.execute({
@@ -53,7 +53,7 @@ notes.post('/', async (c) => {
     args: [senderPk, receiverId],
   });
   if (memberCheck.rows.length === 0) {
-    return c.json({ error: '같은 가족 그룹 멤버에게만 쪽지를 보낼 수 있습니다' }, 403);
+    return c.json({ error: '같은 가족 그룹 멤버에게만 쪽지를 보낼 수 있습니다', error_code: 'NOT_SAME_GROUP' }, 403);
   }
 
   const noteId = crypto.randomUUID();
@@ -173,17 +173,17 @@ notes.patch('/:id/read', async (c) => {
   const noteId = c.req.param('id');
 
   const userPk = await resolveUserPk(db, userId);
-  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
   const noteRes = await db.execute({
     sql: 'SELECT id, receiver_id, read_at FROM notes WHERE id = ?',
     args: [noteId],
   });
   if (noteRes.rows.length === 0) {
-    return c.json({ error: '쪽지를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '쪽지를 찾을 수 없습니다', error_code: 'NOTE_NOT_FOUND' }, 404);
   }
   if (String(noteRes.rows[0].receiver_id) !== userPk) {
-    return c.json({ error: '권한이 없습니다' }, 403);
+    return c.json({ error: '권한이 없습니다', error_code: 'FORBIDDEN' }, 403);
   }
   if (noteRes.rows[0].read_at) {
     return c.json({ success: true, already_read: true });

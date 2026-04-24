@@ -1,8 +1,8 @@
-﻿# 현재 상태
+# 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P68 API error_code 일관성 확보
-- 현재 Phase: **R0~R6 전체 완료 + P11~P68 완료**
+- 마지막 루프: 2026-04-25 — P69 error_code Batch 2 (user/notes/family)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P69 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 684/684, mobile 625/625)
 
@@ -58,7 +58,7 @@
 - **P56**: 알림 채널/액션 버튼 i18n 전환 — top-level side effect → `configureNotificationChannels(t)` 함수화 + notification.* 2키 추가
 - **P57**: backend family.ts 분할 — 834줄→13줄 aggregator + 3 sub-routers (invite 266, group 205, alarm 292) + family-helpers.ts 35줄
 - **P58**: 모바일 api.ts 도메인 분할 — 771줄→barrel+8 모듈 (core, voice, alarm, social, user, billing, family, character) + 32개 소비자 import 변경 0건
-- **P59**: player/compose 스타일 추출 — player.tsx 486→344줄 (-29%), compose.tsx 381→207줄 (-46%) + compose 날짜 getDateLocale() 수정
+- **P59**: player/compose 스타일 추출 — player.tsx 486→344줄 (-29%), compose.tsx 381→207줄 (-46%)
 - **P60**: voice 화면 3개 스타일 추출 — diarize.tsx 413→257줄 (-38%), record.tsx 396→245줄 (-38%), [id].tsx 398→235줄 (-41%)
 - **P61**: gift/received + family-alarm 스타일 추출 — gift/received.tsx 383→233줄 (-39%), family-alarm/create.tsx 359→218줄 (-39%)
 - **P62**: notifications 서비스 테스트 — 31 tests (syncAlarmNotifications weekday 변환, 채널 설정, 푸시 토큰, 스누즈, 권한 검증)
@@ -68,6 +68,7 @@
 - **P66**: 프로덕션 API URL 수정 — core.ts 플레이스홀더 URL → 실제 배포 URL, useAuth.tsx __DEV__ 분기 추가, eas.json env 설정
 - **P67**: 보안 응답 헤더 미들웨어 — securityHeaders.ts 9개 OWASP 헤더 (X-Content-Type-Options, X-Frame-Options, HSTS, CSP 등) + 12 tests
 - **P68**: API error_code 일관성 — billing/character/alarm/friend 4개 라우트에 23건 error_code 추가 (machine-readable 에러 코드)
+- **P69**: API error_code Batch 2 — user/notes/family-invite/family-group/family-alarm 5개 라우트에 78건 error_code 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -76,3 +77,4 @@
 - eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
+- error_code 미적용 라우트 잔여: auth.ts, library.ts, stats.ts, voice.ts, tts.ts, push.ts, dub.ts (~112건)

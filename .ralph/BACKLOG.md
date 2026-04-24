@@ -696,6 +696,16 @@
 - [x] typecheck 통과 (backend 0 errors)
 - [x] 전체 테스트 통과 (backend 684/684)
 
+## P69 — API error_code Batch 2 (user/notes/family) ✅ (2026-04-25)
+
+- [x] `routes/user.ts` — 9건 error_code 추가 (FETCH_USER_FAILED, NO_FIELDS_TO_UPDATE, INVALID_BOOLEAN, USER_NOT_FOUND×2, INVALID_PLAN, UPDATE_PLAN_FAILED, DELETE_ACCOUNT_FAILED, SEARCH_FAILED)
+- [x] `routes/notes.ts` — 10건 error_code 추가 (USER_NOT_FOUND×2, RECEIVER_REQUIRED, TEXT_REQUIRED, TEXT_TOO_LONG, SELF_NOTE, RECEIVER_NOT_FOUND, NOT_SAME_GROUP, NOTE_NOT_FOUND, FORBIDDEN)
+- [x] `routes/family-invite.ts` — 20건 error_code 추가
+- [x] `routes/family-group.ts` — 15건 error_code 추가
+- [x] `routes/family-alarm.ts` — 24건 error_code 추가
+- [x] typecheck 통과 (backend 0 errors)
+- [x] 전체 테스트 통과 (backend 684/684)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
