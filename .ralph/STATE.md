@@ -1,18 +1,18 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P99 route helper 단위 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P99 완료**
+- 마지막 루프: 2026-04-25 — 미테스트 Voice 엔드포인트 테스트 추가
+- 현재 Phase: **R0~R6 전체 완료 + P11~P100 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 836/836)
+- 전체 테스트 통과 (backend 848/848)
 
 ## 완료된 리팩토링
 
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11~P98**: 전체 완료
-- **P99**: route helper 단위 테스트 3파일 추가 (alarm-helpers, character-helpers, billing-helpers — 56 tests)
+- **P11~P99**: 전체 완료
+- **P100**: voice-profile/voice-upload 미테스트 엔드포인트 3개 커버 (family, clone, diarize — 12 tests)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

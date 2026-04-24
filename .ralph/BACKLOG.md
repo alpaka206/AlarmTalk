@@ -1342,3 +1342,9 @@
 - [x] `packages/backend/test/character-helpers.test.ts` — rowToCharacter, buildProgress, serializeCharacter, todayString (11 tests)
 - [x] `packages/backend/test/billing-helpers.test.ts` — PAID_PLAN_TYPES, planTypeToUserPlan (5 tests)
 - [x] 전체 테스트 836/836 통과, typecheck 0 errors
+
+## P100 — 미테스트 Voice 엔드포인트 테스트 추가 ✅ (2026-04-25)
+
+- [x] `packages/backend/test/voice.test.ts` — GET /voice/family (3), POST /voice/clone (6), POST /voice/diarize (3) = 12 tests 추가
+- [x] ElevenLabsClient mock + ENV 바인딩 인프라 추가
+- [x] 전체 테스트 848/848 통과, typecheck 0 errors

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import type { AppEnv } from '../src/types';
+import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 import { resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
 
@@ -9,11 +9,34 @@ const V404 = '40000000-0000-4000-8000-0000000000ff';
 
 const mockDB = createMockDB();
 
+const mockCreateInstantClone = vi.fn();
+const mockDiarize = vi.fn();
+const mockDeleteVoice = vi.fn();
+
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
+vi.mock('../src/lib/elevenlabs', () => ({
+  ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+    this.createInstantClone = mockCreateInstantClone;
+    this.diarize = mockDiarize;
+    this.deleteVoice = mockDeleteVoice;
+  }),
+}));
+
 import voiceRoutes from '../src/routes/voice';
+
+const ENV: Env = {
+  PERSO_API_KEY: 'x',
+  ELEVENLABS_API_KEY: 'test-key',
+  TURSO_DATABASE_URL: 'x',
+  TURSO_AUTH_TOKEN: 'x',
+  GOOGLE_CLIENT_ID: 'x',
+  JWT_SECRET: 'test-secret-32-chars-or-longer!',
+  PASSWORD_PEPPER: 'pepper',
+  ENVIRONMENT: 'test',
+};
 
 function buildApp(userId = 'user-1') {
   const app = new Hono<AppEnv>();
@@ -22,9 +45,16 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function reqWithEnv(app: Hono<AppEnv>, r: Request) {
+  return app.request(r, undefined, ENV);
+}
+
 beforeEach(() => {
   mockDB.reset();
   resetSharedInMemoryVoiceStorage();
+  mockCreateInstantClone.mockReset();
+  mockDiarize.mockReset();
+  mockDeleteVoice.mockReset();
 });
 
 function uploadRequest(
@@ -565,5 +595,177 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+});
+
+describe('GET /voice/family — 가족 음성 프로필', () => {
+  it('가족 멤버가 없으면 빈 배열', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/voice/family'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profiles).toEqual([]);
+  });
+
+  it('가족 멤버 음성 프로필 반환', async () => {
+    mockDB.pushResult([{ user_id: 'user-2' }, { user_id: 'user-3' }]);
+    mockDB.pushResult([
+      { id: V1, name: '엄마 목소리', status: 'ready', user_id: 'user-2', owner_name: '엄마' },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/voice/family'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profiles).toHaveLength(1);
+    expect(body.profiles[0].owner_name).toBe('엄마');
+  });
+
+  it('가족 멤버는 있지만 음성 없으면 빈 배열', async () => {
+    mockDB.pushResult([{ user_id: 'user-2' }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/voice/family'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profiles).toEqual([]);
+  });
+});
+
+describe('POST /voice/clone — 음성 클론', () => {
+  function cloneRequest(audio: Uint8Array | null, name: string | null): Request {
+    const form = new FormData();
+    if (audio) {
+      form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'sample.wav');
+    }
+    if (name) {
+      form.append('name', name);
+    }
+    return new Request('http://localhost/voice/clone', { method: 'POST', body: form });
+  }
+
+  it('프로필 2개 이상이면 403', async () => {
+    mockDB.pushResult([{ count: 2 }]);
+    const app = buildApp();
+    const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
+  });
+
+  it('audio 파일 누락 시 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const form = new FormData();
+    form.append('name', '테스트');
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      new Request('http://localhost/voice/clone', { method: 'POST', body: form }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_AND_NAME_REQUIRED');
+  });
+
+  it('name 누락 시 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const form = new FormData();
+    form.append('audio', new Blob([new Uint8Array([1])], { type: 'audio/wav' }), 'a.wav');
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      new Request('http://localhost/voice/clone', { method: 'POST', body: form }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_AND_NAME_REQUIRED');
+  });
+
+  it('name 50자 초과 시 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const longName = 'x'.repeat(51);
+    const app = buildApp();
+    const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2]), longName));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('NAME_TOO_LONG');
+  });
+
+  it('성공 시 201 + 프로필 반환', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });
+    const app = buildApp();
+    const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3, 4]), '엄마 목소리'));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.profile.name).toBe('엄마 목소리');
+    expect(body.profile.voice_id).toBe('elv-voice-001');
+    expect(body.profile.status).toBe('ready');
+    expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+  });
+
+  it('ElevenLabs 실패 시 500', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockRejectedValue(new Error('API down'));
+    const app = buildApp();
+    const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_CLONING_FAILED');
+    expect(body.detail).toBe('API down');
+  });
+});
+
+describe('POST /voice/diarize — 화자 분리 (ElevenLabs)', () => {
+  function diarizeRequest(audio: Uint8Array | null): Request {
+    const form = new FormData();
+    if (audio) {
+      form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'recording.wav');
+    }
+    return new Request('http://localhost/voice/diarize', { method: 'POST', body: form });
+  }
+
+  it('audio 파일 누락 시 400', async () => {
+    const app = buildApp();
+    const form = new FormData();
+    const res = await reqWithEnv(
+      app,
+      new Request('http://localhost/voice/diarize', { method: 'POST', body: form }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_FILE_REQUIRED');
+  });
+
+  it('성공 시 화자 목록 반환', async () => {
+    mockDiarize.mockResolvedValue({
+      speakers: [
+        { speaker_id: 'spk-1', segments: [{ start: 0, end: 5.2 }] },
+        { speaker_id: 'spk-2', segments: [{ start: 5.5, end: 10.0 }] },
+      ],
+    });
+    const app = buildApp();
+    const res = await reqWithEnv(app, diarizeRequest(new Uint8Array([1, 2, 3])));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.speakers).toHaveLength(2);
+    expect(body.speakers[0].speaker_id).toBe('spk-1');
+    expect(body.speakers[0].label).toBe('Speaker 1');
+    expect(body.speakers[0].total_duration).toBeCloseTo(5.2);
+    expect(body.speakers[1].label).toBe('Speaker 2');
+    expect(mockDiarize).toHaveBeenCalledOnce();
+  });
+
+  it('ElevenLabs 실패 시 500', async () => {
+    mockDiarize.mockRejectedValue(new Error('diarize failed'));
+    const app = buildApp();
+    const res = await reqWithEnv(app, diarizeRequest(new Uint8Array([1, 2])));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error_code).toBe('DIARIZATION_FAILED');
+    expect(body.detail).toBe('diarize failed');
   });
 });
