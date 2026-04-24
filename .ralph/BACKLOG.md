@@ -834,6 +834,15 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 872/872, mobile 782/782)
 
+## P107 — 모바일 컴포넌트 테스트 추가 ✅ (2026-04-25)
+
+- [x] `@testing-library/react-native` devDependency 설치
+- [x] `test/OfflineBanner.test.tsx` — 4 tests (온/오프라인 렌더, 경고 색상, 상태 변경 재렌더)
+- [x] `test/QueryStateView.test.tsx` — 8 tests (에러 표시, message/onRetry prop, 접근성 라벨)
+- [x] `test/PeopleSkeletonCard.test.tsx` — 7 tests (count prop, 애니메이션 루프, memo 확인)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 872/872, mobile 801/801)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
