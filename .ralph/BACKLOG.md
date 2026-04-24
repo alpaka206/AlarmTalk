@@ -858,6 +858,15 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 872/872, mobile 801/801)
 
+## P111 — TypeScript 타입 안전성 강화: `as unknown as` 제거 ✅ (2026-04-25)
+
+- [x] `src/types/react-native-formdata.d.ts` 신규 — FormData.append RN 파일 객체 오버로드 (global interface merge)
+- [x] `services/api/voice.ts` — `audioFile as unknown as Blob` 4건 제거
+- [x] `components/PresetMessageSection.tsx` — `width: '48%' as unknown as number` 제거
+- [x] `services/audio.ts` — `status as unknown as { durationMillis: number }` 제거
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 872/872, mobile 898/898)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

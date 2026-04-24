@@ -243,7 +243,7 @@ function createLocalStyles(colors: ThemeColors) {
       marginBottom: Spacing.md,
     },
     categoryCard: {
-      width: '48%' as unknown as number,
+      width: '48%',
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.surfaceVariant,

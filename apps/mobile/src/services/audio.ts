@@ -94,7 +94,7 @@ export async function stopRecording(recording: Audio.Recording): Promise<{
 
   return {
     uri,
-    duration: (status as unknown as { durationMillis: number }).durationMillis / 1000,
+    duration: status.durationMillis / 1000,
   };
 }
 

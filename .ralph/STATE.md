@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 미테스트 모바일 컴포넌트 3개 테스트 57건 추가
-- 현재 Phase: **R0~R6 전체 완료 + P11~P110 완료**
+- 마지막 루프: 2026-04-25 — 소스 코드 `as unknown as` 타입 단언 6건 제거 (FormData 타입 선언 추가)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P111 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 872/872, mobile 898/898)
 
@@ -15,6 +15,7 @@
 - **P108**: LoginButtons 렌더링 테스트 18건 — Google/Apple 로그인 전 경로, useEffect 응답 처리, 에러 핸들링, 접근성
 - **P109**: auth.ts 서비스 테스트 22건 — decodeIdToken, saveAuthToken, getAuthToken, getAuthProvider, signOut, isAppleAuthAvailable, signInWithApple
 - **P110**: 미테스트 모바일 컴포넌트 3개 테스트 57건 — FamilyMemberRow(22), MiniWaveformPlayer(26), Toast(9)
+- **P111**: `as unknown as` 타입 단언 6건 제거 — FormData RN 타입 선언, PresetMessageSection width, audio.ts durationMillis
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -41,3 +42,4 @@
 - Mobile: 898 tests (55 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14, 전용 테스트 파일 보유)
 - 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
+- 모바일 소스 `as unknown as` 0건 (db-types.ts typedRow만 의도적 유지)

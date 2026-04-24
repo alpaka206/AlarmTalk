@@ -18,7 +18,7 @@ export async function createVoiceClone(
   name: string,
 ) {
   const formData = new FormData();
-  formData.append('audio', audioFile as unknown as Blob);
+  formData.append('audio', audioFile);
   formData.append('name', name);
 
   const data = await post<{ profile: VoiceProfile }>('/voice/clone', formData, {
@@ -29,7 +29,7 @@ export async function createVoiceClone(
 
 export async function diarizeAudio(audioFile: { uri: string; name: string; type: string }) {
   const formData = new FormData();
-  formData.append('audio', audioFile as unknown as Blob);
+  formData.append('audio', audioFile);
 
   const data = await post<{ speakers: Speaker[] }>('/voice/diarize', formData, {
     isFormData: true,
@@ -99,7 +99,7 @@ export async function uploadVoiceAudio(
   durationMs?: number,
 ): Promise<VoiceUploadMeta> {
   const formData = new FormData();
-  formData.append('audio', audioFile as unknown as Blob);
+  formData.append('audio', audioFile);
   if (durationMs !== undefined) formData.append('durationMs', String(durationMs));
   if (audioFile.name) formData.append('originalName', audioFile.name);
   const data = await post<{ upload: VoiceUploadMeta }>('/voice/upload', formData, {
@@ -180,7 +180,7 @@ export async function startDub(
   sourceMessageId?: string,
 ) {
   const formData = new FormData();
-  formData.append('audio', audioFile as unknown as Blob);
+  formData.append('audio', audioFile);
   formData.append('source_language', sourceLanguage);
   formData.append('target_language', targetLanguage);
   if (sourceMessageId) {
