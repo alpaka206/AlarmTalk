@@ -792,6 +792,12 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (alarm 41/41)
 
+## P96 — character.ts 라우트 분할 ✅ (2026-04-25)
+
+- [x] `character.ts` (405줄) → `character-helpers.ts` (168줄) + `character-query.ts` (30줄) + `character-mutation.ts` (215줄) + `character.ts` (11줄 aggregator)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 780/780)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
