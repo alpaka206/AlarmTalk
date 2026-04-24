@@ -1449,3 +1449,10 @@
 - [x] Animated 버전 불일치 해결 (jest.spyOn + TouchableOpacity stub)
 - [x] render() + waitFor() 패턴 정립 (React 19 act() 이중 래핑 금지)
 - [x] 전체 테스트: mobile 819/819, backend 872/872, typecheck 0 errors
+
+## P112 — 화면 비즈니스 로직 테스트 (voices, compose, note/create) ✅ (2026-04-25)
+
+- [x] `apps/mobile/test/voicesScreen.test.ts` — 46 tests (2-profile limit, status badge, family section, query enablement, display profiles fallback)
+- [x] `apps/mobile/test/composeScreen.test.ts` — 37 tests (auth/plan access gates, unread count, sender display, query enablement)
+- [x] `apps/mobile/test/noteCreate.test.ts` — 31 tests (recipient filtering, canSend validation, display name, char count)
+- [x] 전체 테스트: mobile 1012/1012 (58 suites), backend 872/872, typecheck 0 errors

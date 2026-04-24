@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 소스 코드 `as unknown as` 타입 단언 6건 제거 (FormData 타입 선언 추가)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P111 완료**
+- 마지막 루프: 2026-04-25 — 화면 비즈니스 로직 테스트 114건 추가 (voices, compose, note/create)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P112 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 872/872, mobile 898/898)
+- 전체 테스트 통과 (backend 872/872, mobile 1012/1012)
 
 ## 완료된 리팩토링
 
@@ -16,6 +16,7 @@
 - **P109**: auth.ts 서비스 테스트 22건 — decodeIdToken, saveAuthToken, getAuthToken, getAuthProvider, signOut, isAppleAuthAvailable, signInWithApple
 - **P110**: 미테스트 모바일 컴포넌트 3개 테스트 57건 — FamilyMemberRow(22), MiniWaveformPlayer(26), Toast(9)
 - **P111**: `as unknown as` 타입 단언 6건 제거 — FormData RN 타입 선언, PresetMessageSection width, audio.ts durationMillis
+- **P112**: 화면 비즈니스 로직 테스트 114건 — voicesScreen(46), composeScreen(37), noteCreate(31)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -39,7 +40,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 872 tests (49 files) — 모든 라우트 + 미들웨어 + 유틸리티
-- Mobile: 898 tests (55 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14, 전용 테스트 파일 보유)
+- Mobile: 1012 tests (58 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14) + 화면 비즈니스 로직 (voices/compose/noteCreate)
 - 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 - 모바일 소스 `as unknown as` 0건 (db-types.ts typedRow만 의도적 유지)
