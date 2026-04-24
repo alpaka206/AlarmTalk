@@ -1,18 +1,18 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 모바일 컴포넌트 테스트 추가 (OfflineBanner, QueryStateView, PeopleSkeletonCard)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P107 완료**
+- 마지막 루프: 2026-04-25 — LoginButtons 컴포넌트 렌더링 테스트 18건 추가
+- 현재 Phase: **R0~R6 전체 완료 + P11~P108 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 872/872, mobile 801/801)
+- 전체 테스트 통과 (backend 872/872, mobile 819/819)
 
 ## 완료된 리팩토링
 
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11~P106**: 전체 완료
-- **P107**: 모바일 컴포넌트 테스트 19건 추가 — @testing-library/react-native 도입, OfflineBanner(4), QueryStateView(8), PeopleSkeletonCard(7)
+- **P11~P107**: 전체 완료
+- **P108**: LoginButtons 렌더링 테스트 18건 — Google/Apple 로그인 전 경로, useEffect 응답 처리, 에러 핸들링, 접근성
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -36,6 +36,6 @@
 
 ## 테스트 커버리지 현황
 - Backend: 872 tests (49 files) — 모든 라우트 + 미들웨어 + 유틸리티
-- Mobile: 801 tests (50 files) — API core + 전체 API 서비스 모듈 + hooks + services + lib + 컴포넌트 3개
-- 미테스트: lib/db.ts (최소 로직), LoginButtons (auth 의존성 모킹 복잡)
+- Mobile: 819 tests (51 files) — API core + 전체 API 서비스 모듈 + hooks + services + lib + 전체 컴포넌트 (14/14)
+- 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)

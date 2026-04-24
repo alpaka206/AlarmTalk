@@ -1417,3 +1417,11 @@
 - [x] `apps/mobile/test/apiCharacter.test.ts` — Character/XP API (6 tests)
 - [x] `apps/mobile/test/apiVoice.test.ts` — Voice/Upload/TTS/Dub API (24 tests)
 - [x] 전체 테스트: mobile 743/743, backend 872/872, typecheck 0 errors
+
+
+## P108 — LoginButtons 컴포넌트 렌더링 테스트 ✅ (2026-04-25)
+
+- [x] `apps/mobile/test/LoginButtons.test.tsx` — 18 tests (Google/Apple 로그인 전 경로, useEffect 응답 처리, 에러 핸들링, 접근성)
+- [x] Animated 버전 불일치 해결 (jest.spyOn + TouchableOpacity stub)
+- [x] render() + waitFor() 패턴 정립 (React 19 act() 이중 래핑 금지)
+- [x] 전체 테스트: mobile 819/819, backend 872/872, typecheck 0 errors
