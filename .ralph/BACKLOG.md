@@ -545,6 +545,14 @@
 
 ---
 
+## P25 — README 현행화 + stale TODO 정리 ✅ (2026-04-24)
+
+- [x] README.md 전면 재작성: 인증(JWT+bcrypt), 탭 4개, API 16그룹, 기능 7개, 테스트 현황, 설계문서 링크
+- [x] packages/voice/src/VoiceStorage.ts stale TODO → R2 현행 설명으로 교체
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
-- 앱 아이콘 + 스플래시 스크린 디자인
+- 앱 아이콘 설정 (adaptive icon config)
