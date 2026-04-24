@@ -23,7 +23,7 @@ import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getAlarms, updateAlarm, deleteAlarm, getMessages, getVoiceProfiles } from '../../src/services/api';
 import { playAudio } from '../../src/services/audio';
 import { useAppStore } from '../../src/stores/useAppStore';
-import { DAYS_OF_WEEK } from '../../src/constants/presets';
+import { DAY_KEYS } from '../../src/constants/presets';
 import { ErrorView } from '../../src/components/QueryStateView';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheAlarms, getCachedAlarms } from '../../src/services/offlineCache';
@@ -253,7 +253,7 @@ function AlarmsScreen() {
     const sorted = [...days].sort();
     if (JSON.stringify(sorted) === JSON.stringify([1, 2, 3, 4, 5])) return t('alarms.weekday');
     if (JSON.stringify(sorted) === JSON.stringify([0, 6])) return t('alarms.weekend');
-    return days.map((d) => DAYS_OF_WEEK[d]).join(', ');
+    return days.map((d) => t(DAY_KEYS[d])).join(', ');
   };
 
   const renderDeleteAction = (

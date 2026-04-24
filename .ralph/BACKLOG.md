@@ -766,3 +766,28 @@
   - Compose screen gating (16 tests): getComposeScreenState, computeUnreadCount, shouldMarkRead
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 449/449)
+
+---
+
+## P43 — DAYS_OF_WEEK i18n 전환 + DAY_LABELS 통합 ✅ (2026-04-24)
+
+- [x] `presets.ts` DAYS_OF_WEEK → DAY_KEYS (i18n 키 배열로 변환)
+- [x] `family-alarm/create.tsx` 중복 DAY_LABELS 제거 → DAY_KEYS import
+- [x] 소비자 4곳 (alarm/create, alarm/edit, alarms, family-alarm/create) `t(key)` 전환
+- [x] i18n ko/en 각 7키 추가 (alarms.daySun~daySat)
+- [x] presets.test.ts 업데이트 + i18n 키 검증 테스트 추가
+- [x] api-latency.test.ts LATENCY_THRESHOLD_MS 50→75 (flaky 방지)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 450/450)
+
+---
+
+## P44 — 프리셋 메시지 i18n 전환 ✅ (2026-04-24)
+
+- [x] `presets.ts` PresetCategory.messages → messageKeys (i18n 키 배열)
+- [x] i18n ko/en 각 24키 추가 (preset.morning/lunch/afternoon/evening/night/cheer/love/health × 3)
+- [x] alarm/create.tsx 랜덤 선택 + 리스트 `t(key)` 전환
+- [x] message/create.tsx 리스트 `t(key)` 전환
+- [x] presets.test.ts 업데이트
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 450/450)

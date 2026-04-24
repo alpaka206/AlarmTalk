@@ -221,7 +221,9 @@ export default function CreateMessageScreen() {
           {/* 메시지 선택 */}
           {selectedCategory && (
             <View style={styles.presetList}>
-              {PRESET_CATEGORIES.find((c) => c.key === selectedCategory)?.messages.map((msg, i) => (
+              {PRESET_CATEGORIES.find((c) => c.key === selectedCategory)?.messageKeys.map((key, i) => {
+                const msg = t(key);
+                return (
                 <TouchableOpacity
                   key={i}
                   style={[styles.presetItem, selectedPreset === msg && styles.presetItemSelected]}
@@ -237,7 +239,8 @@ export default function CreateMessageScreen() {
                   </Text>
                   {selectedPreset === msg && <Text style={styles.checkmark}>✓</Text>}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           )}
         </>

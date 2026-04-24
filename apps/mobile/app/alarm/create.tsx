@@ -13,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { DAYS_OF_WEEK, PRESET_CATEGORIES, getCategoryLabel } from '../../src/constants/presets';
+import { DAY_KEYS, PRESET_CATEGORIES, getCategoryLabel } from '../../src/constants/presets';
 import {
   getMessages,
   getAlarms,
@@ -297,17 +297,17 @@ export default function CreateAlarmScreen() {
       {/* 반복 요일 */}
       <Text style={dynStyles.sectionTitle}>{t('alarmCreate.repeat')}</Text>
       <View style={dynStyles.daysRow}>
-        {DAYS_OF_WEEK.map((day, index) => (
+        {DAY_KEYS.map((key, index) => (
           <TouchableOpacity
             key={index}
             style={[dynStyles.dayChip, repeatDays.includes(index) && dynStyles.dayChipActive]}
             onPress={() => toggleDay(index)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: repeatDays.includes(index) }}
-            accessibilityLabel={day}
+            accessibilityLabel={t(key)}
           >
             <Text style={[dynStyles.dayText, repeatDays.includes(index) && dynStyles.dayTextActive]}>
-              {day}
+              {t(key)}
             </Text>
           </TouchableOpacity>
         ))}
@@ -637,9 +637,9 @@ export default function CreateAlarmScreen() {
             <TouchableOpacity
               style={dynStyles.randomBtn}
               onPress={() => {
-                const msgs = PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messages;
-                if (msgs && msgs.length > 0) {
-                  setPresetText(msgs[Math.floor(Math.random() * msgs.length)]);
+                const keys = PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messageKeys;
+                if (keys && keys.length > 0) {
+                  setPresetText(t(keys[Math.floor(Math.random() * keys.length)]));
                 }
               }}
               accessibilityRole="button"
@@ -649,7 +649,9 @@ export default function CreateAlarmScreen() {
             </TouchableOpacity>
           </View>
           <View style={dynStyles.messageList}>
-            {PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messages.map((msg, i) => (
+            {PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messageKeys.map((key, i) => {
+              const msg = t(key);
+              return (
               <TouchableOpacity
                 key={i}
                 style={[dynStyles.messageItem, presetText === msg && dynStyles.messageItemSelected]}
@@ -663,7 +665,8 @@ export default function CreateAlarmScreen() {
                 </View>
                 {presetText === msg && <Text style={dynStyles.checkmark}>✓</Text>}
               </TouchableOpacity>
-            ))}
+              );
+            })}
           </View>
 
           {/* 생성 버튼 */}

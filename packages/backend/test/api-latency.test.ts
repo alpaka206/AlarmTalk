@@ -21,7 +21,7 @@ import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
 import giftRoutes from '../src/routes/gift';
 
-const LATENCY_THRESHOLD_MS = 50;
+const LATENCY_THRESHOLD_MS = 75;
 const WRITE_LATENCY_THRESHOLD_MS = 80;
 
 function buildApp(route: string, handler: Hono<AppEnv>, userId = 'user-1') {

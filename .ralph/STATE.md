@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P42 API 응답 시간 벤치마크 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P42 완료**
+- 마지막 루프: 2026-04-24 — P44 프리셋 메시지 i18n 전환
+- 현재 Phase: **R0~R6 전체 완료 + P11~P44 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 672/672, mobile 449/449)
+- 전체 테스트 통과 (backend 672/672, mobile 450/450)
 
 ## 완료된 리팩토링
 
@@ -42,6 +42,8 @@
 - **P40**: alarmPlayback.ts i18n 전환 — 하드코딩 한국어 6건 → i18n 키 반환 패턴 (ko/en 7키 추가, 테스트 17/17)
 - **P41**: 화면 인터랙션 로직 테스트 — voices/compose/alarm-create 3개 화면 비즈니스 로직 54 tests (총 449/449)
 - **P42**: API 응답 시간 벤치마크 테스트 — 10개 라우트 그룹 19 tests (레이턴시 기준선 + sustained throughput p95, 총 672/672)
+- **P43**: DAYS_OF_WEEK i18n 전환 — 하드코딩 한국어 요일명 → i18n 키 전환 + family-alarm DAY_LABELS 중복 제거 (ko/en 7키 추가, 총 450/450)
+- **P44**: 프리셋 메시지 i18n 전환 — 24개 하드코딩 한국어 TTS 메시지 → i18n 키 전환 (ko/en 24키 추가)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

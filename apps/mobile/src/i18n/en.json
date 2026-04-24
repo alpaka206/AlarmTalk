@@ -77,6 +77,13 @@
     "daily": "Daily",
     "weekday": "Weekdays",
     "weekend": "Weekends",
+    "daySun": "Sun",
+    "dayMon": "Mon",
+    "dayTue": "Tue",
+    "dayWed": "Wed",
+    "dayThu": "Thu",
+    "dayFri": "Fri",
+    "daySat": "Sat",
     "nextIn": "Next alarm in",
     "searchPlaceholder": "Search by time, voice, message",
     "countdownDaysHours": "{{days}}d {{hours}}h",
@@ -210,6 +217,48 @@
     "categoryHealth": "Health",
     "categoryCustom": "Custom",
     "a11yCategoryBadge": "Category: {{category}}"
+  },
+  "preset": {
+    "morning": {
+      "0": "Good morning! Let's have a great day!",
+      "1": "Rise and shine! Make today amazing!",
+      "2": "Morning! You've got this today!"
+    },
+    "lunch": {
+      "0": "Don't forget to eat lunch, enjoy something tasty!",
+      "1": "Have you eaten? Make sure to grab a bite!",
+      "2": "Lunchtime! Eat well and power through the afternoon!"
+    },
+    "afternoon": {
+      "0": "Keep going, you're almost there!",
+      "1": "Afternoon slump? Grab a coffee and push through!",
+      "2": "Just a little more to go, you can do it!"
+    },
+    "evening": {
+      "0": "Great job today, you worked hard!",
+      "1": "Time to relax! You had a wonderful day!",
+      "2": "You did well, now take it easy!"
+    },
+    "night": {
+      "0": "You had a great day, sleep tight!",
+      "1": "Good night, sweet dreams!",
+      "2": "Tomorrow will be another great day, good night!"
+    },
+    "cheer": {
+      "0": "You can do it, I believe in you!",
+      "1": "Don't give up even when it's tough, I'm cheering for you!",
+      "2": "You're truly an amazing person!"
+    },
+    "love": {
+      "0": "I love you, always grateful for you!",
+      "1": "I'm happy because you're here!",
+      "2": "I miss you, let's see each other soon!"
+    },
+    "health": {
+      "0": "Did you take your medicine?",
+      "1": "Drink lots of water! Take care of yourself!",
+      "2": "Did you stretch today? Take care of your body!"
+    }
   },
   "settings": {
     "title": "Settings",

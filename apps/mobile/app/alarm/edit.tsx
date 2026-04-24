@@ -13,7 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { DAYS_OF_WEEK } from '../../src/constants/presets';
+import { DAY_KEYS } from '../../src/constants/presets';
 import {
   getMessages,
   getAlarm,
@@ -244,17 +244,17 @@ export default function EditAlarmScreen() {
       {/* 반복 요일 */}
       <Text style={dynStyles.sectionTitle}>{t('alarmCreate.repeat')}</Text>
       <View style={dynStyles.daysRow}>
-        {DAYS_OF_WEEK.map((day, index) => (
+        {DAY_KEYS.map((key, index) => (
           <TouchableOpacity
             key={index}
             style={[dynStyles.dayChip, repeatDays.includes(index) && dynStyles.dayChipActive]}
             onPress={() => toggleDay(index)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: repeatDays.includes(index) }}
-            accessibilityLabel={day}
+            accessibilityLabel={t(key)}
           >
             <Text style={[dynStyles.dayText, repeatDays.includes(index) && dynStyles.dayTextActive]}>
-              {day}
+              {t(key)}
             </Text>
           </TouchableOpacity>
         ))}

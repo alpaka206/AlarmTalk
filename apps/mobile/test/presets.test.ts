@@ -1,16 +1,16 @@
-import { PRESET_CATEGORIES, getCategoryLabel, DAYS_OF_WEEK } from '../src/constants/presets';
+import { PRESET_CATEGORIES, getCategoryLabel, DAY_KEYS } from '../src/constants/presets';
 
 describe('PRESET_CATEGORIES', () => {
   it('8개의 카테고리가 정의되어 있다', () => {
     expect(PRESET_CATEGORIES).toHaveLength(8);
   });
 
-  it('모든 카테고리에 key, emoji, i18nKey, messages가 있다', () => {
+  it('모든 카테고리에 key, emoji, i18nKey, messageKeys가 있다', () => {
     for (const cat of PRESET_CATEGORIES) {
       expect(cat.key).toBeTruthy();
       expect(cat.emoji).toBeTruthy();
       expect(cat.i18nKey).toBeTruthy();
-      expect(cat.messages.length).toBeGreaterThan(0);
+      expect(cat.messageKeys.length).toBeGreaterThan(0);
     }
   });
 
@@ -19,10 +19,10 @@ describe('PRESET_CATEGORIES', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('모든 메시지가 빈 문자열이 아니다', () => {
+  it('모든 messageKeys가 preset. 접두어를 사용한다', () => {
     for (const cat of PRESET_CATEGORIES) {
-      for (const msg of cat.messages) {
-        expect(msg.trim().length).toBeGreaterThan(0);
+      for (const key of cat.messageKeys) {
+        expect(key).toMatch(/^preset\./);
       }
     }
   });
@@ -63,13 +63,19 @@ describe('getCategoryLabel', () => {
   });
 });
 
-describe('DAYS_OF_WEEK', () => {
+describe('DAY_KEYS', () => {
   it('7일이다', () => {
-    expect(DAYS_OF_WEEK).toHaveLength(7);
+    expect(DAY_KEYS).toHaveLength(7);
   });
 
-  it('일요일부터 시작한다', () => {
-    expect(DAYS_OF_WEEK[0]).toBe('일');
-    expect(DAYS_OF_WEEK[6]).toBe('토');
+  it('일요일부터 시작한다 (i18n 키)', () => {
+    expect(DAY_KEYS[0]).toBe('alarms.daySun');
+    expect(DAY_KEYS[6]).toBe('alarms.daySat');
+  });
+
+  it('모든 키가 alarms.day 접두어를 사용한다', () => {
+    for (const key of DAY_KEYS) {
+      expect(key).toMatch(/^alarms\.day/);
+    }
   });
 });

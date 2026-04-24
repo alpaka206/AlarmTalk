@@ -30,8 +30,7 @@ import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
-
-const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+import { DAY_KEYS } from '../../src/constants/presets';
 
 export default function FamilyAlarmCreateScreen() {
   const router = useRouter();
@@ -180,7 +179,8 @@ export default function FamilyAlarmCreateScreen() {
 
         <Text style={styles.sectionLabel} accessibilityRole="header">{t('familyAlarm.repeat')}</Text>
         <View style={styles.daysRow}>
-          {DAY_LABELS.map((label, idx) => {
+          {DAY_KEYS.map((key, idx) => {
+            const label = t(key);
             const active = repeatDays.includes(idx);
             return (
               <TouchableOpacity
