@@ -816,6 +816,13 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 872/872, +24 신규)
 
+## P105 — NotificationBell + CoupleView 비즈니스 로직 테스트 ✅ (2026-04-25)
+
+- [x] `test/notificationBell.test.ts` 신규 — 16 tests (formatBadgeCount 5건, shouldShowBadge 3건, getBellAccessibilityLabel 3건, computeBadgeCount 5건)
+- [x] `test/coupleView.test.ts` 신규 — 23 tests (sortCoupleMembers 7건, areBothAlarmAllowed 4건, computeInitialFromDisplayName 5건, buildMemberDisplayName 5건, getRoleLabelKey 2건)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 782/782, +39 신규)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

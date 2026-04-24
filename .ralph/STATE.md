@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 모바일 API 서비스 테스트 79건 추가
-- 현재 Phase: **R0~R6 전체 완료 + P11~P104 완료**
+- 마지막 루프: 2026-04-25 — NotificationBell + CoupleView 비즈니스 로직 테스트 39건 추가
+- 현재 Phase: **R0~R6 전체 완료 + P11~P105 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 872/872, mobile 743/743)
+- 전체 테스트 통과 (backend 872/872, mobile 782/782)
 
 ## 완료된 리팩토링
 
@@ -13,6 +13,7 @@
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P103**: 전체 완료
 - **P104**: 모바일 API 서비스 모듈 테스트 79건 추가 (social, user, billing, alarm, family, character, voice)
+- **P105**: NotificationBell + CoupleView 비즈니스 로직 테스트 39건 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -36,5 +37,5 @@
 ## 테스트 커버리지 현황
 - Backend: 872 tests (49 files) — 모든 라우트 + 미들웨어 + 유틸리티
 - Mobile: 743 tests (45 files) — API core + 전체 API 서비스 모듈 + hooks + services + lib
-- 미테스트: lib/db.ts (최소 로직), 모바일 컴포넌트 (NotificationBell, CoupleView 등)
+- 미테스트: lib/db.ts (최소 로직), 모바일 컴포넌트 (OfflineBanner, LoginButtons, PeopleSkeletonCard, QueryStateView)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
