@@ -1484,7 +1484,18 @@
 - [x] `packages/backend/test/alarm-query.test.ts` — 13 tests (tick, 목록 필터링, 단건 조회, 접근 제어)
 - [x] 전체 테스트: backend 911/911 (51 suites), mobile 1012/1012, typecheck 0 errors
 
-## P116 — billing-mutation + billing-query 통합 테스트
+## P116 — billing-mutation + billing-query 통합 테스트 ✅ (2026-04-25)
 
-- [ ] `packages/backend/test/billing-mutation.test.ts` — 결제/플랜 변경 비즈니스 로직
-- [ ] `packages/backend/test/billing-query.test.ts` — 플랜 조회/상태 확인
+- [x] `packages/backend/test/billing-mutation.test.ts` — 15 tests (checkout 쿼리순서/trim/기본값/해시검증, redeem 쿼리순서/UPDATE검증/edge cases)
+- [x] `packages/backend/test/billing-query.test.ts` — 14 tests (vouchers resolveUserPk/JOIN/필드매핑, subscription google_id직접사용/JOIN/필터/LIMIT)
+- [x] 전체 테스트: backend 940/940 (53 suites), mobile 1012/1012, typecheck 0 errors
+
+## P117 — character-mutation + character-query 통합 테스트
+
+- [ ] `packages/backend/test/character-mutation.test.ts` — XP 부여, 스트릭 계산, 캐릭터 생성/업데이트 비즈니스 로직
+- [ ] `packages/backend/test/character-query.test.ts` — 캐릭터 조회, 스트릭/능력치/업적 응답 구조
+
+## P118 — voice-profile + voice-upload 통합 테스트
+
+- [ ] `packages/backend/test/voice-profile.test.ts` — 음성 프로필 CRUD, 2개 제한 검증
+- [ ] `packages/backend/test/voice-upload.test.ts` — 파일 업로드, R2 연동 (mock), 형식 검증
