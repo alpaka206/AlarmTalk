@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P25 README 현행화 + stale TODO 정리
-- 현재 Phase: **R0~R6 전체 완료 + P11~P25 완료**
+- 마지막 루프: 2026-04-24 — P26 앱 아이콘 설정 (adaptive icon + monochrome)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P26 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 286/286)
 
@@ -25,6 +25,7 @@
 - **P22**: Sentry 에러 모니터링 연동 (모바일 @sentry/react-native + 백엔드 toucan-js, DSN 미설정 시 no-op)
 - **P23**: Sentry 타입 안전성 수정 (as never 제거, SentryClient 인터페이스, named import) + Maestro E2E 테스트 플로우 6개
 - **P25**: README 현행화 (인증/탭/API/기능 전면 재작성) + packages/voice stale TODO 정리
+- **P26**: 앱 아이콘 설정 — Expo 기본 아이콘 → 브랜디드 나무 아이콘 교체 (icon, adaptive, monochrome, splash, favicon) + generate-icons.mjs 스크립트
 
 ## 알려진 이슈
 - [blocked] Perso API 404

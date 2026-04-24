@@ -553,6 +553,22 @@
 
 ---
 
+## P26 — 앱 아이콘 설정 (adaptive icon + monochrome) ✅ (2026-04-24)
+
+- [x] `scripts/generate-icons.mjs` 신규 — SVG → PNG 아이콘 생성 스크립트 (sharp 사용)
+- [x] `icon.png` 교체 — 코랄 그라데이션 배경 + 흰색 나무 실루엣 (1024×1024)
+- [x] `adaptive-icon.png` 교체 — 흰색 나무 전경 (투명 배경, Android 적응형)
+- [x] `monochrome-icon.png` 신규 — 검정 나무 실루엣 (Android 13+ Material You)
+- [x] `splash-icon.png` 교체 — 흰색 나무 (200×200)
+- [x] `favicon.png` 교체 — 코랄 배경 + 흰 나무 (48×48)
+- [x] `app.json` — `monochromeImage` 설정 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
-- 앱 아이콘 설정 (adaptive icon config)
+- ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료
+- 알림 채널 설정 (Android notification channels)
+- 딥 링크 라우트 핸들링 (voicealarm:// scheme)
+- expo-updates OTA 업데이트 체크 로직
