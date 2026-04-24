@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -187,8 +187,27 @@ export default function LibraryScreen() {
     custom: 'library.categoryCustom',
   };
 
-  const getCategoryLabel = (key: string) =>
-    CATEGORY_I18N[key] ? t(CATEGORY_I18N[key]) : key;
+  const getCategoryLabel = useCallback(
+    (key: string) => (CATEGORY_I18N[key] ? t(CATEGORY_I18N[key]) : key),
+    [t],
+  );
+
+  const renderCategoryItem = useCallback(
+    ({ item: cat }: { item: (typeof CATEGORIES)[number] }) => (
+      <TouchableOpacity
+        style={[dynStyles.categoryChip, categoryFilter === cat.key && dynStyles.categoryChipActive]}
+        onPress={() => setCategoryFilter(cat.key)}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: categoryFilter === cat.key }}
+        accessibilityLabel={cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
+      >
+        <Text style={dynStyles.categoryChipText}>
+          {cat.emoji} {cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [dynStyles, categoryFilter, t, getCategoryLabel],
+  );
 
   const renderItem = ({ item }: { item: LibraryItem }) => {
     const isActive = currentPlayingId === item.message_id;
@@ -287,19 +306,7 @@ export default function LibraryScreen() {
         data={CATEGORIES}
         keyExtractor={(item) => item.key}
         contentContainerStyle={dynStyles.categoryRow}
-        renderItem={({ item: cat }) => (
-          <TouchableOpacity
-            style={[dynStyles.categoryChip, categoryFilter === cat.key && dynStyles.categoryChipActive]}
-            onPress={() => setCategoryFilter(cat.key)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: categoryFilter === cat.key }}
-            accessibilityLabel={cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
-          >
-            <Text style={dynStyles.categoryChipText}>
-              {cat.emoji} {cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderItem={renderCategoryItem}
       />
 
       {showingCached && (
@@ -336,6 +343,10 @@ export default function LibraryScreen() {
           renderItem={renderItem}
           contentContainerStyle={dynStyles.list}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         />
       )}

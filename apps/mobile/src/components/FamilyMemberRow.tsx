@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { FamilyGroupMember } from '../services/api';
@@ -11,7 +11,7 @@ interface Props {
   isCouple?: boolean;
 }
 
-export function FamilyMemberRow({ member, isCouple }: Props) {
+export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
@@ -40,7 +40,7 @@ export function FamilyMemberRow({ member, isCouple }: Props) {
       </View>
     </View>
   );
-}
+});
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({

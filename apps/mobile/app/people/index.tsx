@@ -351,6 +351,10 @@ export default function PeopleScreen() {
         renderItem={renderMember}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl refreshing={familyRefetching} onRefresh={onRefresh} />
         }
@@ -392,6 +396,10 @@ export default function PeopleScreen() {
         renderItem={renderFriend}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
         refreshControl={
           <RefreshControl refreshing={friendsRefetching} onRefresh={onRefresh} />
         }
@@ -418,6 +426,10 @@ export default function PeopleScreen() {
         renderItem={renderRequest}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
       />
     );
   };

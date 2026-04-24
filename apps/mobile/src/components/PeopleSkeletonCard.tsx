@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { Spacing, BorderRadius } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
@@ -36,7 +36,7 @@ interface Props {
   count?: number;
 }
 
-export function PeopleSkeletonCard({ count = 3 }: Props) {
+export const PeopleSkeletonCard = memo(function PeopleSkeletonCard({ count = 3 }: Props) {
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   return (
@@ -46,7 +46,7 @@ export function PeopleSkeletonCard({ count = 3 }: Props) {
       ))}
     </View>
   );
-}
+});
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({

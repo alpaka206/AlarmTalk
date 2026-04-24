@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -64,6 +64,11 @@ export default function TranslateScreen() {
   });
 
   const message = messages?.find((m: Message) => m.id === message_id);
+
+  const targetLanguages = useMemo(
+    () => languages?.filter((l: DubLanguage) => l.code !== sourceLanguage),
+    [languages, sourceLanguage],
+  );
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -235,7 +240,7 @@ export default function TranslateScreen() {
           <ActivityIndicator style={styles.loader} color={colors.primary} />
         ) : (
           <FlatList
-            data={languages?.filter((l: DubLanguage) => l.code !== sourceLanguage)}
+            data={targetLanguages}
             renderItem={renderLanguageItem}
             keyExtractor={(item: DubLanguage) => item.code}
             scrollEnabled={false}

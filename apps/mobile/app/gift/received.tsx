@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -125,11 +125,81 @@ export default function ReceivedGiftsScreen() {
     );
   }
 
-  const statusLabel = (status: string) => {
+  const statusLabel = useCallback((status: string) => {
     if (status === 'accepted') return t('giftReceived.statusAccepted');
     if (status === 'rejected') return t('giftReceived.statusRejected');
     return t('giftReceived.statusPending');
-  };
+  }, [t]);
+
+  const renderGiftItem = useCallback(({ item }: { item: Gift }) => (
+    <View style={styles.card}>
+      <View style={styles.header}>
+        <View style={styles.senderInfo}>
+          <Text style={styles.senderName}>
+            {item.sender_name || t('giftReceived.unknown')}
+          </Text>
+          <Text style={styles.senderEmail}>{item.sender_email}</Text>
+        </View>
+        <Text
+          style={[
+            styles.status,
+            item.status === 'accepted' && styles.statusAccepted,
+            item.status === 'rejected' && styles.statusRejected,
+          ]}
+        >
+          {statusLabel(item.status)}
+        </Text>
+      </View>
+
+      <View style={styles.messageBox}>
+        <Text style={styles.category}>{item.category}</Text>
+        <Text style={styles.messageText} numberOfLines={2}>
+          {item.message_text}
+        </Text>
+      </View>
+
+      {item.note && <Text style={styles.note}>"{item.note}"</Text>}
+
+      {item.status === 'pending' && (
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.acceptBtn}
+            onPress={() => accept.mutate(item.id)}
+            disabled={accept.isPending}
+          >
+            <Text style={styles.acceptBtnText}>{t('common.accept')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.rejectBtn}
+            onPress={() =>
+              Alert.alert(t('giftReceived.rejectTitle'), t('giftReceived.rejectConfirm'), [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.reject'),
+                  style: 'destructive',
+                  onPress: () => reject.mutate(item.id),
+                },
+              ])
+            }
+            disabled={reject.isPending}
+          >
+            <Text style={styles.rejectBtnText}>{t('common.reject')}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {item.status === 'accepted' && (
+        <TouchableOpacity
+          style={styles.setAlarmBtn}
+          onPress={() =>
+            router.push({ pathname: '/alarm/create', params: { message_id: item.message_id } })
+          }
+        >
+          <Text style={styles.setAlarmBtnText}>{t('giftReceived.setAsAlarm')}</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  ), [styles, t, statusLabel, accept, reject, router]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -138,6 +208,10 @@ export default function ReceivedGiftsScreen() {
         data={data ?? []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
+        initialNumToRender={8}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -145,75 +219,7 @@ export default function ReceivedGiftsScreen() {
             <Text style={styles.emptyText}>{t('giftReceived.emptyText')}</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.header}>
-              <View style={styles.senderInfo}>
-                <Text style={styles.senderName}>
-                  {item.sender_name || t('giftReceived.unknown')}
-                </Text>
-                <Text style={styles.senderEmail}>{item.sender_email}</Text>
-              </View>
-              <Text
-                style={[
-                  styles.status,
-                  item.status === 'accepted' && styles.statusAccepted,
-                  item.status === 'rejected' && styles.statusRejected,
-                ]}
-              >
-                {statusLabel(item.status)}
-              </Text>
-            </View>
-
-            <View style={styles.messageBox}>
-              <Text style={styles.category}>{item.category}</Text>
-              <Text style={styles.messageText} numberOfLines={2}>
-                {item.message_text}
-              </Text>
-            </View>
-
-            {item.note && <Text style={styles.note}>"{item.note}"</Text>}
-
-            {item.status === 'pending' && (
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={styles.acceptBtn}
-                  onPress={() => accept.mutate(item.id)}
-                  disabled={accept.isPending}
-                >
-                  <Text style={styles.acceptBtnText}>{t('common.accept')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.rejectBtn}
-                  onPress={() =>
-                    Alert.alert(t('giftReceived.rejectTitle'), t('giftReceived.rejectConfirm'), [
-                      { text: t('common.cancel'), style: 'cancel' },
-                      {
-                        text: t('common.reject'),
-                        style: 'destructive',
-                        onPress: () => reject.mutate(item.id),
-                      },
-                    ])
-                  }
-                  disabled={reject.isPending}
-                >
-                  <Text style={styles.rejectBtnText}>{t('common.reject')}</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {item.status === 'accepted' && (
-              <TouchableOpacity
-                style={styles.setAlarmBtn}
-                onPress={() =>
-                  router.push({ pathname: '/alarm/create', params: { message_id: item.message_id } })
-                }
-              >
-                <Text style={styles.setAlarmBtnText}>{t('giftReceived.setAsAlarm')}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+        renderItem={renderGiftItem}
       />
       </View>
       <Toast message={toast.message} opacity={toast.opacity} />

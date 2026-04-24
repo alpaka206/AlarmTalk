@@ -423,6 +423,14 @@
 - [x] `test/code.test.ts` — 22 tests (공통 5건, 이용권 VA-코드 8건, 가족 초대 6자리 9건)
 - [x] 전체 596/596 통과 (기존 553 + 신규 43)
 
+## P12 — React Native 성능 최적화 ✅ (2026-04-24)
+
+- [x] React.memo: FamilyMemberRow, Toast, PeopleSkeletonCard (FlatList 아이템 불필요 재렌더 방지)
+- [x] FlatList perf props: alarms, compose, people(×3), library, gift/received, voice/[id] (initialNumToRender, maxToRenderPerBatch, windowSize, removeClippedSubviews)
+- [x] useMemo: dub/translate targetLanguages 필터, voice/[id] listData + styles
+- [x] useCallback: library renderCategoryItem/getCategoryLabel, gift/received renderGiftItem/statusLabel, voice/[id] renderListItem
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

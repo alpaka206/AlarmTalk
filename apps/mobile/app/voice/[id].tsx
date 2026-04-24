@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Alert,
   View,
@@ -27,7 +27,7 @@ export default function VoiceDetailScreen() {
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const { data: profiles } = useQuery({
     queryKey: ['voiceProfiles'],
@@ -86,6 +86,48 @@ export default function VoiceDetailScreen() {
   const voiceAlarms = alarms?.filter((a: Alarm) => a.voice_name === profile?.name) ?? [];
 
   const isLoading = loadingMessages || loadingAlarms;
+
+  type SectionItem = { type: 'section'; title: string };
+  type MessageItem = { type: 'message'; data: Message };
+  type AlarmItem = { type: 'alarm'; data: Alarm };
+  type ListItem = SectionItem | MessageItem | AlarmItem;
+
+  const listData = useMemo<ListItem[]>(() => [
+    ...(voiceMessages.length > 0
+      ? [{ type: 'section' as const, title: t('voiceDetail.messageList') }]
+      : []),
+    ...voiceMessages.map((m) => ({ type: 'message' as const, data: m })),
+    ...(voiceAlarms.length > 0
+      ? [{ type: 'section' as const, title: t('voiceDetail.alarmList') }]
+      : []),
+    ...voiceAlarms.map((a) => ({ type: 'alarm' as const, data: a })),
+  ], [voiceMessages, voiceAlarms, t]);
+
+  const renderListItem = useCallback(({ item }: { item: ListItem }) => {
+    if (item.type === 'section') {
+      return <Text style={styles.sectionTitle}>{item.title}</Text>;
+    }
+    if (item.type === 'message') {
+      const m = item.data as Message;
+      return (
+        <View style={styles.itemCard}>
+          <Text style={styles.itemCategory}>{m.category}</Text>
+          <Text style={styles.itemText} numberOfLines={2}>{m.text}</Text>
+          <Text style={styles.itemDate}>{new Date(m.created_at).toLocaleDateString('ko-KR')}</Text>
+        </View>
+      );
+    }
+    const a = item.data as Alarm;
+    return (
+      <View style={styles.itemCard}>
+        <Text style={styles.alarmTime}>{a.time}</Text>
+        <Text style={styles.itemText} numberOfLines={1}>{a.message_text}</Text>
+        <Text style={[styles.itemDate, !a.is_active && styles.inactive]}>
+          {a.is_active ? t('voiceDetail.active') : t('voiceDetail.inactive')}
+        </Text>
+      </View>
+    );
+  }, [styles, t]);
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -171,51 +213,16 @@ export default function VoiceDetailScreen() {
         <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={[
-            ...(voiceMessages.length > 0
-              ? [{ type: 'section', title: t('voiceDetail.messageList') } as const]
-              : []),
-            ...voiceMessages.map((m) => ({ type: 'message' as const, data: m })),
-            ...(voiceAlarms.length > 0
-              ? [{ type: 'section', title: t('voiceDetail.alarmList') } as const]
-              : []),
-            ...voiceAlarms.map((a) => ({ type: 'alarm' as const, data: a })),
-          ]}
+          data={listData}
           keyExtractor={(item, index) =>
             item.type === 'section' ? `section-${index}` : item.data.id
           }
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            if (item.type === 'section') {
-              return <Text style={styles.sectionTitle}>{item.title}</Text>;
-            }
-            if (item.type === 'message') {
-              const m = item.data as Message;
-              return (
-                <View style={styles.itemCard}>
-                  <Text style={styles.itemCategory}>{m.category}</Text>
-                  <Text style={styles.itemText} numberOfLines={2}>
-                    {m.text}
-                  </Text>
-                  <Text style={styles.itemDate}>
-                    {new Date(m.created_at).toLocaleDateString('ko-KR')}
-                  </Text>
-                </View>
-              );
-            }
-            const a = item.data as Alarm;
-            return (
-              <View style={styles.itemCard}>
-                <Text style={styles.alarmTime}>{a.time}</Text>
-                <Text style={styles.itemText} numberOfLines={1}>
-                  {a.message_text}
-                </Text>
-                <Text style={[styles.itemDate, !a.is_active && styles.inactive]}>
-                  {a.is_active ? t('voiceDetail.active') : t('voiceDetail.inactive')}
-                </Text>
-              </View>
-            );
-          }}
+          renderItem={renderListItem}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyText}>{t('voiceDetail.empty')}</Text>

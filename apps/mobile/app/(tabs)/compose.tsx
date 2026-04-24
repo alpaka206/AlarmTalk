@@ -132,6 +132,10 @@ export default function ComposeScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderNoteItem}
         contentContainerStyle={styles.listContent}
+        initialNumToRender={8}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
         ListHeaderComponent={
           <>
             <View style={styles.header}>
