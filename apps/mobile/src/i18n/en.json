@@ -633,5 +633,11 @@
     "helpVoucherDesc": "A code issued when purchasing a plan. Registering it activates the plan.",
     "helpInviteTitle": "Family Invite Code",
     "helpInviteDesc": "A 6-digit code issued by a family group owner. Registering it joins you to the family group."
+  },
+  "update": {
+    "title": "Update Available",
+    "message": "A new version is ready. Would you like to update now?",
+    "now": "Update Now",
+    "later": "Later"
   }
 }

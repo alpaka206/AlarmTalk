@@ -591,4 +591,11 @@
 - ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료
 - ~~알림 채널 설정 (Android notification channels)~~ → P27 완료
 - ~~딥 링크 라우트 핸들링 (voicealarm:// scheme)~~ → P28 완료
-- expo-updates OTA 업데이트 체크 로직
+- ~~expo-updates OTA 업데이트 체크 로직~~ → P29 완료
+- ~~deepLink + updates 테스트 커버리지~~ → P30 완료
+
+## P30 — deepLink + updates 테스트 커버리지 ✅ (2026-04-24)
+
+- [x] `test/deepLink.test.ts` 신규 — 23 tests (parseDeepLink 20건 + createDeepLink 3건)
+- [x] `test/updates.test.ts` 신규 — 7 tests (__DEV__ 가드, web 가드, no update, fetch+alert, not new, error, reloadAsync)
+- [x] 전체 316/316 통과 (기존 286 + P30 30)

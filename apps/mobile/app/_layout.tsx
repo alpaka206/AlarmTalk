@@ -15,6 +15,7 @@ import type * as Notifications from 'expo-notifications';
 import { useAppStore } from '../src/stores/useAppStore';
 import { useTheme } from '../src/hooks/useTheme';
 import { setupAudioSession, ensureAudioDir } from '../src/services/audio';
+import { checkForOTAUpdate } from '../src/services/updates';
 import {
   requestNotificationPermissions,
   addNotificationResponseListener,
@@ -108,6 +109,7 @@ export default function RootLayout() {
     loadPersistedState();
     setupAudioSession();
     ensureAudioDir();
+    checkForOTAUpdate(t);
 
     if (Platform.OS !== 'web') {
       requestNotificationPermissions().then((granted) => {

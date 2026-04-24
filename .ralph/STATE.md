@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P28 딥 링크 라우트 핸들링 (voicealarm:// scheme)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P28 완료**
+- 마지막 루프: 2026-04-24 — P29 expo-updates OTA 업데이트 체크 로직
+- 현재 Phase: **R0~R6 전체 완료 + P11~P30 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 647/647, mobile 286/286)
+- 전체 테스트 통과 (backend 647/647, mobile 316/316)
 
 ## 완료된 리팩토링
 
@@ -28,6 +28,8 @@
 - **P26**: 앱 아이콘 설정 — Expo 기본 아이콘 → 브랜디드 나무 아이콘 교체 (icon, adaptive, monochrome, splash, favicon) + generate-icons.mjs 스크립트
 - **P27**: Android 알림 채널 4개 분리 (alarms MAX, notes HIGH, reminders DEFAULT, system LOW) + sendNotePush + 쪽지 전송 시 수신자 푸시
 - **P28**: 딥 링크 라우트 핸들링 — deepLink.ts 파서 + _layout.tsx 초기 URL/런타임 이벤트 리스너 + auth gating (13 딥 링크 패턴 지원)
+- **P29**: expo-updates OTA 업데이트 — 앱 시작 시 EAS Update 체크 + Alert 기반 opt-in 업데이트 (i18n 4키)
+- **P30**: deepLink + updates 테스트 커버리지 — deepLink 파서 23 tests + updates 서비스 7 tests (총 316/316)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
