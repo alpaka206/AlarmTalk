@@ -786,6 +786,12 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 780/780)
 
+## P95 — alarm.ts 라우트 분할 ✅ (2026-04-25)
+
+- [x] `alarm.ts` (502줄) → `alarm-helpers.ts` (148줄) + `alarm-query.ts` (126줄) + `alarm-mutation.ts` (241줄) + `alarm.ts` (11줄 aggregator)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (alarm 41/41)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
