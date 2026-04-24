@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P92 백엔드 테스트 파일 위치 정리 (중복 제거)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P92 완료**
+- 마지막 루프: 2026-04-25 — P93 모바일 접근성 누락 속성 보강
+- 현재 Phase: **R0~R6 전체 완료 + P11~P93 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 780/780, mobile 662/662)
 
@@ -21,6 +21,7 @@
 - **P90**: billing.test.ts 26→51개 (+25): error_code 전수검증/DB에러/malformed body/edge cases
 - **P91**: MiniWaveformPlayer.tsx accessibilityLabel 하드코딩 영어→i18n(player.a11yPlay/a11yPause) 수정
 - **P92**: 백엔드 테스트 파일 중복 정리 — src/routes/*.test.ts 6개 삭제, 고유 테스트 27건 test/로 병합, vitest.config 정리
+- **P93**: message/[id].tsx 5개 버튼 + people/index.tsx TextInput 접근성 속성 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404

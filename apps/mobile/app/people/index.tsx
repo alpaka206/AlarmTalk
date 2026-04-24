@@ -456,6 +456,7 @@ export default function PeopleScreen() {
             autoCorrect={false}
             returnKeyType="send"
             onSubmitEditing={handleSend}
+            accessibilityLabel={t('friends.addPlaceholder')}
           />
           <TouchableOpacity
             style={[styles.addBtn, !email.trim() && styles.addBtnDisabled]}

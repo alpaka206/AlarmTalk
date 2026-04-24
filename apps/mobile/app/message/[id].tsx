@@ -90,6 +90,8 @@ export default function MessageDetailScreen() {
           <TouchableOpacity
             style={styles.voiceBadge}
             onPress={() => router.push(`/voice/${message.voice_profile_id}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('messageDetail.voice')}: ${message.voice_name}`}
           >
             <View style={styles.voiceAvatar}>
               <Text style={styles.voiceAvatarText}>{message.voice_name.charAt(0)}</Text>
@@ -104,7 +106,12 @@ export default function MessageDetailScreen() {
 
         <View style={styles.actions}>
           {cached && (
-            <TouchableOpacity style={styles.playButton} onPress={handlePlayback}>
+            <TouchableOpacity
+              style={styles.playButton}
+              onPress={handlePlayback}
+              accessibilityRole="button"
+              accessibilityLabel={isPlaying ? t('messageDetail.stop') : t('messageDetail.play')}
+            >
               <Text style={styles.playButtonText}>
                 {isPlaying ? t('messageDetail.stop') : t('messageDetail.play')}
               </Text>
@@ -114,6 +121,8 @@ export default function MessageDetailScreen() {
           <TouchableOpacity
             style={styles.alarmButton}
             onPress={() => router.push(`/alarm/create?message_id=${id}`)}
+            accessibilityRole="button"
+            accessibilityLabel={t('messageDetail.useForAlarm')}
           >
             <Text style={styles.alarmButtonText}>{t('messageDetail.useForAlarm')}</Text>
           </TouchableOpacity>
@@ -122,6 +131,8 @@ export default function MessageDetailScreen() {
             <TouchableOpacity
               style={styles.translateButton}
               onPress={() => router.push(`/dub/translate?message_id=${id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={t('messageDetail.translate')}
             >
               <Text style={styles.translateButtonText}>{t('messageDetail.translate')}</Text>
             </TouchableOpacity>
@@ -130,6 +141,8 @@ export default function MessageDetailScreen() {
           <TouchableOpacity
             style={styles.giftButton}
             onPress={() => router.push(`/message/create?voice_id=${message.voice_profile_id}`)}
+            accessibilityRole="button"
+            accessibilityLabel={t('messageDetail.createAnother')}
           >
             <Text style={styles.giftButtonText}>{t('messageDetail.createAnother')}</Text>
           </TouchableOpacity>

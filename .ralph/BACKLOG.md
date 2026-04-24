@@ -1296,3 +1296,9 @@
 - [x] src/routes/*.test.ts 6개 + src/test-helper.ts 삭제
 - [x] vitest.config.ts include 패턴 정리 (src/**/*.test.ts 제거)
 - [x] 전체 테스트 통과 확인 (780/780)
+
+## P93 — 모바일 접근성 누락 속성 보강 ✅ (2026-04-25)
+
+- [x] `app/message/[id].tsx` — 5개 TouchableOpacity에 accessibilityRole="button" + accessibilityLabel 추가
+- [x] `app/people/index.tsx` — TextInput(친구 추가)에 accessibilityLabel 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
