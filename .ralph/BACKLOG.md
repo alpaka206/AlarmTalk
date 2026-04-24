@@ -416,6 +416,15 @@
 
 ---
 
+## P11 — 신규 라우트 테스트 커버리지
+
+### Batch 1: notes + code 라우트 ✅ (2026-04-24)
+- [x] `test/notes.test.ts` — 21 tests (POST 9건, GET received 4건, GET sent 2건, PATCH read 5건, 가족 그룹 검증 포함)
+- [x] `test/code.test.ts` — 22 tests (공통 5건, 이용권 VA-코드 8건, 가족 초대 6자리 9건)
+- [x] 전체 596/596 통과 (기존 553 + 신규 43)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
