@@ -1,10 +1,10 @@
 ﻿# 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P63 API core + auth utilities 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P63 완료**
+- 마지막 루프: 2026-04-25 — P64 ProfileDropdown + PresetMessageSection 컴포넌트 로직 테스트
+- 현재 Phase: **R0~R6 전체 완료 + P11~P64 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 672/672, mobile 539/539)
+- 전체 테스트 통과 (backend 672/672, mobile 597/597)
 
 ## 완료된 리팩토링
 
@@ -63,6 +63,7 @@
 - **P61**: gift/received + family-alarm 스타일 추출 — gift/received.tsx 383→233줄 (-39%), family-alarm/create.tsx 359→218줄 (-39%)
 - **P62**: notifications 서비스 테스트 — 31 tests (syncAlarmNotifications weekday 변환, 채널 설정, 푸시 토큰, 스누즈, 권한 검증)
 - **P63**: API core + auth utilities 테스트 — 42 tests (request 토큰 주입/401 처리/쿼리파라미터/FormData/에러, decodeIdToken, Apple 로그인, AsyncStorage 토큰 관리)
+- **P64**: ProfileDropdown + PresetMessageSection 비즈니스 로직 테스트 — 58 tests (getPlanLabel, computeInitial, toggleLanguage, 메뉴 항목, 생성 버튼 비활성화, 랜덤 메시지, 카테고리 변경, PRESET_CATEGORIES 무결성)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

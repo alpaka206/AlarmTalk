@@ -664,6 +664,13 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 539/539)
 
+## P64 — ProfileDropdown + PresetMessageSection 비즈니스 로직 테스트 ✅ (2026-04-25)
+
+- [x] `test/profileDropdown.test.ts` 신규 — 30 tests (getPlanLabel 6건, computeInitial 10건, toggleLanguage 3건, getAuthMenuItems 5건, shouldShowProfile 5건, 미테스트: handleLogout/handleDeleteAccount Alert 모킹)
+- [x] `test/presetMessageSection.test.ts` 신규 — 28 tests (isGenerateDisabled 7건, pickRandomMessage 4건, onCategoryChange 3건, filterReadyVoicesForPreset 4건, hasRecentPresets 3건, PRESET_CATEGORIES 무결성 8건 — 일부 presets.test.ts 보완)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 597/597, backend 672/672)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
