@@ -1,0 +1,9 @@
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - 01-onboarding.yaml
+    - 02-login.yaml
+    - 03-tab-navigation.yaml
+    - 04-create-alarm.yaml
+    - 05-voice-management.yaml
+    - 06-profile-dropdown.yaml

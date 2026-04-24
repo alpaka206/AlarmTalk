@@ -11,11 +11,16 @@ export interface Env {
   VOICE_BUCKET?: R2Bucket;
 }
 
+export interface SentryClient {
+  captureException(exception: unknown): string;
+}
+
 export type AuthVariables = {
   userId: string;
   userEmail: string;
   userName: string;
   userPicture: string;
+  sentry: SentryClient;
 };
 
 export type AppEnv = { Bindings: Env; Variables: AuthVariables };

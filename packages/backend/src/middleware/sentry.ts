@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory';
-import Toucan from 'toucan-js';
+import { Toucan } from 'toucan-js';
 import type { AppEnv } from '../types';
 
 export const sentryMiddleware = createMiddleware<AppEnv>(async (c, next) => {
@@ -16,7 +16,7 @@ export const sentryMiddleware = createMiddleware<AppEnv>(async (c, next) => {
     environment: c.env.ENVIRONMENT || 'production',
   });
 
-  c.set('sentry' as never, sentry);
+  c.set('sentry', sentry);
 
   try {
     await next();

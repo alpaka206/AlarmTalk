@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P22 Sentry 에러 모니터링 연동
-- 현재 Phase: **R0~R6 전체 완료 + P11~P22 완료**
+- 마지막 루프: 2026-04-24 — P23 Sentry 타입 수정 + Maestro E2E 테스트
+- 현재 Phase: **R0~R6 전체 완료 + P11~P23 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 286/286)
 
@@ -23,6 +23,7 @@
 - **P20**: db-types 유틸 테스트 (typedRow 4 + getFormFile 6 = 10 tests, 총 606/606)
 - **P21**: 미테스트 모듈 100% 커버리지 (stats 14 + elevenlabs 14 + perso 13 = 41 tests, 총 647/647)
 - **P22**: Sentry 에러 모니터링 연동 (모바일 @sentry/react-native + 백엔드 toucan-js, DSN 미설정 시 no-op)
+- **P23**: Sentry 타입 안전성 수정 (as never 제거, SentryClient 인터페이스, named import) + Maestro E2E 테스트 플로우 6개
 
 ## 알려진 이슈
 - [blocked] Perso API 404

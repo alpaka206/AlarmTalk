@@ -27,7 +27,7 @@ import pushRoutes from './routes/push';
 import codeRoutes from './routes/code';
 import notesRoutes from './routes/notes';
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppEnv>();
 
 // Sentry error tracking (no-op if SENTRY_DSN is not set)
 app.use('*', sentryMiddleware);
@@ -139,9 +139,9 @@ app.onError((err, c) => {
     }),
   );
 
-  const sentry = c.get('sentry' as never);
-  if (sentry && typeof (sentry as { captureException?: unknown }).captureException === 'function') {
-    (sentry as { captureException: (e: Error) => void }).captureException(err);
+  const sentry = c.get('sentry');
+  if (sentry) {
+    sentry.captureException(err);
   }
 
   return c.json({ error: 'Internal server error', requestId }, 500);

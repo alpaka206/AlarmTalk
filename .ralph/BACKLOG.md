@@ -523,7 +523,17 @@
 
 ---
 
+## P23 — Sentry 타입 수정 + Maestro E2E 테스트 ✅ (2026-04-24)
+
+- [x] `types.ts` — SentryClient 인터페이스 + AuthVariables.sentry 추가 (as never 제거)
+- [x] `sentry.ts` — named import (`import { Toucan }`) + c.set 캐스트 제거
+- [x] `index.ts` — `Hono<AppEnv>()` + c.get('sentry') 타입 안전 호출
+- [x] Maestro E2E 플로우 6개 (온보딩, 로그인, 탭 네비, 알람 생성, 음성 관리, 프로필)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 647/647, mobile 286/286)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
-- 모바일 E2E 테스트 (Detox 또는 Maestro)
 - 앱 아이콘 + 스플래시 스크린 디자인
