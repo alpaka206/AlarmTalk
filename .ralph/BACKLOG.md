@@ -464,11 +464,16 @@
 - [x] `test/presets.test.ts` 신규 — 9 tests (PRESET_CATEGORIES 무결성 + getCategoryLabel + DAYS_OF_WEEK)
 - [x] 전체 206/206 통과 (기존 168 + P16 38), 백엔드 596/596 통과
 
+## P17 — useAppStore Zustand 스토어 테스트 ✅ (2026-04-24)
+
+- [x] `test/useAppStore.test.ts` 신규 — 32 tests (초기상태, setAuth, clearAuth, setPlan, voiceProfiles CRUD, setPlaying, completeOnboarding, incrementTtsCount, setDefaultSnoozeMinutes, setDarkMode, loadPersistedState)
+- [x] AsyncStorage in-memory mock + removeItem 포함
+- [x] 전체 238/238 통과 (기존 206 + P17 32), 백엔드 596/596 통과
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
-- useAppStore Zustand 스토어 테스트 (AsyncStorage mock)
 - hooks 테스트 (useAuth, useTheme, useToast, useNetworkStatus)
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
 - Sentry 에러 모니터링 연동
