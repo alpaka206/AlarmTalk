@@ -657,6 +657,13 @@
 - [x] typecheck 통과 (mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 497/497)
 
+## P63 — API core + auth utilities 테스트 ✅ (2026-04-25)
+
+- [x] `test/apiCore.test.ts` 신규 — 22 tests (토큰 주입, 401 자동 로그아웃, 쿼리 파라미터, FormData, 에러 클래스, 204, 커스텀 헤더, AbortController, get/post/patch/del)
+- [x] `test/authUtils.test.ts` 신규 — 20 tests (decodeIdToken 6건, AsyncStorage 토큰 관리 6건, isAppleAuthAvailable 2건, signInWithApple 6건)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 539/539)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
@@ -681,6 +688,7 @@
 - ~~백엔드 billing 라우트 테스트 커버리지 (결제 스텁 검증)~~ → 이미 25 tests 존재 (P7 batch에서 완료)
 - ~~모바일 화면 컴포넌트 인터랙션 테스트 (voices add menu, alarm create form 등)~~ → P41 완료
 - ~~ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)~~ → P39 완료
+- ~~API core + auth utilities 테스트 (fetch 토큰 주입, 401 처리, JWT 디코딩, Apple 로그인)~~ → P63 완료
 
 ## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
 
