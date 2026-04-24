@@ -104,16 +104,22 @@ notes.get('/received', async (c) => {
   const limit = Math.min(Math.max(Number(limitRaw) || 20, 1), 100);
   const offset = Math.max(Number(offsetRaw) || 0, 0);
 
-  const result = await db.execute({
-    sql: `SELECT n.id, n.sender_id, n.text, n.audio_url, n.read_at, n.created_at,
-                 u.name AS sender_name, u.email AS sender_email, u.picture AS sender_picture
-          FROM notes n
-          JOIN users u ON u.id = n.sender_id
-          WHERE n.receiver_id = ?
-          ORDER BY n.created_at DESC
-          LIMIT ? OFFSET ?`,
-    args: [userPk, limit, offset],
-  });
+  const [countRes, result] = await Promise.all([
+    db.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM notes WHERE receiver_id = ?',
+      args: [userPk],
+    }),
+    db.execute({
+      sql: `SELECT n.id, n.sender_id, n.text, n.audio_url, n.read_at, n.created_at,
+                   u.name AS sender_name, u.email AS sender_email, u.picture AS sender_picture
+            FROM notes n
+            JOIN users u ON u.id = n.sender_id
+            WHERE n.receiver_id = ?
+            ORDER BY n.created_at DESC
+            LIMIT ? OFFSET ?`,
+      args: [userPk, limit, offset],
+    }),
+  ]);
 
   return c.json({
     notes: result.rows.map((r) => ({
@@ -127,6 +133,9 @@ notes.get('/received', async (c) => {
       read_at: (r.read_at as string | null) ?? null,
       created_at: String(r.created_at),
     })),
+    total: Number(countRes.rows[0].cnt),
+    limit,
+    offset,
   });
 });
 
@@ -142,16 +151,22 @@ notes.get('/sent', async (c) => {
   const limit = Math.min(Math.max(Number(limitRaw) || 20, 1), 100);
   const offset = Math.max(Number(offsetRaw) || 0, 0);
 
-  const result = await db.execute({
-    sql: `SELECT n.id, n.receiver_id, n.text, n.audio_url, n.read_at, n.created_at,
-                 u.name AS receiver_name, u.email AS receiver_email
-          FROM notes n
-          JOIN users u ON u.id = n.receiver_id
-          WHERE n.sender_id = ?
-          ORDER BY n.created_at DESC
-          LIMIT ? OFFSET ?`,
-    args: [userPk, limit, offset],
-  });
+  const [countRes, result] = await Promise.all([
+    db.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM notes WHERE sender_id = ?',
+      args: [userPk],
+    }),
+    db.execute({
+      sql: `SELECT n.id, n.receiver_id, n.text, n.audio_url, n.read_at, n.created_at,
+                   u.name AS receiver_name, u.email AS receiver_email
+            FROM notes n
+            JOIN users u ON u.id = n.receiver_id
+            WHERE n.sender_id = ?
+            ORDER BY n.created_at DESC
+            LIMIT ? OFFSET ?`,
+      args: [userPk, limit, offset],
+    }),
+  ]);
 
   return c.json({
     notes: result.rows.map((r) => ({
@@ -164,6 +179,9 @@ notes.get('/sent', async (c) => {
       read_at: (r.read_at as string | null) ?? null,
       created_at: String(r.created_at),
     })),
+    total: Number(countRes.rows[0].cnt),
+    limit,
+    offset,
   });
 });
 

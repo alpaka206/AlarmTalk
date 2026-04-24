@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P71 error_code Final Batch (voice/dub/auth)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P71 완료**
+- 마지막 루프: 2026-04-25 — P72 Notes 페이지네이션 + 복합 DB 인덱스
+- 현재 Phase: **R0~R6 전체 완료 + P11~P72 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 684/684, mobile 625/625)
 
@@ -71,6 +71,7 @@
 - **P69**: API error_code Batch 2 — user/notes/family-invite/family-group/family-alarm 5개 라우트에 78건 error_code 추가
 - **P70**: API error_code Batch 3 — library/stats/push/tts 4개 라우트에 28건 error_code 추가
 - **P71**: API error_code Final Batch — voice.ts 35건 + dub.ts 7건 + auth.ts error_code alias + voice.test.ts 28 assertions (전체 API error_code 100% 달성)
+- **P72**: Notes 페이지네이션 완성 (total/limit/offset 추가) + Migration 19 복합 DB 인덱스 6개 (friendships, gifts, alarms)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

@@ -251,6 +251,8 @@ describe('API latency baselines', () => {
         sender_email: 'sender@test.com',
         created_at: '2026-04-24T12:00:00Z',
       }));
+      mockDB.pushResult([{ id: 'pk-1' }]);
+      mockDB.pushResult([{ cnt: 10 }]);
       mockDB.pushResult(rows);
       const app = buildApp('/notes', notesRoutes);
       const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/notes/received')));

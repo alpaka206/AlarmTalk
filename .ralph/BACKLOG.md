@@ -706,6 +706,19 @@
 - [x] typecheck 통과 (backend 0 errors)
 - [x] 전체 테스트 통과 (backend 684/684)
 
+## P72 — Notes 페이지네이션 완성 + 복합 DB 인덱스 ✅ (2026-04-25)
+
+- [x] `routes/notes.ts` — GET /received, /sent에 `Promise.all`로 COUNT 쿼리 병렬 추가
+- [x] 응답에 `total`, `limit`, `offset` 추가 (기존 paginated 엔드포인트와 일관)
+- [x] `lib/migrations.ts` — Migration 19: composite-indices 6개 추가
+  - `idx_friendships_a_status(user_a, status)` + `idx_friendships_b_status(user_b, status)`
+  - `idx_gifts_recipient_created(recipient_id, created_at DESC)` + `idx_gifts_sender_created(sender_id, created_at DESC)`
+  - `idx_alarms_user_active(user_id, is_active)` + `idx_alarms_target_active(target_user_id, is_active)`
+- [x] `test/notes.test.ts` — COUNT mock 결과 + total/limit/offset assertion 추가
+- [x] `test/api-latency.test.ts` — notes/received mock 수정
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 684/684)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

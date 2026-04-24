@@ -151,6 +151,7 @@ describe('GET /notes/received — 수신 쪽지', () => {
 
   it('정상 조회', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ cnt: 1 }]);
     mockDB.pushResult([
       {
         id: 'n1',
@@ -171,24 +172,29 @@ describe('GET /notes/received — 수신 쪽지', () => {
     expect(body.notes).toHaveLength(1);
     expect(body.notes[0].sender_name).toBe('Alice');
     expect(body.notes[0].text).toBe('안녕');
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.offset).toBe(0);
   });
 
   it('limit/offset 파라미터 적용', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([]);
     const app = buildApp();
     await app.request(new Request('http://localhost/notes/received?limit=5&offset=10'));
-    const selectArgs = mockDB.calls[1].args;
+    const selectArgs = mockDB.calls[2].args;
     expect(selectArgs).toContain(5);
     expect(selectArgs).toContain(10);
   });
 
   it('limit 범위 클램핑 (max 100)', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([]);
     const app = buildApp();
     await app.request(new Request('http://localhost/notes/received?limit=999'));
-    expect(mockDB.calls[1].args).toContain(100);
+    expect(mockDB.calls[2].args).toContain(100);
   });
 });
 
@@ -204,6 +210,7 @@ describe('GET /notes/sent — 발신 쪽지', () => {
 
   it('정상 조회', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ cnt: 1 }]);
     mockDB.pushResult([
       {
         id: 'n2',
@@ -224,6 +231,9 @@ describe('GET /notes/sent — 발신 쪽지', () => {
     expect(body.notes[0].receiver_name).toBe('Bob');
     expect(body.notes[0].audio_url).toBe('https://r2.example/audio.mp3');
     expect(body.notes[0].read_at).toBe('2026-04-24T12:00:00Z');
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.offset).toBe(0);
   });
 });
 
