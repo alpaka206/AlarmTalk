@@ -759,6 +759,13 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 724/724, +40 신규)
 
+## P87 — character.ts API 라우트 테스트 24건 추가 ✅ (2026-04-25)
+
+- [x] `test/character.test.ts` — GET /characters/me 4건 (404+USER_NOT_FOUND, 자동생성, 기존캐릭터+stats+achievements, progress 계산)
+- [x] `test/character.test.ts` — POST /characters/xp 20건: 이벤트 검증(3), XP 지급(3), 일일 캡(3), nonce 멱등(2), 스트릭(3), 마일스톤(2), alarm_dismissed(1), local_date 폴백(1), body 파싱 실패(1), 캡 면제(1)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 857/857, +24 신규)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
