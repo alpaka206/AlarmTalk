@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P52 alarms/voices 스타일 추출
-- 현재 Phase: **R0~R6 전체 완료 + P11~P52 완료**
+- 마지막 루프: 2026-04-25 — P53 character/settings 스타일 추출
+- 현재 Phase: **R0~R6 전체 완료 + P11~P53 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
@@ -52,6 +52,7 @@
 - **P50**: 홈 화면 스타일 추출 (index.tsx 820→468줄 -43%) + '또는' 하드코딩 → `t('common.or')` i18n 전환
 - **P51**: people/message 스타일 추출 — people/index.tsx 770→494줄 (-36%), message/create.tsx 727→406줄 (-44%)
 - **P52**: alarms/voices 스타일 추출 — alarms.tsx 668→437줄 (-35%), voices.tsx 619→348줄 (-44%)
+- **P53**: character/settings 스타일 추출 — character/index.tsx 541→298줄 (-45%), settings/index.tsx 518→363줄 (-30%)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
