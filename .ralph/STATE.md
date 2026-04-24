@@ -1,10 +1,10 @@
 ﻿# 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P66 프로덕션 API URL 수정
-- 현재 Phase: **R0~R6 전체 완료 + P11~P66 완료**
+- 마지막 루프: 2026-04-25 — P68 API error_code 일관성 확보
+- 현재 Phase: **R0~R6 전체 완료 + P11~P68 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 672/672, mobile 625/625)
+- 전체 테스트 통과 (backend 684/684, mobile 625/625)
 
 ## 완료된 리팩토링
 
@@ -66,6 +66,8 @@
 - **P64**: ProfileDropdown + PresetMessageSection 비즈니스 로직 테스트 — 58 tests (getPlanLabel, computeInitial, toggleLanguage, 메뉴 항목, 생성 버튼 비활성화, 랜덤 메시지, 카테고리 변경, PRESET_CATEGORIES 무결성)
 - **P65**: Audio 서비스 유닛 테스트 — 28 tests (getLocalAudioPath, ensureAudioDir, setupAudioSession, requestMicPermission, startRecording, stopRecording, saveAudioLocally, isAudioCached, playAudio, deleteLocalAudio, getAudioCacheSize)
 - **P66**: 프로덕션 API URL 수정 — core.ts 플레이스홀더 URL → 실제 배포 URL, useAuth.tsx __DEV__ 분기 추가, eas.json env 설정
+- **P67**: 보안 응답 헤더 미들웨어 — securityHeaders.ts 9개 OWASP 헤더 (X-Content-Type-Options, X-Frame-Options, HSTS, CSP 등) + 12 tests
+- **P68**: API error_code 일관성 — billing/character/alarm/friend 4개 라우트에 23건 error_code 추가 (machine-readable 에러 코드)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

@@ -279,7 +279,7 @@ alarm.post('/', async (c) => {
       args: [userId, body.target_user_id, body.target_user_id, userId],
     });
     if (friendship.rows.length === 0) {
-      return c.json({ error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.' }, 403);
+      return c.json({ error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_FRIENDS' }, 403);
     }
   }
 
@@ -296,7 +296,7 @@ alarm.post('/', async (c) => {
       args: [alarmOwner, alarmOwner],
     });
     if (Number(alarmCount.rows[0].count) >= 2) {
-      return c.json({ error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.' }, 403);
+      return c.json({ error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.', error_code: 'FREE_PLAN_LIMIT' }, 403);
     }
   }
 

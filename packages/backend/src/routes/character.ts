@@ -183,7 +183,7 @@ character.get('/me', async (c) => {
   const db = getDB(c.env);
 
   const userPk = await resolveUserPk(db, userId);
-  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
   const row = await loadOrCreateCharacter(db, userPk);
   const [stats, achievements] = await Promise.all([
@@ -207,7 +207,7 @@ character.post('/xp', async (c) => {
     .catch(() => ({ event: undefined, client_nonce: undefined, local_date: undefined }));
 
   if (!isXpEvent(body.event)) {
-    return c.json({ error: '지원하지 않는 event 입니다' }, 400);
+    return c.json({ error: '지원하지 않는 event 입니다', error_code: 'UNSUPPORTED_EVENT' }, 400);
   }
   const event = body.event;
   const clientNonce =
@@ -220,7 +220,7 @@ character.post('/xp', async (c) => {
       : todayString();
 
   const userPk = await resolveUserPk(db, userId);
-  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+  if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
   if (clientNonce) {
     const dup = await db.execute({

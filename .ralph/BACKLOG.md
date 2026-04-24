@@ -678,6 +678,24 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 625/625, backend 672/672)
 
+## P67 — 보안 응답 헤더 미들웨어 ✅ (2026-04-25)
+
+- [x] `src/middleware/securityHeaders.ts` 신규 — 9개 OWASP 보안 헤더 (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, X-DNS-Prefetch-Control, X-Download-Options, X-Permitted-Cross-Domain-Policies, Permissions-Policy, HSTS, CSP)
+- [x] `src/middleware/securityHeaders.test.ts` 신규 — 12 tests (개별 헤더 9건 + POST 적용 + 응답 보존 + 전체 동시 적용)
+- [x] `src/index.ts` — sentryMiddleware 앞에 securityHeadersMiddleware 등록
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 684/684, mobile 625/625)
+
+## P68 — API error_code 일관성 확보 ✅ (2026-04-25)
+
+- [x] `routes/billing.ts` — 13건 error_code 추가 (checkout 5건 + redeem 8건)
+- [x] `routes/character.ts` — 3건 error_code 추가 (USER_NOT_FOUND 2건 + UNSUPPORTED_EVENT)
+- [x] `routes/alarm.ts` — 2건 error_code 추가 (NOT_FRIENDS + FREE_PLAN_LIMIT)
+- [x] `routes/friend.ts` — 5건 error_code 추가 (INVALID_EMAIL, USER_NOT_FOUND, SELF_REQUEST, ALREADY_FRIENDS, ALREADY_PENDING)
+- [x] `routes/gift.ts` — 5건 error_code 추가 (INVALID_EMAIL, NOTE_TOO_LONG, RECIPIENT_NOT_FOUND, SELF_GIFT, NOT_FRIENDS)
+- [x] typecheck 통과 (backend 0 errors)
+- [x] 전체 테스트 통과 (backend 684/684)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

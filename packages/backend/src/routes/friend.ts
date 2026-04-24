@@ -15,7 +15,7 @@ friend.post('/', async (c) => {
     const body = await c.req.json<{ email: string }>();
 
     if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      return c.json({ error: '유효한 이메일 주소를 입력해주세요.' }, 400);
+      return c.json({ error: '유효한 이메일 주소를 입력해주세요.', error_code: 'INVALID_EMAIL' }, 400);
     }
 
     const target = await db.execute({
@@ -24,13 +24,13 @@ friend.post('/', async (c) => {
     });
 
     if (target.rows.length === 0) {
-      return c.json({ error: '해당 이메일의 사용자를 찾을 수 없습니다.' }, 404);
+      return c.json({ error: '해당 이메일의 사용자를 찾을 수 없습니다.', error_code: 'USER_NOT_FOUND' }, 404);
     }
 
     const targetUserId = target.rows[0].google_id as string;
 
     if (targetUserId === userId) {
-      return c.json({ error: '자기 자신에게는 친구 요청을 보낼 수 없습니다.' }, 400);
+      return c.json({ error: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', error_code: 'SELF_REQUEST' }, 400);
     }
 
     const existing = await db.execute({
@@ -42,10 +42,10 @@ friend.post('/', async (c) => {
     if (existing.rows.length > 0) {
       const status = existing.rows[0].status;
       if (status === 'accepted') {
-        return c.json({ error: '이미 친구입니다.' }, 409);
+        return c.json({ error: '이미 친구입니다.', error_code: 'ALREADY_FRIENDS' }, 409);
       }
       if (status === 'pending') {
-        return c.json({ error: '이미 친구 요청이 대기 중입니다.' }, 409);
+        return c.json({ error: '이미 친구 요청이 대기 중입니다.', error_code: 'ALREADY_PENDING' }, 409);
       }
     }
 

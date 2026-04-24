@@ -6,6 +6,7 @@ import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { publicCache, privateCache, noStore } from './middleware/cache';
+import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
@@ -29,6 +30,9 @@ import codeRoutes from './routes/code';
 import notesRoutes from './routes/notes';
 
 const app = new Hono<AppEnv>();
+
+// Security response headers (OWASP best practices)
+app.use('*', securityHeadersMiddleware);
 
 // Sentry error tracking (no-op if SENTRY_DSN is not set)
 app.use('*', sentryMiddleware);

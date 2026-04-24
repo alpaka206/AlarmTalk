@@ -27,7 +27,7 @@ billing.post('/checkout', async (c) => {
 
   const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
   if (!planKey) {
-    return c.json({ error: 'plan_key 는 필수입니다' }, 400);
+    return c.json({ error: 'plan_key 는 필수입니다', error_code: 'PLAN_KEY_REQUIRED' }, 400);
   }
 
   const planRes = await db.execute({
@@ -36,15 +36,15 @@ billing.post('/checkout', async (c) => {
     args: [planKey],
   });
   if (planRes.rows.length === 0) {
-    return c.json({ error: '존재하지 않는 플랜입니다' }, 400);
+    return c.json({ error: '존재하지 않는 플랜입니다', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
   const plan = planRes.rows[0];
   if (Number(plan.is_active) !== 1) {
-    return c.json({ error: '비활성화된 플랜입니다' }, 400);
+    return c.json({ error: '비활성화된 플랜입니다', error_code: 'PLAN_INACTIVE' }, 400);
   }
   const planType = String(plan.plan_type);
   if (!PAID_PLAN_TYPES.has(planType)) {
-    return c.json({ error: 'free 는 기본 플랜이라 결제 대상이 아닙니다' }, 400);
+    return c.json({ error: 'free 는 기본 플랜이라 결제 대상이 아닙니다', error_code: 'FREE_NOT_BILLABLE' }, 400);
   }
 
   const userRes = await db.execute({
@@ -52,7 +52,7 @@ billing.post('/checkout', async (c) => {
     args: [userId],
   });
   if (userRes.rows.length === 0) {
-    return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
   const userPk = String(userRes.rows[0].id);
 
@@ -258,10 +258,10 @@ billing.post('/redeem', async (c) => {
 
   const raw = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
   if (!raw) {
-    return c.json({ error: 'code 는 필수입니다' }, 400);
+    return c.json({ error: 'code 는 필수입니다', error_code: 'CODE_REQUIRED' }, 400);
   }
   if (!isValidVoucherCodeFormat(raw)) {
-    return c.json({ error: '잘못된 코드 형식입니다' }, 400);
+    return c.json({ error: '잘못된 코드 형식입니다', error_code: 'INVALID_FORMAT' }, 400);
   }
 
   const userRes = await db.execute({
@@ -269,7 +269,7 @@ billing.post('/redeem', async (c) => {
     args: [userId],
   });
   if (userRes.rows.length === 0) {
-    return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
   const userPk = String(userRes.rows[0].id);
 
@@ -280,7 +280,7 @@ billing.post('/redeem', async (c) => {
     args: [codeHash],
   });
   if (voucherRes.rows.length === 0) {
-    return c.json({ error: '해당 코드를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '해당 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
   }
   const voucher = voucherRes.rows[0];
   const status = String(voucher.status);
@@ -289,10 +289,10 @@ billing.post('/redeem', async (c) => {
   const issuerUserId = String(voucher.issuer_user_id);
 
   if (status === 'used') {
-    return c.json({ error: '이미 사용된 코드입니다' }, 409);
+    return c.json({ error: '이미 사용된 코드입니다', error_code: 'CODE_ALREADY_USED' }, 409);
   }
   if (status === 'expired') {
-    return c.json({ error: '만료된 코드입니다' }, 409);
+    return c.json({ error: '만료된 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
   }
 
   const now = new Date();
@@ -302,11 +302,11 @@ billing.post('/redeem', async (c) => {
       sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ?`,
       args: [voucherId],
     });
-    return c.json({ error: '만료된 코드입니다' }, 409);
+    return c.json({ error: '만료된 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
   }
 
   if (issuerUserId === userPk) {
-    return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다' }, 400);
+    return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
   }
 
   const planRes = await db.execute({
@@ -315,7 +315,7 @@ billing.post('/redeem', async (c) => {
     args: [planId],
   });
   if (planRes.rows.length === 0) {
-    return c.json({ error: '연결된 플랜을 찾을 수 없습니다' }, 404);
+    return c.json({ error: '연결된 플랜을 찾을 수 없습니다', error_code: 'PLAN_NOT_FOUND' }, 404);
   }
   const plan = planRes.rows[0];
   const planType = String(plan.plan_type);
