@@ -328,9 +328,9 @@
 - [x] `alarm/create.tsx`에 wakeMode 상태 + 깨우기 방식 선택 UI (TTS 모드 시)
 - [x] i18n 3키 추가 (ko/en)
 
-### 미완료 항목 (R5 정비에서 처리)
-- [ ] alarm/edit.tsx에 wake_mode UI 동기화
-- [ ] 가족/커플 멤버 음성을 알람 설정에서 선택 가능하게
+### 미완료 항목
+- [x] alarm/edit.tsx에 wake_mode UI 동기화 (R5에서 완료)
+- [x] 가족/커플 멤버 음성을 알람 설정에서 선택 가능하게 (create + edit 양쪽 구현)
 - [ ] 프리셋 메시지 카테고리 선택 UI 개선
 - [ ] 최근 사용 메시지 목록 (AsyncStorage 캐싱)
 - [ ] 음성 캐싱 (동일 텍스트+음성 재사용)
@@ -365,60 +365,54 @@
 - [x] i18n ko/en 추가 (note.* 9키, compose.inbox/noNotes 2키)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
-## R5 — 정비 + 테스트 (부분 완료)
+## R5 — 정비 + 테스트 ✅ (2026-04-24)
 
 - [x] alarm/edit.tsx에 wake_mode UI 동기화 (create와 동일한 패턴)
 - [x] 새 파일 lint 0 errors (code.ts, notes.ts, code-register, note/create, compose)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 기존 테스트 전체 통과 (backend 553/553, mobile 168/168)
-- [ ] settings/people 관련 데드 코드 정리
-- [ ] gift/received.tsx 정리 여부 결정
+- [x] settings/people 데드 코드 정리 — 결과: 데드 코드 아님 (ProfileDropdown, NotificationBell, friend/[id]에서 정상 참조)
+- [x] gift/received.tsx 정리 — 결과: 파일 유지 (friend/[id].tsx에서 gift API 사용). 홈 액션카드만 /code-register로 변경
+- [x] 홈 화면 액션카드 "받은 선물" → "코드 등록" 변경 (route + i18n + emoji)
 
 ---
 
-## R6 — Notion 문서화 (R0~R5 완료 후 진행)
+## R6 — 문서화 ✅ (2026-04-24)
 
-> Notion 페이지: https://www.notion.so/estsoft/34bf11f6ee6380c0a35bfefbd5e014d7
-> MCP Notion 도구를 사용하여 직접 작성한다. 불가능하면 마크다운 파일로 생성 후 사용자에게 알린다.
+> Notion MCP 인증 불가 (야간 무인 모드) → `docs/` 폴더에 마크다운으로 생성.
 
-### R6-A: 기획서 업데이트
-- [ ] 프로젝트 개요 (VoiceAlarm 소개, 핵심 가치, 타겟 유저)
-- [ ] 주요 기능 정의 (음성 관리, 알람, 메시지, 코드 등록, 캐릭터)
-- [ ] 화면 흐름도 (탭 4개 + 스택 화면 관계)
-- [ ] 사용자 시나리오 (회원가입 → 음성 등록 → 알람 설정 → 기상)
+### R6-A: 기획서 업데이트 → `docs/R6-A_PROJECT_OVERVIEW.md` ✅
+- [x] 프로젝트 개요 (VoiceAlarm 소개, 핵심 가치, 타겟 유저)
+- [x] 주요 기능 정의 (음성 관리, 알람, 메시지, 코드 등록, 캐릭터)
+- [x] 화면 흐름도 (탭 4개 + 스택 화면 관계)
+- [x] 사용자 시나리오 (5개: 신규가입, 커플알람, 쪽지교환, 스트릭, 오프라인)
 
-### R6-B: 요구사항 정의서
-- [ ] 기능 요구사항 (FR): 각 기능별 상세 스펙 + 우선순위
-- [ ] 비기능 요구사항 (NFR): 성능, 보안, 접근성, 오프라인 지원
-- [ ] 제약사항: 외부 API 비용, 무료 티어 제한, 플랫폼 제한
+### R6-B: 요구사항 정의서 → `docs/R6-B_REQUIREMENTS.md` ✅
+- [x] 기능 요구사항 (FR): 7개 카테고리, 50+ 항목
+- [x] 비기능 요구사항 (NFR): 성능, 보안, 접근성, 국제화, 오프라인
+- [x] 제약사항: 외부 API 비용, 무료 티어 제한, 플랫폼 제한
 
-### R6-C: 기술 스택 & 아키텍처
-- [ ] 기술 스택 다이어그램 (모바일/백엔드/DB/AI)
-- [ ] 시스템 아키텍처 (클라이언트 ↔ CF Workers ↔ Turso ↔ R2)
-- [ ] 모노레포 구조 설명 (apps/mobile, packages/backend, packages/shared 등)
-- [ ] 인증 플로우 (Google OAuth → JWT → API 호출)
-- [ ] 데이터 흐름 (음성 등록 → TTS → 알람 재생)
+### R6-C: 기술 스택 & 아키텍처 → `docs/R6-C_ARCHITECTURE.md` ✅
+- [x] 기술 스택 다이어그램 (모바일/백엔드/DB/AI)
+- [x] 시스템 아키텍처 (요청 흐름, 알람 스케줄링, 인증 플로우, 음성 흐름)
+- [x] 모노레포 구조 설명 (전체 디렉토리 트리)
+- [x] 데이터 흐름 (읽기/쓰기/오프라인 폴백)
 
-### R6-D: API 문서
-- [ ] 전체 API 엔드포인트 목록 (method, path, 설명, 인증 필요 여부)
-- [ ] 주요 API 상세 (요청/응답 스키마, 에러 코드)
-- [ ] 인증 API (회원가입, 로그인, Google OAuth, 토큰 갱신)
-- [ ] 음성 API (등록, 조회, 삭제, 가족 음성)
-- [ ] 알람 API (CRUD, 스케줄링)
-- [ ] 메시지/쪽지 API
-- [ ] 캐릭터/스트릭 API
-- [ ] 가족/친구 API
-- [ ] 결제/이용권 API
+### R6-D: API 문서 → `docs/R6-D_API_REFERENCE.md` ✅
+- [x] 전체 API 엔드포인트 목록 (65+ endpoints)
+- [x] 주요 API 상세 (요청/응답 스키마, 에러 코드)
+- [x] 18개 API 그룹 문서화 (인증~스케줄러)
 
-### R6-E: DB 스키마 문서
-- [ ] 전체 테이블 목록 + 컬럼 정의
-- [ ] ER 다이어그램 (관계도)
-- [ ] 마이그레이션 히스토리
+### R6-E: DB 스키마 문서 → `docs/R6-E_DATABASE_SCHEMA.md` ✅
+- [x] 전체 테이블 목록 + 컬럼 정의 (22 테이블)
+- [x] ER 다이어그램 (텍스트 기반 관계도)
+- [x] 마이그레이션 히스토리 (18개)
 
-### R6-F: 로드맵
-- [ ] 완료된 작업 (P0~P10 요약)
-- [ ] 현재 진행 (R0~R5 UX 리빌드)
-- [ ] 향후 계획 (배포, 스토어 등록, 실 API 연동)
+### R6-F: 로드맵 → `docs/R6-F_ROADMAP.md` ✅
+- [x] 완료된 작업 (P0~R6 요약)
+- [x] 현재 상태 (미연동 항목, 알려진 이슈)
+- [x] 향후 계획 (단기/중기/장기)
+- [x] 기술 부채 목록
 
 ---
 

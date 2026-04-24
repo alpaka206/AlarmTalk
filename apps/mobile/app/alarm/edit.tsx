@@ -20,7 +20,9 @@ import {
   getAlarms,
   updateAlarm,
   getVoiceProfiles,
+  getFamilyVoiceProfiles,
 } from '../../src/services/api';
+import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
 import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile } from '../../src/types';
@@ -34,7 +36,7 @@ export default function EditAlarmScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useAppStore();
+  const { isAuthenticated, plan } = useAppStore();
   const { t } = useTranslation();
   const toast = useToast();
   const { colors } = useTheme();
@@ -71,6 +73,14 @@ export default function EditAlarmScreen() {
 
   const readyVoices: VoiceProfile[] =
     voices?.filter((v: VoiceProfile) => v.status === 'ready') ?? [];
+
+  const { data: familyVoices } = useQuery({
+    queryKey: ['familyVoiceProfiles'],
+    queryFn: getFamilyVoiceProfiles,
+    enabled: isAuthenticated && plan === 'family',
+  });
+  const readyFamilyVoices: FamilyVoiceProfile[] =
+    familyVoices?.filter((v: FamilyVoiceProfile) => v.status === 'ready') ?? [];
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -289,36 +299,69 @@ export default function EditAlarmScreen() {
       {mode === 'sound-only' && (
         <>
           <Text style={dynStyles.sectionTitle}>{t('alarmCreate.voiceProfile')}</Text>
-          {readyVoices.length === 0 ? (
+          {readyVoices.length === 0 && readyFamilyVoices.length === 0 ? (
             <View style={dynStyles.emptyVoiceBox}>
               <Text style={dynStyles.emptyVoiceText}>
                 {t('alarmCreate.voiceProfileRequired')}
               </Text>
             </View>
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={dynStyles.voiceRow}
-            >
-              {readyVoices.map((v) => {
-                const selected = voiceProfileId === v.id;
-                return (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[dynStyles.voiceChip, selected && dynStyles.voiceChipActive]}
-                    onPress={() => setVoiceProfileId(selected ? null : v.id)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                    accessibilityLabel={v.name}
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={dynStyles.voiceRow}
+              >
+                {readyVoices.map((v) => {
+                  const selected = voiceProfileId === v.id;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[dynStyles.voiceChip, selected && dynStyles.voiceChipActive]}
+                      onPress={() => setVoiceProfileId(selected ? null : v.id)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={v.name}
+                    >
+                      <Text style={[dynStyles.voiceText, selected && dynStyles.voiceTextActive]}>
+                        {v.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              {readyFamilyVoices.length > 0 && (
+                <>
+                  <Text style={dynStyles.voiceSubLabel}>{t('alarmCreate.familyVoices')}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={dynStyles.voiceRow}
                   >
-                    <Text style={[dynStyles.voiceText, selected && dynStyles.voiceTextActive]}>
-                      {v.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                    {readyFamilyVoices.map((v: FamilyVoiceProfile) => {
+                      const selected = voiceProfileId === v.id;
+                      return (
+                        <TouchableOpacity
+                          key={v.id}
+                          style={[dynStyles.voiceChip, selected && dynStyles.voiceChipActive]}
+                          onPress={() => setVoiceProfileId(selected ? null : v.id)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`${v.name} (${v.owner_name ?? ''})`}
+                        >
+                          <Text style={[dynStyles.voiceText, selected && dynStyles.voiceTextActive]}>
+                            {v.name}
+                          </Text>
+                          <Text style={dynStyles.voiceOwnerText}>
+                            {v.owner_name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+            </>
           )}
           {soundOnlyInvalid && (
             <Text style={dynStyles.voiceHint}>
@@ -722,6 +765,19 @@ function createStyles(colors: ThemeColors) {
       fontSize: FontSize.sm,
       color: colors.error,
       marginTop: Spacing.xs,
+    },
+    voiceSubLabel: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
+      fontFamily: FontFamily.medium,
+      marginTop: Spacing.sm,
+      marginBottom: Spacing.xs,
+    },
+    voiceOwnerText: {
+      fontSize: FontSize.xs,
+      color: colors.textSecondary,
+      fontFamily: FontFamily.regular,
+      marginTop: 2,
     },
     emptyVoiceBox: {
       backgroundColor: colors.surface,

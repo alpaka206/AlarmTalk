@@ -424,12 +424,12 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/gift/received')}
+              onPress={() => router.push('/code-register')}
               accessibilityRole="button"
-              accessibilityLabel={t('home.receivedGifts')}
+              accessibilityLabel={t('home.codeRegister', '코드 등록')}
             >
-              <Text style={styles.actionEmoji}>🎁</Text>
-              <Text style={styles.actionLabel}>{t('home.receivedGifts')}</Text>
+              <Text style={styles.actionEmoji}>🔑</Text>
+              <Text style={styles.actionLabel}>{t('home.codeRegister', '코드 등록')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
