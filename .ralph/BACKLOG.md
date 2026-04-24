@@ -1477,3 +1477,14 @@
   - 개인정보 처리방침 요약 (iOS Privacy Labels + Android Data Safety)
   - 심사 가이드 (iOS/Android 리뷰 노트)
   - 출시 전 체크리스트 (12항목)
+
+## P115 — alarm-mutation + alarm-query 통합 테스트 ✅ (2026-04-25)
+
+- [x] `packages/backend/test/alarm-mutation.test.ts` — 26 tests (POST 생성, PATCH 수정, DELETE 삭제, 플랜 제한, 친구 검증, UUID 검증)
+- [x] `packages/backend/test/alarm-query.test.ts` — 13 tests (tick, 목록 필터링, 단건 조회, 접근 제어)
+- [x] 전체 테스트: backend 911/911 (51 suites), mobile 1012/1012, typecheck 0 errors
+
+## P116 — billing-mutation + billing-query 통합 테스트
+
+- [ ] `packages/backend/test/billing-mutation.test.ts` — 결제/플랜 변경 비즈니스 로직
+- [ ] `packages/backend/test/billing-query.test.ts` — 플랜 조회/상태 확인
