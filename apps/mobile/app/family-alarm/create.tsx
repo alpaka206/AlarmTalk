@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
   Alert,
@@ -24,20 +23,20 @@ import {
   validateFamilyAlarmForm,
   buildMemberDisplayName,
 } from '../../src/lib/familyAlarmForm';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
-import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { DAY_KEYS } from '../../src/constants/presets';
+import { createFamilyAlarmCreateStyles } from '../../src/styles/familyAlarmCreateStyles';
 
 export default function FamilyAlarmCreateScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const toast = useToast();
   const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const styles = createFamilyAlarmCreateStyles(colors);
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const isConnected = useNetworkStatus();
 
@@ -217,143 +216,3 @@ export default function FamilyAlarmCreateScreen() {
     </SafeAreaView>
   );
 }
-
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-  },
-  sectionLabel: {
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.semibold,
-    color: colors.text,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.lg,
-  },
-  recipientRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  recipientChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  recipientChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  recipientText: {
-    fontSize: FontSize.md,
-    color: colors.text,
-  },
-  recipientTextActive: {
-    color: '#FFF',
-    fontFamily: FontFamily.semibold,
-  },
-  timeInput: {
-    backgroundColor: colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.xl,
-    color: colors.text,
-    textAlign: 'center',
-    minHeight: 56,
-  },
-  messageInput: {
-    backgroundColor: colors.surface,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
-    fontSize: FontSize.md,
-    color: colors.text,
-    minHeight: 100,
-    lineHeight: 22,
-  },
-  charCount: {
-    fontSize: FontSize.xs,
-    color: colors.textTertiary,
-    textAlign: 'right',
-    marginTop: Spacing.xs,
-  },
-  daysRow: {
-    flexDirection: 'row',
-    gap: Spacing.xs,
-  },
-  dayChip: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  dayChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  dayText: {
-    fontSize: FontSize.sm,
-    color: colors.textSecondary,
-    fontFamily: FontFamily.medium,
-  },
-  dayTextActive: {
-    color: '#FFF',
-    fontFamily: FontFamily.semibold,
-  },
-  repeatHint: {
-    fontSize: FontSize.xs,
-    color: colors.textTertiary,
-    marginTop: Spacing.xs,
-  },
-  submitBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: BorderRadius.lg,
-    paddingVertical: Spacing.md,
-    alignItems: 'center',
-    marginTop: Spacing.xl,
-    minHeight: 52,
-    justifyContent: 'center',
-  },
-  submitBtnDisabled: {
-    opacity: 0.5,
-  },
-  submitBtnText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.semibold,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xl,
-  },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: Spacing.md,
-  },
-  emptyText: {
-    fontSize: FontSize.md,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-});

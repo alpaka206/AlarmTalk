@@ -1,8 +1,8 @@
-# 현재 상태
+﻿# 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P58 모바일 api.ts 도메인 분할
-- 현재 Phase: **R0~R6 전체 완료 + P11~P58 완료**
+- 마지�� 루프: 2026-04-25 — P61 gift/family-alarm 화면 3개 스타일 추출
+- 현재 Phase: **R0~R6 전체 완료 + P11~P61 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
@@ -58,6 +58,9 @@
 - **P56**: 알림 채널/액션 버튼 i18n 전환 — top-level side effect → `configureNotificationChannels(t)` 함수화 + notification.* 2키 추가
 - **P57**: backend family.ts 분할 — 834줄→13줄 aggregator + 3 sub-routers (invite 266, group 205, alarm 292) + family-helpers.ts 35줄
 - **P58**: 모바일 api.ts 도메인 분할 — 771줄→barrel+8 모듈 (core, voice, alarm, social, user, billing, family, character) + 32개 소비자 import 변경 0건
+- **P59**: player/compose 스타일 추출 — player.tsx 486→344줄 (-29%), compose.tsx 381→207줄 (-46%) + compose 날짜 getDateLocale() 수정
+- **P60**: voice 화면 3개 스타일 추출 — diarize.tsx 413→257줄 (-38%), record.tsx 396→245줄 (-38%), [id].tsx 398→235줄 (-41%)
+- **P61**: gift/received + family-alarm 스타일 추출 — gift/received.tsx 383→233줄 (-39%), family-alarm/create.tsx 359→218줄 (-39%)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

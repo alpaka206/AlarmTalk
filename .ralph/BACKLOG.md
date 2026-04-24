@@ -1,4 +1,4 @@
-# BACKLOG
+﻿# BACKLOG
 
 ## P0 (지금 바로) — 프로젝트 정리 + 탭 구조 개편
 
@@ -611,6 +611,36 @@
 - [x] `services/api/index.ts` 신규 — barrel re-export (100줄)
 - [x] 32개 소비자 import 변경 0건 (디렉토리 모듈 자동 해석)
 - [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
+
+## P59 — player/compose 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/playerStyles.ts` 신규 — player 화면 스타일 + 웨이브폼 상수 154줄 추출
+- [x] `app/player.tsx` 리팩토링: 486→344줄 (-29%)
+- [x] `src/styles/composeStyles.ts` 신규 — compose 화면 스타일 177줄 추출
+- [x] `app/(tabs)/compose.tsx` 리팩토링: 381→207줄 (-46%)
+- [x] compose.tsx `toLocaleDateString()` → `toLocaleDateString(getDateLocale())` 로캘 수정
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
+
+## P60 — voice 화면 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/voiceDiarizeStyles.ts` 신규 — voice/diarize.tsx 스타일 152줄 추출
+- [x] `app/voice/diarize.tsx` 리팩토링: 413→257줄 (-38%)
+- [x] `src/styles/voiceRecordStyles.ts` 신규 — voice/record.tsx 스타일 147줄 추출
+- [x] `app/voice/record.tsx` 리팩토링: 396→245줄 (-38%)
+- [x] `src/styles/voiceDetailStyles.ts` 신규 — voice/[id].tsx 스타일 161줄 추출
+- [x] `app/voice/[id].tsx` 리팩토링: 398→235줄 (-41%)
+- [x] typecheck 통과 (mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
+
+## P61 — gift/received + family-alarm 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/giftReceivedStyles.ts` 신규 — gift/received.tsx 스타일 149줄 추출
+- [x] `app/gift/received.tsx` ��팩토링: 383→233줄 (-39%)
+- [x] `src/styles/familyAlarmCreateStyles.ts` 신규 — family-alarm/create.tsx 스타일 139줄 추출
+- [x] `app/family-alarm/create.tsx` 리팩토링: 359→218줄 (-39%)
+- [x] typecheck 통과 (mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
 
 ---
