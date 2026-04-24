@@ -175,7 +175,7 @@ function ComposeScreen() {
             </View>
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{t('compose.inbox')}</Text>
+              <Text style={styles.sectionTitle} accessibilityRole="header">{t('compose.inbox')}</Text>
               {unreadCount > 0 && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadBadgeText}>{unreadCount}</Text>

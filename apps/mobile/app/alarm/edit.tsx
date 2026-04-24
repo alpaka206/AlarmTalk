@@ -185,7 +185,7 @@ export default function EditAlarmScreen() {
       <Text style={localStyles.screenTitle}>{t('alarmEdit.title')}</Text>
 
       {/* 시간 선택 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.time')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.time')}</Text>
       <View style={formStyles.timePickerContainer}>
         <Text style={formStyles.ampmLabel}>
           {hour < 12 ? t('alarmCreate.am') : t('alarmCreate.pm')}
@@ -244,7 +244,7 @@ export default function EditAlarmScreen() {
       </View>
 
       {/* 반복 요일 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.repeat')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.repeat')}</Text>
       <View style={formStyles.daysRow}>
         {DAY_KEYS.map((key, index) => (
           <TouchableOpacity
@@ -274,7 +274,7 @@ export default function EditAlarmScreen() {
       </View>
 
       {/* 재생 모드 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.playMode')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.playMode')}</Text>
       <View style={formStyles.modeRow}>
         <TouchableOpacity
           style={[formStyles.modeChip, mode === 'tts' && formStyles.modeChipActive]}
@@ -300,7 +300,7 @@ export default function EditAlarmScreen() {
 
       {mode === 'sound-only' && (
         <>
-          <Text style={formStyles.sectionTitle}>{t('alarmCreate.voiceProfile')}</Text>
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.voiceProfile')}</Text>
           {readyVoices.length === 0 && readyFamilyVoices.length === 0 ? (
             <View style={formStyles.emptyVoiceBox}>
               <Text style={formStyles.emptyVoiceText}>
@@ -376,7 +376,7 @@ export default function EditAlarmScreen() {
       {/* 깨우기 방식 */}
       {mode === 'tts' && (
         <>
-          <Text style={formStyles.sectionTitle}>{t('alarmCreate.wakeMode')}</Text>
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.wakeMode')}</Text>
           <View style={formStyles.modeRow}>
             <TouchableOpacity
               style={[formStyles.modeChip, wakeMode === 'sound_then_voice' && formStyles.modeChipActive]}
@@ -403,7 +403,7 @@ export default function EditAlarmScreen() {
       )}
 
       {/* 스누즈 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.snooze')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.snooze')}</Text>
       <View style={formStyles.snoozeRow}>
         {[5, 10, 15].map((min) => (
           <TouchableOpacity
@@ -422,7 +422,7 @@ export default function EditAlarmScreen() {
       </View>
 
       {/* 진동 패턴 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.vibration')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.vibration')}</Text>
       <View style={formStyles.snoozeRow}>
         {(['default', 'strong', 'none'] as const).map((pattern) => (
           <TouchableOpacity
@@ -441,7 +441,7 @@ export default function EditAlarmScreen() {
       </View>
 
       {/* 메시지 선택 */}
-      <Text style={formStyles.sectionTitle}>{t('alarmCreate.message')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.message')}</Text>
       {messages && messages.length > 0 ? (
         <View style={formStyles.messageList}>
           {messages.map((msg: Message) => (

@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — NotificationBell + CoupleView 비즈니스 로직 테스트 39건 추가
-- 현재 Phase: **R0~R6 전체 완료 + P11~P105 완료**
+- 마지막 루프: 2026-04-25 — 앱 접근성 강화 (WCAG AA 감사 + 24개 요소 수정)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P106 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 872/872, mobile 782/782)
 
@@ -14,6 +14,7 @@
 - **P11~P103**: 전체 완료
 - **P104**: 모바일 API 서비스 모듈 테스트 79건 추가 (social, user, billing, alarm, family, character, voice)
 - **P105**: NotificationBell + CoupleView 비즈니스 로직 테스트 39건 추가
+- **P106**: 앱 접근성 강화 — 22개 sectionTitle header role + TextInput/Pressable a11y 수정
 
 ## 알려진 이슈
 - [blocked] Perso API 404

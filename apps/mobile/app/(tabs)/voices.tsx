@@ -214,7 +214,7 @@ function VoicesScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
               {t('voices.myVoices')} ({profileCount}/{MAX_VOICE_PROFILES})
             </Text>
             <TouchableOpacity
@@ -267,7 +267,7 @@ function VoicesScreen() {
 
         {isFamilyPlan && familyProfiles && familyProfiles.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t('voices.familyVoices')}</Text>
+            <Text style={styles.sectionTitle} accessibilityRole="header">{t('voices.familyVoices')}</Text>
             <FlatList
               data={familyProfiles}
               keyExtractor={(item) => item.id}

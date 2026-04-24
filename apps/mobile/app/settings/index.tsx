@@ -212,7 +212,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.info')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('settings.info')}</Text>
           <View style={styles.card}>
             <SettingRow colors={colors} label={t('settings.version')} value={`${appVersion} (${Constants.expoConfig?.extra?.eas?.projectId ? 'EAS' : t('settings.buildNumber')})`} />
             <SettingRow

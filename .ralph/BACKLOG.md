@@ -825,6 +825,17 @@
 
 ---
 
+## P106 — 앱 접근성 강화 (WCAG AA 감사) ✅ (2026-04-25)
+
+- [x] 전체 앱 접근성 감사 수행 (13개 컴포넌트, 30+ 화면)
+- [x] 22개 section title에 `accessibilityRole="header"` 추가 (alarm/create, alarm/edit, settings, character, compose, index, voices)
+- [x] `alarms.tsx` 검색 TextInput에 `accessibilityLabel` 추가
+- [x] `character/index.tsx` DEV Pressable에 `accessibilityRole="button"` + `accessibilityLabel` 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 872/872, mobile 782/782)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료

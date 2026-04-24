@@ -270,7 +270,7 @@ export default function CharacterScreen() {
 
         {__DEV__ && (
         <View style={dynStyles.section}>
-          <Text style={dynStyles.sectionTitle}>{t('character.devXpTitle')}</Text>
+          <Text style={dynStyles.sectionTitle} accessibilityRole="header">{t('character.devXpTitle')}</Text>
           <Text style={dynStyles.devHint}>{t('character.devXpHint')}</Text>
           <View style={dynStyles.devButtonsRow}>
             {DEV_EVENTS.map((e) => (
@@ -279,6 +279,8 @@ export default function CharacterScreen() {
                 onPress={() => grantMutation.mutate({ event: e.event })}
                 disabled={grantMutation.isPending}
                 style={[dynStyles.devButton, grantMutation.isPending && dynStyles.devButtonDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel={t(e.labelKey)}
               >
                 <Text style={dynStyles.devButtonText}>{t(e.labelKey)}</Text>
               </Pressable>

@@ -381,6 +381,7 @@ function AlarmsScreen() {
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             clearButtonMode="while-editing"
+            accessibilityLabel={t('alarms.searchPlaceholder')}
           />
         </View>
       )}

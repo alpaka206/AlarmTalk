@@ -343,7 +343,7 @@ function HomeScreen() {
         {isAuthenticated && (
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
-              <Text style={styles.sectionTitle}>{t('home.recentMessages')}</Text>
+              <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.recentMessages')}</Text>
               {libraryItems && libraryItems.length > 0 && (
                 <TouchableOpacity
                   onPress={() => router.push('/library')}
@@ -396,7 +396,7 @@ function HomeScreen() {
 
         {/* 빠른 액션 */}
         <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>{t('home.quickStart')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.quickStart')}</Text>
           <View style={styles.actionGrid}>
             <TouchableOpacity
               style={styles.actionCard}
