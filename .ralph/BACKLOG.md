@@ -597,6 +597,22 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
+## P58 — 모바일 api.ts 도메인 분할 ✅ (2026-04-25)
+
+- [x] `services/api.ts` 삭제 (771줄)
+- [x] `services/api/core.ts` 신규 — ApiError + request/get/post/patch/del (93줄)
+- [x] `services/api/voice.ts` 신규 — Voice + Upload + Speaker + TTS + Dub (195줄)
+- [x] `services/api/alarm.ts` 신규 — Alarm + Push (63줄)
+- [x] `services/api/social.ts` 신규 — Friend + Gift + Notes (104줄)
+- [x] `services/api/user.ts` 신규 — User + Stats + Library (69줄)
+- [x] `services/api/billing.ts` 신규 — Billing + Code Registration (56줄)
+- [x] `services/api/family.ts` 신규 — Family Group + Invite + Family Alarm (90줄)
+- [x] `services/api/character.ts` 신규 — Character API (83줄)
+- [x] `services/api/index.ts` 신규 — barrel re-export (100줄)
+- [x] 32개 소비자 import 변경 0건 (디렉토리 모듈 자동 해석)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
