@@ -1193,3 +1193,13 @@
 - [x] notes.ts — Accept-Language 헤더에서 locale 추출하여 sendNotePush에 전달
 - [x] fcm.test.ts — sendNotePush 5 tests 추가 + sendAlarmPush locale 2 tests 추가
 - [x] 전체 테스트 통과 (backend 798/798, mobile 662/662)
+
+## P83 — 접근성 역할(accessibilityRole) 누락 보강 ✅ (2026-04-25)
+
+- [x] 전체 모바일 앱 WCAG AA 접근성 감사 수행 (탭 화면, 스택 화면, 컴포넌트)
+- [x] `app/(tabs)/index.tsx` — 5건 수정: statsErrorCard/pendingGifts/viewAll/recentItem role + greeting header role
+- [x] `app/(tabs)/alarms.tsx` — 1건: previewButton `accessibilityRole="button"` 추가
+- [x] `src/components/QueryStateView.tsx` — 1건: retryBtn `accessibilityRole="button"` + label 추가
+- [x] `app/people/index.tsx` — 4건: remove/accept/share/revoke 버튼 role 추가
+- [x] `app/settings/index.tsx` — 5건: 페이지 제목 + 4개 섹션 제목 `accessibilityRole="header"` 추가
+- [x] typecheck 통과 (backend 0 errors, mobile 0 errors)

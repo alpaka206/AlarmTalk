@@ -330,6 +330,7 @@ function AlarmsScreen() {
           <View style={styles.alarmActions}>
             <TouchableOpacity
               style={styles.previewButton}
+              accessibilityRole="button"
               accessibilityLabel={t('alarms.a11yPreview')}
               onPress={(e) => {
                 e.stopPropagation();

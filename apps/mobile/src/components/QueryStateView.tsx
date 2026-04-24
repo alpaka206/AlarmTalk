@@ -14,7 +14,12 @@ export function ErrorView({ message, onRetry }: { message?: string; onRetry?: ()
       <Text style={dynStyles.title}>{t('common.loadError')}</Text>
       {message && <Text style={dynStyles.subtitle}>{message}</Text>}
       {onRetry && (
-        <TouchableOpacity style={dynStyles.retryBtn} onPress={onRetry}>
+        <TouchableOpacity
+          style={dynStyles.retryBtn}
+          onPress={onRetry}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.retry')}
+        >
           <Text style={dynStyles.retryText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       )}

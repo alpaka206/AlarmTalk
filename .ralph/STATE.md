@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P82 백엔드 푸시 알림 + 화자 분리 i18n
-- 현재 Phase: **R0~R6 전체 완료 + P11~P82 완료**
+- 마지막 루프: 2026-04-25 — P83 접근성 역할(accessibilityRole) 누락 보강
+- 현재 Phase: **R0~R6 전체 완료 + P11~P83 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 798/798, mobile 662/662)
 
@@ -13,6 +13,7 @@
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P81**: 전체 완료 (상세 내역은 이전 STATE 참조)
 - **P82**: 백엔드 FCM 푸시 알림 i18n (ko/en pushTexts 맵 + locale 파라미터) + voice diarize 응답 label 영문화 + notes.ts Accept-Language 기반 locale 전달 + FCM 테스트 7건 추가
+- **P83**: 접근성 역할(accessibilityRole) 누락 보강 — 홈/알람/사람들/설정/QueryStateView 5개 파일, 16건 수정 (button 11건, header 5건, link 1건 + accessibilityLabel 4건 추가)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

@@ -230,6 +230,7 @@ export default function PeopleScreen() {
         onPress={() => handleRemove(item)}
         hitSlop={8}
         style={styles.removeBtn}
+        accessibilityRole="button"
         accessibilityLabel={t('common.delete')}
       >
         <Text style={styles.removeBtnText}>✕</Text>
@@ -251,6 +252,7 @@ export default function PeopleScreen() {
       <TouchableOpacity
         style={styles.acceptBtn}
         onPress={() => acceptMutation.mutate(item.id)}
+        accessibilityRole="button"
         accessibilityLabel={t('common.accept')}
       >
         <Text style={styles.acceptBtnText}>{t('common.accept')}</Text>
@@ -293,6 +295,7 @@ export default function PeopleScreen() {
                   <TouchableOpacity
                     style={styles.inviteShareBtn}
                     onPress={() => handleShareInvite(inv)}
+                    accessibilityRole="button"
                     accessibilityLabel={t('people.shareInvite')}
                   >
                     <Text style={styles.inviteShareBtnText}>{t('people.shareInvite')}</Text>
@@ -300,6 +303,7 @@ export default function PeopleScreen() {
                   <TouchableOpacity
                     style={styles.inviteRevokeBtn}
                     onPress={() => revokeMutation.mutate(inv.code)}
+                    accessibilityRole="button"
                     accessibilityLabel={t('people.revokeInvite')}
                   >
                     <Text style={styles.inviteRevokeBtnText}>{t('people.revokeInvite')}</Text>

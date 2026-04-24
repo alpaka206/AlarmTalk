@@ -176,7 +176,7 @@ function HomeScreen() {
       >
         {/* 인사말 */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>
+          <Text style={styles.greeting} accessibilityRole="header">
             {greeting.emoji} {greeting.text}
           </Text>
           <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
@@ -192,6 +192,8 @@ function HomeScreen() {
             style={styles.statsErrorCard}
             onPress={() => refetchStats()}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.retry')}
           >
             <Text style={styles.statsErrorText}>{t('common.loadError')}</Text>
             <Text style={styles.statsErrorRetry}>{t('common.retry')}</Text>
@@ -230,6 +232,8 @@ function HomeScreen() {
               <TouchableOpacity
                 style={styles.statItem}
                 onPress={() => router.push('/gift/received')}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('home.pendingGifts')} ${stats.gifts.receivedPending}`}
               >
                 <Text style={[styles.statCount, { color: colors.accent }]}>
                   {stats.gifts.receivedPending}
@@ -341,7 +345,11 @@ function HomeScreen() {
             <View style={styles.recentHeader}>
               <Text style={styles.sectionTitle}>{t('home.recentMessages')}</Text>
               {libraryItems && libraryItems.length > 0 && (
-                <TouchableOpacity onPress={() => router.push('/library')}>
+                <TouchableOpacity
+                  onPress={() => router.push('/library')}
+                  accessibilityRole="link"
+                  accessibilityLabel={t('home.viewAll')}
+                >
                   <Text style={styles.viewAllLink}>{t('home.viewAll')}</Text>
                 </TouchableOpacity>
               )}
@@ -353,6 +361,8 @@ function HomeScreen() {
                   style={styles.recentItem}
                   onPress={() => router.push(`/message/${item.message_id}`)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.voice_name}: ${item.text}`}
                 >
                   <View style={styles.recentAvatar}>
                     <Text style={styles.recentAvatarText}>

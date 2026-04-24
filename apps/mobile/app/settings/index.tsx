@@ -74,10 +74,10 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>{t('settings.title')}</Text>
+        <Text style={styles.title} accessibilityRole="header">{t('settings.title')}</Text>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('settings.account')}</Text>
           <View style={styles.card}>
             {profile?.name && (
               <SettingRow colors={colors} label={t('settings.name')} value={profile.name} />
@@ -91,7 +91,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.notifications')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('settings.notifications')}</Text>
           <View style={styles.card}>
             <SettingRow
               colors={colors}
@@ -166,7 +166,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.voice')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('settings.voice')}</Text>
           <View style={styles.card}>
             <SettingRow
               colors={colors}
@@ -186,7 +186,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t('settings.app')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('settings.app')}</Text>
           <View style={styles.card}>
             <SettingRow
               colors={colors}
