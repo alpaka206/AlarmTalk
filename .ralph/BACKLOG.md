@@ -225,6 +225,13 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 806/806, +8; mobile 662/662)
 
+## P109 — auth.ts 서비스 테스트 ✅ (2026-04-25)
+
+- [x] `test/auth.test.ts` 신규 — 22 tests (decodeIdToken 6건, AsyncStorage CRUD 7건, signInWithApple 7건, isAppleAuthAvailable 2건)
+- [x] expo-web-browser + expo-auth-session 네이티브 모듈 mock 처리
+- [x] 전체 모바일 테스트 841/841 통과 (기존 819 + 신규 22)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 완료 항목 (이전 루프)
