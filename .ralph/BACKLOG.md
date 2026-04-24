@@ -602,9 +602,9 @@
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 - ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
 - ~~미사용 export/함수 감사 (dead code 탐지 + 정리)~~ → P38 완료
-- 백엔드 billing 라우트 테스트 커버리지 (결제 스텁 검증)
+- ~~백엔드 billing 라우트 테스트 커버리지 (결제 스텁 검증)~~ → 이미 25 tests 존재 (P7 batch에서 완료)
 - 모바일 화면 컴포넌트 인터랙션 테스트 (voices add menu, alarm create form 등)
-- ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)
+- ~~ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)~~ → P39 완료
 
 ## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
 
@@ -722,3 +722,13 @@
 - [x] `test/navigationRoutes.test.ts` — allowedUnreachable 배열 제거 (모든 라우트 도달 가능)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 392/392)
+
+---
+
+## P39 — ErrorBoundary 탭별 세분화 ✅ (2026-04-24)
+
+- [x] `withErrorBoundary` HOC 추가 (`src/components/ErrorBoundary.tsx`)
+- [x] 4개 탭 화면에 적용 (index, voices, alarms, compose) — 탭별 독립 에러 격리
+- [x] `test/errorBoundary.test.ts` — withErrorBoundary 테스트 3건 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 395/395)

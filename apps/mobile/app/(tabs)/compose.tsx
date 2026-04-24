@@ -12,12 +12,13 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { getReceivedNotes, markNoteRead, type ReceivedNote } from '../../src/services/api';
 
-export default function ComposeScreen() {
+function ComposeScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -376,3 +377,5 @@ function createStyles(colors: ThemeColors) {
     },
   });
 }
+
+export default withErrorBoundary(ComposeScreen);

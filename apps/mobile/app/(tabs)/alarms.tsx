@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getAlarms, updateAlarm, deleteAlarm, getMessages, getVoiceProfiles } from '../../src/services/api';
 import { playAudio } from '../../src/services/audio';
@@ -94,7 +95,7 @@ function compareAlarms(a: Alarm, b: Alarm): number {
   return a.time.localeCompare(b.time);
 }
 
-export default function AlarmsScreen() {
+function AlarmsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
@@ -662,3 +663,5 @@ function createStyles(colors: ThemeColors) {
     },
   });
 }
+
+export default withErrorBoundary(AlarmsScreen);

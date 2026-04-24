@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary } from '../../src/services/api';
 import type { Stats, WeekTrend } from '../../src/services/api';
@@ -40,7 +41,7 @@ function TrendBadge({ trend, colors }: { trend: WeekTrend; colors: ThemeColors }
   return <Text style={{ fontSize: FontSize.xs, color, marginTop: 2 }}>{label}</Text>;
 }
 
-export default function HomeScreen() {
+function HomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useTheme();
@@ -815,3 +816,5 @@ function createStyles(colors: ThemeColors) {
     },
   });
 }
+
+export default withErrorBoundary(HomeScreen);

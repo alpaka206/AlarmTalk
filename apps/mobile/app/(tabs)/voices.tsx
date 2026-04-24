@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import {
   getVoiceProfiles,
@@ -35,7 +36,7 @@ import { cacheVoices, getCachedVoices } from '../../src/services/offlineCache';
 
 const MAX_VOICE_PROFILES = 2;
 
-export default function VoicesScreen() {
+function VoicesScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
@@ -614,3 +615,5 @@ function createStyles(colors: ThemeColors) {
     },
   });
 }
+
+export default withErrorBoundary(VoicesScreen);

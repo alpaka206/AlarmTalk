@@ -1,4 +1,4 @@
-import { Component, useMemo, type ReactNode } from 'react';
+import { Component, useMemo, type ReactNode, type ComponentType } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
@@ -59,6 +59,18 @@ export class ErrorBoundary extends Component<Props, State> {
     }
     return this.props.children;
   }
+}
+
+export function withErrorBoundary<P extends object>(WrappedComponent: ComponentType<P>) {
+  function WithErrorBoundaryWrapper(props: P) {
+    return (
+      <ErrorBoundary>
+        <WrappedComponent {...props} />
+      </ErrorBoundary>
+    );
+  }
+  WithErrorBoundaryWrapper.displayName = `withErrorBoundary(${WrappedComponent.displayName || WrappedComponent.name || 'Component'})`;
+  return WithErrorBoundaryWrapper;
 }
 
 function createStyles(colors: ThemeColors) {

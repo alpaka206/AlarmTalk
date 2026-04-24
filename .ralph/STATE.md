@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P38 미사용 export/함수 감사 (dead code 정리)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P38 완료**
+- 마지막 루프: 2026-04-24 — P39 ErrorBoundary 탭별 세분화
+- 현재 Phase: **R0~R6 전체 완료 + P11~P39 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 653/653, mobile 392/392)
+- 전체 테스트 통과 (backend 653/653, mobile 395/395)
 
 ## 완료된 리팩토링
 
@@ -38,6 +38,7 @@
 - **P36**: 네비게이션 라우트 유효성 검증 — navigationRoutes.test.ts 10 tests (라우트 매핑, 도달성, 동적 파라미터, Stack.Screen 등록, deepLink 매핑) + unused import/var 2건 정리 (voice/record, NotificationBell)
 - **P37**: 도달 불가 음성 화면 연결 — voices.tsx 음성 추가 메뉴에 diarize/picker 2옵션 추가 + i18n 8키 + navigationRoutes 테스트 allowedUnreachable 제거
 - **P38**: 미사용 export/함수 감사 — backend types.ts 7개 미사용 인터페이스 삭제 + QueryStateView LoadingView/EmptyView 삭제
+- **P39**: ErrorBoundary 탭별 세분화 — withErrorBoundary HOC + 4개 탭 화면에 적용 (독립 에러 격리) + 3 tests
 
 ## 알려진 이슈
 - [blocked] Perso API 404
