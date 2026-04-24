@@ -1329,3 +1329,9 @@
 - [x] `app/message/[id].tsx` — 5개 TouchableOpacity에 accessibilityRole="button" + accessibilityLabel 추가
 - [x] `app/people/index.tsx` — TextInput(친구 추가)에 accessibilityLabel 추가
 - [x] typecheck 통과 (backend + mobile 0 errors)
+
+## P98 — Sentry 테스트 + 온보딩 접근성 개선 ✅ (2026-04-25)
+
+- [x] `apps/mobile/test/sentry.test.ts` 신규 — DSN 미설정/빈값 시 init 미호출 검증 (모바일 lib 14/14 모듈 테스트 완료)
+- [x] `apps/mobile/app/onboarding.tsx` — 페이지 타이틀에 accessibilityRole="header" 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)

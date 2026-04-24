@@ -55,7 +55,7 @@ export default function OnboardingScreen() {
   const renderPage = ({ item }: { item: (typeof ONBOARDING_PAGES)[0] }) => (
     <View style={[styles.page, { width, backgroundColor: item.bgColor }]}>
       <Text style={styles.emoji}>{item.emoji}</Text>
-      <Text style={styles.title}>{t(item.titleKey)}</Text>
+      <Text style={styles.title} accessibilityRole="header">{t(item.titleKey)}</Text>
       <Text style={styles.description}>{t(item.descKey)}</Text>
     </View>
   );
