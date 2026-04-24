@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { sendNotePush } from '../lib/fcm';
 
 const notes = new Hono<AppEnv>();
 
@@ -61,6 +62,21 @@ notes.post('/', async (c) => {
           VALUES (?, ?, ?, ?)`,
     args: [noteId, senderPk, receiverId, text],
   });
+
+  const senderRow = await db.execute({
+    sql: 'SELECT name, email FROM users WHERE id = ?',
+    args: [senderPk],
+  });
+  const senderName =
+    (senderRow.rows[0]?.name as string | null) ??
+    (senderRow.rows[0]?.email as string | null) ??
+    'Someone';
+  const pushPromise = sendNotePush(db, receiverId, noteId, senderName);
+  try {
+    c.executionCtx.waitUntil(pushPromise);
+  } catch {
+    void pushPromise;
+  }
 
   return c.json({
     success: true,

@@ -58,7 +58,26 @@ export async function sendAlarmPush(
     token,
     title: 'VoiceAlarm',
     body: `${alarmTime} 알람이 울립니다`,
-    data: { type: 'alarm', alarmId },
+    data: { type: 'alarm', alarmId, channelId: 'alarms' },
+  }));
+
+  return sendPushNotifications(messages);
+}
+
+export async function sendNotePush(
+  db: Client,
+  userId: string,
+  noteId: string,
+  senderName: string,
+): Promise<FcmSendResult[]> {
+  const tokens = await getTokensForUser(db, userId);
+  if (tokens.length === 0) return [];
+
+  const messages: FcmMessage[] = tokens.map((token) => ({
+    token,
+    title: `💌 ${senderName}`,
+    body: '새 쪽지가 도착했어요',
+    data: { type: 'note', noteId, channelId: 'notes' },
   }));
 
   return sendPushNotifications(messages);

@@ -9,6 +9,13 @@ const ALARM_CATEGORY = 'alarm';
 const SNOOZE_ACTION = 'snooze';
 const DISMISS_ACTION = 'dismiss';
 
+export const NotificationChannel = {
+  ALARMS: 'alarms',
+  NOTES: 'notes',
+  REMINDERS: 'reminders',
+  SYSTEM: 'system',
+} as const;
+
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -32,11 +39,37 @@ export async function requestNotificationPermissions(): Promise<boolean> {
 }
 
 if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync('alarms', {
-    name: 'Alarms',
+  Notifications.setNotificationChannelAsync(NotificationChannel.ALARMS, {
+    name: '알람',
+    description: '알람 시간에 울리는 알림',
     importance: Notifications.AndroidImportance.MAX,
     sound: 'default',
     vibrationPattern: [0, 500, 250, 500],
+    enableLights: true,
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    bypassDnd: true,
+  });
+
+  Notifications.setNotificationChannelAsync(NotificationChannel.NOTES, {
+    name: '쪽지',
+    description: '가족/커플이 보낸 음성 쪽지',
+    importance: Notifications.AndroidImportance.HIGH,
+    sound: 'default',
+    vibrationPattern: [0, 250, 200, 250],
+    enableLights: true,
+  });
+
+  Notifications.setNotificationChannelAsync(NotificationChannel.REMINDERS, {
+    name: '리마인더',
+    description: '스트릭, 캐릭터 성장 알림',
+    importance: Notifications.AndroidImportance.DEFAULT,
+    sound: 'default',
+  });
+
+  Notifications.setNotificationChannelAsync(NotificationChannel.SYSTEM, {
+    name: '시스템',
+    description: '친구 요청, 앱 업데이트 등',
+    importance: Notifications.AndroidImportance.LOW,
   });
 }
 
@@ -84,7 +117,7 @@ export async function syncAlarmNotifications(alarms: Alarm[]): Promise<void> {
       sound: 'default',
       categoryIdentifier: ALARM_CATEGORY,
       data: notificationData,
-      ...(Platform.OS === 'android' && { channelId: 'alarms' }),
+      ...(Platform.OS === 'android' && { channelId: NotificationChannel.ALARMS }),
     };
 
     if (repeatDays.length === 0) {
@@ -127,7 +160,7 @@ export async function scheduleSnoozeNotification(
       sound: 'default',
       categoryIdentifier: ALARM_CATEGORY,
       data,
-      ...(Platform.OS === 'android' && { channelId: 'alarms' }),
+      ...(Platform.OS === 'android' && { channelId: NotificationChannel.ALARMS }),
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,

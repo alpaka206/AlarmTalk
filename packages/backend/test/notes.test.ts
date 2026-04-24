@@ -9,6 +9,10 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
+vi.mock('../src/lib/fcm', () => ({
+  sendNotePush: vi.fn().mockResolvedValue([]),
+}));
+
 import notesRoutes from '../src/routes/notes';
 
 function buildApp(userId = 'user-1') {
@@ -92,6 +96,7 @@ describe('POST /notes — 쪽지 전송', () => {
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: '좋은 아침!' }));
     expect(res.status).toBe(201);
@@ -125,6 +130,7 @@ describe('POST /notes — 쪽지 전송', () => {
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: '  hello  ' }));
     expect(res.status).toBe(201);

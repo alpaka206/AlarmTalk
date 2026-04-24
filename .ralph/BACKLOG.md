@@ -566,9 +566,20 @@
 
 ---
 
+## P27 — Android 알림 채널 설정 ✅ (2026-04-24)
+
+- [x] 4채널 분리: alarms(MAX), notes(HIGH), reminders(DEFAULT), system(LOW)
+- [x] `NotificationChannel` 상수 export + channelId 참조를 상수로 변경
+- [x] `sendNotePush` 함수 추가 (쪽지 수신 시 수신자에게 푸시 알림)
+- [x] POST /notes에 쪽지 생성 시 비동기 푸시 발송 연동
+- [x] i18n: settings.channel* 8키 추가 (ko/en)
+- [x] typecheck + 테스트 통과 (backend 647/647, mobile 286/286)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료
-- 알림 채널 설정 (Android notification channels)
+- ~~알림 채널 설정 (Android notification channels)~~ → P27 완료
 - 딥 링크 라우트 핸들링 (voicealarm:// scheme)
 - expo-updates OTA 업데이트 체크 로직
