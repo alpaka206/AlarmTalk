@@ -593,9 +593,21 @@
 - ~~딥 링크 라우트 핸들링 (voicealarm:// scheme)~~ → P28 완료
 - ~~expo-updates OTA 업데이트 체크 로직~~ → P29 완료
 - ~~deepLink + updates 테스트 커버리지~~ → P30 완료
+- ~~하드코딩 한국어 문자열 i18n 전환~~ → P31 완료
+- t() 폴백 문자열 패턴 정리 (home, settings, friend/[id] 등의 `t('key', '폴백')` → `t('key')`)
+- 백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)
+- 접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)
 
 ## P30 — deepLink + updates 테스트 커버리지 ✅ (2026-04-24)
 
 - [x] `test/deepLink.test.ts` 신규 — 23 tests (parseDeepLink 20건 + createDeepLink 3건)
 - [x] `test/updates.test.ts` 신규 — 7 tests (__DEV__ 가드, web 가드, no update, fetch+alert, not new, error, reloadAsync)
 - [x] 전체 316/316 통과 (기존 286 + P30 30)
+
+## P31 — 하드코딩 한국어 문자열 i18n 전환 ✅ (2026-04-24)
+
+- [x] `voice/picker.tsx` — useTranslation 추가 + ~20개 하드코딩 문자열 → t() 전환
+- [x] `alarms.tsx` — 미리듣기 관련 3개 하드코딩 문자열 → t() 전환
+- [x] `character/index.tsx` — DEV_EVENTS label → labelKey + t() 렌더
+- [x] ko.json + en.json — speakerPicker.* 19키 + alarms.* 3키 + character.* 3키 = 25키 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)

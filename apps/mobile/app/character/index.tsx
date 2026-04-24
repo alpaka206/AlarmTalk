@@ -27,10 +27,10 @@ import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 
-const DEV_EVENTS: { event: XpEvent; label: string }[] = [
-  { event: 'alarm_completed', label: '알람 정상 종료 +30 XP' },
-  { event: 'alarm_snoozed', label: '스누즈 +5 XP' },
-  { event: 'family_alarm_received', label: '가족 알람 수신 +10 XP' },
+const DEV_EVENTS: { event: XpEvent; labelKey: string }[] = [
+  { event: 'alarm_completed', labelKey: 'character.devAlarmCompleted' },
+  { event: 'alarm_snoozed', labelKey: 'character.devAlarmSnoozed' },
+  { event: 'family_alarm_received', labelKey: 'character.devFamilyAlarmReceived' },
 ];
 
 const MILESTONES = [7, 30, 90] as const;
@@ -281,7 +281,7 @@ export default function CharacterScreen() {
                 disabled={grantMutation.isPending}
                 style={[dynStyles.devButton, grantMutation.isPending && dynStyles.devButtonDisabled]}
               >
-                <Text style={dynStyles.devButtonText}>{e.label}</Text>
+                <Text style={dynStyles.devButtonText}>{t(e.labelKey)}</Text>
               </Pressable>
             ))}
           </View>

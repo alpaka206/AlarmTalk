@@ -147,11 +147,11 @@ export default function AlarmsScreen() {
       if (action.type === 'navigate') {
         router.push({ pathname: action.path, params: action.params });
       } else if (action.type === 'preview-audio') {
-        toast.show(action.caption || '미리듣기 재생');
+        toast.show(action.caption || t('alarms.previewPlay'));
         try {
           await playAudio(action.uri);
         } catch {
-          toast.show('재생에 실패했어요. mock 파일이 아직 번들되지 않았을 수 있어요.');
+          toast.show(t('alarms.previewFailed'));
         }
       } else {
         toast.show(action.message);
@@ -329,7 +329,7 @@ export default function AlarmsScreen() {
           <View style={styles.alarmActions}>
             <TouchableOpacity
               style={styles.previewButton}
-              accessibilityLabel="미리듣기"
+              accessibilityLabel={t('alarms.a11yPreview')}
               onPress={(e) => {
                 e.stopPropagation();
                 handlePreview(item);

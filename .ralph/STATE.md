@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P29 expo-updates OTA 업데이트 체크 로직
-- 현재 Phase: **R0~R6 전체 완료 + P11~P30 완료**
+- 마지막 루프: 2026-04-24 — P31 하드코딩 한국어 문자열 i18n 전환
+- 현재 Phase: **R0~R6 전체 완료 + P11~P31 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 316/316)
 
@@ -30,6 +30,7 @@
 - **P28**: 딥 링크 라우트 핸들링 — deepLink.ts 파서 + _layout.tsx 초기 URL/런타임 이벤트 리스너 + auth gating (13 딥 링크 패턴 지원)
 - **P29**: expo-updates OTA 업데이트 — 앱 시작 시 EAS Update 체크 + Alert 기반 opt-in 업데이트 (i18n 4키)
 - **P30**: deepLink + updates 테스트 커버리지 — deepLink 파서 23 tests + updates 서비스 7 tests (총 316/316)
+- **P31**: 하드코딩 한국어 문자열 i18n 전환 — picker.tsx 20개 + alarms.tsx 3개 + character/index.tsx 3개 → t() 호출 (ko/en 25키 추가)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -38,3 +39,4 @@
 - eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
+- 일부 화면에 t() 폴백 문자열 패턴 잔존 (home, settings, friend/[id] 등)

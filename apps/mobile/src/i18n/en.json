@@ -78,7 +78,10 @@
     "countdownDaysHours": "{{days}}d {{hours}}h",
     "countdownHoursMinutes": "{{hours}}h {{minutes}}m",
     "countdownMinutes": "{{minutes}}m",
-    "toggleAlarm": "Toggle alarm"
+    "toggleAlarm": "Toggle alarm",
+    "previewPlay": "Playing preview",
+    "previewFailed": "Playback failed. The audio file may not be ready yet.",
+    "a11yPreview": "Preview"
   },
   "voices": {
     "title": "Voice Profiles",
@@ -545,7 +548,10 @@
     "a11yMilestoneAchieved": "achieved",
     "a11yMilestoneNotYet": "not yet",
     "a11yStat": "{{name}}: {{value}}",
-    "a11yXpStat": "{{label}}: {{value}}"
+    "a11yXpStat": "{{label}}: {{value}}",
+    "devAlarmCompleted": "Alarm completed +30 XP",
+    "devAlarmSnoozed": "Snoozed +5 XP",
+    "devFamilyAlarmReceived": "Family alarm received +10 XP"
   },
   "lastSeen": {
     "justNow": "Just now",
@@ -633,6 +639,28 @@
     "helpVoucherDesc": "A code issued when purchasing a plan. Registering it activates the plan.",
     "helpInviteTitle": "Family Invite Code",
     "helpInviteDesc": "A 6-digit code issued by a family group owner. Registering it joins you to the family group."
+  },
+  "speakerPicker": {
+    "title": "Speaker Detection",
+    "desc": "Upload audio and the separation algorithm will split speakers. Select a detected speaker and edit the label.",
+    "pickFile": "Select audio file",
+    "uploadAndDetect": "Upload & detect speakers",
+    "uploading": "Uploading…",
+    "separating": "Separating speakers…",
+    "uploadFailed": "Upload failed",
+    "labelError": "Label error",
+    "labelEditFailed": "Failed to edit label",
+    "unknownError": "Unknown error",
+    "retry": "Retry",
+    "noSpeakers": "No speakers detected.",
+    "rename": "Rename",
+    "close": "Close",
+    "durationConfidence": "{{duration}}s · confidence {{confidence}}%",
+    "a11yEditLabel": "Edit {{label}} name",
+    "a11yRename": "Rename {{label}}",
+    "a11ySpeaker": "{{label}}, {{duration}} seconds, confidence {{confidence}}%",
+    "a11yUploading": "Uploading",
+    "a11ySeparating": "Separating speakers"
   },
   "update": {
     "title": "Update Available",
