@@ -472,9 +472,29 @@
 
 ---
 
+## P18 — hooks 테스트 커버리지 확장 ✅ (2026-04-24)
+
+- [x] `test/useTheme.test.ts` 신규 — 10 tests (라이트/다크 색상 반환, 스키마 무결성, Zustand 연동)
+- [x] `test/useToast.test.ts` 신규 — 8 tests (Animated mock, show/fade/timer 시퀀스, 연속 호출, 커스텀 duration)
+- [x] `test/useNetworkStatus.test.ts` 신규 — 6 tests (NetInfo mock, isConnected true/false/null, 리스너 해제)
+- [x] `test/useAuth.test.ts` 신규 — 24 tests (login/register/logout/refresh 전체 플로우 + boot 시퀀스 + 엣지케이스)
+- [x] 전체 286/286 통과 (기존 238 + P18 48), 백엔드 596/596 통과
+
+---
+
+## P19 — DB Row 타입 안전성 강화 (as unknown as 제거)
+
+- [ ] `packages/backend/src/lib/db-types.ts` 신규 — Turso Row 결과를 안전하게 타입 캐스팅하는 유틸
+- [ ] `routes/auth.ts` — 2건 double assertion 제거 (row 타입 정의)
+- [ ] `routes/voice.ts` — 6건 double assertion 제거 (upload row, member row)
+- [ ] `routes/dub.ts` — 1건 double assertion 제거 (formData.get)
+- [ ] 기타 routes (alarm, character, billing, family, notes) — as 패턴 개선
+- [ ] typecheck 통과 확인
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
-- hooks 테스트 (useAuth, useTheme, useToast, useNetworkStatus)
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
 - Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인
