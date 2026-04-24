@@ -87,6 +87,15 @@
     "previewFailed": "재생에 실패했어요. 오디오 파일이 아직 준비되지 않았을 수 있어요.",
     "a11yPreview": "미리듣기"
   },
+  "alarmPlayback": {
+    "noVoiceProfile": "음성 프로필이 지정되지 않아 기본 알람 톤으로 재생합니다.",
+    "voiceNotFound": "연결된 음성 프로필을 찾을 수 없어 기본 알람 톤으로 재생합니다.",
+    "voiceNotReady": "음성 프로필이 아직 준비되지 않아 기본 알람 톤으로 재생합니다.",
+    "noMessage": "재생할 메시지를 찾을 수 없습니다.",
+    "modeOriginal": "원본",
+    "modeTts": "TTS",
+    "originalSample": "{{name}}의 원본 샘플"
+  },
   "voices": {
     "title": "음성 프로필",
     "subtitle": "소중한 사람의 목소리를 등록하세요",

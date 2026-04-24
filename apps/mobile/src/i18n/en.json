@@ -87,6 +87,15 @@
     "previewFailed": "Playback failed. The audio file may not be ready yet.",
     "a11yPreview": "Preview"
   },
+  "alarmPlayback": {
+    "noVoiceProfile": "No voice profile selected. Playing default alarm tone.",
+    "voiceNotFound": "Linked voice profile not found. Playing default alarm tone.",
+    "voiceNotReady": "Voice profile is not ready yet. Playing default alarm tone.",
+    "noMessage": "No message found to play.",
+    "modeOriginal": "Original",
+    "modeTts": "TTS",
+    "originalSample": "{{name}}'s original sample"
+  },
   "voices": {
     "title": "Voice Profiles",
     "subtitle": "Register a loved one's voice",

@@ -148,14 +148,14 @@ function AlarmsScreen() {
       if (action.type === 'navigate') {
         router.push({ pathname: action.path, params: action.params });
       } else if (action.type === 'preview-audio') {
-        toast.show(action.caption || t('alarms.previewPlay'));
+        toast.show(t(action.captionKey, action.captionParams) || t('alarms.previewPlay'));
         try {
           await playAudio(action.uri);
         } catch {
           toast.show(t('alarms.previewFailed'));
         }
       } else {
-        toast.show(action.message);
+        toast.show(t(action.messageKey));
       }
     },
     [messages, voices, router, toast],
@@ -309,7 +309,7 @@ function AlarmsScreen() {
               <Text style={[styles.alarmVoice, !item.is_active && styles.textInactive]}>🗣️ {item.voice_name}</Text>
               <View style={styles.modeBadge}>
                 <Text style={styles.modeBadgeText}>
-                  {getAlarmModeBadge(item.mode).emoji} {getAlarmModeBadge(item.mode).label}
+                  {getAlarmModeBadge(item.mode).emoji} {t(getAlarmModeBadge(item.mode).labelKey)}
                 </Text>
               </View>
               {(() => {

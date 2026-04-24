@@ -732,3 +732,15 @@
 - [x] `test/errorBoundary.test.ts` — withErrorBoundary 테스트 3건 추가
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 395/395)
+
+---
+
+## P40 — alarmPlayback.ts i18n 전환 ✅ (2026-04-24)
+
+- [x] `src/lib/alarmPlayback.ts` — 하드코딩 한국어 6건 → i18n 키 반환 패턴으로 변경
+  - 인터페이스: `reason`→`reasonKey`, `label`→`labelKey`, `caption`→`captionKey`+`captionParams`, `message`→`messageKey`
+- [x] `app/(tabs)/alarms.tsx` — `t()` 호출로 번역 (badge, preview caption, toast)
+- [x] `src/i18n/ko.json` + `en.json` — `alarmPlayback.*` 7키 추가
+- [x] `test/alarmPlayback.test.ts` — 테스트 6건 업데이트 (i18n 키 매칭)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 395/395)
