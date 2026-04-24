@@ -10,7 +10,7 @@ import { RegisterRequestSchema, LoginRequestSchema } from '@voice-alarm/shared';
 const auth = new Hono<{ Bindings: Env }>();
 
 function jsonError(code: string, message: string) {
-  return { error: message, code };
+  return { error: message, code, error_code: code };
 }
 
 auth.post('/register', async (c) => {

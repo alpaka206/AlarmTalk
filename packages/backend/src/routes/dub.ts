@@ -31,15 +31,15 @@ dub.post('/', async (c) => {
   const sourceMessageId = formData.get('source_message_id') as string | null;
 
   if (!audioFile || !sourceLanguage || !targetLanguage) {
-    return c.json({ error: 'audio, source_language, target_language are required' }, 400);
+    return c.json({ error: 'audio, source_language, target_language are required', error_code: 'MISSING_REQUIRED_FIELDS' }, 400);
   }
 
   if (sourceLanguage === targetLanguage) {
-    return c.json({ error: 'Source and target languages must be different' }, 400);
+    return c.json({ error: 'Source and target languages must be different', error_code: 'SAME_LANGUAGE' }, 400);
   }
 
   if (sourceMessageId && !UUID_RE.test(sourceMessageId)) {
-    return c.json({ error: 'Invalid source_message_id format' }, 400);
+    return c.json({ error: 'Invalid source_message_id format', error_code: 'INVALID_SOURCE_MESSAGE_ID' }, 400);
   }
 
   const jobId = crypto.randomUUID();
@@ -84,7 +84,7 @@ dub.post('/', async (c) => {
       args: [err instanceof Error ? err.message : 'Unknown error', jobId],
     });
     return c.json(
-      { error: 'Failed to start dubbing', detail: err instanceof Error ? err.message : 'Unknown error' },
+      { error: 'Failed to start dubbing', error_code: 'DUB_START_FAILED', detail: err instanceof Error ? err.message : 'Unknown error' },
       500,
     );
   }
@@ -109,7 +109,7 @@ dub.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid dub job ID format' }, 400);
+    return c.json({ error: 'Invalid dub job ID format', error_code: 'INVALID_DUB_JOB_ID' }, 400);
   }
 
   const jobRes = await db.execute({
@@ -118,7 +118,7 @@ dub.get('/:id', async (c) => {
   });
 
   if (jobRes.rows.length === 0) {
-    return c.json({ error: 'Dub job not found' }, 404);
+    return c.json({ error: 'Dub job not found', error_code: 'DUB_JOB_NOT_FOUND' }, 404);
   }
 
   const job = jobRes.rows[0];
@@ -243,7 +243,7 @@ dub.get('/:id', async (c) => {
     });
   } catch (err) {
     return c.json(
-      { error: 'Failed to check dubbing progress', detail: err instanceof Error ? err.message : 'Unknown error' },
+      { error: 'Failed to check dubbing progress', error_code: 'DUB_PROGRESS_CHECK_FAILED', detail: err instanceof Error ? err.message : 'Unknown error' },
       500,
     );
   }

@@ -90,6 +90,8 @@ describe('GET /voice/:id — 음성 프로필 상세', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/voice/bad-id'));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
   it('존재하지 않으면 404', async () => {
@@ -97,6 +99,8 @@ describe('GET /voice/:id — 음성 프로필 상세', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('GET', `/voice/${V404}`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 
   it('프로필 반환', async () => {
@@ -115,6 +119,8 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', '/voice/bad-id', { name: '새 이름' }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
   it('JSON 이 아니면 400', async () => {
@@ -127,12 +133,16 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
       }),
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('JSON_BODY_REQUIRED');
   });
 
   it('이름이 공백이면 400', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { name: '   ' }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_NAME_LENGTH');
   });
 
   it('이름이 51자 이상이면 400', async () => {
@@ -141,6 +151,8 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
       jsonReq('PATCH', `/voice/${V1}`, { name: '가'.repeat(51) }),
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_NAME_LENGTH');
   });
 
   it('존재하지 않거나 소유자가 아니면 404', async () => {
@@ -150,6 +162,8 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
       jsonReq('PATCH', `/voice/${V404}`, { name: '새 이름' }),
     );
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 
   it('정상 변경은 200 과 새 이름을 반환하고 updated_at 이 갱신된다', async () => {
@@ -177,6 +191,8 @@ describe('GET /voice/:id/stats — 음성 프로필 통계', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/voice/bad-id/stats'));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
   it('존재하지 않으면 404', async () => {
@@ -186,6 +202,8 @@ describe('GET /voice/:id/stats — 음성 프로필 통계', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('GET', `/voice/${V404}/stats`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 
   it('통계 반환', async () => {
@@ -230,6 +248,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
     const app = buildApp();
     const res = await app.request(uploadRequest('/voice/upload', { audio: null }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_FILE_REQUIRED');
   });
 
   it('MIME 이 audio/* 가 아니면 415', async () => {
@@ -240,6 +260,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
       }),
     );
     expect(res.status).toBe(415);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_AUDIO_MIME_TYPE');
   });
 
   it('빈 파일이면 400', async () => {
@@ -250,6 +272,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
       }),
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_FILE_EMPTY');
   });
 
   it('10 MiB 초과면 413', async () => {
@@ -261,6 +285,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
       }),
     );
     expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUDIO_FILE_TOO_LARGE');
   });
 
   it('durationMs 가 숫자가 아니면 400', async () => {
@@ -272,6 +298,8 @@ describe('POST /voice/upload — 원본 오디오 업로드', () => {
       }),
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_DURATION');
   });
 });
 
@@ -282,6 +310,8 @@ describe('POST /voice/uploads/:uploadId/separate — 화자 분리 mock', () => 
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/voice/uploads/bad-id/separate'));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_UPLOAD_ID');
   });
 
   it('업로드가 없으면 404', async () => {
@@ -289,6 +319,8 @@ describe('POST /voice/uploads/:uploadId/separate — 화자 분리 mock', () => 
     const app = buildApp();
     const res = await app.request(jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
   });
 
   it('타인 소유 업로드면 403', async () => {
@@ -296,6 +328,8 @@ describe('POST /voice/uploads/:uploadId/separate — 화자 분리 mock', () => 
     const app = buildApp('user-1');
     const res = await app.request(jsonReq('POST', `/voice/uploads/${UPLOAD_ID}/separate`));
     expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('FORBIDDEN');
   });
 
   it('정상 호출은 화자 1~3명과 201 을 반환하고 INSERT 를 수행한다', async () => {
@@ -346,6 +380,8 @@ describe('GET /voice/uploads/:uploadId/speakers — 저장된 화자 조회', ()
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/voice/uploads/bad/speakers'));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_UPLOAD_ID');
   });
 
   it('업로드가 없으면 404', async () => {
@@ -353,6 +389,8 @@ describe('GET /voice/uploads/:uploadId/speakers — 저장된 화자 조회', ()
     const app = buildApp();
     const res = await app.request(jsonReq('GET', `/voice/uploads/${UPLOAD_ID}/speakers`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
   });
 
   it('저장된 화자를 start_ms 순으로 돌려준다', async () => {
@@ -400,6 +438,8 @@ describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 �
     const app = buildApp();
     const res = await app.request(patchReq('bad', SPEAKER_ID, { label: '엄마' }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_ID_FORMAT');
   });
 
   it('JSON body 가 아니면 400', async () => {
@@ -412,12 +452,16 @@ describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 �
       }),
     );
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('JSON_BODY_REQUIRED');
   });
 
   it('빈 label 이면 400', async () => {
     const app = buildApp();
     const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '   ' }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_LABEL_LENGTH');
   });
 
   it('업로드가 없으면 404', async () => {
@@ -425,6 +469,8 @@ describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 �
     const app = buildApp();
     const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_UPLOAD_NOT_FOUND');
   });
 
   it('타인 소유 업로드면 403', async () => {
@@ -432,6 +478,8 @@ describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 �
     const app = buildApp('user-1');
     const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
     expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('FORBIDDEN');
   });
 
   it('화자가 없으면 404', async () => {
@@ -440,6 +488,8 @@ describe('PATCH /voice/uploads/:uploadId/speakers/:speakerId — 화자 라벨 �
     const app = buildApp();
     const res = await app.request(patchReq(UPLOAD_ID, SPEAKER_ID, { label: '엄마' }));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('SPEAKER_NOT_FOUND');
   });
 
   it('정상 호출은 200 과 업데이트된 라벨을 반환한다', async () => {
@@ -464,6 +514,8 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', '/voice/bad-id'));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_VOICE_PROFILE_ID');
   });
 
   it('존재하지 않으면 404', async () => {
@@ -471,6 +523,8 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V404}`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 
   it('연관 메시지 있으면 409 경고', async () => {
@@ -484,6 +538,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     const body = await res.json();
     expect(body.warning).toBe(true);
     expect(body.message_count).toBe(3);
+    expect(body.error_code).toBe('VOICE_PROFILE_IN_USE');
   });
 
   it('force=true로 연관 메시지 있어도 삭제', async () => {

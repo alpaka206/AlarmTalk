@@ -1066,3 +1066,13 @@
 - [x] `apps/mobile/eas.json` — preview/production env에 `EXPO_PUBLIC_API_URL` 추가
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 672/672, mobile 625/625)
+
+## P71 — API error_code Final Batch (voice/dub/auth) + 테스트 검증 ✅ (2026-04-25)
+
+- [x] `routes/voice.ts` — 35건 error_code 추가 (upload 6 + separate 3 + speakers-get 3 + speakers-patch 6 + get 2 + patch 4 + clone 4 + diarize 2 + stats 2 + delete 3)
+- [x] `routes/dub.ts` — 7건 error_code 추가 (POST 4 + GET 3)
+- [x] `routes/auth.ts` — jsonError 헬퍼에 error_code alias 추가 (기존 code 필드와 동일값)
+- [x] `test/voice.test.ts` — 28개 기존 에러 테스트에 error_code 검증 assertion 추가
+- [x] **전체 API error_code 일관성 100% 달성** — 모든 라우트 파일 적용 완료
+- [x] typecheck 통과 (backend 0 errors)
+- [x] 전체 테스트 통과 (backend 684/684)

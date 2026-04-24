@@ -29,26 +29,26 @@ voice.post('/upload', async (c) => {
   try {
     formData = await c.req.formData();
   } catch {
-    return c.json({ error: 'multipart/form-data body required' }, 400);
+    return c.json({ error: 'multipart/form-data body required', error_code: 'MULTIPART_BODY_REQUIRED' }, 400);
   }
 
   const audioFile = getFormFile(formData, 'audio');
   if (!audioFile || typeof audioFile === 'string') {
-    return c.json({ error: 'audio file is required' }, 400);
+    return c.json({ error: 'audio file is required', error_code: 'AUDIO_FILE_REQUIRED' }, 400);
   }
 
   const mimeType = audioFile.type || 'application/octet-stream';
   if (!mimeType.startsWith('audio/')) {
-    return c.json({ error: 'audio/* MIME type required' }, 415);
+    return c.json({ error: 'audio/* MIME type required', error_code: 'INVALID_AUDIO_MIME_TYPE' }, 415);
   }
 
   const buffer = await audioFile.arrayBuffer();
   if (buffer.byteLength === 0) {
-    return c.json({ error: 'audio file is empty' }, 400);
+    return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
   }
   if (buffer.byteLength > MAX_UPLOAD_BYTES) {
     return c.json(
-      { error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${buffer.byteLength})` },
+      { error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${buffer.byteLength})`, error_code: 'AUDIO_FILE_TOO_LARGE' },
       413,
     );
   }
@@ -58,7 +58,7 @@ voice.post('/upload', async (c) => {
   if (typeof durationRaw === 'string' && durationRaw.length > 0) {
     const n = Number.parseInt(durationRaw, 10);
     if (!Number.isFinite(n) || n <= 0) {
-      return c.json({ error: 'durationMs must be a positive integer' }, 400);
+      return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
     }
     durationMs = n;
   }
@@ -120,7 +120,7 @@ voice.post('/uploads/:uploadId/separate', async (c) => {
   const uploadId = c.req.param('uploadId');
 
   if (!UUID_RE.test(uploadId)) {
-    return c.json({ error: 'Invalid upload ID format' }, 400);
+    return c.json({ error: 'Invalid upload ID format', error_code: 'INVALID_UPLOAD_ID' }, 400);
   }
 
   const uploadRes = await db.execute({
@@ -128,11 +128,11 @@ voice.post('/uploads/:uploadId/separate', async (c) => {
     args: [uploadId],
   });
   if (uploadRes.rows.length === 0) {
-    return c.json({ error: 'Voice upload not found' }, 404);
+    return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
   const upload = typedRow<{ id: string; user_id: string; object_key: string }>(uploadRes.rows[0]);
   if (upload.user_id !== userId) {
-    return c.json({ error: 'Forbidden' }, 403);
+    return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 
   const provider = new MockVoiceProvider();
@@ -173,7 +173,7 @@ voice.get('/uploads/:uploadId/speakers', async (c) => {
   const uploadId = c.req.param('uploadId');
 
   if (!UUID_RE.test(uploadId)) {
-    return c.json({ error: 'Invalid upload ID format' }, 400);
+    return c.json({ error: 'Invalid upload ID format', error_code: 'INVALID_UPLOAD_ID' }, 400);
   }
 
   const uploadRes = await db.execute({
@@ -181,10 +181,10 @@ voice.get('/uploads/:uploadId/speakers', async (c) => {
     args: [uploadId],
   });
   if (uploadRes.rows.length === 0) {
-    return c.json({ error: 'Voice upload not found' }, 404);
+    return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
   if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
-    return c.json({ error: 'Forbidden' }, 403);
+    return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 
   const speakersRes = await db.execute({
@@ -204,18 +204,18 @@ voice.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
   const speakerId = c.req.param('speakerId');
 
   if (!UUID_RE.test(uploadId) || !UUID_RE.test(speakerId)) {
-    return c.json({ error: 'Invalid ID format' }, 400);
+    return c.json({ error: 'Invalid ID format', error_code: 'INVALID_ID_FORMAT' }, 400);
   }
 
   let body: { label?: unknown };
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: 'JSON body required' }, 400);
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
   const label = typeof body.label === 'string' ? body.label.trim() : '';
   if (label.length === 0 || label.length > 50) {
-    return c.json({ error: 'label must be 1-50 characters' }, 400);
+    return c.json({ error: 'label must be 1-50 characters', error_code: 'INVALID_LABEL_LENGTH' }, 400);
   }
 
   const uploadRes = await db.execute({
@@ -223,10 +223,10 @@ voice.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
     args: [uploadId],
   });
   if (uploadRes.rows.length === 0) {
-    return c.json({ error: 'Voice upload not found' }, 404);
+    return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
   if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
-    return c.json({ error: 'Forbidden' }, 403);
+    return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 
   const speakerRes = await db.execute({
@@ -234,7 +234,7 @@ voice.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
     args: [speakerId, uploadId],
   });
   if (speakerRes.rows.length === 0) {
-    return c.json({ error: 'Speaker not found' }, 404);
+    return c.json({ error: 'Speaker not found', error_code: 'SPEAKER_NOT_FOUND' }, 404);
   }
 
   await db.execute({
@@ -314,7 +314,7 @@ voice.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format' }, 400);
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
   const result = await db.execute({
@@ -323,7 +323,7 @@ voice.get('/:id', async (c) => {
   });
 
   if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found' }, 404);
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
   return c.json({ profile: result.rows[0] });
@@ -336,19 +336,19 @@ voice.patch('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format' }, 400);
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
   let body: { name?: unknown };
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: 'JSON body required' }, 400);
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
 
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (name.length === 0 || name.length > 50) {
-    return c.json({ error: 'name must be 1-50 characters' }, 400);
+    return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
 
   const existing = await db.execute({
@@ -356,7 +356,7 @@ voice.patch('/:id', async (c) => {
     args: [id, userId],
   });
   if (existing.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found' }, 404);
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
   await db.execute({
@@ -382,6 +382,7 @@ voice.post('/clone', async (c) => {
       return c.json(
         {
           error: 'VOICE_LIMIT_REACHED',
+          error_code: 'VOICE_LIMIT_REACHED',
           message: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
         },
         403,
@@ -392,11 +393,11 @@ voice.post('/clone', async (c) => {
     const audioFile = getFormFile(formData, 'audio');
     const name = formData.get('name') as string | null;
     if (!audioFile || !name) {
-      return c.json({ error: 'audio file and name are required' }, 400);
+      return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
 
     if (name.length > 50) {
-      return c.json({ error: 'Name must be 50 characters or less' }, 400);
+      return c.json({ error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' }, 400);
     }
 
     const audioBuffer = await audioFile.arrayBuffer();
@@ -436,6 +437,7 @@ voice.post('/clone', async (c) => {
     return c.json(
       {
         error: 'Voice cloning failed',
+        error_code: 'VOICE_CLONING_FAILED',
         detail,
       },
       500,
@@ -449,7 +451,7 @@ voice.post('/diarize', async (c) => {
   const audioFile = getFormFile(formData, 'audio');
 
   if (!audioFile) {
-    return c.json({ error: 'audio file is required' }, 400);
+    return c.json({ error: 'audio file is required', error_code: 'AUDIO_FILE_REQUIRED' }, 400);
   }
 
   const audioBuffer = await audioFile.arrayBuffer();
@@ -470,6 +472,7 @@ voice.post('/diarize', async (c) => {
     return c.json(
       {
         error: 'Speaker diarization failed',
+        error_code: 'DIARIZATION_FAILED',
         detail: err instanceof Error ? err.message : 'Unknown error',
       },
       500,
@@ -484,7 +487,7 @@ voice.get('/:id/stats', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format' }, 400);
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
   const [profileRes, msgRes, alarmRes] = await Promise.all([
@@ -505,7 +508,7 @@ voice.get('/:id/stats', async (c) => {
   ]);
 
   if (profileRes.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found' }, 404);
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
   return c.json({
@@ -522,7 +525,7 @@ voice.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format' }, 400);
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
   const result = await db.execute({
@@ -531,7 +534,7 @@ voice.delete('/:id', async (c) => {
   });
 
   if (result.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found' }, 404);
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
   const profile = result.rows[0];
@@ -546,6 +549,7 @@ voice.delete('/:id', async (c) => {
     return c.json(
       {
         warning: true,
+        error_code: 'VOICE_PROFILE_IN_USE',
         message_count: msgCount,
         message: `This voice profile has ${msgCount} message(s). Add ?force=true to delete anyway.`,
       },
