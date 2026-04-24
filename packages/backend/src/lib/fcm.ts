@@ -1,4 +1,5 @@
 import type { Client } from '@libsql/client/web';
+import { logStructured } from './logger';
 
 export type PushLocale = 'ko' | 'en';
 
@@ -46,16 +47,13 @@ export async function sendPushNotifications(
   const results: FcmSendResult[] = [];
 
   for (const msg of messages) {
-    console.warn(
-      JSON.stringify({
-        level: 'info',
-        at: 'fcm.sendPush',
-        action: 'MOCK_SEND',
-        token: msg.token.slice(0, 8) + '...',
-        title: msg.title,
-        body: msg.body,
-      }),
-    );
+    logStructured('info', {
+      at: 'fcm.sendPush',
+      action: 'MOCK_SEND',
+      token: msg.token.slice(0, 8) + '...',
+      title: msg.title,
+      body: msg.body,
+    });
     results.push({ token: msg.token, success: true });
   }
 

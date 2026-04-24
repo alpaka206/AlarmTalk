@@ -11,7 +11,7 @@ import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { sendAlarmPush } from './lib/fcm';
-import { logRouteError } from './lib/logger';
+import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
 import alarmRoutes from './routes/alarm';
@@ -170,16 +170,13 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
   const firing = selectFiringAlarms(alarms, now);
 
-  console.warn(
-    JSON.stringify({
-      level: 'info',
-      at: 'scheduled',
-      now: now.toISOString(),
-      checked: alarms.length,
-      firing_count: firing.length,
-      firing_ids: firing.map((a) => a.id),
-    }),
-  );
+  logStructured('info', {
+    at: 'scheduled',
+    now: now.toISOString(),
+    checked: alarms.length,
+    firing_count: firing.length,
+    firing_ids: firing.map((a) => a.id),
+  });
 
   for (const alarm of firing) {
     const targetUserId = alarm.target_user_id ?? alarm.user_id;

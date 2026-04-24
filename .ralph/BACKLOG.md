@@ -777,6 +777,15 @@
 - [x] typecheck 통��� (backend 0 errors)
 - [x] 전체 테스트 통과 (backend 920/920, +25)
 
+## P94 — voice.ts 라우트 분할 + 구조화 로깅 ✅ (2026-04-25)
+
+- [x] `voice.ts` (593줄) → `voice-upload.ts` (254줄) + `voice-profile.ts` (280줄) + `voice.ts` (11줄 aggregator)
+- [x] `logger.ts`에 `logStructured(level, data)` 유틸 추가
+- [x] `index.ts` + `fcm.ts`의 `console.warn` → `logStructured('info', ...)` 마이그레이션
+- [x] `test/fcm.test.ts` spy 업데이트 (`console.warn` → `console.log`)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 780/780)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

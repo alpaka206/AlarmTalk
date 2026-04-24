@@ -1,6 +1,13 @@
 import type { Context } from 'hono';
 import type { SentryClient } from '../types';
 
+export function logStructured(level: 'info' | 'warn' | 'error', data: Record<string, unknown>): void {
+  const entry = { level, ...data };
+  const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
+  // eslint-disable-next-line no-console
+  fn(JSON.stringify(entry));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono Context is invariant on Env; this accepts both pre-auth and post-auth contexts
 export function logRouteError(c: Context<any>, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);

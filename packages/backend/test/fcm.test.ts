@@ -43,7 +43,7 @@ describe('sendPushNotifications', () => {
   });
 
   it('모든 메시지에 success=true 반환 (mock)', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     const results = await sendPushNotifications([
       { token: 'tok-1', title: 'Test', body: 'Hello' },
       { token: 'tok-2', title: 'Test', body: 'World', data: { type: 'alarm' } },
@@ -53,8 +53,8 @@ describe('sendPushNotifications', () => {
     expect(results[1]).toEqual({ token: 'tok-2', success: true });
   });
 
-  it('console.warn으로 로그 출력', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('console.log으로 구조화된 로그 출력', async () => {
+    const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await sendPushNotifications([
       { token: 'abcdefghijk', title: 'VoiceAlarm', body: '알람' },
     ]);
@@ -79,7 +79,7 @@ describe('sendAlarmPush', () => {
   });
 
   it('토큰 있으면 알람 메시지 전송', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'device-tok' }]);
     const results = await sendAlarmPush(
       mockDB.client as never,
@@ -93,7 +93,7 @@ describe('sendAlarmPush', () => {
   });
 
   it('여러 디바이스 토큰에 모두 전송', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([
       { token: 'phone-tok' },
       { token: 'tablet-tok' },
@@ -109,7 +109,7 @@ describe('sendAlarmPush', () => {
   });
 
   it('영어 로케일 시 영문 body', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'en-tok' }]);
     await sendAlarmPush(
       mockDB.client as never,
@@ -119,13 +119,13 @@ describe('sendAlarmPush', () => {
       'en',
     );
     const logged = JSON.parse(
-      (vi.mocked(console.warn).mock.calls[0][0] as string),
+      (vi.mocked(console.log).mock.calls[0][0] as string),
     );
     expect(logged.body).toBe('Alarm at 09:00');
   });
 
   it('한국어 로케일 기본 body', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'ko-tok' }]);
     await sendAlarmPush(
       mockDB.client as never,
@@ -134,7 +134,7 @@ describe('sendAlarmPush', () => {
       '06:30',
     );
     const logged = JSON.parse(
-      (vi.mocked(console.warn).mock.calls[0][0] as string),
+      (vi.mocked(console.log).mock.calls[0][0] as string),
     );
     expect(logged.body).toBe('06:30 알람이 울립니다');
   });
@@ -153,7 +153,7 @@ describe('sendNotePush', () => {
   });
 
   it('한국어 기본 body', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'note-tok' }]);
     await sendNotePush(
       mockDB.client as never,
@@ -162,14 +162,14 @@ describe('sendNotePush', () => {
       'Alice',
     );
     const logged = JSON.parse(
-      (vi.mocked(console.warn).mock.calls[0][0] as string),
+      (vi.mocked(console.log).mock.calls[0][0] as string),
     );
     expect(logged.title).toBe('💌 Alice');
     expect(logged.body).toBe('새 쪽지가 도착했어요');
   });
 
   it('영어 로케일 시 영문 body', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'en-tok' }]);
     await sendNotePush(
       mockDB.client as never,
@@ -179,7 +179,7 @@ describe('sendNotePush', () => {
       'en',
     );
     const logged = JSON.parse(
-      (vi.mocked(console.warn).mock.calls[0][0] as string),
+      (vi.mocked(console.log).mock.calls[0][0] as string),
     );
     expect(logged.title).toBe('💌 Bob');
     expect(logged.body).toBe('You have a new note');
