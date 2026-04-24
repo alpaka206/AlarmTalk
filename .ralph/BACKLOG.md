@@ -1247,3 +1247,27 @@
 - [x] GET /notes/sent 페이지네이션 3건 (limit/offset 적용, max 100 클램핑, 음수 → 1)
 - [x] GET /notes/received 클램핑 3건 (limit 0 → 20, 음수 offset → 0, 비숫자 → 기본값)
 - [x] 전체 테스트 통과 (backend 833/833, mobile 662/662)
+
+## P87 — character.test.ts API 라우트 테스트 24건 추가 ✅ (2026-04-25)
+
+- [x] GET /characters/me 4건 (404, 자동생성, 기존캐릭터+stats, progress)
+- [x] POST /characters/xp 20건 (이벤트검증, XP지급, 일일캡, 날짜리셋, nonce멱등, 스트릭, 마일스톤, 캡면제)
+- [x] 전체 테스트 통과 (backend 857/857, mobile 662/662)
+
+## P88 — friend.test.ts API 라우트 테스트 19건 추가 ✅ (2026-04-25)
+
+- [x] POST /friend: 빈 이메일, 누락 이메일, DB 에러 + 기존 6건 error_code 검증 강화
+- [x] GET /friend/list: 빈 목록, 페이지네이션, limit 클램핑(max 100, min 1), 검색 쿼리 SQL 전달, 빈 검색어 trim, DB 에러
+- [x] GET /friend/pending: 빈 목록, 페이지네이션, DB 에러
+- [x] PATCH /friend/:id/accept: 잘못된 UUID, 응답 상세 구조, pending+현재 사용자 SQL 검증, DB 에러
+- [x] DELETE /friend/:id: 잘못된 UUID, user_a/user_b SQL 조건 검증, DB 에러
+- [x] 전체 테스트 통과 (backend 876/876, mobile 662/662)
+
+## P89 — gift.test.ts API 라우트 테스트 19건 추가 ✅ (2026-04-25)
+
+- [x] POST /gift: 빈 이메일, 잘못된 UUID message_id, note 200자 경계, null note 저장, DB 에러 + error_code 검증 강화
+- [x] GET /gift/received: 빈 목록, 페이지네이션, limit 클램핑, 검색 쿼리 LIKE, DB 에러
+- [x] GET /gift/sent: 빈 목록, 검색 3필드 LIKE, DB 에러
+- [x] PATCH /gift/:id/accept: UUID 유효성, message_library 삽입 검증, 응답 구조, DB 에러
+- [x] PATCH /gift/:id/reject: UUID 유효성, pending+recipient SQL 검증, 응답 구조, DB 에러
+- [x] 전체 테스트 통과 (backend 895/895, mobile 662/662)
