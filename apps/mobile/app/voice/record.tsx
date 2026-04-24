@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../src/hooks/useTheme';
 import { requestMicPermission, startRecording, stopRecording } from '../../src/services/audio';
 import { createVoiceClone } from '../../src/services/api';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { createVoiceRecordStyles } from '../../src/styles/voiceRecordStyles';
@@ -70,7 +70,7 @@ export default function RecordScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceRecord.cloneError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceRecord.cloneError')));
     },
   });
 

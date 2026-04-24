@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { getReceivedGifts, acceptGift, rejectGift } from '../../src/services/api';
 import { useTheme } from '../../src/hooks/useTheme';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import type { Gift } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -90,7 +90,7 @@ export default function ReceivedGiftsScreen() {
       if (context?.previous) {
         queryClient.setQueryData(['gifts-received'], context.previous);
       }
-      toast.show(getApiErrorMessage(err, t('giftReceived.acceptError')));
+      toast.show(getApiErrorMessage(err, t, t('giftReceived.acceptError')));
     },
   });
 
@@ -112,7 +112,7 @@ export default function ReceivedGiftsScreen() {
       if (context?.previous) {
         queryClient.setQueryData(['gifts-received'], context.previous);
       }
-      toast.show(getApiErrorMessage(err, t('giftReceived.rejectError')));
+      toast.show(getApiErrorMessage(err, t, t('giftReceived.rejectError')));
     },
   });
 

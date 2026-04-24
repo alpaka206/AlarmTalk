@@ -25,7 +25,7 @@ import {
   saveAudioLocally,
   playAudio,
 } from '../../src/services/audio';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import type { Message, DubLanguage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -136,7 +136,7 @@ export default function TranslateScreen() {
       }, 5000);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('dub.failed')));
+      toast.show(getApiErrorMessage(err, t, t('dub.failed')));
     },
   });
 

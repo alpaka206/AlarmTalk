@@ -25,6 +25,7 @@ import {
   sanitizeLabel,
   speakerPickerReducer,
 } from '../../src/lib/speakerPickerState';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 
 export default function SpeakerPickerScreen() {
   const router = useRouter();
@@ -64,7 +65,7 @@ export default function SpeakerPickerScreen() {
       const detected = await separateUpload(upload.id);
       dispatch({ type: 'READY', speakers: detected });
     } catch (err) {
-      dispatch({ type: 'FAIL', message: err instanceof Error ? err.message : t('speakerPicker.uploadFailed') });
+      dispatch({ type: 'FAIL', message: getApiErrorMessage(err, t, t('speakerPicker.uploadFailed')) });
     }
   }, [state.file]);
 
@@ -86,7 +87,7 @@ export default function SpeakerPickerScreen() {
       } catch (err) {
         dispatch({
           type: 'FAIL',
-          message: err instanceof Error ? err.message : t('speakerPicker.labelEditFailed'),
+          message: getApiErrorMessage(err, t, t('speakerPicker.labelEditFailed')),
         });
       }
     },

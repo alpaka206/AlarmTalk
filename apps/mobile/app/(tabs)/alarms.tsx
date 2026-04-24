@@ -28,7 +28,7 @@ import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheAlarms, getCachedAlarms } from '../../src/services/offlineCache';
 import { syncAlarmNotifications } from '../../src/services/notifications';
 import type { Alarm } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { parseRepeatDays } from '../../src/lib/alarmForm';
 import {
   buildAlarmPreviewAction,
@@ -221,7 +221,7 @@ function AlarmsScreen() {
       resyncNotifications();
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarms.toggleError')));
+      toast.show(getApiErrorMessage(err, t, t('alarms.toggleError')));
     },
   });
 
@@ -232,7 +232,7 @@ function AlarmsScreen() {
       resyncNotifications();
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarms.deleteError')));
+      toast.show(getApiErrorMessage(err, t, t('alarms.deleteError')));
     },
   });
 

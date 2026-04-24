@@ -18,6 +18,7 @@ import { getVoiceProfiles, getMessages, getAlarms, updateVoiceProfile } from '..
 import { useAppStore } from '../../src/stores/useAppStore';
 import { sanitizeVoiceName } from '../../src/lib/voiceName';
 import type { Message, Alarm, VoiceProfile } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { createVoiceDetailStyles } from '../../src/styles/voiceDetailStyles';
 
 export default function VoiceDetailScreen() {
@@ -46,7 +47,7 @@ export default function VoiceDetailScreen() {
       setDraftName('');
     },
     onError: (err) => {
-      Alert.alert(t('voiceDetail.renameFailed'), err instanceof Error ? err.message : t('voiceDetail.renameNetworkError'));
+      Alert.alert(t('voiceDetail.renameFailed'), getApiErrorMessage(err, t, t('voiceDetail.renameNetworkError')));
     },
   });
 

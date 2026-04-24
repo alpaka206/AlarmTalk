@@ -52,9 +52,9 @@ const STATUS_I18N: Record<number, string> = {
   500: 'apiError.serverError',
 };
 
-export function getApiErrorMessage(error: unknown, t: TFunction): string {
+export function getApiErrorMessage(error: unknown, t: TFunction, fallback?: string): string {
   if (!(error instanceof ApiError)) {
-    return t('apiError.unknown');
+    return fallback ?? t('apiError.unknown');
   }
 
   if (error.errorCode) {
@@ -71,7 +71,7 @@ export function getApiErrorMessage(error: unknown, t: TFunction): string {
     if (translated !== statusKey) return translated;
   }
 
-  return t('apiError.unknown');
+  return fallback ?? t('apiError.unknown');
 }
 
 export function getErrorCode(error: unknown): string | null {

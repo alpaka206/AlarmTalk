@@ -142,6 +142,26 @@ describe('getApiErrorMessage', () => {
     expect(getApiErrorMessage(new ApiError(418, { error: 'teapot' }), identity)).toBe('apiError.unknown');
   });
 
+  it('uses fallback for non-ApiError when provided', () => {
+    expect(getApiErrorMessage(new Error('oops'), identity, '커스텀 에러')).toBe('커스텀 에러');
+  });
+
+  it('uses fallback for unmapped status when provided', () => {
+    expect(getApiErrorMessage(new ApiError(418, { error: 'teapot' }), identity, '알 수 없는 오류')).toBe('알 수 없는 오류');
+  });
+
+  it('prefers error_code over fallback', () => {
+    const t = mockT({ 'apiError.voiceLimitReached': '음성 2개 제한' });
+    const err = new ApiError(409, { error: 'limit', error_code: 'VOICE_LIMIT_REACHED' });
+    expect(getApiErrorMessage(err, t, '업로드 실패')).toBe('음성 2개 제한');
+  });
+
+  it('prefers status mapping over fallback', () => {
+    const t = mockT({ 'apiError.serverError': '서버 에러' });
+    const err = new ApiError(500, { error: 'crash' });
+    expect(getApiErrorMessage(err, t, '알 수 없음')).toBe('서버 에러');
+  });
+
   it('maps both INVALID_FORMAT and INVALID_CODE_FORMAT to same key', () => {
     const t = mockT({ 'apiError.invalidCodeFormat': '형식 오류' });
     const err1 = new ApiError(400, { error: 'bad', error_code: 'INVALID_FORMAT' });

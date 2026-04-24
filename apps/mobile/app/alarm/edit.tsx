@@ -26,7 +26,7 @@ import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
 import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { parseRepeatDays, validateAlarmForm, getTimeUntilAlarm } from '../../src/lib/alarmForm';
@@ -122,7 +122,7 @@ export default function EditAlarmScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarmEdit.editError')));
+      toast.show(getApiErrorMessage(err, t, t('alarmEdit.editError')));
     },
   });
 

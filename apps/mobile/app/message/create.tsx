@@ -20,7 +20,7 @@ import { getVoiceProfiles, generateTTS, getFriendList, sendGift } from '../../sr
 import { saveAudioLocally, playAudio } from '../../src/services/audio';
 import { useAppStore } from '../../src/stores/useAppStore';
 import type { VoiceProfile, Friend } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
@@ -81,7 +81,7 @@ export default function CreateMessageScreen() {
     onError: (err: unknown) => {
       Alert.alert(
         t('messageCreate.generateErrorTitle'),
-        getApiErrorMessage(err, t('messageCreate.generateError')),
+        getApiErrorMessage(err, t, t('messageCreate.generateError')),
       );
     },
   });
@@ -369,7 +369,7 @@ export default function CreateMessageScreen() {
                     } catch (err: unknown) {
                       Alert.alert(
                         t('common.error'),
-                        getApiErrorMessage(err, t('messageCreate.giftError')),
+                        getApiErrorMessage(err, t, t('messageCreate.giftError')),
                       );
                     } finally {
                       setGiftSending(false);

@@ -140,17 +140,3 @@ export interface DubResult {
   expected_remaining_minutes?: number;
 }
 
-export function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (
-    err != null &&
-    typeof err === 'object' &&
-    'responseData' in err &&
-    err.responseData != null &&
-    typeof err.responseData === 'object' &&
-    'error' in err.responseData &&
-    typeof (err.responseData as Record<string, unknown>).error === 'string'
-  ) {
-    return (err.responseData as Record<string, unknown>).error as string;
-  }
-  return fallback;
-}

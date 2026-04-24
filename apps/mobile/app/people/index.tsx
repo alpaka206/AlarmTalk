@@ -27,7 +27,7 @@ import {
 } from '../../src/services/api';
 import type { FamilyInvite } from '../../src/services/api';
 import type { Friend, PendingFriendRequest } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createPeopleStyles } from '../../src/styles/peopleStyles';
 import { useAppStore } from '../../src/stores/useAppStore';
@@ -102,7 +102,7 @@ export default function PeopleScreen() {
       queryClient.invalidateQueries({ queryKey: ['pending-requests'] });
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('friends.sendError')));
+      toast.show(getApiErrorMessage(err, t, t('friends.sendError')));
     },
   });
 
@@ -129,7 +129,7 @@ export default function PeopleScreen() {
       toast.show(t('people.codeCopied'));
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('common.error')));
+      toast.show(getApiErrorMessage(err, t, t('common.error')));
     },
   });
 

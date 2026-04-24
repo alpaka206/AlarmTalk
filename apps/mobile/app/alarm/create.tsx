@@ -27,7 +27,7 @@ import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
 import type { AlarmMode, VibrationPattern, Friend, Message, VoiceProfile } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { PresetMessageSection } from '../../src/components/PresetMessageSection';
@@ -108,7 +108,7 @@ export default function CreateAlarmScreen() {
       setPresetText(null);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarmCreate.ttsError')));
+      toast.show(getApiErrorMessage(err, t, t('alarmCreate.ttsError')));
     },
   });
 
@@ -145,7 +145,7 @@ export default function CreateAlarmScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarmCreate.createError')));
+      toast.show(getApiErrorMessage(err, t, t('alarmCreate.createError')));
     },
   });
 

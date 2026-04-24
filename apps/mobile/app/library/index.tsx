@@ -25,7 +25,7 @@ import { ErrorView } from '../../src/components/QueryStateView';
 import { MiniWaveformPlayer } from '../../src/components/MiniWaveformPlayer';
 import { Audio } from 'expo-av';
 import type { LibraryItem } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
@@ -114,7 +114,7 @@ export default function LibraryScreen() {
       queryClient.invalidateQueries({ queryKey: ['library'] });
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('library.deleteError')));
+      toast.show(getApiErrorMessage(err, t, t('library.deleteError')));
     },
   });
 

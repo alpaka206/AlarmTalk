@@ -13,6 +13,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { BorderRadius, FontSize, Spacing, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 import { validateEmailPasswordForm, type AuthMode } from '../lib/authFormValidation';
+import { getApiErrorMessage } from '../lib/apiErrors';
 
 export type Mode = AuthMode;
 
@@ -57,7 +58,7 @@ export default function EmailPasswordForm({
       else await login(email, password);
       onSuccess?.();
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : t('authForm.requestError'));
+      setSubmitError(getApiErrorMessage(e, t, t('authForm.requestError')));
     }
   }
 

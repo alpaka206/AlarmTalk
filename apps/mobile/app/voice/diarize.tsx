@@ -14,7 +14,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../src/hooks/useTheme';
 import { diarizeAudio, createVoiceClone } from '../../src/services/api';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import type { Speaker } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -45,7 +45,7 @@ export default function DiarizeScreen() {
       setStep('select');
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceDiarize.analyzeError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceDiarize.analyzeError')));
     },
   });
 
@@ -68,7 +68,7 @@ export default function DiarizeScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceDiarize.cloneError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceDiarize.cloneError')));
     },
   });
 

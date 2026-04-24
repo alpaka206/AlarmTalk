@@ -204,6 +204,17 @@
 - [x] `test/apiErrors.test.ts` — 33 tests (error_code 매핑 17 + HTTP 폴백 6 + getErrorCode 3 + ApiError 추출 5 + edge 2)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P81 — error_code 화면 통합 (getApiErrorMessage 마이그레이션) ✅ (2026-04-25)
+
+- [x] `src/lib/apiErrors.ts` — optional `fallback` 3번째 파라미터 추가
+- [x] 12개 화면 import 전환: `src/types` → `src/lib/apiErrors` (alarms, voices, alarm/create, alarm/edit, dub/translate, gift/received, library, message/create, people, voice/diarize, voice/upload, voice/record)
+- [x] 19개 call site 시그니처 변경: `(err, t('key'))` → `(err, t, t('key'))`
+- [x] 3개 추가 화면 raw catch → getApiErrorMessage (voice/picker, voice/[id], EmailPasswordForm)
+- [x] `src/types.ts` 구버전 `getApiErrorMessage` 삭제
+- [x] `test/apiErrors.test.ts` — fallback 파라미터 테스트 4건 추가 (33→37 tests)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 662/662, +4)
+
 ---
 
 ## 완료 항목 (이전 루프)

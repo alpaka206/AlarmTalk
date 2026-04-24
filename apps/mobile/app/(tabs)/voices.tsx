@@ -28,7 +28,7 @@ import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { ErrorView } from '../../src/components/QueryStateView';
 import type { VoiceProfile } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
@@ -90,7 +90,7 @@ function VoicesScreen() {
       queryClient.invalidateQueries({ queryKey: ['voiceProfiles'] });
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voices.deleteError')));
+      toast.show(getApiErrorMessage(err, t, t('voices.deleteError')));
     },
   });
 
