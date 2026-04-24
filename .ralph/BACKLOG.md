@@ -596,7 +596,31 @@
 - ~~하드코딩 한국어 문자열 i18n 전환~~ → P31 완료
 - ~~t() 폴백 문자열 패턴 정리~~ → P32 완료
 - ~~백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)~~ → P33 완료
-- 접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)
+- ~~접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)~~ → P34 완료
+- 백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)
+- 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
+- React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)
+
+## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
+
+- [x] `test/a11y-audit.test.ts` 신규 — 30 tests
+  - 인터랙티브 요소 (Pressable/TouchableOpacity) accessibilityLabel/accessibilityRole 커버리지
+  - Switch accessibilityLabel 검증
+  - TextInput accessibilityLabel/placeholder 검증
+  - i18n 키 동기화 (ko↔en 605키 완전 일치)
+  - t() 폴백 문자열 패턴 부재 검증
+  - WCAG AA 색상 대비 (라이트/다크 모드 12개 조합)
+  - 접근성 인프라 무결성 (MIN_TOUCH_TARGET, a11y 파일 수 회귀 방지)
+- [x] a11y 이슈 5건 수정:
+  - MiniWaveformPlayer.tsx: TouchableOpacity a11y 추가
+  - StateView.tsx: Pressable accessibilityLabel 추가
+  - gift/received.tsx: 3개 TouchableOpacity a11y 추가
+  - settings/index.tsx: TextInput placeholder + accessibilityLabel 추가
+- [x] i18n: settings.deleteAccountPlaceholder 키 추가 (ko/en)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 346/346)
+
+---
 
 ## P33 — 백엔드 console.error → 구조화 로깅 전환 ✅ (2026-04-24)
 

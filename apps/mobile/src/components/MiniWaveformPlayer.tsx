@@ -97,7 +97,13 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
 
   return (
     <View style={dynStyles.container}>
-      <TouchableOpacity onPress={handleToggle} style={dynStyles.playBtn} hitSlop={8}>
+      <TouchableOpacity
+        onPress={handleToggle}
+        style={dynStyles.playBtn}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+      >
         <Text style={dynStyles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
       </TouchableOpacity>
       <View style={dynStyles.waveformArea}>

@@ -240,6 +240,7 @@
     "deleteAccount": "Delete account",
     "deleteAccountWarning": "Deleting your account will permanently remove all voice profiles, messages, alarms, and friend connections. This action cannot be undone.",
     "deleteAccountConfirmPrompt": "Type 'delete' to confirm",
+    "deleteAccountPlaceholder": "Type 'delete'",
     "deleteAccountConfirmWord": "delete",
     "deleteAccountSuccess": "Your account has been deleted.",
     "deleteAccountError": "Failed to delete account. Please try again.",

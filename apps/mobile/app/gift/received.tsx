@@ -166,6 +166,8 @@ export default function ReceivedGiftsScreen() {
             style={styles.acceptBtn}
             onPress={() => accept.mutate(item.id)}
             disabled={accept.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.accept')}
           >
             <Text style={styles.acceptBtnText}>{t('common.accept')}</Text>
           </TouchableOpacity>
@@ -182,6 +184,8 @@ export default function ReceivedGiftsScreen() {
               ])
             }
             disabled={reject.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.reject')}
           >
             <Text style={styles.rejectBtnText}>{t('common.reject')}</Text>
           </TouchableOpacity>
@@ -194,6 +198,8 @@ export default function ReceivedGiftsScreen() {
           onPress={() =>
             router.push({ pathname: '/alarm/create', params: { message_id: item.message_id } })
           }
+          accessibilityRole="button"
+          accessibilityLabel={t('giftReceived.setAsAlarm')}
         >
           <Text style={styles.setAlarmBtnText}>{t('giftReceived.setAsAlarm')}</Text>
         </TouchableOpacity>

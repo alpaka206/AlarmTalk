@@ -240,6 +240,7 @@
     "deleteAccount": "계정 삭제",
     "deleteAccountWarning": "계정을 삭제하면 모든 음성 프로필, 메시지, 알람, 친구 관계가 영구적으로 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
     "deleteAccountConfirmPrompt": "삭제를 확인하려면 '삭제'를 입력하세요",
+    "deleteAccountPlaceholder": "'삭제' 입력",
     "deleteAccountConfirmWord": "삭제",
     "deleteAccountSuccess": "계정이 삭제되었습니다.",
     "deleteAccountError": "계정 삭제에 실패했습니다. 다시 시도해주세요.",

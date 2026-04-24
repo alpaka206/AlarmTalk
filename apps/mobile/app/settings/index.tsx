@@ -278,6 +278,8 @@ export default function SettingsScreen() {
               style={styles.deleteDialogInput}
               value={deleteConfirmText}
               onChangeText={setDeleteConfirmText}
+              placeholder={t('settings.deleteAccountPlaceholder')}
+              accessibilityLabel={t('settings.deleteAccountPlaceholder')}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!deleting}

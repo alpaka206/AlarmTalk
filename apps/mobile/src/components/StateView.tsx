@@ -36,6 +36,7 @@ export function StateView({ variant, emoji, title, subtitle, action }: StateView
           onPress={action.onPress}
           style={dynStyles.actionButton}
           accessibilityRole="button"
+          accessibilityLabel={action.label}
         >
           <Text style={dynStyles.actionText}>{action.label}</Text>
         </Pressable>
