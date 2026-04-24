@@ -1374,3 +1374,19 @@
 - [x] 78개 컴파일 에러 수정 (27개 파일: 소스 13개 + 테스트 14개)
 - [x] 주요 패턴: tuple cast `as [number, number]`, `arr[0]!`, `keys[idx]!`, `RecordingOptions` cast
 - [x] typecheck 0 errors (backend + mobile), 전체 테스트 848/848 통과
+
+## P103 — Auth 미들웨어 단위 테스트 ✅ (2026-04-25)
+
+- [x] `packages/backend/test/auth-middleware.test.ts` — 24 tests (header 검증, App/Google/Apple JWT, 분기, base64url)
+- [x] 전체 테스트 872/872 통과, typecheck 0 errors
+
+## P104 — 모바일 API 서비스 모듈 테스트 ✅ (2026-04-25)
+
+- [x] `apps/mobile/test/apiSocial.test.ts` — Friend/Gift/Notes API (18 tests)
+- [x] `apps/mobile/test/apiUser.test.ts` — User/Stats/Library API (12 tests)
+- [x] `apps/mobile/test/apiBilling.test.ts` — Voucher/Code Registration API (5 tests)
+- [x] `apps/mobile/test/apiAlarm.test.ts` — Alarm/Push Token API (10 tests)
+- [x] `apps/mobile/test/apiFamily.test.ts` — Family Group/Alarm/Invites API (10 tests)
+- [x] `apps/mobile/test/apiCharacter.test.ts` — Character/XP API (6 tests)
+- [x] `apps/mobile/test/apiVoice.test.ts` — Voice/Upload/TTS/Dub API (24 tests)
+- [x] 전체 테스트: mobile 743/743, backend 872/872, typecheck 0 errors
