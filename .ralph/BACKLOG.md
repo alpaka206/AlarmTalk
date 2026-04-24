@@ -671,6 +671,13 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 597/597, backend 672/672)
 
+## P65 — Audio 서비스 유닛 테스트 ✅ (2026-04-25)
+
+- [x] `test/audio.test.ts` 신규 — 28 tests (getLocalAudioPath 3건, ensureAudioDir 2건, setupAudioSession 1건, requestMicPermission 2건, startRecording 3건, stopRecording 3건, saveAudioLocally 3건, isAudioCached 3건, playAudio 1건, deleteLocalAudio 3건, getAudioCacheSize 4건)
+- [x] expo-av + expo-file-system/legacy + react-native 모킹 (jest.requireMock 패턴)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 625/625, backend 672/672)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
