@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P47 모바일 번들 사이즈 모니터링 (의존성/소스/에셋 감사 15 tests)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P47 완료**
+- 마지막 루프: 2026-04-25 — P50 홈 화면 스타일 추출 + 마지막 하드코딩 한국어 수정
+- 현재 Phase: **R0~R6 전체 완료 + P11~P50 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
@@ -47,6 +47,9 @@
 - **P45**: lib/utility + EmailPasswordForm i18n Batch 1 — 6개 lib 파일 TFunction 주입 + EmailPasswordForm 15건 + ko/en 22키 추가 (19 파일)
 - **P46**: 하드코딩 한국어 전면 전환 Batch 2~4 — voucherShare 8키 + ErrorBoundary 3키 + character 46키 + friend fallback 1키 (ko/en 총 58키 추가)
 - **P47**: 모바일 번들 사이즈 모니터링 — bundleAudit.test.ts 15 tests (의존성 예산, 금지 패키지, 미사용 dep, 소스 크기, import 위생, i18n 규모, 순환 의존성, 에셋 크기)
+- **P48**: 대형 화면 파일 분할 — alarm/create.tsx 1146→641줄 (-44%), alarm/edit.tsx 795→526줄 (-34%), 공유 스타일 모듈 + PresetMessageSection 컴포넌트 추출
+- **P49**: ADR 현행화 — ADR-004 Superseded(web 삭제) + ADR-007~012 신규 6건 (4탭 구조, JWT 인증, 음성 2개 제한, i18n TFunction, 스타일 공유, Sentry)
+- **P50**: 홈 화면 스타일 추출 (index.tsx 820→468줄 -43%) + '또는' 하드코딩 → `t('common.or')` i18n 전환
 
 ## 알려진 이슈
 - [blocked] Perso API 404

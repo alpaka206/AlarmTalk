@@ -61,7 +61,8 @@
     "accept": "수락",
     "reject": "거절",
     "logout": "로그아웃",
-    "back": "돌아가기"
+    "back": "돌아가기",
+    "or": "또는"
   },
   "alarms": {
     "title": "알람",

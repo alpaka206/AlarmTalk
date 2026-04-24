@@ -599,8 +599,9 @@
 - ~~접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)~~ → P34 완료
 - ~~백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)~~ → P42 완료
 - ~~모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)~~ → P47 완료
-- 대형 화면 파일 컴포넌트 분할 리팩토링 (alarm/create.tsx 1147줄, index.tsx 821줄, alarm/edit.tsx 796줄)
-- ADR (Architecture Decision Records) 작성 — 주요 기술 결정 사유 문서화
+- ~~대형 화면 파일 컴포넌트 분할 리팩토링 (alarm/create.tsx 1147줄, alarm/edit.tsx 796줄)~~ → P48 완료
+- ~~대형 화면 파일 분할 후보: index.tsx (820줄)~~ → P50 완료 (820→468줄)
+- ~~ADR (Architecture Decision Records) 작성 — 주요 기술 결정 사유 문서화~~ → P49 완료
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 - ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
 - ~~미사용 export/함수 감사 (dead code 탐지 + 정리)~~ → P38 완료
@@ -842,3 +843,37 @@
 - [x] `friend/[id].tsx` — '친구' fallback → `t('friendProfile.friendFallback')`
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 672/672, mobile 451/451)
+
+---
+
+## P48 — 대형 화면 파일 컴포넌트 분할 리팩토링 ✅ (2026-04-25)
+
+- [x] `src/styles/alarmFormStyles.ts` 신규 — alarm/create + edit 공유 스타일 50+키 추출
+- [x] `src/components/PresetMessageSection.tsx` 신규 — 프리셋 메시지 섹션 컴포넌트 추출
+- [x] `alarm/create.tsx` 리팩토링: 1146→641줄 (-44%)
+- [x] `alarm/edit.tsx` 리팩토링: 795→526줄 (-34%)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 466/466)
+
+---
+
+## P49 — ADR (Architecture Decision Records) 현행화 ✅ (2026-04-25)
+
+- [x] ADR-004 상태 Superseded로 변경 (web 삭제 반영)
+- [x] ADR-007 신규: 4탭 구조 + 프로필 드롭다운
+- [x] ADR-008 신규: JWT 자체 발급 인증
+- [x] ADR-009 신규: 음성 프로필 2개 제한
+- [x] ADR-010 신규: i18n TFunction 주입 패턴
+- [x] ADR-011 신규: 스타일 공유 createXxxStyles 패턴
+- [x] ADR-012 신규: Sentry graceful degradation
+
+---
+
+## P50 — 홈 화면 스타일 추출 + 마지막 하드코딩 한국어 ✅ (2026-04-25)
+
+- [x] `src/styles/homeStyles.ts` 신규 — 홈 화면 전체 스타일 추출 (351줄)
+- [x] `(tabs)/index.tsx` 리팩토링: 820→468줄 (-43%)
+- [x] `또는` 하드코딩 → `t('common.or')` i18n 전환
+- [x] i18n ko/en `common.or` 키 추가
+- [x] typecheck 통과 (mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)

@@ -61,7 +61,8 @@
     "accept": "Accept",
     "reject": "Reject",
     "logout": "Log out",
-    "back": "Back"
+    "back": "Back",
+    "or": "or"
   },
   "alarms": {
     "title": "Alarms",
