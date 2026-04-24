@@ -888,3 +888,14 @@
 - [x] `app/message/create.tsx` 리팩토링: 727→406줄 (-44%)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
+
+---
+
+## P52 — alarms/voices 탭 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/alarmsStyles.ts` 신규 — alarms 화면 스타일 228줄 추출
+- [x] `app/(tabs)/alarms.tsx` 리팩토링: 668→437줄 (-35%)
+- [x] `src/styles/voicesStyles.ts` 신규 — voices 화면 스타일 268줄 추출
+- [x] `app/(tabs)/voices.tsx` 리팩토링: 619→348줄 (-44%)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
