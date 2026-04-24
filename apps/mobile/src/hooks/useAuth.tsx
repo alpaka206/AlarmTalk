@@ -33,10 +33,13 @@ export interface AuthState {
 
 const STORAGE_KEY = 'auth_token';
 
+const PRODUCTION_API_URL = 'https://voice-alarm-api.voicealarm.workers.dev';
+
 function resolveApiBase(): string {
   const explicit = process.env.EXPO_PUBLIC_API_URL;
   if (explicit) return `${explicit}/api`;
-  return 'http://localhost:8787/api';
+  const base = __DEV__ ? 'http://localhost:8787' : PRODUCTION_API_URL;
+  return `${base}/api`;
 }
 
 export interface AsyncStorageLike {

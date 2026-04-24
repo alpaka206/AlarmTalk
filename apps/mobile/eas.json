@@ -25,7 +25,8 @@
         "simulator": true
       },
       "env": {
-        "APP_VARIANT": "preview"
+        "APP_VARIANT": "preview",
+        "EXPO_PUBLIC_API_URL": "https://voice-alarm-api.voicealarm.workers.dev"
       }
     },
     "production": {
@@ -35,7 +36,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "APP_VARIANT": "production"
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_API_URL": "https://voice-alarm-api.voicealarm.workers.dev"
       }
     }
   },

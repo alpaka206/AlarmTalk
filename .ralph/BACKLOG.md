@@ -1030,3 +1030,11 @@
 - [x] 기존 `settings.channel*` 8키를 채널 생성 코드에서 실제 사용하도록 연결
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466, a11y-audit 30/30)
+
+## P66 — 프로덕션 API URL 수정 ✅ (2026-04-25)
+
+- [x] `apps/mobile/src/services/api/core.ts` — 프로덕션 폴백 URL `your-name.workers.dev` → `voicealarm.workers.dev` 수정
+- [x] `apps/mobile/src/hooks/useAuth.tsx` — `resolveApiBase()` `__DEV__` 분기 추가 + 프로덕션 URL 통일
+- [x] `apps/mobile/eas.json` — preview/production env에 `EXPO_PUBLIC_API_URL` 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 625/625)

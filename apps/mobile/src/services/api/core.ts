@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const PRODUCTION_API_URL = 'https://voice-alarm-api.voicealarm.workers.dev';
+
 const API_BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
-  (__DEV__ ? 'http://localhost:8787' : 'https://voice-alarm-api.your-name.workers.dev');
+  (__DEV__ ? 'http://localhost:8787' : PRODUCTION_API_URL);
 
 const BASE = `${API_BASE_URL}/api`;
 const TIMEOUT_MS = 60000;
