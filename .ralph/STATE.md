@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P27 Android 알림 채널 설정 (4채널 분리 + 쪽지 푸시)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P27 완료**
+- 마지막 루프: 2026-04-24 — P28 딥 링크 라우트 핸들링 (voicealarm:// scheme)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P28 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 286/286)
 
@@ -27,6 +27,7 @@
 - **P25**: README 현행화 (인증/탭/API/기능 전면 재작성) + packages/voice stale TODO 정리
 - **P26**: 앱 아이콘 설정 — Expo 기본 아이콘 → 브랜디드 나무 아이콘 교체 (icon, adaptive, monochrome, splash, favicon) + generate-icons.mjs 스크립트
 - **P27**: Android 알림 채널 4개 분리 (alarms MAX, notes HIGH, reminders DEFAULT, system LOW) + sendNotePush + 쪽지 전송 시 수신자 푸시
+- **P28**: 딥 링크 라우트 핸들링 — deepLink.ts 파서 + _layout.tsx 초기 URL/런타임 이벤트 리스너 + auth gating (13 딥 링크 패턴 지원)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

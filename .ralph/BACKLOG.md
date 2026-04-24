@@ -577,9 +577,18 @@
 
 ---
 
+## P28 — 딥 링크 라우트 핸들링 ✅ (2026-04-24)
+
+- [x] `src/lib/deepLink.ts` 신규 — parseDeepLink + createDeepLink (13 딥 링크 패턴)
+- [x] `app/_layout.tsx` — Linking.getInitialURL (cold start) + addEventListener (런타임) + auth gating
+- [x] 특수 URL: `voicealarm://code/VA-XXXX` → `/code-register?code=VA-XXXX`
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료
 - ~~알림 채널 설정 (Android notification channels)~~ → P27 완료
-- 딥 링크 라우트 핸들링 (voicealarm:// scheme)
+- ~~딥 링크 라우트 핸들링 (voicealarm:// scheme)~~ → P28 완료
 - expo-updates OTA 업데이트 체크 로직

@@ -8,7 +8,9 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { initSentry } from '../src/lib/sentry';
+import { parseDeepLink } from '../src/lib/deepLink';
 import type * as Notifications from 'expo-notifications';
 import { useAppStore } from '../src/stores/useAppStore';
 import { useTheme } from '../src/hooks/useTheme';
@@ -46,6 +48,40 @@ export default function RootLayout() {
   const router = useRouter();
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const hasNavigatedToOnboarding = useRef(false);
+  const deepLinkHandled = useRef(false);
+
+  const handleDeepLink = useCallback(
+    (url: string) => {
+      const route = parseDeepLink(url);
+      if (!route) return;
+
+      const { isAuthenticated, hasCompletedOnboarding: onboarded } = useAppStore.getState();
+
+      if (!onboarded) return;
+      if (route.requiresAuth && !isAuthenticated) return;
+
+      router.push({
+        pathname: route.pathname as never,
+        params: route.params,
+      });
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!stateLoaded || deepLinkHandled.current) return;
+    deepLinkHandled.current = true;
+
+    Linking.getInitialURL().then((url) => {
+      if (url) handleDeepLink(url);
+    });
+
+    const sub = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+
+    return () => sub.remove();
+  }, [stateLoaded, handleDeepLink]);
 
   const [fontsLoaded, fontError] = useFonts({
     'Pretendard-Regular': require('../assets/fonts/Pretendard-Regular.otf'),
