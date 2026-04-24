@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P89 gift.ts API 라우트 테스트 19건 추가
-- 현재 Phase: **R0~R6 전체 완료 + P11~P89 완료**
+- 마지막 루프: 2026-04-25 — P90 billing.ts API 라우트 테스트 25건 추가
+- 현재 Phase: **R0~R6 전체 완료 + P11~P90 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 895/895, mobile 662/662)
+- 전체 테스트 통과 (backend 920/920, mobile 662/662)
 
 ## 완료된 리팩토링
 
@@ -18,6 +18,7 @@
 - **P87**: character.test.ts 11→35개 (+24)
 - **P88**: friend.test.ts 12→31개 (+19): error_code/페이지네이션/검색/UUID/DB에러
 - **P89**: gift.test.ts 14→33개 (+19): error_code/페이지네이션/검색/UUID/경계값/DB에러
+- **P90**: billing.test.ts 26→51개 (+25): error_code 전수검증/DB에러/malformed body/edge cases
 
 ## 알려진 이슈
 - [blocked] Perso API 404

@@ -766,6 +766,17 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 857/857, +24 신규)
 
+## P90 — billing.ts API 라우트 테스트 25건 추가 ✅ (2026-04-25)
+
+- [x] POST /checkout: error_code 5종 (PLAN_KEY_REQUIRED, PLAN_NOT_FOUND, PLAN_INACTIVE, FREE_NOT_BILLABLE, USER_NOT_FOUND)
+- [x] POST /checkout: malformed JSON body, 비문자열 plan_key, period_days=0 기본값, DB에러→500
+- [x] GET /subscription: family plan_group_id non-null, DB에러→500
+- [x] GET /vouchers: 필드 매핑 정확성, ORDER BY 검증, DB에러→500
+- [x] POST /redeem: error_code 6종 (CODE_REQUIRED, INVALID_FORMAT, CODE_NOT_FOUND, CODE_ALREADY_USED, CODE_EXPIRED, SELF_ISSUED)
+- [x] POST /redeem: user not found, plan not found, 기간 검증, malformed body, DB에러→500
+- [x] typecheck 통��� (backend 0 errors)
+- [x] 전체 테스트 통과 (backend 920/920, +25)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
