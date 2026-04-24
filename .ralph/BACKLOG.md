@@ -232,6 +232,14 @@
 - [x] 전체 모바일 테스트 841/841 통과 (기존 819 + 신규 22)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P110 — 미테스트 모바일 컴포넌트 3개 단위 테스트 ✅ (2026-04-25)
+
+- [x] `test/familyMemberRow.test.ts` 신규 — 22 tests (avatar initial 4건, role 감지 4건, 조건부 렌더링 5건, couple 카드 3건, 표시이름 우선순위 5건, 기타 1건)
+- [x] `test/miniWaveformPlayer.test.ts` 신규 — 26 tests (progress 계산 6건, status 업데이트 4건, toggle 액션 7건, bar 색상 4건, 접근성 2건, 시간 표시 4건, 기타)
+- [x] `test/toast.test.ts` 신규 — 9 tests (visibility 4건, message 추출 4건, pointer events 1건)
+- [x] 전체 모바일 테스트 898/898 통과 (기존 841 + 신규 57)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 완료 항목 (이전 루프)
