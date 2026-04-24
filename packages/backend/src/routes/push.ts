@@ -12,17 +12,17 @@ push.post('/token', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: 'JSON body required' }, 400);
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
   const platform = typeof body.platform === 'string' ? body.platform.trim() : '';
 
   if (token.length === 0 || token.length > 500) {
-    return c.json({ error: 'token must be 1-500 characters' }, 400);
+    return c.json({ error: 'token must be 1-500 characters', error_code: 'INVALID_TOKEN_LENGTH' }, 400);
   }
   if (!['ios', 'android', 'web'].includes(platform)) {
-    return c.json({ error: 'platform must be ios, android, or web' }, 400);
+    return c.json({ error: 'platform must be ios, android, or web', error_code: 'INVALID_PLATFORM' }, 400);
   }
 
   const id = crypto.randomUUID();
@@ -46,12 +46,12 @@ push.delete('/token', async (c) => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: 'JSON body required' }, 400);
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';
   if (token.length === 0) {
-    return c.json({ error: 'token is required' }, 400);
+    return c.json({ error: 'token is required', error_code: 'TOKEN_REQUIRED' }, 400);
   }
 
   await db.execute({

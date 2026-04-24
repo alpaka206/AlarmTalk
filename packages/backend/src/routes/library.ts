@@ -25,14 +25,14 @@ library.get('/', async (c) => {
     } else if (filter?.startsWith('voice:')) {
       const voiceId = filter.slice(6);
       if (!UUID_RE.test(voiceId)) {
-        return c.json({ error: 'Invalid voice profile ID format' }, 400);
+        return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
       }
       whereClause += ' AND m.voice_profile_id = ?';
       filterArgs.push(voiceId);
     } else if (filter?.startsWith('date:')) {
       const dateStr = filter.slice(5);
       if (!DATE_RE.test(dateStr)) {
-        return c.json({ error: 'Invalid date format. Use YYYY-MM-DD' }, 400);
+        return c.json({ error: 'Invalid date format. Use YYYY-MM-DD', error_code: 'INVALID_DATE_FORMAT' }, 400);
       }
       whereClause += ' AND date(ml.received_at) = ?';
       filterArgs.push(dateStr);
@@ -60,7 +60,7 @@ library.get('/', async (c) => {
     return c.json({ items: result.rows, total, limit, offset });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch library' }, 500);
+    return c.json({ error: 'Failed to fetch library', error_code: 'FETCH_LIBRARY_FAILED' }, 500);
   }
 });
 
@@ -70,7 +70,7 @@ library.patch('/:id/favorite', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid library item ID format' }, 400);
+    return c.json({ error: 'Invalid library item ID format', error_code: 'INVALID_LIBRARY_ITEM_ID' }, 400);
   }
 
   try {
@@ -80,7 +80,7 @@ library.patch('/:id/favorite', async (c) => {
     });
 
     if (result.rows.length === 0) {
-      return c.json({ error: 'Library item not found' }, 404);
+      return c.json({ error: 'Library item not found', error_code: 'LIBRARY_ITEM_NOT_FOUND' }, 404);
     }
 
     const newValue = Number(result.rows[0].is_favorite) === 1 ? 0 : 1;
@@ -92,7 +92,7 @@ library.patch('/:id/favorite', async (c) => {
     return c.json({ is_favorite: newValue === 1 });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to toggle favorite' }, 500);
+    return c.json({ error: 'Failed to toggle favorite', error_code: 'TOGGLE_FAVORITE_FAILED' }, 500);
   }
 });
 
@@ -102,7 +102,7 @@ library.delete('/:id', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid library item ID format' }, 400);
+    return c.json({ error: 'Invalid library item ID format', error_code: 'INVALID_LIBRARY_ITEM_ID' }, 400);
   }
 
   try {
@@ -112,13 +112,13 @@ library.delete('/:id', async (c) => {
     });
 
     if (result.rowsAffected === 0) {
-      return c.json({ error: 'Library item not found' }, 404);
+      return c.json({ error: 'Library item not found', error_code: 'LIBRARY_ITEM_NOT_FOUND' }, 404);
     }
 
     return c.json({ ok: true });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to delete library item' }, 500);
+    return c.json({ error: 'Failed to delete library item', error_code: 'DELETE_LIBRARY_ITEM_FAILED' }, 500);
   }
 });
 

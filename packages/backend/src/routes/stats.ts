@@ -102,7 +102,7 @@ stats.get('/', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch stats' }, 500);
+    return c.json({ error: 'Failed to fetch stats', error_code: 'FETCH_STATS_FAILED' }, 500);
   }
 });
 
@@ -169,7 +169,7 @@ stats.get('/activity', async (c) => {
     return c.json({ activities });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch activity' }, 500);
+    return c.json({ error: 'Failed to fetch activity', error_code: 'FETCH_ACTIVITY_FAILED' }, 500);
   }
 });
 
