@@ -1,86 +1,18 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P81 error_code 화면 통합
-- 현재 Phase: **R0~R6 전체 완료 + P11~P81 완료**
+- 마지막 루프: 2026-04-25 — P82 백엔드 푸시 알림 + 화자 분리 i18n
+- 현재 Phase: **R0~R6 전체 완료 + P11~P82 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 793/793, mobile 662/662)
+- 전체 테스트 통과 (backend 798/798, mobile 662/662)
 
 ## 완료된 리팩토링
 
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11**: notes 라우트 21 tests + code 라우트 22 tests (신규 43건)
-- **P12**: React Native 성능 최적화 (10 파일 — React.memo, FlatList perf props, useMemo/useCallback)
-- **P13**: 쪽지 상세 화면 구현 (`app/note/[id].tsx` 신규 + compose 탭 네비게이션 연결)
-- **P14**: Switch 컴포넌트 접근성 일괄 보강 (ProfileDropdown, alarms, settings — 5개 Switch에 a11y 속성 추가 + i18n 2키)
-- **P15**: EAS 빌드/서브밋 설정 강화 + 스토어 메타데이터 (eas.json submit 프로필, app.json runtimeVersion/updates/versionCode, store/listing.json)
-- **P16**: 모바일 유틸 테스트 커버리지 확장 Batch 2 (authFormValidation 14 + waveform 15 + presets 9 = 38 tests, 총 206/206)
-- **P17**: useAppStore Zustand 스토어 테스트 (32 tests — 전체 액션 + AsyncStorage persist 검증, 총 238/238)
-- **P18**: hooks 테스트 커버리지 확장 (useTheme 10 + useToast 8 + useNetworkStatus 6 + useAuth 24 = 48 tests, 총 286/286)
-- **P19**: DB Row 타입 안전성 강화 (db-types.ts 유틸 + as unknown as 10건 제거 + as Record 9건 개선, 7 파일)
-- **P20**: db-types 유틸 테스트 (typedRow 4 + getFormFile 6 = 10 tests, 총 606/606)
-- **P21**: 미테스트 모듈 100% 커버리지 (stats 14 + elevenlabs 14 + perso 13 = 41 tests, 총 647/647)
-- **P22**: Sentry 에러 모니터링 연동 (모바일 @sentry/react-native + 백엔드 toucan-js, DSN 미설정 시 no-op)
-- **P23**: Sentry 타입 안전성 수정 (as never 제거, SentryClient 인터페이스, named import) + Maestro E2E 테스트 플로우 6개
-- **P25**: README 현행화 (인증/탭/API/기능 전면 재작성) + packages/voice stale TODO 정리
-- **P26**: 앱 아이콘 설정 — Expo 기본 아이콘 → 브랜디드 나무 아이콘 교체 (icon, adaptive, monochrome, splash, favicon) + generate-icons.mjs 스크립트
-- **P27**: Android 알림 채널 4개 분리 (alarms MAX, notes HIGH, reminders DEFAULT, system LOW) + sendNotePush + 쪽지 전송 시 수신자 푸시
-- **P28**: 딥 링크 라우트 핸들링 — deepLink.ts 파서 + _layout.tsx 초기 URL/런타임 이벤트 리스너 + auth gating (13 딥 링크 패턴 지원)
-- **P29**: expo-updates OTA 업데이트 — 앱 시작 시 EAS Update 체크 + Alert 기반 opt-in 업데이트 (i18n 4키)
-- **P30**: deepLink + updates 테스트 커버리지 — deepLink 파서 23 tests + updates 서비스 7 tests (총 316/316)
-- **P31**: 하드코딩 한국어 문자열 i18n 전환 — picker.tsx 20개 + alarms.tsx 3개 + character/index.tsx 3개 → t() 호출 (ko/en 25키 추가)
-- **P32**: t() 폴백 문자열 패턴 정리 — 6파일 24건 폴백 제거 + 누락 i18n 키 14개 추가 (ko/en)
-- **P33**: 백엔드 console.error → 구조화 로깅 — logRouteError 유틸 + 8파일 22건 마이그레이션 + Sentry 자동 캡처 (6 tests)
-- **P34**: 접근성 자동화 검증 — a11y-audit.test.ts 30 tests (인터랙티브 요소 a11y, i18n 동기화, WCAG AA 색상 대비) + 5건 a11y 이슈 수정 (MiniWaveformPlayer, StateView, gift/received, settings TextInput)
-- **P35**: React Query 캐시 전략 테스트 — queryCache.test.ts 36 tests (키 일관성, enabled 가드, 뮤테이션 무효화, 오프라인 캐시 통합) + 쿼리 키 불일치 버그 3건 수정 (userProfile, gifts-received)
-- **P36**: 네비게이션 라우트 유효성 검증 — navigationRoutes.test.ts 10 tests (라우트 매핑, 도달성, 동적 파라미터, Stack.Screen 등록, deepLink 매핑) + unused import/var 2건 정리 (voice/record, NotificationBell)
-- **P37**: 도달 불가 음성 화면 연결 — voices.tsx 음성 추가 메뉴에 diarize/picker 2옵션 추가 + i18n 8키 + navigationRoutes 테스트 allowedUnreachable 제거
-- **P38**: 미사용 export/함수 감사 — backend types.ts 7개 미사용 인터페이스 삭제 + QueryStateView LoadingView/EmptyView 삭제
-- **P39**: ErrorBoundary 탭별 세분화 — withErrorBoundary HOC + 4개 탭 화면에 적용 (독립 에러 격리) + 3 tests
-- **P40**: alarmPlayback.ts i18n 전환 — 하드코딩 한국어 6건 → i18n 키 반환 패턴 (ko/en 7키 추가, 테스트 17/17)
-- **P41**: 화면 인터랙션 로직 테스트 — voices/compose/alarm-create 3개 화면 비즈니스 로직 54 tests (총 449/449)
-- **P42**: API 응답 시간 벤치마크 테스트 — 10개 라우트 그룹 19 tests (레이턴시 기준선 + sustained throughput p95, 총 672/672)
-- **P43**: DAYS_OF_WEEK i18n 전환 — 하드코딩 한국어 요일명 → i18n 키 전환 + family-alarm DAY_LABELS 중복 제거 (ko/en 7키 추가, 총 450/450)
-- **P44**: 프리셋 메시지 i18n 전환 — 24개 하드코딩 한국어 TTS 메시지 → i18n 키 전환 (ko/en 24키 추가)
-- **P45**: lib/utility + EmailPasswordForm i18n Batch 1 — 6개 lib 파일 TFunction 주입 + EmailPasswordForm 15건 + ko/en 22키 추가 (19 파일)
-- **P46**: 하드코딩 한국어 전면 전환 Batch 2~4 — voucherShare 8키 + ErrorBoundary 3키 + character 46키 + friend fallback 1키 (ko/en 총 58키 추가)
-- **P47**: 모바일 번들 사이즈 모니터링 — bundleAudit.test.ts 15 tests (의존성 예산, 금지 패키지, 미사용 dep, 소스 크기, import 위생, i18n 규모, 순환 의존성, 에셋 크기)
-- **P48**: 대형 화면 파일 분할 — alarm/create.tsx 1146→641줄 (-44%), alarm/edit.tsx 795→526줄 (-34%), 공유 스타일 모듈 + PresetMessageSection 컴포넌트 추출
-- **P49**: ADR 현행화 — ADR-004 Superseded(web 삭제) + ADR-007~012 신규 6건 (4탭 구조, JWT 인증, 음성 2개 제한, i18n TFunction, 스타일 공유, Sentry)
-- **P50**: 홈 화면 스타일 추출 (index.tsx 820→468줄 -43%) + '또는' 하드코딩 → `t('common.or')` i18n 전환
-- **P51**: people/message 스타일 추출 — people/index.tsx 770→494줄 (-36%), message/create.tsx 727→406줄 (-44%)
-- **P52**: alarms/voices 스타일 추출 — alarms.tsx 668→437줄 (-35%), voices.tsx 619→348줄 (-44%)
-- **P53**: character/settings 스타일 추출 — character/index.tsx 541→298줄 (-45%), settings/index.tsx 518→363줄 (-30%)
-- **P54**: library/dub 스타일 추출 — library/index.tsx 536→355줄 (-34%), dub/translate.tsx 501→309줄 (-38%)
-- **P55**: 날짜 로캘 하드코딩 → i18n 동적 전환 — `getDateLocale()` 유틸 + 5파일 7건 'ko-KR' 제거
-- **P56**: 알림 채널/액션 버튼 i18n 전환 — top-level side effect → `configureNotificationChannels(t)` 함수화 + notification.* 2키 추가
-- **P57**: backend family.ts 분할 — 834줄→13줄 aggregator + 3 sub-routers (invite 266, group 205, alarm 292) + family-helpers.ts 35줄
-- **P58**: 모바일 api.ts 도메인 분할 — 771줄→barrel+8 모듈 (core, voice, alarm, social, user, billing, family, character) + 32개 소비자 import 변경 0건
-- **P59**: player/compose 스타일 추출 — player.tsx 486→344줄 (-29%), compose.tsx 381→207줄 (-46%)
-- **P60**: voice 화면 3개 스타일 추출 — diarize.tsx 413→257줄 (-38%), record.tsx 396→245줄 (-38%), [id].tsx 398→235줄 (-41%)
-- **P61**: gift/received + family-alarm 스타일 추출 — gift/received.tsx 383→233줄 (-39%), family-alarm/create.tsx 359→218줄 (-39%)
-- **P62**: notifications 서비스 테스트 — 31 tests (syncAlarmNotifications weekday 변환, 채널 설정, 푸시 토큰, 스누즈, 권한 검증)
-- **P63**: API core + auth utilities 테스트 — 42 tests (request 토큰 주입/401 처리/쿼리파라미터/FormData/에러, decodeIdToken, Apple 로그인, AsyncStorage 토큰 관리)
-- **P64**: ProfileDropdown + PresetMessageSection 비즈니스 로직 테스트 — 58 tests (getPlanLabel, computeInitial, toggleLanguage, 메뉴 항목, 생성 버튼 비활성화, 랜덤 메시지, 카테고리 변경, PRESET_CATEGORIES 무결성)
-- **P65**: Audio 서비스 유닛 테스트 — 28 tests (getLocalAudioPath, ensureAudioDir, setupAudioSession, requestMicPermission, startRecording, stopRecording, saveAudioLocally, isAudioCached, playAudio, deleteLocalAudio, getAudioCacheSize)
-- **P66**: 프로덕션 API URL 수정 — core.ts 플레이스홀더 URL → 실제 배포 URL, useAuth.tsx __DEV__ 분기 추가, eas.json env 설정
-- **P67**: 보안 응답 헤더 미들웨어 — securityHeaders.ts 9개 OWASP 헤더 (X-Content-Type-Options, X-Frame-Options, HSTS, CSP 등) + 12 tests
-- **P68**: API error_code 일관성 — billing/character/alarm/friend 4개 라우트에 23건 error_code 추가 (machine-readable 에러 코드)
-- **P69**: API error_code Batch 2 — user/notes/family-invite/family-group/family-alarm 5개 라우트에 78건 error_code 추가
-- **P70**: API error_code Batch 3 — library/stats/push/tts 4개 라우트에 28건 error_code 추가
-- **P71**: API error_code Final Batch — voice.ts 35건 + dub.ts 7건 + auth.ts error_code alias + voice.test.ts 28 assertions (전체 API error_code 100% 달성)
-- **P72**: Notes 페이지네이션 완성 (total/limit/offset 추가) + Migration 19 복합 DB 인덱스 6개 (friendships, gifts, alarms)
-- **P73**: family-alarm 라우트 테스트 40건 (POST /alarms TTS 20 + POST /alarms/voice 20, 전체 검증 경로 커버)
-- **P74**: WCAG AA 색상 대비 버그 수정 — a11y 테스트 stale 하드코딩 색상 → 실제 앱 Colors import + textSecondary WCAG AA 달성 (light #6B7280, dark #98989D)
-- **P75**: packages/ui ↔ mobile/constants/theme 색상 동기화 — ColorPalette 8개 값 + DarkColors.textSecondary 정렬 (mobile을 source of truth로)
-- **P76**: family-invite 라우트 테스트 30건 (POST create 8 + GET list 4 + POST accept 12 + POST revoke 6, 전체 754/754)
-- **P77**: family-group 라우트 테스트 26건 (GET current 4 + POST leave 4 + POST transfer 11 + DELETE member 7, 전체 780/780)
-- **P78**: family-helpers 유틸 + sentry 미들웨어 테스트 12건 (resolveUserPk 3 + assertSameGroup 5 + sentryMiddleware 4, 전체 792/792) + Sentry captureException 미작동 버그 발견
-- **P79**: Sentry captureException 버그 수정 — try-catch → app.onError 패턴 마이그레이션 (sentry.ts + index.ts + sentry.test.ts 5건, 전체 793/793)
-- **P80**: 모바일 error_code 처리 시스템 — ApiError.errorCode 추출 + apiErrors.ts 유틸 (40개 error_code → i18n 매핑) + ko/en 46키 추가 + 33 tests (전체 658/658)
-- **P81**: error_code 화면 통합 — 15개 화면 getApiErrorMessage 마이그레이션 (src/types→lib/apiErrors) + fallback 파라미터 + 구버전 삭제 + 4 tests (전체 662/662)
+- **P11~P81**: 전체 완료 (상세 내역은 이전 STATE 참조)
+- **P82**: 백엔드 FCM 푸시 알림 i18n (ko/en pushTexts 맵 + locale 파라미터) + voice diarize 응답 label 영문화 + notes.ts Accept-Language 기반 locale 전달 + FCM 테스트 7건 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -89,4 +21,3 @@
 - eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
-- ~~error_code 미적용 라우트 잔여~~ → P71에서 전체 완료 (voice 35건 + dub 7건 + auth alias)

@@ -463,7 +463,7 @@ voice.post('/diarize', async (c) => {
     return c.json({
       speakers: result.speakers.map((s, i) => ({
         speaker_id: s.speaker_id,
-        label: `화자 ${i + 1}`,
+        label: `Speaker ${i + 1}`,
         segments: s.segments,
         total_duration: s.segments.reduce((sum, seg) => sum + (seg.end - seg.start), 0),
       })),

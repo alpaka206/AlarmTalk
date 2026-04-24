@@ -3,7 +3,7 @@ import { createMockDB } from './helpers';
 
 const mockDB = createMockDB();
 
-import { getTokensForUser, sendPushNotifications, sendAlarmPush } from '../src/lib/fcm';
+import { getTokensForUser, sendPushNotifications, sendAlarmPush, sendNotePush } from '../src/lib/fcm';
 
 beforeEach(() => {
   mockDB.reset();
@@ -106,5 +106,82 @@ describe('sendAlarmPush', () => {
     );
     expect(results).toHaveLength(2);
     expect(results.map((r) => r.token)).toEqual(['phone-tok', 'tablet-tok']);
+  });
+
+  it('영어 로케일 시 영문 body', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'en-tok' }]);
+    await sendAlarmPush(
+      mockDB.client as never,
+      'user-en',
+      'alarm-en',
+      '09:00',
+      'en',
+    );
+    const logged = JSON.parse(
+      (vi.mocked(console.warn).mock.calls[0][0] as string),
+    );
+    expect(logged.body).toBe('Alarm at 09:00');
+  });
+
+  it('한국어 로케일 기본 body', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'ko-tok' }]);
+    await sendAlarmPush(
+      mockDB.client as never,
+      'user-ko',
+      'alarm-ko',
+      '06:30',
+    );
+    const logged = JSON.parse(
+      (vi.mocked(console.warn).mock.calls[0][0] as string),
+    );
+    expect(logged.body).toBe('06:30 알람이 울립니다');
+  });
+});
+
+describe('sendNotePush', () => {
+  it('토큰 없으면 빈 결과', async () => {
+    mockDB.pushResult([]);
+    const results = await sendNotePush(
+      mockDB.client as never,
+      'user-1',
+      'note-1',
+      'Alice',
+    );
+    expect(results).toEqual([]);
+  });
+
+  it('한국어 기본 body', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'note-tok' }]);
+    await sendNotePush(
+      mockDB.client as never,
+      'user-1',
+      'note-1',
+      'Alice',
+    );
+    const logged = JSON.parse(
+      (vi.mocked(console.warn).mock.calls[0][0] as string),
+    );
+    expect(logged.title).toBe('💌 Alice');
+    expect(logged.body).toBe('새 쪽지가 도착했어요');
+  });
+
+  it('영어 로케일 시 영문 body', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'en-tok' }]);
+    await sendNotePush(
+      mockDB.client as never,
+      'user-en',
+      'note-en',
+      'Bob',
+      'en',
+    );
+    const logged = JSON.parse(
+      (vi.mocked(console.warn).mock.calls[0][0] as string),
+    );
+    expect(logged.title).toBe('💌 Bob');
+    expect(logged.body).toBe('You have a new note');
   });
 });

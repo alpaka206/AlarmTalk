@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { sendNotePush } from '../lib/fcm';
+import { sendNotePush, type PushLocale } from '../lib/fcm';
 
 const notes = new Hono<AppEnv>();
 
@@ -71,7 +71,9 @@ notes.post('/', async (c) => {
     (senderRow.rows[0]?.name as string | null) ??
     (senderRow.rows[0]?.email as string | null) ??
     'Someone';
-  const pushPromise = sendNotePush(db, receiverId, noteId, senderName);
+  const acceptLang = c.req.header('Accept-Language') ?? '';
+  const locale: PushLocale = acceptLang.startsWith('en') ? 'en' : 'ko';
+  const pushPromise = sendNotePush(db, receiverId, noteId, senderName, locale);
   try {
     c.executionCtx.waitUntil(pushPromise);
   } catch {

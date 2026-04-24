@@ -1169,3 +1169,27 @@
 - [x] sentryMiddleware try-catch → app.onError 패턴으로 마이그레이션
 - [x] sentry.test.ts에서 captureException 호출 검증 테스트 추가 (5 tests)
 - [x] 전체 테스트 통과 확인 (backend 793/793)
+
+---
+
+## P80 — 모바일 error_code 처리 시스템 ✅ (2026-04-25)
+
+- [x] ApiError.errorCode 추출 + apiErrors.ts 유틸 (40개 error_code → i18n 매핑)
+- [x] ko/en 46키 추가 + 33 tests (전체 658/658)
+
+---
+
+## P81 — error_code 화면 통합 ✅ (2026-04-25)
+
+- [x] 15개 화면 getApiErrorMessage 마이그레이션 + fallback 파라미터
+- [x] 구버전 src/types.ts getApiErrorMessage 삭제 + 4 tests (전체 662/662)
+
+---
+
+## P82 — 백엔드 푸시 알림 + 화자 분리 i18n ✅ (2026-04-25)
+
+- [x] fcm.ts — pushTexts i18n 맵 (ko/en) + sendAlarmPush/sendNotePush locale 파라미터 추가
+- [x] voice.ts — diarize 응답 `화자 N` → `Speaker N` (클라이언트가 자체 i18n 사용)
+- [x] notes.ts — Accept-Language 헤더에서 locale 추출하여 sendNotePush에 전달
+- [x] fcm.test.ts — sendNotePush 5 tests 추가 + sendAlarmPush locale 2 tests 추가
+- [x] 전체 테스트 통과 (backend 798/798, mobile 662/662)
