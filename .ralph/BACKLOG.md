@@ -868,6 +868,14 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 872/872, mobile 898/898)
 
+## P114 — ARCHITECTURE.md + README.md 현행화 ✅ (2026-04-25)
+
+- [x] ARCHITECTURE.md 탭 구조 현행화: 6개→4개 (index, voices, alarms, compose), 삭제된 탭 제거, 신규 스택 화면 추가
+- [x] ARCHITECTURE.md 백엔드 라우트 현행화: 7개→17개, aggregator 패턴 반영, lib 디렉토리 확장
+- [x] ARCHITECTURE.md DB 스키마 현행화: 7개→22개 테이블, ER 다이어그램 확장
+- [x] ARCHITECTURE.md Plan Limits 현행화: Plus→Personal, 음성 2개 제한, 가족 쪽지 추가
+- [x] README.md 테스트 수치 현행화: 647→872 (백엔드), 286→1012 (모바일)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
@@ -893,6 +901,7 @@
 - ~~모바일 화면 컴포넌트 인터랙션 테스트 (voices add menu, alarm create form 등)~~ → P41 완료
 - ~~ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)~~ → P39 완료
 - ~~API core + auth utilities 테스트 (fetch 토큰 주입, 401 처리, JWT 디코딩, Apple 로그인)~~ → P63 완료
+- ~~문서화 (README, ARCHITECTURE 현행화)~~ → P114 완료
 
 ## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
 
