@@ -798,6 +798,12 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 780/780)
 
+## P97 — billing.ts 라우트 분할 ✅ (2026-04-25)
+
+- [x] `billing.ts` (378줄) → `billing-helpers.ts` (23줄) + `billing-query.ts` (90줄) + `billing-mutation.ts` (230줄) + `billing.ts` (10줄 aggregator)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 780/780)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
