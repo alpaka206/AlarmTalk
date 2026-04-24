@@ -112,3 +112,36 @@ describe('DELETE /library/:id', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /library — 필터 상세', () => {
+  it('limit 최대 100으로 클램핑', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/library?limit=999'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.limit).toBe(100);
+  });
+
+  it('voice 필터 적용', async () => {
+    const vpId = '50000000-0000-4000-8000-000000000001';
+    mockDB.pushResult([{ total: 1 }]);
+    mockDB.pushResult([{ id: 'lib-1' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', `/library?filter=voice:${vpId}`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+  });
+
+  it('date 필터 적용', async () => {
+    mockDB.pushResult([{ total: 1 }]);
+    mockDB.pushResult([{ id: 'lib-1' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/library?filter=date:2026-04-10'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toHaveLength(1);
+  });
+});

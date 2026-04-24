@@ -167,4 +167,173 @@ describe('PATCH /gift/:id/reject — 거절', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
   });
+
+  it('pending 상태 + 수신자 확인 SQL 검증', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    await app.request(jsonReq('PATCH', `/gift/${ID.gift}/reject`));
+    expect(mockDB.calls[0].sql).toContain("status = 'pending'");
+    expect(mockDB.calls[0].sql).toContain('recipient_id = ?');
+    expect(mockDB.calls[0].args).toContain('user-1');
+  });
+});
+
+describe('POST /gift — 응답 상세', () => {
+  it('메모 200자 경계값 허용', async () => {
+    mockDB.pushResult([{ google_id: 'user-2' }]);
+    mockDB.pushResult([{ id: ID.friendship }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/gift', {
+        recipient_email: 'b@test.com',
+        message_id: ID.message,
+        note: 'x'.repeat(200),
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('메모 미제공 시 null 저장', async () => {
+    mockDB.pushResult([{ google_id: 'user-2' }]);
+    mockDB.pushResult([{ id: ID.friendship }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/gift', { recipient_email: 'b@test.com', message_id: ID.message }),
+    );
+    expect(res.status).toBe(201);
+    const insertArgs = mockDB.calls[3].args;
+    expect(insertArgs[5]).toBeNull();
+  });
+
+  it('선물 생성 시 전체 응답 형태 검증', async () => {
+    mockDB.pushResult([{ google_id: 'user-2' }]);
+    mockDB.pushResult([{ id: ID.friendship }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/gift', {
+        recipient_email: 'b@test.com',
+        message_id: ID.message,
+        note: 'hello!',
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.gift.id).toBeDefined();
+    expect(body.gift.message_id).toBe(ID.message);
+    expect(body.gift.status).toBe('pending');
+  });
+});
+
+describe('GET /gift/received — 페이지네이션', () => {
+  it('페이지네이션 메타데이터 반환', async () => {
+    mockDB.pushResult([{ total: 1 }]);
+    mockDB.pushResult([{ id: ID.gift, sender_email: 'a@b.com', message_text: 'hi' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/received'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.gifts).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.offset).toBe(0);
+  });
+
+  it('limit/offset 적용', async () => {
+    mockDB.pushResult([{ total: 50 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/received?limit=5&offset=10'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.limit).toBe(5);
+    expect(body.offset).toBe(10);
+  });
+
+  it('limit 최대 100으로 클램핑', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/received?limit=999'));
+    const body = await res.json();
+    expect(body.limit).toBe(100);
+  });
+
+  it('검색 쿼리 SQL LIKE로 전달', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/received?q=hello'));
+    expect(res.status).toBe(200);
+    expect(mockDB.calls[0].args).toContain('%hello%');
+  });
+});
+
+describe('GET /gift/sent — 페이지네이션', () => {
+  it('페이지네이션 메타데이터 반환', async () => {
+    mockDB.pushResult([{ total: 1 }]);
+    mockDB.pushResult([{ id: ID.gift, recipient_email: 'a@b.com' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/sent'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.gifts).toHaveLength(1);
+    expect(body.total).toBe(1);
+    expect(body.limit).toBe(20);
+    expect(body.offset).toBe(0);
+  });
+
+  it('빈 보낸 목록', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/sent'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.gifts).toHaveLength(0);
+    expect(body.total).toBe(0);
+  });
+
+  it('검색 쿼리 LIKE (이름/이메일/텍스트)', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/gift/sent?q=test'));
+    expect(res.status).toBe(200);
+    const countSql = mockDB.calls[0].sql;
+    expect(countSql).toContain('LIKE');
+  });
+});
+
+describe('PATCH /gift/:id/accept — 상세', () => {
+  it('잘못된 UUID 형식이면 400', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('PATCH', '/gift/bad-id/accept'));
+    expect(res.status).toBe(400);
+  });
+
+  it('수락 시 message_library 삽입 확인', async () => {
+    mockDB.pushResult([{ id: ID.gift, message_id: ID.message }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ id: ID.gift, status: 'accepted', message_id: ID.message }]);
+    const app = buildApp();
+    await app.request(jsonReq('PATCH', `/gift/${ID.gift}/accept`));
+    const libInsert = mockDB.calls.find((c) => c.sql.includes('message_library'));
+    expect(libInsert).toBeDefined();
+    expect(libInsert!.args[2]).toBe(ID.message);
+  });
+});
+
+describe('PATCH /gift/:id/reject — 상세', () => {
+  it('잘못된 UUID 형식이면 400', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('PATCH', '/gift/bad-id/reject'));
+    expect(res.status).toBe(400);
+  });
 });
