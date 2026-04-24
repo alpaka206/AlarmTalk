@@ -80,7 +80,7 @@ export function parseDeepLink(url: string): DeepLinkRoute | null {
   const segments = path.split('/').filter(Boolean);
   if (segments.length === 0) return null;
 
-  const root = segments[0];
+  const root = segments[0]!;
   const resolver = ROUTE_MAP[root];
 
   if (resolver) {

@@ -6,12 +6,12 @@ jest.mock('expo-linking', () => ({
     if (!match) return { scheme: null, path: url, queryParams: {} };
     const scheme = match[1];
     const rest = match[2];
-    const [path, query] = rest.split('?');
+    const [path, query] = rest!.split('?');
     const queryParams: Record<string, string> = {};
     if (query) {
       for (const pair of query.split('&')) {
         const [k, v] = pair.split('=');
-        queryParams[k] = decodeURIComponent(v);
+        queryParams[k!] = decodeURIComponent(v!);
       }
     }
     return { scheme, path, queryParams };

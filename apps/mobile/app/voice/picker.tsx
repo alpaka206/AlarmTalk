@@ -40,7 +40,7 @@ export default function SpeakerPickerScreen() {
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
+      const asset = result.assets[0]!;
       dispatch({
         type: 'PICK_FILE',
         file: { uri: asset.uri, name: asset.name, type: asset.mimeType || 'audio/wav' },

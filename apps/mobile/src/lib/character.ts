@@ -123,7 +123,7 @@ export function pickRandomDialogue(
   const raw = safeRng();
   const ratio = Number.isFinite(raw) ? Math.max(0, Math.min(raw, 0.999999)) : 0;
   const idx = Math.floor(ratio * keys.length);
-  return t(keys[idx] ?? keys[0]);
+  return t((keys[idx] ?? keys[0])!);
 }
 
 export function pickStreakAwareDialogue(
@@ -142,7 +142,7 @@ export function pickStreakAwareDialogue(
       const r2 = safeRng();
       const r2Ratio = Number.isFinite(r2) ? Math.max(0, Math.min(r2, 0.999999)) : 0;
       const idx = Math.floor(r2Ratio * tier.keys.length);
-      return t(tier.keys[idx] ?? tier.keys[0]);
+      return t((tier.keys[idx] ?? tier.keys[0])!);
     }
   }
 

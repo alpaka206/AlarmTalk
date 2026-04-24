@@ -29,7 +29,7 @@ function extractImports(content: string): string[] {
   const imports: string[] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    imports.push(m[1]);
+    imports.push(m[1]!);
   }
   return imports;
 }
@@ -40,7 +40,7 @@ function getPackageName(specifier: string): string | null {
     const parts = specifier.split('/');
     return parts.slice(0, 2).join('/');
   }
-  return specifier.split('/')[0];
+  return specifier.split('/')[0]!;
 }
 
 const pkg = JSON.parse(fs.readFileSync(PKG_JSON, 'utf-8'));

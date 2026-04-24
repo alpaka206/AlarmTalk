@@ -11,7 +11,7 @@ function isGenerateDisabled(voiceId: string | null, text: string | null, isPendi
 function pickRandomMessage(categoryKey: string, t: (key: string) => string): string | null {
   const cat = PRESET_CATEGORIES.find((c) => c.key === categoryKey);
   if (!cat || cat.messageKeys.length === 0) return null;
-  const key = cat.messageKeys[Math.floor(Math.random() * cat.messageKeys.length)];
+  const key = cat.messageKeys[Math.floor(Math.random() * cat.messageKeys.length)]!;
   return t(key);
 }
 
@@ -199,7 +199,7 @@ describe('PresetMessageSection — PRESET_CATEGORIES integrity', () => {
 
   it('getCategoryLabel uses t function', () => {
     const mockT = (key: string) => `label:${key}`;
-    const cat = PRESET_CATEGORIES[0];
+    const cat = PRESET_CATEGORIES[0]!;
     expect(getCategoryLabel(cat, mockT)).toBe(`label:${cat.i18nKey}`);
   });
 

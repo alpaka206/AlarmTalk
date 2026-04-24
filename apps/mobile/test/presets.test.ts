@@ -51,7 +51,7 @@ describe('PRESET_CATEGORIES', () => {
 describe('getCategoryLabel', () => {
   it('i18nKey를 t 함수로 번역한 결과를 반환한다', () => {
     const mockT = (key: string) => `translated:${key}`;
-    const cat = PRESET_CATEGORIES[0];
+    const cat = PRESET_CATEGORIES[0]!;
     expect(getCategoryLabel(cat, mockT)).toBe(`translated:${cat.i18nKey}`);
   });
 

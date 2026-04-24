@@ -27,7 +27,7 @@ function extractQueryKeys(content: string): string[][] {
   const keys: string[][] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    const parts = m[1].split(',').map((s) => s.trim().replace(/['"]/g, ''));
+    const parts = m[1]!.split(',').map((s) => s.trim().replace(/['"]/g, ''));
     keys.push(parts);
   }
   return keys;
@@ -38,7 +38,7 @@ function extractInvalidateKeys(content: string): string[][] {
   const keys: string[][] = [];
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    const parts = m[1].split(',').map((s) => s.trim().replace(/['"]/g, ''));
+    const parts = m[1]!.split(',').map((s) => s.trim().replace(/['"]/g, ''));
     keys.push(parts);
   }
   return keys;
@@ -75,8 +75,8 @@ describe('쿼리 키 일관성', () => {
       /useQuery\(\s*\{[^}]*queryKey:\s*\[([^\]]+)\][^}]*queryFn:\s*(?:\(\)\s*=>?\s*)?([a-zA-Z]+)/gs;
     let m: RegExpExecArray | null;
     while ((m = queryRe.exec(content))) {
-      const keyParts = m[1].split(',').map((s) => s.trim().replace(/['"]/g, ''));
-      const fn = m[2];
+      const keyParts = m[1]!.split(',').map((s) => s.trim().replace(/['"]/g, ''));
+      const fn = m[2]!;
       if (!queryFnToKeys.has(fn)) queryFnToKeys.set(fn, []);
       queryFnToKeys.get(fn)!.push({ key: keyParts, file: rel(file) });
     }
@@ -85,7 +85,7 @@ describe('쿼리 키 일관성', () => {
   it('getUserProfile은 항상 동일한 쿼리 키를 사용한다', () => {
     const entries = queryFnToKeys.get('getUserProfile') ?? [];
     expect(entries.length).toBeGreaterThan(0);
-    const baseKey = entries[0].key[0];
+    const baseKey = entries[0]!.key[0];
     for (const e of entries) {
       expect({ file: e.file, key: e.key[0] }).toEqual({ file: e.file, key: baseKey });
     }
@@ -158,7 +158,7 @@ describe('쿼리 키 일관성', () => {
   it('모든 쿼리 함수에 대해 첫 번째 키 세그먼트가 일관된다', () => {
     const violations: string[] = [];
     for (const [fn, entries] of queryFnToKeys) {
-      const baseKey = entries[0].key[0];
+      const baseKey = entries[0]!.key[0];
       for (const e of entries.slice(1)) {
         if (e.key[0] !== baseKey) {
           violations.push(`${fn}: ${e.file} uses [${e.key[0]}] but expected [${baseKey}]`);
@@ -180,8 +180,8 @@ describe('쿼리 enabled 가드', () => {
       if (!block.includes('enabled')) {
         const fnMatch = block.match(/queryFn:\s*(?:\(\)\s*=>?\s*)?([a-zA-Z]+)/);
         const keyMatch = block.match(/queryKey:\s*\[([^\]]+)\]/);
-        const fn = fnMatch?.[1] ?? 'unknown';
-        const key = keyMatch?.[1] ?? 'unknown';
+        const fn: string = fnMatch?.[1] ?? 'unknown';
+        const key: string = keyMatch?.[1] ?? 'unknown';
         queriesWithoutGuard.push(`${rel(file)}: ${fn} [${key}]`);
       }
     }
@@ -370,7 +370,7 @@ describe('쿼리 키 레지스트리 완전성', () => {
     for (const { content } of allFiles) {
       const keys = extractQueryKeys(content);
       for (const k of keys) {
-        foundKeys.add(k[0]);
+        foundKeys.add(k[0]!);
       }
     }
     const unknownKeys = [...foundKeys].filter(
@@ -384,9 +384,9 @@ describe('쿼리 키 레지스트리 완전성', () => {
     for (const { content } of allFiles) {
       const keys = extractQueryKeys(content);
       for (const k of keys) {
-        const base = k[0].replace(/-(.)/, (_, c: string) => c.toUpperCase()).replace(/[A-Z]/g, '');
+        const base = k[0]!.replace(/-(.)/, (_, c: string) => c.toUpperCase()).replace(/[A-Z]/g, '');
         if (!domains.has(base)) domains.set(base, []);
-        if (!domains.get(base)!.includes(k[0])) domains.get(base)!.push(k[0]);
+        if (!domains.get(base)!.includes(k[0]!)) domains.get(base)!.push(k[0]!);
       }
     }
     for (const [, variants] of domains) {

@@ -10,9 +10,9 @@ function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace(/^#/, '');
   const n =
     h.length === 3
-      ? [h[0] + h[0], h[1] + h[1], h[2] + h[2]]
+      ? [h[0]! + h[0]!, h[1]! + h[1]!, h[2]! + h[2]!]
       : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
-  return [parseInt(n[0], 16), parseInt(n[1], 16), parseInt(n[2], 16)];
+  return [parseInt(n[0]!, 16), parseInt(n[1]!, 16), parseInt(n[2]!, 16)];
 }
 
 function srgbToLinear(c: number): number {
@@ -150,7 +150,7 @@ describe('접근성 자동 검증', () => {
       for (const file of filesWithSwitch) {
         const lines = file.content.split('\n');
         for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes('<Switch') && !lines[i].includes('//')) {
+          if (lines[i]!.includes('<Switch') && !lines[i]!.includes('//')) {
             const context = lines.slice(i, Math.min(i + 15, lines.length)).join('\n');
             if (!context.includes('accessibilityLabel')) {
               missing.push(`${relPath(file.path)}:${i + 1}`);
@@ -179,7 +179,7 @@ describe('접근성 자동 검증', () => {
       for (const file of filesWithInput) {
         const lines = file.content.split('\n');
         for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes('<TextInput') && !lines[i].includes('//')) {
+          if (lines[i]!.includes('<TextInput') && !lines[i]!.includes('//')) {
             const context = lines
               .slice(i, Math.min(i + 10, lines.length))
               .join('\n');

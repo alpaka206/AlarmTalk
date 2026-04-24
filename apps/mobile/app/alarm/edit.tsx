@@ -87,7 +87,7 @@ export default function EditAlarmScreen() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (alarm && !loaded) {
-      const [h, m] = alarm.time.split(':').map(Number);
+      const [h, m] = alarm.time.split(':').map(Number) as [number, number];
       setHour(h);
       setMinute(m);
       setRepeatDays(parseRepeatDays(alarm.repeat_days));

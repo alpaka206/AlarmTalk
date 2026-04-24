@@ -378,7 +378,7 @@ export default function CreateMessageScreen() {
                 >
                   <View style={styles.friendAvatar}>
                     <Text style={styles.friendAvatarText}>
-                      {(f.friend_name || f.friend_email || '?')[0].toUpperCase()}
+                      {(f.friend_name || f.friend_email || '?')[0]!.toUpperCase()}
                     </Text>
                   </View>
                   <View style={styles.friendInfo}>

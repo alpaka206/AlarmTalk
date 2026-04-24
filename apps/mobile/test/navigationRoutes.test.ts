@@ -54,19 +54,19 @@ function extractPushTargets(): Array<{ file: string; target: string }> {
     const stringPushRe = /router\.(push|replace)\(\s*'([^']+)'/g;
     let m: RegExpExecArray | null;
     while ((m = stringPushRe.exec(content))) {
-      targets.push({ file: rel(file), target: m[2] });
+      targets.push({ file: rel(file), target: m[2]! });
     }
 
     const templatePushRe = /router\.(push|replace)\(\s*`([^`]+)`/g;
     while ((m = templatePushRe.exec(content))) {
-      const template = m[2];
+      const template = m[2]!;
       const normalized = template.replace(/\$\{[^}]+\}/g, '__PARAM__');
       targets.push({ file: rel(file), target: normalized });
     }
 
     const objectPushRe = /router\.(push|replace)\(\s*\{\s*pathname:\s*'([^']+)'/g;
     while ((m = objectPushRe.exec(content))) {
-      targets.push({ file: rel(file), target: m[2] });
+      targets.push({ file: rel(file), target: m[2]! });
     }
   }
 
@@ -77,13 +77,13 @@ function routeMatchesTarget(route: string, target: string): boolean {
   if (route === target) return true;
 
   const routeParts = route.split('/');
-  const cleanTarget = target.split('?')[0];
+  const cleanTarget = target.split('?')[0]!;
   const targetParts = cleanTarget.split('/');
 
   if (routeParts.length !== targetParts.length) return false;
 
   return routeParts.every((rp, i) => {
-    const tp = targetParts[i];
+    const tp = targetParts[i]!;
     if (rp.startsWith('[') && rp.endsWith(']')) return tp === '__PARAM__' || tp !== '';
     return rp === tp;
   });
@@ -226,7 +226,7 @@ describe('deepLink → 라우트 매핑', () => {
     const deepLinkPaths: string[] = [];
     let m: RegExpExecArray | null;
     while ((m = routeRe.exec(deepLinkFile.content))) {
-      deepLinkPaths.push(m[1]);
+      deepLinkPaths.push(m[1]!);
     }
 
     const broken: string[] = [];

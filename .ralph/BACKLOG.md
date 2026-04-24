@@ -1355,3 +1355,10 @@
 - [x] 주요 패턴: `rows[0]` → `rows[0]!`, array destructuring → tuple cast, bounded loop `!`
 - [x] 전체 테스트 848/848 통과, typecheck 0 errors (backend + mobile)
 - [x] 전체 테스트 848/848 통과, typecheck 0 errors
+
+## P102 — TypeScript 엄격 모드 강화: noUncheckedIndexedAccess (모바일) ✅ (2026-04-25)
+
+- [x] `apps/mobile/tsconfig.json`에 `noUncheckedIndexedAccess: true` 활성화
+- [x] 78개 컴파일 에러 수정 (27개 파일: 소스 13개 + 테스트 14개)
+- [x] 주요 패턴: tuple cast `as [number, number]`, `arr[0]!`, `keys[idx]!`, `RecordingOptions` cast
+- [x] typecheck 0 errors (backend + mobile), 전체 테스트 848/848 통과

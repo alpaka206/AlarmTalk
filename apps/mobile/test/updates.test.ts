@@ -123,7 +123,7 @@ describe('checkForOTAUpdate', () => {
 
     await checkForOTAUpdate(mockT as never);
 
-    const buttons = alertSpy.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    const buttons = alertSpy.mock.calls[0]![2] as Array<{ text: string; onPress?: () => void }>;
     const updateButton = buttons.find((b) => b.text === 'update.now');
     updateButton?.onPress?.();
     expect(mockReload).toHaveBeenCalled();

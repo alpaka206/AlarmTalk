@@ -27,7 +27,7 @@ describe('filterFamilyAlarmRecipients', () => {
     const members = [m({ user_id: 'self' }), m({ user_id: 'other' })];
     const result = filterFamilyAlarmRecipients(members, 'self');
     expect(result).toHaveLength(1);
-    expect(result[0].user_id).toBe('other');
+    expect(result[0]!.user_id).toBe('other');
   });
 
   it('allow_family_alarms=false 는 제외한다', () => {

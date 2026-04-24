@@ -57,7 +57,7 @@ export default function UploadScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setSelectedFile(result.assets[0]);
+      setSelectedFile(result.assets[0]!);
     }
   };
 

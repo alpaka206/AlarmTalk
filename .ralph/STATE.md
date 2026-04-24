@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — noUncheckedIndexedAccess 활성화 (백엔드)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P101 완료**
+- 마지막 루프: 2026-04-25 — noUncheckedIndexedAccess 활성화 (모바일)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P102 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 848/848)
 
@@ -12,7 +12,8 @@
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P100**: 전체 완료
-- **P101**: noUncheckedIndexedAccess 활성화 — 171개 에러 수정 (27개 파일)
+- **P101**: noUncheckedIndexedAccess 활성화 (백엔드) — 171개 에러 수정 (27개 파일)
+- **P102**: noUncheckedIndexedAccess 활성화 (모바일) — 78개 에러 수정 (27개 파일)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -31,4 +32,4 @@
 
 ## TypeScript 엄격 모드 현황
 - Backend: `strict: true` + `noUncheckedIndexedAccess: true` ✅
-- Mobile: `strict: true` (noUncheckedIndexedAccess 미적용)
+- Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅

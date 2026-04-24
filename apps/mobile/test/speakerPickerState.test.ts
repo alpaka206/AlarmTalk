@@ -89,7 +89,7 @@ describe('speakerPickerReducer', () => {
     expect(s.draftLabel).toBe('화자 1');
     s = speakerPickerReducer(s, { type: 'EDIT_CHANGE', label: '엄마' });
     expect(s.draftLabel).toBe('엄마');
-    expect(s.speakers[0].label).toBe('화자 1');
+    expect(s.speakers[0]!.label).toBe('화자 1');
     s = speakerPickerReducer(s, { type: 'EDIT_CANCEL' });
     expect(s.editingSpeakerId).toBeNull();
     expect(s.draftLabel).toBe('');
@@ -108,8 +108,8 @@ describe('speakerPickerReducer', () => {
       speakerId: 's1',
       label: '엄마',
     });
-    expect(next.speakers[0].label).toBe('엄마');
-    expect(next.speakers[1].label).toBe('화자 2');
+    expect(next.speakers[0]!.label).toBe('엄마');
+    expect(next.speakers[1]!.label).toBe('화자 2');
     expect(next.editingSpeakerId).toBeNull();
   });
 

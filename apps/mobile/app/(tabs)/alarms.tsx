@@ -42,7 +42,7 @@ import { Toast } from '../../src/components/Toast';
 
 function getNextFireMs(alarm: Alarm): number | null {
   if (!alarm.is_active) return null;
-  const [h, m] = alarm.time.split(':').map(Number);
+  const [h, m] = alarm.time.split(':').map(Number) as [number, number];
   const days = parseRepeatDays(alarm.repeat_days);
   const now = new Date();
   const todayMinutes = now.getHours() * 60 + now.getMinutes();
@@ -253,7 +253,7 @@ function AlarmsScreen() {
     const sorted = [...days].sort();
     if (JSON.stringify(sorted) === JSON.stringify([1, 2, 3, 4, 5])) return t('alarms.weekday');
     if (JSON.stringify(sorted) === JSON.stringify([0, 6])) return t('alarms.weekend');
-    return days.map((d) => t(DAY_KEYS[d])).join(', ');
+    return days.map((d) => t(DAY_KEYS[d]!)).join(', ');
   };
 
   const renderDeleteAction = (

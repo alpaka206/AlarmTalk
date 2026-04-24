@@ -139,8 +139,8 @@ describe('useAppStore — voiceProfiles', () => {
     useAppStore.getState().addVoiceProfile(makeVoice('v2', '새 음성'));
     const profiles = useAppStore.getState().voiceProfiles;
     expect(profiles).toHaveLength(2);
-    expect(profiles[0].id).toBe('v2');
-    expect(profiles[1].id).toBe('v1');
+    expect(profiles[0]!.id).toBe('v2');
+    expect(profiles[1]!.id).toBe('v1');
   });
 
   it('removeVoiceProfile은 해당 ID만 제거', () => {

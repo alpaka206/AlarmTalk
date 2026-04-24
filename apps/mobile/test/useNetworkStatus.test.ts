@@ -31,7 +31,7 @@ describe('useNetworkStatus — 로직 테스트', () => {
     NetInfo.addEventListener((state) => {
       result = state.isConnected !== false;
     });
-    mockListeners[0]({ isConnected: true });
+    mockListeners[0]!({ isConnected: true });
     expect(result).toBe(true);
   });
 
@@ -40,7 +40,7 @@ describe('useNetworkStatus — 로직 테스트', () => {
     NetInfo.addEventListener((state) => {
       result = state.isConnected !== false;
     });
-    mockListeners[0]({ isConnected: false });
+    mockListeners[0]!({ isConnected: false });
     expect(result).toBe(false);
   });
 
@@ -49,7 +49,7 @@ describe('useNetworkStatus — 로직 테스트', () => {
     NetInfo.addEventListener((state) => {
       result = state.isConnected !== false;
     });
-    mockListeners[0]({ isConnected: null });
+    mockListeners[0]!({ isConnected: null });
     expect(result).toBe(true);
   });
 
@@ -65,9 +65,9 @@ describe('useNetworkStatus — 로직 테스트', () => {
     NetInfo.addEventListener((state) => {
       result = state.isConnected !== false;
     });
-    mockListeners[0]({ isConnected: false });
+    mockListeners[0]!({ isConnected: false });
     expect(result).toBe(false);
-    mockListeners[0]({ isConnected: true });
+    mockListeners[0]!({ isConnected: true });
     expect(result).toBe(true);
   });
 });

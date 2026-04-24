@@ -145,7 +145,7 @@ export function PresetMessageSection({
               onPress={() => {
                 const keys = PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messageKeys;
                 if (keys && keys.length > 0) {
-                  onPresetTextSelect(t(keys[Math.floor(Math.random() * keys.length)]));
+                  onPresetTextSelect(t(keys[Math.floor(Math.random() * keys.length)]!));
                 }
               }}
               accessibilityRole="button"

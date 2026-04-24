@@ -128,7 +128,7 @@ export function decodeIdToken(idToken: string): {
     const parts = idToken.split('.');
     if (parts.length !== 3) return null;
     // base64url → base64
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
     const payload = JSON.parse(atob(b64));
     return {
       sub: payload.sub,

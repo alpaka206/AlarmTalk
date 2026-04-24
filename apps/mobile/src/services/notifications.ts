@@ -101,7 +101,7 @@ export async function syncAlarmNotifications(alarms: Alarm[]): Promise<void> {
   const activeAlarms = alarms.filter((a) => a.is_active);
 
   for (const alarm of activeAlarms) {
-    const [hour, minute] = alarm.time.split(':').map(Number);
+    const [hour, minute] = alarm.time.split(':').map(Number) as [number, number];
     const repeatDays = parseRepeatDays(alarm.repeat_days);
     const title = alarm.voice_name ? `🗣️ ${alarm.voice_name}` : '⏰ VoiceAlarm';
     const body = alarm.message_text || 'Alarm';

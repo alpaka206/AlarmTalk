@@ -21,9 +21,9 @@ function jsonResponse(status: number, body: unknown): Response {
 function makeFetchImpl(responses: Array<{ status: number; body: unknown }>) {
   let idx = 0;
   return jest.fn(() => {
-    const r = responses[idx] ?? responses[responses.length - 1];
+    const r = responses[idx] ?? responses[responses.length - 1]!;
     idx++;
-    return Promise.resolve(jsonResponse(r.status, r.body));
+    return Promise.resolve(jsonResponse(r!.status, r!.body));
   }) as unknown as typeof fetch;
 }
 

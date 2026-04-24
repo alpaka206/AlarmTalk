@@ -49,7 +49,7 @@ export default function FriendProfileScreen() {
 
   const friendEmail = friend.friend_email ?? '';
   const friendName = friend.friend_name || friendEmail;
-  const initial = (friendName || '?')[0].toUpperCase();
+  const initial = (friendName || '?')[0]!.toUpperCase();
 
   const giftsToFriend = sentGifts?.filter((g: Gift) => g.recipient_id === friend.user_b || g.recipient_id === friend.user_a) ?? [];
   const giftsFromFriend = receivedGifts?.filter((g: Gift) => g.sender_email === friendEmail) ?? [];

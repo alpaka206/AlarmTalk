@@ -78,7 +78,7 @@ export async function startRecording(enableMetering = false): Promise<Audio.Reco
     ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
     isMeteringEnabled: enableMetering,
   };
-  await recording.prepareToRecordAsync(options);
+  await recording.prepareToRecordAsync(options as Audio.RecordingOptions);
   await recording.startAsync();
   return recording;
 }
