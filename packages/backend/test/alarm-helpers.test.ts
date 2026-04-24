@@ -1,0 +1,208 @@
+import { describe, it, expect } from 'vitest';
+import {
+  normalizeAlarmRow,
+  validateAlarmFields,
+  ALARM_MODES,
+  VIBRATION_PATTERNS,
+  WAKE_MODES,
+} from '../src/routes/alarm-helpers';
+
+describe('normalizeAlarmRow', () => {
+  const base = { id: 'a1', user_id: 'u1' };
+
+  it('parses JSON string repeat_days', () => {
+    const row = { ...base, repeat_days: '[0,1,5]' };
+    expect(normalizeAlarmRow(row).repeat_days).toEqual([0, 1, 5]);
+  });
+
+  it('returns [] for invalid JSON repeat_days', () => {
+    const row = { ...base, repeat_days: 'bad' };
+    expect(normalizeAlarmRow(row).repeat_days).toEqual([]);
+  });
+
+  it('passes through array repeat_days', () => {
+    const row = { ...base, repeat_days: [2, 4] };
+    expect(normalizeAlarmRow(row).repeat_days).toEqual([2, 4]);
+  });
+
+  it('filters non-integer values from repeat_days', () => {
+    const row = { ...base, repeat_days: '[1, 2.5, "x", 3]' };
+    expect(normalizeAlarmRow(row).repeat_days).toEqual([1, 3]);
+  });
+
+  it('returns [] for empty string repeat_days', () => {
+    expect(normalizeAlarmRow({ ...base, repeat_days: '' }).repeat_days).toEqual([]);
+  });
+
+  it('coerces is_active correctly', () => {
+    expect(normalizeAlarmRow({ ...base, is_active: 1 }).is_active).toBe(true);
+    expect(normalizeAlarmRow({ ...base, is_active: true }).is_active).toBe(true);
+    expect(normalizeAlarmRow({ ...base, is_active: 0 }).is_active).toBe(false);
+    expect(normalizeAlarmRow({ ...base, is_active: false }).is_active).toBe(false);
+    expect(normalizeAlarmRow({ ...base, is_active: null }).is_active).toBe(false);
+  });
+
+  it('defaults mode to tts for unknown values', () => {
+    expect(normalizeAlarmRow({ ...base, mode: 'invalid' }).mode).toBe('tts');
+    expect(normalizeAlarmRow({ ...base }).mode).toBe('tts');
+  });
+
+  it('preserves valid mode values', () => {
+    expect(normalizeAlarmRow({ ...base, mode: 'sound-only' }).mode).toBe('sound-only');
+    expect(normalizeAlarmRow({ ...base, mode: 'tts' }).mode).toBe('tts');
+  });
+
+  it('defaults vibration_pattern to default', () => {
+    expect(normalizeAlarmRow({ ...base }).vibration_pattern).toBe('default');
+    expect(normalizeAlarmRow({ ...base, vibration_pattern: 'wrong' }).vibration_pattern).toBe('default');
+  });
+
+  it('preserves valid vibration_pattern', () => {
+    expect(normalizeAlarmRow({ ...base, vibration_pattern: 'strong' }).vibration_pattern).toBe('strong');
+    expect(normalizeAlarmRow({ ...base, vibration_pattern: 'none' }).vibration_pattern).toBe('none');
+  });
+
+  it('defaults wake_mode to sound_then_voice', () => {
+    expect(normalizeAlarmRow({ ...base }).wake_mode).toBe('sound_then_voice');
+  });
+
+  it('preserves valid wake_mode', () => {
+    expect(normalizeAlarmRow({ ...base, wake_mode: 'voice_only' }).wake_mode).toBe('voice_only');
+  });
+
+  it('nullifies missing voice_profile_id and speaker_id', () => {
+    const r = normalizeAlarmRow({ ...base });
+    expect(r.voice_profile_id).toBeNull();
+    expect(r.speaker_id).toBeNull();
+  });
+
+  it('detects family alarm from category', () => {
+    expect(normalizeAlarmRow({ ...base, category: 'family' }).is_family_alarm).toBe(true);
+    expect(normalizeAlarmRow({ ...base, category: 'family-voice' }).is_family_alarm).toBe(true);
+    expect(normalizeAlarmRow({ ...base, category: 'personal' }).is_family_alarm).toBe(false);
+  });
+
+  it('detects received family alarm when viewer differs from sender', () => {
+    const row = { ...base, category: 'family', user_id: 'sender-1' };
+    expect(normalizeAlarmRow(row, 'viewer-2').is_received_family_alarm).toBe(true);
+    expect(normalizeAlarmRow(row, 'sender-1').is_received_family_alarm).toBe(false);
+    expect(normalizeAlarmRow(row).is_received_family_alarm).toBe(false);
+  });
+
+  it('extracts sender info', () => {
+    const row = { ...base, user_id: 'u1', creator_name: 'Kim', creator_email: 'k@t.co' };
+    const r = normalizeAlarmRow(row);
+    expect(r.sender_name).toBe('Kim');
+    expect(r.sender_email).toBe('k@t.co');
+    expect(r.sender_user_id).toBe('u1');
+  });
+});
+
+describe('validateAlarmFields', () => {
+  it('returns null for valid empty body', () => {
+    expect(validateAlarmFields({})).toBeNull();
+  });
+
+  it('rejects invalid message_id', () => {
+    const r = validateAlarmFields({ message_id: 'not-uuid' });
+    expect(r?.error_code).toBe('INVALID_MESSAGE_ID');
+  });
+
+  it('accepts valid message_id', () => {
+    expect(validateAlarmFields({ message_id: '12345678-1234-1234-1234-123456789012' })).toBeNull();
+  });
+
+  it('rejects non-string target_user_id', () => {
+    const r = validateAlarmFields({ target_user_id: 123 as unknown as string });
+    expect(r?.error_code).toBe('INVALID_TARGET_USER');
+  });
+
+  it('rejects invalid mode', () => {
+    expect(validateAlarmFields({ mode: 'vibrate' })?.error_code).toBe('INVALID_ALARM_MODE');
+  });
+
+  it('accepts valid modes', () => {
+    for (const m of ALARM_MODES) {
+      expect(validateAlarmFields({ mode: m })).toBeNull();
+    }
+  });
+
+  it('rejects invalid vibration_pattern', () => {
+    expect(validateAlarmFields({ vibration_pattern: 'turbo' })?.error_code).toBe('INVALID_VIBRATION_PATTERN');
+  });
+
+  it('accepts valid vibration_patterns', () => {
+    for (const v of VIBRATION_PATTERNS) {
+      expect(validateAlarmFields({ vibration_pattern: v })).toBeNull();
+    }
+  });
+
+  it('rejects invalid wake_mode', () => {
+    expect(validateAlarmFields({ wake_mode: 'alarm_only' })?.error_code).toBe('INVALID_WAKE_MODE');
+  });
+
+  it('accepts valid wake_modes', () => {
+    for (const w of WAKE_MODES) {
+      expect(validateAlarmFields({ wake_mode: w })).toBeNull();
+    }
+  });
+
+  it('rejects invalid voice_profile_id but allows null', () => {
+    expect(validateAlarmFields({ voice_profile_id: 'bad' })?.error_code).toBe('INVALID_VOICE_PROFILE_ID');
+    expect(validateAlarmFields({ voice_profile_id: null })).toBeNull();
+  });
+
+  it('rejects invalid speaker_id but allows null', () => {
+    expect(validateAlarmFields({ speaker_id: 'bad' })?.error_code).toBe('INVALID_SPEAKER_ID');
+    expect(validateAlarmFields({ speaker_id: null })).toBeNull();
+  });
+
+  it('rejects malformed time', () => {
+    expect(validateAlarmFields({ time: '9:00' })?.error_code).toBe('INVALID_TIME_FORMAT');
+    expect(validateAlarmFields({ time: '123:00' })?.error_code).toBe('INVALID_TIME_FORMAT');
+  });
+
+  it('rejects out-of-range time values', () => {
+    expect(validateAlarmFields({ time: '25:00' })?.error_code).toBe('INVALID_TIME_VALUE');
+    expect(validateAlarmFields({ time: '12:60' })?.error_code).toBe('INVALID_TIME_VALUE');
+  });
+
+  it('accepts valid times', () => {
+    expect(validateAlarmFields({ time: '00:00' })).toBeNull();
+    expect(validateAlarmFields({ time: '23:59' })).toBeNull();
+    expect(validateAlarmFields({ time: '07:30' })).toBeNull();
+  });
+
+  it('rejects invalid repeat_days', () => {
+    expect(validateAlarmFields({ repeat_days: [7] })?.error_code).toBe('INVALID_REPEAT_DAYS');
+    expect(validateAlarmFields({ repeat_days: [-1] })?.error_code).toBe('INVALID_REPEAT_DAYS');
+    expect(validateAlarmFields({ repeat_days: [1.5] })?.error_code).toBe('INVALID_REPEAT_DAYS');
+    expect(validateAlarmFields({ repeat_days: 'mon' as unknown as number[] })?.error_code).toBe('INVALID_REPEAT_DAYS');
+  });
+
+  it('accepts valid repeat_days', () => {
+    expect(validateAlarmFields({ repeat_days: [] })).toBeNull();
+    expect(validateAlarmFields({ repeat_days: [0, 3, 6] })).toBeNull();
+  });
+
+  it('rejects invalid snooze_minutes', () => {
+    expect(validateAlarmFields({ snooze_minutes: 0 })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+    expect(validateAlarmFields({ snooze_minutes: 31 })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+    expect(validateAlarmFields({ snooze_minutes: 5.5 })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+  });
+
+  it('accepts valid snooze_minutes', () => {
+    expect(validateAlarmFields({ snooze_minutes: 1 })).toBeNull();
+    expect(validateAlarmFields({ snooze_minutes: 15 })).toBeNull();
+    expect(validateAlarmFields({ snooze_minutes: 30 })).toBeNull();
+  });
+
+  it('rejects non-boolean is_active', () => {
+    expect(validateAlarmFields({ is_active: 1 as unknown as boolean })?.error_code).toBe('INVALID_IS_ACTIVE');
+  });
+
+  it('accepts boolean is_active', () => {
+    expect(validateAlarmFields({ is_active: true })).toBeNull();
+    expect(validateAlarmFields({ is_active: false })).toBeNull();
+  });
+});

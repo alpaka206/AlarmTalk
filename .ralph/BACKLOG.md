@@ -1335,3 +1335,10 @@
 - [x] `apps/mobile/test/sentry.test.ts` 신규 — DSN 미설정/빈값 시 init 미호출 검증 (모바일 lib 14/14 모듈 테스트 완료)
 - [x] `apps/mobile/app/onboarding.tsx` — 페이지 타이틀에 accessibilityRole="header" 추가
 - [x] typecheck 통과 (backend + mobile 0 errors)
+
+## P99 — Route Helper 단위 테스트 추가 ✅ (2026-04-25)
+
+- [x] `packages/backend/test/alarm-helpers.test.ts` — normalizeAlarmRow + validateAlarmFields (37 tests)
+- [x] `packages/backend/test/character-helpers.test.ts` — rowToCharacter, buildProgress, serializeCharacter, todayString (11 tests)
+- [x] `packages/backend/test/billing-helpers.test.ts` — PAID_PLAN_TYPES, planTypeToUserPlan (5 tests)
+- [x] 전체 테스트 836/836 통과, typecheck 0 errors
