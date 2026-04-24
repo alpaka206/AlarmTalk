@@ -877,3 +877,14 @@
 - [x] i18n ko/en `common.or` 키 추가
 - [x] typecheck 통과 (mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
+
+---
+
+## P51 — people/message 대형 화면 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/peopleStyles.ts` 신규 — people 화면 스타일 275줄 추출
+- [x] `app/people/index.tsx` 리팩토링: 770→494줄 (-36%)
+- [x] `src/styles/messageCreateStyles.ts` 신규 — message/create 스타일 320줄 추출
+- [x] `app/message/create.tsx` 리팩토링: 727→406줄 (-44%)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
