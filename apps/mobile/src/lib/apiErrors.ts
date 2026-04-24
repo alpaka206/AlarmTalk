@@ -36,6 +36,7 @@ const ERROR_CODE_I18N: Record<string, string> = {
   MESSAGE_IN_USE: 'apiError.messageInUse',
   MESSAGE_NOT_FOUND: 'apiError.messageNotFound',
   NOTE_NOT_FOUND: 'apiError.noteNotFound',
+  ALARM_NOT_FOUND: 'apiError.alarmNotFound',
   RECIPIENT_NOT_FOUND: 'apiError.recipientNotFound',
   RECEIVER_NOT_FOUND: 'apiError.recipientNotFound',
   USER_NOT_FOUND: 'apiError.userNotFound',

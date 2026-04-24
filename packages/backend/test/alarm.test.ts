@@ -19,7 +19,7 @@ function buildApp(userId = 'user-1') {
 }
 
 beforeEach(() => {
-  mockDB.calls.length = 0;
+  mockDB.reset();
 });
 
 describe('GET /alarm — 알람 목록', () => {
@@ -199,7 +199,7 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(403);
   });
 
-  it('무료 플랜 알람 2개 초과면 403', async () => {
+  it('���료 플랜 알람 2개 초과면 403', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
     mockDB.pushResult([{ count: 2 }]); // alarm count
     const app = buildApp();
@@ -207,6 +207,7 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toContain('무료 플랜');
+    expect(body.error_code).toBe('FREE_PLAN_LIMIT');
   });
 
   it('메시지가 존재하지 않으면 404', async () => {
@@ -353,10 +354,11 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
   });
 
   it('잘못된 time 형식이면 400', async () => {
-    mockDB.pushResult([{ id: ID.alarm }]);
     const app = buildApp();
     const res = await app.request(jsonReq('PATCH', `/alarm/${ID.alarm}`, { time: 'bad' }));
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_TIME_FORMAT');
   });
 
   it('정상 수정', async () => {
@@ -468,11 +470,13 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
 });
 
 describe('DELETE /alarm/:id — 알람 삭제', () => {
-  it('존재하지 않으면 404', async () => {
+  it('존재하지 않으면 404 + ALARM_NOT_FOUND', async () => {
     mockDB.pushResult([], 0);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/alarm/${ID.alarm404}`));
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('ALARM_NOT_FOUND');
   });
 
   it('정상 삭제', async () => {
@@ -482,5 +486,71 @@ describe('DELETE /alarm/:id — 알람 삭제', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+});
+
+describe('error_code 일관성 검증', () => {
+  it('POST — required fields 누락 시 REQUIRED_FIELDS_MISSING', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/alarm', { time: '07:00' }));
+    const body = await res.json();
+    expect(body.error_code).toBe('REQUIRED_FIELDS_MISSING');
+  });
+
+  it('POST — 잘못된 mode 시 INVALID_ALARM_MODE', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', mode: 'video' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_ALARM_MODE');
+  });
+
+  it('POST — 잘못된 vibration_pattern 시 INVALID_VIBRATION_PATTERN', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', vibration_pattern: 'extreme' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_VIBRATION_PATTERN');
+  });
+
+  it('POST — 잘못된 wake_mode 시 INVALID_WAKE_MODE', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00', wake_mode: 'alarm_only' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_WAKE_MODE');
+  });
+
+  it('PATCH — 소유하지 않은 알람 시 ALARM_NOT_FOUND', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('PATCH', `/alarm/${ID.alarm404}`, { time: '08:00' }));
+    const body = await res.json();
+    expect(body.error_code).toBe('ALARM_NOT_FOUND');
+  });
+
+  it('PATCH — 업데이트 필드 없으면 NO_UPDATE_FIELDS', async () => {
+    mockDB.pushResult([{ id: ID.alarm }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('PATCH', `/alarm/${ID.alarm}`, {}));
+    const body = await res.json();
+    expect(body.error_code).toBe('NO_UPDATE_FIELDS');
+  });
+
+  it('GET /:id — 잘못된 ID 형식 시 INVALID_ALARM_ID', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/alarm/not-a-uuid'));
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_ALARM_ID');
+  });
+
+  it('DELETE — 잘못된 ID 형식 시 INVALID_ALARM_ID', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', '/alarm/not-a-uuid'));
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_ALARM_ID');
   });
 });

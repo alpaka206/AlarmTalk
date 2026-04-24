@@ -1,19 +1,18 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P83 접근성 역할(accessibilityRole) 누락 보강
-- 현재 Phase: **R0~R6 전체 완료 + P11~P83 완료**
+- 마지막 루프: 2026-04-25 — P84 alarm.ts 검증 로직 중복 제거 + error_code 일관성
+- 현재 Phase: **R0~R6 전체 완료 + P11~P84 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 798/798, mobile 662/662)
+- 전체 테스트 통과 (backend 806/806, mobile 662/662)
 
 ## 완료된 리팩토링
 
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11~P81**: 전체 완료 (상세 내역은 이전 STATE 참조)
-- **P82**: 백엔드 FCM 푸시 알림 i18n (ko/en pushTexts 맵 + locale 파라미터) + voice diarize 응답 label 영문화 + notes.ts Accept-Language 기반 locale 전달 + FCM 테스트 7건 추가
-- **P83**: 접근성 역할(accessibilityRole) 누락 보강 — 홈/알람/사람들/설정/QueryStateView 5개 파일, 16건 수정 (button 11건, header 5건, link 1건 + accessibilityLabel 4건 추가)
+- **P11~P83**: 전체 완료 (상세 내역은 이전 STATE 참조)
+- **P84**: alarm.ts validateAlarmFields() 추출로 POST/PATCH 검증 중복 제거 (~70줄→2줄), 모든 에러 응답에 error_code 추가 (17종), 프론트엔드 ALARM_NOT_FOUND 매핑 + i18n, 테스트 8건 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404

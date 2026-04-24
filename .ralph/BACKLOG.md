@@ -215,6 +215,16 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 662/662, +4)
 
+## P84 — alarm.ts 검증 로직 중복 제거 + error_code 일관성 ✅ (2026-04-25)
+
+- [x] `validateAlarmFields()` 함수 추출 — POST/PATCH 공통 검증 통합 (~70줄 중복 → 2줄 호출)
+- [x] 모든 알람 에러 응답에 `error_code` 추가 (17종: REQUIRED_FIELDS_MISSING, INVALID_ALARM_MODE, INVALID_VIBRATION_PATTERN, INVALID_WAKE_MODE, INVALID_VOICE_PROFILE_ID, INVALID_SPEAKER_ID, INVALID_TIME_FORMAT, INVALID_TIME_VALUE, INVALID_REPEAT_DAYS, INVALID_SNOOZE_MINUTES, INVALID_IS_ACTIVE, INVALID_ALARM_ID, ALARM_NOT_FOUND, NO_UPDATE_FIELDS, INVALID_MESSAGE_ID, INVALID_TARGET_USER)
+- [x] PATCH 검증을 DB 조회 전으로 이동 (fail-fast)
+- [x] 프론트엔드 `apiErrors.ts`에 ALARM_NOT_FOUND 매핑 + ko/en i18n 키 추가
+- [x] `alarm.test.ts` beforeEach mockDB.reset() 전환 + error_code 테스트 8건 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 806/806, +8; mobile 662/662)
+
 ---
 
 ## 완료 항목 (이전 루프)

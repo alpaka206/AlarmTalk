@@ -76,6 +76,80 @@ function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
   };
 }
 
+type FieldError = { error: string; error_code: string };
+
+function validateAlarmFields(body: {
+  mode?: string;
+  vibration_pattern?: string;
+  wake_mode?: string;
+  voice_profile_id?: string | null;
+  speaker_id?: string | null;
+  time?: string;
+  repeat_days?: number[];
+  snooze_minutes?: number;
+  message_id?: string;
+  is_active?: boolean;
+  target_user_id?: string;
+}): FieldError | null {
+  if (body.message_id !== undefined && !UUID_RE.test(body.message_id)) {
+    return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
+  }
+
+  if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {
+    return { error: 'Invalid target_user_id', error_code: 'INVALID_TARGET_USER' };
+  }
+
+  if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {
+    return { error: `mode must be one of: ${ALARM_MODES.join(', ')}`, error_code: 'INVALID_ALARM_MODE' };
+  }
+
+  if (body.vibration_pattern !== undefined && !VIBRATION_PATTERNS.includes(body.vibration_pattern as VibrationPattern)) {
+    return { error: `vibration_pattern must be one of: ${VIBRATION_PATTERNS.join(', ')}`, error_code: 'INVALID_VIBRATION_PATTERN' };
+  }
+
+  if (body.wake_mode !== undefined && !WAKE_MODES.includes(body.wake_mode as WakeMode)) {
+    return { error: `wake_mode must be one of: ${WAKE_MODES.join(', ')}`, error_code: 'INVALID_WAKE_MODE' };
+  }
+
+  if (body.voice_profile_id !== undefined && body.voice_profile_id !== null && !UUID_RE.test(body.voice_profile_id)) {
+    return { error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' };
+  }
+
+  if (body.speaker_id !== undefined && body.speaker_id !== null && !UUID_RE.test(body.speaker_id)) {
+    return { error: 'Invalid speaker_id format', error_code: 'INVALID_SPEAKER_ID' };
+  }
+
+  if (body.time !== undefined) {
+    if (!/^\d{2}:\d{2}$/.test(body.time)) {
+      return { error: 'time must be in HH:mm format', error_code: 'INVALID_TIME_FORMAT' };
+    }
+    const [h, m] = body.time.split(':').map(Number);
+    if (h < 0 || h > 23 || m < 0 || m > 59) {
+      return { error: 'Invalid time value', error_code: 'INVALID_TIME_VALUE' };
+    }
+  }
+
+  if (
+    body.repeat_days !== undefined &&
+    (!Array.isArray(body.repeat_days) || body.repeat_days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))
+  ) {
+    return { error: 'repeat_days must be an array of integers 0-6', error_code: 'INVALID_REPEAT_DAYS' };
+  }
+
+  if (
+    body.snooze_minutes !== undefined &&
+    (!Number.isInteger(body.snooze_minutes) || body.snooze_minutes < 1 || body.snooze_minutes > 30)
+  ) {
+    return { error: 'snooze_minutes must be an integer between 1 and 30', error_code: 'INVALID_SNOOZE_MINUTES' };
+  }
+
+  if (body.is_active !== undefined && typeof body.is_active !== 'boolean') {
+    return { error: 'is_active must be a boolean', error_code: 'INVALID_IS_ACTIVE' };
+  }
+
+  return null;
+}
+
 const alarm = new Hono<AppEnv>();
 
 /** 디버그용 cron 틱 — 현재 UTC 시각 기준으로 발화 대상 알람을 반환 (푸시 전송은 하지 않음) */
@@ -176,7 +250,7 @@ alarm.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid alarm ID format' }, 400);
+    return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
   const result = await db.execute({
@@ -191,7 +265,7 @@ alarm.get('/:id', async (c) => {
   });
 
   if (result.rows.length === 0) {
-    return c.json({ error: 'Alarm not found' }, 404);
+    return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
 
   return c.json({ alarm: normalizeAlarmRow(result.rows[0] as AlarmRow, userId) });
@@ -216,60 +290,11 @@ alarm.post('/', async (c) => {
   }>();
 
   if (!body.message_id || !body.time) {
-    return c.json({ error: 'message_id and time are required' }, 400);
+    return c.json({ error: 'message_id and time are required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
   }
 
-  if (!UUID_RE.test(body.message_id)) {
-    return c.json({ error: 'Invalid message_id format' }, 400);
-  }
-
-  if (body.target_user_id && typeof body.target_user_id !== 'string') {
-    return c.json({ error: 'Invalid target_user_id' }, 400);
-  }
-
-  if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {
-    return c.json({ error: `mode must be one of: ${ALARM_MODES.join(', ')}` }, 400);
-  }
-
-  if (body.vibration_pattern !== undefined && !VIBRATION_PATTERNS.includes(body.vibration_pattern as VibrationPattern)) {
-    return c.json({ error: `vibration_pattern must be one of: ${VIBRATION_PATTERNS.join(', ')}` }, 400);
-  }
-
-  if (body.wake_mode !== undefined && !WAKE_MODES.includes(body.wake_mode as WakeMode)) {
-    return c.json({ error: `wake_mode must be one of: ${WAKE_MODES.join(', ')}` }, 400);
-  }
-
-  if (body.voice_profile_id !== undefined && !UUID_RE.test(body.voice_profile_id)) {
-    return c.json({ error: 'Invalid voice_profile_id format' }, 400);
-  }
-
-  if (body.speaker_id !== undefined && !UUID_RE.test(body.speaker_id)) {
-    return c.json({ error: 'Invalid speaker_id format' }, 400);
-  }
-
-  if (!/^\d{2}:\d{2}$/.test(body.time)) {
-    return c.json({ error: 'time must be in HH:mm format' }, 400);
-  }
-
-  const [h, m] = body.time.split(':').map(Number);
-  if (h < 0 || h > 23 || m < 0 || m > 59) {
-    return c.json({ error: 'Invalid time value' }, 400);
-  }
-
-  if (
-    body.repeat_days &&
-    (!Array.isArray(body.repeat_days) ||
-      body.repeat_days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))
-  ) {
-    return c.json({ error: 'repeat_days must be an array of integers 0-6' }, 400);
-  }
-
-  if (
-    body.snooze_minutes !== undefined &&
-    (!Number.isInteger(body.snooze_minutes) || body.snooze_minutes < 1 || body.snooze_minutes > 30)
-  ) {
-    return c.json({ error: 'snooze_minutes must be an integer between 1 and 30' }, 400);
-  }
+  const fieldError = validateAlarmFields(body);
+  if (fieldError) return c.json(fieldError, 400);
 
   if (body.target_user_id && body.target_user_id !== userId) {
     const friendship = await db.execute({
@@ -355,7 +380,7 @@ alarm.patch('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid alarm ID format' }, 400);
+    return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
   const body = await c.req.json<{
@@ -371,74 +396,15 @@ alarm.patch('/:id', async (c) => {
     speaker_id?: string | null;
   }>();
 
-  if (body.message_id !== undefined && !UUID_RE.test(body.message_id)) {
-    return c.json({ error: 'Invalid message_id format' }, 400);
-  }
+  const fieldError = validateAlarmFields(body);
+  if (fieldError) return c.json(fieldError, 400);
 
-  if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {
-    return c.json({ error: `mode must be one of: ${ALARM_MODES.join(', ')}` }, 400);
-  }
-
-  if (body.vibration_pattern !== undefined && !VIBRATION_PATTERNS.includes(body.vibration_pattern as VibrationPattern)) {
-    return c.json({ error: `vibration_pattern must be one of: ${VIBRATION_PATTERNS.join(', ')}` }, 400);
-  }
-
-  if (body.wake_mode !== undefined && !WAKE_MODES.includes(body.wake_mode as WakeMode)) {
-    return c.json({ error: `wake_mode must be one of: ${WAKE_MODES.join(', ')}` }, 400);
-  }
-
-  if (
-    body.voice_profile_id !== undefined &&
-    body.voice_profile_id !== null &&
-    !UUID_RE.test(body.voice_profile_id)
-  ) {
-    return c.json({ error: 'Invalid voice_profile_id format' }, 400);
-  }
-
-  if (
-    body.speaker_id !== undefined &&
-    body.speaker_id !== null &&
-    !UUID_RE.test(body.speaker_id)
-  ) {
-    return c.json({ error: 'Invalid speaker_id format' }, 400);
-  }
-
-  // 알람 소유 확인
   const existing = await db.execute({
     sql: 'SELECT id FROM alarms WHERE id = ? AND user_id = ?',
     args: [id, userId],
   });
   if (existing.rows.length === 0) {
-    return c.json({ error: 'Alarm not found' }, 404);
-  }
-
-  if (body.time !== undefined) {
-    if (!/^\d{2}:\d{2}$/.test(body.time)) {
-      return c.json({ error: 'time must be in HH:mm format' }, 400);
-    }
-    const [h, m] = body.time.split(':').map(Number);
-    if (h < 0 || h > 23 || m < 0 || m > 59) {
-      return c.json({ error: 'Invalid time value' }, 400);
-    }
-  }
-
-  if (
-    body.repeat_days !== undefined &&
-    (!Array.isArray(body.repeat_days) ||
-      body.repeat_days.some((d) => !Number.isInteger(d) || d < 0 || d > 6))
-  ) {
-    return c.json({ error: 'repeat_days must be an array of integers 0-6' }, 400);
-  }
-
-  if (
-    body.snooze_minutes !== undefined &&
-    (!Number.isInteger(body.snooze_minutes) || body.snooze_minutes < 1 || body.snooze_minutes > 30)
-  ) {
-    return c.json({ error: 'snooze_minutes must be an integer between 1 and 30' }, 400);
-  }
-
-  if (body.is_active !== undefined && typeof body.is_active !== 'boolean') {
-    return c.json({ error: 'is_active must be a boolean' }, 400);
+    return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
 
   const updates: string[] = [];
@@ -486,7 +452,7 @@ alarm.patch('/:id', async (c) => {
   }
 
   if (updates.length === 0) {
-    return c.json({ error: 'No fields to update' }, 400);
+    return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
   }
 
   updates.push("updated_at = datetime('now')");
@@ -518,7 +484,7 @@ alarm.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid alarm ID format' }, 400);
+    return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
   const result = await db.execute({
@@ -527,7 +493,7 @@ alarm.delete('/:id', async (c) => {
   });
 
   if (result.rowsAffected === 0) {
-    return c.json({ error: 'Alarm not found' }, 404);
+    return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
   }
 
   return c.json({ success: true });

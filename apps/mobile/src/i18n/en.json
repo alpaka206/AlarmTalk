@@ -893,6 +893,7 @@
     "messageInUse": "Can't delete a message that's in use.",
     "messageNotFound": "Message not found.",
     "noteNotFound": "Note not found.",
+    "alarmNotFound": "Alarm not found.",
     "recipientNotFound": "Recipient not found.",
     "userNotFound": "User not found.",
     "noVoiceProfile": "The recipient has no voice profile."
