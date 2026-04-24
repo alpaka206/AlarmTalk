@@ -457,10 +457,19 @@
 - [x] store/listing.json 신규: ko/en 스토어 리스팅 (제목, 설명, 키워드, 카테고리, 스크린샷 가이드)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P16 — 모바일 유틸 테스트 커버리지 확장 (Batch 2) ✅ (2026-04-24)
+
+- [x] `test/authFormValidation.test.ts` 신규 — 14 tests (login/register 모드별 validation 엣지케이스)
+- [x] `test/waveform.test.ts` 신규 — 15 tests (generateWaveform 결정론성/범위/한글 + formatTime 엣지케이스)
+- [x] `test/presets.test.ts` 신규 — 9 tests (PRESET_CATEGORIES 무결성 + getCategoryLabel + DAYS_OF_WEEK)
+- [x] 전체 206/206 통과 (기존 168 + P16 38), 백엔드 596/596 통과
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
+- useAppStore Zustand 스토어 테스트 (AsyncStorage mock)
+- hooks 테스트 (useAuth, useTheme, useToast, useNetworkStatus)
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
 - Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인
