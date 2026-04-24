@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
 
 const gift = new Hono<AppEnv>();
 
@@ -76,7 +77,7 @@ gift.post('/', async (c) => {
 
     return c.json({ gift: { id, message_id: body.message_id, status: 'pending' } }, 201);
   } catch (err) {
-    console.error(`POST /gift failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to send gift' }, 500);
   }
 });
@@ -123,7 +124,7 @@ gift.get('/received', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ gifts: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /gift/received failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch received gifts' }, 500);
   }
 });
@@ -170,7 +171,7 @@ gift.get('/sent', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ gifts: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /gift/sent failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch sent gifts' }, 500);
   }
 });
@@ -213,7 +214,7 @@ gift.patch('/:id/accept', async (c) => {
 
     return c.json({ success: true, gift: updated.rows[0] });
   } catch (err) {
-    console.error(`PATCH /gift/${id}/accept failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to accept gift' }, 500);
   }
 });
@@ -250,7 +251,7 @@ gift.patch('/:id/reject', async (c) => {
 
     return c.json({ success: true, gift: updated.rows[0] });
   } catch (err) {
-    console.error(`PATCH /gift/${id}/reject failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to reject gift' }, 500);
   }
 });

@@ -1,0 +1,25 @@
+import type { Context } from 'hono';
+import type { SentryClient } from '../types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function logRouteError(c: Context<any>, err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join(' | ') : undefined;
+
+  const entry: Record<string, unknown> = {
+    level: 'error',
+    method: c.req.method,
+    path: c.req.path,
+    error: message,
+  };
+
+  const uid = c.get('userId') as string | undefined;
+  if (uid) entry.uid = uid;
+  if (stack) entry.stack = stack;
+
+  // eslint-disable-next-line no-console
+  console.error(JSON.stringify(entry));
+
+  const sentry = c.get('sentry') as SentryClient | undefined;
+  if (sentry) sentry.captureException(err);
+}

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
 
 const stats = new Hono<AppEnv>();
 
@@ -100,7 +101,7 @@ stats.get('/', async (c) => {
       },
     });
   } catch (err) {
-    console.error(`GET /stats failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch stats' }, 500);
   }
 });
@@ -167,7 +168,7 @@ stats.get('/activity', async (c) => {
 
     return c.json({ activities });
   } catch (err) {
-    console.error(`GET /stats/activity failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch activity' }, 500);
   }
 });

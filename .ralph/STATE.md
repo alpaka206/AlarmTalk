@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P32 t() 폴백 문자열 패턴 정리
-- 현재 Phase: **R0~R6 전체 완료 + P11~P32 완료**
+- 마지막 루프: 2026-04-24 — P33 백엔드 console.error → 구조화 로깅 전환
+- 현재 Phase: **R0~R6 전체 완료 + P11~P33 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 647/647, mobile 316/316)
+- 전체 테스트 통과 (backend 653/653, mobile 316/316)
 
 ## 완료된 리팩토링
 
@@ -32,6 +32,7 @@
 - **P30**: deepLink + updates 테스트 커버리지 — deepLink 파서 23 tests + updates 서비스 7 tests (총 316/316)
 - **P31**: 하드코딩 한국어 문자열 i18n 전환 — picker.tsx 20개 + alarms.tsx 3개 + character/index.tsx 3개 → t() 호출 (ko/en 25키 추가)
 - **P32**: t() 폴백 문자열 패턴 정리 — 6파일 24건 폴백 제거 + 누락 i18n 키 14개 추가 (ko/en)
+- **P33**: 백엔드 console.error → 구조화 로깅 — logRouteError 유틸 + 8파일 22건 마이그레이션 + Sentry 자동 캡처 (6 tests)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -41,3 +42,4 @@
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
 - ~~일부 화면에 t() 폴백 문자열 패턴 잔존~~ → P32에서 전체 정리 완료
+- ~~라우트 console.error 비구조화~~ → P33에서 logRouteError로 전환 완료

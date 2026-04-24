@@ -595,8 +595,25 @@
 - ~~deepLink + updates 테스트 커버리지~~ → P30 완료
 - ~~하드코딩 한국어 문자열 i18n 전환~~ → P31 완료
 - ~~t() 폴백 문자열 패턴 정리~~ → P32 완료
-- 백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)
+- ~~백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)~~ → P33 완료
 - 접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)
+
+## P33 — 백엔드 console.error → 구조화 로깅 전환 ✅ (2026-04-24)
+
+- [x] `src/lib/logger.ts` 신규 — `logRouteError(c, err)` 유틸 (JSON 출력 + Sentry captureException)
+- [x] auth.ts 마이그레이션 (2건)
+- [x] friend.ts 마이그레이션 (5건)
+- [x] gift.ts 마이그레이션 (5건)
+- [x] library.ts 마이그레이션 (3건)
+- [x] stats.ts 마이그레이션 (2건)
+- [x] voice.ts 마이그레이션 (1건)
+- [x] user.ts 마이그레이션 (4건)
+- [x] index.ts onError 마이그레이션 (1건)
+- [x] `test/route-logger.test.ts` — 6 tests
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 316/316)
+
+---
 
 ## P32 — t() 폴백 문자열 패턴 정리 ✅ (2026-04-24)
 

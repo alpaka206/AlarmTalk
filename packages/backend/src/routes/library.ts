@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const library = new Hono<AppEnv>();
@@ -58,7 +59,7 @@ library.get('/', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ items: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /library failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch library' }, 500);
   }
 });
@@ -90,7 +91,7 @@ library.patch('/:id/favorite', async (c) => {
 
     return c.json({ is_favorite: newValue === 1 });
   } catch (err) {
-    console.error(`PATCH /library/${id}/favorite failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to toggle favorite' }, 500);
   }
 });
@@ -116,7 +117,7 @@ library.delete('/:id', async (c) => {
 
     return c.json({ ok: true });
   } catch (err) {
-    console.error(`DELETE /library/${id} failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to delete library item' }, 500);
   }
 });

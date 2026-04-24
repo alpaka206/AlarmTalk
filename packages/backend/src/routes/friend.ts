@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
 
 const friend = new Hono<AppEnv>();
 
@@ -68,7 +69,7 @@ friend.post('/', async (c) => {
       201,
     );
   } catch (err) {
-    console.error(`POST /friend failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to send friend request' }, 500);
   }
 });
@@ -116,7 +117,7 @@ friend.get('/list', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ friends: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /friend/list failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch friends' }, 500);
   }
 });
@@ -151,7 +152,7 @@ friend.get('/pending', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ pending: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /friend/pending failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to fetch pending requests' }, 500);
   }
 });
@@ -191,7 +192,7 @@ friend.patch('/:id/accept', async (c) => {
 
     return c.json({ success: true, friendship: updated.rows[0] });
   } catch (err) {
-    console.error(`PATCH /friend/${id}/accept failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to accept friend request' }, 500);
   }
 });
@@ -217,7 +218,7 @@ friend.delete('/:id', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error(`DELETE /friend/${id} failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to delete friendship' }, 500);
   }
 });

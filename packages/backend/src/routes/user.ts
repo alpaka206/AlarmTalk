@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
 
 const user = new Hono<AppEnv>();
 
@@ -58,8 +59,8 @@ user.get('/me', async (c) => {
       },
     });
   } catch (err) {
+    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
-    console.error(`GET /user/me failed: ${detail}`);
     return c.json({ error: 'Failed to fetch user info', detail }, 500);
   }
 });
@@ -124,7 +125,7 @@ user.patch('/plan', async (c) => {
 
     return c.json({ success: true, plan: body.plan });
   } catch (err) {
-    console.error(`PATCH /user/plan failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to update plan' }, 500);
   }
 });
@@ -151,7 +152,7 @@ user.delete('/me', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error(`DELETE /user/me failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Failed to delete account' }, 500);
   }
 });
@@ -182,7 +183,7 @@ user.get('/search', async (c) => {
       })),
     });
   } catch (err) {
-    console.error(`GET /user/search failed: ${err instanceof Error ? err.message : err}`);
+    logRouteError(c, err);
     return c.json({ error: 'Search failed' }, 500);
   }
 });

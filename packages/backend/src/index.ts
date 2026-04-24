@@ -10,6 +10,7 @@ import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { sendAlarmPush } from './lib/fcm';
+import { logRouteError } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
 import alarmRoutes from './routes/alarm';
@@ -127,24 +128,8 @@ api.route('/notes', notesRoutes);
 app.route('/api', api);
 
 app.onError((err, c) => {
-  const requestId = c.res.headers.get('X-Request-Id') ?? 'unknown';
-  console.error(
-    JSON.stringify({
-      level: 'error',
-      rid: requestId,
-      method: c.req.method,
-      path: c.req.path,
-      error: err.message,
-      stack: err.stack?.split('\n').slice(0, 5).join(' | '),
-    }),
-  );
-
-  const sentry = c.get('sentry');
-  if (sentry) {
-    sentry.captureException(err);
-  }
-
-  return c.json({ error: 'Internal server error', requestId }, 500);
+  logRouteError(c, err);
+  return c.json({ error: 'Internal server error' }, 500);
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml 에 `[triggers] crons = ["* * * * *"]` 등록 시 1분 주기로 호출됨

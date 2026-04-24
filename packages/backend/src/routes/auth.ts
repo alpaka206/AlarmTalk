@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
 import { typedRow } from '../lib/db-types';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
@@ -61,8 +62,7 @@ auth.post('/register', async (c) => {
       201,
     );
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`POST /auth/register failed: ${detail}`);
+    logRouteError(c, err);
     return c.json(jsonError('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
   }
 });
@@ -126,8 +126,7 @@ auth.post('/login', async (c) => {
       },
     });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`POST /auth/login failed: ${detail}`);
+    logRouteError(c, err);
     return c.json(jsonError('AUTH_LOGIN_FAILED', 'Login failed'), 500);
   }
 });

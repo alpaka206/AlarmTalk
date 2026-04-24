@@ -8,6 +8,7 @@ import { getSharedInMemoryVoiceStorage, MockVoiceProvider } from '@voice-alarm/v
 import { R2VoiceStorage } from '../lib/r2-storage';
 
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
 
 function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
   if (env?.VOICE_BUCKET) return new R2VoiceStorage(env.VOICE_BUCKET);
@@ -429,8 +430,8 @@ voice.post('/clone', async (c) => {
       201,
     );
   } catch (err) {
+    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`Voice clone failed for user ${userId}: ${detail}`);
 
     return c.json(
       {
