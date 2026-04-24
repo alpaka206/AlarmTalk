@@ -19,12 +19,21 @@ interface RequestConfig {
 }
 
 export class ApiError extends Error {
+  public errorCode: string | null;
+
   constructor(
     public status: number,
     public responseData: unknown,
   ) {
     super(`API Error ${status}`);
     this.name = 'ApiError';
+    this.errorCode =
+      responseData != null &&
+      typeof responseData === 'object' &&
+      'error_code' in responseData &&
+      typeof (responseData as Record<string, unknown>).error_code === 'string'
+        ? (responseData as Record<string, unknown>).error_code as string
+        : null;
   }
 }
 

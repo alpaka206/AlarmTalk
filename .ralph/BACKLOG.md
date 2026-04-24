@@ -195,6 +195,17 @@
 
 ---
 
+## P80 — 모바일 error_code 처리 시스템 ✅ (2026-04-25)
+- [x] `ApiError` 클래스에 `errorCode` 필드 추가 — responseData에서 `error_code` 자동 추출
+- [x] `src/lib/apiErrors.ts` 신규 — `getApiErrorMessage(error, t)` + `getErrorCode(error)` 유틸리티
+- [x] 40개 백엔드 error_code → i18n 키 매핑 (FREE_PLAN_LIMIT, VOICE_LIMIT_REACHED, CODE_* 등)
+- [x] HTTP 상태 코드별 폴백 메시지 (401, 403, 404, 409, 429, 500)
+- [x] `ko.json` + `en.json`에 `apiError.*` 46키 추가
+- [x] `test/apiErrors.test.ts` — 33 tests (error_code 매핑 17 + HTTP 폴백 6 + getErrorCode 3 + ApiError 추출 5 + edge 2)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
+
 ## 완료 항목 (이전 루프)
 
 <details>

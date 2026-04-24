@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P79 Sentry captureException 버그 수정
-- 현재 Phase: **R0~R6 전체 완료 + P11~P79 완료**
+- 마지막 루프: 2026-04-25 — P80 모바일 error_code 처리 시스템
+- 현재 Phase: **R0~R6 전체 완료 + P11~P80 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 793/793, mobile 625/625)
+- 전체 테스트 통과 (backend 793/793, mobile 658/658)
 
 ## 완료된 리팩토링
 
@@ -79,6 +79,7 @@
 - **P77**: family-group 라우트 테스트 26건 (GET current 4 + POST leave 4 + POST transfer 11 + DELETE member 7, 전체 780/780)
 - **P78**: family-helpers 유틸 + sentry 미들웨어 테스트 12건 (resolveUserPk 3 + assertSameGroup 5 + sentryMiddleware 4, 전체 792/792) + Sentry captureException 미작동 버그 발견
 - **P79**: Sentry captureException 버그 수정 — try-catch → app.onError 패턴 마이그레이션 (sentry.ts + index.ts + sentry.test.ts 5건, 전체 793/793)
+- **P80**: 모바일 error_code 처리 시스템 — ApiError.errorCode 추출 + apiErrors.ts 유틸 (40개 error_code → i18n 매핑) + ko/en 46키 추가 + 33 tests (전체 658/658)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
