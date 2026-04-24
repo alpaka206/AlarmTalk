@@ -37,7 +37,7 @@ familyInvite.post('/invites', async (c) => {
     if (resolved.rows.length === 0) {
       return c.json({ error: '소유한 가족 플랜 그룹이 없습니다', error_code: 'NO_OWNED_GROUP' }, 404);
     }
-    planGroupId = String(resolved.rows[0].id);
+    planGroupId = String(resolved.rows[0]!.id);
   }
 
   const groupRes = await db.execute({
@@ -47,7 +47,7 @@ familyInvite.post('/invites', async (c) => {
   if (groupRes.rows.length === 0) {
     return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
   }
-  const group = groupRes.rows[0];
+  const group = groupRes.rows[0]!;
   if (String(group.owner_user_id) !== userPk) {
     return c.json({ error: '그룹 소유자만 초대할 수 있습니다', error_code: 'OWNER_ONLY' }, 403);
   }
@@ -61,8 +61,8 @@ familyInvite.post('/invites', async (c) => {
                 AND expires_at > datetime('now')) AS pending_count`,
     args: [planGroupId, planGroupId],
   });
-  const memberCount = Number(countRes.rows[0].member_count) || 0;
-  const pendingCount = Number(countRes.rows[0].pending_count) || 0;
+  const memberCount = Number(countRes.rows[0]!.member_count) || 0;
+  const pendingCount = Number(countRes.rows[0]!.pending_count) || 0;
   if (memberCount + pendingCount >= maxMembers) {
     return c.json(
       { error: `정원 초과 (최대 ${maxMembers}명, 멤버 ${memberCount} + 대기 ${pendingCount})`, error_code: 'GROUP_FULL' },
@@ -147,7 +147,7 @@ familyInvite.post('/invites/:code/accept', async (c) => {
   if (inviteRes.rows.length === 0) {
     return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'INVITE_NOT_FOUND' }, 404);
   }
-  const invite = inviteRes.rows[0];
+  const invite = inviteRes.rows[0]!;
   const inviteId = String(invite.id);
   const planGroupId = String(invite.plan_group_id);
   const inviterUserId = String(invite.inviter_user_id);
@@ -192,12 +192,12 @@ familyInvite.post('/invites/:code/accept', async (c) => {
   if (groupRes.rows.length === 0) {
     return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
   }
-  const maxMembers = Number(groupRes.rows[0].max_members) || 6;
+  const maxMembers = Number(groupRes.rows[0]!.max_members) || 6;
   const countRes = await db.execute({
     sql: `SELECT COUNT(*) AS c FROM plan_group_members WHERE plan_group_id = ?`,
     args: [planGroupId],
   });
-  const memberCount = Number(countRes.rows[0].c) || 0;
+  const memberCount = Number(countRes.rows[0]!.c) || 0;
   if (memberCount >= maxMembers) {
     return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
   }
@@ -247,7 +247,7 @@ familyInvite.post('/invites/:code/revoke', async (c) => {
   if (inviteRes.rows.length === 0) {
     return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'INVITE_NOT_FOUND' }, 404);
   }
-  const invite = inviteRes.rows[0];
+  const invite = inviteRes.rows[0]!;
   if (String(invite.inviter_user_id) !== userPk) {
     return c.json({ error: '발급자만 취소할 수 있습니다', error_code: 'NOT_INVITER' }, 403);
   }

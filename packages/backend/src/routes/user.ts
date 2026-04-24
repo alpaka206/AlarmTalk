@@ -20,7 +20,7 @@ user.get('/me', async (c) => {
 
     if (result.rows.length === 0) {
       const id = crypto.randomUUID();
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0]!;
       await db.execute({
         sql: `INSERT INTO users (id, google_id, firebase_uid, email, name, picture, daily_tts_reset_at)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -32,7 +32,7 @@ user.get('/me', async (c) => {
       });
     }
 
-    const u = result.rows[0];
+    const u = result.rows[0]!;
     const [profileCount, alarmCount] = await Promise.all([
       db.execute({
         sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',

@@ -65,7 +65,7 @@ billingQuery.get('/subscription', async (c) => {
     return c.json({ subscription: null, plan: null });
   }
 
-  const r = result.rows[0];
+  const r = result.rows[0]!;
   return c.json({
     subscription: {
       id: String(r.sub_id),

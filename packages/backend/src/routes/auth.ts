@@ -44,7 +44,7 @@ auth.post('/register', async (c) => {
 
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]!;
 
     await db.execute({
       sql: `INSERT INTO users (id, email, password_hash, name, daily_tts_reset_at)
@@ -100,7 +100,7 @@ auth.post('/login', async (c) => {
       password_hash: string | null;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    }>(result.rows[0]);
+    }>(result.rows[0]!);
 
     if (!row.password_hash) {
       return c.json(jsonError('AUTH_OAUTH_ONLY', 'This account uses OAuth sign-in'), 401);
@@ -152,7 +152,7 @@ auth.get('/me', async (c) => {
       email: string;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    }>(result.rows[0]);
+    }>(result.rows[0]!);
     return c.json({
       user: {
         id: row.id,

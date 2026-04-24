@@ -122,7 +122,7 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
-  const upload = typedRow<{ id: string; user_id: string; object_key: string }>(uploadRes.rows[0]);
+  const upload = typedRow<{ id: string; user_id: string; object_key: string }>(uploadRes.rows[0]!);
   if (upload.user_id !== userId) {
     return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
@@ -174,7 +174,7 @@ voiceUpload.get('/uploads/:uploadId/speakers', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
-  if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
+  if (typedRow<{ user_id: string }>(uploadRes.rows[0]!).user_id !== userId) {
     return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 
@@ -215,7 +215,7 @@ voiceUpload.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' }, 404);
   }
-  if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
+  if (typedRow<{ user_id: string }>(uploadRes.rows[0]!).user_id !== userId) {
     return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 

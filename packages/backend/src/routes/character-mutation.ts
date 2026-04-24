@@ -53,7 +53,7 @@ characterMutation.post('/xp', async (c) => {
       args: [userPk, clientNonce],
     });
     if (dup.rows.length > 0) {
-      const log = typedRow<{ event: string; granted_xp: number; affection_delta: number; capped: number }>(dup.rows[0]);
+      const log = typedRow<{ event: string; granted_xp: number; affection_delta: number; capped: number }>(dup.rows[0]!);
       const row = await loadOrCreateCharacter(db, userPk);
       const [stats, achievements] = await Promise.all([
         loadStats(db, row.id),

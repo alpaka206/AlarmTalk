@@ -66,7 +66,7 @@ familyAlarm.post('/alarms', async (c) => {
   if (recipientRes.rows.length === 0) {
     return c.json({ error: '수신자를 찾을 수 없습니다', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
   }
-  const recipient = recipientRes.rows[0];
+  const recipient = recipientRes.rows[0]!;
   if (Number(recipient.allow_family_alarms ?? 0) !== 1) {
     return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
   }
@@ -90,7 +90,7 @@ familyAlarm.post('/alarms', async (c) => {
     if (latest.rows.length === 0) {
       return c.json({ error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' }, 400);
     }
-    voiceProfileId = String(latest.rows[0].id);
+    voiceProfileId = String(latest.rows[0]!.id);
   }
 
   const repeatDays = normalizeRepeatDays(body.repeat_days);
@@ -204,7 +204,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
   if (recipientRes.rows.length === 0) {
     return c.json({ error: '수신자를 찾을 수 없습니다', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
   }
-  const recipient = recipientRes.rows[0];
+  const recipient = recipientRes.rows[0]!;
   if (Number(recipient.allow_family_alarms ?? 0) !== 1) {
     return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
   }
@@ -216,10 +216,10 @@ familyAlarm.post('/alarms/voice', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: '음성 업로드를 찾을 수 없습니다', error_code: 'UPLOAD_NOT_FOUND' }, 400);
   }
-  if (String(uploadRes.rows[0].user_id) !== senderPk) {
+  if (String(uploadRes.rows[0]!.user_id) !== senderPk) {
     return c.json({ error: '업로드 소유자가 아닙니다', error_code: 'NOT_UPLOAD_OWNER' }, 400);
   }
-  const objectKey = String(uploadRes.rows[0].object_key);
+  const objectKey = String(uploadRes.rows[0]!.object_key);
 
   const latestVp = await db.execute({
     sql: `SELECT id FROM voice_profiles WHERE user_id = ?
@@ -229,7 +229,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
   if (latestVp.rows.length === 0) {
     return c.json({ error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' }, 400);
   }
-  const voiceProfileId = String(latestVp.rows[0].id);
+  const voiceProfileId = String(latestVp.rows[0]!.id);
 
   const repeatDays = normalizeRepeatDays(body.repeat_days);
   const messageId = crypto.randomUUID();

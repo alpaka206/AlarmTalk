@@ -51,7 +51,7 @@ gift.post('/', async (c) => {
       return c.json({ error: '받는 사람을 찾을 수 없습니다.', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
     }
 
-    const recipientId = recipient.rows[0].google_id as string;
+    const recipientId = recipient.rows[0]!.google_id as string;
 
     if (recipientId === userId) {
       return c.json({ error: '자기 자신에게는 선물할 수 없습니다.', error_code: 'SELF_GIFT' }, 400);
@@ -203,7 +203,7 @@ gift.patch('/:id/accept', async (c) => {
     const libId = crypto.randomUUID();
     await db.execute({
       sql: 'INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)',
-      args: [libId, userId, existing.rows[0].message_id],
+      args: [libId, userId, existing.rows[0]!.message_id!],
     });
 
     const updated = await db.execute({

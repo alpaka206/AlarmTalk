@@ -39,7 +39,7 @@ export async function resolveUserPk(
     sql: 'SELECT id FROM users WHERE google_id = ?',
     args: [googleId],
   });
-  return res.rows.length === 0 ? null : String(res.rows[0].id);
+  return res.rows.length === 0 ? null : String(res.rows[0]!.id);
 }
 
 export function rowToCharacter(row: Row): CharacterRow {
@@ -70,7 +70,7 @@ export async function loadOrCreateCharacter(
     args: [userPk],
   });
   if (existing.rows.length > 0) {
-    return rowToCharacter(existing.rows[0]);
+    return rowToCharacter(existing.rows[0]!);
   }
   const id = crypto.randomUUID();
   await db.execute({
@@ -82,7 +82,7 @@ export async function loadOrCreateCharacter(
     sql: 'SELECT * FROM characters WHERE id = ?',
     args: [id],
   });
-  return rowToCharacter(created.rows[0]);
+  return rowToCharacter(created.rows[0]!);
 }
 
 export function buildProgress(xp: number, level: number) {
@@ -127,7 +127,7 @@ export async function loadStats(
     args: [characterId],
   });
   if (res.rows.length === 0) return null;
-  const r = typedRow<{ diligence: number; health: number; consistency: number }>(res.rows[0]);
+  const r = typedRow<{ diligence: number; health: number; consistency: number }>(res.rows[0]!);
   return {
     diligence: Number(r.diligence ?? 0),
     health: Number(r.health ?? 0),
@@ -164,5 +164,5 @@ export async function ensureStatsRow(
 }
 
 export function todayString(now: Date = new Date()): string {
-  return now.toISOString().split('T')[0];
+  return now.toISOString().split('T')[0]!;
 }

@@ -13,7 +13,7 @@ async function resolveUserPk(
     sql: 'SELECT id FROM users WHERE google_id = ?',
     args: [googleId],
   });
-  return res.rows.length > 0 ? String(res.rows[0].id) : null;
+  return res.rows.length > 0 ? String(res.rows[0]!.id) : null;
 }
 
 notes.post('/', async (c) => {
@@ -135,7 +135,7 @@ notes.get('/received', async (c) => {
       read_at: (r.read_at as string | null) ?? null,
       created_at: String(r.created_at),
     })),
-    total: Number(countRes.rows[0].cnt),
+    total: Number(countRes.rows[0]!.cnt),
     limit,
     offset,
   });
@@ -181,7 +181,7 @@ notes.get('/sent', async (c) => {
       read_at: (r.read_at as string | null) ?? null,
       created_at: String(r.created_at),
     })),
-    total: Number(countRes.rows[0].cnt),
+    total: Number(countRes.rows[0]!.cnt),
     limit,
     offset,
   });
@@ -202,10 +202,10 @@ notes.patch('/:id/read', async (c) => {
   if (noteRes.rows.length === 0) {
     return c.json({ error: '쪽지를 찾을 수 없습니다', error_code: 'NOTE_NOT_FOUND' }, 404);
   }
-  if (String(noteRes.rows[0].receiver_id) !== userPk) {
+  if (String(noteRes.rows[0]!.receiver_id) !== userPk) {
     return c.json({ error: '권한이 없습니다', error_code: 'FORBIDDEN' }, 403);
   }
-  if (noteRes.rows[0].read_at) {
+  if (noteRes.rows[0]!.read_at) {
     return c.json({ success: true, already_read: true });
   }
 

@@ -75,7 +75,7 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
 function decodeJwtPayload(token: string): TokenPayload {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid token format');
-  const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
   return JSON.parse(atob(b64));
 }
 

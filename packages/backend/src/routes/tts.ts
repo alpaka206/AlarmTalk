@@ -55,9 +55,9 @@ tts.post('/generate', async (c) => {
   });
 
   if (user.rows.length > 0) {
-    const u = user.rows[0];
+    const u = user.rows[0]!;
     const plan = u.plan as string;
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]!;
 
     // 일일 리셋
     if (u.daily_tts_reset_at !== today) {
@@ -90,7 +90,7 @@ tts.post('/generate', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  const vp = profile.rows[0];
+  const vp = profile.rows[0]!;
   if (vp.status !== 'ready') {
     return c.json({ error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' }, 400);
   }
@@ -127,7 +127,7 @@ tts.post('/generate', async (c) => {
     const bytes = new Uint8Array(audioBuffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]!);
     }
     const base64Audio = btoa(binary);
 
@@ -194,7 +194,7 @@ tts.get('/messages', async (c) => {
     }),
   ]);
 
-  const total = Number(countRes.rows[0].total);
+  const total = Number(countRes.rows[0]!.total);
   return c.json({ messages: result.rows, total, limit, offset });
 });
 
@@ -212,7 +212,7 @@ tts.delete('/messages/:id', async (c) => {
     sql: 'SELECT COUNT(*) as cnt FROM alarms WHERE message_id = ?',
     args: [id],
   });
-  const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]).cnt ?? 0);
+  const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]!).cnt ?? 0);
 
   if (alarmCount > 0 && c.req.query('force') !== 'true') {
     return c.json({

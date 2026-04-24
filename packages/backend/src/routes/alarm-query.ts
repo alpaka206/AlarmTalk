@@ -91,7 +91,7 @@ alarmQuery.get('/', async (c) => {
     }),
   ]);
 
-  const total = Number(countRes.rows[0].total);
+  const total = Number(countRes.rows[0]!.total);
   const alarms = (result.rows as AlarmRow[]).map((r) => normalizeAlarmRow(r, userId));
   return c.json({ alarms, total, limit, offset });
 });

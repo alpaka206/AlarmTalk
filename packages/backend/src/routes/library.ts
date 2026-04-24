@@ -83,7 +83,7 @@ library.patch('/:id/favorite', async (c) => {
       return c.json({ error: 'Library item not found', error_code: 'LIBRARY_ITEM_NOT_FOUND' }, 404);
     }
 
-    const newValue = Number(result.rows[0].is_favorite) === 1 ? 0 : 1;
+    const newValue = Number(result.rows[0]!.is_favorite) === 1 ? 0 : 1;
     await db.execute({
       sql: 'UPDATE message_library SET is_favorite = ? WHERE id = ?',
       args: [newValue, id],

@@ -56,12 +56,12 @@ alarmMutation.post('/', async (c) => {
     args: [alarmOwner],
   });
 
-  if (user.rows.length > 0 && user.rows[0].plan === 'free') {
+  if (user.rows.length > 0 && user.rows[0]!.plan === 'free') {
     const alarmCount = await db.execute({
       sql: 'SELECT COUNT(*) as count FROM alarms WHERE user_id = ? OR target_user_id = ?',
       args: [alarmOwner, alarmOwner],
     });
-    if (Number(alarmCount.rows[0].count) >= 2) {
+    if (Number(alarmCount.rows[0]!.count) >= 2) {
       return c.json({ error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.', error_code: 'FREE_PLAN_LIMIT' }, 403);
     }
   }

@@ -27,7 +27,7 @@ friend.post('/', async (c) => {
       return c.json({ error: '해당 이메일의 사용자를 찾을 수 없습니다.', error_code: 'USER_NOT_FOUND' }, 404);
     }
 
-    const targetUserId = target.rows[0].google_id as string;
+    const targetUserId = target.rows[0]!.google_id as string;
 
     if (targetUserId === userId) {
       return c.json({ error: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', error_code: 'SELF_REQUEST' }, 400);
@@ -40,7 +40,7 @@ friend.post('/', async (c) => {
     });
 
     if (existing.rows.length > 0) {
-      const status = existing.rows[0].status;
+      const status = existing.rows[0]!.status;
       if (status === 'accepted') {
         return c.json({ error: '이미 친구입니다.', error_code: 'ALREADY_FRIENDS' }, 409);
       }
@@ -61,8 +61,8 @@ friend.post('/', async (c) => {
           id,
           user_a: userId,
           user_b: targetUserId,
-          target_email: target.rows[0].email,
-          target_name: target.rows[0].name,
+          target_email: target.rows[0]!.email,
+          target_name: target.rows[0]!.name,
           status: 'pending',
         },
       },

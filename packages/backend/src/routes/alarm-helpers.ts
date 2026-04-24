@@ -120,7 +120,7 @@ export function validateAlarmFields(body: {
     if (!/^\d{2}:\d{2}$/.test(body.time)) {
       return { error: 'time must be in HH:mm format', error_code: 'INVALID_TIME_FORMAT' };
     }
-    const [h, m] = body.time.split(':').map(Number);
+    const [h, m] = body.time.split(':').map(Number) as [number, number];
     if (h < 0 || h > 23 || m < 0 || m > 59) {
       return { error: 'Invalid time value', error_code: 'INVALID_TIME_VALUE' };
     }

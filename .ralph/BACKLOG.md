@@ -1347,4 +1347,11 @@
 
 - [x] `packages/backend/test/voice.test.ts` — GET /voice/family (3), POST /voice/clone (6), POST /voice/diarize (3) = 12 tests 추가
 - [x] ElevenLabsClient mock + ENV 바인딩 인프라 추가
+
+## P101 — TypeScript 엄격 모드 강화: noUncheckedIndexedAccess ✅ (2026-04-25)
+
+- [x] `packages/backend/tsconfig.json`에 `noUncheckedIndexedAccess: true` 활성화
+- [x] 171개 컴파일 에러 수정 (27개 소스 파일)
+- [x] 주요 패턴: `rows[0]` → `rows[0]!`, array destructuring → tuple cast, bounded loop `!`
+- [x] 전체 테스트 848/848 통과, typecheck 0 errors (backend + mobile)
 - [x] 전체 테스트 848/848 통과, typecheck 0 errors

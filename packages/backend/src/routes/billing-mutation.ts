@@ -26,7 +26,7 @@ billingMutation.post('/checkout', async (c) => {
   if (planRes.rows.length === 0) {
     return c.json({ error: '존재하지 않는 플랜입니다', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
-  const plan = planRes.rows[0];
+  const plan = planRes.rows[0]!;
   if (Number(plan.is_active) !== 1) {
     return c.json({ error: '비활성화된 플랜입니다', error_code: 'PLAN_INACTIVE' }, 400);
   }
@@ -163,7 +163,7 @@ billingMutation.post('/redeem', async (c) => {
   if (voucherRes.rows.length === 0) {
     return c.json({ error: '해당 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
   }
-  const voucher = voucherRes.rows[0];
+  const voucher = voucherRes.rows[0]!;
   const status = String(voucher.status);
   const voucherId = String(voucher.id);
   const planId = String(voucher.plan_id);
@@ -198,7 +198,7 @@ billingMutation.post('/redeem', async (c) => {
   if (planRes.rows.length === 0) {
     return c.json({ error: '연결된 플랜을 찾을 수 없습니다', error_code: 'PLAN_NOT_FOUND' }, 404);
   }
-  const plan = planRes.rows[0];
+  const plan = planRes.rows[0]!;
   const planType = String(plan.plan_type);
   const periodDays = Number(plan.period_days) || 30;
   const startsAt = now;

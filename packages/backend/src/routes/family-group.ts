@@ -25,7 +25,7 @@ familyGroup.get('/groups/current', async (c) => {
   if (groupRes.rows.length === 0) {
     return c.json({ group: null, members: [], role: null });
   }
-  const g = groupRes.rows[0];
+  const g = groupRes.rows[0]!;
   const groupId = String(g.id);
 
   const membersRes = await db.execute({
@@ -76,7 +76,7 @@ familyGroup.post('/groups/:groupId/leave', async (c) => {
   if (memberRes.rows.length === 0) {
     return c.json({ error: '해당 그룹의 멤버가 아닙니다', error_code: 'NOT_MEMBER' }, 403);
   }
-  const myRole = String(memberRes.rows[0].role);
+  const myRole = String(memberRes.rows[0]!.role);
   if (myRole === 'owner') {
     return c.json(
       { error: '소유자는 탈퇴할 수 없습니다. 먼저 권한을 양도하거나 그룹을 해체하세요', error_code: 'OWNER_CANNOT_LEAVE' },
@@ -86,7 +86,7 @@ familyGroup.post('/groups/:groupId/leave', async (c) => {
 
   await db.execute({
     sql: `DELETE FROM plan_group_members WHERE id = ?`,
-    args: [String(memberRes.rows[0].id)],
+    args: [String(memberRes.rows[0]!.id)],
   });
 
   return c.json({ success: true, left_group_id: groupId });
@@ -120,7 +120,7 @@ familyGroup.post('/groups/:groupId/transfer-ownership', async (c) => {
   if (groupRes.rows.length === 0) {
     return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
   }
-  if (String(groupRes.rows[0].owner_user_id) !== userPk) {
+  if (String(groupRes.rows[0]!.owner_user_id) !== userPk) {
     return c.json({ error: '그룹 소유자만 양도할 수 있습니다', error_code: 'OWNER_ONLY' }, 403);
   }
 
@@ -175,7 +175,7 @@ familyGroup.delete('/groups/:groupId/members/:userId', async (c) => {
   if (groupRes.rows.length === 0) {
     return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
   }
-  if (String(groupRes.rows[0].owner_user_id) !== userPk) {
+  if (String(groupRes.rows[0]!.owner_user_id) !== userPk) {
     return c.json({ error: '그룹 소유자만 멤버를 제거할 수 있습니다', error_code: 'OWNER_ONLY' }, 403);
   }
   if (targetUserId === userPk) {
@@ -190,13 +190,13 @@ familyGroup.delete('/groups/:groupId/members/:userId', async (c) => {
   if (targetRes.rows.length === 0) {
     return c.json({ error: '대상이 해당 그룹의 멤버가 아닙니다', error_code: 'TARGET_NOT_MEMBER' }, 404);
   }
-  if (String(targetRes.rows[0].role) === 'owner') {
+  if (String(targetRes.rows[0]!.role) === 'owner') {
     return c.json({ error: 'owner 는 제거할 수 없습니다', error_code: 'CANNOT_REMOVE_OWNER' }, 400);
   }
 
   await db.execute({
     sql: `DELETE FROM plan_group_members WHERE id = ?`,
-    args: [String(targetRes.rows[0].id)],
+    args: [String(targetRes.rows[0]!.id)],
   });
 
   return c.json({ success: true, removed_user_id: targetUserId });

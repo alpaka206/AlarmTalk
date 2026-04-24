@@ -35,7 +35,7 @@ voiceProfile.get('/', async (c) => {
     }),
   ]);
 
-  const total = Number(countRes.rows[0].total);
+  const total = Number(countRes.rows[0]!.total);
   return c.json({ profiles: result.rows, total, limit, offset });
 });
 
@@ -136,7 +136,7 @@ voiceProfile.post('/clone', async (c) => {
       sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
       args: [userId],
     });
-    const count = Number(profileCount.rows[0].count);
+    const count = Number(profileCount.rows[0]!.count);
     if (count >= MAX_VOICE_PROFILES) {
       return c.json(
         {
@@ -236,8 +236,8 @@ voiceProfile.get('/:id/stats', async (c) => {
 
   return c.json({
     voice_profile_id: id,
-    messages: Number(typedRow<{ count: number }>(msgRes.rows[0]).count ?? 0),
-    alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]).count ?? 0),
+    messages: Number(typedRow<{ count: number }>(msgRes.rows[0]!).count ?? 0),
+    alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]!).count ?? 0),
   });
 });
 
@@ -259,13 +259,13 @@ voiceProfile.delete('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  const profile = result.rows[0];
+  const profile = result.rows[0]!;
 
   const msgCheck = await db.execute({
     sql: 'SELECT COUNT(*) as cnt FROM messages WHERE voice_profile_id = ?',
     args: [id],
   });
-  const msgCount = Number(typedRow<{ cnt: number }>(msgCheck.rows[0]).cnt ?? 0);
+  const msgCount = Number(typedRow<{ cnt: number }>(msgCheck.rows[0]!).cnt ?? 0);
 
   if (msgCount > 0 && c.req.query('force') !== 'true') {
     return c.json(

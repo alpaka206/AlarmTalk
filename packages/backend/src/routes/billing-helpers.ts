@@ -18,5 +18,5 @@ export async function resolveUserPk(c: Context<AppEnv>): Promise<string | null> 
     args: [userId],
   });
   if (res.rows.length === 0) return null;
-  return String(res.rows[0].id);
+  return String(res.rows[0]!.id);
 }

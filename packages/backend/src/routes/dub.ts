@@ -10,7 +10,7 @@ const dub = new Hono<AppEnv>();
 async function getSpaceSeq(perso: PersoClient): Promise<number> {
   const { result } = await perso.listSpaces();
   if (!result.length) throw new Error('No Perso spaces available');
-  return result[0].spaceSeq;
+  return result[0]!.spaceSeq;
 }
 
 dub.get('/languages', async (c) => {
@@ -59,7 +59,7 @@ dub.post('/', async (c) => {
     const { blobSasUrl } = await perso.getSasToken(fileName);
     await perso.uploadToBlob(blobSasUrl, audioBuffer);
 
-    const blobUrl = blobSasUrl.split('?')[0];
+    const blobUrl = blobSasUrl.split('?')[0]!;
     const registered = await perso.registerAudio(spaceSeq, blobUrl, fileName);
 
     const { result } = await perso.requestTranslation(spaceSeq, {
@@ -70,7 +70,7 @@ dub.post('/', async (c) => {
       numberOfSpeakers: 1,
     });
 
-    const projectSeq = result.startGenerateProjectIdList[0];
+    const projectSeq = result.startGenerateProjectIdList[0]!;
 
     await db.execute({
       sql: `UPDATE dub_jobs SET status = 'processing', perso_project_seq = ?, perso_media_seq = ? WHERE id = ?`,
@@ -121,7 +121,7 @@ dub.get('/:id', async (c) => {
     return c.json({ error: 'Dub job not found', error_code: 'DUB_JOB_NOT_FOUND' }, 404);
   }
 
-  const job = jobRes.rows[0];
+  const job = jobRes.rows[0]!;
 
   if (job.status === 'ready' || job.status === 'failed') {
     return c.json({
@@ -198,7 +198,7 @@ dub.get('/:id', async (c) => {
     const bytes = new Uint8Array(audioBuffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]!);
     }
     const audioBase64 = btoa(binary);
 
@@ -212,13 +212,13 @@ dub.get('/:id', async (c) => {
       });
 
       if (srcMsg.rows.length > 0) {
-        const src = srcMsg.rows[0];
+        const src = srcMsg.rows[0]!;
         resultMessageId = crypto.randomUUID();
 
         await db.execute({
           sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category)
                 VALUES (?, ?, ?, ?, ?)`,
-          args: [resultMessageId, userId, src.voice_profile_id, `[${job.target_language}] ${src.text}`, src.category],
+          args: [resultMessageId, userId, src.voice_profile_id!, `[${job.target_language}] ${src.text}`, src.category!],
         });
 
         await db.execute({

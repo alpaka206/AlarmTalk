@@ -32,7 +32,7 @@ codeRoutes.post('/register', async (c) => {
   if (userRes.rows.length === 0) {
     return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
-  const userPk = String(userRes.rows[0].id);
+  const userPk = String(userRes.rows[0]!.id);
 
   const upper = raw.toUpperCase();
 
@@ -47,7 +47,7 @@ codeRoutes.post('/register', async (c) => {
     if (voucherRes.rows.length === 0) {
       return c.json({ error: '해당 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
     }
-    const voucher = voucherRes.rows[0];
+    const voucher = voucherRes.rows[0]!;
     const status = String(voucher.status);
     const voucherId = String(voucher.id);
     const planId = String(voucher.plan_id);
@@ -81,7 +81,7 @@ codeRoutes.post('/register', async (c) => {
     if (planRes.rows.length === 0) {
       return c.json({ error: '연결된 플랜을 찾을 수 없습니다', error_code: 'PLAN_NOT_FOUND' }, 404);
     }
-    const plan = planRes.rows[0];
+    const plan = planRes.rows[0]!;
     const planType = String(plan.plan_type);
     const periodDays = Number(plan.period_days) || 30;
     const startsAt = now;
@@ -136,7 +136,7 @@ codeRoutes.post('/register', async (c) => {
     if (inviteRes.rows.length === 0) {
       return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
     }
-    const invite = inviteRes.rows[0];
+    const invite = inviteRes.rows[0]!;
     const inviteId = String(invite.id);
     const planGroupId = String(invite.plan_group_id);
     const status = String(invite.status);
@@ -180,12 +180,12 @@ codeRoutes.post('/register', async (c) => {
     if (groupRes.rows.length === 0) {
       return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
     }
-    const maxMembers = Number(groupRes.rows[0].max_members) || 6;
+    const maxMembers = Number(groupRes.rows[0]!.max_members) || 6;
     const countRes = await db.execute({
       sql: `SELECT COUNT(*) AS c FROM plan_group_members WHERE plan_group_id = ?`,
       args: [planGroupId],
     });
-    const memberCount = Number(countRes.rows[0].c) || 0;
+    const memberCount = Number(countRes.rows[0]!.c) || 0;
     if (memberCount >= maxMembers) {
       return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
     }

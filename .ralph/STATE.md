@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 미테스트 Voice 엔드포인트 테스트 추가
-- 현재 Phase: **R0~R6 전체 완료 + P11~P100 완료**
+- 마지막 루프: 2026-04-25 — noUncheckedIndexedAccess 활성화 (백엔드)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P101 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 848/848)
 
@@ -11,8 +11,8 @@
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11~P99**: 전체 완료
-- **P100**: voice-profile/voice-upload 미테스트 엔드포인트 3개 커버 (family, clone, diarize — 12 tests)
+- **P11~P100**: 전체 완료
+- **P101**: noUncheckedIndexedAccess 활성화 — 171개 에러 수정 (27개 파일)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -28,3 +28,7 @@
 - alarm.ts 502줄 → 11줄 aggregator (P95)
 - character.ts 405줄 → 11줄 aggregator (P96)
 - billing.ts 378줄 → 10줄 aggregator (P97)
+
+## TypeScript 엄격 모드 현황
+- Backend: `strict: true` + `noUncheckedIndexedAccess: true` ✅
+- Mobile: `strict: true` (noUncheckedIndexedAccess 미적용)

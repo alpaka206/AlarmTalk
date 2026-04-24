@@ -8,7 +8,7 @@ export async function resolveUserPk(
     sql: 'SELECT id FROM users WHERE google_id = ?',
     args: [googleId],
   });
-  return res.rows.length === 0 ? null : String(res.rows[0].id);
+  return res.rows.length === 0 ? null : String(res.rows[0]!.id);
 }
 
 export async function assertSameGroup(
