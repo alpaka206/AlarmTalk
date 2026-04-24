@@ -586,6 +586,19 @@
 
 ---
 
+## P57 — 백엔드 대형 라우트 파일 분할 (family.ts 834줄) ✅ (2026-04-25)
+
+- [x] `family.ts` → 13줄 thin aggregator (Hono `.route('/')` 마운트)
+- [x] `family-invite.ts` 신규 — 266줄 (POST/GET/accept/revoke invites)
+- [x] `family-group.ts` 신규 — 205줄 (current/leave/transfer/remove-member)
+- [x] `family-alarm.ts` 신규 ��� 292줄 (text alarm + voice alarm)
+- [x] `lib/family-helpers.ts` 신규 — 35줄 (resolveUserPk + assertSameGroup)
+- [x] index.ts 변경 불필요 (기존 `api.route('/family', familyRoutes)` 유지)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 466/466)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - ~~앱 아이콘 설정 (adaptive icon config)~~ → P26 완료
@@ -926,3 +939,12 @@
 - [x] 5파일 7건 `toLocaleDateString('ko-KR')` → `getDateLocale()` 교체 (index, voices, friend, message, library, voice)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
+
+## P56 — 알림 채널/액션 버튼 i18n 전환 ✅ (2026-04-25)
+
+- [x] `notifications.ts` — top-level side effect → `configureNotificationChannels(t: TFunction)` 함수 래핑
+- [x] `_layout.tsx` — i18n 준비 후 `configureNotificationChannels(t)` 호출
+- [x] i18n ko/en `notification.snoozeAction`, `notification.dismissAction` 2키 추가
+- [x] 기존 `settings.channel*` 8키를 채널 생성 코드에서 실제 사용하도록 연결
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466, a11y-audit 30/30)

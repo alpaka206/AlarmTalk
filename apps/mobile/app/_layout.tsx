@@ -21,6 +21,7 @@ import {
   addNotificationResponseListener,
   scheduleSnoozeNotification,
   registerPushTokenWithServer,
+  configureNotificationChannels,
   SNOOZE_ACTION,
   DISMISS_ACTION,
 } from '../src/services/notifications';
@@ -110,6 +111,7 @@ export default function RootLayout() {
     setupAudioSession();
     ensureAudioDir();
     checkForOTAUpdate(t);
+    configureNotificationChannels(t);
 
     if (Platform.OS !== 'web') {
       requestNotificationPermissions().then((granted) => {

@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P55 날짜 로캘 i18n 전환
-- 현재 Phase: **R0~R6 전체 완료 + P11~P55 완료**
+- 마지막 루프: 2026-04-25 — P57 backend family.ts 라우트 분할
+- 현재 Phase: **R0~R6 전체 완료 + P11~P57 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
@@ -55,6 +55,8 @@
 - **P53**: character/settings 스타일 추출 — character/index.tsx 541→298줄 (-45%), settings/index.tsx 518→363줄 (-30%)
 - **P54**: library/dub 스타일 추출 — library/index.tsx 536→355줄 (-34%), dub/translate.tsx 501→309줄 (-38%)
 - **P55**: 날짜 로캘 하드코딩 → i18n 동적 전환 — `getDateLocale()` 유틸 + 5파일 7건 'ko-KR' 제거
+- **P56**: 알림 채널/액션 버튼 i18n 전환 — top-level side effect → `configureNotificationChannels(t)` 함수화 + notification.* 2키 추가
+- **P57**: backend family.ts 분할 — 834줄→13줄 aggregator + 3 sub-routers (invite 266, group 205, alarm 292) + family-helpers.ts 35줄
 
 ## 알려진 이슈
 - [blocked] Perso API 404

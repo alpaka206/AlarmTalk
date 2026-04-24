@@ -847,5 +847,9 @@
     "shareCode": "Code: {{code}}",
     "shareExpiry": "Expires: {{date}}",
     "shareInstruction": "Enter it in [Code Registration] in the app to use."
+  },
+  "notification": {
+    "snoozeAction": "😴 Snooze",
+    "dismissAction": "✓ Dismiss"
   }
 }

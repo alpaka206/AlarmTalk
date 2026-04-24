@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import type { TFunction } from 'i18next';
 import type { Alarm } from '../types';
 import { parseRepeatDays } from '../lib/alarmForm';
 import { registerPushToken, unregisterPushToken } from './api';
@@ -38,54 +39,56 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return status === 'granted';
 }
 
-if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync(NotificationChannel.ALARMS, {
-    name: '알람',
-    description: '알람 시간에 울리는 알림',
-    importance: Notifications.AndroidImportance.MAX,
-    sound: 'default',
-    vibrationPattern: [0, 500, 250, 500],
-    enableLights: true,
-    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-    bypassDnd: true,
-  });
+export function configureNotificationChannels(t: TFunction): void {
+  if (Platform.OS === 'android') {
+    Notifications.setNotificationChannelAsync(NotificationChannel.ALARMS, {
+      name: t('settings.channelAlarms'),
+      description: t('settings.channelAlarmsDesc'),
+      importance: Notifications.AndroidImportance.MAX,
+      sound: 'default',
+      vibrationPattern: [0, 500, 250, 500],
+      enableLights: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      bypassDnd: true,
+    });
 
-  Notifications.setNotificationChannelAsync(NotificationChannel.NOTES, {
-    name: '쪽지',
-    description: '가족/커플이 보낸 음성 쪽지',
-    importance: Notifications.AndroidImportance.HIGH,
-    sound: 'default',
-    vibrationPattern: [0, 250, 200, 250],
-    enableLights: true,
-  });
+    Notifications.setNotificationChannelAsync(NotificationChannel.NOTES, {
+      name: t('settings.channelNotes'),
+      description: t('settings.channelNotesDesc'),
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: 'default',
+      vibrationPattern: [0, 250, 200, 250],
+      enableLights: true,
+    });
 
-  Notifications.setNotificationChannelAsync(NotificationChannel.REMINDERS, {
-    name: '리마인더',
-    description: '스트릭, 캐릭터 성장 알림',
-    importance: Notifications.AndroidImportance.DEFAULT,
-    sound: 'default',
-  });
+    Notifications.setNotificationChannelAsync(NotificationChannel.REMINDERS, {
+      name: t('settings.channelReminders'),
+      description: t('settings.channelRemindersDesc'),
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: 'default',
+    });
 
-  Notifications.setNotificationChannelAsync(NotificationChannel.SYSTEM, {
-    name: '시스템',
-    description: '친구 요청, 앱 업데이트 등',
-    importance: Notifications.AndroidImportance.LOW,
-  });
-}
+    Notifications.setNotificationChannelAsync(NotificationChannel.SYSTEM, {
+      name: t('settings.channelSystem'),
+      description: t('settings.channelSystemDesc'),
+      importance: Notifications.AndroidImportance.LOW,
+    });
+  }
 
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationCategoryAsync(ALARM_CATEGORY, [
-    {
-      identifier: SNOOZE_ACTION,
-      buttonTitle: '😴 스누즈',
-      options: { opensAppToForeground: false },
-    },
-    {
-      identifier: DISMISS_ACTION,
-      buttonTitle: '✓ 끄기',
-      options: { opensAppToForeground: false },
-    },
-  ]);
+  if (Platform.OS !== 'web') {
+    Notifications.setNotificationCategoryAsync(ALARM_CATEGORY, [
+      {
+        identifier: SNOOZE_ACTION,
+        buttonTitle: t('notification.snoozeAction'),
+        options: { opensAppToForeground: false },
+      },
+      {
+        identifier: DISMISS_ACTION,
+        buttonTitle: t('notification.dismissAction'),
+        options: { opensAppToForeground: false },
+      },
+    ]);
+  }
 }
 
 export async function syncAlarmNotifications(alarms: Alarm[]): Promise<void> {

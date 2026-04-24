@@ -847,5 +847,9 @@
     "shareCode": "코드: {{code}}",
     "shareExpiry": "만료: {{date}}",
     "shareInstruction": "앱에서 [코드 등록]에 입력해 사용하세요."
+  },
+  "notification": {
+    "snoozeAction": "😴 스누즈",
+    "dismissAction": "✓ 끄기"
   }
 }
