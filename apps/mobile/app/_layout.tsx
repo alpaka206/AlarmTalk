@@ -211,6 +211,13 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="note/[id]"
+              options={{
+                headerShown: true,
+                title: t('noteDetail.title'),
+              }}
+            />
+            <Stack.Screen
               name="people/index"
               options={{ headerShown: true, title: t('people.title', '내 사람들') }}
             />

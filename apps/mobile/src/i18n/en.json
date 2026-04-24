@@ -595,6 +595,12 @@
     "sendSuccess": "Note sent successfully",
     "sendError": "Failed to send note"
   },
+  "noteDetail": {
+    "title": "Note",
+    "notFound": "Note not found",
+    "messageLabel": "Message: {{text}}",
+    "audioAvailable": "🔊 Voice message attached"
+  },
   "codeRegister": {
     "title": "Register Code",
     "subtitle": "Enter a voucher code or family invite code",

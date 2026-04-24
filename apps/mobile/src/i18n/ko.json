@@ -600,6 +600,12 @@
     "sendSuccess": "쪽지를 보냈습니다",
     "sendError": "쪽지 전송에 실패했습니다"
   },
+  "noteDetail": {
+    "title": "쪽지",
+    "notFound": "쪽지를 찾을 수 없습니다",
+    "messageLabel": "메시지: {{text}}",
+    "audioAvailable": "🔊 음성 메시지가 첨부되어 있습니다"
+  },
   "codeRegister": {
     "title": "코드 등록",
     "subtitle": "이용권 코드 또는 가족 초대 코드를 입력하세요",

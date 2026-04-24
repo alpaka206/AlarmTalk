@@ -431,6 +431,14 @@
 - [x] useCallback: library renderCategoryItem/getCategoryLabel, gift/received renderGiftItem/statusLabel, voice/[id] renderListItem
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P13 — 쪽지 상세 화면 구현 ✅ (2026-04-24)
+
+- [x] `app/note/[id].tsx` 신규 — 발신자 아바타/이름/이메일, 날짜/시간, 메시지 전문, 오디오 섹션 (future-ready)
+- [x] `app/(tabs)/compose.tsx` — 쪽지 탭 시 `/note/${id}` 네비게이션 추가
+- [x] `app/_layout.tsx` — `note/[id]` Stack.Screen 등록
+- [x] i18n `noteDetail.*` 4키 추가 (ko/en)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)

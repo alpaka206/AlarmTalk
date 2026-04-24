@@ -48,8 +48,9 @@ export default function ComposeScreen() {
       if (!note.read_at) {
         readMutation.mutate(note.id);
       }
+      router.push(`/note/${note.id}`);
     },
-    [readMutation],
+    [readMutation, router],
   );
 
   const handleSendAlarm = useCallback(() => {
