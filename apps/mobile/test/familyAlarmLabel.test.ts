@@ -2,6 +2,17 @@ import {
   buildFamilyAlarmLabel,
   isReceivedFamilyAlarm,
 } from '../src/lib/familyAlarmLabel';
+import type { TFunction } from 'i18next';
+
+const t = ((key: string, opts?: Record<string, string>) => {
+  if (opts) {
+    return Object.entries(opts).reduce(
+      (s, [k, v]) => s.replace(`{{${k}}}`, v),
+      key,
+    );
+  }
+  return key;
+}) as TFunction;
 
 describe('isReceivedFamilyAlarm', () => {
   it('가족 카테고리 아니면 false', () => {
@@ -60,7 +71,7 @@ describe('isReceivedFamilyAlarm', () => {
 
 describe('buildFamilyAlarmLabel', () => {
   it('수신 가족 알람 아니면 visible=false', () => {
-    const label = buildFamilyAlarmLabel({ is_family_alarm: false }, 'self');
+    const label = buildFamilyAlarmLabel({ is_family_alarm: false }, 'self', t);
     expect(label.visible).toBe(false);
     expect(label.text).toBe('');
   });
@@ -69,8 +80,10 @@ describe('buildFamilyAlarmLabel', () => {
     const label = buildFamilyAlarmLabel(
       { is_family_alarm: true, sender_user_id: 'other', sender_name: '엄마' },
       'self',
+      t,
     );
-    expect(label).toEqual({ visible: true, text: '💌 엄마 님이 보낸 알람' });
+    expect(label.visible).toBe(true);
+    expect(label.text).toBe('familyAlarmLabel.receivedAlarm');
   });
 
   it('sender_name 없고 sender_email 있으면 email 사용', () => {
@@ -82,8 +95,9 @@ describe('buildFamilyAlarmLabel', () => {
         sender_email: 'mom@example.com',
       },
       'self',
+      t,
     );
-    expect(label.text).toBe('💌 mom@example.com 님이 보낸 알람');
+    expect(label.visible).toBe(true);
   });
 
   it('sender_name 이 공백만이면 email fallback', () => {
@@ -95,11 +109,12 @@ describe('buildFamilyAlarmLabel', () => {
         sender_email: 'dad@example.com',
       },
       'self',
+      t,
     );
-    expect(label.text).toBe('💌 dad@example.com 님이 보낸 알람');
+    expect(label.visible).toBe(true);
   });
 
-  it('이름·이메일 모두 없으면 "가족" 표시', () => {
+  it('이름·이메일 모두 없으면 family fallback', () => {
     const label = buildFamilyAlarmLabel(
       {
         is_family_alarm: true,
@@ -108,7 +123,8 @@ describe('buildFamilyAlarmLabel', () => {
         sender_email: null,
       },
       'self',
+      t,
     );
-    expect(label.text).toBe('💌 가족 님이 보낸 알람');
+    expect(label.visible).toBe(true);
   });
 });

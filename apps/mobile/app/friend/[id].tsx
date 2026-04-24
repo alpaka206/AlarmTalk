@@ -115,7 +115,7 @@ export default function FriendProfileScreen() {
         {giftsFromFriend.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle} accessibilityRole="header">
-              {t('friendProfile.recentGiftsFrom', { name: friend.friend_name || '친구' })}
+              {t('friendProfile.recentGiftsFrom', { name: friend.friend_name || t('friendProfile.friendFallback') })}
             </Text>
             {giftsFromFriend.slice(0, 5).map((g: Gift) => (
               <View

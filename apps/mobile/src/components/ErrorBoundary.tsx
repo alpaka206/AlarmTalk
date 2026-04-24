@@ -1,5 +1,6 @@
 import { Component, useMemo, type ReactNode, type ComponentType } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 import { Sentry } from '../lib/sentry';
@@ -14,13 +15,14 @@ interface State {
 }
 
 function ErrorFallback({ errorMessage, onRetry }: { errorMessage: string | null; onRetry: () => void }) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={dynStyles.container} accessibilityRole="alert">
       <Text style={dynStyles.emoji}>😵</Text>
-      <Text style={dynStyles.title}>문제가 발생했습니다</Text>
-      <Text style={dynStyles.subtitle}>앱을 다시 시도해 주세요</Text>
+      <Text style={dynStyles.title}>{t('errorBoundary.title')}</Text>
+      <Text style={dynStyles.subtitle}>{t('errorBoundary.subtitle')}</Text>
       {errorMessage && (
         <Text style={dynStyles.detail} numberOfLines={3}>
           {errorMessage}
@@ -30,9 +32,9 @@ function ErrorFallback({ errorMessage, onRetry }: { errorMessage: string | null;
         onPress={onRetry}
         style={dynStyles.retryButton}
         accessibilityRole="button"
-        accessibilityLabel="다시 시도"
+        accessibilityLabel={t('errorBoundary.retry')}
       >
-        <Text style={dynStyles.retryText}>다시 시도</Text>
+        <Text style={dynStyles.retryText}>{t('errorBoundary.retry')}</Text>
       </Pressable>
     </View>
   );

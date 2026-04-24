@@ -99,6 +99,7 @@ function AlarmsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const userId = useAppStore((s) => s.userId);
   const { t } = useTranslation();
   const { colors } = useTheme();
   const toast = useToast();
@@ -313,7 +314,7 @@ function AlarmsScreen() {
                 </Text>
               </View>
               {(() => {
-                const familyLabel = buildFamilyAlarmLabel(item);
+                const familyLabel = buildFamilyAlarmLabel(item, userId, t);
                 return familyLabel.visible ? (
                   <View style={styles.familyBadge}>
                     <Text style={styles.familyBadgeText} accessibilityLabel={familyLabel.text}>

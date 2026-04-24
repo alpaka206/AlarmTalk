@@ -124,8 +124,8 @@ export default function CharacterScreen() {
 
   const currentStreak = data?.streak?.current ?? 0;
   const dialogue = useMemo(
-    () => pickStreakAwareDialogue(stage, currentStreak, () => ((dialogueSeed * 9301 + 49297) % 233280) / 233280),
-    [stage, currentStreak, dialogueSeed],
+    () => pickStreakAwareDialogue(stage, currentStreak, t, () => ((dialogueSeed * 9301 + 49297) % 233280) / 233280),
+    [stage, currentStreak, dialogueSeed, t],
   );
 
   const handleTap = useCallback(() => {
@@ -174,7 +174,7 @@ export default function CharacterScreen() {
             <Text style={dynStyles.characterName}>{character.name}</Text>
             <View style={dynStyles.badge}>
               <Text style={dynStyles.badgeText}>
-                Lv.{character.level} · {stageToLabel(character.stage)}
+                Lv.{character.level} · {stageToLabel(character.stage, t)}
               </Text>
             </View>
           </View>

@@ -56,7 +56,7 @@ export default function VoiceDetailScreen() {
   };
 
   const commitEdit = (currentName: string) => {
-    const sanitized = sanitizeVoiceName(draftName);
+    const sanitized = sanitizeVoiceName(draftName, t);
     if (!sanitized.ok) {
       Alert.alert(t('common.error'), sanitized.error ?? t('voiceDetail.renameInputError'));
       return;

@@ -5,6 +5,9 @@ import {
   type FamilyAlarmFormInput,
 } from '../src/lib/familyAlarmForm';
 import type { FamilyGroupMember } from '../src/services/api';
+import type { TFunction } from 'i18next';
+
+const t = ((key: string) => key) as TFunction;
 
 function m(overrides: Partial<FamilyGroupMember> & { user_id: string }): FamilyGroupMember {
   return {
@@ -64,7 +67,7 @@ describe('validateFamilyAlarmForm', () => {
   };
 
   it('정상 입력 → payload 반환', () => {
-    const result = validateFamilyAlarmForm({ ...base, repeatDays: [1, 3, 5] });
+    const result = validateFamilyAlarmForm({ ...base, repeatDays: [1, 3, 5] }, t);
     if (!result.ok) throw new Error('expected ok');
     expect(result.payload).toEqual({
       recipient_user_id: 'user-x',
@@ -75,47 +78,47 @@ describe('validateFamilyAlarmForm', () => {
   });
 
   it('공백 문자 포함 메시지는 trim 됨', () => {
-    const result = validateFamilyAlarmForm({ ...base, messageText: '  hi  ' });
+    const result = validateFamilyAlarmForm({ ...base, messageText: '  hi  ' }, t);
     if (!result.ok) throw new Error('expected ok');
     expect(result.payload.message_text).toBe('hi');
   });
 
   it('repeatDays 중복·범위 밖 제거 + 정렬', () => {
-    const result = validateFamilyAlarmForm({ ...base, repeatDays: [5, 1, 1, 7, -1, 3] });
+    const result = validateFamilyAlarmForm({ ...base, repeatDays: [5, 1, 1, 7, -1, 3] }, t);
     if (!result.ok) throw new Error('expected ok');
     expect(result.payload.repeat_days).toEqual([1, 3, 5]);
   });
 
   it('빈 repeatDays 는 payload 에서 생략', () => {
-    const result = validateFamilyAlarmForm(base);
+    const result = validateFamilyAlarmForm(base, t);
     if (!result.ok) throw new Error('expected ok');
     expect(result.payload.repeat_days).toBeUndefined();
   });
 
   it('recipientUserId 없으면 에러', () => {
-    const result = validateFamilyAlarmForm({ ...base, recipientUserId: null });
+    const result = validateFamilyAlarmForm({ ...base, recipientUserId: null }, t);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('수신자');
+    if (!result.ok) expect(result.error).toBe('familyAlarmForm.recipientRequired');
   });
 
   it('wakeAt 포맷 오류면 에러', () => {
-    const result = validateFamilyAlarmForm({ ...base, wakeAt: '7:30' });
+    const result = validateFamilyAlarmForm({ ...base, wakeAt: '7:30' }, t);
     expect(result.ok).toBe(false);
   });
 
   it('messageText 공백만이면 에러', () => {
-    const result = validateFamilyAlarmForm({ ...base, messageText: '   ' });
+    const result = validateFamilyAlarmForm({ ...base, messageText: '   ' }, t);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain('메시지');
+    if (!result.ok) expect(result.error).toBe('familyAlarmForm.messageRequired');
   });
 
   it('messageText 500자 초과 에러', () => {
-    const result = validateFamilyAlarmForm({ ...base, messageText: 'a'.repeat(501) });
+    const result = validateFamilyAlarmForm({ ...base, messageText: 'a'.repeat(501) }, t);
     expect(result.ok).toBe(false);
   });
 
   it('voiceProfileId 전달 시 payload 에 포함', () => {
-    const result = validateFamilyAlarmForm({ ...base, voiceProfileId: 'vp-1' });
+    const result = validateFamilyAlarmForm({ ...base, voiceProfileId: 'vp-1' }, t);
     if (!result.ok) throw new Error('expected ok');
     expect(result.payload.voice_profile_id).toBe('vp-1');
   });
@@ -123,16 +126,16 @@ describe('validateFamilyAlarmForm', () => {
 
 describe('buildMemberDisplayName', () => {
   it('name 이 있으면 name 사용', () => {
-    expect(buildMemberDisplayName(m({ user_id: 'a', name: 'Alice' }))).toBe('Alice');
+    expect(buildMemberDisplayName(m({ user_id: 'a', name: 'Alice' }), t)).toBe('Alice');
   });
   it('name 없고 email 있으면 email', () => {
-    expect(buildMemberDisplayName(m({ user_id: 'a', email: 'a@b.com' }))).toBe('a@b.com');
+    expect(buildMemberDisplayName(m({ user_id: 'a', email: 'a@b.com' }), t)).toBe('a@b.com');
   });
-  it('둘 다 없으면 이름 미지정', () => {
-    expect(buildMemberDisplayName(m({ user_id: 'a' }))).toBe('이름 미지정');
+  it('둘 다 없으면 i18n noName 키', () => {
+    expect(buildMemberDisplayName(m({ user_id: 'a' }), t)).toBe('familyAlarmForm.noName');
   });
   it('name 이 빈 문자열이면 email fallback', () => {
-    expect(buildMemberDisplayName(m({ user_id: 'a', name: '   ', email: 'x@y.com' }))).toBe(
+    expect(buildMemberDisplayName(m({ user_id: 'a', name: '   ', email: 'x@y.com' }), t)).toBe(
       'x@y.com',
     );
   });

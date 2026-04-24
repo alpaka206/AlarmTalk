@@ -15,7 +15,7 @@ export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple 
   const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
-  const displayName = buildMemberDisplayName(member);
+  const displayName = buildMemberDisplayName(member, t);
 
   return (
     <View style={[dynStyles.card, isCouple && dynStyles.coupleCard]}>

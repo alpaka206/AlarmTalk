@@ -791,3 +791,36 @@
 - [x] presets.test.ts 업데이트
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 672/672, mobile 450/450)
+
+---
+
+## P45 — 하드코딩 한국어 i18n 전환 Batch 1 (lib/utility + EmailPasswordForm) ✅ (2026-04-25)
+
+- [x] `authFormValidation.ts` — TFunction 주입, 3건 → i18n 키 (authForm.*)
+- [x] `familyAlarmForm.ts` — TFunction 주입, 5건 → i18n 키 (familyAlarmForm.*)
+- [x] `familyAlarmLabel.ts` — TFunction 주입, 2건 → i18n 키 (familyAlarmLabel.* + 보간)
+- [x] `speakerPickerState.ts` — TFunction 주입, 2건 → i18n 키 (speakerPicker.*)
+- [x] `stateView.ts` — TFunction 주입, DEFAULTS → i18n 키 (stateView.*)
+- [x] `voiceName.ts` — TFunction 주입, 2건 → i18n 키 (voiceName.*)
+- [x] `EmailPasswordForm.tsx` — useTranslation 추가 + 15건 → t() 호출 (authForm.*)
+- [x] 소비자 7개 파일 호출부 업데이트
+- [x] i18n ko/en 각 22키 추가
+- [x] 테스트 7개 파일 mock t 적용 + 검증 변경
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 450/450)
+
+## P46 — 하드코딩 한국어 i18n 전환 Batch 2~4 (잔여)
+
+### Batch 2: voucherShare.ts ✅ (2026-04-25)
+- [x] `voucherShare.ts` — TFunction 주입, 8건 → i18n 키 (voucher 상태명 3건 + 공유 메시지 5건)
+
+### Batch 3: ErrorBoundary ✅ (2026-04-25)
+- [x] `ErrorBoundary.tsx` — useTranslation + 4건 → i18n 키 (제목/부제/재시도)
+
+### Batch 4: character.ts ✅ (2026-04-25)
+- [x] `character.ts` — TFunction 주입, 46건 → i18n 키 (스테이지 라벨 4 + 대사 28 + 스트릭 대사 14)
+
+### 기타 ✅ (2026-04-25)
+- [x] `friend/[id].tsx` — '친구' fallback → `t('friendProfile.friendFallback')`
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 451/451)

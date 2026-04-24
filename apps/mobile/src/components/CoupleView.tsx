@@ -66,7 +66,7 @@ function MemberAvatar({
   styles: ReturnType<typeof createStyles>;
 }) {
   const { t } = useTranslation();
-  const displayName = buildMemberDisplayName(member);
+  const displayName = buildMemberDisplayName(member, t);
 
   return (
     <View style={styles.memberCol}>

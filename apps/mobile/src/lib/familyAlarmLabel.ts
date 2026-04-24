@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 export interface FamilyAlarmLabelInput {
   is_family_alarm?: boolean;
   is_received_family_alarm?: boolean;
@@ -25,13 +27,14 @@ export function isReceivedFamilyAlarm(
 
 export function buildFamilyAlarmLabel(
   alarm: FamilyAlarmLabelInput,
-  selfUserId?: string | null,
+  selfUserId: string | null | undefined,
+  t: TFunction,
 ): FamilyAlarmLabel {
   if (!isReceivedFamilyAlarm(alarm, selfUserId)) {
     return { visible: false, text: '' };
   }
   const name = (alarm.sender_name ?? '').trim();
   const email = (alarm.sender_email ?? '').trim();
-  const label = name.length > 0 ? name : email.length > 0 ? email : '가족';
-  return { visible: true, text: `💌 ${label} 님이 보낸 알람` };
+  const label = name.length > 0 ? name : email.length > 0 ? email : t('familyAlarmLabel.family');
+  return { visible: true, text: t('familyAlarmLabel.receivedAlarm', { name: label }) };
 }

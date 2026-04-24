@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 export type StateViewVariant = 'loading' | 'empty' | 'error';
 
 export interface StateViewConfig {
@@ -7,21 +9,22 @@ export interface StateViewConfig {
   subtitle?: string;
 }
 
-const DEFAULTS: Record<StateViewVariant, { emoji: string; title: string; subtitle: string }> = {
-  loading: { emoji: '⏳', title: '불러오는 중...', subtitle: '' },
-  empty: { emoji: '📭', title: '아직 데이터가 없어요', subtitle: '' },
-  error: { emoji: '😵', title: '문제가 발생했습니다', subtitle: '다시 시도해 주세요' },
+const DEFAULT_KEYS: Record<StateViewVariant, { emoji: string; titleKey: string; subtitleKey: string }> = {
+  loading: { emoji: '⏳', titleKey: 'stateView.loading', subtitleKey: '' },
+  empty: { emoji: '📭', titleKey: 'stateView.empty', subtitleKey: '' },
+  error: { emoji: '😵', titleKey: 'stateView.error', subtitleKey: 'stateView.errorSubtitle' },
 };
 
 export function resolveStateView(
   variant: StateViewVariant,
+  t: TFunction,
   overrides?: Partial<Pick<StateViewConfig, 'emoji' | 'title' | 'subtitle'>>,
 ): StateViewConfig {
-  const defaults = DEFAULTS[variant];
+  const defaults = DEFAULT_KEYS[variant];
   return {
     variant,
     emoji: overrides?.emoji ?? defaults.emoji,
-    title: overrides?.title ?? defaults.title,
-    subtitle: (overrides?.subtitle ?? defaults.subtitle) || undefined,
+    title: overrides?.title ?? t(defaults.titleKey),
+    subtitle: (overrides?.subtitle ?? (defaults.subtitleKey ? t(defaults.subtitleKey) : '')) || undefined,
   };
 }

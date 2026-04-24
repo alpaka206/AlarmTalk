@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { FamilyGroupMember, FamilyAlarmCreatePayload } from '../services/api';
 
 export interface FamilyAlarmFormInput {
@@ -25,19 +26,19 @@ export function filterFamilyAlarmRecipients(
     });
 }
 
-export function validateFamilyAlarmForm(input: FamilyAlarmFormInput): ValidationResult {
+export function validateFamilyAlarmForm(input: FamilyAlarmFormInput, t: TFunction): ValidationResult {
   if (!input.recipientUserId) {
-    return { ok: false, error: '수신자를 선택해주세요.' };
+    return { ok: false, error: t('familyAlarmForm.recipientRequired') };
   }
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.wakeAt)) {
-    return { ok: false, error: '시간 형식이 올바르지 않습니다 (HH:mm).' };
+    return { ok: false, error: t('familyAlarmForm.invalidTimeFormat') };
   }
   const text = input.messageText.trim();
   if (text.length === 0) {
-    return { ok: false, error: '메시지를 입력해주세요.' };
+    return { ok: false, error: t('familyAlarmForm.messageRequired') };
   }
   if (text.length > 500) {
-    return { ok: false, error: '메시지는 500자 이하여야 합니다.' };
+    return { ok: false, error: t('familyAlarmForm.messageTooLong') };
   }
 
   const payload: FamilyAlarmCreatePayload = {
@@ -55,8 +56,8 @@ export function validateFamilyAlarmForm(input: FamilyAlarmFormInput): Validation
   return { ok: true, payload };
 }
 
-export function buildMemberDisplayName(m: FamilyGroupMember): string {
+export function buildMemberDisplayName(m: FamilyGroupMember, t: TFunction): string {
   if (m.name && m.name.trim().length > 0) return m.name;
   if (m.email) return m.email;
-  return '이름 미지정';
+  return t('familyAlarmForm.noName');
 }

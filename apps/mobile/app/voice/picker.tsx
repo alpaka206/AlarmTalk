@@ -71,7 +71,7 @@ export default function SpeakerPickerScreen() {
   const commitEdit = useCallback(
     async (speaker: SpeakerSegment) => {
       if (!state.upload) return;
-      const sanitized = sanitizeLabel(state.draftLabel);
+      const sanitized = sanitizeLabel(state.draftLabel, t);
       if (!sanitized.ok) {
         dispatch({ type: 'FAIL', message: sanitized.error ?? t('speakerPicker.labelError') });
         return;

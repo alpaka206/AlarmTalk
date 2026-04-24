@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { resolveStateView, type StateViewVariant } from '../lib/stateView';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
@@ -13,9 +14,10 @@ interface StateViewProps {
 }
 
 export function StateView({ variant, emoji, title, subtitle, action }: StateViewProps) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
-  const cfg = resolveStateView(variant, { emoji, title, subtitle });
+  const cfg = resolveStateView(variant, t, { emoji, title, subtitle });
 
   return (
     <View

@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { SpeakerSegment, VoiceUploadMeta } from '../services/api';
 
 export type SpeakerPickerPhase =
@@ -87,13 +88,13 @@ export interface SanitizedLabel {
   error?: string;
 }
 
-export function sanitizeLabel(raw: string): SanitizedLabel {
+export function sanitizeLabel(raw: string, t: TFunction): SanitizedLabel {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
-    return { ok: false, value: '', error: '라벨을 입력하세요.' };
+    return { ok: false, value: '', error: t('speakerPicker.labelRequired') };
   }
   if (trimmed.length > 50) {
-    return { ok: false, value: trimmed, error: '라벨은 50자 이하여야 합니다.' };
+    return { ok: false, value: trimmed, error: t('speakerPicker.labelTooLong') };
   }
   return { ok: true, value: trimmed };
 }

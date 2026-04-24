@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/useAuth';
 import { useAppStore } from '../stores/useAppStore';
 import { BorderRadius, FontSize, Spacing, FontFamily } from '../constants/theme';
@@ -24,6 +25,7 @@ export default function EmailPasswordForm({
   defaultMode = 'login',
   onSuccess,
 }: EmailPasswordFormProps) {
+  const { t } = useTranslation();
   const { login, register, isLoading, token, user: authUser } = useAuth();
   const setAppAuth = useAppStore((s) => s.setAuth);
   const { colors } = useTheme();
@@ -45,7 +47,7 @@ export default function EmailPasswordForm({
 
   async function handleSubmit() {
     setSubmitError(null);
-    const err = validateEmailPasswordForm({ mode, email, password, name });
+    const err = validateEmailPasswordForm({ mode, email, password, name }, t);
     if (err) {
       setSubmitError(err);
       return;
@@ -55,12 +57,12 @@ export default function EmailPasswordForm({
       else await login(email, password);
       onSuccess?.();
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : '요청 처리 중 오류가 발생했습니다.');
+      setSubmitError(e instanceof Error ? e.message : t('authForm.requestError'));
     }
   }
 
   return (
-    <View style={dynStyles.container} accessibilityLabel="이메일 로그인">
+    <View style={dynStyles.container} accessibilityLabel={t('authForm.emailLogin')}>
       <View style={dynStyles.tabRow}>
         <TouchableOpacity
           accessibilityRole="tab"
@@ -68,7 +70,7 @@ export default function EmailPasswordForm({
           onPress={() => setMode('login')}
           style={[dynStyles.tab, mode === 'login' && dynStyles.tabActive]}
         >
-          <Text style={[dynStyles.tabText, mode === 'login' && dynStyles.tabTextActive]}>로그인</Text>
+          <Text style={[dynStyles.tabText, mode === 'login' && dynStyles.tabTextActive]}>{t('authForm.login')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="tab"
@@ -77,28 +79,28 @@ export default function EmailPasswordForm({
           style={[dynStyles.tab, mode === 'register' && dynStyles.tabActive]}
         >
           <Text style={[dynStyles.tabText, mode === 'register' && dynStyles.tabTextActive]}>
-            가입하기
+            {t('authForm.register')}
           </Text>
         </TouchableOpacity>
       </View>
 
       {isRegister && (
         <View style={dynStyles.field}>
-          <Text style={dynStyles.label}>이름</Text>
+          <Text style={dynStyles.label}>{t('authForm.name')}</Text>
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder="홍길동"
+            placeholder={t('authForm.namePlaceholder')}
             placeholderTextColor={colors.textTertiary}
             autoComplete="name"
             style={dynStyles.input}
-            accessibilityLabel="이름"
+            accessibilityLabel={t('authForm.name')}
           />
         </View>
       )}
 
       <View style={dynStyles.field}>
-        <Text style={dynStyles.label}>이메일</Text>
+        <Text style={dynStyles.label}>{t('authForm.email')}</Text>
         <TextInput
           value={email}
           onChangeText={setEmail}
@@ -108,21 +110,21 @@ export default function EmailPasswordForm({
           autoCapitalize="none"
           keyboardType="email-address"
           style={dynStyles.input}
-          accessibilityLabel="이메일"
+          accessibilityLabel={t('authForm.email')}
         />
       </View>
 
       <View style={dynStyles.field}>
-        <Text style={dynStyles.label}>비밀번호</Text>
+        <Text style={dynStyles.label}>{t('authForm.password')}</Text>
         <TextInput
           value={password}
           onChangeText={setPassword}
-          placeholder={isRegister ? '8자 이상' : '비밀번호'}
+          placeholder={isRegister ? t('authForm.passwordPlaceholder') : t('authForm.password')}
           placeholderTextColor={colors.textTertiary}
           autoComplete={isRegister ? 'new-password' : 'current-password'}
           secureTextEntry
           style={dynStyles.input}
-          accessibilityLabel="비밀번호"
+          accessibilityLabel={t('authForm.password')}
         />
       </View>
 
@@ -137,12 +139,12 @@ export default function EmailPasswordForm({
         disabled={isLoading}
         style={[dynStyles.submitButton, isLoading && dynStyles.submitButtonDisabled]}
         accessibilityRole="button"
-        accessibilityLabel={isRegister ? '가입하기' : '로그인'}
+        accessibilityLabel={isRegister ? t('authForm.register') : t('authForm.login')}
       >
         {isLoading ? (
           <ActivityIndicator color="#FFFFFF" />
         ) : (
-          <Text style={dynStyles.submitText}>{isRegister ? '가입하기' : '로그인'}</Text>
+          <Text style={dynStyles.submitText}>{isRegister ? t('authForm.register') : t('authForm.login')}</Text>
         )}
       </TouchableOpacity>
     </View>

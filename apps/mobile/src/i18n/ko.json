@@ -165,7 +165,8 @@
     "a11yStat": "{{label}} {{count}}개",
     "a11ySetAlarm": "이 친구에게 알람 보내기 버튼",
     "a11ySendGift": "이 친구에게 선물하기 버튼",
-    "a11yGiftItem": "{{text}}, 상태: {{status}}"
+    "a11yGiftItem": "{{text}}, 상태: {{status}}",
+    "friendFallback": "친구"
   },
   "people": {
     "title": "내 사람들",
@@ -628,7 +629,57 @@
     "a11yXpStat": "{{label}}: {{value}}",
     "devAlarmCompleted": "알람 정상 종료 +30 XP",
     "devAlarmSnoozed": "스누즈 +5 XP",
-    "devFamilyAlarmReceived": "가족 알람 수신 +10 XP"
+    "devFamilyAlarmReceived": "가족 알람 수신 +10 XP",
+    "stageSeed": "씨앗",
+    "stageSprout": "새싹",
+    "stageTree": "나무",
+    "stageBloom": "꽃",
+    "dlg": {
+      "seed0": "조용히 자라고 있어요.",
+      "seed1": "햇살이 필요해요. ☀️",
+      "seed2": "물 주실래요?",
+      "seed3": "아직은 작지만, 곧 자랄 거예요.",
+      "seed4": "흙 속에서 단단한 꿈을 키우고 있어요.",
+      "seed5": "뿌리를 내릴 준비를 하고 있어요.",
+      "seed6": "비가 오면 더 깊이 뿌리를 내릴 거예요.",
+      "sprout0": "새싹이 돋았어요!",
+      "sprout1": "바람이 기분 좋아요. 🌬️",
+      "sprout2": "오늘도 같이 깨워주세요.",
+      "sprout3": "조금씩 자라고 있어요.",
+      "sprout4": "작은 뿌리가 땅을 움켜쥐고 있어요.",
+      "sprout5": "줄기가 조금씩 굵어지고 있어요!",
+      "sprout6": "첫 잎이 돋아났어요. 🌿",
+      "tree0": "그늘을 드리워 드릴게요. 🌳",
+      "tree1": "오늘 알람 잘 들으셨나요?",
+      "tree2": "나무가 되었어요!",
+      "tree3": "가족도 같이 깨워봐요.",
+      "tree4": "뿌리가 깊어지고 있어요.",
+      "tree5": "줄기가 튼튼해졌어요!",
+      "tree6": "잎이 무성해지고 있어요.",
+      "bloom0": "꽃이 피었어요! 🌸",
+      "bloom1": "완전 잘 자랐죠?",
+      "bloom2": "함께 해주셔서 고마워요.",
+      "bloom3": "이 순간이 제일 좋아요.",
+      "bloom4": "뿌리부터 꽃잎까지, 온전히 자랐어요.",
+      "bloom5": "나무 그늘 아래서 쉬어가세요.",
+      "bloom6": "꽃잎이 바람에 흩날려요. 🌸"
+    },
+    "streak": {
+      "d90_0": "전설의 나무가 되었어요! 🌸",
+      "d90_1": "90일 넘게 함께했어요. 정말 대단해요!",
+      "d90_2": "당신의 뿌리는 누구보다 깊어요.",
+      "d30_0": "30일 연속! 잎이 무성하게 자랐어요.",
+      "d30_1": "한 달 동안 매일 함께 해주셨어요!",
+      "d30_2": "줄기가 하늘을 향해 쭉 뻗었어요!",
+      "d7_0": "7일 연속! 뿌리가 단단히 내려앉았어요.",
+      "d7_1": "일주일 동안 꾸준히 일어나고 있어요!",
+      "d7_2": "줄기가 눈에 띄게 굵어졌어요!",
+      "d3_0": "뿌리가 조금씩 깊어지고 있어요!",
+      "d3_1": "연속 기상 중! 작은 새싹이 기뻐해요.",
+      "d3_2": "매일 물을 주니까 쑥쑥 자라요.",
+      "d1_0": "오늘도 일어났군요! 뿌리가 자라기 시작해요.",
+      "d1_1": "연속 기상 시작! 함께 성장해요."
+    }
   },
   "lastSeen": {
     "justNow": "방금 전",
@@ -737,12 +788,63 @@
     "a11yRename": "{{label}} 이름 변경",
     "a11ySpeaker": "{{label}}, {{duration}}초, 신뢰도 {{confidence}}%",
     "a11yUploading": "업로드 중",
-    "a11ySeparating": "화자 분리 중"
+    "a11ySeparating": "화자 분리 중",
+    "labelRequired": "라벨을 입력하세요.",
+    "labelTooLong": "라벨은 50자 이하여야 합니다."
   },
   "update": {
     "title": "업데이트 안내",
     "message": "새로운 버전이 준비되었어요. 지금 업데이트하시겠어요?",
     "now": "지금 업데이트",
     "later": "나중에"
+  },
+  "authForm": {
+    "allFieldsRequired": "모든 필드를 입력해주세요.",
+    "passwordMinLength": "비밀번호는 최소 8자 이상이어야 합니다.",
+    "requestError": "요청 처리 중 오류가 발생했습니다.",
+    "emailLogin": "이메일 로그인",
+    "login": "로그인",
+    "register": "가입하기",
+    "name": "이름",
+    "namePlaceholder": "홍길동",
+    "email": "이메일",
+    "password": "비밀번호",
+    "passwordPlaceholder": "8자 이상"
+  },
+  "familyAlarmForm": {
+    "recipientRequired": "수신자를 선택해주세요.",
+    "invalidTimeFormat": "시간 형식이 올바르지 않습니다 (HH:mm).",
+    "messageRequired": "메시지를 입력해주세요.",
+    "messageTooLong": "메시지는 500자 이하여야 합니다.",
+    "noName": "이름 미지정"
+  },
+  "voiceName": {
+    "nameRequired": "이름을 입력하세요.",
+    "nameTooLong": "이름은 50자 이하여야 합니다."
+  },
+  "familyAlarmLabel": {
+    "family": "가족",
+    "receivedAlarm": "💌 {{name}} 님이 보낸 알람"
+  },
+  "stateView": {
+    "loading": "불러오는 중...",
+    "empty": "아직 데이터가 없어요",
+    "error": "문제가 발생했습니다",
+    "errorSubtitle": "다시 시도해 주세요"
+  },
+  "errorBoundary": {
+    "title": "문제가 발생했습니다",
+    "subtitle": "앱을 다시 시도해 주세요",
+    "retry": "다시 시도"
+  },
+  "voucher": {
+    "statusUsed": "사용됨",
+    "statusExpired": "만료",
+    "statusIssued": "미사용",
+    "shareTitle": "VoiceAlarm 이용권 선물이 도착했어요 🎁",
+    "sharePlan": "플랜: {{plan}}",
+    "shareCode": "코드: {{code}}",
+    "shareExpiry": "만료: {{date}}",
+    "shareInstruction": "앱에서 [코드 등록]에 입력해 사용하세요."
   }
 }

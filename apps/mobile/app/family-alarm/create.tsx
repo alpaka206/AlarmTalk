@@ -89,7 +89,7 @@ export default function FamilyAlarmCreateScreen() {
       wakeAt,
       messageText,
       repeatDays,
-    });
+    }, t);
     if (!result.ok) {
       toast.show(result.error);
       return;
@@ -139,12 +139,12 @@ export default function FamilyAlarmCreateScreen() {
                 key={m.id}
                 style={[styles.recipientChip, selected && styles.recipientChipActive]}
                 onPress={() => setSelectedRecipient(m.user_id)}
-                accessibilityLabel={t('familyAlarm.a11yRecipient', { name: buildMemberDisplayName(m) })}
+                accessibilityLabel={t('familyAlarm.a11yRecipient', { name: buildMemberDisplayName(m, t) })}
                 accessibilityRole="radio"
                 accessibilityState={{ selected }}
               >
                 <Text style={[styles.recipientText, selected && styles.recipientTextActive]}>
-                  {buildMemberDisplayName(m)}
+                  {buildMemberDisplayName(m, t)}
                 </Text>
               </TouchableOpacity>
             );

@@ -165,7 +165,8 @@
     "a11yStat": "{{label}}: {{count}}",
     "a11ySetAlarm": "Send alarm to this friend",
     "a11ySendGift": "Send gift to this friend",
-    "a11yGiftItem": "{{text}}, status: {{status}}"
+    "a11yGiftItem": "{{text}}, status: {{status}}",
+    "friendFallback": "Friend"
   },
   "people": {
     "title": "People",
@@ -628,7 +629,57 @@
     "a11yXpStat": "{{label}}: {{value}}",
     "devAlarmCompleted": "Alarm completed +30 XP",
     "devAlarmSnoozed": "Snoozed +5 XP",
-    "devFamilyAlarmReceived": "Family alarm received +10 XP"
+    "devFamilyAlarmReceived": "Family alarm received +10 XP",
+    "stageSeed": "Seed",
+    "stageSprout": "Sprout",
+    "stageTree": "Tree",
+    "stageBloom": "Bloom",
+    "dlg": {
+      "seed0": "Growing quietly.",
+      "seed1": "I need some sunlight. ☀️",
+      "seed2": "Will you water me?",
+      "seed3": "I'm small now, but I'll grow soon.",
+      "seed4": "Nurturing a strong dream deep in the soil.",
+      "seed5": "Getting ready to put down roots.",
+      "seed6": "When it rains, I'll root even deeper.",
+      "sprout0": "A sprout has appeared!",
+      "sprout1": "The breeze feels nice. 🌬️",
+      "sprout2": "Wake up with me today too.",
+      "sprout3": "Growing little by little.",
+      "sprout4": "Tiny roots are gripping the soil.",
+      "sprout5": "My stem is getting thicker!",
+      "sprout6": "The first leaf has appeared. 🌿",
+      "tree0": "I'll shade you. 🌳",
+      "tree1": "Did you hear the alarm today?",
+      "tree2": "I've become a tree!",
+      "tree3": "Let's wake up the family too.",
+      "tree4": "My roots are growing deeper.",
+      "tree5": "My trunk has grown strong!",
+      "tree6": "My leaves are growing thick.",
+      "bloom0": "I'm blooming! 🌸",
+      "bloom1": "I've grown beautifully, right?",
+      "bloom2": "Thank you for being with me.",
+      "bloom3": "This is my favorite moment.",
+      "bloom4": "From roots to petals, I've fully grown.",
+      "bloom5": "Rest under my shade.",
+      "bloom6": "Petals are dancing in the wind. 🌸"
+    },
+    "streak": {
+      "d90_0": "I've become a legendary tree! 🌸",
+      "d90_1": "Over 90 days together. You're amazing!",
+      "d90_2": "Your roots run deeper than anyone's.",
+      "d30_0": "30 day streak! My leaves are lush.",
+      "d30_1": "A whole month together every day!",
+      "d30_2": "My trunk stretches toward the sky!",
+      "d7_0": "7 day streak! My roots are firmly planted.",
+      "d7_1": "Waking up consistently for a week!",
+      "d7_2": "My trunk has visibly thickened!",
+      "d3_0": "My roots are growing deeper!",
+      "d3_1": "Streak going! The little sprout is happy.",
+      "d3_2": "Watering every day makes me grow fast.",
+      "d1_0": "You woke up! My roots are starting to grow.",
+      "d1_1": "Streak started! Let's grow together."
+    }
   },
   "lastSeen": {
     "justNow": "Just now",
@@ -737,12 +788,63 @@
     "a11yRename": "Rename {{label}}",
     "a11ySpeaker": "{{label}}, {{duration}} seconds, confidence {{confidence}}%",
     "a11yUploading": "Uploading",
-    "a11ySeparating": "Separating speakers"
+    "a11ySeparating": "Separating speakers",
+    "labelRequired": "Please enter a label.",
+    "labelTooLong": "Label must be 50 characters or less."
   },
   "update": {
     "title": "Update Available",
     "message": "A new version is ready. Would you like to update now?",
     "now": "Update Now",
     "later": "Later"
+  },
+  "authForm": {
+    "allFieldsRequired": "Please fill in all fields.",
+    "passwordMinLength": "Password must be at least 8 characters.",
+    "requestError": "An error occurred while processing your request.",
+    "emailLogin": "Email Login",
+    "login": "Login",
+    "register": "Sign Up",
+    "name": "Name",
+    "namePlaceholder": "John Doe",
+    "email": "Email",
+    "password": "Password",
+    "passwordPlaceholder": "8+ characters"
+  },
+  "familyAlarmForm": {
+    "recipientRequired": "Please select a recipient.",
+    "invalidTimeFormat": "Invalid time format (HH:mm).",
+    "messageRequired": "Please enter a message.",
+    "messageTooLong": "Message must be 500 characters or less.",
+    "noName": "No name"
+  },
+  "voiceName": {
+    "nameRequired": "Please enter a name.",
+    "nameTooLong": "Name must be 50 characters or less."
+  },
+  "familyAlarmLabel": {
+    "family": "Family",
+    "receivedAlarm": "💌 Alarm from {{name}}"
+  },
+  "stateView": {
+    "loading": "Loading...",
+    "empty": "No data yet",
+    "error": "Something went wrong",
+    "errorSubtitle": "Please try again"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "subtitle": "Please try restarting the app",
+    "retry": "Try Again"
+  },
+  "voucher": {
+    "statusUsed": "Used",
+    "statusExpired": "Expired",
+    "statusIssued": "Available",
+    "shareTitle": "A VoiceAlarm voucher gift has arrived 🎁",
+    "sharePlan": "Plan: {{plan}}",
+    "shareCode": "Code: {{code}}",
+    "shareExpiry": "Expires: {{date}}",
+    "shareInstruction": "Enter it in [Code Registration] in the app to use."
   }
 }
