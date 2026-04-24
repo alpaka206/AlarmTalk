@@ -1108,8 +1108,25 @@
 
 ---
 
-## P75 — packages/ui ↔ mobile/constants/theme 색상 동기화 (미착수)
+## P75 — packages/ui ↔ mobile/constants/theme 색상 동기화 ✅ (2026-04-25)
 
-- [ ] `packages/ui/src/tokens.ts`의 LightColors/DarkColors와 `apps/mobile/src/constants/theme.ts`의 Colors 값 불일치 해소
-- [ ] 단일 소스(source of truth) 결정: UI 패키지를 모바일 의존성으로 추가하거나, 역방향 동기화
-- [ ] WCAG AA 대비비 유지 검증
+- [x] `packages/ui/src/tokens.ts`의 LightColors/DarkColors와 `apps/mobile/src/constants/theme.ts`의 Colors 값 불일치 해소 (8건: light textTertiary + dark 7건)
+- [x] 단일 소스(source of truth) 결정: mobile `theme.ts`가 source of truth (web 삭제됨, iOS 네이티브 톤, WCAG AA 검증됨)
+- [x] WCAG AA 대비비 유지 검증 (UI 패키지 a11y 테스트 38/38, mobile 625/625 통과)
+
+---
+
+## P76 — family-invite 라우트 테스트 ✅ (2026-04-25)
+
+- [x] POST /invites — 초대 생성 8 tests (자동 그룹 탐색, 명시적 ID, 404/403/409 분기, malformed body)
+- [x] GET /invites — 초대 목록 4 tests (정상, 빈 사용자, 빈 목록, used 필드 매핑)
+- [x] POST /invites/:code/accept — 초대 수락 12 tests (정상, 포맷/404/409/400 분기, 만료 시각 DB 갱신)
+- [x] POST /invites/:code/revoke — 초대 취소 6 tests (정상, 포맷/404/403/409 분기)
+- [x] 전체 테스트 통과 (backend 754/754)
+
+---
+
+## P77 — family-group 라우트 테스트 (미착수)
+
+- [ ] family-group.ts 전체 핸들러 테스트 커버리지 작성
+- [ ] 전체 테스트 통과 확인
