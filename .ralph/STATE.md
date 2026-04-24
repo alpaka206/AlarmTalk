@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P36 네비게이션 라우트 유효성 검증 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P36 완료**
+- 마지막 루프: 2026-04-24 — P37 도달 불가 음성 화면 네비게이션 연결
+- 현재 Phase: **R0~R6 전체 완료 + P11~P37 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 653/653, mobile 392/392)
 
@@ -36,6 +36,7 @@
 - **P34**: 접근성 자동화 검증 — a11y-audit.test.ts 30 tests (인터랙티브 요소 a11y, i18n 동기화, WCAG AA 색상 대비) + 5건 a11y 이슈 수정 (MiniWaveformPlayer, StateView, gift/received, settings TextInput)
 - **P35**: React Query 캐시 전략 테스트 — queryCache.test.ts 36 tests (키 일관성, enabled 가드, 뮤테이션 무효화, 오프라인 캐시 통합) + 쿼리 키 불일치 버그 3건 수정 (userProfile, gifts-received)
 - **P36**: 네비게이션 라우트 유효성 검증 — navigationRoutes.test.ts 10 tests (라우트 매핑, 도달성, 동적 파라미터, Stack.Screen 등록, deepLink 매핑) + unused import/var 2건 정리 (voice/record, NotificationBell)
+- **P37**: 도달 불가 음성 화면 연결 — voices.tsx 음성 추가 메뉴에 diarize/picker 2옵션 추가 + i18n 8키 + navigationRoutes 테스트 allowedUnreachable 제거
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -44,5 +45,3 @@
 - eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
-- ~~일부 화면에 t() 폴백 문자열 패턴 잔존~~ → P32에서 전체 정리 완료
-- ~~라우트 console.error 비구조화~~ → P33에서 logRouteError로 전환 완료

@@ -170,9 +170,7 @@ describe('라우트 탐색 커버리지', () => {
       }
     }
 
-    const allowedUnreachable = ['/voice/picker', '/voice/diarize'];
-    const actual = unreachable.filter((r) => !allowedUnreachable.includes(r));
-    expect(actual).toEqual([]);
+    expect(unreachable).toEqual([]);
   });
 });
 

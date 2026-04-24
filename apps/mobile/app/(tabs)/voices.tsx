@@ -305,6 +305,30 @@ export default function VoicesScreen() {
                 </View>
               </TouchableOpacity>
               <TouchableOpacity
+                style={styles.addOptionItem}
+                onPress={() => { setShowAddOptions(false); router.push('/voice/diarize'); }}
+                accessibilityRole="button"
+                accessibilityLabel={t('voices.diarize')}
+              >
+                <Text style={styles.addOptionEmoji}>📞</Text>
+                <View style={styles.addOptionInfo}>
+                  <Text style={styles.addOptionTitle}>{t('voices.diarize')}</Text>
+                  <Text style={styles.addOptionDesc}>{t('voices.diarizeDesc')}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addOptionItem}
+                onPress={() => { setShowAddOptions(false); router.push('/voice/picker'); }}
+                accessibilityRole="button"
+                accessibilityLabel={t('voices.speakerPicker')}
+              >
+                <Text style={styles.addOptionEmoji}>👥</Text>
+                <View style={styles.addOptionInfo}>
+                  <Text style={styles.addOptionTitle}>{t('voices.speakerPicker')}</Text>
+                  <Text style={styles.addOptionDesc}>{t('voices.speakerPickerDesc')}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={styles.addOptionCancel}
                 onPress={() => setShowAddOptions(false)}
                 accessibilityRole="button"

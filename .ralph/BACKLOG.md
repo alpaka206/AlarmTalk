@@ -600,6 +600,11 @@
 - 백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)
 - 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
+- ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
+- 미사용 export/함수 감사 (dead code 탐지 + 정리)
+- 백엔드 billing 라우트 테스트 커버리지 (결제 스텁 검증)
+- 모바일 화면 컴포넌트 인터랙션 테스트 (voices add menu, alarm create form 등)
+- ErrorBoundary 화면별 세분화 (탭별 독립 에러 격리)
 
 ## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
 
@@ -695,4 +700,15 @@
   - `voice/record.tsx`: `_LEVEL_BAR_COUNT` 미사용 상수 삭제
   - `NotificationBell.tsx`: `FontSize` 미사용 import 삭제
 - [x] typecheck 통과 (backend + mobile 0 errors, --noUnusedLocals --noUnusedParameters 포함)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 392/392)
+
+---
+
+## P37 — 도달 불가 음성 화면 네비게이션 연결 ✅ (2026-04-24)
+
+- [x] `app/(tabs)/voices.tsx` — 음성 추가 메뉴에 diarize(통화 녹음 추출) + picker(화자 분리) 옵션 2개 추가
+- [x] `src/i18n/ko.json` — voices.diarize, diarizeDesc, speakerPicker, speakerPickerDesc 4키 추가
+- [x] `src/i18n/en.json` — 동일 4키 추가
+- [x] `test/navigationRoutes.test.ts` — allowedUnreachable 배열 제거 (모든 라우트 도달 가능)
+- [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 653/653, mobile 392/392)
