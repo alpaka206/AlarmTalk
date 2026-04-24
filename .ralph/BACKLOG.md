@@ -719,6 +719,14 @@
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 684/684)
 
+## P73 — family-alarm 라우트 테스트 ✅ (2026-04-25)
+
+- [x] `test/family-alarm.test.ts` — 40 tests 신규
+  - POST /alarms (TTS) — 20 tests: 검증(5), 인증/권한(6), 음성프로필(2), 정상경로(5), 엣지(2)
+  - POST /alarms/voice — 20 tests: 검증(5), 인증/권한(5), 업로드(3), 정상경로(7)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 724/724, +40 신규)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
