@@ -18,8 +18,7 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB
 const MAX_SPEAKERS = 3;
 const MAX_VOICE_PROFILES = 2;
 
-/** 원본 오디오 업로드 — 화자 분리/클론 전 단계 저장소. */
-// TODO: real object storage integration (R2 / S3) — currently in-memory only.
+/** 원본 오디오 업로드 — 화자 분리/클론 전 단계 저장소. R2 가용 시 R2, 미가용 시 in-memory 폴백. */
 voice.post('/upload', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);

@@ -447,6 +447,16 @@
 - [x] i18n: `alarms.toggleAlarm` 키 추가 (ko/en)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P15 — EAS 빌드/서브밋 + 스토어 메타데이터 ✅ (2026-04-24)
+
+- [x] voice.ts 스테일 TODO 삭제 (R2 이미 통합됨)
+- [x] eas.json: submit 프로필 추가 (iOS App Store + Google Play internal track)
+- [x] eas.json: autoIncrement, appVersionSource, env 변수 추가
+- [x] app.json: runtimeVersion (appVersion 정책), updates URL (EAS Update)
+- [x] app.json: ios.buildNumber, android.versionCode, ITSAppUsesNonExemptEncryption
+- [x] store/listing.json 신규: ko/en 스토어 리스팅 (제목, 설명, 키워드, 카테고리, 스크린샷 가이드)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
@@ -454,4 +464,3 @@
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
 - Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인
-- App Store / Google Play 스토어 등록 준비 (메타데이터, 스크린샷)

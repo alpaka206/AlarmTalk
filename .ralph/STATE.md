@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P14 Switch 접근성 보강
-- 현재 Phase: **R0~R6 전체 완료 + P11~P14 완료**
+- 마지막 루프: 2026-04-24 — P15 EAS 빌드/서브밋 + 스토어 메타데이터
+- 현재 Phase: **R0~R6 전체 완료 + P11~P15 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 596/596, mobile 168/168)
 
@@ -15,8 +15,11 @@
 - **P12**: React Native 성능 최적화 (10 파일 — React.memo, FlatList perf props, useMemo/useCallback)
 - **P13**: 쪽지 상세 화면 구현 (`app/note/[id].tsx` 신규 + compose 탭 네비게이션 연결)
 - **P14**: Switch 컴포넌트 접근성 일괄 보강 (ProfileDropdown, alarms, settings — 5개 Switch에 a11y 속성 추가 + i18n 2키)
+- **P15**: EAS 빌드/서브밋 설정 강화 + 스토어 메타데이터 (eas.json submit 프로필, app.json runtimeVersion/updates/versionCode, store/listing.json)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
 - [blocked] ElevenLabs 통합 테스트
 - TTS 변환 미구현 (notes.audio_url 항상 null)
+- eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
+- eas.json submit: Android google-service-account.json 생성 필요
