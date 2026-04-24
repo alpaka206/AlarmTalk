@@ -1126,7 +1126,24 @@
 
 ---
 
-## P77 — family-group 라우트 테스트 (미착수)
+## P77 — family-group 라우트 테스트 ✅ (2026-04-25)
 
-- [ ] family-group.ts 전체 핸들러 테스트 커버리지 작성
-- [ ] 전체 테스트 통과 확인
+- [x] family-group.ts 전체 핸들러 테스트 커버리지 작성 (26 tests)
+- [x] 전체 테스트 통과 확인 (backend 780/780)
+
+---
+
+## P78 — family-helpers + sentry 미들웨어 테스트 ✅ (2026-04-25)
+
+- [x] family-helpers.ts 유틸 테스트 (resolveUserPk 3 + assertSameGroup 5 = 8 tests)
+- [x] sentry.ts 미들웨어 테스트 (DSN 분기 4 tests)
+- [x] 전체 테스트 통과 확인 (backend 792/792)
+- [x] 발견: Sentry captureException 미작동 버그 (Hono compose 구조 이슈) → P79
+
+---
+
+## P79 — Sentry captureException 버그 수정 ✅ (2026-04-25)
+
+- [x] sentryMiddleware try-catch → app.onError 패턴으로 마이그레이션
+- [x] sentry.test.ts에서 captureException 호출 검증 테스트 추가 (5 tests)
+- [x] 전체 테스트 통과 확인 (backend 793/793)

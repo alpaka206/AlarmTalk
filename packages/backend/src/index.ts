@@ -132,6 +132,8 @@ api.route('/notes', notesRoutes);
 app.route('/api', api);
 
 app.onError((err, c) => {
+  const sentry = c.get('sentry');
+  if (sentry) sentry.captureException(err);
   logRouteError(c, err);
   return c.json({ error: 'Internal server error' }, 500);
 });

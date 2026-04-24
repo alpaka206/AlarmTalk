@@ -17,11 +17,5 @@ export const sentryMiddleware = createMiddleware<AppEnv>(async (c, next) => {
   });
 
   c.set('sentry', sentry);
-
-  try {
-    await next();
-  } catch (err) {
-    sentry.captureException(err);
-    throw err;
-  }
+  await next();
 });
