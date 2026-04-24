@@ -598,7 +598,9 @@
 - ~~백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)~~ → P33 완료
 - ~~접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)~~ → P34 완료
 - ~~백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)~~ → P42 완료
-- 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
+- ~~모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)~~ → P47 완료
+- 대형 화면 파일 컴포넌트 분할 리팩토링 (alarm/create.tsx 1147줄, index.tsx 821줄, alarm/edit.tsx 796줄)
+- ADR (Architecture Decision Records) 작성 — 주요 기술 결정 사유 문서화
 - ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 - ~~도달 불가 화면 연결 (voice/diarize, voice/picker)~~ → P37 완료
 - ~~미사용 export/함수 감사 (dead code 탐지 + 정리)~~ → P38 완료
@@ -808,6 +810,22 @@
 - [x] 테스트 7개 파일 mock t 적용 + 검증 변경
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (backend 672/672, mobile 450/450)
+
+## P47 — 모바일 번들 사이즈 모니터링 ✅ (2026-04-25)
+
+- [x] `test/bundleAudit.test.ts` 신규 — 15 tests (4 describe groups)
+  - 의존성 예산 (production ≤40, dev ≤15)
+  - 금지 패키지 목록 (moment, lodash, axios, firebase 등 14개)
+  - 미사용 의존성 감지 (import 분석)
+  - 소스 크기 예산 (단일 ≤1200줄, 전체 ≤700KB)
+  - import 위생 (node_modules 직접 참조, React 중복)
+  - i18n 키 규모 (300~3000 leaf keys)
+  - lib/ 순환 의존성 감지 (DFS)
+  - 에셋 크기/스테일 감지
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 672/672, mobile 466/466)
+
+---
 
 ## P46 — 하드코딩 한국어 i18n 전환 Batch 2~4 (잔여)
 

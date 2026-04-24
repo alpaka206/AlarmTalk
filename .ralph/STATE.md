@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P45~P46 하드코딩 한국어 i18n 전면 전환 (4 Batch)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P46 완료**
+- 마지막 루프: 2026-04-25 — P47 모바일 번들 사이즈 모니터링 (의존성/소스/에셋 감사 15 tests)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P47 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 672/672, mobile 451/451)
+- 전체 테스트 통과 (backend 672/672, mobile 466/466)
 
 ## 완료된 리팩토링
 
@@ -46,6 +46,7 @@
 - **P44**: 프리셋 메시지 i18n 전환 — 24개 하드코딩 한국어 TTS 메시지 → i18n 키 전환 (ko/en 24키 추가)
 - **P45**: lib/utility + EmailPasswordForm i18n Batch 1 — 6개 lib 파일 TFunction 주입 + EmailPasswordForm 15건 + ko/en 22키 추가 (19 파일)
 - **P46**: 하드코딩 한국어 전면 전환 Batch 2~4 — voucherShare 8키 + ErrorBoundary 3키 + character 46키 + friend fallback 1키 (ko/en 총 58키 추가)
+- **P47**: 모바일 번들 사이즈 모니터링 — bundleAudit.test.ts 15 tests (의존성 예산, 금지 패키지, 미사용 dep, 소스 크기, import 위생, i18n 규모, 순환 의존성, 에셋 크기)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
