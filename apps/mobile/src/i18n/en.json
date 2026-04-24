@@ -77,7 +77,8 @@
     "searchPlaceholder": "Search by time, voice, message",
     "countdownDaysHours": "{{days}}d {{hours}}h",
     "countdownHoursMinutes": "{{hours}}h {{minutes}}m",
-    "countdownMinutes": "{{minutes}}m"
+    "countdownMinutes": "{{minutes}}m",
+    "toggleAlarm": "Toggle alarm"
   },
   "voices": {
     "title": "Voice Profiles",

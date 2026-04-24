@@ -77,7 +77,8 @@
     "searchPlaceholder": "시간, 음성, 메시지로 검색",
     "countdownDaysHours": "{{days}}일 {{hours}}시간",
     "countdownHoursMinutes": "{{hours}}시간 {{minutes}}분",
-    "countdownMinutes": "{{minutes}}분"
+    "countdownMinutes": "{{minutes}}분",
+    "toggleAlarm": "알람 켜기/끄기"
   },
   "voices": {
     "title": "음성 프로필",

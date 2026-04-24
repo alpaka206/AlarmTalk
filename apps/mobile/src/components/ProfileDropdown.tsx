@@ -100,8 +100,13 @@ export function ProfileDropdown() {
         animationType="fade"
         onRequestClose={() => setVisible(false)}
       >
-        <Pressable style={styles.backdrop} onPress={() => setVisible(false)}>
-          <Pressable style={styles.menu} onPress={() => {}}>
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => setVisible(false)}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.close')}
+        >
+          <Pressable style={styles.menu} onPress={() => {}} accessibilityRole="menu">
             {isAuthenticated && profile && (
               <View style={styles.profileSection}>
                 <View style={styles.profileAvatar}>
@@ -145,6 +150,9 @@ export function ProfileDropdown() {
                 onValueChange={setDarkMode}
                 trackColor={{ true: colors.primary }}
                 style={styles.menuSwitch}
+                accessibilityRole="switch"
+                accessibilityLabel={t('settings.darkMode')}
+                accessibilityState={{ checked: darkMode }}
               />
             </View>
 

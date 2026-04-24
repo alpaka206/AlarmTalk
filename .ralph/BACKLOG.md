@@ -439,12 +439,19 @@
 - [x] i18n `noteDetail.*` 4키 추가 (ko/en)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P14 — Switch 접근성 보강 ✅ (2026-04-24)
+
+- [x] ProfileDropdown: Switch a11y + Backdrop/Menu Pressable a11y 추가
+- [x] alarms.tsx: 알람 토글 Switch a11y 추가
+- [x] settings/index.tsx: 알림 Switch 2개 + 다크모드 Switch a11y 추가
+- [x] i18n: `alarms.toggleAlarm` 키 추가 (ko/en)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
-- 성능 프로파일링 + 최적화
 - Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인
 - App Store / Google Play 스토어 등록 준비 (메타데이터, 스크린샷)

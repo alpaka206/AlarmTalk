@@ -345,6 +345,9 @@ export default function AlarmsScreen() {
                 true: colors.primaryLight,
               }}
               thumbColor={item.is_active ? colors.primary : colors.surfaceVariant}
+              accessibilityRole="switch"
+              accessibilityLabel={t('alarms.toggleAlarm')}
+              accessibilityState={{ checked: !!item.is_active }}
             />
           </View>
         </TouchableOpacity>

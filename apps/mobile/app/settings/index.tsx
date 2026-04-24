@@ -110,12 +110,28 @@ export default function SettingsScreen() {
             <SettingRow
               colors={colors}
               label={t('settings.alarmNotif')}
-              trailing={<Switch value={true} trackColor={{ true: colors.primary }} />}
+              trailing={
+                <Switch
+                  value={true}
+                  trackColor={{ true: colors.primary }}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('settings.alarmNotif')}
+                  accessibilityState={{ checked: true }}
+                />
+              }
             />
             <SettingRow
               colors={colors}
               label={t('settings.messageNotif')}
-              trailing={<Switch value={true} trackColor={{ true: colors.primary }} />}
+              trailing={
+                <Switch
+                  value={true}
+                  trackColor={{ true: colors.primary }}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('settings.messageNotif')}
+                  accessibilityState={{ checked: true }}
+                />
+              }
             />
             <View style={styles.settingRow}>
               <Text style={styles.settingLabel}>{t('settings.defaultSnooze')}</Text>
@@ -179,6 +195,9 @@ export default function SettingsScreen() {
                   value={darkMode}
                   onValueChange={setDarkMode}
                   trackColor={{ true: colors.primary }}
+                  accessibilityRole="switch"
+                  accessibilityLabel={t('settings.darkMode')}
+                  accessibilityState={{ checked: darkMode }}
                 />
               }
             />
