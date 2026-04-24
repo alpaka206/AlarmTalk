@@ -195,6 +195,22 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="code-register/index"
+              options={{
+                headerShown: true,
+                title: t('codeRegister.title'),
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
+              name="note/create"
+              options={{
+                headerShown: true,
+                title: t('note.title'),
+                presentation: 'modal',
+              }}
+            />
+            <Stack.Screen
               name="people/index"
               options={{ headerShown: true, title: t('people.title', '내 사람들') }}
             />

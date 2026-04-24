@@ -579,6 +579,37 @@
     "sendAlarm": "알람 보내기",
     "sendAlarmDesc": "상대방에게 알람을 예약해 보내요",
     "sendNote": "쪽지 보내기",
-    "sendNoteDesc": "텍스트를 음성으로 변환해 전달해요"
+    "sendNoteDesc": "텍스트를 음성으로 변환해 전달해요",
+    "inbox": "받은 쪽지",
+    "noNotes": "아직 받은 쪽지가 없어요"
+  },
+  "note": {
+    "title": "쪽지 보내기",
+    "recipient": "받는 사람",
+    "noRecipients": "같은 가족 그룹에 멤버가 없습니다",
+    "message": "메시지",
+    "messagePlaceholder": "전하고 싶은 말을 입력하세요",
+    "send": "보내기",
+    "sendSuccess": "쪽지를 보냈습니다",
+    "sendError": "쪽지 전송에 실패했습니다"
+  },
+  "codeRegister": {
+    "title": "코드 등록",
+    "subtitle": "이용권 코드 또는 가족 초대 코드를 입력하세요",
+    "inputLabel": "코드 입력",
+    "placeholder": "VA-XXXX-XXXX-XXXX 또는 6자리 숫자",
+    "register": "등록하기",
+    "typeVoucher": "이용권 코드",
+    "typeInvite": "가족 초대 코드",
+    "voucherSuccess": "이용권이 등록되었습니다",
+    "inviteSuccess": "가족 그룹에 가입되었습니다",
+    "voucherSuccessDetail": "플랜이 업그레이드되었습니다. 새로운 기능을 즐겨보세요!",
+    "inviteSuccessDetail": "가족 그룹에 성공적으로 가입되었습니다. 이제 가족 기능을 이용할 수 있어요!",
+    "unknownError": "코드 등록에 실패했습니다. 다시 시도해 주세요.",
+    "helpTitle": "코드 종류 안내",
+    "helpVoucherTitle": "이용권 코드",
+    "helpVoucherDesc": "플랜 구매 시 발급되는 코드입니다. 등록하면 해당 플랜이 활성화됩니다.",
+    "helpInviteTitle": "가족 초대 코드",
+    "helpInviteDesc": "가족 그룹 오너가 발급한 6자리 초대 코드입니다. 등록하면 가족 그룹에 참여됩니다."
   }
 }

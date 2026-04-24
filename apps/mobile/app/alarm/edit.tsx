@@ -23,7 +23,7 @@ import {
 } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
-import type { AlarmMode, VibrationPattern, Message, VoiceProfile } from '../../src/types';
+import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile } from '../../src/types';
 import { getApiErrorMessage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -48,6 +48,7 @@ export default function EditAlarmScreen() {
   const [mode, setMode] = useState<AlarmMode>('tts');
   const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const [wakeMode, setWakeMode] = useState<WakeMode>('sound_then_voice');
   const [loaded, setLoaded] = useState(false);
 
   const { data: alarm } = useQuery({
@@ -83,6 +84,7 @@ export default function EditAlarmScreen() {
       setMode(alarm.mode === 'sound-only' ? 'sound-only' : 'tts');
       setVibrationPattern(alarm.vibration_pattern ?? 'default');
       setVoiceProfileId(alarm.voice_profile_id ?? null);
+      setWakeMode(alarm.wake_mode === 'voice_only' ? 'voice_only' : 'sound_then_voice');
       setLoaded(true);
     }
   }, [alarm, loaded]);
@@ -97,6 +99,7 @@ export default function EditAlarmScreen() {
       mode?: AlarmMode;
       vibration_pattern?: VibrationPattern;
       voice_profile_id?: string | null;
+      wake_mode?: WakeMode;
     }) => updateAlarm(id!, params),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
@@ -145,6 +148,7 @@ export default function EditAlarmScreen() {
       mode: payload.mode,
       vibration_pattern: payload.vibration_pattern,
       voice_profile_id: payload.voice_profile_id ?? null,
+      wake_mode: mode === 'tts' ? wakeMode : 'sound_then_voice',
     });
   };
 
@@ -321,6 +325,35 @@ export default function EditAlarmScreen() {
               {t('alarmCreate.voiceProfileHint')}
             </Text>
           )}
+        </>
+      )}
+
+      {/* 깨우기 방식 */}
+      {mode === 'tts' && (
+        <>
+          <Text style={dynStyles.sectionTitle}>{t('alarmCreate.wakeMode')}</Text>
+          <View style={dynStyles.modeRow}>
+            <TouchableOpacity
+              style={[dynStyles.modeChip, wakeMode === 'sound_then_voice' && dynStyles.modeChipActive]}
+              onPress={() => setWakeMode('sound_then_voice')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'sound_then_voice' }}
+            >
+              <Text style={[dynStyles.modeText, wakeMode === 'sound_then_voice' && dynStyles.modeTextActive]}>
+                {t('alarmCreate.soundThenVoice')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[dynStyles.modeChip, wakeMode === 'voice_only' && dynStyles.modeChipActive]}
+              onPress={() => setWakeMode('voice_only')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'voice_only' }}
+            >
+              <Text style={[dynStyles.modeText, wakeMode === 'voice_only' && dynStyles.modeTextActive]}>
+                {t('alarmCreate.voiceOnly')}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
 

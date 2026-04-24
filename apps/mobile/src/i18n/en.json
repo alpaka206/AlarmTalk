@@ -574,6 +574,37 @@
     "sendAlarm": "Send Alarm",
     "sendAlarmDesc": "Schedule an alarm for someone special",
     "sendNote": "Send Note",
-    "sendNoteDesc": "Convert text to voice and deliver it"
+    "sendNoteDesc": "Convert text to voice and deliver it",
+    "inbox": "Inbox",
+    "noNotes": "No notes received yet"
+  },
+  "note": {
+    "title": "Send Note",
+    "recipient": "Recipient",
+    "noRecipients": "No members in your family group",
+    "message": "Message",
+    "messagePlaceholder": "Write your message here",
+    "send": "Send",
+    "sendSuccess": "Note sent successfully",
+    "sendError": "Failed to send note"
+  },
+  "codeRegister": {
+    "title": "Register Code",
+    "subtitle": "Enter a voucher code or family invite code",
+    "inputLabel": "Enter code",
+    "placeholder": "VA-XXXX-XXXX-XXXX or 6-digit number",
+    "register": "Register",
+    "typeVoucher": "Voucher Code",
+    "typeInvite": "Family Invite Code",
+    "voucherSuccess": "Voucher registered successfully",
+    "inviteSuccess": "You have joined the family group",
+    "voucherSuccessDetail": "Your plan has been upgraded. Enjoy the new features!",
+    "inviteSuccessDetail": "You have successfully joined the family group. Family features are now available!",
+    "unknownError": "Failed to register code. Please try again.",
+    "helpTitle": "Code Types",
+    "helpVoucherTitle": "Voucher Code",
+    "helpVoucherDesc": "A code issued when purchasing a plan. Registering it activates the plan.",
+    "helpInviteTitle": "Family Invite Code",
+    "helpInviteDesc": "A 6-digit code issued by a family group owner. Registering it joins you to the family group."
   }
 }

@@ -437,6 +437,23 @@ export const migrations: Migration[] = [
       `ALTER TABLE alarms ADD COLUMN voice_profile_id TEXT DEFAULT NULL`,
     ],
   },
+  {
+    id: 18,
+    name: 'notes-table',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        sender_id TEXT NOT NULL REFERENCES users(id),
+        receiver_id TEXT NOT NULL REFERENCES users(id),
+        text TEXT NOT NULL,
+        audio_url TEXT,
+        read_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_receiver ON notes(receiver_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_sender ON notes(sender_id, created_at DESC)`,
+    ],
+  },
 ];
 
 export async function runMigrations(db: Client): Promise<string[]> {

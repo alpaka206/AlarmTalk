@@ -503,6 +503,42 @@ export async function getVouchers() {
   return data.vouchers;
 }
 
+// ===== Code Registration (Unified) =====
+
+export interface CodeRegisterVoucherResult {
+  success: true;
+  type: 'voucher';
+  subscription: {
+    id: string;
+    plan_id: string;
+    status: string;
+    starts_at: string;
+    expires_at: string;
+  };
+  plan: {
+    key: string;
+    name: string;
+    plan_type: string;
+    period_days: number;
+  };
+}
+
+export interface CodeRegisterInviteResult {
+  success: true;
+  type: 'invite';
+  membership: {
+    id: string;
+    plan_group_id: string;
+    role: string;
+  };
+}
+
+export type CodeRegisterResult = CodeRegisterVoucherResult | CodeRegisterInviteResult;
+
+export async function registerCode(code: string): Promise<CodeRegisterResult> {
+  return post<CodeRegisterResult>('/code/register', { code });
+}
+
 // ===== Family Group / Family Alarm API =====
 
 export interface FamilyGroupMember {
@@ -679,4 +715,57 @@ export async function registerPushToken(token: string, platform: 'ios' | 'androi
 
 export async function unregisterPushToken(token: string) {
   return request<{ success: boolean }>({ method: 'DELETE', path: '/push/token', body: { token } });
+}
+
+// ===== Notes API =====
+
+export interface ReceivedNote {
+  id: string;
+  sender_id: string;
+  sender_name: string | null;
+  sender_email: string;
+  sender_picture: string | null;
+  text: string;
+  audio_url: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface SentNote {
+  id: string;
+  receiver_id: string;
+  receiver_name: string | null;
+  receiver_email: string;
+  text: string;
+  audio_url: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export async function sendNote(receiverId: string, text: string) {
+  return post<{ success: boolean; note: ReceivedNote }>('/notes', {
+    receiver_id: receiverId,
+    text,
+  });
+}
+
+export async function getReceivedNotes(limit = 20, offset = 0) {
+  const data = await get<{ notes: ReceivedNote[] }>(
+    `/notes/received?limit=${limit}&offset=${offset}`,
+  );
+  return data.notes;
+}
+
+export async function getSentNotes(limit = 20, offset = 0) {
+  const data = await get<{ notes: SentNote[] }>(
+    `/notes/sent?limit=${limit}&offset=${offset}`,
+  );
+  return data.notes;
+}
+
+export async function markNoteRead(noteId: string) {
+  return request<{ success: boolean; read_at?: string }>({
+    method: 'PATCH',
+    path: `/notes/${noteId}/read`,
+  });
 }

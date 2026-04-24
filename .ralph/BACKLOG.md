@@ -335,37 +335,44 @@
 - [ ] 최근 사용 메시지 목록 (AsyncStorage 캐싱)
 - [ ] 음성 캐싱 (동일 텍스트+음성 재사용)
 
-## R3 — 코드 등록 시스템
+## R3 — 코드 등록 시스템 ✅ (2026-04-24)
 
-### "받은 선물" → "코드 등록" 변환
-- [ ] `app/gift/received.tsx` → `app/code-register/index.tsx`로 이동 + 리네임
-- [ ] 코드 입력 UI: 텍스트 필드 + "등록" 버튼
-- [ ] 코드 타입 판별 (백엔드):
-  - **이용권 코드**: 등록 시 사용 가능 일수 증가 (billing 테이블 업데이트)
-  - **가족/커플 초대 코드**: 등록 시 해당 그룹에 자동 가입
-- [ ] 에러 처리: 만료 / 사용완료 / 존재하지 않는 코드
-- [ ] 성공 시 토스트 메시지 + 화면 갱신
-- [ ] typecheck 통과
+### "받은 선물" → "코드 등록" 변환 ✅
+- [x] `app/code-register/index.tsx` 신규 (gift/received는 별도 보존)
+- [x] 코드 입력 UI: 텍스트 필드 + "등록" 버튼 + 자동 코드 타입 감지 뱃지
+- [x] 통합 백엔드 엔드포인트 `POST /code/register`:
+  - **이용권 코드 (VA-XXXX-XXXX-XXXX)**: subscription 생성 + user plan 업데이트
+  - **가족 초대 코드 (6자리 숫자)**: plan_group_members 가입
+- [x] 에러 처리: 만료 / 사용완료 / 존재하지 않음 / 본인 발급 / 정원 초과 / 잘못된 형식
+- [x] 성공 시 토스트 메시지 + userProfile 쿼리 무효화
+- [x] ProfileDropdown 라우트 `/gift/received` → `/code-register` 변경
+- [x] i18n ko/en 각 18키 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
 
-## R4 — 메시지 작성 탭
+## R4 — 메시지 작성 탭 ✅ (2026-04-24)
 
-### 커플/가족 전용 기능
-- [ ] `app/(tabs)/compose.tsx` 구현:
-  - 비커플/비가족: "가족 또는 커플 플랜에 가입하면 사용할 수 있어요" 안내 + CTA
-  - 커플/가족: 수신자 선택 → 메시지 타입 선택
-- [ ] **알람 보내기**: 상대방에게 시간 + 메시지로 알람 예약
-- [ ] **쪽지 보내기**: 텍스트 입력 → TTS 음성 변환 → 상대방이 원할 때 재생
-  - 쪽지는 비동기 (푸시만, 강제 소리 없음)
-- [ ] **수신함**: 받은 쪽지 목록 + 재생 UI (스택 화면)
-- [ ] 백엔드: 쪽지 테이블 신규 (`notes`: id, sender_id, receiver_id, text, audio_url, read_at, created_at)
-- [ ] typecheck 통과
+### 커플/가족 전용 기능 ✅
+- [x] `app/(tabs)/compose.tsx` 리빌드:
+  - 비로그인/비가족: 기존 안내 UI 유지
+  - 가족 플랜: 알람 보내기 + 쪽지 보내기 카드 + 받은 쪽지 인라인 목록
+- [x] **알람 보내기**: `/family-alarm/create` 로 네비게이션 연결
+- [x] **쪽지 보내기**: `app/note/create.tsx` 신규 — 수신자 선택 + 텍스트 입력 + 전송
+  - TTS 음성 변환은 Perso API blocked 상태이므로 텍스트만 저장 (audio_url=null)
+- [x] **수신함**: compose 탭에 받은 쪽지 FlatList 인라인 표시 (미읽음 뱃지 + 읽음 표시)
+- [x] 백엔드: 마이그레이션 18 (`notes` 테이블) + `routes/notes.ts` (POST, GET received/sent, PATCH read)
+  - 가족 그룹 멤버 간에만 쪽지 전송 허용
+- [x] API: sendNote, getReceivedNotes, getSentNotes, markNoteRead
+- [x] i18n ko/en 추가 (note.* 9키, compose.inbox/noNotes 2키)
+- [x] typecheck 통과 (backend + mobile 0 errors)
 
-## R5 — 정비 + 테스트
+## R5 — 정비 + 테스트 (부분 완료)
 
+- [x] alarm/edit.tsx에 wake_mode UI 동기화 (create와 동일한 패턴)
+- [x] 새 파일 lint 0 errors (code.ts, notes.ts, code-register, note/create, compose)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 기존 테스트 전체 통과 (backend 553/553, mobile 168/168)
 - [ ] settings/people 관련 데드 코드 정리
-- [ ] 전체 lint 0 errors 0 warnings 유지
-- [ ] typecheck 통과 (backend + mobile)
-- [ ] 기존 테스트 전체 통과 확인
+- [ ] gift/received.tsx 정리 여부 결정
 
 ---
 

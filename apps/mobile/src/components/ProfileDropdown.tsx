@@ -132,7 +132,7 @@ export function ProfileDropdown() {
               styles={styles}
               label={t('profile.codeRegister')}
               icon="🎟️"
-              onPress={() => { setVisible(false); router.push('/gift/received'); }}
+              onPress={() => { setVisible(false); router.push('/code-register'); }}
             />
 
             <View style={styles.divider} />

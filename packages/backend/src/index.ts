@@ -23,6 +23,8 @@ import billingRoutes from './routes/billing';
 import familyRoutes from './routes/family';
 import characterRoutes from './routes/character';
 import pushRoutes from './routes/push';
+import codeRoutes from './routes/code';
+import notesRoutes from './routes/notes';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -115,6 +117,8 @@ api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/characters', characterRoutes);
 api.route('/push', pushRoutes);
+api.route('/code', codeRoutes);
+api.route('/notes', notesRoutes);
 
 app.route('/api', api);
 
