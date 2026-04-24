@@ -482,14 +482,20 @@
 
 ---
 
-## P19 — DB Row 타입 안전성 강화 (as unknown as 제거)
+## P19 — DB Row 타입 안전성 강화 (as unknown as 제거) ✅ (2026-04-24)
 
-- [ ] `packages/backend/src/lib/db-types.ts` 신규 — Turso Row 결과를 안전하게 타입 캐스팅하는 유틸
-- [ ] `routes/auth.ts` — 2건 double assertion 제거 (row 타입 정의)
-- [ ] `routes/voice.ts` — 6건 double assertion 제거 (upload row, member row)
-- [ ] `routes/dub.ts` — 1건 double assertion 제거 (formData.get)
-- [ ] 기타 routes (alarm, character, billing, family, notes) — as 패턴 개선
-- [ ] typecheck 통과 확인
+- [x] `packages/backend/src/lib/db-types.ts` 신규 — typedRow<T> + getFormFile 유틸
+- [x] `routes/auth.ts` — 2건 double assertion 제거 → typedRow
+- [x] `routes/voice.ts` — 7건 double assertion 제거 (FormData 4건 → getFormFile, DB row 3건 → typedRow) + 3건 as Record 개선
+- [x] `routes/dub.ts` — 1건 double assertion 제거 → getFormFile
+- [x] `routes/character.ts` — rowToCharacter 시그니처 Row 타입 직접 사용 + 3건 typedRow 적용
+- [x] `routes/tts.ts` — 1건 as Record → typedRow
+- [x] typecheck 통과 확인 (backend + mobile 0 errors, 596/596 tests)
+
+## P20 — db-types 유틸 테스트 ✅ (2026-04-24)
+
+- [x] `test/db-types.test.ts` 신규 — typedRow 4 tests + getFormFile 6 tests = 10 tests
+- [x] 전체 606/606 통과 (기존 596 + P19 0 + P20 10)
 
 ---
 

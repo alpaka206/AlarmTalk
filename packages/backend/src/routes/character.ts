@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
+import type { Row } from '@libsql/client/web';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { typedRow } from '../lib/db-types';
 import {
   computeLevelFromXp,
   computeStageFromLevel,
@@ -47,7 +49,7 @@ async function resolveUserPk(
   return res.rows.length === 0 ? null : String(res.rows[0].id);
 }
 
-function rowToCharacter(row: Record<string, unknown>): CharacterRow {
+function rowToCharacter(row: Row): CharacterRow {
   return {
     id: String(row.id),
     user_id: String(row.user_id),
@@ -75,7 +77,7 @@ async function loadOrCreateCharacter(
     args: [userPk],
   });
   if (existing.rows.length > 0) {
-    return rowToCharacter(existing.rows[0] as Record<string, unknown>);
+    return rowToCharacter(existing.rows[0]);
   }
   const id = crypto.randomUUID();
   await db.execute({
@@ -87,7 +89,7 @@ async function loadOrCreateCharacter(
     sql: 'SELECT * FROM characters WHERE id = ?',
     args: [id],
   });
-  return rowToCharacter(created.rows[0] as Record<string, unknown>);
+  return rowToCharacter(created.rows[0]);
 }
 
 function buildProgress(xp: number, level: number) {
@@ -132,7 +134,7 @@ async function loadStats(
     args: [characterId],
   });
   if (res.rows.length === 0) return null;
-  const r = res.rows[0] as Record<string, unknown>;
+  const r = typedRow<{ diligence: number; health: number; consistency: number }>(res.rows[0]);
   return {
     diligence: Number(r.diligence ?? 0),
     health: Number(r.health ?? 0),
@@ -149,7 +151,7 @@ async function loadAchievements(
     args: [characterId],
   });
   return res.rows.map((r) => {
-    const row = r as Record<string, unknown>;
+    const row = typedRow<{ milestone: number; bonus_xp: number; achieved_at: string }>(r);
     return {
       milestone: Number(row.milestone),
       bonus_xp: Number(row.bonus_xp),
@@ -229,7 +231,7 @@ character.post('/xp', async (c) => {
       args: [userPk, clientNonce],
     });
     if (dup.rows.length > 0) {
-      const log = dup.rows[0] as Record<string, unknown>;
+      const log = typedRow<{ event: string; granted_xp: number; affection_delta: number; capped: number }>(dup.rows[0]);
       const row = await loadOrCreateCharacter(db, userPk);
       const [stats, achievements] = await Promise.all([
         loadStats(db, row.id),

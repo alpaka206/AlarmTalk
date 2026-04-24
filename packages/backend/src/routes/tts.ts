@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
+import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 
 const tts = new Hono<AppEnv>();
@@ -209,7 +210,7 @@ tts.delete('/messages/:id', async (c) => {
     sql: 'SELECT COUNT(*) as cnt FROM alarms WHERE message_id = ?',
     args: [id],
   });
-  const alarmCount = Number((alarmCheck.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+  const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]).cnt ?? 0);
 
   if (alarmCount > 0 && c.req.query('force') !== 'true') {
     return c.json({

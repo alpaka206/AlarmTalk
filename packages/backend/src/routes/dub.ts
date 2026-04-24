@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { PersoClient } from '../lib/perso';
 import { getDB } from '../lib/db';
+import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 
 const dub = new Hono<AppEnv>();
@@ -24,7 +25,7 @@ dub.post('/', async (c) => {
   const perso = new PersoClient(c.env.PERSO_API_KEY);
 
   const formData = await c.req.formData();
-  const audioFile = formData.get('audio') as unknown as File | null;
+  const audioFile = getFormFile(formData, 'audio');
   const sourceLanguage = formData.get('source_language') as string | null;
   const targetLanguage = formData.get('target_language') as string | null;
   const sourceMessageId = formData.get('source_message_id') as string | null;

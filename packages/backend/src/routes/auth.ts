@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { getDB } from '../lib/db';
+import { typedRow } from '../lib/db-types';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
 import { RegisterRequestSchema, LoginRequestSchema } from '@voice-alarm/shared';
@@ -93,13 +94,13 @@ auth.post('/login', async (c) => {
       return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
-    const row = result.rows[0] as unknown as {
+    const row = typedRow<{
       id: string;
       email: string;
       password_hash: string | null;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    };
+    }>(result.rows[0]);
 
     if (!row.password_hash) {
       return c.json(jsonError('AUTH_OAUTH_ONLY', 'This account uses OAuth sign-in'), 401);
@@ -147,12 +148,12 @@ auth.get('/me', async (c) => {
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
     }
-    const row = result.rows[0] as unknown as {
+    const row = typedRow<{
       id: string;
       email: string;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    };
+    }>(result.rows[0]);
     return c.json({
       user: {
         id: row.id,

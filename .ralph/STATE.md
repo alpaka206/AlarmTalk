@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P18 hooks 테스트 커버리지 확장
-- 현재 Phase: **R0~R6 전체 완료 + P11~P18 완료**
+- 마지막 루프: 2026-04-24 — P20 db-types 유틸 테스트
+- 현재 Phase: **R0~R6 전체 완료 + P11~P20 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 596/596, mobile 286/286)
+- 전체 테스트 통과 (backend 606/606, mobile 286/286)
 
 ## 완료된 리팩토링
 
@@ -19,6 +19,8 @@
 - **P16**: 모바일 유틸 테스트 커버리지 확장 Batch 2 (authFormValidation 14 + waveform 15 + presets 9 = 38 tests, 총 206/206)
 - **P17**: useAppStore Zustand 스토어 테스트 (32 tests — 전체 액션 + AsyncStorage persist 검증, 총 238/238)
 - **P18**: hooks 테스트 커버리지 확장 (useTheme 10 + useToast 8 + useNetworkStatus 6 + useAuth 24 = 48 tests, 총 286/286)
+- **P19**: DB Row 타입 안전성 강화 (db-types.ts 유틸 + as unknown as 10건 제거 + as Record 9건 개선, 7 파일)
+- **P20**: db-types 유틸 테스트 (typedRow 4 + getFormFile 6 = 10 tests, 총 606/606)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

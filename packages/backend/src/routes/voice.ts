@@ -3,6 +3,7 @@ import type { AppEnv } from '../types';
 import type { VoiceStorage } from '@voice-alarm/voice';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
+import { typedRow, getFormFile } from '../lib/db-types';
 import { getSharedInMemoryVoiceStorage, MockVoiceProvider } from '@voice-alarm/voice';
 import { R2VoiceStorage } from '../lib/r2-storage';
 
@@ -30,7 +31,7 @@ voice.post('/upload', async (c) => {
     return c.json({ error: 'multipart/form-data body required' }, 400);
   }
 
-  const audioFile = formData.get('audio') as unknown as File | null;
+  const audioFile = getFormFile(formData, 'audio');
   if (!audioFile || typeof audioFile === 'string') {
     return c.json({ error: 'audio file is required' }, 400);
   }
@@ -128,7 +129,7 @@ voice.post('/uploads/:uploadId/separate', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found' }, 404);
   }
-  const upload = uploadRes.rows[0] as unknown as { id: string; user_id: string; object_key: string };
+  const upload = typedRow<{ id: string; user_id: string; object_key: string }>(uploadRes.rows[0]);
   if (upload.user_id !== userId) {
     return c.json({ error: 'Forbidden' }, 403);
   }
@@ -181,7 +182,7 @@ voice.get('/uploads/:uploadId/speakers', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found' }, 404);
   }
-  if ((uploadRes.rows[0] as unknown as { user_id: string }).user_id !== userId) {
+  if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -223,7 +224,7 @@ voice.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
   if (uploadRes.rows.length === 0) {
     return c.json({ error: 'Voice upload not found' }, 404);
   }
-  if ((uploadRes.rows[0] as unknown as { user_id: string }).user_id !== userId) {
+  if (typedRow<{ user_id: string }>(uploadRes.rows[0]).user_id !== userId) {
     return c.json({ error: 'Forbidden' }, 403);
   }
 
@@ -291,7 +292,7 @@ voice.get('/family', async (c) => {
     return c.json({ profiles: [] });
   }
 
-  const memberIds = memberRes.rows.map((r) => (r as unknown as { user_id: string }).user_id);
+  const memberIds = memberRes.rows.map((r) => typedRow<{ user_id: string }>(r).user_id);
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, u.name as owner_name
@@ -387,7 +388,7 @@ voice.post('/clone', async (c) => {
     }
 
     const formData = await c.req.formData();
-    const audioFile = formData.get('audio') as unknown as File | null;
+    const audioFile = getFormFile(formData, 'audio');
     const name = formData.get('name') as string | null;
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required' }, 400);
@@ -444,7 +445,7 @@ voice.post('/clone', async (c) => {
 /** 화자 분리 (Speaker Diarization) */
 voice.post('/diarize', async (c) => {
   const formData = await c.req.formData();
-  const audioFile = formData.get('audio') as unknown as File | null;
+  const audioFile = getFormFile(formData, 'audio');
 
   if (!audioFile) {
     return c.json({ error: 'audio file is required' }, 400);
@@ -508,8 +509,8 @@ voice.get('/:id/stats', async (c) => {
 
   return c.json({
     voice_profile_id: id,
-    messages: Number((msgRes.rows[0] as Record<string, unknown>)?.count ?? 0),
-    alarms: Number((alarmRes.rows[0] as Record<string, unknown>)?.count ?? 0),
+    messages: Number(typedRow<{ count: number }>(msgRes.rows[0]).count ?? 0),
+    alarms: Number(typedRow<{ count: number }>(alarmRes.rows[0]).count ?? 0),
   });
 });
 
@@ -538,7 +539,7 @@ voice.delete('/:id', async (c) => {
     sql: 'SELECT COUNT(*) as cnt FROM messages WHERE voice_profile_id = ?',
     args: [id],
   });
-  const msgCount = Number((msgCheck.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+  const msgCount = Number(typedRow<{ cnt: number }>(msgCheck.rows[0]).cnt ?? 0);
 
   if (msgCount > 0 && c.req.query('force') !== 'true') {
     return c.json(
