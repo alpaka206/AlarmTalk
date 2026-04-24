@@ -16,7 +16,7 @@ import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { PRESET_CATEGORIES } from '../../src/constants/presets';
+import { PRESET_CATEGORIES, getCategoryLabel } from '../../src/constants/presets';
 import { getVoiceProfiles, generateTTS, getFriendList, sendGift } from '../../src/services/api';
 import { saveAudioLocally, playAudio } from '../../src/services/audio';
 import { useAppStore } from '../../src/stores/useAppStore';
@@ -201,7 +201,7 @@ export default function CreateMessageScreen() {
                   setSelectedCategory(cat.key);
                   setSelectedPreset(null);
                 }}
-                accessibilityLabel={t('messageCreate.a11yCategory', { label: cat.label })}
+                accessibilityLabel={t('messageCreate.a11yCategory', { label: getCategoryLabel(cat, t) })}
                 accessibilityRole="radio"
                 accessibilityState={{ selected: selectedCategory === cat.key }}
               >
@@ -212,7 +212,7 @@ export default function CreateMessageScreen() {
                     selectedCategory === cat.key && styles.categoryLabelActive,
                   ]}
                 >
-                  {cat.label}
+                  {getCategoryLabel(cat, t)}
                 </Text>
               </TouchableOpacity>
             ))}

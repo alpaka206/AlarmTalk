@@ -6,7 +6,10 @@ const KEYS = {
   messages: 'offline_cache_messages',
   library: 'offline_cache_library',
   voices: 'offline_cache_voices',
+  recentPresets: 'recent_preset_messages',
 } as const;
+
+const MAX_RECENT_PRESETS = 5;
 
 export async function cacheAlarms(alarms: Alarm[]): Promise<void> {
   await AsyncStorage.setItem(KEYS.alarms, JSON.stringify(alarms));
@@ -46,4 +49,16 @@ export async function getCachedVoices(): Promise<VoiceProfile[] | null> {
   const raw = await AsyncStorage.getItem(KEYS.voices);
   if (!raw) return null;
   return JSON.parse(raw) as VoiceProfile[];
+}
+
+export async function getRecentPresetMessages(): Promise<string[]> {
+  const raw = await AsyncStorage.getItem(KEYS.recentPresets);
+  if (!raw) return [];
+  return JSON.parse(raw) as string[];
+}
+
+export async function addRecentPresetMessage(text: string): Promise<void> {
+  const existing = await getRecentPresetMessages();
+  const deduped = [text, ...existing.filter((m) => m !== text)].slice(0, MAX_RECENT_PRESETS);
+  await AsyncStorage.setItem(KEYS.recentPresets, JSON.stringify(deduped));
 }

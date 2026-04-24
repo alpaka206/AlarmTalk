@@ -268,6 +268,10 @@
     "emptyVoice": "Register a voice first →",
     "presetCategory": "Category",
     "generatePreset": "🔊 Generate this message",
+    "presetMessages": "Select message",
+    "randomMessage": "🎲 Random",
+    "recentMessages": "Recently used",
+    "reusedMessage": "Reusing previously generated message.",
     "ttsError": "Failed to generate voice.",
     "noMessages": "No voice messages yet",
     "noMessagesDesc": "Create one yourself, or use presets below for a quick start!",
@@ -578,7 +582,8 @@
     "sendNote": "Send Note",
     "sendNoteDesc": "Convert text to voice and deliver it",
     "inbox": "Inbox",
-    "noNotes": "No notes received yet"
+    "noNotes": "No notes received yet",
+    "noteFrom": "Note from {{name}}"
   },
   "note": {
     "title": "Send Note",

@@ -10,12 +10,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
-import { getReceivedNotes, type ReceivedNote } from '../../src/services/api';
+import { getReceivedNotes, markNoteRead, type ReceivedNote } from '../../src/services/api';
 
 export default function ComposeScreen() {
   const { t } = useTranslation();
@@ -28,11 +28,29 @@ export default function ComposeScreen() {
 
   const isFamilyOrCouple = plan === 'family';
 
+  const queryClient = useQueryClient();
+
   const { data: receivedNotes, isLoading: notesLoading } = useQuery({
     queryKey: ['notes-received'],
     queryFn: () => getReceivedNotes(10),
     enabled: isAuthenticated && isFamilyOrCouple && isConnected,
   });
+
+  const readMutation = useMutation({
+    mutationFn: markNoteRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notes-received'] });
+    },
+  });
+
+  const handleNotePress = useCallback(
+    (note: ReceivedNote) => {
+      if (!note.read_at) {
+        readMutation.mutate(note.id);
+      }
+    },
+    [readMutation],
+  );
 
   const handleSendAlarm = useCallback(() => {
     router.push('/family-alarm/create');
@@ -46,7 +64,14 @@ export default function ComposeScreen() {
     ({ item }: { item: ReceivedNote }) => {
       const isUnread = !item.read_at;
       return (
-        <View style={[styles.noteCard, isUnread && styles.noteCardUnread]}>
+        <TouchableOpacity
+          style={[styles.noteCard, isUnread && styles.noteCardUnread]}
+          activeOpacity={0.7}
+          onPress={() => handleNotePress(item)}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('compose.noteFrom', { name: item.sender_name || item.sender_email })}: ${item.text}`}
+          accessibilityState={{ selected: !isUnread }}
+        >
           <View style={styles.noteHeader}>
             <View style={styles.noteAvatar}>
               <Text style={styles.noteAvatarText}>
@@ -63,13 +88,13 @@ export default function ComposeScreen() {
             </View>
             {isUnread && <View style={styles.unreadDot} />}
           </View>
-          <Text style={styles.noteText} numberOfLines={2}>
+          <Text style={styles.noteText}>
             {item.text}
           </Text>
-        </View>
+        </TouchableOpacity>
       );
     },
-    [styles],
+    [styles, handleNotePress, t],
   );
 
   if (!isAuthenticated) {

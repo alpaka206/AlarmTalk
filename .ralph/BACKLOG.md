@@ -274,7 +274,7 @@
 ### R0-A: 탭 축소 5→4 ✅ (2026-04-24)
 - [x] `app/(tabs)/people.tsx` 삭제 (→ `app/people/index.tsx` 스택 화면으로 이동)
 - [x] `app/(tabs)/settings.tsx` 삭제 (→ `app/settings/index.tsx` 스택 화면으로 이동)
-- [ ] `app/(tabs)/voices.tsx` → 음성 관리 탭으로 리빌드 (R1에서 상세)
+- [x] `app/(tabs)/voices.tsx` → 음성 관리 탭으로 리빌드 (R1에서 완료)
 - [x] `app/(tabs)/_layout.tsx` — 탭 4개로 변경: index(홈), voices(음성), alarms(알람), compose(메시지작성)
 - [x] `app/(tabs)/compose.tsx` 신규 — 메시지 작성 탭 (R4에서 상세 구현, 여기선 스캐폴드만)
 - [x] `src/i18n/ko.json` — `tab.people`, `tab.settings` 삭제, `tab.compose: "메시지"` 추가, `people.title` 추가, `compose.*` 8키 추가
@@ -331,9 +331,9 @@
 ### 미완료 항목
 - [x] alarm/edit.tsx에 wake_mode UI 동기화 (R5에서 완료)
 - [x] 가족/커플 멤버 음성을 알람 설정에서 선택 가능하게 (create + edit 양쪽 구현)
-- [ ] 프리셋 메시지 카테고리 선택 UI 개선
-- [ ] 최근 사용 메시지 목록 (AsyncStorage 캐싱)
-- [ ] 음성 캐싱 (동일 텍스트+음성 재사용)
+- [x] 프리셋 메시지 카테고리 선택 UI 개선 (2열 그리드 + i18n + 랜덤 선택)
+- [x] 최근 사용 메시지 목록 (AsyncStorage 캐싱, 최대 5개)
+- [x] 음성 캐싱 — 동일 voice+text 조합 감지 시 기존 message_id 재사용
 
 ## R3 — 코드 등록 시스템 ✅ (2026-04-24)
 

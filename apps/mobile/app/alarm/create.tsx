@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,8 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { DAYS_OF_WEEK, PRESET_CATEGORIES } from '../../src/constants/presets';
-import type { PresetCategory } from '../../src/constants/presets';
+import { DAYS_OF_WEEK, PRESET_CATEGORIES, getCategoryLabel } from '../../src/constants/presets';
 import {
   getMessages,
   getAlarms,
@@ -32,6 +31,7 @@ import { getApiErrorMessage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { validateAlarmForm, getTimeUntilAlarm } from '../../src/lib/alarmForm';
+import { getRecentPresetMessages, addRecentPresetMessage } from '../../src/services/offlineCache';
 import * as Haptics from 'expo-haptics';
 
 export default function CreateAlarmScreen() {
@@ -59,6 +59,14 @@ export default function CreateAlarmScreen() {
   const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
   const [wakeMode, setWakeMode] = useState<'sound_then_voice' | 'voice_only'>('sound_then_voice');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const [recentPresets, setRecentPresets] = useState<string[]>([]);
+
+  const loadRecentPresets = useCallback(async () => {
+    const recent = await getRecentPresetMessages();
+    setRecentPresets(recent);
+  }, []);
+
+  useEffect(() => { loadRecentPresets(); }, [loadRecentPresets]);
 
   const { data: messages } = useQuery({
     queryKey: ['messages'],
@@ -103,6 +111,19 @@ export default function CreateAlarmScreen() {
 
   const handlePresetGenerate = () => {
     if (!presetVoiceId || !presetText) return;
+    addRecentPresetMessage(presetText).then(() => loadRecentPresets());
+
+    const cached = messages?.find(
+      (m: Message) => m.voice_profile_id === presetVoiceId && m.text === presetText,
+    );
+    if (cached) {
+      setSelectedMessageId(cached.id);
+      setShowPreset(false);
+      setPresetText(null);
+      toast.show(t('alarmCreate.reusedMessage'));
+      return;
+    }
+
     ttsMutation.mutate({
       voice_profile_id: presetVoiceId,
       text: presetText,
@@ -559,29 +580,74 @@ export default function CreateAlarmScreen() {
             </ScrollView>
           )}
 
-          {/* 카테고리 선택 */}
-          <Text style={dynStyles.presetLabel}>{t('alarmCreate.presetCategory')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={dynStyles.presetRow}>
-            {PRESET_CATEGORIES.map((cat: PresetCategory) => (
-              <TouchableOpacity
-                key={cat.key}
-                style={[dynStyles.targetChip, presetCategory === cat.key && dynStyles.targetChipActive]}
-                onPress={() => {
-                  setPresetCategory(cat.key);
-                  setPresetText(null);
-                }}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: presetCategory === cat.key }}
-                accessibilityLabel={cat.label}
-              >
-                <Text style={[dynStyles.targetText, presetCategory === cat.key && dynStyles.targetTextActive]}>
-                  {cat.emoji} {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {/* 최근 사용 메시지 */}
+          {recentPresets.length > 0 && (
+            <>
+              <Text style={dynStyles.presetLabel}>{t('alarmCreate.recentMessages')}</Text>
+              <View style={dynStyles.messageList}>
+                {recentPresets.map((msg, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    style={[dynStyles.messageItem, presetText === msg && dynStyles.messageItemSelected]}
+                    onPress={() => setPresetText(msg)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: presetText === msg }}
+                    accessibilityLabel={msg}
+                  >
+                    <View style={dynStyles.messageInfo}>
+                      <Text style={dynStyles.messageText} numberOfLines={2}>"{msg}"</Text>
+                    </View>
+                    {presetText === msg && <Text style={dynStyles.checkmark}>✓</Text>}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
-          {/* 프리셋 메시지 목록 */}
+          {/* 카테고리 선택 — 2열 그리드 */}
+          <Text style={dynStyles.presetLabel}>{t('alarmCreate.presetCategory')}</Text>
+          <View style={dynStyles.categoryGrid}>
+            {PRESET_CATEGORIES.map((cat) => {
+              const selected = presetCategory === cat.key;
+              const label = getCategoryLabel(cat, t);
+              return (
+                <TouchableOpacity
+                  key={cat.key}
+                  style={[dynStyles.categoryCard, selected && dynStyles.categoryCardActive]}
+                  onPress={() => {
+                    setPresetCategory(cat.key);
+                    setPresetText(null);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={label}
+                >
+                  <Text style={dynStyles.categoryEmoji}>{cat.emoji}</Text>
+                  <Text style={[dynStyles.categoryLabel, selected && dynStyles.categoryLabelActive]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* 프리셋 메시지 목록 + 랜덤 선택 */}
+          <View style={dynStyles.presetMsgHeader}>
+            <Text style={[dynStyles.presetLabel, { marginBottom: 0 }]}>{t('alarmCreate.presetMessages')}</Text>
+            <TouchableOpacity
+              style={dynStyles.randomBtn}
+              onPress={() => {
+                const msgs = PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messages;
+                if (msgs && msgs.length > 0) {
+                  setPresetText(msgs[Math.floor(Math.random() * msgs.length)]);
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={t('alarmCreate.randomMessage')}
+            >
+              <Text style={dynStyles.randomBtnText}>{t('alarmCreate.randomMessage')}</Text>
+            </TouchableOpacity>
+          </View>
           <View style={dynStyles.messageList}>
             {PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messages.map((msg, i) => (
               <TouchableOpacity
@@ -931,6 +997,56 @@ function createStyles(colors: ThemeColors) {
   },
   presetRow: {
     marginBottom: Spacing.sm,
+  },
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  categoryCard: {
+    width: '48%' as unknown as number,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceVariant,
+    borderRadius: BorderRadius.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: Spacing.sm,
+  },
+  categoryCardActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  categoryEmoji: {
+    fontSize: 24,
+  },
+  categoryLabel: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.semibold,
+    color: colors.text,
+  },
+  categoryLabelActive: {
+    color: '#FFF',
+  },
+  presetMsgHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  randomBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    backgroundColor: colors.surfaceVariant,
+  },
+  randomBtnText: {
+    fontSize: FontSize.xs,
+    fontFamily: FontFamily.semibold,
+    color: colors.primary,
   },
   presetGenerateBtn: {
     backgroundColor: colors.accent,

@@ -268,6 +268,10 @@
     "emptyVoice": "먼저 음성을 등록해주세요 →",
     "presetCategory": "카테고리",
     "generatePreset": "🔊 이 메시지로 생성",
+    "presetMessages": "메시지 선택",
+    "randomMessage": "🎲 랜덤",
+    "recentMessages": "최근 사용",
+    "reusedMessage": "이미 생성된 메시지를 재사용합니다.",
     "ttsError": "음성 생성에 실패했습니다.",
     "noMessages": "아직 음성 메시지가 없어요",
     "noMessagesDesc": "직접 만들거나, 아래 프리셋으로 빠르게 생성해보세요!",
@@ -583,7 +587,8 @@
     "sendNote": "쪽지 보내기",
     "sendNoteDesc": "텍스트를 음성으로 변환해 전달해요",
     "inbox": "받은 쪽지",
-    "noNotes": "아직 받은 쪽지가 없어요"
+    "noNotes": "아직 받은 쪽지가 없어요",
+    "noteFrom": "{{name}}님의 쪽지"
   },
   "note": {
     "title": "쪽지 보내기",
