@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
+import { initSentry } from '../src/lib/sentry';
 import type * as Notifications from 'expo-notifications';
 import { useAppStore } from '../src/stores/useAppStore';
 import { useTheme } from '../src/hooks/useTheme';
@@ -25,6 +26,7 @@ import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { AuthProvider } from '../src/hooks/useAuth';
 import '../src/i18n';
 
+initSentry();
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient({

@@ -509,8 +509,21 @@
 
 ---
 
+## P22 — Sentry 에러 모니터링 연동 ✅ (2026-04-24)
+
+- [x] 모바일: `@sentry/react-native` 설치 + Expo 플러그인 등록
+- [x] `src/lib/sentry.ts` 신규 — initSentry() (EXPO_PUBLIC_SENTRY_DSN 환경변수, 미설정 시 no-op)
+- [x] `ErrorBoundary.tsx` — componentDidCatch에서 Sentry.captureException 호출
+- [x] `_layout.tsx` — 앱 시작 시 initSentry() 호출
+- [x] 백엔드: `toucan-js` 설치 + `middleware/sentry.ts` 신규 (Hono 미들웨어)
+- [x] `index.ts` — sentryMiddleware 최상단 등록 + onError에서 Sentry 보고
+- [x] `types.ts` — Env에 `SENTRY_DSN?: string` 추가
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 647/647, mobile 286/286)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
-- Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인

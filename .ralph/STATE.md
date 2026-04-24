@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P21 미테스트 모듈 커버리지 100%
-- 현재 Phase: **R0~R6 전체 완료 + P11~P21 완료**
+- 마지막 루프: 2026-04-24 — P22 Sentry 에러 모니터링 연동
+- 현재 Phase: **R0~R6 전체 완료 + P11~P22 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 286/286)
 
@@ -22,6 +22,7 @@
 - **P19**: DB Row 타입 안전성 강화 (db-types.ts 유틸 + as unknown as 10건 제거 + as Record 9건 개선, 7 파일)
 - **P20**: db-types 유틸 테스트 (typedRow 4 + getFormFile 6 = 10 tests, 총 606/606)
 - **P21**: 미테스트 모듈 100% 커버리지 (stats 14 + elevenlabs 14 + perso 13 = 41 tests, 총 647/647)
+- **P22**: Sentry 에러 모니터링 연동 (모바일 @sentry/react-native + 백엔드 toucan-js, DSN 미설정 시 no-op)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -29,3 +30,4 @@
 - TTS 변환 미구현 (notes.audio_url 항상 null)
 - eas.json submit: iOS ascAppId/appleTeamId placeholder 교체 필요
 - eas.json submit: Android google-service-account.json 생성 필요
+- Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)

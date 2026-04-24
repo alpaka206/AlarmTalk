@@ -2,6 +2,7 @@ import { Component, useMemo, type ReactNode } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
+import { Sentry } from '../lib/sentry';
 
 interface Props {
   children: ReactNode;
@@ -42,6 +43,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, errorMessage: error.message };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
   }
 
   handleRetry = () => {

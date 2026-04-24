@@ -6,6 +6,7 @@ import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { publicCache, privateCache, noStore } from './middleware/cache';
+import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { sendAlarmPush } from './lib/fcm';
@@ -27,6 +28,9 @@ import codeRoutes from './routes/code';
 import notesRoutes from './routes/notes';
 
 const app = new Hono<{ Bindings: Env }>();
+
+// Sentry error tracking (no-op if SENTRY_DSN is not set)
+app.use('*', sentryMiddleware);
 
 // Structured request logging
 app.use('*', loggerMiddleware);
@@ -134,6 +138,12 @@ app.onError((err, c) => {
       stack: err.stack?.split('\n').slice(0, 5).join(' | '),
     }),
   );
+
+  const sentry = c.get('sentry' as never);
+  if (sentry && typeof (sentry as { captureException?: unknown }).captureException === 'function') {
+    (sentry as { captureException: (e: Error) => void }).captureException(err);
+  }
+
   return c.json({ error: 'Internal server error', requestId }, 500);
 });
 
