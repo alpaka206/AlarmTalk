@@ -1213,3 +1213,20 @@
 - [x] `app/people/index.tsx` — 4건: remove/accept/share/revoke 버튼 role 추가
 - [x] `app/settings/index.tsx` — 5건: 페이지 제목 + 4개 섹션 제목 `accessibilityRole="header"` 추가
 - [x] typecheck 통과 (backend 0 errors, mobile 0 errors)
+
+## P84 — alarm.ts 검증 로직 중복 제거 + error_code 일관성 ✅ (2026-04-25)
+
+- [x] validateAlarmFields() 함수 추출 — POST/PATCH 공통 검증 (~70줄→2줄)
+- [x] 모든 에러 응답에 error_code 추가 (17종)
+- [x] 프론트엔드 ALARM_NOT_FOUND 매핑 + i18n
+- [x] alarm.test.ts error_code 검증 8 tests 추가
+- [x] 전체 테스트 통과 (backend 806/806, mobile 662/662)
+
+## P85 — user.test.ts 테스트 커버리지 강화 ✅ (2026-04-25)
+
+- [x] beforeEach: `mockDB.calls.length = 0` → `mockDB.reset()` + execute 복원
+- [x] 기존 테스트 error_code 검증 강화 (NO_FIELDS_TO_UPDATE, INVALID_BOOLEAN, USER_NOT_FOUND, INVALID_PLAN)
+- [x] toBoolFlag 변환 테스트 6건 ('1'/'0'/'true'/'false'/1/0)
+- [x] DB 에러 핸들링 테스트 3건 (FETCH_USER_FAILED, DELETE_ACCOUNT_FAILED, SEARCH_FAILED)
+- [x] 엣지 케이스 테스트 4건 (allow_family_alarms null, 잘못된 JSON x2, family 플랜, 빈 쿼리)
+- [x] 전체 테스트 통과 (backend 820/820, mobile 662/662)

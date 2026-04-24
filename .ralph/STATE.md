@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P84 alarm.ts 검증 로직 중복 제거 + error_code 일관성
-- 현재 Phase: **R0~R6 전체 완료 + P11~P84 완료**
+- 마지막 루프: 2026-04-25 — P85 user.test.ts 커버리지 강화
+- 현재 Phase: **R0~R6 전체 완료 + P11~P85 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 806/806, mobile 662/662)
+- 전체 테스트 통과 (backend 820/820, mobile 662/662)
 
 ## 완료된 리팩토링
 
@@ -13,6 +13,7 @@
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P83**: 전체 완료 (상세 내역은 이전 STATE 참조)
 - **P84**: alarm.ts validateAlarmFields() 추출로 POST/PATCH 검증 중복 제거 (~70줄→2줄), 모든 에러 응답에 error_code 추가 (17종), 프론트엔드 ALARM_NOT_FOUND 매핑 + i18n, 테스트 8건 추가
+- **P85**: user.test.ts 테스트 16→30개 (+14): beforeEach reset() 수정, error_code 검증 5건, toBoolFlag 6변환 테스트, DB 에러 핸들링 3건, 엣지 케이스 4건
 
 ## 알려진 이슈
 - [blocked] Perso API 404
