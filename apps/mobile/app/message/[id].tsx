@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../../src/i18n';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getMessages } from '../../src/services/api';
@@ -77,7 +78,7 @@ export default function MessageDetailScreen() {
         <View style={styles.header}>
           <Text style={styles.category}>{message.category.toUpperCase()}</Text>
           <Text style={styles.date}>
-            {new Date(message.created_at).toLocaleDateString('ko-KR', {
+            {new Date(message.created_at).toLocaleDateString(getDateLocale(), {
               year: 'numeric',
               month: 'long',
               day: 'numeric',

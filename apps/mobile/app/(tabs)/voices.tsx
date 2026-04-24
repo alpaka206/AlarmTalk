@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../../src/i18n';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createVoicesStyles } from '../../src/styles/voicesStyles';
@@ -168,7 +169,7 @@ function VoicesScreen() {
               <Text style={[styles.statusText, { color: badge.color }]}>{badge.label}</Text>
             </View>
             <Text style={styles.profileDate}>
-              {new Date(item.created_at).toLocaleDateString('ko-KR')}
+              {new Date(item.created_at).toLocaleDateString(getDateLocale())}
             </Text>
           </View>
           <TouchableOpacity

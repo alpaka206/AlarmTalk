@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../../src/i18n';
 import { TouchableOpacity } from 'react-native';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
@@ -54,7 +55,7 @@ export default function FriendProfileScreen() {
   const giftsFromFriend = receivedGifts?.filter((g: Gift) => g.sender_email === friendEmail) ?? [];
   const alarmsForFriend = alarms?.filter((a: Alarm) => a.target_user_id && a.target_user_id !== a.user_id) ?? [];
 
-  const since = new Date(friend.created_at).toLocaleDateString('ko-KR', {
+  const since = new Date(friend.created_at).toLocaleDateString(getDateLocale(), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',

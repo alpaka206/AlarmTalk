@@ -13,6 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../../src/i18n';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getVoiceProfiles, getMessages, getAlarms, updateVoiceProfile } from '../../src/services/api';
@@ -113,7 +114,7 @@ export default function VoiceDetailScreen() {
         <View style={styles.itemCard}>
           <Text style={styles.itemCategory}>{m.category}</Text>
           <Text style={styles.itemText} numberOfLines={2}>{m.text}</Text>
-          <Text style={styles.itemDate}>{new Date(m.created_at).toLocaleDateString('ko-KR')}</Text>
+          <Text style={styles.itemDate}>{new Date(m.created_at).toLocaleDateString(getDateLocale())}</Text>
         </View>
       );
     }
@@ -184,7 +185,7 @@ export default function VoiceDetailScreen() {
             </>
           )}
           <Text style={styles.profileDate}>
-            {new Date(profile.created_at).toLocaleDateString('ko-KR')}
+            {new Date(profile.created_at).toLocaleDateString(getDateLocale())}
           </Text>
           <View style={styles.statsRow}>
             <View style={styles.statItem} accessibilityLabel={t('voiceDetail.a11yStat', { label: t('voiceDetail.messages'), count: voiceMessages.length })}>

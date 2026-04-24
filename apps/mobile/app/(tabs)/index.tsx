@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { getDateLocale } from '../../src/i18n';
 import { Spacing, FontSize } from '../../src/constants/theme';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
@@ -365,7 +366,7 @@ function HomeScreen() {
                     </Text>
                   </View>
                   <Text style={styles.recentDate}>
-                    {new Date(item.received_at).toLocaleDateString('ko-KR', {
+                    {new Date(item.received_at).toLocaleDateString(getDateLocale(), {
                       month: 'short',
                       day: 'numeric',
                     })}

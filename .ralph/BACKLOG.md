@@ -910,3 +910,19 @@
 - [x] `app/settings/index.tsx` 리팩토링: 518→363줄 (-30%)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
+
+## P54 — library/dub 스타일 추출 ✅ (2026-04-25)
+
+- [x] `src/styles/libraryStyles.ts` 신규 — library 화면 스타일 180줄 추출
+- [x] `app/library/index.tsx` 리팩토링: 536→355줄 (-34%)
+- [x] `src/styles/dubTranslateStyles.ts` 신규 — dub/translate 스타일 192줄 추출
+- [x] `app/dub/translate.tsx` 리팩토링: 501→309줄 (-38%)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
+
+## P55 — 날짜 로캘 하드코딩 → i18n 동적 전환 ✅ (2026-04-25)
+
+- [x] `src/i18n/index.ts` — `getDateLocale()` 유틸 추가 (i18n.language → Intl 로캘)
+- [x] 5파일 7건 `toLocaleDateString('ko-KR')` → `getDateLocale()` 교체 (index, voices, friend, message, library, voice)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 466/466)
