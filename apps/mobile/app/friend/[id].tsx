@@ -27,7 +27,7 @@ export default function FriendProfileScreen() {
   });
 
   const { data: receivedGifts } = useQuery({
-    queryKey: ['receivedGifts'],
+    queryKey: ['gifts-received'],
     queryFn: getReceivedGifts,
   });
 

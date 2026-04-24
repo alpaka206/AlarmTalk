@@ -599,7 +599,7 @@
 - ~~접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)~~ → P34 완료
 - 백엔드 API 응답 시간 벤치마크 테스트 (주요 엔드포인트 latency 기준선 설정)
 - 모바일 번들 사이즈 모니터링 (expo export 후 JS bundle 크기 측정 + 기준선 테스트)
-- React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)
+- ~~React Query 캐시 전략 테스트 (staleTime, gcTime 설정 검증 + 오프라인 폴백 시나리오)~~ → P35 완료
 
 ## P34 — 접근성 자동화 검증 테스트 ✅ (2026-04-24)
 
@@ -660,3 +660,39 @@
 - [x] `character/index.tsx` — DEV_EVENTS label → labelKey + t() 렌더
 - [x] ko.json + en.json — speakerPicker.* 19키 + alarms.* 3키 + character.* 3키 = 25키 추가
 - [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
+
+## P35 — React Query 캐시 전략 테스트 ✅ (2026-04-24)
+
+- [x] `test/queryCache.test.ts` 신규 — 36 tests (7 describe groups)
+  - QueryClient defaults 검증 (staleTime 30s, retry 2, gcTime 기본)
+  - 쿼리 키 일관성 (9개 주요 함수 + 전체 첫 번째 세그먼트 일관성)
+  - enabled 가드 (탭 화면 isConnected 필수)
+  - 뮤테이션 캐시 무효화 (8개 뮤테이션 패턴 검증)
+  - 오프라인 캐시 통합 (AsyncStorage 캐시 키, 로드/저장 패턴, 폴백)
+  - 쿼리 키 레지스트리 완전성 + 네이밍 혼용 방지
+  - recentPresets 캐시 (최대 5개, 중복 제거, 최신 우선)
+- [x] 쿼리 키 불일치 버그 3건 수정:
+  - `family-alarm/create.tsx`: `['user-profile']` → `['userProfile']`
+  - `note/create.tsx`: `['user-profile']` → `['userProfile']`
+  - `friend/[id].tsx`: `['receivedGifts']` → `['gifts-received']`
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 382/382)
+
+---
+
+## P36 — 네비게이션 라우트 유효성 검증 테스트 ✅ (2026-04-24)
+
+- [x] `test/navigationRoutes.test.ts` 신규 — 10 tests (5 describe groups)
+  - 라우트 존재 여부 (22개 이상) + 주요 26개 라우트 필수 검증
+  - router.push/replace 대상 → 실제 라우트 파일 매핑 (그룹 프리픽스 /(tabs) 처리)
+  - 비-탭 스택 라우트 도달성 (모든 라우트에 네비게이션 엔트리포인트 존재)
+  - [id] 동적 라우트 파라미터 전달 검증
+  - Stack.Screen 등록 확인 (_layout.tsx)
+  - deepLink 파서 경로 → 실제 라우트 매핑
+- [x] unused import/var 2건 정리:
+  - `voice/record.tsx`: `_LEVEL_BAR_COUNT` 미사용 상수 삭제
+  - `NotificationBell.tsx`: `FontSize` 미사용 import 삭제
+- [x] typecheck 통과 (backend + mobile 0 errors, --noUnusedLocals --noUnusedParameters 포함)
+- [x] 전체 테스트 통과 (backend 653/653, mobile 392/392)

@@ -21,7 +21,6 @@ import { getApiErrorMessage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
-const _LEVEL_BAR_COUNT = 20;
 const LEVEL_HISTORY_SIZE = 20;
 
 function dbToNormalized(db: number): number {

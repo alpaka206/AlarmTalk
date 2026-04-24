@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { FontSize, FontFamily, Spacing } from '../constants/theme';
+import { FontFamily, Spacing } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 import { useAppStore } from '../stores/useAppStore';
 import { getPendingRequests } from '../services/api';

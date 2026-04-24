@@ -48,7 +48,7 @@ export default function FamilyAlarmCreateScreen() {
   const [repeatDays, setRepeatDays] = useState<number[]>([]);
 
   const { data: profile } = useQuery({
-    queryKey: ['user-profile'],
+    queryKey: ['userProfile'],
     queryFn: getUserProfile,
     enabled: isAuthenticated && isConnected,
   });

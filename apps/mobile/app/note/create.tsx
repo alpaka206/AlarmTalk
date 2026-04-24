@@ -43,7 +43,7 @@ export default function NoteCreateScreen() {
   const [text, setText] = useState('');
 
   const { data: profile } = useQuery({
-    queryKey: ['user-profile'],
+    queryKey: ['userProfile'],
     queryFn: getUserProfile,
     enabled: isAuthenticated && isConnected,
   });
