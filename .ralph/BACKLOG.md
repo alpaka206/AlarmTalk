@@ -1230,3 +1230,13 @@
 - [x] DB 에러 핸들링 테스트 3건 (FETCH_USER_FAILED, DELETE_ACCOUNT_FAILED, SEARCH_FAILED)
 - [x] 엣지 케이스 테스트 4건 (allow_family_alarms null, 잘못된 JSON x2, family 플랜, 빈 쿼리)
 - [x] 전체 테스트 통과 (backend 820/820, mobile 662/662)
+
+## P86 — notes.test.ts 테스트 커버리지 강화 ✅ (2026-04-25)
+
+- [x] vi.hoisted() 도입으로 mockSendNotePush vi.mock factory 참조 해결
+- [x] 기존 10개 에러 테스트에 error_code 검증 추가 (USER_NOT_FOUND, RECEIVER_REQUIRED, TEXT_REQUIRED, TEXT_TOO_LONG, SELF_NOTE, RECEIVER_NOT_FOUND, NOT_SAME_GROUP, NOTE_NOT_FOUND, FORBIDDEN)
+- [x] sendNotePush 호출 검증 3건 (인자/locale ko 기본, Accept-Language: en → locale en, sender name 폴백 2건)
+- [x] 경계값 테스트 4건 (text 500자 성공, 공백 receiver_id/text, limit 0 → 기본값 20)
+- [x] GET /notes/sent 페이지네이션 3건 (limit/offset 적용, max 100 클램핑, 음수 → 1)
+- [x] GET /notes/received 클램핑 3건 (limit 0 → 20, 음수 offset → 0, 비숫자 → 기본값)
+- [x] 전체 테스트 통과 (backend 833/833, mobile 662/662)
