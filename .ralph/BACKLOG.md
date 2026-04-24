@@ -1282,3 +1282,23 @@
 - [x] PATCH /gift/:id/accept: UUID 유효성, message_library 삽입 검증, 응답 구조, DB 에러
 - [x] PATCH /gift/:id/reject: UUID 유효성, pending+recipient SQL 검증, 응답 구조, DB 에러
 - [x] 전체 테스트 통과 (backend 895/895, mobile 662/662)
+
+## P91 — MiniWaveformPlayer 접근성 라벨 i18n 수정 ✅ (2026-04-25)
+
+- [x] accessibilityLabel 하드코딩 영어('Pause'/'Play')→i18n(t('player.a11yPause')/t('player.a11yPlay')) 변경
+- [x] 전체 감사: TypeScript any(1건 정당), 하드코딩 문자열(언어이름 의도적), 기타 a11y 속성 정상
+- [x] typecheck + 테스트 통과 (backend 920/920, mobile 662/662)
+
+## P92 — 백엔드 테스트 파일 위치 정리 (미진행)
+
+- [ ] `src/routes/*.test.ts` 6개 파일과 `test/*.test.ts` 6개 파일 중복 존재 정리
+  - alarm.test.ts: routes/20건, test/41건
+  - friend.test.ts: routes/31건, test/14건
+  - gift.test.ts: routes/33건, test/14건
+  - library.test.ts: routes/14건, test/10건
+  - stats.test.ts: routes/10건, test/14건
+  - tts.test.ts: routes/20건, test/20건
+- [ ] 각 쌍에서 고유 테스트 식별 → test/ 폴더로 통합
+- [ ] src/routes/*.test.ts 파일 삭제
+- [ ] vitest.config.ts include 패턴 정리 (src/**/*.test.ts 제거 가능)
+- [ ] 전체 테스트 통과 확인
