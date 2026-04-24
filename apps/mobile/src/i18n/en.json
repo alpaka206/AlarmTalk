@@ -484,6 +484,11 @@
     "apple": "Continue with Apple"
   },
   "messageDetail": {
+    "title": "Message Detail",
+    "voice": "Voice Profile",
+    "category": "Category",
+    "createdAt": "Created At",
+    "setAsAlarm": "Set as Alarm",
     "notFound": "Message not found",
     "play": "Play",
     "stop": "Stop",

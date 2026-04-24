@@ -534,6 +534,17 @@
 
 ---
 
+## P24 — i18n 누락 키 수정 + 로그아웃 시 푸시 토큰 해제 ✅ (2026-04-24)
+
+- [x] en.json `messageDetail` 5키 누락 수정 (title, voice, category, createdAt, setAsAlarm)
+- [x] `unregisterPushTokenFromServer()` 구현 + `clearAuth` 연동
+- [x] useAppStore 테스트 mock 업데이트
+- [x] i18n 키 동기화 검증: All keys match
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 647/647, mobile 286/286)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 앱 아이콘 + 스플래시 스크린 디자인

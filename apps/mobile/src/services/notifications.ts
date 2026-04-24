@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import type { Alarm } from '../types';
 import { parseRepeatDays } from '../lib/alarmForm';
-import { registerPushToken } from './api';
+import { registerPushToken, unregisterPushToken } from './api';
 
 const ALARM_CATEGORY = 'alarm';
 const SNOOZE_ACTION = 'snooze';
@@ -157,5 +157,18 @@ export async function registerPushTokenWithServer(): Promise<string | null> {
     return token;
   } catch {
     return null;
+  }
+}
+
+export async function unregisterPushTokenFromServer(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    if (!projectId) return;
+
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    await unregisterPushToken(token);
+  } catch {
+    // best-effort — don't block logout if unregister fails
   }
 }

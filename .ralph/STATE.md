@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-24 — P23 Sentry 타입 수정 + Maestro E2E 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P23 완료**
+- 마지막 루프: 2026-04-24 — P24 i18n 누락 키 수정 + 로그아웃 시 푸시 토큰 해제
+- 현재 Phase: **R0~R6 전체 완료 + P11~P24 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 647/647, mobile 286/286)
 
