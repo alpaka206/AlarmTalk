@@ -1,8 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
   FlatList,
   TouchableOpacity,
@@ -19,7 +18,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { getVoiceProfiles, deleteVoiceProfile } from '../../src/services/api';
+import {
+  getVoiceProfiles,
+  deleteVoiceProfile,
+  getFamilyVoiceProfiles,
+} from '../../src/services/api';
+import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { ErrorView } from '../../src/components/QueryStateView';
 import type { VoiceProfile } from '../../src/types';
@@ -29,17 +33,22 @@ import { Toast } from '../../src/components/Toast';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheVoices, getCachedVoices } from '../../src/services/offlineCache';
 
+const MAX_VOICE_PROFILES = 2;
+
 export default function VoicesScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
+  const plan = useAppStore((s) => s.plan);
   const { t } = useTranslation();
   const toast = useToast();
   const { colors } = useTheme();
   const isConnected = useNetworkStatus();
-  const [searchQuery, setSearchQuery] = useState('');
   const [cachedProfiles, setCachedProfiles] = useState<VoiceProfile[] | null>(null);
+  const [showAddOptions, setShowAddOptions] = useState(false);
   const styles = useMemo(() => createStyles(colors), [colors]);
+
+  const isFamilyPlan = plan === 'family';
 
   useEffect(() => {
     getCachedVoices().then(setCachedProfiles);
@@ -57,23 +66,22 @@ export default function VoicesScreen() {
     enabled: isAuthenticated && isConnected,
   });
 
-  /* eslint-disable react-hooks/set-state-in-effect */
+  const { data: familyProfiles } = useQuery({
+    queryKey: ['familyVoiceProfiles'],
+    queryFn: getFamilyVoiceProfiles,
+    enabled: isAuthenticated && isConnected && isFamilyPlan,
+  });
+
   useEffect(() => {
     if (profiles && profiles.length > 0) {
       cacheVoices(profiles);
       setCachedProfiles(profiles);
     }
   }, [profiles]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const displayProfiles = profiles ?? cachedProfiles;
-
-  const filteredProfiles = useMemo(() => {
-    if (!displayProfiles) return displayProfiles;
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return displayProfiles;
-    return displayProfiles.filter((p) => p.name.toLowerCase().includes(q));
-  }, [displayProfiles, searchQuery]);
+  const profileCount = displayProfiles?.length ?? 0;
+  const isLimitReached = profileCount >= MAX_VOICE_PROFILES;
 
   const deleteMutation = useMutation({
     mutationFn: deleteVoiceProfile,
@@ -85,7 +93,7 @@ export default function VoicesScreen() {
     },
   });
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = useCallback((id: string, name: string) => {
     Alert.alert(t('voices.deleteTitle'), t('voices.deleteConfirm', { name }), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -94,9 +102,17 @@ export default function VoicesScreen() {
         onPress: () => deleteMutation.mutate(id),
       },
     ]);
-  };
+  }, [t, deleteMutation]);
 
-  const getStatusBadge = (status: string) => {
+  const handleAdd = useCallback(() => {
+    if (isLimitReached) {
+      toast.show(t('voices.limitReached', { max: MAX_VOICE_PROFILES }));
+      return;
+    }
+    setShowAddOptions(true);
+  }, [isLimitReached, toast, t]);
+
+  const getStatusBadge = useCallback((status: string) => {
     switch (status) {
       case 'ready':
         return { label: t('voices.statusReady'), color: colors.success };
@@ -107,7 +123,7 @@ export default function VoicesScreen() {
       default:
         return { label: status, color: colors.textTertiary };
     }
-  };
+  }, [t, colors]);
 
   const renderDeleteAction = (
     _progress: RNAnimated.AnimatedInterpolation<number>,
@@ -168,119 +184,137 @@ export default function VoicesScreen() {
     );
   };
 
+  const renderFamilyProfile = ({ item }: { item: FamilyVoiceProfile }) => (
+    <View style={styles.familyCard}>
+      <View style={styles.familyAvatar}>
+        <Text style={styles.familyAvatarText}>{item.name.charAt(0)}</Text>
+      </View>
+      <View style={styles.profileInfo}>
+        <Text style={styles.profileName}>{item.name}</Text>
+        {item.owner_name && (
+          <Text style={styles.familyOwnerLabel}>{item.owner_name}</Text>
+        )}
+      </View>
+      <Text style={styles.familyBadge}>{t('voices.familyReadOnly')}</Text>
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('voices.title')}</Text>
-        <Text style={styles.subtitle}>{t('voices.subtitle')}</Text>
-      </View>
+        <View style={styles.header}>
+          <Text style={styles.title}>{t('voices.title')}</Text>
+          <Text style={styles.subtitle}>{t('voices.subtitle')}</Text>
+        </View>
 
-      <View style={styles.addSection}>
-        <TouchableOpacity
-          style={styles.addCard}
-          onPress={() => router.push('/voice/record')}
-          accessibilityRole="button"
-          accessibilityLabel={t('voices.record')}
-        >
-          <Text style={styles.addEmoji}>🎙️</Text>
-          <View>
-            <Text style={styles.addTitle}>{t('voices.record')}</Text>
-            <Text style={styles.addDesc}>{t('voices.recordDesc')}</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.addCard}
-          onPress={() => router.push('/voice/upload')}
-          accessibilityRole="button"
-          accessibilityLabel={t('voices.upload')}
-        >
-          <Text style={styles.addEmoji}>📁</Text>
-          <View>
-            <Text style={styles.addTitle}>{t('voices.upload')}</Text>
-            <Text style={styles.addDesc}>{t('voices.uploadDesc')}</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.addCard, styles.addCardHighlight]}
-          onPress={() => router.push('/voice/diarize')}
-          accessibilityRole="button"
-          accessibilityLabel={t('voices.callRecord')}
-        >
-          <Text style={styles.addEmoji}>📞</Text>
-          <View>
-            <Text style={[styles.addTitle, { color: '#FFF' }]}>{t('voices.callRecord')}</Text>
-            <Text style={[styles.addDesc, { color: 'rgba(255,255,255,0.8)' }]}>
-              {t('voices.callRecordDesc')}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.addCard}
-          onPress={() => router.push('/voice/picker')}
-          accessibilityRole="button"
-          accessibilityLabel={t('voices.speakerDetect', '화자 감지')}
-        >
-          <Text style={styles.addEmoji}>🧩</Text>
-          <View>
-            <Text style={styles.addTitle}>화자 감지 (mock)</Text>
-            <Text style={styles.addDesc}>업로드 후 감지된 화자를 직접 선택·편집합니다.</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.listSection}>
-        <Text style={styles.listTitle}>
-          {t('voices.registered')} ({displayProfiles?.length ?? 0})
-        </Text>
-        {displayProfiles && displayProfiles.length > 0 && (
-          <TextInput
-            style={styles.searchInput}
-            placeholder={t('voices.searchPlaceholder')}
-            placeholderTextColor={colors.textTertiary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
-        )}
-        {isLoading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        ) : isError ? (
-          <ErrorView onRetry={refetch} />
-        ) : filteredProfiles?.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🎵</Text>
-            <Text style={styles.emptyText}>
-              {t('voices.emptyTitle')}
-              {'\n'}
-              {t('voices.emptyDesc')}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>
+              {t('voices.myVoices')} ({profileCount}/{MAX_VOICE_PROFILES})
             </Text>
             <TouchableOpacity
-              style={styles.emptyCta}
-              onPress={() => router.push('/voice/record')}
+              style={[styles.addButton, isLimitReached && styles.addButtonDisabled]}
+              onPress={handleAdd}
+              disabled={isLimitReached}
               accessibilityRole="button"
-              accessibilityLabel={t('voices.record')}
+              accessibilityLabel={t('voices.addVoice')}
+              accessibilityState={{ disabled: isLimitReached }}
             >
-              <Text style={styles.emptyCtaText}>{t('voices.record')}</Text>
+              <Text style={[styles.addButtonText, isLimitReached && styles.addButtonTextDisabled]}>
+                + {t('voices.addVoice')}
+              </Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <FlatList
-            data={filteredProfiles}
-            keyExtractor={(item) => item.id}
-            renderItem={renderProfile}
-            scrollEnabled={false}
-          />
+
+          {isLimitReached && (
+            <Text style={styles.limitMessage}>
+              {t('voices.limitReached', { max: MAX_VOICE_PROFILES })}
+            </Text>
+          )}
+
+          {isLoading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+          ) : isError ? (
+            <ErrorView onRetry={refetch} />
+          ) : !displayProfiles || displayProfiles.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🎵</Text>
+              <Text style={styles.emptyText}>{t('voices.emptyTitle')}</Text>
+              <Text style={styles.emptyHint}>{t('voices.emptyDesc')}</Text>
+              <TouchableOpacity
+                style={styles.emptyCta}
+                onPress={handleAdd}
+                accessibilityRole="button"
+                accessibilityLabel={t('voices.addVoice')}
+              >
+                <Text style={styles.emptyCtaText}>{t('voices.addVoice')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              data={displayProfiles}
+              keyExtractor={(item) => item.id}
+              renderItem={renderProfile}
+              scrollEnabled={false}
+            />
+          )}
+        </View>
+
+        {isFamilyPlan && familyProfiles && familyProfiles.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t('voices.familyVoices')}</Text>
+            <FlatList
+              data={familyProfiles}
+              keyExtractor={(item) => item.id}
+              renderItem={renderFamilyProfile}
+              scrollEnabled={false}
+            />
+          </View>
         )}
-      </View>
+
+        {showAddOptions && (
+          <View style={styles.addOptionsOverlay}>
+            <View style={styles.addOptionsCard}>
+              <Text style={styles.addOptionsTitle}>{t('voices.chooseMethod')}</Text>
+              <TouchableOpacity
+                style={styles.addOptionItem}
+                onPress={() => { setShowAddOptions(false); router.push('/voice/record'); }}
+                accessibilityRole="button"
+                accessibilityLabel={t('voices.record')}
+              >
+                <Text style={styles.addOptionEmoji}>🎙️</Text>
+                <View style={styles.addOptionInfo}>
+                  <Text style={styles.addOptionTitle}>{t('voices.record')}</Text>
+                  <Text style={styles.addOptionDesc}>{t('voices.recordDesc')}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addOptionItem}
+                onPress={() => { setShowAddOptions(false); router.push('/voice/upload'); }}
+                accessibilityRole="button"
+                accessibilityLabel={t('voices.upload')}
+              >
+                <Text style={styles.addOptionEmoji}>📁</Text>
+                <View style={styles.addOptionInfo}>
+                  <Text style={styles.addOptionTitle}>{t('voices.upload')}</Text>
+                  <Text style={styles.addOptionDesc}>{t('voices.uploadDesc')}</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.addOptionCancel}
+                onPress={() => setShowAddOptions(false)}
+                accessibilityRole="button"
+                accessibilityLabel={t('common.cancel')}
+              >
+                <Text style={styles.addOptionCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </ScrollView>
       <Toast message={toast.message} opacity={toast.opacity} />
     </SafeAreaView>
@@ -307,59 +341,45 @@ function createStyles(colors: ThemeColors) {
       color: colors.textSecondary,
       marginTop: Spacing.xs,
     },
-    addSection: {
-      padding: Spacing.lg,
-      gap: Spacing.md,
+    section: {
+      paddingHorizontal: Spacing.lg,
+      marginBottom: Spacing.lg,
     },
-    addCard: {
+    sectionHeader: {
       flexDirection: 'row',
+      justifyContent: 'space-between',
       alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.lg,
-      gap: Spacing.md,
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 1,
-      shadowRadius: 6,
-      elevation: 2,
+      marginBottom: Spacing.md,
     },
-    addCardHighlight: {
-      backgroundColor: colors.primary,
-    },
-    addEmoji: {
-      fontSize: 28,
-    },
-    addTitle: {
-      fontSize: FontSize.lg,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    addDesc: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    listSection: {
-      padding: Spacing.lg,
-      flex: 1,
-    },
-    listTitle: {
+    sectionTitle: {
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
       color: colors.text,
-      marginBottom: Spacing.md,
     },
-    searchInput: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.md,
+    addButton: {
+      backgroundColor: colors.primary,
+      borderRadius: BorderRadius.full,
       paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
-      fontSize: FontSize.md,
-      color: colors.text,
+      paddingVertical: Spacing.xs,
+      minHeight: 36,
+      justifyContent: 'center',
+    },
+    addButtonDisabled: {
+      backgroundColor: colors.surfaceVariant,
+    },
+    addButtonText: {
+      fontSize: FontSize.sm,
+      fontFamily: FontFamily.semibold,
+      color: '#FFF',
+    },
+    addButtonTextDisabled: {
+      color: colors.textTertiary,
+    },
+    limitMessage: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
       marginBottom: Spacing.md,
-      borderWidth: 1,
-      borderColor: colors.border,
+      fontFamily: FontFamily.regular,
     },
     profileCard: {
       flexDirection: 'row',
@@ -422,10 +442,46 @@ function createStyles(colors: ThemeColors) {
     },
     deleteButton: {
       padding: Spacing.sm,
+      minWidth: 44,
+      minHeight: 44,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     deleteText: {
       fontSize: FontSize.sm,
       color: colors.error,
+    },
+    familyCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: BorderRadius.lg,
+      padding: Spacing.md,
+      marginBottom: Spacing.md,
+      opacity: 0.85,
+    },
+    familyAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: colors.surfaceVariant,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    familyAvatarText: {
+      fontSize: FontSize.md,
+      fontFamily: FontFamily.bold,
+      color: colors.textSecondary,
+    },
+    familyOwnerLabel: {
+      fontSize: FontSize.xs,
+      color: colors.textTertiary,
+      marginTop: 2,
+    },
+    familyBadge: {
+      fontSize: FontSize.xs,
+      color: colors.textTertiary,
+      fontFamily: FontFamily.medium,
     },
     emptyState: {
       alignItems: 'center',
@@ -439,7 +495,12 @@ function createStyles(colors: ThemeColors) {
       fontSize: FontSize.md,
       color: colors.textSecondary,
       textAlign: 'center',
-      lineHeight: 22,
+    },
+    emptyHint: {
+      fontSize: FontSize.sm,
+      color: colors.textTertiary,
+      textAlign: 'center',
+      marginTop: Spacing.xs,
     },
     emptyCta: {
       marginTop: Spacing.lg,
@@ -453,7 +514,7 @@ function createStyles(colors: ThemeColors) {
     emptyCtaText: {
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
-      color: colors.surface,
+      color: '#FFF',
     },
     swipeDeleteContainer: {
       backgroundColor: colors.error,
@@ -461,12 +522,71 @@ function createStyles(colors: ThemeColors) {
       alignItems: 'flex-end',
       paddingHorizontal: Spacing.xl,
       borderRadius: BorderRadius.lg,
-      marginBottom: Spacing.sm,
+      marginBottom: Spacing.md,
     },
     swipeDeleteText: {
       color: '#FFF',
       fontFamily: FontFamily.bold,
       fontSize: FontSize.md,
+    },
+    addOptionsOverlay: {
+      paddingHorizontal: Spacing.lg,
+      marginTop: Spacing.md,
+    },
+    addOptionsCard: {
+      backgroundColor: colors.surface,
+      borderRadius: BorderRadius.lg,
+      padding: Spacing.lg,
+      shadowColor: colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 1,
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    addOptionsTitle: {
+      fontSize: FontSize.lg,
+      fontFamily: FontFamily.semibold,
+      color: colors.text,
+      marginBottom: Spacing.md,
+    },
+    addOptionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: Spacing.md,
+      borderBottomWidth: 0.5,
+      borderBottomColor: colors.border,
+      minHeight: 56,
+    },
+    addOptionEmoji: {
+      fontSize: 28,
+      marginRight: Spacing.md,
+      width: 36,
+      textAlign: 'center',
+    },
+    addOptionInfo: {
+      flex: 1,
+    },
+    addOptionTitle: {
+      fontSize: FontSize.md,
+      fontFamily: FontFamily.semibold,
+      color: colors.text,
+    },
+    addOptionDesc: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
+      marginTop: 2,
+    },
+    addOptionCancel: {
+      alignItems: 'center',
+      paddingVertical: Spacing.md,
+      marginTop: Spacing.xs,
+      minHeight: 44,
+      justifyContent: 'center',
+    },
+    addOptionCancelText: {
+      fontSize: FontSize.md,
+      color: colors.textSecondary,
+      fontFamily: FontFamily.semibold,
     },
   });
 }

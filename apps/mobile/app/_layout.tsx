@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -69,40 +70,43 @@ export default function RootLayout() {
     loadPersistedState();
     setupAudioSession();
     ensureAudioDir();
-    requestNotificationPermissions().then((granted) => {
-      if (granted) registerPushTokenWithServer();
-    });
 
-    responseListener.current = addNotificationResponseListener((response) => {
-      const actionId = response.actionIdentifier;
-      const { content } = response.notification.request;
-      const data = content.data;
+    if (Platform.OS !== 'web') {
+      requestNotificationPermissions().then((granted) => {
+        if (granted) registerPushTokenWithServer();
+      });
 
-      if (actionId === DISMISS_ACTION) return;
+      responseListener.current = addNotificationResponseListener((response) => {
+        const actionId = response.actionIdentifier;
+        const { content } = response.notification.request;
+        const data = content.data;
 
-      if (actionId === SNOOZE_ACTION && data) {
-        const minutes = typeof data.snoozeMinutes === 'number' ? data.snoozeMinutes : 5;
-        scheduleSnoozeNotification(
-          content.title || '⏰ VoiceAlarm',
-          content.body || '',
-          data as Record<string, unknown>,
-          minutes,
-        );
-        return;
-      }
+        if (actionId === DISMISS_ACTION) return;
 
-      if (data?.messageId) {
-        router.push({
-          pathname: '/player',
-          params: {
-            messageId: String(data.messageId),
-            text: String(data.text || ''),
-            voiceName: String(data.voiceName || ''),
-            category: String(data.category || ''),
-          },
-        });
-      }
-    });
+        if (actionId === SNOOZE_ACTION && data) {
+          const minutes = typeof data.snoozeMinutes === 'number' ? data.snoozeMinutes : 5;
+          scheduleSnoozeNotification(
+            content.title || '⏰ VoiceAlarm',
+            content.body || '',
+            data as Record<string, unknown>,
+            minutes,
+          );
+          return;
+        }
+
+        if (data?.messageId) {
+          router.push({
+            pathname: '/player',
+            params: {
+              messageId: String(data.messageId),
+              text: String(data.text || ''),
+              voiceName: String(data.voiceName || ''),
+              category: String(data.category || ''),
+            },
+          });
+        }
+      });
+    }
 
     return () => {
       responseListener.current?.remove();
@@ -189,6 +193,14 @@ export default function RootLayout() {
                 title: t('screen.receivedGifts'),
                 presentation: 'modal',
               }}
+            />
+            <Stack.Screen
+              name="people/index"
+              options={{ headerShown: true, title: t('people.title', '내 사람들') }}
+            />
+            <Stack.Screen
+              name="settings/index"
+              options={{ headerShown: true, title: t('settings.title') }}
             />
             <Stack.Screen
               name="family-alarm/create"

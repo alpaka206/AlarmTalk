@@ -433,7 +433,7 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/people')}
+              onPress={() => router.push('/people')}
               accessibilityRole="button"
               accessibilityLabel={t('home.manageFriends')}
             >

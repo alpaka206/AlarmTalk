@@ -2,6 +2,7 @@ import type { TFunction } from 'i18next';
 
 export type AlarmMode = 'tts' | 'sound-only';
 export type VibrationPattern = 'default' | 'strong' | 'none';
+export type WakeMode = 'sound_then_voice' | 'voice_only';
 
 export interface AlarmFormInput {
   messageId: string | null;
@@ -9,6 +10,7 @@ export interface AlarmFormInput {
   repeatDays: number[];
   mode: AlarmMode;
   vibrationPattern?: VibrationPattern;
+  wakeMode?: WakeMode;
   voiceProfileId?: string | null;
   speakerId?: string | null;
   snoozeMinutes?: number;
@@ -21,6 +23,7 @@ export interface AlarmCreatePayload {
   repeat_days: number[];
   mode: AlarmMode;
   vibration_pattern?: VibrationPattern;
+  wake_mode?: WakeMode;
   voice_profile_id?: string;
   speaker_id?: string;
   snooze_minutes?: number;
@@ -55,6 +58,7 @@ export function buildCreatePayload(input: AlarmFormInput): AlarmCreatePayload {
     mode: input.mode,
   };
   if (input.vibrationPattern) payload.vibration_pattern = input.vibrationPattern;
+  if (input.wakeMode) payload.wake_mode = input.wakeMode;
   if (input.voiceProfileId) payload.voice_profile_id = input.voiceProfileId;
   if (input.speakerId) payload.speaker_id = input.speakerId;
   if (typeof input.snoozeMinutes === 'number') payload.snooze_minutes = input.snoozeMinutes;

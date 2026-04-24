@@ -428,6 +428,15 @@ export const migrations: Migration[] = [
       `ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`,
     ],
   },
+  {
+    id: 17,
+    name: 'alarm-wake-mode',
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice'
+         CHECK(wake_mode IN ('sound_then_voice','voice_only'))`,
+      `ALTER TABLE alarms ADD COLUMN voice_profile_id TEXT DEFAULT NULL`,
+    ],
+  },
 ];
 
 export async function runMigrations(db: Client): Promise<string[]> {

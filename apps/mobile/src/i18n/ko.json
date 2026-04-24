@@ -41,8 +41,7 @@
     "home": "홈",
     "voices": "음성",
     "alarms": "알람",
-    "people": "내 사람들",
-    "settings": "설정"
+    "compose": "메시지"
   },
   "common": {
     "error": "오류",
@@ -97,7 +96,13 @@
     "statusReady": "사용 가능",
     "statusProcessing": "생성 중...",
     "statusFailed": "실패",
-    "searchPlaceholder": "이름으로 검색"
+    "searchPlaceholder": "이름으로 검색",
+    "myVoices": "내 음성",
+    "addVoice": "음성 추가",
+    "limitReached": "최대 {{max}}개까지 등록 가능합니다",
+    "familyVoices": "가족 음성",
+    "familyReadOnly": "읽기 전용",
+    "chooseMethod": "등록 방법 선택"
   },
   "friends": {
     "title": "친구",
@@ -134,6 +139,7 @@
     "a11yGiftItem": "{{text}}, 상태: {{status}}"
   },
   "people": {
+    "title": "내 사람들",
     "members": "멤버",
     "friends": "친구",
     "requests": "요청",
@@ -283,7 +289,10 @@
     "vibration": "진동",
     "vibrationDefault": "기본",
     "vibrationStrong": "강하게",
-    "vibrationNone": "없음"
+    "vibrationNone": "없음",
+    "wakeMode": "깨우기 방식",
+    "soundThenVoice": "알람 → 음성",
+    "voiceOnly": "음성만"
   },
   "alarmValidation": {
     "messageRequired": "메시지를 선택해주세요.",
@@ -553,5 +562,23 @@
     "a11ySourceLang": "원본 언어: {{name}}",
     "a11yTargetLang": "번역 언어: {{name}}",
     "a11yProgress": "번역 진행 중, {{progress}}% 완료"
+  },
+  "profile": {
+    "openMenu": "프로필 메뉴 열기",
+    "people": "내 사람들",
+    "codeRegister": "코드 등록",
+    "settings": "설정",
+    "notifications": "알림",
+    "notificationsBadge": "알림 {{count}}건"
+  },
+  "compose": {
+    "title": "메시지 작성",
+    "loginRequired": "로그인하고 메시지를 보내보세요",
+    "familyOnly": "가족 또는 커플 플랜에 가입하면 사용할 수 있어요",
+    "familyOnlyHint": "프로필 메뉴에서 코드를 등록하거나 플랜을 업그레이드하세요",
+    "sendAlarm": "알람 보내기",
+    "sendAlarmDesc": "상대방에게 알람을 예약해 보내요",
+    "sendNote": "쪽지 보내기",
+    "sendNoteDesc": "텍스트를 음성으로 변환해 전달해요"
   }
 }

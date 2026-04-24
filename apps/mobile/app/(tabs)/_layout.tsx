@@ -1,17 +1,18 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { FontFamily } from '../../src/constants/theme';
+import { FontFamily, Spacing } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
+import { ProfileDropdown } from '../../src/components/ProfileDropdown';
+import { NotificationBell } from '../../src/components/NotificationBell';
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const icons: Record<string, string> = {
     home: '🏠',
     voices: '🎙️',
     alarms: '⏰',
-    people: '👤',
-    settings: '⚙️',
+    compose: '💌',
   };
   return <Text style={[styles.icon, focused && styles.iconFocused]}>{icons[name] || '📱'}</Text>;
 }
@@ -25,7 +26,16 @@ export default function TabLayout() {
       <OfflineBanner />
       <Tabs
         screenOptions={{
-          headerShown: false,
+          headerShown: true,
+          headerTitle: '',
+          headerStyle: { backgroundColor: colors.background },
+          headerShadowVisible: false,
+          headerRight: () => (
+            <View style={styles.headerRight}>
+              <NotificationBell />
+              <ProfileDropdown />
+            </View>
+          ),
           tabBarStyle: [styles.tabBar, { backgroundColor: colors.surface, borderTopColor: colors.border }],
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textTertiary,
@@ -54,17 +64,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="people"
+        name="compose"
         options={{
-          title: t('tab.people'),
-          tabBarIcon: ({ focused }) => <TabIcon name="people" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: t('tab.settings'),
-          tabBarIcon: ({ focused }) => <TabIcon name="settings" focused={focused} />,
+          title: t('tab.compose'),
+          tabBarIcon: ({ focused }) => <TabIcon name="compose" focused={focused} />,
         }}
       />
     </Tabs>
@@ -92,5 +95,11 @@ const styles = StyleSheet.create({
   },
   iconFocused: {
     opacity: 1,
+  },
+  headerRight: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: Spacing.xs,
+    marginRight: Spacing.md,
   },
 });

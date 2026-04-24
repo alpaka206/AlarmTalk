@@ -55,6 +55,7 @@ export default function CreateAlarmScreen() {
   const [presetVoiceId, setPresetVoiceId] = useState<string | null>(null);
   const [mode, setMode] = useState<AlarmMode>('tts');
   const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
+  const [wakeMode, setWakeMode] = useState<'sound_then_voice' | 'voice_only'>('sound_then_voice');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
 
   const { data: messages } = useQuery({
@@ -132,6 +133,7 @@ export default function CreateAlarmScreen() {
       repeatDays,
       mode,
       vibrationPattern,
+      wakeMode: mode === 'tts' ? wakeMode : undefined,
       voiceProfileId,
       snoozeMinutes: snooze,
       targetUserId,
@@ -355,6 +357,35 @@ export default function CreateAlarmScreen() {
               {t('alarmCreate.voiceProfileHint')}
             </Text>
           )}
+        </>
+      )}
+
+      {/* 깨우기 방식 */}
+      {mode === 'tts' && (
+        <>
+          <Text style={dynStyles.sectionTitle}>{t('alarmCreate.wakeMode')}</Text>
+          <View style={dynStyles.modeRow}>
+            <TouchableOpacity
+              style={[dynStyles.modeChip, wakeMode === 'sound_then_voice' && dynStyles.modeChipActive]}
+              onPress={() => setWakeMode('sound_then_voice')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'sound_then_voice' }}
+            >
+              <Text style={[dynStyles.modeText, wakeMode === 'sound_then_voice' && dynStyles.modeTextActive]}>
+                🔔 {t('alarmCreate.soundThenVoice')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[dynStyles.modeChip, wakeMode === 'voice_only' && dynStyles.modeChipActive]}
+              onPress={() => setWakeMode('voice_only')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'voice_only' }}
+            >
+              <Text style={[dynStyles.modeText, wakeMode === 'voice_only' && dynStyles.modeTextActive]}>
+                🗣️ {t('alarmCreate.voiceOnly')}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </>
       )}
 

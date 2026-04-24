@@ -425,7 +425,7 @@ export default function PeopleScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{t('tab.people')}</Text>
+        <Text style={styles.title}>{t('people.title')}</Text>
       </View>
 
       {activeSegment === 'friends' && (

@@ -147,6 +147,20 @@ export async function deleteVoiceProfile(id: string) {
   await del(`/voice/${id}`);
 }
 
+export interface FamilyVoiceProfile {
+  id: string;
+  name: string;
+  status: string;
+  created_at: string;
+  user_id: string;
+  owner_name: string | null;
+}
+
+export async function getFamilyVoiceProfiles() {
+  const data = await get<{ profiles: FamilyVoiceProfile[] }>('/voice/family');
+  return data.profiles;
+}
+
 export async function updateVoiceProfile(id: string, name: string) {
   const data = await patch<{ profile: { id: string; name: string } }>(`/voice/${id}`, { name });
   return data.profile;
@@ -278,6 +292,7 @@ export async function createAlarm(params: {
   target_user_id?: string;
   mode?: 'tts' | 'sound-only';
   vibration_pattern?: 'default' | 'strong' | 'none';
+  wake_mode?: 'sound_then_voice' | 'voice_only';
   voice_profile_id?: string;
   speaker_id?: string;
 }) {
@@ -295,6 +310,7 @@ export async function updateAlarm(
     message_id?: string;
     mode?: 'tts' | 'sound-only';
     vibration_pattern?: 'default' | 'strong' | 'none';
+    wake_mode?: 'sound_then_voice' | 'voice_only';
     voice_profile_id?: string | null;
     speaker_id?: string | null;
   },

@@ -265,6 +265,156 @@
 - [x] `offlineCache.test.ts` 신규 — 15 tests (alarms/messages/library/voices 캐시 CRUD + 격리 + 덮어쓰기)
 - [x] 모바일 전체 168/168 통과, 백엔드 553/553 통과
 
+---
+
+# UX 리빌드 (R0~R5) — 사용자 피드백 기반 신규 기획
+
+## R0 — 탭 구조 변경 (4탭 + 프로필 드롭다운)
+
+### R0-A: 탭 축소 5→4 ✅ (2026-04-24)
+- [x] `app/(tabs)/people.tsx` 삭제 (→ `app/people/index.tsx` 스택 화면으로 이동)
+- [x] `app/(tabs)/settings.tsx` 삭제 (→ `app/settings/index.tsx` 스택 화면으로 이동)
+- [ ] `app/(tabs)/voices.tsx` → 음성 관리 탭으로 리빌드 (R1에서 상세)
+- [x] `app/(tabs)/_layout.tsx` — 탭 4개로 변경: index(홈), voices(음성), alarms(알람), compose(메시지작성)
+- [x] `app/(tabs)/compose.tsx` 신규 — 메시지 작성 탭 (R4에서 상세 구현, 여기선 스캐폴드만)
+- [x] `src/i18n/ko.json` — `tab.people`, `tab.settings` 삭제, `tab.compose: "메시지"` 추가, `people.title` 추가, `compose.*` 8키 추가
+- [x] `src/i18n/en.json` — 동일
+- [x] typecheck 통과 확인
+
+### R0-B: 프로필 드롭다운 + 알림 아이콘 ✅ (2026-04-24)
+- [x] `src/components/ProfileDropdown.tsx` 신규 — 우측 상단 프로필 아바타 + 드롭다운 메뉴
+  - 내 프로필 (이름, 이메일, 플랜 뱃지)
+  - 내 사람들 → `/people` 이동
+  - 코드 등록 → `/gift/received` 이동
+  - 다크모드 토글 (Switch)
+  - 언어 전환 (한국어↔영어)
+  - 설정(상세) → `/settings` 이동
+  - 로그아웃 (Alert 확인)
+  - 계정 삭제 (Alert 확인)
+- [x] `src/components/NotificationBell.tsx` 신규 — 프로필 옆 알림 아이콘 (pending-requests 뱃지)
+- [x] `app/(tabs)/_layout.tsx` — headerShown + headerRight에 NotificationBell + ProfileDropdown 배치
+- [x] `src/i18n/ko.json`, `en.json` — profile.* 6키 추가
+- [x] typecheck 통과 확인
+
+## R1 — 음성 관리 리빌드 ✅ (2026-04-24)
+
+### 백엔드: 음성 2개 제한 ✅
+- [x] `packages/backend/src/routes/voice.ts` — POST /clone에 MAX_VOICE_PROFILES=2 제한 + VOICE_LIMIT_REACHED 에러 코드
+- [x] GET /voice/family 신규 — 같은 그룹 멤버의 ready 음성 목록 (읽기 전용)
+- [x] typecheck 통과
+
+### 프론트엔드: 음성 탭 UI ✅
+- [x] `app/(tabs)/voices.tsx` 전면 리빌드:
+  - 내 음성 (N/2) 카운터 + "음성 추가" 버튼 (2개 시 비활성화)
+  - 추가 클릭 → 녹음/업로드 선택 카드
+  - 2개 시 limitReached 메시지 표시
+  - 가족 음성 섹션 (family plan, 읽기 전용)
+- [x] `api.ts`에 FamilyVoiceProfile 타입 + getFamilyVoiceProfiles 함수
+- [x] i18n ko/en 각 6키 추가
+- [x] typecheck 통과
+
+## R2 — 알람 설정 리빌드 (부분 완료)
+
+### 백엔드 변경 ✅ (2026-04-24)
+- [x] 마이그레이션 17: `wake_mode` + `voice_profile_id` 컬럼 추가
+- [x] `alarm.ts` POST/PATCH에 `wake_mode` 검증·저장·응답 추가
+- [x] 프리셋 메시지 API: `/tts/presets` 이미 존재 (추가 작업 불필요)
+- [x] typecheck 통과
+
+### 프론트엔드: 깨우기 방식 ✅ (2026-04-24)
+- [x] `alarmForm.ts`에 WakeMode 타입 + 폼·페이로드 추가
+- [x] `types.ts`에 WakeMode + Alarm.wake_mode 추가
+- [x] `api.ts` createAlarm/updateAlarm에 wake_mode 추가
+- [x] `alarm/create.tsx`에 wakeMode 상태 + 깨우기 방식 선택 UI (TTS 모드 시)
+- [x] i18n 3키 추가 (ko/en)
+
+### 미완료 항목 (R5 정비에서 처리)
+- [ ] alarm/edit.tsx에 wake_mode UI 동기화
+- [ ] 가족/커플 멤버 음성을 알람 설정에서 선택 가능하게
+- [ ] 프리셋 메시지 카테고리 선택 UI 개선
+- [ ] 최근 사용 메시지 목록 (AsyncStorage 캐싱)
+- [ ] 음성 캐싱 (동일 텍스트+음성 재사용)
+
+## R3 — 코드 등록 시스템
+
+### "받은 선물" → "코드 등록" 변환
+- [ ] `app/gift/received.tsx` → `app/code-register/index.tsx`로 이동 + 리네임
+- [ ] 코드 입력 UI: 텍스트 필드 + "등록" 버튼
+- [ ] 코드 타입 판별 (백엔드):
+  - **이용권 코드**: 등록 시 사용 가능 일수 증가 (billing 테이블 업데이트)
+  - **가족/커플 초대 코드**: 등록 시 해당 그룹에 자동 가입
+- [ ] 에러 처리: 만료 / 사용완료 / 존재하지 않는 코드
+- [ ] 성공 시 토스트 메시지 + 화면 갱신
+- [ ] typecheck 통과
+
+## R4 — 메시지 작성 탭
+
+### 커플/가족 전용 기능
+- [ ] `app/(tabs)/compose.tsx` 구현:
+  - 비커플/비가족: "가족 또는 커플 플랜에 가입하면 사용할 수 있어요" 안내 + CTA
+  - 커플/가족: 수신자 선택 → 메시지 타입 선택
+- [ ] **알람 보내기**: 상대방에게 시간 + 메시지로 알람 예약
+- [ ] **쪽지 보내기**: 텍스트 입력 → TTS 음성 변환 → 상대방이 원할 때 재생
+  - 쪽지는 비동기 (푸시만, 강제 소리 없음)
+- [ ] **수신함**: 받은 쪽지 목록 + 재생 UI (스택 화면)
+- [ ] 백엔드: 쪽지 테이블 신규 (`notes`: id, sender_id, receiver_id, text, audio_url, read_at, created_at)
+- [ ] typecheck 통과
+
+## R5 — 정비 + 테스트
+
+- [ ] settings/people 관련 데드 코드 정리
+- [ ] 전체 lint 0 errors 0 warnings 유지
+- [ ] typecheck 통과 (backend + mobile)
+- [ ] 기존 테스트 전체 통과 확인
+
+---
+
+## R6 — Notion 문서화 (R0~R5 완료 후 진행)
+
+> Notion 페이지: https://www.notion.so/estsoft/34bf11f6ee6380c0a35bfefbd5e014d7
+> MCP Notion 도구를 사용하여 직접 작성한다. 불가능하면 마크다운 파일로 생성 후 사용자에게 알린다.
+
+### R6-A: 기획서 업데이트
+- [ ] 프로젝트 개요 (VoiceAlarm 소개, 핵심 가치, 타겟 유저)
+- [ ] 주요 기능 정의 (음성 관리, 알람, 메시지, 코드 등록, 캐릭터)
+- [ ] 화면 흐름도 (탭 4개 + 스택 화면 관계)
+- [ ] 사용자 시나리오 (회원가입 → 음성 등록 → 알람 설정 → 기상)
+
+### R6-B: 요구사항 정의서
+- [ ] 기능 요구사항 (FR): 각 기능별 상세 스펙 + 우선순위
+- [ ] 비기능 요구사항 (NFR): 성능, 보안, 접근성, 오프라인 지원
+- [ ] 제약사항: 외부 API 비용, 무료 티어 제한, 플랫폼 제한
+
+### R6-C: 기술 스택 & 아키텍처
+- [ ] 기술 스택 다이어그램 (모바일/백엔드/DB/AI)
+- [ ] 시스템 아키텍처 (클라이언트 ↔ CF Workers ↔ Turso ↔ R2)
+- [ ] 모노레포 구조 설명 (apps/mobile, packages/backend, packages/shared 등)
+- [ ] 인증 플로우 (Google OAuth → JWT → API 호출)
+- [ ] 데이터 흐름 (음성 등록 → TTS → 알람 재생)
+
+### R6-D: API 문서
+- [ ] 전체 API 엔드포인트 목록 (method, path, 설명, 인증 필요 여부)
+- [ ] 주요 API 상세 (요청/응답 스키마, 에러 코드)
+- [ ] 인증 API (회원가입, 로그인, Google OAuth, 토큰 갱신)
+- [ ] 음성 API (등록, 조회, 삭제, 가족 음성)
+- [ ] 알람 API (CRUD, 스케줄링)
+- [ ] 메시지/쪽지 API
+- [ ] 캐릭터/스트릭 API
+- [ ] 가족/친구 API
+- [ ] 결제/이용권 API
+
+### R6-E: DB 스키마 문서
+- [ ] 전체 테이블 목록 + 컬럼 정의
+- [ ] ER 다이어그램 (관계도)
+- [ ] 마이그레이션 히스토리
+
+### R6-F: 로드맵
+- [ ] 완료된 작업 (P0~P10 요약)
+- [ ] 현재 진행 (R0~R5 UX 리빌드)
+- [ ] 향후 계획 (배포, 스토어 등록, 실 API 연동)
+
+---
+
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
 
 - 모바일 E2E 테스트 (Detox 또는 Maestro)
@@ -272,4 +422,3 @@
 - Sentry 에러 모니터링 연동
 - 앱 아이콘 + 스플래시 스크린 디자인
 - App Store / Google Play 스토어 등록 준비 (메타데이터, 스크린샷)
-- 문서화 (README, ARCHITECTURE, ADR)

@@ -16,6 +16,7 @@ function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
 const voice = new Hono<AppEnv>();
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB
 const MAX_SPEAKERS = 3;
+const MAX_VOICE_PROFILES = 2;
 
 /** 원본 오디오 업로드 — 화자 분리/클론 전 단계 저장소. */
 // TODO: real object storage integration (R2 / S3) — currently in-memory only.
@@ -274,6 +275,37 @@ voice.get('/', async (c) => {
   return c.json({ profiles: result.rows, total, limit, offset });
 });
 
+/** 가족/커플 멤버의 음성 프로필 조회 (읽기 전용) */
+voice.get('/family', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+
+  const memberRes = await db.execute({
+    sql: `SELECT fm2.user_id
+          FROM family_members fm1
+          JOIN family_members fm2 ON fm1.group_id = fm2.group_id
+          WHERE fm1.user_id = ? AND fm2.user_id != ?`,
+    args: [userId, userId],
+  });
+
+  if (memberRes.rows.length === 0) {
+    return c.json({ profiles: [] });
+  }
+
+  const memberIds = memberRes.rows.map((r) => (r as unknown as { user_id: string }).user_id);
+  const placeholders = memberIds.map(() => '?').join(',');
+  const voicesRes = await db.execute({
+    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, u.name as owner_name
+          FROM voice_profiles vp
+          LEFT JOIN users u ON vp.user_id = u.google_id
+          WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready'
+          ORDER BY vp.created_at DESC`,
+    args: memberIds,
+  });
+
+  return c.json({ profiles: voicesRes.rows });
+});
+
 /** 음성 프로필 상세 조회 */
 voice.get('/:id', async (c) => {
   const userId = c.get('userId');
@@ -340,29 +372,19 @@ voice.post('/clone', async (c) => {
   const db = getDB(c.env);
 
   try {
-    // 무료 플랜 제한 체크
-    const user = await db.execute({
-      sql: 'SELECT plan FROM users WHERE google_id = ?',
+    const profileCount = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
       args: [userId],
     });
-
-    if (user.rows.length > 0) {
-      const plan = user.rows[0].plan as string;
-      const profileCount = await db.execute({
-        sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
-        args: [userId],
-      });
-      const count = Number(profileCount.rows[0].count);
-
-      const limits: Record<string, number> = { free: 1, plus: 3, family: 10 };
-      if (count >= (limits[plan] ?? 1)) {
-        return c.json(
-          {
-            error: `${plan} 플랜은 최대 ${limits[plan]}개의 음성 프로필을 지원합니다. 업그레이드해주세요.`,
-          },
-          403,
-        );
-      }
+    const count = Number(profileCount.rows[0].count);
+    if (count >= MAX_VOICE_PROFILES) {
+      return c.json(
+        {
+          error: 'VOICE_LIMIT_REACHED',
+          message: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+        },
+        403,
+      );
     }
 
     const formData = await c.req.formData();

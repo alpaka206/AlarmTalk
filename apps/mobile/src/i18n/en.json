@@ -41,8 +41,7 @@
     "home": "Home",
     "voices": "Voices",
     "alarms": "Alarms",
-    "people": "People",
-    "settings": "Settings"
+    "compose": "Messages"
   },
   "common": {
     "error": "Error",
@@ -97,7 +96,13 @@
     "statusReady": "Ready",
     "statusProcessing": "Processing...",
     "statusFailed": "Failed",
-    "searchPlaceholder": "Search by name"
+    "searchPlaceholder": "Search by name",
+    "myVoices": "My Voices",
+    "addVoice": "Add Voice",
+    "limitReached": "You can register up to {{max}} voice profiles",
+    "familyVoices": "Family Voices",
+    "familyReadOnly": "Read-only",
+    "chooseMethod": "Choose method"
   },
   "friends": {
     "title": "Friends",
@@ -134,6 +139,7 @@
     "a11yGiftItem": "{{text}}, status: {{status}}"
   },
   "people": {
+    "title": "People",
     "members": "Members",
     "friends": "Friends",
     "requests": "Requests",
@@ -283,7 +289,10 @@
     "vibration": "Vibration",
     "vibrationDefault": "Default",
     "vibrationStrong": "Strong",
-    "vibrationNone": "None"
+    "vibrationNone": "None",
+    "wakeMode": "Wake-up Style",
+    "soundThenVoice": "Alarm then Voice",
+    "voiceOnly": "Voice Only"
   },
   "alarmValidation": {
     "messageRequired": "Please select a message.",
@@ -548,5 +557,23 @@
     "a11ySourceLang": "Source language: {{name}}",
     "a11yTargetLang": "Target language: {{name}}",
     "a11yProgress": "Translating, {{progress}}% complete"
+  },
+  "profile": {
+    "openMenu": "Open profile menu",
+    "people": "People",
+    "codeRegister": "Register Code",
+    "settings": "Settings",
+    "notifications": "Notifications",
+    "notificationsBadge": "{{count}} notifications"
+  },
+  "compose": {
+    "title": "Compose",
+    "loginRequired": "Log in to send messages",
+    "familyOnly": "Available with a family or couple plan",
+    "familyOnlyHint": "Register a code or upgrade your plan in the profile menu",
+    "sendAlarm": "Send Alarm",
+    "sendAlarmDesc": "Schedule an alarm for someone special",
+    "sendNote": "Send Note",
+    "sendNoteDesc": "Convert text to voice and deliver it"
   }
 }
