@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — 화면 비즈니스 로직 테스트 114건 추가 (voices, compose, note/create)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P112 완료**
+- 마지막 루프: 2026-04-25 — P4 Notion 동기화 + P113 스토어 메타데이터 준비
+- 현재 Phase: **R0~R6 전체 완료 + P11~P113 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 872/872, mobile 1012/1012)
 
@@ -11,12 +11,10 @@
 - **P0~P10**: 전체 완료
 - **R0~R5**: 전체 완료
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
-- **P11~P107**: 전체 완료
-- **P108**: LoginButtons 렌더링 테스트 18건 — Google/Apple 로그인 전 경로, useEffect 응답 처리, 에러 핸들링, 접근성
-- **P109**: auth.ts 서비스 테스트 22건 — decodeIdToken, saveAuthToken, getAuthToken, getAuthProvider, signOut, isAppleAuthAvailable, signInWithApple
-- **P110**: 미테스트 모바일 컴포넌트 3개 테스트 57건 — FamilyMemberRow(22), MiniWaveformPlayer(26), Toast(9)
-- **P111**: `as unknown as` 타입 단언 6건 제거 — FormData RN 타입 선언, PresetMessageSection width, audio.ts durationMillis
-- **P112**: 화면 비즈니스 로직 테스트 114건 — voicesScreen(46), composeScreen(37), noteCreate(31)
+- **P11~P112**: 전체 완료
+- **P113**: App Store / Google Play 스토어 등록 메타데이터 준비
+  - `docs/P4_NOTION_SYNC.md` — Notion 기획서 동기화 가이드
+  - `docs/STORE_LISTING.md` — 스토어 메타데이터 (한/영 설명, 스크린샷 가이드, 심사 노트, 체크리스트)
 
 ## 알려진 이슈
 - [blocked] Perso API 404

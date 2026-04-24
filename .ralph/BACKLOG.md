@@ -133,10 +133,11 @@
 
 ## P4 — 기획서(Notion) 동기화 + 추가 정비
 
-### Notion 기획서 업데이트
-- [ ] 기획서 섹션 7 "기술 스택" — 실제 스택으로 수정 (RN/Expo, Hono+CF Workers, Turso, JWT 자체인증)
-- [ ] 기획서 섹션 6 "개발 로드맵" — 현재 구현 상태 반영 (Phase 1 MVP 대부분 완료)
-- [ ] 기획서 "현재 이슈" — 실제 이슈 목록으로 갱신
+### Notion 기획서 업데이트 ✅ (2026-04-25)
+- [x] 기획서 섹션 7 "기술 스택" — 실제 스택으로 수정 → `docs/P4_NOTION_SYNC.md` 섹션 1
+- [x] 기획서 섹션 6 "개발 로드맵" — 현재 구현 상태 반영 → `docs/P4_NOTION_SYNC.md` 섹션 2
+- [x] 기획서 "현재 이슈" — 실제 이슈 목록으로 갱신 → `docs/P4_NOTION_SYNC.md` 섹션 3
+- 비고: Notion MCP 미사용, 마크다운 fallback. 사용자가 Notion에 수동 반영 필요
 
 ### 온보딩 플로우 기획서 정렬 ✅ (2026-04-24)
 - [x] `apps/mobile/app/onboarding.tsx` — 4페이지 추가 (나무 캐릭터), SafeAreaView, 접근성, 토큰 색상
@@ -1456,3 +1457,14 @@
 - [x] `apps/mobile/test/composeScreen.test.ts` — 37 tests (auth/plan access gates, unread count, sender display, query enablement)
 - [x] `apps/mobile/test/noteCreate.test.ts` — 31 tests (recipient filtering, canSend validation, display name, char count)
 - [x] 전체 테스트: mobile 1012/1012 (58 suites), backend 872/872, typecheck 0 errors
+
+## P113 — App Store / Google Play 스토어 등록 메타데이터 준비 ✅ (2026-04-25)
+
+- [x] `docs/P4_NOTION_SYNC.md` — Notion 기획서 동기화 가이드 (기술스택/로드맵/이슈 3섹션)
+- [x] `docs/STORE_LISTING.md` — 스토어 등록 메타데이터 완성:
+  - 앱 기본 정보 (카테고리, 등급, 가격, 언어)
+  - 한국어/영어 스토어 설명 (짧은 설명 + 전체 설명 + 키워드 + What's New)
+  - 스크린샷 가이드 (7장 구성 + 디바이스별 해상도)
+  - 개인정보 처리방침 요약 (iOS Privacy Labels + Android Data Safety)
+  - 심사 가이드 (iOS/Android 리뷰 노트)
+  - 출시 전 체크리스트 (12항목)
