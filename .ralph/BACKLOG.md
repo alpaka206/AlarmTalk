@@ -643,6 +643,20 @@
 - [x] typecheck 통과 (mobile 0 errors)
 - [x] 전체 테스트 통과 (mobile 466/466)
 
+## P62 — notifications 서비스 테스트 ✅ (2026-04-25)
+
+- [x] `test/notifications.test.ts` 신규 — 31 tests
+  - NotificationChannel 상수 + action 식별자 (2건)
+  - requestNotificationPermissions: granted/request/denied (3건)
+  - configureNotificationChannels: 4채널 설정 + snooze/dismiss 액션 + i18n (3건)
+  - syncAlarmNotifications: 취소→재스케줄, 비활성 제외, 권한 미부여, DAILY/WEEKLY 트리거, weekday 0→1/1→2/6→7 변환, 시간 파싱, voice_name 제목, channelId, categoryIdentifier, data 필드, 다중 알람, 문자열 repeat_days 파싱 (15건)
+  - scheduleSnoozeNotification: 초 변환 + categoryIdentifier (2건)
+  - registerPushTokenWithServer: 성공 + 에러 null (2건)
+  - unregisterPushTokenFromServer: 성공 + 조용한 실패 (2건)
+  - addNotificationResponseListener: 구독 객체 (1건)
+- [x] typecheck 통과 (mobile 0 errors)
+- [x] 전체 테스트 통과 (mobile 497/497)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
