@@ -107,7 +107,7 @@ export default function ReceivedGiftsScreen() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gifts-received'] });
-      toast.show(t('giftReceived.rejectSuccess', '선물을 거절했습니다'));
+      toast.show(t('giftReceived.rejectSuccess'));
     },
     onError: (err: unknown, _id, context) => {
       if (context?.previous) {

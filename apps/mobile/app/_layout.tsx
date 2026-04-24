@@ -259,7 +259,7 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="people/index"
-              options={{ headerShown: true, title: t('people.title', '내 사람들') }}
+              options={{ headerShown: true, title: t('people.title') }}
             />
             <Stack.Screen
               name="settings/index"

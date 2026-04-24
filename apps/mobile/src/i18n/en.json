@@ -25,7 +25,11 @@
     "noMessages": "No messages received yet",
     "viewAll": "View all ›",
     "loginTitle": "Sign in to get started",
-    "loginDesc": "Register a loved one's voice and\nreceive warm messages every day"
+    "loginDesc": "Register a loved one's voice and\nreceive warm messages every day",
+    "activeAlarms": "Active alarms",
+    "messages": "Messages",
+    "friends": "Friends",
+    "pendingGifts": "Pending gifts"
   },
   "screen": {
     "voiceRecord": "Voice Recording",
@@ -244,7 +248,10 @@
     "planPlus": "Plus ($3.99/mo)",
     "planFamily": "Family ($7.99/mo)",
     "defaultSnooze": "Default snooze",
-    "minutes": "min"
+    "minutes": "min",
+    "notifPermission": "Notification permission",
+    "permitted": "Allowed",
+    "notPermitted": "Not allowed"
   },
   "onboarding": {
     "skip": "Skip",
@@ -373,7 +380,8 @@
     "rejectError": "Failed to reject.",
     "rejectTitle": "Reject gift",
     "rejectConfirm": "Reject this gift?",
-    "setAsAlarm": "⏰ Set as alarm"
+    "setAsAlarm": "⏰ Set as alarm",
+    "rejectSuccess": "Gift rejected"
   },
   "voiceRecord": {
     "guideTitle": "Please read the sentences below naturally",
@@ -492,7 +500,13 @@
   },
   "login": {
     "google": "Continue with Google",
-    "apple": "Continue with Apple"
+    "apple": "Continue with Apple",
+    "error": "Login failed",
+    "saveFailed": "Failed to save login credentials.",
+    "noToken": "No authentication token received.",
+    "unknownError": "An unknown error occurred.",
+    "googleFailed": "Could not start Google sign-in.",
+    "appleFailed": "Apple sign-in failed."
   },
   "messageDetail": {
     "title": "Message Detail",

@@ -74,7 +74,7 @@ export default function FriendProfileScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('friendProfile.a11yBack')}
         >
-          <Text style={styles.backText}>{t('common.back', '< 돌아가기')}</Text>
+          <Text style={styles.backText}>{t('common.back')}</Text>
         </TouchableOpacity>
 
         <View style={styles.profileCard}>

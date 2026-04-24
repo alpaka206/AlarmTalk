@@ -594,9 +594,17 @@
 - ~~expo-updates OTA 업데이트 체크 로직~~ → P29 완료
 - ~~deepLink + updates 테스트 커버리지~~ → P30 완료
 - ~~하드코딩 한국어 문자열 i18n 전환~~ → P31 완료
-- t() 폴백 문자열 패턴 정리 (home, settings, friend/[id] 등의 `t('key', '폴백')` → `t('key')`)
+- ~~t() 폴백 문자열 패턴 정리~~ → P32 완료
 - 백엔드 console.error → 구조화 로깅 전환 (Sentry 연동 강화)
 - 접근성 자동화 테스트 (axe-core 또는 @testing-library/react-native a11y 검증)
+
+## P32 — t() 폴백 문자열 패턴 정리 ✅ (2026-04-24)
+
+- [x] 누락 i18n 키 14개 추가 (ko.json + en.json): home.activeAlarms/messages/friends/pendingGifts, login.error/saveFailed/noToken/unknownError/googleFailed/appleFailed, giftReceived.rejectSuccess, settings.notifPermission/permitted/notPermitted
+- [x] 6파일 24건 t() 폴백 문자열 제거: index.tsx(11), LoginButtons.tsx(7), gift/received.tsx(1), friend/[id].tsx(1), _layout.tsx(1), settings/index.tsx(3)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
+---
 
 ## P30 — deepLink + updates 테스트 커버리지 ✅ (2026-04-24)
 

@@ -191,8 +191,8 @@ export default function HomeScreen() {
             onPress={() => refetchStats()}
             activeOpacity={0.7}
           >
-            <Text style={styles.statsErrorText}>{t('common.loadError', '불러오기 실패')}</Text>
-            <Text style={styles.statsErrorRetry}>{t('common.retry', '다시 시도')}</Text>
+            <Text style={styles.statsErrorText}>{t('common.loadError')}</Text>
+            <Text style={styles.statsErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         )}
         {isAuthenticated && stats && (
@@ -200,28 +200,28 @@ export default function HomeScreen() {
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.activeAlarms', '활성 알람')} ${stats.alarms.active}`}
+              accessibilityLabel={`${t('home.activeAlarms')} ${stats.alarms.active}`}
             >
               <Text style={styles.statCount}>{stats.alarms.active}</Text>
-              <Text style={styles.statLabel}>{t('home.activeAlarms', '활성 알람')}</Text>
+              <Text style={styles.statLabel}>{t('home.activeAlarms')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.alarms} colors={colors} />}
             </View>
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.messages', '메시지')} ${stats.messages.total}`}
+              accessibilityLabel={`${t('home.messages')} ${stats.messages.total}`}
             >
               <Text style={styles.statCount}>{stats.messages.total}</Text>
-              <Text style={styles.statLabel}>{t('home.messages', '메시지')}</Text>
+              <Text style={styles.statLabel}>{t('home.messages')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.messages} colors={colors} />}
             </View>
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.friends', '친구')} ${stats.friends.total}`}
+              accessibilityLabel={`${t('home.friends')} ${stats.friends.total}`}
             >
               <Text style={styles.statCount}>{stats.friends.total}</Text>
-              <Text style={styles.statLabel}>{t('home.friends', '친구')}</Text>
+              <Text style={styles.statLabel}>{t('home.friends')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.friends} colors={colors} />}
             </View>
             {stats.gifts.receivedPending > 0 && (
@@ -233,7 +233,7 @@ export default function HomeScreen() {
                   {stats.gifts.receivedPending}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.accent }]}>
-                  {t('home.pendingGifts', '대기 선물')}
+                  {t('home.pendingGifts')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -426,10 +426,10 @@ export default function HomeScreen() {
               style={styles.actionCard}
               onPress={() => router.push('/code-register')}
               accessibilityRole="button"
-              accessibilityLabel={t('home.codeRegister', '코드 등록')}
+              accessibilityLabel={t('home.codeRegister')}
             >
               <Text style={styles.actionEmoji}>🔑</Text>
-              <Text style={styles.actionLabel}>{t('home.codeRegister', '코드 등록')}</Text>
+              <Text style={styles.actionLabel}>{t('home.codeRegister')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}

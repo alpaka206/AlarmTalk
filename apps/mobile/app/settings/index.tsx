@@ -79,10 +79,10 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>{t('settings.account')}</Text>
           <View style={styles.card}>
             {profile?.name && (
-              <SettingRow colors={colors} label={t('settings.name', '이름')} value={profile.name} />
+              <SettingRow colors={colors} label={t('settings.name')} value={profile.name} />
             )}
             {profile?.email && (
-              <SettingRow colors={colors} label={t('settings.email', '이메일')} value={profile.email} />
+              <SettingRow colors={colors} label={t('settings.email')} value={profile.email} />
             )}
             <SettingRow colors={colors} label={t('settings.plan')} value={getPlanLabel()} />
             <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => {}} />
@@ -94,8 +94,8 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <SettingRow
               colors={colors}
-              label={t('settings.notifPermission', '알림 권한')}
-              value={notifStatus === 'granted' ? t('settings.permitted', '허용됨') : t('settings.notPermitted', '허용 안 됨')}
+              label={t('settings.notifPermission')}
+              value={notifStatus === 'granted' ? t('settings.permitted') : t('settings.notPermitted')}
               valueColor={notifStatus === 'granted' ? colors.primary : colors.error}
               onPress={async () => {
                 if (notifStatus !== 'granted') {
