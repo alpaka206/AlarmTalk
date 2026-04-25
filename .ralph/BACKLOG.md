@@ -1569,7 +1569,7 @@
 - [x] EmailPasswordForm.tsx — 로그인/회원가입 탭에 accessibilityLabel 추가
 
 ## P124 — 향후 작업 후보 (우선순위 미정)
-- [ ] 앱 아이콘 + 스플래시 스크린 디자인 (Expo config)
+- [x] 앱 아이콘 + 스플래시 스크린 디자인 (커스텀 나무 아이콘 + 코랄 배경 이미 완료)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [x] App Store / Google Play 메타데이터 준비 (P130 — store.config.json 생성, 한국어/영어 이중 언어)
 - [x] 성능 프로파일링: useCallback 최적화 — alarms/voices/library/home 4개 화면 (P125)
@@ -1582,3 +1582,4 @@
 - [x] Maestro E2E 플로우 추가: 07-message-tab, 08-code-register, 09-alarm-voice-toggle (P131)
 - [x] README.md 테스트 수 보정: backend 872→1068, mobile 1012→1044, E2E 6→9 (P131)
 - [x] Backend Integration Smoke Test: 전체 앱 라우팅 와이어링 + 보안 헤더 + CORS + 404 검증 25 tests (P132)
+- [x] i18n Key Validation: locale 동기화 + 보간 변수 일치 + 코드 키 사용 검증 + common.close 누락 수정 14 tests (P133)

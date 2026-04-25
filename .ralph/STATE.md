@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P132 (Backend Integration Smoke Test)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P132 부분 완료**
+- 마지막 루프: 2026-04-25 — P133 (i18n Key Validation + Missing Translation Fix)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -22,6 +22,7 @@
 - **P130**: App Store / Google Play 메타데이터 (store.config.json)
 - **P131**: Maestro E2E 플로우 3개 추가 (message-tab, code-register, alarm-voice-toggle) + README 테스트 수 보정
 - **P132**: Backend Integration Smoke Test (25 tests — health, public, auth, 15 protected routes, security headers, CORS, 404)
+- **P133**: i18n Key Validation 테스트 14개 + `common.close` 누락 수정
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -44,7 +45,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1093 tests (58 files)
-- Mobile: 1044 tests (59 files)
+- Mobile: 1058 tests (60 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)
