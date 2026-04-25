@@ -1688,9 +1688,13 @@
 ## P171 — dub 라우트 엣지 케이스 테스트 ✅ (2026-04-25)
 - [x] dub 엣지 케이스 14개 추가 (22→36): POST 실패 경로 4개 (getSasToken/uploadToBlob/requestTranslation/non-Error), GET/:id full success path 2개 (source_message 있음/없음), null 경계값 3개, hasFailed 기본 메시지, download 실패 2개, languages/jobs 각 1개
 
-## P172 — 향후 작업 후보
+## P172 — TTS 라우트 엣지 케이스 테스트 ✅ (2026-04-25)
+- [x] TTS 엣지 케이스 19개 추가 (20→39): POST /generate 성공/실패 경로 13개 (user 미존재, 일일 리셋, plan 폴백, NO_VOICE_ID, ElevenLabs 실패/비-Error, 성공 경로, 경계값), GET /messages 필터/페이지네이션 6개 (limit 클램핑, offset 클램핑, 복합 필터), DELETE 순서/격리 3개
+- [x] translate.ts 라우트 미존재 확인 (dub.ts에 통합됨) — BACKLOG 항목 제거
+
+## P173 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
 - [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
-- [ ] translate.ts 라우트 엣지 케이스 테스트 확장
+- [ ] stats.ts 라우트 엣지 케이스 테스트 확장 (18 tests / 176 lines)

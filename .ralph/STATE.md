@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P171 (dub 라우트 엣지 케이스 테스트 14개 추가)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P171 전체 완료**
+- 마지막 루프: 2026-04-25 — P172 (TTS 라우트 엣지 케이스 테스트 19개 추가)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P172 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -59,6 +59,7 @@
 - **P169**: Maestro E2E 플로우 2개 추가 (subscription, library-delete)
 - **P170**: voice-profile 엣지 케이스 테스트 13개 + push 엣지 케이스 테스트 8개 추가 (1210→1231)
 - **P171**: dub 라우트 엣지 케이스 테스트 14개 추가 (1231→1245) — POST 실패 경로 4개, GET/:id full success path + null 경계값 8개, languages/jobs 2개
+- **P172**: TTS 라우트 엣지 케이스 테스트 19개 추가 (1245→1264) — POST /generate 성공/실패 경로 13개, GET /messages 필터/페이지네이션 6개, DELETE 순서/격리 3개 (일부 겹침으로 19개)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -80,7 +81,7 @@
 - Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 1245 tests (58 files)
+- Backend: 1264 tests (58 files)
 - Mobile: 1970 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
