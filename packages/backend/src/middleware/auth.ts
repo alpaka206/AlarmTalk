@@ -22,7 +22,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     return c.json({ error: 'Authorization header required', error_code: 'AUTH_MISSING' }, 401);
   }
   if (!authHeader.startsWith('Bearer ')) {
-    return c.json({ error: 'Authorization header must use Bearer scheme', error_code: 'AUTH_INVALID_SCHEME' }, 401);
+    return c.json(
+      { error: 'Authorization header must use Bearer scheme', error_code: 'AUTH_INVALID_SCHEME' },
+      401,
+    );
   }
 
   const token = authHeader.slice(7);

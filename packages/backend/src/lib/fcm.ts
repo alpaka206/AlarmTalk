@@ -39,9 +39,7 @@ export async function getTokensForUser(db: Client, userId: string): Promise<stri
   return result.rows.map((r) => String(r.token));
 }
 
-export async function sendPushNotifications(
-  messages: FcmMessage[],
-): Promise<FcmSendResult[]> {
+export async function sendPushNotifications(messages: FcmMessage[]): Promise<FcmSendResult[]> {
   // Structure-only: log instead of calling FCM HTTP v1 API.
   // Real implementation would POST to https://fcm.googleapis.com/v1/projects/{project}/messages:send
   const results: FcmSendResult[] = [];

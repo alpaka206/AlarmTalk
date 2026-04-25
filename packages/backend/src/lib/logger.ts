@@ -1,7 +1,10 @@
 import type { Context } from 'hono';
 import type { SentryClient } from '../types';
 
-export function logStructured(level: 'info' | 'warn' | 'error', data: Record<string, unknown>): void {
+export function logStructured(
+  level: 'info' | 'warn' | 'error',
+  data: Record<string, unknown>,
+): void {
   const entry = { level, ...data };
   const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   // eslint-disable-next-line no-console

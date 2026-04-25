@@ -424,9 +424,7 @@ export const migrations: Migration[] = [
   {
     id: 16,
     name: 'user-last-active',
-    statements: [
-      `ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`,
-    ],
+    statements: [`ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`],
   },
   {
     id: 17,

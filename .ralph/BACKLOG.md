@@ -1751,6 +1751,8 @@
 
 ## P182 — Prettier 포맷팅 정규화 (배치)
 - [x] Batch 1: packages/shared (6) + packages/ui (9) + packages/voice (7) = 22파일 포맷팅 완료
-- [ ] Batch 2: packages/backend src/ (20파일씩, 총 107파일 잔여)
-- [ ] Batch 3~N: apps/mobile (20파일씩, 총 136파일 잔여)
+- [x] Batch 2: packages/backend data+lib+middleware 일부 20파일 포맷팅 완료
+- [ ] Batch 3: packages/backend middleware 잔여 9 + routes 11 = 20파일
+- [ ] Batch 4~5: packages/backend routes 잔여 + test 파일 (~13파일)
+- [ ] Batch 6~N: apps/mobile (20파일씩, 총 136파일 잔여)
 - [ ] 전체 완료 후 CI에 format:check 스텝 추가

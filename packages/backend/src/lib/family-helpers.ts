@@ -22,14 +22,10 @@ export async function assertSameGroup(
   });
   if (senderGroupRes.rows.length === 0) return false;
 
-  const senderGroupIds = new Set(
-    senderGroupRes.rows.map((r) => String(r.plan_group_id)),
-  );
+  const senderGroupIds = new Set(senderGroupRes.rows.map((r) => String(r.plan_group_id)));
   const recipientMemberRes = await db.execute({
     sql: `SELECT plan_group_id FROM plan_group_members WHERE user_id = ?`,
     args: [recipientPk],
   });
-  return recipientMemberRes.rows.some((r) =>
-    senderGroupIds.has(String(r.plan_group_id)),
-  );
+  return recipientMemberRes.rows.some((r) => senderGroupIds.has(String(r.plan_group_id)));
 }

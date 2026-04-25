@@ -47,10 +47,7 @@ app.use('*', rateLimitMiddleware);
 app.use('*', bodyLimitMiddleware);
 
 // CORS
-const ALLOWED_ORIGINS = [
-  'http://localhost:8081',
-  'exp://localhost:8081',
-];
+const ALLOWED_ORIGINS = ['http://localhost:8081', 'exp://localhost:8081'];
 
 app.use(
   '*',
