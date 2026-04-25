@@ -1681,9 +1681,13 @@
 - [x] config.yaml 실행 순서 추가 (11→13)
 - [x] README 테스트 수 업데이트 (E2E 11→13 플로우)
 
-## P170 — 향후 작업 후보
+## P170 — voice-profile + push 엣지 케이스 테스트 ✅ (2026-04-25)
+- [x] voice-profile 엣지 케이스 13개 추가 (47→60): pagination 폴백, name validation 경계값, clone count=0, non-Error throw, force 대소문자 구분, family placeholders
+- [x] push 엣지 케이스 8개 추가 (14→25): 비문자열 토큰/플랫폼, null/boolean 타입, 경계값 500자, upsert SQL, trim 검증
+
+## P171 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
-- [ ] voice-profile 라우트 엣지 케이스 테스트 확장
-- [ ] notification 라우트 테스트 커버리지 추가
+- [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
+- [ ] dub/translate 라우트 엣지 케이스 테스트 확장

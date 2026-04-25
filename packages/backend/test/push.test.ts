@@ -177,3 +177,86 @@ describe('DELETE /push/token — 푸시 토큰 삭제', () => {
     expect(mockDB.calls[0].args[0]).toBe('user-42');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — POST /push/token                                      */
+/* ------------------------------------------------------------------ */
+describe('POST /push/token — edge cases', () => {
+  it('token이 숫자이면 빈 문자열로 처리 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 12345, platform: 'ios' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('platform이 null → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'valid-token', platform: null }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_PLATFORM');
+  });
+
+  it('platform이 boolean → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'valid-token', platform: true }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_PLATFORM');
+  });
+
+  it('빈 JSON body ({}) → token 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', {}),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('token 500자 경계 — 정확히 500자 등록 가능', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'b'.repeat(500), platform: 'web' }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('SQL에 ON CONFLICT upsert 포함', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    await app.request(
+      jsonReq('POST', '/push/token', { token: 'tok', platform: 'ios' }),
+    );
+    expect(mockDB.calls[0].sql).toContain('ON CONFLICT');
+    expect(mockDB.calls[0].sql).toContain("datetime('now')");
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — DELETE /push/token                                    */
+/* ------------------------------------------------------------------ */
+describe('DELETE /push/token — edge cases', () => {
+  it('token이 숫자이면 빈 문자열로 처리 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('DELETE', '/push/token', { token: 999 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TOKEN_REQUIRED');
+  });
+
+  it('token trim 후 값이 DELETE 쿼리에 전달', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    await app.request(
+      jsonReq('DELETE', '/push/token', { token: '  trimmed  ' }),
+    );
+    expect(mockDB.calls[0].args).toContain('trimmed');
+  });
+});

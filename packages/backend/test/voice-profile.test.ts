@@ -536,4 +536,143 @@ describe('GET /family — 가족 음성 프로필 (voice-profile)', () => {
     expect(memberQuery.args).toContain('user-me');
     expect(memberQuery.sql).toContain('fm2.user_id != ?');
   });
+
+  it('placeholders 수 = 가족 멤버 수', async () => {
+    mockDB.pushResult([{ user_id: 'a' }, { user_id: 'b' }, { user_id: 'c' }]);
+    mockDB.pushResult([]);
+    await req(buildApp(), new Request('http://localhost/vp/family'));
+    const voiceQuery = mockDB.calls[1]!;
+    expect(voiceQuery.sql).toContain('?,?,?');
+    expect(voiceQuery.args).toEqual(['a', 'b', 'c']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — GET / pagination                                      */
+/* ------------------------------------------------------------------ */
+describe('GET / — pagination edge cases (voice-profile)', () => {
+  it('limit=abc (비숫자) → 기본값 50', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    await req(buildApp(), new Request('http://localhost/vp?limit=abc'));
+    const call = mockDB.calls[1]!;
+    expect(call.args).toContain(50);
+  });
+
+  it('limit=-5 → 최소 1 로 클램핑', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    await req(buildApp(), new Request('http://localhost/vp?limit=-5'));
+    const call = mockDB.calls[1]!;
+    expect(call.args).toContain(1);
+  });
+
+  it('offset=abc (비숫자) → 기본값 0', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    await req(buildApp(), new Request('http://localhost/vp?offset=abc'));
+    const call = mockDB.calls[1]!;
+    expect(call.args).toContain(0);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — PATCH /:id name validation                            */
+/* ------------------------------------------------------------------ */
+describe('PATCH /:id — name edge cases (voice-profile)', () => {
+  it('name 필드 자체 없으면 400', async () => {
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, {}));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_NAME_LENGTH');
+  });
+
+  it('name: null → 400', async () => {
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { name: null }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_NAME_LENGTH');
+  });
+
+  it('name 1자 경계 → 통과', async () => {
+    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { name: 'A' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).profile.name).toBe('A');
+  });
+
+  it('name 앞뒤 공백은 trim 후 저장', async () => {
+    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([], 1);
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { name: '  엄마  ' }));
+    expect(res.status).toBe(200);
+    const updateCall = mockDB.calls[1]!;
+    expect(updateCall.args).toContain('엄마');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — POST /clone                                           */
+/* ------------------------------------------------------------------ */
+describe('POST /clone — edge cases (voice-profile)', () => {
+  it('프로필 0개이면 정상 생성', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-zero' });
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), '첫번째'));
+    expect(res.status).toBe(201);
+    expect((await res.json()).profile.status).toBe('ready');
+  });
+
+  it('non-Error throw → detail = "Unknown error"', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockRejectedValue('string-error');
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'test'));
+    expect(res.status).toBe(500);
+    expect((await res.json()).detail).toBe('Unknown error');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — DELETE /:id force parameter                           */
+/* ------------------------------------------------------------------ */
+describe('DELETE /:id — force edge cases (voice-profile)', () => {
+  it('force=false → "true" 아니므로 409', async () => {
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
+    mockDB.pushResult([{ cnt: 2 }]);
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}?force=false`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('VOICE_PROFILE_IN_USE');
+  });
+
+  it('force=TRUE (대문자) → 대소문자 구분으로 409', async () => {
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
+    mockDB.pushResult([{ cnt: 1 }]);
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}?force=TRUE`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it('force=true + elevenlabs_voice_id 있으면 외부 삭제 + cascade', async () => {
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-abc' }]);
+    mockDB.pushResult([{ cnt: 2 }]);
+    mockDB.pushResult([], 1); // DELETE alarms
+    mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([], 2); // DELETE messages
+    mockDB.pushResult([], 1); // DELETE voice_profiles
+    mockDeleteVoice.mockResolvedValue(undefined);
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}?force=true`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDeleteVoice).toHaveBeenCalledWith('elv-abc');
+    expect((await res.json()).messages_deleted).toBe(2);
+  });
 });
