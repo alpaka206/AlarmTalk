@@ -1670,9 +1670,13 @@
 - [x] subscriptionScreen.test.ts 32개 (planTypeToUserPlan, PLANS 상수, isPlanCurrent/Upgrade, formatDate, 피처 오버랩)
 - [x] README 테스트 수 업데이트 (1938→1970)
 
-## P168 — 향후 작업 후보
+## P168 — billing-mutation 테스트 확장 + any 감사 ✅ (2026-04-25)
+- [x] billing-mutation.test.ts 확장 (15→40): checkout error paths 14개 + redeem error paths 11개
+- [x] TypeScript any 사용 최종 감사 완료 (lib/logger.ts 1건만 — 정당 사용 확인)
+- [x] README 테스트 수 업데이트 (1185→1210)
+
+## P169 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
-- [ ] 백엔드 테스트 커버리지 확장 (alarm-mutation, billing-mutation 통합 테스트)
 - [ ] 모바일 E2E 테스트 확장 (Maestro — subscription, library-delete 플로우)
-- [ ] TypeScript any 사용 최종 감사 (lib/logger.ts 외 없는지 확인)
+- [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
