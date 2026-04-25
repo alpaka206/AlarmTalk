@@ -195,6 +195,7 @@ describe('i18n — value quality', () => {
       'settings.languageKorean',
       'compose.title',
       'authForm.emailPlaceholder',
+      'dub.experimentBadge',
     ]);
     const filtered = suspectKeys.filter((s) => {
       const k = s.split(':')[0]!;

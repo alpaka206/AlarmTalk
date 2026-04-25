@@ -714,7 +714,8 @@
     "noJobs": "아직 번역 내역이 없습니다",
     "a11ySourceLang": "원본 언어: {{name}}",
     "a11yTargetLang": "번역 언어: {{name}}",
-    "a11yProgress": "번역 진행 중, {{progress}}% 완료"
+    "a11yProgress": "번역 진행 중, {{progress}}% 완료",
+    "experimentBadge": "beta"
   },
   "profile": {
     "openMenu": "프로필 메뉴 열기",

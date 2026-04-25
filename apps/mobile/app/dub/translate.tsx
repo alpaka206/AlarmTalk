@@ -26,6 +26,13 @@ import {
   playAudio,
 } from '../../src/services/audio';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
+import {
+  SOURCE_LANGUAGES,
+  filterTargetLanguages,
+  validateDubStart,
+  getDubPhase,
+  shouldSaveAudio,
+} from '../../src/lib/dubHelpers';
 import type { Message, DubLanguage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -65,7 +72,7 @@ export default function TranslateScreen() {
   const message = messages?.find((m: Message) => m.id === message_id);
 
   const targetLanguages = useMemo(
-    () => languages?.filter((l: DubLanguage) => l.code !== sourceLanguage),
+    () => filterTargetLanguages(languages, sourceLanguage),
     [languages, sourceLanguage],
   );
 
@@ -95,8 +102,8 @@ export default function TranslateScreen() {
         stopPolling();
         setDubStatus('ready');
 
-        if (result.audio_base64 && result.result_message_id) {
-          await saveAudioLocally(result.audio_base64, result.result_message_id, result.audio_format || 'mp3');
+        if (shouldSaveAudio(result)) {
+          await saveAudioLocally(result.audio_base64!, result.result_message_id!, result.audio_format || 'mp3');
           setResultAudioSaved(true);
           queryClient.invalidateQueries({ queryKey: ['messages'] });
           queryClient.invalidateQueries({ queryKey: ['library'] });
@@ -141,12 +148,9 @@ export default function TranslateScreen() {
   });
 
   const handleStart = () => {
-    if (!targetLanguage) {
-      toast.show(t('dub.selectLanguage'));
-      return;
-    }
-    if (sourceLanguage === targetLanguage) {
-      toast.show(t('dub.sameLanguage'));
+    const validationError = validateDubStart(targetLanguage, sourceLanguage);
+    if (validationError) {
+      toast.show(t(`dub.${validationError}`));
       return;
     }
     dubMutation.mutate();
@@ -192,11 +196,12 @@ export default function TranslateScreen() {
       <Text style={[styles.langText, targetLanguage === item.code && styles.langTextActive]}>
         {item.name}
       </Text>
-      {item.experiment && <Text style={styles.experimentBadge}>beta</Text>}
+      {item.experiment && <Text style={styles.experimentBadge}>{t('dub.experimentBadge')}</Text>}
     </TouchableOpacity>
   );
 
-  const isProcessing = dubStatus === 'processing' || dubMutation.isPending;
+  const phase = getDubPhase(dubStatus, dubMutation.isPending);
+  const isProcessing = phase === 'processing';
 
   return (
     <View style={styles.container}>
@@ -212,12 +217,7 @@ export default function TranslateScreen() {
 
         <Text style={styles.sectionTitle} accessibilityRole="header">{t('dub.sourceLanguage')}</Text>
         <View style={styles.sourceRow}>
-          {[
-            { code: 'ko', name: '한국어' },
-            { code: 'en', name: 'English' },
-            { code: 'ja', name: '日本語' },
-            { code: 'zh', name: '中文' },
-          ].map((lang) => (
+          {SOURCE_LANGUAGES.map((lang) => (
             <TouchableOpacity
               key={lang.code}
               style={[styles.sourceChip, sourceLanguage === lang.code && styles.sourceChipActive]}

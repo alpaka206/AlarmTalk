@@ -714,7 +714,8 @@
     "noJobs": "No translation history yet",
     "a11ySourceLang": "Source language: {{name}}",
     "a11yTargetLang": "Target language: {{name}}",
-    "a11yProgress": "Translating, {{progress}}% complete"
+    "a11yProgress": "Translating, {{progress}}% complete",
+    "experimentBadge": "beta"
   },
   "profile": {
     "openMenu": "Open profile menu",
