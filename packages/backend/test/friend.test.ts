@@ -260,6 +260,95 @@ describe('GET /friend/pending — 상세', () => {
   });
 });
 
+describe('POST /friend — 엣지 케이스', () => {
+  it('거절된 관계가 있어도 새 요청 가능 (status 가 accepted/pending 아님)', async () => {
+    mockDB.pushResult([{ google_id: 'user-2', email: 'b@test.com', name: 'B' }]);
+    mockDB.pushResult([{ id: ID.friendship, status: 'rejected' }]);
+    mockDB.pushResult([], 1); // insert
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/friend', { email: 'b@test.com' }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.friendship.status).toBe('pending');
+  });
+
+  it('역방향 friendship 이 이미 pending 이면 409', async () => {
+    mockDB.pushResult([{ google_id: 'user-2', email: 'b@test.com', name: 'B' }]);
+    mockDB.pushResult([{ id: ID.friendship, status: 'pending' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/friend', { email: 'b@test.com' }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('ALREADY_PENDING');
+    const sql = mockDB.calls[1].sql;
+    expect(sql).toContain('user_a = ? AND user_b = ?');
+  });
+
+  it('target_email 과 target_name 이 응답에 포함', async () => {
+    mockDB.pushResult([{ google_id: 'user-3', email: 'c@test.com', name: 'Charlie' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/friend', { email: 'c@test.com' }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.friendship.target_email).toBe('c@test.com');
+    expect(body.friendship.target_name).toBe('Charlie');
+  });
+});
+
+describe('PATCH /friend/:id/accept — UUID 검증', () => {
+  it('유효하지 않은 UUID 형식이면 400', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('PATCH', '/friend/not-a-valid-uuid/accept'));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid friendship ID format');
+  });
+});
+
+describe('DELETE /friend/:id — UUID 검증', () => {
+  it('유효하지 않은 UUID 형식이면 400', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', '/friend/bad-uuid'));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid friendship ID format');
+  });
+});
+
+describe('GET /friend/list — 파라미터 엣지 케이스', () => {
+  it('limit 가 비숫자 문자열이면 기본값 20으로 폴백', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/friend/list?limit=abc'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.limit).toBe(20);
+  });
+
+  it('offset 이 음수이면 0으로 클램핑', async () => {
+    mockDB.pushResult([{ total: 0 }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/friend/list?offset=-10'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.offset).toBe(0);
+  });
+
+  it('total 이 null 이면 0으로 처리', async () => {
+    mockDB.pushResult([{ total: null }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/friend/list'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.total).toBe(0);
+  });
+});
+
 describe('PATCH /friend/:id/accept — SQL 검증', () => {
   it('현재 사용자의 pending 요청만 조회', async () => {
     mockDB.pushResult([]);

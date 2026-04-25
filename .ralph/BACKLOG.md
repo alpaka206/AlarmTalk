@@ -1588,3 +1588,4 @@
 - [x] AlarmListItem 컴포넌트 단위 테스트 17개: 렌더링, 콜백, 모드뱃지, 가족알람, 접근성, memo 검증 (P136)
 - [x] code.test.ts 엣지 케이스 6개 추가: 비문자열 코드, invite expired status, max_members 폴백, unknown plan_type, period_days 폴백 (P137)
 - [x] Maestro E2E 플로우 2개 추가: 10-home-character (홈 위젯+빠른 액션), 11-alarm-edit-delete (알람 편집/삭제) + README 테스트 수 보정 (P138)
+- [x] friend.ts 라우트 엣지 케이스 테스트 8개 추가: UUID 검증, 거절 후 재요청, 역방향 pending, target 필드 검증, 파라미터 폴백, null total (P139)
