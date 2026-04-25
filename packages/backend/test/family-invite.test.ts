@@ -466,4 +466,279 @@ describe('POST /family/invites/:code/revoke', () => {
     const body = await res.json();
     expect(body.error_code).toBe('NOT_PENDING');
   });
+
+  it('returns 409 NOT_PENDING for expired invite', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'expired' }]);
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('NOT_PENDING');
+  });
+
+  it('trims whitespace from code param', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'pending' }]);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/ ${INVITE_CODE} /revoke`),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+});
+
+// ─── POST /family/invites — edge cases ─────────────────────────
+
+describe('POST /family/invites — edge cases', () => {
+  const app = buildApp();
+
+  it('treats non-string plan_group_id as empty → auto-resolve', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: GROUP_ID }]); // auto-resolve owned group
+    mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: 6 }]);
+    mockDB.pushResult([{ member_count: 1, pending_count: 0 }]);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', '/family/invites', { plan_group_id: 99999 }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.invite.plan_group_id).toBe(GROUP_ID);
+  });
+
+  it('treats whitespace-only plan_group_id as empty → auto-resolve', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: GROUP_ID }]);
+    mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: 6 }]);
+    mockDB.pushResult([{ member_count: 0, pending_count: 0 }]);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', '/family/invites', { plan_group_id: '   ' }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.invite.plan_group_id).toBe(GROUP_ID);
+  });
+
+  it('defaults max_members to 6 when null', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: null }]);
+    mockDB.pushResult([{ member_count: 5, pending_count: 0 }]);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.invite).toBeDefined();
+  });
+
+  it('returns 409 GROUP_FULL when max_members is null and slots used >= 6', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: null }]);
+    mockDB.pushResult([{ member_count: 4, pending_count: 2 }]);
+
+    const res = await app.request(
+      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('GROUP_FULL');
+  });
+
+  it('trims plan_group_id whitespace', async () => {
+    pushResolveUserPk(OWNER_PK);
+    mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: 6 }]);
+    mockDB.pushResult([{ member_count: 0, pending_count: 0 }]);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', '/family/invites', { plan_group_id: `  ${GROUP_ID}  ` }),
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+// ─── POST /family/invites/:code/accept — edge cases ────────────
+
+describe('POST /family/invites/:code/accept — edge cases', () => {
+  const app = buildApp('google-member');
+
+  it('skips expiry check when expires_at is invalid date → allows accept', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const future = new Date(Date.now() + 600_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: 'not-a-date',
+      },
+    ]);
+    mockDB.pushResult([]); // not already member
+    mockDB.pushResult([{ max_members: 6 }]);
+    mockDB.pushResult([{ c: 1 }]);
+    mockDB.pushResult([], 1); // INSERT member
+    mockDB.pushResult([], 1); // UPDATE invite
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('defaults max_members to 6 when null during accept', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const future = new Date(Date.now() + 600_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: future,
+      },
+    ]);
+    mockDB.pushResult([]); // not already member
+    mockDB.pushResult([{ max_members: null }]); // null max_members
+    mockDB.pushResult([{ c: 5 }]); // 5 members, under default 6
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('returns 409 GROUP_FULL when max_members null and 6 members exist', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const future = new Date(Date.now() + 600_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: future,
+      },
+    ]);
+    mockDB.pushResult([]); // not already member
+    mockDB.pushResult([{ max_members: null }]);
+    mockDB.pushResult([{ c: 6 }]); // at default max
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('GROUP_FULL');
+  });
+
+  it('trims whitespace from code param in accept', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const future = new Date(Date.now() + 600_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: future,
+      },
+    ]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ max_members: 6 }]);
+    mockDB.pushResult([{ c: 1 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/ ${INVITE_CODE} /accept`),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('verifies INSERT uses correct plan_group_id and role', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const future = new Date(Date.now() + 600_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: future,
+      },
+    ]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ max_members: 6 }]);
+    mockDB.pushResult([{ c: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.membership.plan_group_id).toBe(GROUP_ID);
+    expect(body.membership.user_id).toBe(MEMBER_PK);
+    expect(body.membership.role).toBe('member');
+    expect(body.invite.id).toBe(INVITE_ID);
+
+    const insertCall = mockDB.calls.find(
+      (c) => c.sql.includes('INSERT INTO plan_group_members'),
+    );
+    expect(insertCall).toBeDefined();
+    expect(insertCall!.args).toContain(GROUP_ID);
+    expect(insertCall!.args).toContain(MEMBER_PK);
+
+    const updateCall = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE plan_group_invites'),
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall!.args).toContain(MEMBER_PK);
+    expect(updateCall!.args).toContain(INVITE_ID);
+  });
+
+  it('marks invite as expired in DB when pending but past expires_at', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    const past = new Date(Date.now() - 60_000).toISOString();
+    mockDB.pushResult([
+      {
+        id: INVITE_ID,
+        plan_group_id: GROUP_ID,
+        inviter_user_id: OWNER_PK,
+        status: 'pending',
+        expires_at: past,
+      },
+    ]);
+    mockDB.pushResult([], 1); // UPDATE to expired
+
+    const res = await app.request(
+      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
+    );
+    expect(res.status).toBe(409);
+
+    const updateCall = mockDB.calls.find(
+      (c) => c.sql.includes("SET status = 'expired'"),
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall!.args).toContain(INVITE_ID);
+  });
 });

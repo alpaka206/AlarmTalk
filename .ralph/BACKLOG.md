@@ -885,6 +885,14 @@
 - [x] ARCHITECTURE.md Plan Limits 현행화: Plus→Personal, 음성 2개 제한, 가족 쪽지 추가
 - [x] README.md 테스트 수치 현행화: 647→872 (백엔드), 286→1012 (모바일)
 
+## P144 — family-invite.ts 엣지 케이스 테스트 10개 추가 ✅ (2026-04-25)
+
+- [x] POST /invites: 비문자열 plan_group_id auto-resolve, 공백 plan_group_id, max_members null 폴백(6), GROUP_FULL(null→6), trim 동작
+- [x] POST /invites/:code/accept: expires_at 유효하지 않은 날짜(NaN), max_members null 폴백, GROUP_FULL(null→6), 코드 trim, INSERT/UPDATE SQL 검증, expired 상태 DB 갱신 확인
+- [x] POST /invites/:code/revoke: 'expired' 상태 NOT_PENDING, 코드 trim
+- [x] typecheck 통과 (backend + mobile 0 errors)
+- [x] 전체 테스트 통과 (backend 1185/1185, +13 신규)
+
 ---
 
 ## 자가 생성 가능 풀 (BACKLOG 고갈 시)
