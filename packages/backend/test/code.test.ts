@@ -62,6 +62,13 @@ describe('POST /code/register — 공통', () => {
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
+  it('code가 숫자 등 비문자열이면 400 CODE_REQUIRED', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 12345 }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('CODE_REQUIRED');
+  });
+
   it('JSON 파싱 실패 시 CODE_REQUIRED 400', async () => {
     const app = buildApp();
     const res = await app.request(
@@ -163,6 +170,33 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     expect(updateUser).toContain('UPDATE users SET plan');
   });
 
+  it('알 수 없는 plan_type → user plan "free"로 업데이트', async () => {
+    setupUserLookup();
+    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([{ id: 'p1', key: 'trial_7', name: 'Trial', plan_type: 'trial', period_days: 7, max_members: 1, price_krw: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    expect(res.status).toBe(200);
+    const updateUserArgs = mockDB.calls[5].args;
+    expect(updateUserArgs[0]).toBe('free');
+  });
+
+  it('period_days 누락 시 기본값 30일 적용', async () => {
+    setupUserLookup();
+    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([{ id: 'p1', key: 'custom', name: 'Custom', plan_type: 'personal', period_days: null, max_members: 1, price_krw: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const body = await res.json();
+    expect(body.plan.period_days).toBe(30);
+  });
+
   it('family 플랜 타입 → user plan "family"로 업데이트', async () => {
     setupUserLookup();
     mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
@@ -258,6 +292,41 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
     mockDB.pushResult([]);
     mockDB.pushResult([{ max_members: 2 }]);
     mockDB.pushResult([{ c: 2 }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('GROUP_FULL');
+  });
+
+  it('상태가 expired인 초대 코드 409', async () => {
+    setupUserLookup();
+    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'expired', expires_at: '2099-12-31' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('CODE_EXPIRED');
+  });
+
+  it('max_members null 시 기본값 6 적용 — 5명이면 가입 허용', async () => {
+    setupUserLookup();
+    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ max_members: null }]);
+    mockDB.pushResult([{ c: 5 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+  });
+
+  it('max_members null + 6명이면 정원 초과', async () => {
+    setupUserLookup();
+    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ max_members: null }]);
+    mockDB.pushResult([{ c: 6 }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(409);
