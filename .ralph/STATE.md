@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P176 (noUnusedLocals/noUnusedParameters 활성화 + 11개 dead code 정리)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P175-A 전체 완료**
+- 마지막 루프: 2026-04-25 — P177 (API error_code 커버리지 갭 수정 — 25개 누락 에러코드 추가)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P177 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -65,6 +65,7 @@
 - **P175-A**: alarm-helpers 엣지 케이스 테스트 25개 추가 (28→58) — normalizeAlarmRow: null/undefined/number repeat_days, JSON→non-array, 빈 JSON배열, NaN필터, 문자열 is_active, non-string category/creator/user_id, spread 보존; validateAlarmFields: 빈문자열 UUID, NaN/Infinity snooze, 검증 우선순위, 전체 유효 동시검증
 - **P175-B**: notification 라우트+유틸 엣지 테스트 46개 추가 (1333→1379) — fcm.ts: 토큰 slice/변환/data payload 검증 17개, push.ts: type coercion/UUID/platform 12개, scheduler.ts: formatHHmm 경계값/shouldAlarmFire 비배열/요일 13개, notes.ts: type coercion/locale 폴백/noteId UUID 16개
 - **P176**: noUnusedLocals/noUnusedParameters 활성화 — backend+mobile tsconfig에 추가, 11개 dead code 정리 (unused imports 6, unused params 2, unused vars 2, unused types 2), README 테스트 수 업데이트
+- **P177**: API error_code 커버리지 갭 수정 — 백엔드 ~150개 에러코드 중 모바일 미처리 25개 user-facing 코드 추가 (apiErrors.ts + i18n ko/en + 테스트 62개)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -87,7 +88,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1379 tests (58 files)
-- Mobile: 1970 tests (86 files)
+- Mobile: 1995 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)

@@ -175,6 +175,156 @@ describe('getApiErrorMessage', () => {
     const err = new ApiError(404, { error: 'not found', error_code: 'RECEIVER_NOT_FOUND' });
     expect(getApiErrorMessage(err, t)).toBe('수신자 없음');
   });
+
+  it('maps PLAN_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.planNotFound': '플랜 없음' });
+    const err = new ApiError(400, { error: 'bad', error_code: 'PLAN_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('플랜 없음');
+  });
+
+  it('maps PLAN_INACTIVE', () => {
+    const t = mockT({ 'apiError.planInactive': '비활성 플랜' });
+    const err = new ApiError(400, { error: 'bad', error_code: 'PLAN_INACTIVE' });
+    expect(getApiErrorMessage(err, t)).toBe('비활성 플랜');
+  });
+
+  it('maps FREE_NOT_BILLABLE', () => {
+    const t = mockT({ 'apiError.freeNotBillable': '무료 플랜' });
+    const err = new ApiError(400, { error: 'bad', error_code: 'FREE_NOT_BILLABLE' });
+    expect(getApiErrorMessage(err, t)).toBe('무료 플랜');
+  });
+
+  it('maps VOICE_PROFILE_NOT_READY', () => {
+    const t = mockT({ 'apiError.voiceProfileNotReady': '준비 중' });
+    const err = new ApiError(400, { error: 'not ready', error_code: 'VOICE_PROFILE_NOT_READY' });
+    expect(getApiErrorMessage(err, t)).toBe('준비 중');
+  });
+
+  it('maps NO_VOICE_ID', () => {
+    const t = mockT({ 'apiError.noVoiceId': 'ID 없음' });
+    const err = new ApiError(400, { error: 'no id', error_code: 'NO_VOICE_ID' });
+    expect(getApiErrorMessage(err, t)).toBe('ID 없음');
+  });
+
+  it('maps TTS_GENERATION_FAILED', () => {
+    const t = mockT({ 'apiError.ttsGenerationFailed': 'TTS 실패' });
+    const err = new ApiError(500, { error: 'fail', error_code: 'TTS_GENERATION_FAILED' });
+    expect(getApiErrorMessage(err, t)).toBe('TTS 실패');
+  });
+
+  it('maps VOICE_CLONING_FAILED', () => {
+    const t = mockT({ 'apiError.voiceCloningFailed': '클론 실패' });
+    const err = new ApiError(500, { error: 'fail', error_code: 'VOICE_CLONING_FAILED' });
+    expect(getApiErrorMessage(err, t)).toBe('클론 실패');
+  });
+
+  it('maps VOICE_NOT_OWNED', () => {
+    const t = mockT({ 'apiError.voiceNotOwned': '소유자 아님' });
+    const err = new ApiError(400, { error: 'not owned', error_code: 'VOICE_NOT_OWNED' });
+    expect(getApiErrorMessage(err, t)).toBe('소유자 아님');
+  });
+
+  it('maps VOICE_UPLOAD_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.voiceUploadNotFound': '업로드 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'VOICE_UPLOAD_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('업로드 없음');
+  });
+
+  it('maps UPLOAD_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.uploadNotFound': '업로드 없음' });
+    const err = new ApiError(400, { error: 'not found', error_code: 'UPLOAD_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('업로드 없음');
+  });
+
+  it('maps TARGET_NOT_MEMBER', () => {
+    const t = mockT({ 'apiError.targetNotMember': '멤버 아님' });
+    const err = new ApiError(400, { error: 'not member', error_code: 'TARGET_NOT_MEMBER' });
+    expect(getApiErrorMessage(err, t)).toBe('멤버 아님');
+  });
+
+  it('maps NO_OWNED_GROUP', () => {
+    const t = mockT({ 'apiError.noOwnedGroup': '그룹 없음' });
+    const err = new ApiError(404, { error: 'no group', error_code: 'NO_OWNED_GROUP' });
+    expect(getApiErrorMessage(err, t)).toBe('그룹 없음');
+  });
+
+  it('maps INVITE_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.inviteNotFound': '초대 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'INVITE_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('초대 없음');
+  });
+
+  it('maps NOT_INVITER', () => {
+    const t = mockT({ 'apiError.notInviter': '발급자만' });
+    const err = new ApiError(403, { error: 'forbidden', error_code: 'NOT_INVITER' });
+    expect(getApiErrorMessage(err, t)).toBe('발급자만');
+  });
+
+  it('maps INVALID_EMAIL', () => {
+    const t = mockT({ 'apiError.invalidEmail': '이메일 오류' });
+    const err = new ApiError(400, { error: 'bad email', error_code: 'INVALID_EMAIL' });
+    expect(getApiErrorMessage(err, t)).toBe('이메일 오류');
+  });
+
+  it('maps PENDING_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.pendingNotFound': '대기 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'PENDING_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('대기 없음');
+  });
+
+  it('maps FRIENDSHIP_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.friendshipNotFound': '친구 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'FRIENDSHIP_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('친구 없음');
+  });
+
+  it('maps PENDING_GIFT_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.pendingGiftNotFound': '선물 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'PENDING_GIFT_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('선물 없음');
+  });
+
+  it('maps LIBRARY_ITEM_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.libraryItemNotFound': '항목 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'LIBRARY_ITEM_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('항목 없음');
+  });
+
+  it('maps NOTE_TOO_LONG', () => {
+    const t = mockT({ 'apiError.noteTooLong': '메모 길어' });
+    const err = new ApiError(400, { error: 'too long', error_code: 'NOTE_TOO_LONG' });
+    expect(getApiErrorMessage(err, t)).toBe('메모 길어');
+  });
+
+  it('maps TEXT_TOO_LONG', () => {
+    const t = mockT({ 'apiError.textTooLong': '텍스트 길어' });
+    const err = new ApiError(400, { error: 'too long', error_code: 'TEXT_TOO_LONG' });
+    expect(getApiErrorMessage(err, t)).toBe('텍스트 길어');
+  });
+
+  it('maps MESSAGE_TEXT_TOO_LONG', () => {
+    const t = mockT({ 'apiError.messageTextTooLong': '메시지 길어' });
+    const err = new ApiError(400, { error: 'too long', error_code: 'MESSAGE_TEXT_TOO_LONG' });
+    expect(getApiErrorMessage(err, t)).toBe('메시지 길어');
+  });
+
+  it('maps DUB_START_FAILED', () => {
+    const t = mockT({ 'apiError.dubStartFailed': '더빙 실패' });
+    const err = new ApiError(500, { error: 'fail', error_code: 'DUB_START_FAILED' });
+    expect(getApiErrorMessage(err, t)).toBe('더빙 실패');
+  });
+
+  it('maps DUB_JOB_NOT_FOUND', () => {
+    const t = mockT({ 'apiError.dubJobNotFound': '더빙 없음' });
+    const err = new ApiError(404, { error: 'not found', error_code: 'DUB_JOB_NOT_FOUND' });
+    expect(getApiErrorMessage(err, t)).toBe('더빙 없음');
+  });
+
+  it('maps SAME_LANGUAGE', () => {
+    const t = mockT({ 'apiError.sameLanguage': '같은 언어' });
+    const err = new ApiError(400, { error: 'same', error_code: 'SAME_LANGUAGE' });
+    expect(getApiErrorMessage(err, t)).toBe('같은 언어');
+  });
 });
 
 describe('getErrorCode', () => {

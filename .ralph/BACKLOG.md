@@ -1709,3 +1709,10 @@
 - [x] backend+mobile tsconfig에 noUnusedLocals/noUnusedParameters 활성화
 - [x] 11개 dead code 정리: unused imports 6개 + unused params 2개 + unused vars 2개 + unused types 2개
 - [x] README.md 백엔드 테스트 수 업데이트 (1245→1379)
+
+## P177 — API error_code 커버리지 갭 수정 ✅ (2026-04-25)
+- [x] 백엔드 전체 라우트 error_code 전수 조사 (~150개 고유 코드)
+- [x] 모바일 apiErrors.ts ERROR_CODE_I18N 맵에 누락된 25개 user-facing 코드 추가
+- [x] i18n ko.json/en.json에 apiError.* 키 27개 추가
+- [x] apiErrors.test.ts 테스트 확장 (37→62)
+- [x] i18nKeys.test.ts 키 일관성 검증 통과
