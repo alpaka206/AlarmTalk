@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import type { AppEnv } from '../src/types';
+import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
@@ -8,10 +8,28 @@ const M1 = '10000000-0000-4000-8000-000000000001';
 const M404 = '10000000-0000-4000-8000-0000000000ff';
 
 const mockDB = createMockDB();
+const mockTextToSpeech = vi.fn();
 
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
+
+vi.mock('../src/lib/elevenlabs', () => ({
+  ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+    this.textToSpeech = mockTextToSpeech;
+  }),
+}));
+
+const ENV: Env = {
+  PERSO_API_KEY: 'x',
+  ELEVENLABS_API_KEY: 'test-key',
+  TURSO_DATABASE_URL: 'x',
+  TURSO_AUTH_TOKEN: 'x',
+  GOOGLE_CLIENT_ID: 'x',
+  JWT_SECRET: 'test-secret-32-chars-or-longer!',
+  PASSWORD_PEPPER: 'pepper',
+  ENVIRONMENT: 'test',
+};
 
 import ttsRoutes from '../src/routes/tts';
 
@@ -22,8 +40,13 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function reqWithEnv(app: Hono<AppEnv>, r: Request) {
+  return app.request(r, undefined, ENV);
+}
+
 beforeEach(() => {
-  mockDB.calls.length = 0;
+  mockDB.reset();
+  mockTextToSpeech.mockReset();
 });
 
 describe('POST /tts/generate — TTS 생성', () => {
