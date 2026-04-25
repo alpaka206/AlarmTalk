@@ -185,3 +185,196 @@ describe('sendNotePush', () => {
     expect(logged.body).toBe('You have a new note');
   });
 });
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — getTokensForUser                                      */
+/* ------------------------------------------------------------------ */
+describe('getTokensForUser — edge cases', () => {
+  it('숫자 토큰 값을 String()으로 변환', async () => {
+    mockDB.pushResult([{ token: 12345 }]);
+    const tokens = await getTokensForUser(mockDB.client as never, 'user-x');
+    expect(tokens).toEqual(['12345']);
+  });
+
+  it('null 토큰 값을 String()으로 변환 → "null"', async () => {
+    mockDB.pushResult([{ token: null }]);
+    const tokens = await getTokensForUser(mockDB.client as never, 'user-x');
+    expect(tokens).toEqual(['null']);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — sendPushNotifications                                 */
+/* ------------------------------------------------------------------ */
+describe('sendPushNotifications — edge cases', () => {
+  it('8자 미만 토큰도 slice 후 "..." 붙여 로깅', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await sendPushNotifications([
+      { token: 'abc', title: 'T', body: 'B' },
+    ]);
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.token).toBe('abc...');
+  });
+
+  it('빈 문자열 토큰 → "..." 로깅', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await sendPushNotifications([
+      { token: '', title: 'T', body: 'B' },
+    ]);
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.token).toBe('...');
+  });
+
+  it('data 필드가 있어도 결과에는 token+success만', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const results = await sendPushNotifications([
+      { token: 'tok-data', title: 'T', body: 'B', data: { key: 'val' } },
+    ]);
+    expect(results[0]).toEqual({ token: 'tok-data', success: true });
+    expect(results[0]).not.toHaveProperty('data');
+  });
+
+  it('정확히 8자 토큰 → 전체 + "..."', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await sendPushNotifications([
+      { token: '12345678', title: 'T', body: 'B' },
+    ]);
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.token).toBe('12345678...');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — sendAlarmPush                                         */
+/* ------------------------------------------------------------------ */
+describe('sendAlarmPush — edge cases', () => {
+  it('data payload에 type=alarm, alarmId, channelId=alarms 포함', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'dev-tok' }]);
+    await sendAlarmPush(
+      mockDB.client as never,
+      'user-1',
+      'alarm-xyz',
+      '08:30',
+    );
+    expect(spy).toHaveBeenCalledOnce();
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.title).toBe('VoiceAlarm');
+    expect(logged.body).toBe('08:30 알람이 울립니다');
+  });
+
+  it('title은 항상 VoiceAlarm (로케일 무관)', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'en-dev' }]);
+    await sendAlarmPush(
+      mockDB.client as never,
+      'user-en',
+      'a1',
+      '12:00',
+      'en',
+    );
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.title).toBe('VoiceAlarm');
+  });
+
+  it('alarmTime에 특수 시각 "00:00" 전달', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'midnight-tok' }]);
+    await sendAlarmPush(
+      mockDB.client as never,
+      'user-m',
+      'alarm-mid',
+      '00:00',
+      'ko',
+    );
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.body).toBe('00:00 알람이 울립니다');
+  });
+
+  it('여러 디바이스에 동일 body/title 전송', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([
+      { token: 'phone' },
+      { token: 'tablet-xx' },
+      { token: 'watch-xxx' },
+    ]);
+    const results = await sendAlarmPush(
+      mockDB.client as never,
+      'user-multi',
+      'alarm-multi',
+      '06:00',
+      'en',
+    );
+    expect(results).toHaveLength(3);
+    for (const call of spy.mock.calls) {
+      const logged = JSON.parse(call[0] as string);
+      expect(logged.title).toBe('VoiceAlarm');
+      expect(logged.body).toBe('Alarm at 06:00');
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — sendNotePush                                          */
+/* ------------------------------------------------------------------ */
+describe('sendNotePush — edge cases', () => {
+  it('data payload에 type=note, noteId, channelId=notes 포함 확인 (구조 기반)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'note-dev' }]);
+    const results = await sendNotePush(
+      mockDB.client as never,
+      'user-1',
+      'note-abc',
+      'Alice',
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0].token).toBe('note-dev');
+    expect(results[0].success).toBe(true);
+  });
+
+  it('sender name에 이모지/특수문자 포함', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'emoji-tok' }]);
+    await sendNotePush(
+      mockDB.client as never,
+      'user-e',
+      'note-e',
+      '🦊 여우',
+    );
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.title).toBe('💌 🦊 여우');
+  });
+
+  it('빈 sender name → title에 "💌 " 포함', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([{ token: 'empty-name' }]);
+    await sendNotePush(
+      mockDB.client as never,
+      'user-empty',
+      'note-empty',
+      '',
+    );
+    const logged = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(logged.title).toBe('💌 ');
+  });
+
+  it('여러 디바이스에 동일 note body 전송', async () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([
+      { token: 'dev-a-xx' },
+      { token: 'dev-b-xx' },
+    ]);
+    const results = await sendNotePush(
+      mockDB.client as never,
+      'user-multi',
+      'note-m',
+      'Bob',
+      'en',
+    );
+    expect(results).toHaveLength(2);
+    for (const call of spy.mock.calls) {
+      const logged = JSON.parse(call[0] as string);
+      expect(logged.body).toBe('You have a new note');
+    }
+  });
+});

@@ -61,7 +61,7 @@ function sortItems(items: LibraryItem[]): LibraryItem[] {
 function computeDisplayItems(
   items: LibraryItem[] | null,
   cachedItems: LibraryItem[] | null,
-  isConnected: boolean,
+  _isConnected: boolean,
   filter: FilterType,
   categoryFilter: string,
 ): LibraryItem[] | null {

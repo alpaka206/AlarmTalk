@@ -1701,6 +1701,11 @@
 ## P175 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
-- [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
+- [x] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련) — fcm/push/scheduler/notes 4파일 46개 엣지 케이스 추가 (1333→1379)
 - [x] normalizeAlarmRow 단위 테스트 추가 (14개 엣지 케이스: null/undefined/number repeat_days, JSON→non-array, 문자열 is_active, non-string 필드, spread 보존 등)
 - [x] alarm-helpers validateAlarmFields 단위 테스트 확장 (11개 엣지 케이스: 빈문자열 UUID, NaN/Infinity snooze, 검증 우선순위, 전체 유효 동시검증 등)
+
+## P176 — TypeScript 엄격 모드 강화 ✅ (2026-04-25)
+- [x] backend+mobile tsconfig에 noUnusedLocals/noUnusedParameters 활성화
+- [x] 11개 dead code 정리: unused imports 6개 + unused params 2개 + unused vars 2개 + unused types 2개
+- [x] README.md 백엔드 테스트 수 업데이트 (1245→1379)

@@ -1,5 +1,3 @@
-import { initSentry } from '../src/lib/sentry';
-
 const mockInit = jest.fn();
 jest.mock('@sentry/react-native', () => ({ init: mockInit }));
 jest.mock('expo-constants', () => ({

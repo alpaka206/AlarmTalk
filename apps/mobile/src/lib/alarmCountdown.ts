@@ -1,4 +1,3 @@
-import type { TFunction } from 'i18next';
 import type { Alarm } from '../types';
 import { parseRepeatDays } from './alarmForm';
 

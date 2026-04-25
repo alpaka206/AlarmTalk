@@ -259,4 +259,120 @@ describe('DELETE /push/token — edge cases', () => {
     );
     expect(mockDB.calls[0].args).toContain('trimmed');
   });
+
+  it('token null → 빈 문자열로 처리 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('DELETE', '/push/token', { token: null }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TOKEN_REQUIRED');
+  });
+
+  it('token boolean → 빈 문자열로 처리 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('DELETE', '/push/token', { token: true }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TOKEN_REQUIRED');
+  });
+
+  it('token 배열 → 빈 문자열로 처리 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('DELETE', '/push/token', { token: ['a', 'b'] }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('TOKEN_REQUIRED');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — POST /push/token (추가)                                */
+/* ------------------------------------------------------------------ */
+describe('POST /push/token — type coercion edge cases', () => {
+  it('token null → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: null, platform: 'ios' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('token boolean → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: false, platform: 'ios' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('token 배열 → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: ['x'], platform: 'ios' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('platform 대소문자 구분 — "IOS" → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'valid-tok', platform: 'IOS' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_PLATFORM');
+  });
+
+  it('platform 앞뒤 공백 trim 후 유효하면 201', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'valid-tok', platform: '  android  ' }),
+    );
+    expect(res.status).toBe(201);
+    expect(mockDB.calls[0].args).toContain('android');
+  });
+
+  it('platform 숫자 → 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: 'valid-tok', platform: 123 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_PLATFORM');
+  });
+
+  it('공백만 있는 token → trim 후 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/push/token', { token: '   ', platform: 'ios' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TOKEN_LENGTH');
+  });
+
+  it('SQL INSERT에 UUID 형식 id 포함', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    await app.request(
+      jsonReq('POST', '/push/token', { token: 'uuid-test', platform: 'web' }),
+    );
+    const id = mockDB.calls[0].args[0];
+    expect(typeof id).toBe('string');
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it('다른 userId로 빌드한 앱은 해당 userId로 등록', async () => {
+    mockDB.pushResult([], 1);
+    const app = buildApp('custom-user-99');
+    await app.request(
+      jsonReq('POST', '/push/token', { token: 'cust-tok', platform: 'ios' }),
+    );
+    expect(mockDB.calls[0].args).toContain('custom-user-99');
+  });
 });

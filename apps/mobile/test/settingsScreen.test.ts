@@ -1,5 +1,4 @@
 type TFn = (key: string) => string;
-type PlanType = 'free' | 'plus' | 'family';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

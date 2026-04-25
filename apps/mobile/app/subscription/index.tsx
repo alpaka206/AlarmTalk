@@ -74,7 +74,7 @@ export default function SubscriptionScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { plan, isAuthenticated } = useAppStore();
+  const { isAuthenticated } = useAppStore();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['subscription'],

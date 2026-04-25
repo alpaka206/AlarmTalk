@@ -2,8 +2,6 @@
  * P64 — ProfileDropdown business logic tests
  */
 
-type PlanType = 'free' | 'plus' | 'family';
-
 function getPlanLabel(plan: string, t: (key: string) => string): string {
   const labels: Record<string, string> = {
     free: t('settings.planFree'),

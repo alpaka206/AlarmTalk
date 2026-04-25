@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P175-A (alarm-helpers 엣지 케이스 테스트 25개 추가, 28→58)
+- 마지막 루프: 2026-04-25 — P176 (noUnusedLocals/noUnusedParameters 활성화 + 11개 dead code 정리)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P175-A 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -63,6 +63,8 @@
 - **P173**: stats 라우트 엣지 케이스 테스트 17개 추가 (1264→1284) — 문자열 Number() 변환, 독립 트렌드 값, ISO 날짜 바인딩, OR 양방향 검색, 경계값 50/51자, 동일 timestamp 안정성
 - **P174**: alarm-mutation 엣지 케이스 테스트 19개 추가 (1284→1303) — POST: 비문자열 target_user_id, 잘못된 voice_profile_id/speaker_id UUID, 비배열 repeat_days, 소수점/음수 repeat_days, count 문자열 변환, time 경계값 00:00/23:59/24:00, snooze 경계값 1/30; PATCH: voice_profile_id/speaker_id UUID 검증, is_active 비불리언, time 형식, message_id UUID, updated_at SQL 포함, mode SQL 반영
 - **P175-A**: alarm-helpers 엣지 케이스 테스트 25개 추가 (28→58) — normalizeAlarmRow: null/undefined/number repeat_days, JSON→non-array, 빈 JSON배열, NaN필터, 문자열 is_active, non-string category/creator/user_id, spread 보존; validateAlarmFields: 빈문자열 UUID, NaN/Infinity snooze, 검증 우선순위, 전체 유효 동시검증
+- **P175-B**: notification 라우트+유틸 엣지 테스트 46개 추가 (1333→1379) — fcm.ts: 토큰 slice/변환/data payload 검증 17개, push.ts: type coercion/UUID/platform 12개, scheduler.ts: formatHHmm 경계값/shouldAlarmFire 비배열/요일 13개, notes.ts: type coercion/locale 폴백/noteId UUID 16개
+- **P176**: noUnusedLocals/noUnusedParameters 활성화 — backend+mobile tsconfig에 추가, 11개 dead code 정리 (unused imports 6, unused params 2, unused vars 2, unused types 2), README 테스트 수 업데이트
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -80,11 +82,11 @@
 - ProfileDropdown.tsx shadowColor: '#000' — RN 표준 패턴, 의도적 유지
 
 ## TypeScript 엄격 모드 현황
-- Backend: `strict: true` + `noUncheckedIndexedAccess: true` ✅
-- Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
+- Backend: `strict: true` + `noUncheckedIndexedAccess: true` + `noUnusedLocals: true` + `noUnusedParameters: true` ✅
+- Mobile: `strict: true` + `noUncheckedIndexedAccess: true` + `noUnusedLocals: true` + `noUnusedParameters: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 1333 tests (58 files)
+- Backend: 1379 tests (58 files)
 - Mobile: 1970 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 

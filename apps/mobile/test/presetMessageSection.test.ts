@@ -1,7 +1,7 @@
 /**
  * P64 — PresetMessageSection business logic tests
  */
-import { PRESET_CATEGORIES, getCategoryLabel, type PresetCategory } from '../src/constants/presets';
+import { PRESET_CATEGORIES, getCategoryLabel } from '../src/constants/presets';
 import type { VoiceProfile } from '../src/types';
 
 function isGenerateDisabled(voiceId: string | null, text: string | null, isPending: boolean): boolean {
@@ -17,7 +17,7 @@ function pickRandomMessage(categoryKey: string, t: (key: string) => string): str
 
 function onCategoryChange(
   newCategory: string,
-  currentText: string | null,
+  _currentText: string | null,
 ): { category: string; text: null } {
   return { category: newCategory, text: null };
 }

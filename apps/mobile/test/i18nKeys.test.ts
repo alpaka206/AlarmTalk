@@ -43,10 +43,6 @@ function readAllSources(dir: string): Array<{ file: string; content: string }> {
   return results;
 }
 
-function rel(absPath: string): string {
-  return path.relative(ROOT, absPath).replace(/\\/g, '/');
-}
-
 function extractLiteralKeys(content: string): string[] {
   const keys: string[] = [];
   const patterns = [

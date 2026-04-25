@@ -5,6 +5,8 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types"],
     "skipLibCheck": true,
