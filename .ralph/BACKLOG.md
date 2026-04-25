@@ -1732,3 +1732,12 @@
 - [x] `friend/[id].tsx`: SafeAreaView→View, 커스텀 back 버튼 제거 (Stack 헤더와 중복)
 - [x] typecheck: backend + mobile 0 errors
 - [x] friendProfile + i18nKeys 테스트: 55/55 통과
+
+## P180 — i18n 미사용 키 정리 + 역방향 검증 ✅ (2026-04-25)
+- [x] ko.json/en.json 미사용 키 39개 삭제 (867→828 keys)
+- [x] extractLiteralKeys 개선: mapRe → bareRe (배열 요소/상수 패턴 캐치)
+- [x] DYNAMIC_KEY_PREFIXES 상수: 동적 키 패턴 4개 등록
+- [x] "no dead keys in ko.json (reverse validation)" 테스트 추가 (14→15 tests)
+- [x] allowedIdentical 세트에서 삭제된 settings.languageKorean 제거
+- [x] typecheck: backend + mobile 0 errors
+- [x] i18nKeys tests: 15/15 통과

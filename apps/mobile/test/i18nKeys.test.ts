@@ -56,17 +56,24 @@ function extractLiteralKeys(content: string): string[] {
     }
   }
 
-  const mapRe = /:\s*'([\w.]+)'/g;
+  const bareRe = /'([a-zA-Z][\w]*(?:\.[\w]+)+)'/g;
   let mm: RegExpExecArray | null;
-  while ((mm = mapRe.exec(content))) {
+  while ((mm = bareRe.exec(content))) {
     const val = mm[1]!;
-    if (val.includes('.') && koKeys.has(val)) {
+    if (koKeys.has(val)) {
       keys.push(val);
     }
   }
 
   return keys;
 }
+
+const DYNAMIC_KEY_PREFIXES = [
+  'alarmCreate.vibration',
+  'dub.selectLanguage',
+  'dub.sameLanguage',
+  'home.activityType',
+];
 
 const allFiles = [...readAllSources(APP_DIR), ...readAllSources(SRC_DIR)];
 
@@ -164,6 +171,15 @@ describe('i18n — key usage validation', () => {
     const deep = [...koKeys].filter((k) => k.split('.').length > 4);
     expect(deep).toEqual([]);
   });
+
+  test('no dead keys in ko.json (reverse validation)', () => {
+    const isDynamic = (key: string) =>
+      DYNAMIC_KEY_PREFIXES.some((p) => key.startsWith(p));
+    const dead = [...koKeys]
+      .filter((k) => !usedKeys.has(k) && !isDynamic(k))
+      .sort();
+    expect(dead).toEqual([]);
+  });
 });
 
 describe('i18n — value quality', () => {
@@ -188,7 +204,6 @@ describe('i18n — value quality', () => {
     }
     const allowedIdentical = new Set([
       'settings.planFree',
-      'settings.languageKorean',
       'compose.title',
       'authForm.emailPlaceholder',
       'dub.experimentBadge',

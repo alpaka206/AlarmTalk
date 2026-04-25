@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P179 (누락된 Stack.Screen 등록 + friend/[id] 중복 UI 제거)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P179 전체 완료**
+- 마지막 루프: 2026-04-25 — P180 (i18n 미사용 키 39개 삭제 + 역방향 검증 테스트 추가)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P180 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -68,6 +68,7 @@
 - **P177**: API error_code 커버리지 갭 수정 — 백엔드 ~150개 에러코드 중 모바일 미처리 25개 user-facing 코드 추가 (apiErrors.ts + i18n ko/en + 테스트 62개)
 - **P178**: API 요청 재시도 + 지수 백오프 (GET 자동 2회 재시도, 5xx/네트워크 에러 대응, 테스트 11개)
 - **P179**: 누락된 Stack.Screen 등록 2개 (voice/picker, friend/[id]) + i18n screen.* 키 2개 추가 + friend/[id] 중복 back 버튼/SafeAreaView 제거
+- **P180**: i18n 미사용 키 39개 삭제 (ko/en 양쪽) + extractLiteralKeys 개선 (배열 요소 패턴 캐치) + 역방향 검증 테스트 추가 (867→828 keys)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -90,7 +91,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1379 tests (58 files)
-- Mobile: 2006 tests (86 files)
+- Mobile: 2007 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)
