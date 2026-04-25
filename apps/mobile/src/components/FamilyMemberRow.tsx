@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { FamilyGroupMember } from '../services/api';
 import { buildMemberDisplayName } from '../lib/familyAlarmForm';
@@ -9,13 +9,16 @@ import { useTheme, type ThemeColors } from '../hooks/useTheme';
 interface Props {
   member: FamilyGroupMember;
   isCouple?: boolean;
+  onRemove?: () => void;
+  onTransfer?: () => void;
 }
 
-export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple }: Props) {
+export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple, onRemove, onTransfer }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   const displayName = buildMemberDisplayName(member, t);
+  const hasActions = onRemove != null || onTransfer != null;
 
   return (
     <View
@@ -41,6 +44,32 @@ export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple 
           <Text style={dynStyles.alarmAllowed}>⏰ {t('people.alarmAllowed')}</Text>
         )}
       </View>
+      {hasActions && (
+        <View style={dynStyles.actions}>
+          {onTransfer != null && (
+            <TouchableOpacity
+              onPress={onTransfer}
+              hitSlop={8}
+              style={dynStyles.actionBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('people.transferOwnership')}
+            >
+              <Text style={dynStyles.actionBtnText}>👑</Text>
+            </TouchableOpacity>
+          )}
+          {onRemove != null && (
+            <TouchableOpacity
+              onPress={onRemove}
+              hitSlop={8}
+              style={dynStyles.removeActionBtn}
+              accessibilityRole="button"
+              accessibilityLabel={t('people.removeMember')}
+            >
+              <Text style={dynStyles.removeActionBtnText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 });
@@ -120,6 +149,34 @@ function createStyles(colors: ThemeColors) {
       fontSize: FontSize.xs,
       color: colors.success,
       marginTop: 2,
+    },
+    actions: {
+      flexDirection: 'row',
+      gap: Spacing.xs,
+      marginLeft: Spacing.sm,
+    },
+    actionBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: colors.surfaceVariant,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    actionBtnText: {
+      fontSize: FontSize.md,
+    },
+    removeActionBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: `${colors.error}15`,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    removeActionBtnText: {
+      fontSize: FontSize.sm,
+      color: colors.error,
     },
   });
 }

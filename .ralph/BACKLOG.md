@@ -1646,8 +1646,22 @@
 - [x] queryCache.test.ts에 누락된 'activity' 쿼리 키 추가 (P154 누락분)
 - [x] README.md 테스트 수 업데이트 (1890 → 1937)
 
-## P162 — 향후 작업 후보
-- [ ] People 탭에 가족 관리 UI 추가 (탈퇴/양도/멤버 제거 — P161 API 함수 활용)
-- [ ] PATCH /user/me 모바일 API 클라이언트 함수 + 프로필 편집 화면
-- [ ] GET /billing/subscription + POST /billing/checkout 모바일 연동
-- [ ] DELETE /tts/messages/:id 모바일 연동 (라이브러리에서 TTS 메시지 삭제)
+## P162 — People 탭 가족 관리 UI ✅ (2026-04-25)
+- [x] People 탭에 가족 관리 UI 추가 (탈퇴/양도/멤버 제거 — P161 API 함수 활용)
+
+## P163 — PATCH /user/me API + 설정 가족 알람 토글 ✅ (2026-04-25)
+- [x] PATCH /user/me 모바일 API 클라이언트 함수 + 설정 화면 연동
+- [x] getUserProfile 응답 타입 수정 (백엔드 응답 구조 정합성 복구)
+
+## P164 — Billing + TTS API 클라이언트 ✅ (2026-04-25)
+- [x] GET /billing/subscription + POST /billing/checkout 모바일 API 클라이언트 추가
+- [x] DELETE /tts/messages/:id 모바일 API 클라이언트 추가
+
+## P165 — 테스트 수정 + README 업데이트 ✅ (2026-04-25)
+- [x] apiUser.test.ts: getUserProfile unwrap 테스트 수정 + updateUserSettings 테스트 추가 (1937→1938)
+- [x] i18n 키 검증: 자동 검증으로 테스트 파일 수정 불필요 확인
+
+## P166 — 향후 작업 후보
+- [ ] 라이브러리 화면에 TTS 메시지 삭제 UI 연동 (deleteTtsMessage 활용)
+- [ ] 구독 관리 화면 구축 (getSubscription + checkout 활용)
+- [ ] README.md 테스트 수 업데이트 (1937→1938)

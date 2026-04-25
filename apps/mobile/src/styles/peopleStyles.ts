@@ -273,7 +273,23 @@ export function createPeopleStyles(colors: ThemeColors) {
     },
     coupleContainer: {
       flex: 1,
+      paddingHorizontal: Spacing.lg,
       paddingBottom: 100,
+    },
+    leaveGroupBtn: {
+      borderWidth: 1,
+      borderColor: colors.error,
+      borderRadius: BorderRadius.lg,
+      paddingVertical: Spacing.md,
+      alignItems: 'center',
+      marginTop: Spacing.lg,
+      minHeight: 48,
+      justifyContent: 'center',
+    },
+    leaveGroupBtnText: {
+      color: colors.error,
+      fontSize: FontSize.md,
+      fontFamily: FontFamily.semibold,
     },
   });
 }

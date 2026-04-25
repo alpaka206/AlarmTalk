@@ -3,12 +3,25 @@ import { get, patch, del } from './core';
 
 // ===== User API =====
 
+export interface UserProfile {
+  id: string;
+  email: string | null;
+  name: string | null;
+  plan: string;
+  allow_family_alarms: boolean;
+}
+
 export async function getUserProfile() {
-  return get<{ id: string; email: string; name: string; plan: string }>('/user/me');
+  const data = await get<{ user: UserProfile; stats: { voice_profiles: number; alarms: number } }>('/user/me');
+  return data.user;
 }
 
 export async function updatePlan(plan: 'free' | 'plus' | 'family') {
   return patch<{ plan: string }>('/user/plan', { plan });
+}
+
+export async function updateUserSettings(body: { allow_family_alarms?: boolean }) {
+  return patch<{ success: boolean; allow_family_alarms: boolean }>('/user/me', body);
 }
 
 export async function deleteAccount() {

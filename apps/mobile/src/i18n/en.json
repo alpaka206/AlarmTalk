@@ -206,7 +206,20 @@
     "pendingInvites": "Pending Invites",
     "coupleConnected": "Connected",
     "bothAlarmAllowed": "Both can send alarms",
-    "coupleAlarmHint": "Enable alarm receiving in Settings"
+    "coupleAlarmHint": "Enable alarm receiving in Settings",
+    "leaveGroup": "Leave Group",
+    "leaveGroupTitle": "Leave Family Group",
+    "leaveGroupConfirm": "Are you sure you want to leave this family group? You won't receive alarms from members anymore.",
+    "leaveGroupSuccess": "Left the family group",
+    "transferOwnership": "Transfer Ownership",
+    "transferOwnershipTitle": "Transfer Ownership",
+    "transferOwnershipConfirm": "Transfer ownership to {{name}}? This cannot be undone.",
+    "transferOwnershipSuccess": "Ownership transferred",
+    "removeMember": "Remove Member",
+    "removeMemberTitle": "Remove Member",
+    "removeMemberConfirm": "Remove {{name}} from the family group?",
+    "removeMemberSuccess": "Member removed",
+    "manage": "Manage"
   },
   "library": {
     "title": "Library",
@@ -329,7 +342,8 @@
     "minutes": "min",
     "notifPermission": "Notification permission",
     "permitted": "Allowed",
-    "notPermitted": "Not allowed"
+    "notPermitted": "Not allowed",
+    "allowFamilyAlarms": "Receive family alarms"
   },
   "onboarding": {
     "skip": "Skip",

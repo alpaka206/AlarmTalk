@@ -166,6 +166,11 @@ export async function getPresets() {
   return data.presets;
 }
 
+export async function deleteTtsMessage(id: string, force?: boolean) {
+  const path = force ? `/tts/messages/${id}?force=true` : `/tts/messages/${id}`;
+  return del<{ ok: boolean; alarms_affected: number }>(path);
+}
+
 // ===== Dub API =====
 
 export async function getDubLanguages() {

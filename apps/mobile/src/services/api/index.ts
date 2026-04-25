@@ -16,6 +16,7 @@ export {
   getMessages,
   getMessagesByVoice,
   getPresets,
+  deleteTtsMessage,
   getDubLanguages,
   startDub,
   getDubStatus,
@@ -58,6 +59,7 @@ export type { ReceivedNote, SentNote } from './social';
 export {
   getUserProfile,
   updatePlan,
+  updateUserSettings,
   deleteAccount,
   getStats,
   getActivity,
@@ -66,17 +68,22 @@ export {
   toggleFavorite,
   deleteLibraryItem,
 } from './user';
-export type { WeekTrend, Stats, ActivityItem, UserSearchResult } from './user';
+export type { UserProfile, WeekTrend, Stats, ActivityItem, UserSearchResult } from './user';
 
 export {
   getVouchers,
   registerCode,
+  getSubscription,
+  checkout,
 } from './billing';
 export type {
   VoucherItem,
   CodeRegisterVoucherResult,
   CodeRegisterInviteResult,
   CodeRegisterResult,
+  SubscriptionPlan,
+  Subscription,
+  CheckoutResult,
 } from './billing';
 
 export {

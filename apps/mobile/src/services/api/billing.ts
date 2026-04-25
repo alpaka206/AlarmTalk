@@ -57,3 +57,44 @@ export type CodeRegisterResult = CodeRegisterVoucherResult | CodeRegisterInviteR
 export async function registerCode(code: string): Promise<CodeRegisterResult> {
   return post<CodeRegisterResult>('/code/register', { code });
 }
+
+// ===== Subscription API =====
+
+export interface SubscriptionPlan {
+  id: string;
+  key: string;
+  name: string;
+  plan_type: string;
+  period_days: number;
+  max_members: number;
+  price_krw: number;
+}
+
+export interface Subscription {
+  id: string;
+  user_id: string;
+  plan_id: string;
+  plan_group_id: string | null;
+  status: string;
+  starts_at: string;
+  expires_at: string;
+}
+
+export async function getSubscription() {
+  return get<{ subscription: Subscription | null; plan: SubscriptionPlan | null }>(
+    '/billing/subscription',
+  );
+}
+
+export interface CheckoutResult {
+  success: true;
+  checkout_stub: true;
+  subscription: Subscription;
+  plan: SubscriptionPlan;
+  plan_group: { id: string; owner_user_id: string; max_members: number } | null;
+  voucher: { id: string; code: string; expires_at: string };
+}
+
+export async function checkout(planKey: string) {
+  return post<CheckoutResult>('/billing/checkout', { plan_key: planKey });
+}

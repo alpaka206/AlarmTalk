@@ -206,7 +206,20 @@
     "pendingInvites": "대기 중 초대",
     "coupleConnected": "연결됨",
     "bothAlarmAllowed": "서로 알람을 보낼 수 있어요",
-    "coupleAlarmHint": "설정에서 알람 수신을 허용해주세요"
+    "coupleAlarmHint": "설정에서 알람 수신을 허용해주세요",
+    "leaveGroup": "그룹 탈퇴",
+    "leaveGroupTitle": "가족 그룹 탈퇴",
+    "leaveGroupConfirm": "정말 가족 그룹을 나가시겠어요? 탈퇴 후 멤버들의 알람을 받을 수 없어요.",
+    "leaveGroupSuccess": "가족 그룹에서 나왔습니다",
+    "transferOwnership": "소유자 양도",
+    "transferOwnershipTitle": "소유자 권한 양도",
+    "transferOwnershipConfirm": "{{name}}에게 소유자 권한을 양도하시겠어요? 양도 후에는 되돌릴 수 없어요.",
+    "transferOwnershipSuccess": "소유자 권한이 양도되었습니다",
+    "removeMember": "멤버 제거",
+    "removeMemberTitle": "멤버 제거",
+    "removeMemberConfirm": "{{name}}을(를) 가족 그룹에서 제거하시겠어요?",
+    "removeMemberSuccess": "멤버가 제거되었습니다",
+    "manage": "관리"
   },
   "library": {
     "title": "보관함",
@@ -329,7 +342,8 @@
     "minutes": "분",
     "notifPermission": "알림 권한",
     "permitted": "허용됨",
-    "notPermitted": "허용 안 됨"
+    "notPermitted": "허용 안 됨",
+    "allowFamilyAlarms": "가족 알람 수신"
   },
   "onboarding": {
     "skip": "건너뛰기",

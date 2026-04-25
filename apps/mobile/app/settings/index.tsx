@@ -2,13 +2,13 @@ import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, TextInput, Act
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { createSettingsStyles } from '../../src/styles/settingsStyles';
-import { getUserProfile, deleteAccount } from '../../src/services/api';
+import { getUserProfile, updateUserSettings, deleteAccount } from '../../src/services/api';
 import { useState, useEffect, useMemo } from 'react';
 import { Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -23,10 +23,26 @@ export default function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
 
+  const queryClient = useQueryClient();
   const { data: profile } = useQuery({
     queryKey: ['userProfile'],
     queryFn: getUserProfile,
     enabled: isAuthenticated,
+  });
+
+  const [allowFamilyAlarms, setAllowFamilyAlarms] = useState(true);
+  useEffect(() => {
+    if (profile) {
+      setAllowFamilyAlarms(profile.allow_family_alarms ?? true);
+    }
+  }, [profile]);
+
+  const updateSettingsMutation = useMutation({
+    mutationFn: updateUserSettings,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userProfile'] });
+      queryClient.invalidateQueries({ queryKey: ['family-group'] });
+    },
   });
 
   const appVersion = Constants.expoConfig?.version ?? '1.0.0';
@@ -89,6 +105,25 @@ export default function SettingsScreen() {
             )}
             <SettingRow colors={colors} label={t('settings.plan')} value={getPlanLabel()} />
             <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => router.push('/code-register')} />
+            {plan === 'family' && (
+              <SettingRow
+                colors={colors}
+                label={t('settings.allowFamilyAlarms')}
+                trailing={
+                  <Switch
+                    value={allowFamilyAlarms}
+                    onValueChange={(val) => {
+                      setAllowFamilyAlarms(val);
+                      updateSettingsMutation.mutate({ allow_family_alarms: val });
+                    }}
+                    trackColor={{ true: colors.primary }}
+                    accessibilityRole="switch"
+                    accessibilityLabel={t('settings.allowFamilyAlarms')}
+                    accessibilityState={{ checked: allowFamilyAlarms }}
+                  />
+                }
+              />
+            )}
           </View>
         </View>
 

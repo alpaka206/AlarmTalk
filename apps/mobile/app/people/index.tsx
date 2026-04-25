@@ -24,6 +24,9 @@ import {
   createFamilyInvite,
   getFamilyInvites,
   revokeFamilyInvite,
+  leaveFamilyGroup,
+  transferFamilyOwnership,
+  removeFamilyMember,
 } from '../../src/services/api';
 import type { FamilyInvite } from '../../src/services/api';
 import type { Friend, PendingFriendRequest } from '../../src/types';
@@ -140,6 +143,41 @@ export default function PeopleScreen() {
     },
   });
 
+  const leaveMutation = useMutation({
+    mutationFn: (groupId: string) => leaveFamilyGroup(groupId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['family-group'] });
+      toast.show(t('people.leaveGroupSuccess'));
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('common.error')));
+    },
+  });
+
+  const transferMutation = useMutation({
+    mutationFn: ({ groupId, targetUserId }: { groupId: string; targetUserId: string }) =>
+      transferFamilyOwnership(groupId, targetUserId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['family-group'] });
+      toast.show(t('people.transferOwnershipSuccess'));
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('common.error')));
+    },
+  });
+
+  const removeMemberMutation = useMutation({
+    mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
+      removeFamilyMember(groupId, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['family-group'] });
+      toast.show(t('people.removeMemberSuccess'));
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('common.error')));
+    },
+  });
+
   const handleSend = useCallback(() => {
     const trimmed = email.trim();
     if (!trimmed) return;
@@ -168,8 +206,56 @@ export default function PeopleScreen() {
     }
   }, [t, toast]);
 
+  const userId = useAppStore((s) => s.userId);
   const pendingInvites = (invites ?? []).filter((i) => i.status === 'pending');
   const isOwner = familyData?.role === 'owner';
+  const groupId = familyData?.group?.id;
+
+  const handleLeaveGroup = useCallback(() => {
+    if (!groupId) return;
+    Alert.alert(
+      t('people.leaveGroupTitle'),
+      t('people.leaveGroupConfirm'),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        { text: t('people.leaveGroup'), style: 'destructive', onPress: () => leaveMutation.mutate(groupId) },
+      ],
+    );
+  }, [t, groupId, leaveMutation]);
+
+  const handleTransferOwnership = useCallback((member: import('../../src/services/api').FamilyGroupMember) => {
+    if (!groupId) return;
+    const name = member.name || member.email || t('common.noName');
+    Alert.alert(
+      t('people.transferOwnershipTitle'),
+      t('people.transferOwnershipConfirm', { name }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('people.transferOwnership'),
+          style: 'destructive',
+          onPress: () => transferMutation.mutate({ groupId, targetUserId: member.user_id }),
+        },
+      ],
+    );
+  }, [t, groupId, transferMutation]);
+
+  const handleRemoveMember = useCallback((member: import('../../src/services/api').FamilyGroupMember) => {
+    if (!groupId) return;
+    const name = member.name || member.email || t('common.noName');
+    Alert.alert(
+      t('people.removeMemberTitle'),
+      t('people.removeMemberConfirm', { name }),
+      [
+        { text: t('common.cancel'), style: 'cancel' },
+        {
+          text: t('people.removeMember'),
+          style: 'destructive',
+          onPress: () => removeMemberMutation.mutate({ groupId, userId: member.user_id }),
+        },
+      ],
+    );
+  }, [t, groupId, removeMemberMutation]);
 
   const onRefresh = async () => {
     const tasks: Promise<unknown>[] = [refetchFriends(), refetchPending()];
@@ -249,9 +335,19 @@ export default function PeopleScreen() {
     </View>
   ), [styles, t, acceptMutation]);
 
-  const renderMember = useCallback(({ item }: { item: import('../../src/services/api').FamilyGroupMember }) => (
-    <FamilyMemberRow member={item} isCouple={isCouple} />
-  ), [isCouple]);
+  const renderMember = useCallback(({ item }: { item: import('../../src/services/api').FamilyGroupMember }) => {
+    const isSelf = item.user_id === userId;
+    const canRemove = isOwner && !isSelf && item.role !== 'owner';
+    const canTransfer = isOwner && !isSelf && item.role !== 'owner';
+    return (
+      <FamilyMemberRow
+        member={item}
+        isCouple={isCouple}
+        onRemove={canRemove ? () => handleRemoveMember(item) : undefined}
+        onTransfer={canTransfer ? () => handleTransferOwnership(item) : undefined}
+      />
+    );
+  }, [isCouple, isOwner, userId, handleRemoveMember, handleTransferOwnership]);
 
   if (!isAuthenticated) {
     return (
@@ -317,6 +413,21 @@ export default function PeopleScreen() {
     );
   };
 
+  const renderLeaveButton = () => (
+    <TouchableOpacity
+      style={styles.leaveGroupBtn}
+      onPress={handleLeaveGroup}
+      disabled={leaveMutation.isPending}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={t('people.leaveGroup')}
+    >
+      <Text style={styles.leaveGroupBtnText}>
+        {leaveMutation.isPending ? '...' : t('people.leaveGroup')}
+      </Text>
+    </TouchableOpacity>
+  );
+
   const renderMembersContent = () => {
     if (familyLoading) {
       return <PeopleSkeletonCard count={3} />;
@@ -339,6 +450,7 @@ export default function PeopleScreen() {
             onSendAlarm={() => router.push('/family-alarm/create')}
           />
           {renderInviteSection()}
+          {!isOwner && renderLeaveButton()}
         </View>
       );
     }
@@ -373,6 +485,7 @@ export default function PeopleScreen() {
               <Text style={styles.familyAlarmBtnText}>⏰ {t('people.sendFamilyAlarm')}</Text>
             </TouchableOpacity>
             {renderInviteSection()}
+            {!isOwner && renderLeaveButton()}
           </View>
         }
       />

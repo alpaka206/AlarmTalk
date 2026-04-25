@@ -9,6 +9,7 @@ import { get, patch, del } from '../src/services/api/core';
 import {
   getUserProfile,
   updatePlan,
+  updateUserSettings,
   deleteAccount,
   getStats,
   getActivity,
@@ -25,14 +26,23 @@ const mockDel = del as jest.MockedFunction<typeof del>;
 beforeEach(() => jest.clearAllMocks());
 
 describe('User API', () => {
-  it('getUserProfile → GET /user/me', async () => {
-    const profile = { id: 'u1', email: 'a@b.com', name: 'Test', plan: 'free' };
-    mockGet.mockResolvedValue(profile);
+  it('getUserProfile → GET /user/me (unwraps user)', async () => {
+    const user = { id: 'u1', email: 'a@b.com', name: 'Test', plan: 'free', allow_family_alarms: true };
+    mockGet.mockResolvedValue({ user, stats: { voice_profiles: 1, alarms: 2 } });
 
     const result = await getUserProfile();
 
     expect(mockGet).toHaveBeenCalledWith('/user/me');
-    expect(result).toEqual(profile);
+    expect(result).toEqual(user);
+  });
+
+  it('updateUserSettings → PATCH /user/me', async () => {
+    mockPatch.mockResolvedValue({ success: true, allow_family_alarms: false });
+
+    const result = await updateUserSettings({ allow_family_alarms: false });
+
+    expect(mockPatch).toHaveBeenCalledWith('/user/me', { allow_family_alarms: false });
+    expect(result).toEqual({ success: true, allow_family_alarms: false });
   });
 
   it('updatePlan → PATCH /user/plan', async () => {
