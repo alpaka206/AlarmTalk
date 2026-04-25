@@ -1685,9 +1685,12 @@
 - [x] voice-profile 엣지 케이스 13개 추가 (47→60): pagination 폴백, name validation 경계값, clone count=0, non-Error throw, force 대소문자 구분, family placeholders
 - [x] push 엣지 케이스 8개 추가 (14→25): 비문자열 토큰/플랫폼, null/boolean 타입, 경계값 500자, upsert SQL, trim 검증
 
-## P171 — 향후 작업 후보
+## P171 — dub 라우트 엣지 케이스 테스트 ✅ (2026-04-25)
+- [x] dub 엣지 케이스 14개 추가 (22→36): POST 실패 경로 4개 (getSasToken/uploadToBlob/requestTranslation/non-Error), GET/:id full success path 2개 (source_message 있음/없음), null 경계값 3개, hasFailed 기본 메시지, download 실패 2개, languages/jobs 각 1개
+
+## P172 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
 - [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
-- [ ] dub/translate 라우트 엣지 케이스 테스트 확장
+- [ ] translate.ts 라우트 엣지 케이스 테스트 확장

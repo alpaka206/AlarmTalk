@@ -32,8 +32,8 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
-vi.mock('../src/lib/perso', () => ({
-  PersoClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+vi.mock('../src/lib/perso', () => {
+  const Ctor = vi.fn().mockImplementation(function (this: Record<string, unknown>) {
     this.listLanguages = mockListLanguages;
     this.listSpaces = mockListSpaces;
     this.getSasToken = mockGetSasToken;
@@ -43,8 +43,10 @@ vi.mock('../src/lib/perso', () => ({
     this.getProgress = mockGetProgress;
     this.getDownloadInfo = mockGetDownloadInfo;
     this.download = mockDownload;
-  }),
-}));
+  }) as unknown as Record<string, unknown>;
+  Ctor.toFileUrl = (path: string) => `https://perso-files.test${path}`;
+  return { PersoClient: Ctor };
+});
 
 import dubRoutes from '../src/routes/dub';
 
@@ -117,6 +119,15 @@ describe('GET /dub/languages', () => {
     const app = buildApp();
     const res = await app.req(jsonReq('GET', '/dub/languages'));
     expect(res.status).toBe(500);
+  });
+
+  it('빈 언어 목록 → 200 + empty array', async () => {
+    mockListLanguages.mockResolvedValueOnce({ result: { languages: [] } });
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', '/dub/languages'));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.languages).toEqual([]);
   });
 });
 
@@ -254,6 +265,81 @@ describe('POST /dub', () => {
     const data = await res.json();
     expect(data.detail).toContain('No Perso spaces');
   });
+
+  it('getSasToken 실패 → 500 + DB failed 기록', async () => {
+    mockDB.pushResult([]); // INSERT dub_jobs
+    mockDB.pushResult([]); // UPDATE failed
+    mockGetSasToken.mockRejectedValueOnce(new Error('SAS token expired'));
+    const app = buildApp();
+    const res = await app.req(
+      multipartReq('/dub', {
+        audio: new File([audioBlob], 'test.wav'),
+        source_language: 'ko',
+        target_language: 'en',
+      }),
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.detail).toBe('SAS token expired');
+    const failedUpdate = mockDB.calls[1]!;
+    expect(failedUpdate.sql).toContain('failed');
+    expect(failedUpdate.args[0]).toBe('SAS token expired');
+  });
+
+  it('uploadToBlob 실패 → 500 + DB failed 기록', async () => {
+    mockDB.pushResult([]); // INSERT dub_jobs
+    mockDB.pushResult([]); // UPDATE failed
+    mockUploadToBlob.mockRejectedValueOnce(new Error('Blob upload timeout'));
+    const app = buildApp();
+    const res = await app.req(
+      multipartReq('/dub', {
+        audio: new File([audioBlob], 'test.wav'),
+        source_language: 'ko',
+        target_language: 'en',
+      }),
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.detail).toBe('Blob upload timeout');
+  });
+
+  it('requestTranslation 실패 → 500 + DB failed 기록', async () => {
+    mockDB.pushResult([]); // INSERT dub_jobs
+    mockDB.pushResult([]); // UPDATE failed
+    mockRequestTranslation.mockRejectedValueOnce(new Error('Translation quota exceeded'));
+    const app = buildApp();
+    const res = await app.req(
+      multipartReq('/dub', {
+        audio: new File([audioBlob], 'test.wav'),
+        source_language: 'ko',
+        target_language: 'en',
+      }),
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.detail).toBe('Translation quota exceeded');
+    const failedUpdate = mockDB.calls[1]!;
+    expect(failedUpdate.args[0]).toBe('Translation quota exceeded');
+  });
+
+  it('non-Error throw → detail "Unknown error"', async () => {
+    mockDB.pushResult([]); // INSERT dub_jobs
+    mockDB.pushResult([]); // UPDATE failed
+    mockListSpaces.mockRejectedValueOnce('raw string throw');
+    const app = buildApp();
+    const res = await app.req(
+      multipartReq('/dub', {
+        audio: new File([audioBlob], 'test.wav'),
+        source_language: 'ko',
+        target_language: 'en',
+      }),
+    );
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.detail).toBe('Unknown error');
+    const failedUpdate = mockDB.calls[0]!;
+    expect(failedUpdate.args[0]).toBe('Unknown error');
+  });
 });
 
 describe('GET /dub/jobs', () => {
@@ -275,6 +361,17 @@ describe('GET /dub/jobs', () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.jobs).toHaveLength(1);
+  });
+
+  it('SQL에 user_id 필터 + LIMIT 20 포함 확인', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp('user-42');
+    const res = await app.req(jsonReq('GET', '/dub/jobs'));
+    expect(res.status).toBe(200);
+    const call = mockDB.calls[0]!;
+    expect(call.sql).toContain('user_id = ?');
+    expect(call.sql).toContain('LIMIT 20');
+    expect(call.args[0]).toBe('user-42');
   });
 });
 
@@ -434,5 +531,229 @@ describe('GET /dub/:id', () => {
     const data = await res.json();
     expect(data.status).toBe('failed');
     expect(data.error_message).toContain('No translated audio');
+  });
+
+  it('ready 상태 + progress null → Number(null) = 0', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'ready',
+      progress: null,
+      result_message_id: 'msg-1',
+      error_message: null,
+    }]);
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.progress).toBe(0);
+  });
+
+  it('failed 상태 + error_message null → null 반환', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'failed',
+      progress: null,
+      result_message_id: null,
+      error_message: null,
+    }]);
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.status).toBe('failed');
+    expect(data.error_message).toBeNull();
+  });
+
+  it('processing → hasFailed + empty progressReason → 기본 메시지', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 10,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockDB.pushResult([]); // UPDATE failed
+    mockGetProgress.mockResolvedValueOnce({
+      result: { projectSeq: 101, progress: 10, progressReason: '', hasFailed: true },
+    });
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    const data = await res.json();
+    expect(data.status).toBe('failed');
+    const updateCall = mockDB.calls[1]!;
+    expect(updateCall.args[0]).toBe('Dubbing failed');
+  });
+
+  it('진행 100% → download 응답에 audioFile 없음 → failed', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 50,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      source_message_id: null,
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockDB.pushResult([]); // UPDATE failed (download link unavailable)
+    mockGetProgress.mockResolvedValueOnce({
+      result: { projectSeq: 101, progress: 100, progressReason: '', hasFailed: false },
+    });
+    mockGetDownloadInfo.mockResolvedValueOnce({ hasTranslatedVoice: true });
+    mockDownload.mockResolvedValueOnce({ result: { audioFile: null } });
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    const data = await res.json();
+    expect(data.status).toBe('failed');
+    expect(data.error_message).toContain('Download link unavailable');
+  });
+
+  it('진행 100% → 오디오 fetch 실패 → 500', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 50,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      source_message_id: null,
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockGetProgress.mockResolvedValueOnce({
+      result: { projectSeq: 101, progress: 100, progressReason: '', hasFailed: false },
+    });
+    mockGetDownloadInfo.mockResolvedValueOnce({ hasTranslatedVoice: true });
+    mockDownload.mockResolvedValueOnce({
+      result: { audioFile: { voiceAudioDownloadLink: '/audio/test.mp3' } },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({ ok: false, status: 404 }) as typeof fetch;
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.error_code).toBe('DUB_PROGRESS_CHECK_FAILED');
+    globalThis.fetch = originalFetch;
+  });
+
+  it('진행 100% + source_message_id → 결과 메시지 생성', async () => {
+    const srcMsgId = '11111111-1111-1111-1111-111111111111';
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 50,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      source_message_id: srcMsgId,
+      target_language: 'en',
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockDB.pushResult([{
+      id: srcMsgId,
+      user_id: 'user-1',
+      voice_profile_id: 'vp-1',
+      text: '안녕하세요',
+      category: 'greeting',
+    }]);
+    mockDB.pushResult([]); // INSERT messages
+    mockDB.pushResult([]); // INSERT message_library
+    mockDB.pushResult([]); // UPDATE dub_jobs (ready)
+    mockGetProgress.mockResolvedValueOnce({
+      result: { projectSeq: 101, progress: 100, progressReason: '', hasFailed: false },
+    });
+    mockGetDownloadInfo.mockResolvedValueOnce({ hasTranslatedVoice: true });
+    mockDownload.mockResolvedValueOnce({
+      result: { audioFile: { voiceAudioDownloadLink: '/audio/test.mp3' } },
+    });
+    const fakeAudio = new Uint8Array([0x41, 0x42, 0x43]);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => fakeAudio.buffer,
+    }) as typeof fetch;
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    const data = await res.json();
+    expect(data.status).toBe('ready');
+    expect(data.progress).toBe(100);
+    expect(data.result_message_id).toBeDefined();
+    expect(data.audio_base64).toBeDefined();
+    expect(data.audio_format).toBe('mp3');
+    const insertMsgCall = mockDB.calls[2]!;
+    expect(insertMsgCall.sql).toContain('INSERT INTO messages');
+    expect(insertMsgCall.args).toContain('vp-1');
+    expect(insertMsgCall.args[3]).toContain('[en]');
+    const insertLibCall = mockDB.calls[3]!;
+    expect(insertLibCall.sql).toContain('INSERT INTO message_library');
+    globalThis.fetch = originalFetch;
+  });
+
+  it('진행 100% + source_message_id → 원본 메시지 없음 → resultMessageId null', async () => {
+    const srcMsgId = '22222222-2222-2222-2222-222222222222';
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 50,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      source_message_id: srcMsgId,
+      target_language: 'en',
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockDB.pushResult([]); // SELECT messages — empty (source not found)
+    mockDB.pushResult([]); // UPDATE dub_jobs (ready)
+    mockGetProgress.mockResolvedValueOnce({
+      result: { projectSeq: 101, progress: 100, progressReason: '', hasFailed: false },
+    });
+    mockGetDownloadInfo.mockResolvedValueOnce({ hasTranslatedVoice: true });
+    mockDownload.mockResolvedValueOnce({
+      result: { audioFile: { voiceAudioDownloadLink: '/audio/test.mp3' } },
+    });
+    const fakeAudio = new Uint8Array([0x41, 0x42]);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => fakeAudio.buffer,
+    }) as typeof fetch;
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    const data = await res.json();
+    expect(data.status).toBe('ready');
+    expect(data.result_message_id).toBeNull();
+    expect(data.audio_base64).toBeDefined();
+    const updateCall = mockDB.calls[2]!;
+    expect(updateCall.sql).toContain('UPDATE dub_jobs');
+    expect(updateCall.args[0]).toBeNull();
+    globalThis.fetch = originalFetch;
+  });
+
+  it('processing → non-Error throw → detail "Unknown error"', async () => {
+    mockDB.pushResult([{
+      id: VALID_UUID,
+      user_id: 'user-1',
+      status: 'processing',
+      progress: 0,
+      perso_project_seq: 101,
+      perso_space_seq: 1,
+      error_message: null,
+      result_message_id: null,
+    }]);
+    mockGetProgress.mockRejectedValueOnce('raw string error');
+    const app = buildApp();
+    const res = await app.req(jsonReq('GET', `/dub/${VALID_UUID}`));
+    expect(res.status).toBe(500);
+    const data = await res.json();
+    expect(data.detail).toBe('Unknown error');
   });
 });
