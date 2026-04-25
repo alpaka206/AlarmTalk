@@ -7,29 +7,12 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
-jest.mock('../src/hooks/useTheme', () => ({
-  useTheme: () => ({
-    colors: {
-      primary: '#FF7F6B',
-      primaryLight: '#FFB4A8',
-      primaryDark: '#E05A47',
-      secondary: '#FFCBA4',
-      accent: '#FF6B8A',
-      background: '#FFF5F3',
-      surface: '#FFFFFF',
-      surfaceVariant: '#FFF0ED',
-      text: '#2D2D2D',
-      textSecondary: '#6B7280',
-      textTertiary: '#AEAEB2',
-      border: '#F2E8E5',
-      success: '#34C759',
-      warning: '#FF9500',
-      error: '#FF3B30',
-      shadow: 'rgba(255, 127, 107, 0.15)',
-    },
-    isDark: false,
-  }),
-}));
+jest.mock('../src/hooks/useTheme', () => {
+  const { Colors } = jest.requireActual('../src/constants/theme');
+  return {
+    useTheme: () => ({ colors: Colors.light, isDark: false }),
+  };
+});
 
 import { ErrorView } from '../src/components/QueryStateView';
 

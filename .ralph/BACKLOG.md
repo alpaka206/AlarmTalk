@@ -1583,3 +1583,4 @@
 - [x] README.md 테스트 수 보정: backend 872→1068, mobile 1012→1044, E2E 6→9 (P131)
 - [x] Backend Integration Smoke Test: 전체 앱 라우팅 와이어링 + 보안 헤더 + CORS + 404 검증 25 tests (P132)
 - [x] i18n Key Validation: locale 동기화 + 보간 변수 일치 + 코드 키 사용 검증 + common.close 누락 수정 14 tests (P133)
+- [x] OfflineBanner 테스트 실패 수정 + useTheme mock jest.requireActual 패턴 개선 (3파일) + README 테스트 수 보정 (P134)
