@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P119~P120 오디오 캐시 관리 (자동 정리 + 설정 UI 연결)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P120 완료**
+- 마지막 루프: 2026-04-25 — P121 접근성(A11y) 개선 (Toast/OfflineBanner/PeopleSkeletonCard/FamilyMemberRow + 탭 화면 header 역할)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P121 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 - 전체 테스트 통과 (backend 1068/1068, mobile 1024/1024)
 
@@ -15,6 +15,7 @@
 - **P113**: App Store / Google Play 스토어 등록 메타데이터 준비
 - **P114~P118**: 테스트 커버리지 확장 (backend split modules + voice 전용 테스트)
 - **P119**: 오디오 캐시 관리 — getCachedAudioFiles, cleanupAudioCache(200MB LRU), clearAudioCache + 앱 시작 시 자동 정리
+- **P121**: 접근성(A11y) 개선 — Toast/OfflineBanner/PeopleSkeletonCard에 a11y role/label 추가, 탭 화면 header 역할, FamilyMemberRow 라벨 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404

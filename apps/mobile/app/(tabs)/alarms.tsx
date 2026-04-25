@@ -360,7 +360,7 @@ function AlarmsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{t('alarms.title')}</Text>
+        <Text style={styles.title} accessibilityRole="header">{t('alarms.title')}</Text>
         <TouchableOpacity
           style={styles.addButton}
           onPress={() => router.push('/alarm/create')}

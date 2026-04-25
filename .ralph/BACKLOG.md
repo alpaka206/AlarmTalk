@@ -1515,3 +1515,22 @@
 - [x] "캐시 삭제" 버튼에 clearAudioCache 연결 (기존엔 Alert만 표시, 실제 삭제 미구현)
 - [x] 삭제 확인 다이얼로그 (취소/삭제 버튼) + 삭제 후 캐시 크기 0으로 갱신
 - [x] typecheck 통과, 전체 테스트 1024/1024 통과
+
+## P121 — 접근성(A11y) 개선 ✅ (2026-04-25)
+
+- [x] Toast.tsx — accessibilityRole="alert" + accessibilityLiveRegion="polite"
+- [x] OfflineBanner.tsx — accessibilityRole="alert" + accessibilityLiveRegion="assertive"
+- [x] PeopleSkeletonCard.tsx — accessibilityRole="progressbar" + accessibilityLabel (useTranslation 도입)
+- [x] FamilyMemberRow.tsx — accessibilityLabel="{displayName}, {role}" 추가
+- [x] alarms.tsx 제목 — accessibilityRole="header"
+- [x] compose.tsx 제목 — accessibilityRole="header"
+- [x] i18n: common.loading 키 추가 (ko/en)
+- [x] 테스트: OfflineBanner + PeopleSkeletonCard 접근성 검증 추가 (13/13 통과)
+- [x] typecheck 통과, 전체 테스트 통과
+
+## P122 — Hardcoded 색상 디자인 토큰 마이그레이션 (대기)
+
+- [ ] #FFFFFF / #fff / #FFF → 적절한 테마 토큰으로 교체 (24+ 인스턴스)
+- [ ] rgba() 오버레이 → 토큰화 검토
+- [ ] LoginButtons.tsx 브랜드 색상은 유지 (Google #4285F4, Apple #000000 등)
+- [ ] textOnPrimary 토큰 추가 여부 사용자 확인 필요

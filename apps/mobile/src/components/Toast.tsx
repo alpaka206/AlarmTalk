@@ -13,7 +13,12 @@ export const Toast = memo(function Toast({ message, opacity }: ToastProps) {
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   if (!message) return null;
   return (
-    <Animated.View style={[dynStyles.toast, { opacity }]} pointerEvents="none">
+    <Animated.View
+      style={[dynStyles.toast, { opacity }]}
+      pointerEvents="none"
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+    >
       <Text style={dynStyles.toastText}>{message}</Text>
     </Animated.View>
   );

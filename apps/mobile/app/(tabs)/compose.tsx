@@ -141,7 +141,7 @@ function ComposeScreen() {
         ListHeaderComponent={
           <>
             <View style={styles.header}>
-              <Text style={styles.title}>{t('compose.title')}</Text>
+              <Text style={styles.title} accessibilityRole="header">{t('compose.title')}</Text>
             </View>
 
             <View style={styles.actionsRow}>

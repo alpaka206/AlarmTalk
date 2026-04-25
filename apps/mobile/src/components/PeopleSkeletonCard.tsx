@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 
@@ -37,10 +38,11 @@ interface Props {
 }
 
 export const PeopleSkeletonCard = memo(function PeopleSkeletonCard({ count = 3 }: Props) {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   return (
-    <View style={dynStyles.container}>
+    <View style={dynStyles.container} accessibilityRole="progressbar" accessibilityLabel={t('common.loading')}>
       {Array.from({ length: count }, (_, i) => (
         <SkeletonRow key={i} dynStyles={dynStyles} />
       ))}

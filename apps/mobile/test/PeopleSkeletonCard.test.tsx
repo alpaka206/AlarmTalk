@@ -25,6 +25,12 @@ jest.spyOn(Animated, 'timing').mockReturnValue({
   _isUsingNativeDriver: jest.fn().mockReturnValue(false),
 } as unknown as Animated.CompositeAnimation);
 
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
 jest.mock('../src/hooks/useTheme', () => ({
   useTheme: () => ({
     colors: {
@@ -99,5 +105,12 @@ describe('PeopleSkeletonCard', () => {
     expect((PeopleSkeletonCard as unknown as { $$typeof: symbol }).$$typeof).toBe(
       Symbol.for('react.memo'),
     );
+  });
+
+  it('progressbar 접근성 역할과 로딩 라벨이 적용된다', () => {
+    const { toJSON } = render(<PeopleSkeletonCard count={2} />);
+    const tree = JSON.stringify(toJSON());
+    expect(tree).toContain('"accessibilityRole":"progressbar"');
+    expect(tree).toContain('"accessibilityLabel":"common.loading"');
   });
 });

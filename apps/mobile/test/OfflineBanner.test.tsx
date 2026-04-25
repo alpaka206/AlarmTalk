@@ -64,6 +64,14 @@ describe('OfflineBanner', () => {
     expect(tree).toContain('#FFFFFF');
   });
 
+  it('오프라인 배너에 alert 접근성 역할이 적용된다', () => {
+    mockIsConnected = false;
+    const { toJSON } = render(<OfflineBanner />);
+    const tree = JSON.stringify(toJSON());
+    expect(tree).toContain('"accessibilityRole":"alert"');
+    expect(tree).toContain('"accessibilityLiveRegion":"assertive"');
+  });
+
   it('연결 상태 변경 시 재렌더에 반응한다', () => {
     mockIsConnected = false;
     const { toJSON, rerender } = render(<OfflineBanner />);

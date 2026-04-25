@@ -18,7 +18,10 @@ export const FamilyMemberRow = memo(function FamilyMemberRow({ member, isCouple 
   const displayName = buildMemberDisplayName(member, t);
 
   return (
-    <View style={[dynStyles.card, isCouple && dynStyles.coupleCard]}>
+    <View
+      style={[dynStyles.card, isCouple && dynStyles.coupleCard]}
+      accessibilityLabel={`${displayName}, ${member.role === 'owner' ? t('people.owner') : t('people.member')}`}
+    >
       <View style={[dynStyles.avatar, member.role === 'owner' && dynStyles.ownerAvatar]}>
         <Text style={dynStyles.avatarText}>
           {displayName.charAt(0).toUpperCase()}
