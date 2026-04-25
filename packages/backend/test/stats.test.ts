@@ -227,7 +227,7 @@ describe('GET /stats/activity — 최근 활동', () => {
     expect(body.activities[4].type).toBe('gift');
   });
 
-  it('알람 활동 summary 형식', async () => {
+  it('알람 활동 detail 형식', async () => {
     mockDB.pushResult([
       { id: 'a1', time: '08:30', created_at: '2026-04-24T08:00:00Z', type: 'alarm' },
     ]);
@@ -239,11 +239,11 @@ describe('GET /stats/activity — 최근 활동', () => {
     const res = await app.request(new Request('http://localhost/stats/activity'));
     const body = await res.json();
 
-    expect(body.activities[0].summary).toBe('알람 08:30');
+    expect(body.activities[0].detail).toEqual({ time: '08:30' });
     expect(body.activities[0].type).toBe('alarm');
   });
 
-  it('메시지 summary 50자 초과 시 자름', async () => {
+  it('메시지 detail.text 50자 초과 시 자름', async () => {
     const longText = '가'.repeat(60);
     mockDB.pushResult([]);
     mockDB.pushResult([
@@ -256,10 +256,10 @@ describe('GET /stats/activity — 최근 활동', () => {
     const res = await app.request(new Request('http://localhost/stats/activity'));
     const body = await res.json();
 
-    expect(body.activities[0].summary).toHaveLength(50);
+    expect(body.activities[0].detail.text).toHaveLength(50);
   });
 
-  it('선물 note가 null이면 기본 summary', async () => {
+  it('선물 note가 null이면 detail.note null', async () => {
     mockDB.pushResult([]);
     mockDB.pushResult([]);
     mockDB.pushResult([
@@ -271,10 +271,10 @@ describe('GET /stats/activity — 최근 활동', () => {
     const res = await app.request(new Request('http://localhost/stats/activity'));
     const body = await res.json();
 
-    expect(body.activities[0].summary).toBe('선물 (accepted)');
+    expect(body.activities[0].detail).toEqual({ note: null, status: 'accepted' });
   });
 
-  it('음성 summary 형식', async () => {
+  it('음성 detail 형식', async () => {
     mockDB.pushResult([]);
     mockDB.pushResult([]);
     mockDB.pushResult([]);
@@ -286,7 +286,7 @@ describe('GET /stats/activity — 최근 활동', () => {
     const res = await app.request(new Request('http://localhost/stats/activity'));
     const body = await res.json();
 
-    expect(body.activities[0].summary).toBe('음성 "아빠" (processing)');
+    expect(body.activities[0].detail).toEqual({ name: '아빠', status: 'processing' });
   });
 
   it('4개 DB 쿼리 실행 확인', async () => {
@@ -369,6 +369,6 @@ describe('GET /stats/activity — 최근 활동', () => {
     const res = await app.request(new Request('http://localhost/stats/activity'));
     const body = await res.json();
 
-    expect(body.activities[0].summary).toHaveLength(50);
+    expect(body.activities[0].detail.note).toHaveLength(50);
   });
 });

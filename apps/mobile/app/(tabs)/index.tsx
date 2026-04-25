@@ -261,7 +261,7 @@ function HomeScreen() {
             <View style={styles.widgetInfo}>
               <View style={styles.widgetNameRow}>
                 <Text style={styles.widgetName}>{characterData.character.name}</Text>
-                <Text style={styles.widgetLevel}>Lv.{characterData.character.level}</Text>
+                <Text style={styles.widgetLevel}>{t('character.levelDisplay', { level: characterData.character.level })}</Text>
                 {characterData.streak && characterData.streak.current > 0 && (
                   <Text style={styles.widgetStreak}>
                     🔥 {characterData.streak.current}

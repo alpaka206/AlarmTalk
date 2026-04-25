@@ -607,6 +607,7 @@
     "a11yDay": "{{day}}요일"
   },
   "character": {
+    "levelDisplay": "Lv.{{level}}",
     "loadError": "캐릭터를 불러오지 못했어요",
     "tapHint": "캐릭터를 탭하면 새 대사가 나와요",
     "streakDays": "일 연속 기상",

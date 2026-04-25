@@ -174,7 +174,7 @@ export default function CharacterScreen() {
             <Text style={dynStyles.characterName}>{character.name}</Text>
             <View style={dynStyles.badge}>
               <Text style={dynStyles.badgeText}>
-                Lv.{character.level} · {stageToLabel(character.stage, t)}
+                {t('character.levelDisplay', { level: character.level })} · {stageToLabel(character.stage, t)}
               </Text>
             </View>
           </View>

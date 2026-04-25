@@ -196,6 +196,7 @@ describe('i18n — value quality', () => {
       'compose.title',
       'authForm.emailPlaceholder',
       'dub.experimentBadge',
+      'character.levelDisplay',
     ]);
     const filtered = suspectKeys.filter((s) => {
       const k = s.split(':')[0]!;

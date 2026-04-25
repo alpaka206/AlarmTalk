@@ -142,25 +142,25 @@ stats.get('/activity', async (c) => {
       ...recentAlarms.rows.map((r) => ({
         id: r.id as string,
         type: 'alarm' as const,
-        summary: `알람 ${r.time}`,
+        detail: { time: r.time as string },
         created_at: r.created_at as string,
       })),
       ...recentMessages.rows.map((r) => ({
         id: r.id as string,
         type: 'message' as const,
-        summary: String(r.text).slice(0, 50),
+        detail: { text: String(r.text).slice(0, 50) },
         created_at: r.created_at as string,
       })),
       ...recentGifts.rows.map((r) => ({
         id: r.id as string,
         type: 'gift' as const,
-        summary: r.note ? String(r.note).slice(0, 50) : `선물 (${r.status})`,
+        detail: { note: r.note ? String(r.note).slice(0, 50) : null, status: r.status as string },
         created_at: r.created_at as string,
       })),
       ...recentVoices.rows.map((r) => ({
         id: r.id as string,
         type: 'voice' as const,
-        summary: `음성 "${r.name}" (${r.status})`,
+        detail: { name: r.name as string, status: r.status as string },
         created_at: r.created_at as string,
       })),
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())

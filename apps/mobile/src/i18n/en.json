@@ -607,6 +607,7 @@
     "a11yDay": "{{day}}"
   },
   "character": {
+    "levelDisplay": "Lv.{{level}}",
     "loadError": "Could not load character",
     "tapHint": "Tap the character for a new dialogue",
     "streakDays": " day streak",
