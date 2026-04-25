@@ -1662,6 +1662,17 @@
 - [x] i18n 키 검증: 자동 검증으로 테스트 파일 수정 불필요 확인
 
 ## P166 — 향후 작업 후보
-- [ ] 라이브러리 화면에 TTS 메시지 삭제 UI 연동 (deleteTtsMessage 활용)
-- [ ] 구독 관리 화면 구축 (getSubscription + checkout 활용)
-- [ ] README.md 테스트 수 업데이트 (1937→1938)
+- [x] 라이브러리 화면에 TTS 메시지 삭제 UI 연동 (deleteTtsMessage 활용) ✅ (2026-04-25)
+- [x] 구독 관리 화면 구축 (getSubscription + checkout 활용) ✅ (2026-04-25)
+- [x] README.md 테스트 수 업데이트 — 이미 1938로 정확 ✅ (2026-04-25)
+
+## P167 — 구독 화면 테스트 ✅ (2026-04-25)
+- [x] subscriptionScreen.test.ts 32개 (planTypeToUserPlan, PLANS 상수, isPlanCurrent/Upgrade, formatDate, 피처 오버랩)
+- [x] README 테스트 수 업데이트 (1938→1970)
+
+## P168 — 향후 작업 후보
+- [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
+- [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
+- [ ] 백엔드 테스트 커버리지 확장 (alarm-mutation, billing-mutation 통합 테스트)
+- [ ] 모바일 E2E 테스트 확장 (Maestro — subscription, library-delete 플로우)
+- [ ] TypeScript any 사용 최종 감사 (lib/logger.ts 외 없는지 확인)

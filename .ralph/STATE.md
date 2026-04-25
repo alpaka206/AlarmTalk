@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P164 (Billing + TTS API + 테스트 수정)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P160 부분 완료**
+- 마지막 루프: 2026-04-25 — P167 (구독 화면 테스트 32개)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P167 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -52,6 +52,9 @@
 - **P162**: People 탭 가족 관리 UI (탈퇴/양도/멤버 제거) — FamilyMemberRow 액션 버튼 + 확인 다이얼로그 + i18n 22키
 - **P163**: PATCH /user/me API 클라이언트 + 설정 화면 가족 알람 수신 토글 + getUserProfile 응답 타입 수정
 - **P164**: Billing API (getSubscription + checkout) + TTS 메시지 삭제 API 클라이언트 추가
+- **P166-A**: 라이브러리 화면 TTS 메시지 삭제 UI 연동 — 보관함 제거/완전 삭제 2단계 선택 + i18n 4키
+- **P166-B**: 구독 관리 화면 구축 — 플랜 비교 + checkout API 연동 + 설정 화면 연결 + i18n 34키
+- **P167**: 구독 화면 비즈니스 로직 테스트 32개 (planTypeToUserPlan, PLANS 상수, isPlanCurrent/Upgrade, formatDate)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -74,7 +77,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1185 tests (58 files)
-- Mobile: 1938 tests (85 files)
+- Mobile: 1970 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)

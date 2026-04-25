@@ -27,7 +27,7 @@ interface Props {
   t: TFunction;
   getCategoryLabel: (key: string) => string;
   onPress: (messageId: string) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string, messageId: string) => void;
   onFavorite: (id: string) => void;
   onPlay: (messageId: string, sound: Audio.Sound) => void;
   onStop: () => void;
@@ -55,7 +55,7 @@ function LibraryListItemInner({
   return (
     <Swipeable
       renderRightActions={renderDeleteAction}
-      onSwipeableOpen={() => onDelete(item.id)}
+      onSwipeableOpen={() => onDelete(item.id, item.message_id)}
       overshootRight={false}
     >
       <TouchableOpacity

@@ -364,6 +364,7 @@ describe('쿼리 키 레지스트리 완전성', () => {
     'dubLanguages',
     'sentGifts',
     'gifts-received',
+    'subscription',
   ];
 
   it('알려진 쿼리 키 목록이 실제 소스와 일치한다', () => {

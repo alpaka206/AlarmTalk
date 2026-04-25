@@ -104,7 +104,7 @@ export default function SettingsScreen() {
               <SettingRow colors={colors} label={t('settings.email')} value={profile.email} />
             )}
             <SettingRow colors={colors} label={t('settings.plan')} value={getPlanLabel()} />
-            <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => router.push('/code-register')} />
+            <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => router.push('/subscription')} />
             {plan === 'family' && (
               <SettingRow
                 colors={colors}

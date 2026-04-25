@@ -268,6 +268,10 @@ export default function RootLayout() {
               options={{ headerShown: true, title: t('settings.title') }}
             />
             <Stack.Screen
+              name="subscription/index"
+              options={{ headerShown: true, title: t('subscription.title') }}
+            />
+            <Stack.Screen
               name="family-alarm/create"
               options={{
                 headerShown: true,

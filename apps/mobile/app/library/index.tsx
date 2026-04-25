@@ -15,7 +15,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createLibraryStyles } from '../../src/styles/libraryStyles';
-import { getLibrary, toggleFavorite, deleteLibraryItem } from '../../src/services/api';
+import { getLibrary, toggleFavorite, deleteLibraryItem, deleteTtsMessage } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheLibrary, getCachedLibrary } from '../../src/services/offlineCache';
@@ -116,16 +116,44 @@ export default function LibraryScreen() {
     },
   });
 
-  const handleDelete = useCallback((id: string) => {
+  const deepDeleteMutation = useMutation({
+    mutationFn: (messageId: string) => deleteTtsMessage(messageId, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['alarms'] });
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('library.deleteError')));
+    },
+  });
+
+  const handleDelete = useCallback((id: string, messageId: string) => {
     Alert.alert(t('library.deleteTitle'), t('library.deleteConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('common.delete'),
-        style: 'destructive',
+        text: t('library.removeFromLibrary'),
         onPress: () => deleteMutation.mutate(id),
       },
+      {
+        text: t('library.deletePermanently'),
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            t('library.deletePermanentlyTitle'),
+            t('library.deletePermanentlyConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.delete'),
+                style: 'destructive',
+                onPress: () => deepDeleteMutation.mutate(messageId),
+              },
+            ],
+          );
+        },
+      },
     ]);
-  }, [t, deleteMutation]);
+  }, [t, deleteMutation, deepDeleteMutation]);
 
   const renderDeleteAction = useCallback((
     _progress: RNAnimated.AnimatedInterpolation<number>,
