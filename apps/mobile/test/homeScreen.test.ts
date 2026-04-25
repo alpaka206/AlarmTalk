@@ -418,8 +418,8 @@ describe('HomeScreen — play/pause toggle', () => {
   });
 
   it('shows play when currentPlayingId differs', () => {
-    const currentPlayingId = 'msg-2';
-    const messageId = 'msg-1';
+    const currentPlayingId: string = 'msg-2';
+    const messageId: string = 'msg-1';
     const isPlaying = currentPlayingId === messageId;
     expect(isPlaying).toBe(false);
   });

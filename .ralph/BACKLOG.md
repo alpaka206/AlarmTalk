@@ -1612,3 +1612,4 @@
 - [x] library.ts 라우트 테스트 확장 (10→34): GET 필터 엣지 11개 + PATCH error_code 5개 + DELETE error_code 4개 + beforeEach 개선 (P143)
 - [x] family-invite.ts 엣지 케이스 테스트 10개 추가 (33→43): max_members null 폴백, expires_at 유효성, 코드 trim, SQL 검증 (P144)
 - [x] 미테스트 스크린 3개 단위 테스트 137개: alarmsScreen(49) + homeScreen(55) + settingsScreen(33) — compareAlarms 정렬, 검색 필터, TrendBadge, getTimeGreeting, formatBytes, getPlanLabel (P145)
+- [x] characterScreen/codeRegisterScreen 단위 테스트 89개: characterScreen(47, StatBar pct/milestoneEmoji/statBarMax/achievedSet/DEV_EVENTS/MILESTONES/통합) + codeRegisterScreen(42, VOUCHER_RE/INVITE_RE/detectCodeType/error extraction/button disabled/success branching) + homeScreen/settingsScreen typecheck 수정 (P146)

@@ -155,12 +155,14 @@ describe('SettingsScreen — navigation routes', () => {
 
 describe('SettingsScreen — version display', () => {
   it('falls back to 1.0.0 when undefined', () => {
-    const version = undefined ?? '1.0.0';
+    const raw: string | undefined = undefined;
+    const version = raw ?? '1.0.0';
     expect(version).toBe('1.0.0');
   });
 
   it('uses actual version when available', () => {
-    const version = '2.3.1' ?? '1.0.0';
+    const raw: string | undefined = '2.3.1';
+    const version = raw ?? '1.0.0';
     expect(version).toBe('2.3.1');
   });
 });
