@@ -1,8 +1,5 @@
 import type { TFunction } from 'i18next';
-
-export type AlarmMode = 'tts' | 'sound-only';
-export type VibrationPattern = 'default' | 'strong' | 'none';
-export type WakeMode = 'sound_then_voice' | 'voice_only';
+import type { AlarmMode, VibrationPattern, WakeMode } from '../types';
 
 export interface AlarmFormInput {
   messageId: string | null;

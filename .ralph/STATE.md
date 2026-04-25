@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P155 (알람 생성/편집 폼 접근성 레이블 보완)
+- 마지막 루프: 2026-04-25 — P156 (알람 편집 PresetMessageSection 추가 + 타입 중복 제거)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P154 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -45,6 +45,7 @@
 - **P153**: activity endpoint i18n 정규화 (summary 한국어 하드코딩 → detail 구조체) + "Lv." 접두사 i18n 전환 (2 screens)
 - **P154**: 홈 화면 최근 활동 피드 통합 (getActivity API + activityHelpers + 홈 UI 섹션 + i18n 12키 + 테스트 10개)
 - **P155**: 알람 생성/편집 폼 접근성 레이블 누락 8개 보완 (전체 앱 a11y 100% 커버리지 달성)
+- **P156**: 알람 편집 PresetMessageSection 추가 (R2 스펙 갭 수정) + AlarmMode/VibrationPattern/WakeMode 타입 중복 정의 제거
 
 ## 알려진 이슈
 - [blocked] Perso API 404

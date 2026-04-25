@@ -1622,3 +1622,4 @@
 - [x] activity endpoint i18n 정규화 (summary 한국어 하드코딩 → detail 구조체) + "Lv." 접두사 i18n 전환 (home + character 2 screens) + i18nKeys allowedIdentical 추가 (P153)
 - [x] 홈 화면 최근 활동 피드 통합: getActivity API 함수 + ActivityItem 타입 + activityHelpers 헬퍼 + 홈 UI 섹션 + i18n 12키 + 테스트 10개 (P154)
 - [x] 알람 생성/편집 폼 접근성 레이블 누락 8개 보완: mode/wakeMode 라디오 버튼 — 전체 앱 a11y 100% 커버리지 달성 (P155)
+- [x] 알람 편집 PresetMessageSection 추가 (R2 스펙 갭 — create/edit 기능 대칭 완성) + AlarmMode/VibrationPattern/WakeMode 타입 중복 정의 제거 (types.ts 단일 소스) (P156)

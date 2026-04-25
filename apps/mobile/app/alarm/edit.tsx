@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   updateAlarm,
   getVoiceProfiles,
   getFamilyVoiceProfiles,
+  generateTTS,
 } from '../../src/services/api';
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
@@ -29,7 +30,9 @@ import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile } fro
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
+import { PresetMessageSection } from '../../src/components/PresetMessageSection';
 import { parseRepeatDays, validateAlarmForm, getTimeUntilAlarm } from '../../src/lib/alarmForm';
+import { getRecentPresetMessages, addRecentPresetMessage } from '../../src/services/offlineCache';
 import { createAlarmFormStyles } from '../../src/styles/alarmFormStyles';
 import * as Haptics from 'expo-haptics';
 
@@ -54,6 +57,18 @@ export default function EditAlarmScreen() {
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
   const [wakeMode, setWakeMode] = useState<WakeMode>('sound_then_voice');
   const [loaded, setLoaded] = useState(false);
+  const [showPreset, setShowPreset] = useState(false);
+  const [presetCategory, setPresetCategory] = useState<string>('morning');
+  const [presetText, setPresetText] = useState<string | null>(null);
+  const [presetVoiceId, setPresetVoiceId] = useState<string | null>(null);
+  const [recentPresets, setRecentPresets] = useState<string[]>([]);
+
+  const loadRecentPresets = useCallback(async () => {
+    const recent = await getRecentPresetMessages();
+    setRecentPresets(recent);
+  }, []);
+
+  useEffect(() => { loadRecentPresets(); }, [loadRecentPresets]);
 
   const { data: alarm } = useQuery({
     queryKey: ['alarm', id],
@@ -125,6 +140,41 @@ export default function EditAlarmScreen() {
       toast.show(getApiErrorMessage(err, t, t('alarmEdit.editError')));
     },
   });
+
+  const ttsMutation = useMutation({
+    mutationFn: generateTTS,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      setSelectedMessageId(data.message_id);
+      setShowPreset(false);
+      setPresetText(null);
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('alarmCreate.ttsError')));
+    },
+  });
+
+  const handlePresetGenerate = () => {
+    if (!presetVoiceId || !presetText) return;
+    addRecentPresetMessage(presetText).then(() => loadRecentPresets());
+
+    const cached = messages?.find(
+      (m: Message) => m.voice_profile_id === presetVoiceId && m.text === presetText,
+    );
+    if (cached) {
+      setSelectedMessageId(cached.id);
+      setShowPreset(false);
+      setPresetText(null);
+      toast.show(t('alarmCreate.reusedMessage'));
+      return;
+    }
+
+    ttsMutation.mutate({
+      voice_profile_id: presetVoiceId,
+      text: presetText,
+      category: presetCategory,
+    });
+  };
 
   const toggleDay = (day: number) => {
     setRepeatDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
@@ -477,6 +527,22 @@ export default function EditAlarmScreen() {
           <Text style={formStyles.emptyMessageDesc}>{t('alarmCreate.noMessagesDesc')}</Text>
         </View>
       )}
+
+      <PresetMessageSection
+        showPreset={showPreset}
+        onTogglePreset={() => setShowPreset((v) => !v)}
+        readyVoices={readyVoices}
+        presetVoiceId={presetVoiceId}
+        onVoiceSelect={(vid) => setPresetVoiceId(vid)}
+        recentPresets={recentPresets}
+        presetText={presetText}
+        onPresetTextSelect={setPresetText}
+        presetCategory={presetCategory}
+        onCategorySelect={setPresetCategory}
+        isPending={ttsMutation.isPending}
+        onGenerate={handlePresetGenerate}
+        formStyles={formStyles}
+      />
 
       {/* 저장 버튼 */}
       <TouchableOpacity
