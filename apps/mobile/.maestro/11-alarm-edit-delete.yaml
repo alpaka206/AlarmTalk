@@ -1,0 +1,67 @@
+appId: com.devrel.voicealarm
+name: "Alarm Edit & Delete"
+---
+
+- launchApp
+
+- tapOn: "⏰"
+- assertVisible:
+    text: "알람"
+    timeout: 3000
+
+- tapOn:
+    text: ".*추가.*|.*만들기.*"
+    regex: true
+
+- assertVisible:
+    text: "알람 설정"
+    timeout: 3000
+
+- scrollUntilVisible:
+    element:
+      text: ".*저장.*|.*만들기.*"
+      regex: true
+    direction: DOWN
+
+- tapOn:
+    text: ".*저장.*|.*만들기.*"
+    regex: true
+
+- assertVisible:
+    text: "알람"
+    timeout: 5000
+
+- tapOn:
+    text: ".*\\d{1,2}:\\d{2}.*"
+    regex: true
+
+- assertVisible:
+    text: ".*알람.*편집.*|.*알람 설정.*"
+    regex: true
+    timeout: 3000
+
+- back
+
+- assertVisible:
+    text: "알람"
+    timeout: 3000
+
+- swipe:
+    direction: LEFT
+    from:
+      text: ".*\\d{1,2}:\\d{2}.*"
+      regex: true
+
+- tapOn:
+    text: ".*삭제.*|🗑️"
+    regex: true
+    optional: true
+
+- tapOn:
+    text: ".*삭제.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: "알람"
+    timeout: 5000

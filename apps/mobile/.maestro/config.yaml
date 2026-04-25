@@ -10,3 +10,5 @@ executionOrder:
     - 07-message-tab.yaml
     - 08-code-register.yaml
     - 09-alarm-voice-toggle.yaml
+    - 10-home-character.yaml
+    - 11-alarm-edit-delete.yaml

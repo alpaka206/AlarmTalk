@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P137 (code.ts 라우트 엣지 케이스 테스트 6개 추가)
+- 마지막 루프: 2026-04-25 — P138 (Maestro E2E 플로우 2개 추가: home-character, alarm-edit-delete)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -27,6 +27,7 @@
 - **P135**: 미테스트 React.memo 컴포넌트 4개 단위 테스트 추가 (36 tests)
 - **P136**: AlarmListItem 컴포넌트 단위 테스트 17개 추가
 - **P137**: code.ts 라우트 엣지 케이스 테스트 6개 추가 (비문자열 코드, invite expired status, max_members 폴백, unknown plan_type, period_days 폴백)
+- **P138**: Maestro E2E 플로우 2개 추가 (10-home-character, 11-alarm-edit-delete) + README 테스트 수 보정
 
 ## 알려진 이슈
 - [blocked] Perso API 404

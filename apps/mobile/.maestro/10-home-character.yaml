@@ -1,0 +1,58 @@
+appId: com.devrel.voicealarm
+name: "Home Screen & Character Widget"
+---
+
+- launchApp
+
+- tapOn: "🏠"
+- assertVisible:
+    text: ".*다음 알람.*|.*알람이 없어요.*"
+    regex: true
+    timeout: 3000
+
+- assertVisible:
+    text: ".*빠른 시작.*"
+    regex: true
+    timeout: 3000
+
+- scrollUntilVisible:
+    element:
+      text: ".*음성 녹음.*|🎙️"
+      regex: true
+    direction: DOWN
+    timeout: 5000
+
+- assertVisible:
+    text: ".*메시지 작성.*|✏️"
+    regex: true
+
+- assertVisible:
+    text: ".*알람 추가.*|⏰"
+    regex: true
+
+- scrollUntilVisible:
+    element:
+      text: ".*코드 등록.*|🔑"
+      regex: true
+    direction: DOWN
+    timeout: 3000
+
+- tapOn:
+    text: ".*Lv\\..*|.*레벨.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: ".*캐릭터.*|.*나무.*|🌰|🌱|🌳|🌸"
+    regex: true
+    timeout: 3000
+    optional: true
+
+- back
+  optional: true
+
+- tapOn: "🏠"
+- assertVisible:
+    text: ".*다음 알람.*|.*알람이 없어요.*"
+    regex: true
+    timeout: 3000
