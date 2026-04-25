@@ -8,6 +8,8 @@ const API_BASE_URL =
 
 const BASE = `${API_BASE_URL}/api`;
 const TIMEOUT_MS = 60000;
+const DEFAULT_GET_RETRIES = 2;
+const RETRY_BASE_MS = 1000;
 
 interface RequestConfig {
   method: string;
@@ -16,6 +18,22 @@ interface RequestConfig {
   params?: Record<string, string>;
   headers?: Record<string, string>;
   isFormData?: boolean;
+  retry?: number;
+}
+
+function retryDelay(attempt: number): number {
+  return RETRY_BASE_MS * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5);
+}
+
+function isRetryable(error: unknown): boolean {
+  if (error instanceof ApiError) {
+    return error.status >= 500;
+  }
+  return true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ApiError extends Error {
@@ -54,35 +72,50 @@ export async function request<T>(config: RequestConfig): Promise<T> {
     if (qs) url += `?${qs}`;
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const maxRetries =
+    config.retry ?? (config.method === 'GET' ? DEFAULT_GET_RETRIES : 0);
+  let lastError: unknown;
 
-  try {
-    const res = await fetch(url, {
-      method: config.method,
-      headers,
-      body: config.isFormData
-        ? (config.body as FormData)
-        : config.body != null
-          ? JSON.stringify(config.body)
-          : undefined,
-      signal: controller.signal,
-    });
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    if (res.status === 401) {
-      await AsyncStorage.removeItem('auth_token');
+    try {
+      const res = await fetch(url, {
+        method: config.method,
+        headers,
+        body: config.isFormData
+          ? (config.body as FormData)
+          : config.body != null
+            ? JSON.stringify(config.body)
+            : undefined,
+        signal: controller.signal,
+      });
+
+      if (res.status === 401) {
+        await AsyncStorage.removeItem('auth_token');
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new ApiError(res.status, errData);
+      }
+
+      if (res.status === 204) return undefined as T;
+      return (await res.json()) as T;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetries && isRetryable(error)) {
+        await sleep(retryDelay(attempt));
+        continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
     }
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null);
-      throw new ApiError(res.status, errData);
-    }
-
-    if (res.status === 204) return undefined as T;
-    return (await res.json()) as T;
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw lastError;
 }
 
 export function get<T>(path: string, params?: Record<string, string>): Promise<T> {

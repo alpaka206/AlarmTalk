@@ -210,6 +210,137 @@ describe('request()', () => {
   });
 });
 
+describe('retry behavior', () => {
+  beforeEach(() => {
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn: () => void) => {
+      fn();
+      return 0 as unknown as NodeJS.Timeout;
+    });
+  });
+
+  afterEach(() => {
+    (global.setTimeout as unknown as jest.SpyInstance).mockRestore();
+  });
+
+  it('GET 요청은 5xx 에러 시 자동으로 재시도한다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }))
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+
+    const result = await request<{ ok: boolean }>({ method: 'GET', path: '/flaky' });
+
+    expect(result).toEqual({ ok: true });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('GET 요청은 네트워크 에러 시 재시도한다', async () => {
+    (global.fetch as jest.Mock)
+      .mockRejectedValueOnce(new TypeError('Network request failed'))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+
+    const result = await request<{ ok: boolean }>({ method: 'GET', path: '/flaky' });
+
+    expect(result).toEqual({ ok: true });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('GET 요청은 최대 3회(초기+재시도2) 시도 후 실패한다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValue(jsonResponse(500, { error: 'down' }));
+
+    await expect(request({ method: 'GET', path: '/down' })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('4xx 에러는 재시도하지 않는다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(422, { error: 'validation' }));
+
+    await expect(request({ method: 'GET', path: '/bad' })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('401 에러는 재시도하지 않는다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(401, { error: 'unauthorized' }));
+
+    await expect(request({ method: 'GET', path: '/auth' })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('POST 요청은 기본적으로 재시도하지 않는다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }));
+
+    await expect(request({ method: 'POST', path: '/create', body: {} })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('PATCH 요청은 기본적으로 재시도하지 않는다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }));
+
+    await expect(request({ method: 'PATCH', path: '/update', body: {} })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('DELETE 요청은 기본적으로 재시도하지 않는다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }));
+
+    await expect(request({ method: 'DELETE', path: '/remove' })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retry=0으로 GET 재시도를 비활성화할 수 있다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }));
+
+    await expect(request({ method: 'GET', path: '/no-retry', retry: 0 })).rejects.toThrow(ApiError);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retry 옵션으로 POST 재시도를 활성화할 수 있다', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }))
+      .mockResolvedValueOnce(jsonResponse(200, { id: '1' }));
+
+    const result = await request<{ id: string }>({
+      method: 'POST',
+      path: '/create',
+      body: {},
+      retry: 1,
+    });
+
+    expect(result).toEqual({ id: '1' });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('재시도 사이에 지수 백오프 딜레이가 적용된다', async () => {
+    const sleepCalls: number[] = [];
+    (global.setTimeout as unknown as jest.SpyInstance).mockRestore();
+    jest.spyOn(global, 'setTimeout').mockImplementation((fn: () => void, ms?: number) => {
+      if (ms != null && ms > 100 && ms < 10000) sleepCalls.push(ms);
+      fn();
+      return 0 as unknown as NodeJS.Timeout;
+    });
+
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }))
+      .mockResolvedValueOnce(jsonResponse(500, { error: 'internal' }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+
+    await request<{ ok: boolean }>({ method: 'GET', path: '/slow' });
+
+    expect(sleepCalls.length).toBe(2);
+    expect(sleepCalls[0]!).toBeGreaterThanOrEqual(500);
+    expect(sleepCalls[0]!).toBeLessThanOrEqual(1500);
+    expect(sleepCalls[1]!).toBeGreaterThanOrEqual(1000);
+    expect(sleepCalls[1]!).toBeLessThanOrEqual(3000);
+  });
+});
+
 describe('convenience methods', () => {
   beforeEach(() => {
     (global.fetch as jest.Mock).mockResolvedValue(jsonResponse(200, { ok: true }));

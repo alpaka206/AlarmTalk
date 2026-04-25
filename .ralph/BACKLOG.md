@@ -1716,3 +1716,11 @@
 - [x] i18n ko.json/en.json에 apiError.* 키 27개 추가
 - [x] apiErrors.test.ts 테스트 확장 (37→62)
 - [x] i18nKeys.test.ts 키 일관성 검증 통과
+
+## P178 — API 요청 재시도 + 지수 백오프 ✅ (2026-04-25)
+- [x] `services/api/core.ts`에 retry loop + exponential backoff with jitter 추가
+- [x] GET 요청: 기본 2회 재시도 (5xx, 네트워크 에러 대상)
+- [x] POST/PATCH/DELETE: 기본 재시도 없음 (retry 옵션으로 opt-in 가능)
+- [x] 4xx 에러(401, 422 등): 재시도 안 함
+- [x] apiCore.test.ts 재시도 테스트 11개 추가 (22→33)
+- [x] Mobile jest: 2006 passed (1995→2006)
