@@ -1741,3 +1741,16 @@
 - [x] allowedIdentical 세트에서 삭제된 settings.languageKorean 제거
 - [x] typecheck: backend + mobile 0 errors
 - [x] i18nKeys tests: 15/15 통과
+
+## P181 — CI 매트릭스 확장 (ui/voice 패키지) ✅ (2026-04-25)
+- [x] `.github/workflows/ci.yml` typecheck 매트릭스: packages/ui, packages/voice 추가 (3→5)
+- [x] `.github/workflows/ci.yml` test 매트릭스: packages/ui, packages/voice 추가 (3→5)
+- [x] README.md 테스트 현황 표에 UI 토큰(38), Voice 어댑터(11) 행 추가
+- [x] format:check CI 추가 시도 → 263파일 불일치로 보류 (P182로 이관)
+- [x] typecheck: backend + mobile + ui + voice 0 errors
+
+## P182 — Prettier 포맷팅 정규화 (배치)
+- [x] Batch 1: packages/shared (6) + packages/ui (9) + packages/voice (7) = 22파일 포맷팅 완료
+- [ ] Batch 2: packages/backend src/ (20파일씩, 총 107파일 잔여)
+- [ ] Batch 3~N: apps/mobile (20파일씩, 총 136파일 잔여)
+- [ ] 전체 완료 후 CI에 format:check 스텝 추가

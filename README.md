@@ -194,6 +194,8 @@ npm test             # 전체 테스트 (backend + mobile)
 |------|-----------|----------|
 | 백엔드 | Vitest | 1379 |
 | 모바일 | Jest | 2007 |
+| UI 토큰 | Vitest | 38 |
+| Voice 어댑터 | Vitest | 11 |
 | E2E | Maestro | 13 플로우 |
 
 ## 브랜치 전략

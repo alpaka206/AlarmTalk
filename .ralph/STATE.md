@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P180 (i18n 미사용 키 39개 삭제 + 역방향 검증 테스트 추가)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P180 전체 완료**
+- 마지막 루프: 2026-04-25 — P181 + P182-B1 (CI 매트릭스 확장 + Prettier 포맷팅 Batch 1)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P181 완료 + P182 진행중 (Batch 1/N)**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -69,6 +69,7 @@
 - **P178**: API 요청 재시도 + 지수 백오프 (GET 자동 2회 재시도, 5xx/네트워크 에러 대응, 테스트 11개)
 - **P179**: 누락된 Stack.Screen 등록 2개 (voice/picker, friend/[id]) + i18n screen.* 키 2개 추가 + friend/[id] 중복 back 버튼/SafeAreaView 제거
 - **P180**: i18n 미사용 키 39개 삭제 (ko/en 양쪽) + extractLiteralKeys 개선 (배열 요소 패턴 캐치) + 역방향 검증 테스트 추가 (867→828 keys)
+- **P181**: CI 매트릭스 확장 — packages/ui (38 tests) + packages/voice (11 tests) typecheck+test 매트릭스 추가 + README 테스트 현황 업데이트
 
 ## 알려진 이슈
 - [blocked] Perso API 404
