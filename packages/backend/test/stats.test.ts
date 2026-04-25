@@ -137,7 +137,7 @@ describe('GET /stats — 대시보드 통계', () => {
     expect(mockDB.calls[2].args).toContain('test-user-42');
   });
 
-  it('DB 에러 시 500', async () => {
+  it('DB 에러 시 500 + error_code', async () => {
     const origExecute = mockDB.client.execute;
     mockDB.client.execute = async () => {
       throw new Error('DB connection lost');
@@ -149,8 +149,39 @@ describe('GET /stats — 대시보드 통계', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe('Failed to fetch stats');
+    expect(body.error_code).toBe('FETCH_STATS_FAILED');
 
     mockDB.client.execute = origExecute;
+  });
+
+  it('빈 rows 배열 반환 시 0으로 폴백', async () => {
+    for (let i = 0; i < 6; i++) mockDB.pushResult([]);
+    for (let i = 0; i < 5; i++) mockDB.pushResult([]);
+
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/stats'));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.alarms).toEqual({ total: 0, active: 0 });
+    expect(body.messages).toEqual({ total: 0 });
+    expect(body.voices).toEqual({ total: 0 });
+    expect(body.friends).toEqual({ total: 0 });
+    expect(body.gifts).toEqual({ received: 0, receivedPending: 0, sent: 0 });
+    expect(body.trends.alarms).toEqual({ thisWeek: 0, lastWeek: 0 });
+  });
+
+  it('큰 숫자 정상 반환', async () => {
+    pushAllStatsResults({ alarms: { total: 99999, active: 50000 }, messages: 100000 });
+
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/stats'));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.alarms.total).toBe(99999);
+    expect(body.alarms.active).toBe(50000);
+    expect(body.messages.total).toBe(100000);
   });
 });
 
@@ -274,7 +305,7 @@ describe('GET /stats/activity — 최근 활동', () => {
     expect(mockDB.calls[3].sql).toContain('voice_profiles');
   });
 
-  it('DB 에러 시 500', async () => {
+  it('DB 에러 시 500 + error_code', async () => {
     const origExecute = mockDB.client.execute;
     mockDB.client.execute = async () => {
       throw new Error('timeout');
@@ -286,7 +317,58 @@ describe('GET /stats/activity — 최근 활동', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe('Failed to fetch activity');
+    expect(body.error_code).toBe('FETCH_ACTIVITY_FAILED');
 
     mockDB.client.execute = origExecute;
+  });
+
+  it('10개 초과 활동 → 최대 10개 반환', async () => {
+    const alarms = Array.from({ length: 5 }, (_, i) => ({
+      id: `a${i}`,
+      time: `0${i}:00`,
+      created_at: `2026-04-24T0${i}:00:00Z`,
+      type: 'alarm',
+    }));
+    const messages = Array.from({ length: 5 }, (_, i) => ({
+      id: `m${i}`,
+      text: `메시지 ${i}`,
+      created_at: `2026-04-24T1${i}:00:00Z`,
+      type: 'message',
+    }));
+    const gifts = Array.from({ length: 3 }, (_, i) => ({
+      id: `g${i}`,
+      note: `선물 ${i}`,
+      status: 'pending',
+      created_at: `2026-04-23T0${i}:00:00Z`,
+      type: 'gift',
+    }));
+
+    mockDB.pushResult(alarms);
+    mockDB.pushResult(messages);
+    mockDB.pushResult(gifts);
+    mockDB.pushResult([]);
+
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/stats/activity'));
+    const body = await res.json();
+
+    expect(body.activities).toHaveLength(10);
+    expect(body.activities[0].type).toBe('message');
+  });
+
+  it('선물 note 50자 초과 시 잘림', async () => {
+    const longNote = '나'.repeat(60);
+    mockDB.pushResult([]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([
+      { id: 'g1', note: longNote, status: 'pending', created_at: '2026-04-24T06:00:00Z', type: 'gift' },
+    ]);
+    mockDB.pushResult([]);
+
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/stats/activity'));
+    const body = await res.json();
+
+    expect(body.activities[0].summary).toHaveLength(50);
   });
 });
