@@ -241,6 +241,15 @@
 - [x] 전체 모바일 테스트 898/898 통과 (기존 841 + 신규 57)
 - [x] typecheck 통과 (backend + mobile 0 errors)
 
+## P143 — library.ts 라우트 테스트 확장 ✅ (2026-04-25)
+
+- [x] GET /library 엣지 케이스 11개 추가 (voice/date 필터 검증, limit/offset 클램프, DB 에러, SQL 검증)
+- [x] PATCH /library/:id/favorite 엣지 케이스 5개 추가 (error_code, DB 에러, user_id 검증)
+- [x] DELETE /library/:id 엣지 케이스 4개 추가 (error_code, DB 에러, user_id 검증)
+- [x] beforeEach → mockDB.reset() 개선 + ID 상수 사용
+- [x] 전체 backend 테스트 1172/1172 통과 (1151→1172, +21)
+- [x] typecheck 통과 (backend + mobile 0 errors)
+
 ---
 
 ## 완료 항목 (이전 루프)
