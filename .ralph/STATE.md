@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P148 (libraryScreen + playerScreen + voiceRecordScreen 비즈니스 로직 테스트 165개 추가, 1449→1614 mobile tests)
+- 마지막 루프: 2026-04-25 — P149 (alarmEditScreen + messageCreateScreen + friendProfileScreen 비즈니스 로직 테스트 146개 추가, 1614→1760 mobile tests)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -38,6 +38,7 @@
 - **P146**: characterScreen/codeRegisterScreen 단위 테스트 89개 추가 + homeScreen/settingsScreen typecheck 수정 (1250→1339)
 - **P147**: peopleScreen + alarmCreateScreen 비즈니스 로직 테스트 110개 추가 (1339→1449)
 - **P148**: libraryScreen + playerScreen + voiceRecordScreen 비즈니스 로직 테스트 165개 추가 (1449→1614)
+- **P149**: alarmEditScreen + messageCreateScreen + friendProfileScreen 비즈니스 로직 테스트 146개 추가 (1614→1760)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -60,7 +61,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1185 tests (58 files)
-- Mobile: 1614 tests (75 files)
+- Mobile: 1760 tests (78 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)
