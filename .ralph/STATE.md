@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P116 billing-mutation + billing-query 통합 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P116 완료**
+- 마지막 루프: 2026-04-25 — P117 character-mutation + character-query 통합 테스트
+- 현재 Phase: **R0~R6 전체 완료 + P11~P117 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 940/940, mobile 1012/1012)
+- 전체 테스트 통과 (backend 980/980, mobile 1012/1012)
 
 ## 완료된 리팩토링
 
@@ -37,7 +37,7 @@
 - Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 940 tests (53 files) — 모든 라우트 + 미들웨어 + 유틸리티 + 전체 split module 테스트
+- Backend: 980 tests (55 files) — 모든 라우트 + 미들웨어 + 유틸리티 + 전체 split module 테스트
 - Mobile: 1012 tests (58 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14) + 화면 비즈니스 로직 (voices/compose/noteCreate)
 - 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)

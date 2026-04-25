@@ -1492,8 +1492,9 @@
 
 ## P117 — character-mutation + character-query 통합 테스트
 
-- [ ] `packages/backend/test/character-mutation.test.ts` — XP 부여, 스트릭 계산, 캐릭터 생성/업데이트 비즈니스 로직
-- [ ] `packages/backend/test/character-query.test.ts` — 캐릭터 조회, 스트릭/능력치/업적 응답 구조
+- [x] `packages/backend/test/character-mutation.test.ts` — 26 tests (DB 쿼리 구조, 이벤트별 XP/affection, 스트릭 로직, 30/90일 마일스톤, nonce 중복, level/stage 재계산)
+- [x] `packages/backend/test/character-query.test.ts` — 14 tests (resolveUserPk/자동생성, loadStats/loadAchievements, XP기반 level/stage 재계산, progress, streak 매핑)
+- [x] 전체 테스트: backend 980/980 (55 suites), mobile 1012/1012, typecheck 0 errors
 
 ## P118 — voice-profile + voice-upload 통합 테스트
 
