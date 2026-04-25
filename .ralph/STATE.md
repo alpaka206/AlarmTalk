@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P156 (알람 편집 PresetMessageSection 추가 + 타입 중복 제거)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P154 부분 완료**
+- 마지막 루프: 2026-04-25 — P160 (설정 화면 비활성 UI 5건 수정 + 알림 기본설정 스토어)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P160 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -46,6 +46,8 @@
 - **P154**: 홈 화면 최근 활동 피드 통합 (getActivity API + activityHelpers + 홈 UI 섹션 + i18n 12키 + 테스트 10개)
 - **P155**: 알람 생성/편집 폼 접근성 레이블 누락 8개 보완 (전체 앱 a11y 100% 커버리지 달성)
 - **P156**: 알람 편집 PresetMessageSection 추가 (R2 스펙 갭 수정) + AlarmMode/VibrationPattern/WakeMode 타입 중복 정의 제거
+- **P157**: R2 알람 기본 모드 sound-only 수정 + R5 프로필 드롭다운 people 항목 제거 + i18n 정리
+- **P160**: 설정 화면 비활성 UI 5건 수정 (알림 Switch 연결, 플랜 관리 내비게이션, 언어 토글, 음성 품질 dead onPress 제거) + 알림 기본설정 스토어 추가
 
 ## 알려진 이슈
 - [blocked] Perso API 404

@@ -1623,3 +1623,18 @@
 - [x] 홈 화면 최근 활동 피드 통합: getActivity API 함수 + ActivityItem 타입 + activityHelpers 헬퍼 + 홈 UI 섹션 + i18n 12키 + 테스트 10개 (P154)
 - [x] 알람 생성/편집 폼 접근성 레이블 누락 8개 보완: mode/wakeMode 라디오 버튼 — 전체 앱 a11y 100% 커버리지 달성 (P155)
 - [x] 알람 편집 PresetMessageSection 추가 (R2 스펙 갭 — create/edit 기능 대칭 완성) + AlarmMode/VibrationPattern/WakeMode 타입 중복 정의 제거 (types.ts 단일 소스) (P156)
+- [x] R2 알람 기본 모드 수정 (sound-only) + R5 프로필 드롭다운 people 항목 제거 + i18n profile.people 정리 (P157)
+
+## P158 — 프로덕션 준비: console.log/warn 정리 ✅ (2026-04-25)
+- [x] 앱/백엔드 console 사용 감사 — 모바일 0건, 백엔드 logger.ts/middleware만 사용 (정상)
+
+## P159 — 딥링크 URL 스킴 ✅ (이미 구현됨)
+- [x] expo-linking URL scheme 설정 (voicealarm://) — app.json + deepLink.ts + _layout.tsx
+- [x] 코드/알람/음성/노트/메시지/사람/설정/캐릭터/라이브러리/플레이어 10개 라우트 지원
+
+## P160 — 설정 화면 비활성 UI 수정 + 알림 기본설정 스토어
+- [x] useAppStore에 alarmNotifications/messageNotifications 상태 + setter + 영속화 추가
+- [x] settings/index.tsx 알림 Switch를 스토어 상태에 연결 (value/onValueChange)
+- [x] settings/index.tsx "플랜 관리" → /code-register 내비게이션 연결
+- [x] settings/index.tsx 음성 품질 dead onPress 제거
+- [x] settings/index.tsx 언어 설정 실제 i18n.changeLanguage() 호출로 교체

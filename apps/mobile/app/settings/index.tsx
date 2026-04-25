@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, Switch, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import Constants from 'expo-constants';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
@@ -14,12 +15,13 @@ import * as Notifications from 'expo-notifications';
 import { getAudioCacheSize, clearAudioCache } from '../../src/services/audio';
 
 export default function SettingsScreen() {
-  const { plan, isAuthenticated, clearAuth, defaultSnoozeMinutes, setDefaultSnoozeMinutes, darkMode, setDarkMode } = useAppStore();
+  const { plan, isAuthenticated, clearAuth, defaultSnoozeMinutes, setDefaultSnoozeMinutes, darkMode, setDarkMode, alarmNotifications, setAlarmNotifications, messageNotifications, setMessageNotifications } = useAppStore();
   const { colors } = useTheme();
   const styles = useMemo(() => createSettingsStyles(colors), [colors]);
   const [cacheSize, setCacheSize] = useState(0);
   const [notifStatus, setNotifStatus] = useState<string>('undetermined');
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const router = useRouter();
 
   const { data: profile } = useQuery({
     queryKey: ['userProfile'],
@@ -86,7 +88,7 @@ export default function SettingsScreen() {
               <SettingRow colors={colors} label={t('settings.email')} value={profile.email} />
             )}
             <SettingRow colors={colors} label={t('settings.plan')} value={getPlanLabel()} />
-            <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => {}} />
+            <SettingRow colors={colors} label={t('settings.managePlan')} value="→" onPress={() => router.push('/code-register')} />
           </View>
         </View>
 
@@ -113,11 +115,12 @@ export default function SettingsScreen() {
               label={t('settings.alarmNotif')}
               trailing={
                 <Switch
-                  value={true}
+                  value={alarmNotifications}
+                  onValueChange={setAlarmNotifications}
                   trackColor={{ true: colors.primary }}
                   accessibilityRole="switch"
                   accessibilityLabel={t('settings.alarmNotif')}
-                  accessibilityState={{ checked: true }}
+                  accessibilityState={{ checked: alarmNotifications }}
                 />
               }
             />
@@ -126,11 +129,12 @@ export default function SettingsScreen() {
               label={t('settings.messageNotif')}
               trailing={
                 <Switch
-                  value={true}
+                  value={messageNotifications}
+                  onValueChange={setMessageNotifications}
                   trackColor={{ true: colors.primary }}
                   accessibilityRole="switch"
                   accessibilityLabel={t('settings.messageNotif')}
-                  accessibilityState={{ checked: true }}
+                  accessibilityState={{ checked: messageNotifications }}
                 />
               }
             />
@@ -172,7 +176,6 @@ export default function SettingsScreen() {
               colors={colors}
               label={t('settings.voiceQuality')}
               value={t('settings.voiceQualityHigh')}
-              onPress={() => {}}
             />
             <SettingRow colors={colors} label={t('settings.cacheSize')} value={formatBytes(cacheSize)} />
             <SettingRow
@@ -215,8 +218,8 @@ export default function SettingsScreen() {
             <SettingRow
               colors={colors}
               label={t('settings.language')}
-              value={t('settings.languageKorean')}
-              onPress={() => {}}
+              value={i18n.language === 'ko' ? 'English' : '한국어'}
+              onPress={() => i18n.changeLanguage(i18n.language === 'ko' ? 'en' : 'ko')}
             />
           </View>
         </View>

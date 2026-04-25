@@ -128,13 +128,6 @@ export function ProfileDropdown() {
 
             <MenuItem
               styles={styles}
-              label={t('profile.people')}
-              icon="👤"
-              onPress={() => { setVisible(false); router.push('/people'); }}
-            />
-
-            <MenuItem
-              styles={styles}
               label={t('profile.codeRegister')}
               icon="🎟️"
               onPress={() => { setVisible(false); router.push('/code-register'); }}

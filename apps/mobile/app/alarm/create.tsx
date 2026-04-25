@@ -58,7 +58,7 @@ export default function CreateAlarmScreen() {
   const [presetCategory, setPresetCategory] = useState<string>('morning');
   const [presetText, setPresetText] = useState<string | null>(null);
   const [presetVoiceId, setPresetVoiceId] = useState<string | null>(null);
-  const [mode, setMode] = useState<AlarmMode>('tts');
+  const [mode, setMode] = useState<AlarmMode>('sound-only');
   const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
   const [wakeMode, setWakeMode] = useState<'sound_then_voice' | 'voice_only'>('sound_then_voice');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
