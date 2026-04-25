@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P125 (성능 프로파일링: useCallback 최적화 4개 화면)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P125 부분 완료**
+- 마지막 루프: 2026-04-25 — P126 (성능 프로파일링 Phase 2: React.memo 컴포넌트 추출)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P126 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -15,6 +15,7 @@
 - **P123**: 접근성 누락 보완 완료
 - **P124**: player/character 상수 분리 완료
 - **P125**: 성능 프로파일링 — useCallback 최적화 (alarms, voices, library, home 화면)
+- **P126**: 성능 프로파일링 Phase 2 — React.memo 컴포넌트 추출 (AlarmListItem, LibraryListItem, VoiceProfileItem)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -52,5 +53,5 @@
 ## 성능 최적화 현황
 - FlatList: initialNumToRender, maxToRenderPerBatch, windowSize, removeClippedSubviews 전체 적용
 - useCallback: alarms, voices, library, home 화면 핸들러/렌더러 최적화 완료
-- React.memo: FamilyMemberRow, PeopleSkeletonCard 적용
-- 추가 최적화 후보: React.memo 컴포넌트 추출 (AlarmListItem 등), countdown 분리
+- React.memo: FamilyMemberRow, PeopleSkeletonCard, AlarmListItem, LibraryListItem, VoiceProfileItem 적용
+- 추가 최적화 후보: countdown 분리 (CountdownText), people/index.tsx useCallback

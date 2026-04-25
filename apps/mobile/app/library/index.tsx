@@ -9,12 +9,10 @@ import {
   RefreshControl,
   Animated as RNAnimated,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getDateLocale } from '../../src/i18n';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createLibraryStyles } from '../../src/styles/libraryStyles';
 import { getLibrary, toggleFavorite, deleteLibraryItem } from '../../src/services/api';
@@ -22,7 +20,7 @@ import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheLibrary, getCachedLibrary } from '../../src/services/offlineCache';
 import { ErrorView } from '../../src/components/QueryStateView';
-import { MiniWaveformPlayer } from '../../src/components/MiniWaveformPlayer';
+import { LibraryListItem } from '../../src/components/LibraryListItem';
 import { Audio } from 'expo-av';
 import type { LibraryItem } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
@@ -160,21 +158,6 @@ export default function LibraryScreen() {
     setCurrentSound(null);
   }, [setPlaying]);
 
-  const getCategoryEmoji = (category: string) => {
-    const map: Record<string, string> = {
-      morning: '🌅',
-      lunch: '🍽️',
-      afternoon: '☕',
-      evening: '🌙',
-      night: '😴',
-      cheer: '💪',
-      love: '❤️',
-      health: '🏥',
-      custom: '✏️',
-    };
-    return map[category] || '💌';
-  };
-
   const CATEGORY_I18N: Record<string, string> = {
     morning: 'library.categoryMorning',
     lunch: 'library.categoryLunch',
@@ -209,69 +192,29 @@ export default function LibraryScreen() {
     [dynStyles, categoryFilter, t, getCategoryLabel],
   );
 
-  const renderItem = useCallback(({ item }: { item: LibraryItem }) => {
-    const isActive = currentPlayingId === item.message_id;
-    return (
-      <Swipeable
-        renderRightActions={renderDeleteAction}
-        onSwipeableOpen={() => handleDelete(item.id)}
-        overshootRight={false}
-      >
-        <TouchableOpacity
-          style={dynStyles.messageCard}
-          onPress={() => router.push(`/message/${item.message_id}`)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.voice_name}, ${getCategoryLabel(item.category)}: ${item.text}`}
-        >
-          <View style={dynStyles.messageLeft}>
-            <View style={dynStyles.avatarSmall}>
-              <Text style={dynStyles.avatarLetter}>{item.voice_name?.charAt(0) || '?'}</Text>
-            </View>
-            <View style={dynStyles.messageContent}>
-              <View style={dynStyles.messageHeader}>
-                <Text style={dynStyles.voiceName}>{item.voice_name}</Text>
-                <Text
-                  style={dynStyles.categoryBadge}
-                  accessibilityLabel={t('library.a11yCategoryBadge', { category: getCategoryLabel(item.category) })}
-                >{getCategoryEmoji(item.category)}</Text>
-              </View>
-              <Text style={dynStyles.messageText} numberOfLines={2}>
-                &quot;{item.text}&quot;
-              </Text>
-              <View style={dynStyles.miniPlayerRow}>
-                <MiniWaveformPlayer
-                  messageId={item.message_id}
-                  isActive={isActive}
-                  onPlay={handleMiniPlay}
-                  onStop={handleMiniStop}
-                />
-              </View>
-              <Text style={dynStyles.messageDate}>
-                {new Date(item.received_at).toLocaleDateString(getDateLocale(), {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-            </View>
-          </View>
+  const handleItemPress = useCallback((messageId: string) => {
+    router.push(`/message/${messageId}`);
+  }, [router]);
 
-          <View style={dynStyles.messageActions}>
-            <TouchableOpacity
-              onPress={() => favoriteMutation.mutate(item.id)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={item.is_favorite ? t('library.removeFavorite') : t('library.addFavorite')}
-            >
-              <Text style={dynStyles.favoriteIcon}>{item.is_favorite ? '❤️' : '🤍'}</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Swipeable>
-    );
-  }, [dynStyles, router, currentPlayingId, handleDelete, handleMiniPlay, handleMiniStop, getCategoryLabel, renderDeleteAction, favoriteMutation, t]);
+  const handleFavorite = useCallback((id: string) => {
+    favoriteMutation.mutate(id);
+  }, [favoriteMutation]);
+
+  const renderItem = useCallback(({ item }: { item: LibraryItem }) => (
+    <LibraryListItem
+      item={item}
+      styles={dynStyles}
+      isActive={currentPlayingId === item.message_id}
+      t={t}
+      getCategoryLabel={getCategoryLabel}
+      onPress={handleItemPress}
+      onDelete={handleDelete}
+      onFavorite={handleFavorite}
+      onPlay={handleMiniPlay}
+      onStop={handleMiniStop}
+      renderDeleteAction={renderDeleteAction}
+    />
+  ), [dynStyles, currentPlayingId, t, getCategoryLabel, handleItemPress, handleDelete, handleFavorite, handleMiniPlay, handleMiniStop, renderDeleteAction]);
 
   return (
     <SafeAreaView style={dynStyles.container} edges={['bottom']}>

@@ -10,13 +10,12 @@ import {
   RefreshControl,
   Animated as RNAnimated,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getDateLocale } from '../../src/i18n';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
+import { VoiceProfileItem } from '../../src/components/VoiceProfileItem';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createVoicesStyles } from '../../src/styles/voicesStyles';
 import {
@@ -144,46 +143,21 @@ function VoicesScreen() {
     );
   }, [styles, t]);
 
-  const renderProfile = useCallback(({ item }: { item: VoiceProfile }) => {
-    const badge = getStatusBadge(item.status);
-    return (
-      <Swipeable
-        renderRightActions={renderDeleteAction}
-        onSwipeableOpen={() => handleDelete(item.id, item.name)}
-        overshootRight={false}
-      >
-        <TouchableOpacity
-          style={styles.profileCard}
-          activeOpacity={0.7}
-          onPress={() => router.push({ pathname: '/voice/[id]', params: { id: item.id } })}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name} ${badge.label}`}
-        >
-          <View style={styles.avatarContainer}>
-            <Text style={styles.avatarText}>{item.name.charAt(0)}</Text>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{item.name}</Text>
-            <View style={[styles.statusBadge, { backgroundColor: badge.color + '20' }]}>
-              <View style={[styles.statusDot, { backgroundColor: badge.color }]} />
-              <Text style={[styles.statusText, { color: badge.color }]}>{badge.label}</Text>
-            </View>
-            <Text style={styles.profileDate}>
-              {new Date(item.created_at).toLocaleDateString(getDateLocale())}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => handleDelete(item.id, item.name)}
-            accessibilityRole="button"
-            accessibilityLabel={`${t('common.delete')} ${item.name}`}
-          >
-            <Text style={styles.deleteText}>{t('common.delete')}</Text>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Swipeable>
-    );
-  }, [styles, router, handleDelete, getStatusBadge, renderDeleteAction, t]);
+  const handleProfilePress = useCallback((id: string) => {
+    router.push({ pathname: '/voice/[id]', params: { id } });
+  }, [router]);
+
+  const renderProfile = useCallback(({ item }: { item: VoiceProfile }) => (
+    <VoiceProfileItem
+      item={item}
+      styles={styles}
+      t={t}
+      getStatusBadge={getStatusBadge}
+      onPress={handleProfilePress}
+      onDelete={handleDelete}
+      renderDeleteAction={renderDeleteAction}
+    />
+  ), [styles, t, handleProfilePress, handleDelete, getStatusBadge, renderDeleteAction]);
 
   const renderFamilyProfile = useCallback(({ item }: { item: FamilyVoiceProfile }) => (
     <View style={styles.familyCard}>

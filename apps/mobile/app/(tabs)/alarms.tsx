@@ -5,18 +5,17 @@ import {
   TextInput,
   FlatList,
   TouchableOpacity,
-  Switch,
   Alert,
   ActivityIndicator,
   RefreshControl,
   Animated as RNAnimated,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
+import { AlarmListItem } from '../../src/components/AlarmListItem';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createAlarmsStyles } from '../../src/styles/alarmsStyles';
 import { getAlarms, updateAlarm, deleteAlarm, getMessages, getVoiceProfiles } from '../../src/services/api';
@@ -32,10 +31,8 @@ import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { parseRepeatDays } from '../../src/lib/alarmForm';
 import {
   buildAlarmPreviewAction,
-  getAlarmModeBadge,
   resolveAlarmPlayback,
 } from '../../src/lib/alarmPlayback';
-import { buildFamilyAlarmLabel } from '../../src/lib/familyAlarmLabel';
 import type { Message, VoiceProfile } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -274,88 +271,34 @@ function AlarmsScreen() {
     );
   }, [styles, t]);
 
-  const renderAlarm = useCallback(({ item }: { item: Alarm }) => {
-    const repeatDays = parseRepeatDays(item.repeat_days);
-    void tick;
-    const nextFireMs = getNextFireMs(item);
-    const perAlarmCountdown = nextFireMs !== null ? formatCountdown(nextFireMs, t) : null;
-    return (
-      <Swipeable
-        renderRightActions={renderDeleteAction}
-        onSwipeableOpen={() => handleDelete(item.id)}
-        overshootRight={false}
-      >
-        <TouchableOpacity
-          style={[styles.alarmCard, !item.is_active && styles.alarmCardInactive]}
-          onPress={() => router.push({ pathname: '/alarm/edit', params: { id: item.id } })}
-          onLongPress={() => handleDelete(item.id)}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel={`${t('alarms.title')} ${item.time} ${item.voice_name}`}
-        >
-          <View style={styles.alarmLeft}>
-            <Text style={[styles.alarmTime, !item.is_active && styles.timeInactive]}>
-              {item.time}
-            </Text>
-            <View style={styles.alarmSubRow}>
-              <Text style={[styles.alarmRepeat, !item.is_active && styles.textInactive]}>
-                {formatRepeatDays(repeatDays)}
-              </Text>
-              {item.is_active && perAlarmCountdown && (
-                <Text style={styles.alarmCountdown}>{perAlarmCountdown}</Text>
-              )}
-            </View>
-            <View style={styles.alarmMeta}>
-              <Text style={[styles.alarmVoice, !item.is_active && styles.textInactive]}>🗣️ {item.voice_name}</Text>
-              <View style={styles.modeBadge}>
-                <Text style={styles.modeBadgeText}>
-                  {getAlarmModeBadge(item.mode).emoji} {t(getAlarmModeBadge(item.mode).labelKey)}
-                </Text>
-              </View>
-              {(() => {
-                const familyLabel = buildFamilyAlarmLabel(item, userId, t);
-                return familyLabel.visible ? (
-                  <View style={styles.familyBadge}>
-                    <Text style={styles.familyBadgeText} accessibilityLabel={familyLabel.text}>
-                      {familyLabel.text}
-                    </Text>
-                  </View>
-                ) : null;
-              })()}
-              <Text style={[styles.alarmMessage, !item.is_active && styles.textInactive]} numberOfLines={1}>
-                "{item.message_text}"
-              </Text>
-            </View>
-          </View>
-          <View style={styles.alarmActions}>
-            <TouchableOpacity
-              style={styles.previewButton}
-              accessibilityRole="button"
-              accessibilityLabel={t('alarms.a11yPreview')}
-              onPress={(e) => {
-                e.stopPropagation();
-                handlePreview(item);
-              }}
-            >
-              <Text style={styles.previewIcon}>🔈</Text>
-            </TouchableOpacity>
-            <Switch
-              value={!!item.is_active}
-              onValueChange={(value) => toggleMutation.mutate({ id: item.id, is_active: value })}
-              trackColor={{
-                false: colors.border,
-                true: colors.primaryLight,
-              }}
-              thumbColor={item.is_active ? colors.primary : colors.surfaceVariant}
-              accessibilityRole="switch"
-              accessibilityLabel={t('alarms.toggleAlarm')}
-              accessibilityState={{ checked: !!item.is_active }}
-            />
-          </View>
-        </TouchableOpacity>
-      </Swipeable>
-    );
-  }, [tick, styles, colors, t, router, userId, handlePreview, handleDelete, formatRepeatDays, renderDeleteAction, toggleMutation]);
+  const handleAlarmPress = useCallback((alarm: Alarm) => {
+    router.push({ pathname: '/alarm/edit', params: { id: alarm.id } });
+  }, [router]);
+
+  const handleToggle = useCallback((id: string, isActive: boolean) => {
+    toggleMutation.mutate({ id, is_active: isActive });
+  }, [toggleMutation]);
+
+  const formatCountdownForItem = useCallback((ms: number) => formatCountdown(ms, t), [t]);
+
+  const renderAlarm = useCallback(({ item }: { item: Alarm }) => (
+    <AlarmListItem
+      item={item}
+      styles={styles}
+      colors={colors}
+      userId={userId}
+      tick={tick}
+      t={t}
+      formatRepeatDays={formatRepeatDays}
+      formatCountdown={formatCountdownForItem}
+      getNextFireMs={getNextFireMs}
+      onPress={handleAlarmPress}
+      onDelete={handleDelete}
+      onPreview={handlePreview}
+      onToggle={handleToggle}
+      renderDeleteAction={renderDeleteAction}
+    />
+  ), [tick, styles, colors, t, userId, handleAlarmPress, handleDelete, handlePreview, handleToggle, formatRepeatDays, formatCountdownForItem, renderDeleteAction]);
 
   return (
     <SafeAreaView style={styles.container}>
