@@ -322,6 +322,115 @@ describe('POST /alarms', () => {
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
     expect(insertCall!.args).toContain(15);
   });
+
+  it('target_user_id 비문자열 타입 → 400 INVALID_TARGET_USER', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, target_user_id: 123 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TARGET_USER');
+  });
+
+  it('voice_profile_id 잘못된 UUID 형식 → 400 INVALID_VOICE_PROFILE_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, voice_profile_id: 'not-a-uuid' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
+  });
+
+  it('speaker_id 잘못된 UUID 형식 → 400 INVALID_SPEAKER_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, speaker_id: 'bad-speaker' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_SPEAKER_ID');
+  });
+
+  it('repeat_days 배열이 아닌 값 → 400 INVALID_REPEAT_DAYS', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, repeat_days: 'mon,wed' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REPEAT_DAYS');
+  });
+
+  it('무료 플랜 count 문자열 "2" → Number() 변환 후 거부', async () => {
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([{ count: '2' }]);
+
+    const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FREE_PLAN_LIMIT');
+  });
+
+  it('time "00:00" 경계값 허용', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, time: '00:00' }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('time "23:59" 경계값 허용', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, time: '23:59' }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('time "24:00" → 400 INVALID_TIME_VALUE', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, time: '24:00' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TIME_VALUE');
+  });
+
+  it('snooze_minutes 경계값 1 (최소) 허용', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 1 }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('snooze_minutes 경계값 30 (최대) 허용', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 30 }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('repeat_days 소수점 값 → 400 INVALID_REPEAT_DAYS', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, repeat_days: [1, 2.5] }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REPEAT_DAYS');
+  });
+
+  it('repeat_days 음수 → 400 INVALID_REPEAT_DAYS', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, repeat_days: [-1, 3] }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REPEAT_DAYS');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -541,6 +650,104 @@ describe('PATCH /alarms/:id', () => {
     expect(res.status).toBe(200);
     const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
     expect(updateCall!.args).toContain(spkId);
+  });
+
+  it('voice_profile_id 잘못된 UUID → 400 INVALID_VOICE_PROFILE_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { voice_profile_id: 'bad-uuid' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VOICE_PROFILE_ID');
+  });
+
+  it('speaker_id 잘못된 UUID → 400 INVALID_SPEAKER_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { speaker_id: 'bad-speaker' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_SPEAKER_ID');
+  });
+
+  it('is_active 비불리언 → 400 INVALID_IS_ACTIVE', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { is_active: 'yes' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_IS_ACTIVE');
+  });
+
+  it('time 잘못된 형식 → 400 INVALID_TIME_FORMAT', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { time: '8:30' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TIME_FORMAT');
+  });
+
+  it('message_id 잘못된 UUID → 400 INVALID_MESSAGE_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { message_id: 'not-uuid' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_MESSAGE_ID');
+  });
+
+  it('UPDATE SQL에 항상 updated_at = datetime(now) 포함', async () => {
+    mockDB.pushResult([{ id: ID.alarm }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{
+      id: ID.alarm,
+      user_id: 'user-1',
+      target_user_id: null,
+      message_id: ID.message,
+      time: '08:00',
+      repeat_days: '[]',
+      is_active: 1,
+      snooze_minutes: 5,
+      mode: 'tts',
+      vibration_pattern: 'default',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+    }]);
+
+    await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { time: '08:00' }),
+    );
+    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
+    expect(updateCall!.sql).toContain("updated_at = datetime('now')");
+  });
+
+  it('mode 수정 시 UPDATE SQL에 mode 반영', async () => {
+    mockDB.pushResult([{ id: ID.alarm }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{
+      id: ID.alarm,
+      user_id: 'user-1',
+      target_user_id: null,
+      message_id: ID.message,
+      time: '07:30',
+      repeat_days: '[]',
+      is_active: 1,
+      snooze_minutes: 5,
+      mode: 'sound-only',
+      vibration_pattern: 'default',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+    }]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { mode: 'sound-only' }),
+    );
+    expect(res.status).toBe(200);
+    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
+    expect(updateCall!.sql).toContain('mode = ?');
+    expect(updateCall!.args).toContain('sound-only');
   });
 
   it('voice_profile_id null 로 해제', async () => {

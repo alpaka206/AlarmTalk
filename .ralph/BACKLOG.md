@@ -1692,9 +1692,15 @@
 - [x] TTS 엣지 케이스 19개 추가 (20→39): POST /generate 성공/실패 경로 13개 (user 미존재, 일일 리셋, plan 폴백, NO_VOICE_ID, ElevenLabs 실패/비-Error, 성공 경로, 경계값), GET /messages 필터/페이지네이션 6개 (limit 클램핑, offset 클램핑, 복합 필터), DELETE 순서/격리 3개
 - [x] translate.ts 라우트 미존재 확인 (dub.ts에 통합됨) — BACKLOG 항목 제거
 
-## P173 — 향후 작업 후보
+## P173 — stats.ts 엣지 케이스 테스트 ✅ (2026-04-25)
+- [x] stats.ts 라우트 엣지 케이스 테스트 확장 (18→35 tests, +17 edge cases)
+
+## P174 — alarm-mutation 엣지 케이스 테스트 ✅ (2026-04-25)
+- [x] alarm-mutation 엣지 케이스 19개 추가 (44→63): POST 비문자열 target_user_id, UUID 검증 (voice_profile_id/speaker_id), 비배열/소수점/음수 repeat_days, count 문자열 변환, time 경계값 3개, snooze 경계값 2개; PATCH UUID 검증 3개, is_active 비불리언, time 형식, updated_at SQL, mode SQL 반영
+
+## P175 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
-- [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
 - [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
-- [x] stats.ts 라우트 엣지 케이스 테스트 확장 (18→35 tests, +17 edge cases)
+- [ ] normalizeAlarmRow 단위 테스트 추가 (JSON 파싱 실패, 미지 mode 폴백, family alarm 판별)
+- [ ] alarm-helpers validateAlarmFields 단위 테스트 분리 (현재 라우트 통합으로만 테스트)
