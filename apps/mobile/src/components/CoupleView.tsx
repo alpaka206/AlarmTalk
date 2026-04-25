@@ -123,7 +123,7 @@ function createStyles(colors: ThemeColors) {
     avatarText: {
       fontSize: FontSize.xl,
       fontFamily: FontFamily.bold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     memberName: {
       fontSize: FontSize.md,
@@ -171,7 +171,7 @@ function createStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     alarmBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },

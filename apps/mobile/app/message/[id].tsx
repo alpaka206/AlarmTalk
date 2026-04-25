@@ -227,7 +227,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
   },
   playButtonText: {
-    color: '#fff',
+    color: colors.textOnPrimary,
     fontSize: FontSize.md,
     fontFamily: FontFamily.semibold,
   },

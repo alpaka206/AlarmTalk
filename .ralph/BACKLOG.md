@@ -1538,29 +1538,40 @@
 - [x] backgroundColor: '#FFF' → colors.surface (playerStyles, voiceRecordStyles)
 - [x] typecheck 통과
 
-### Batch 2: 컴포넌트 파일 (대기)
-- [ ] EmailPasswordForm.tsx — #FFFFFF (2건)
-- [ ] ErrorBoundary.tsx — #FFFFFF (1건)
-- [ ] NotificationBell.tsx — #FFF (1건)
-- [ ] OfflineBanner.tsx — #FFFFFF (1건)
-- [ ] PresetMessageSection.tsx — #FFF (3건)
-- [ ] QueryStateView.tsx — #FFF (1건)
-- [ ] StateView.tsx — #FFFFFF (1건)
-- [ ] Toast.tsx — #fff (1건)
-- [ ] CoupleView.tsx — #FFF (2건)
-- [ ] ProfileDropdown.tsx — rgba(0,0,0,0.3) → colors.overlay (1건)
-- [ ] LoginButtons.tsx — 브랜드 색상 유지, #FFFFFF (3건) → colors.textOnPrimary
+### Batch 2: 컴포넌트 파일 ✅ (2026-04-25)
+- [x] EmailPasswordForm.tsx — #FFFFFF (2건) → colors.textOnPrimary
+- [x] ErrorBoundary.tsx — #FFFFFF (1건) → colors.textOnPrimary
+- [x] NotificationBell.tsx — #FFF (1건) → colors.textOnPrimary
+- [x] OfflineBanner.tsx — #FFFFFF (1건) → colors.textOnPrimary
+- [x] PresetMessageSection.tsx — #FFF (3건) → colors.textOnPrimary
+- [x] QueryStateView.tsx — #FFF (1건) → colors.textOnPrimary
+- [x] StateView.tsx — #FFFFFF (1건) → colors.textOnPrimary
+- [x] Toast.tsx — #fff (1건) → colors.textOnPrimary
+- [x] CoupleView.tsx — #FFF (2건) → colors.textOnPrimary
+- [x] ProfileDropdown.tsx — rgba(0,0,0,0.3) → colors.overlay (1건)
+- [x] LoginButtons.tsx — 브랜드 색상 의도적 유지 (Google/Apple OAuth 가이드라인)
 
-### Batch 3: 화면 파일 (대기)
-- [ ] code-register/index.tsx — #fff (2건)
-- [ ] alarm/edit.tsx — #FFF (2건)
-- [ ] alarm/create.tsx — #FFF (4건)
-- [ ] note/create.tsx — #fff (2건)
-- [ ] friend/[id].tsx — #FFFFFF (1건)
-- [ ] voice/upload.tsx — #FFF (2건)
-- [ ] voice/picker.tsx — #FFF (1건)
-- [ ] voice/record.tsx — #FFF (1건)
-- [ ] voice/diarize.tsx — #FFF (2건)
-- [ ] message/create.tsx — #FFF (1건)
-- [ ] message/[id].tsx — #fff (1건)
-- [ ] dub/translate.tsx — #FFF (1건)
+### Batch 3: 화면 파일 ✅ (2026-04-25)
+- [x] code-register/index.tsx — #fff (2건) → colors.textOnPrimary
+- [x] alarm/edit.tsx — #FFF (2건) → colors.textOnPrimary
+- [x] alarm/create.tsx — #FFF (4건) → colors.textOnPrimary
+- [x] note/create.tsx — #fff (3건) → colors.textOnPrimary
+- [x] friend/[id].tsx — #FFFFFF (1건) → colors.textOnPrimary
+- [x] voice/upload.tsx — #FFF (2건) → colors.textOnPrimary
+- [x] voice/picker.tsx — #FFF (1건) → colors.textOnPrimary + #F87171/#B91C1C → colors.error (2건 추가)
+- [x] voice/record.tsx — #FFF (1건) → colors.textOnPrimary
+- [x] voice/diarize.tsx — #FFF (2건) → colors.textOnPrimary
+- [x] message/create.tsx — #FFF (1건) → colors.textOnPrimary
+- [x] message/[id].tsx — #fff (1건) → colors.textOnPrimary
+- [x] dub/translate.tsx — #FFF (1건) → colors.textOnPrimary
+
+## P123 — 접근성 누락 보완 ✅ (2026-04-25)
+- [x] EmailPasswordForm.tsx — 로그인/회원가입 탭에 accessibilityLabel 추가
+
+## P124 — 향후 작업 후보 (우선순위 미정)
+- [ ] 앱 아이콘 + 스플래시 스크린 디자인 (Expo config)
+- [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
+- [ ] App Store / Google Play 메타데이터 준비
+- [ ] 성능 프로파일링 (불필요한 re-render 감지)
+- [ ] player.tsx 시간대 그라데이션 팔레트 → 별도 상수 파일 분리
+- [ ] character/index.tsx #8B5E3C (나무 갈색) → 테마 토큰 또는 상수 분리

@@ -119,7 +119,7 @@ export default function UploadScreen() {
           accessibilityState={{ disabled: !selectedFile || !name.trim() || cloneMutation.isPending }}
         >
           {cloneMutation.isPending ? (
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color={colors.textOnPrimary} />
           ) : (
             <Text style={styles.submitText}>{t('voiceUpload.submit')}</Text>
           )}
@@ -193,7 +193,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     opacity: 0.5,
   },
   submitText: {
-    color: '#FFF',
+    color: colors.textOnPrimary,
     fontSize: FontSize.lg,
     fontFamily: FontFamily.bold,
   },

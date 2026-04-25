@@ -258,7 +258,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: Spacing.sm,
     backgroundColor: colors.primary,
   },
-  actionButtonText: { color: '#FFFFFF', fontSize: FontSize.md, fontFamily: FontFamily.bold },
+  actionButtonText: { color: colors.textOnPrimary, fontSize: FontSize.md, fontFamily: FontFamily.bold },
   giftActionButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,

@@ -116,7 +116,7 @@ function createStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     retryText: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
     },

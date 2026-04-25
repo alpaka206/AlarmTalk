@@ -38,7 +38,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     toastText: {
-      color: '#fff',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },

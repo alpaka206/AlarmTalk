@@ -67,6 +67,7 @@ export default function EmailPasswordForm({
       <View style={dynStyles.tabRow}>
         <TouchableOpacity
           accessibilityRole="tab"
+          accessibilityLabel={t('authForm.login')}
           accessibilityState={{ selected: mode === 'login' }}
           onPress={() => setMode('login')}
           style={[dynStyles.tab, mode === 'login' && dynStyles.tabActive]}
@@ -75,6 +76,7 @@ export default function EmailPasswordForm({
         </TouchableOpacity>
         <TouchableOpacity
           accessibilityRole="tab"
+          accessibilityLabel={t('authForm.register')}
           accessibilityState={{ selected: mode === 'register' }}
           onPress={() => setMode('register')}
           style={[dynStyles.tab, mode === 'register' && dynStyles.tabActive]}
@@ -143,7 +145,7 @@ export default function EmailPasswordForm({
         accessibilityLabel={isRegister ? t('authForm.register') : t('authForm.login')}
       >
         {isLoading ? (
-          <ActivityIndicator color="#FFFFFF" />
+          <ActivityIndicator color={colors.textOnPrimary} />
         ) : (
           <Text style={dynStyles.submitText}>{isRegister ? t('authForm.register') : t('authForm.login')}</Text>
         )}
@@ -212,7 +214,7 @@ function createStyles(colors: ThemeColors) {
       opacity: 0.6,
     },
     submitText: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },

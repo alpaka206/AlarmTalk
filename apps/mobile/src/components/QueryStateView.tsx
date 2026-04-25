@@ -61,7 +61,7 @@ function createStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.md,
     },
     retryText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
       fontSize: FontSize.md,
     },

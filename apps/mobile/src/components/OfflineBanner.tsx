@@ -33,7 +33,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     text: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
     },

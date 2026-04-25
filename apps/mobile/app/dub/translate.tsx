@@ -295,7 +295,7 @@ export default function TranslateScreen() {
             accessibilityState={{ disabled: !targetLanguage || isProcessing, busy: dubMutation.isPending }}
           >
             {dubMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.startButtonText}>{t('dub.start')}</Text>
             )}

@@ -138,7 +138,7 @@ export default function CodeRegisterScreen() {
             accessibilityLabel={t('codeRegister.register')}
           >
             {mutation.isPending ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.registerButtonText}>{t('codeRegister.register')}</Text>
             )}
@@ -275,7 +275,7 @@ function createStyles(colors: ThemeColors) {
     registerButtonText: {
       fontSize: FontSize.md,
       fontFamily: FontFamily.bold,
-      color: '#fff',
+      color: colors.textOnPrimary,
     },
     helpSection: {
       marginTop: Spacing.sm,

@@ -230,7 +230,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  primaryText: { color: '#FFF', fontSize: FontSize.lg, fontFamily: FontFamily.bold },
+  primaryText: { color: colors.textOnPrimary, fontSize: FontSize.lg, fontFamily: FontFamily.bold },
   secondaryButton: {
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
@@ -247,13 +247,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statusText: { marginLeft: Spacing.sm, color: colors.textSecondary },
   errorCard: {
     backgroundColor: colors.surface,
-    borderColor: '#F87171',
+    borderColor: colors.error,
     borderWidth: 1,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     marginBottom: Spacing.md,
   },
-  errorText: { color: '#B91C1C', fontSize: FontSize.md },
+  errorText: { color: colors.error, fontSize: FontSize.md },
   emptyText: {
     textAlign: 'center',
     color: colors.textSecondary,

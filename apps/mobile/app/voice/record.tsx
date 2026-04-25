@@ -232,7 +232,7 @@ export default function RecordScreen() {
             accessibilityState={{ disabled: cloneMutation.isPending, busy: cloneMutation.isPending }}
           >
             {cloneMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.submitText}>{t('voiceRecord.submit')}</Text>
             )}

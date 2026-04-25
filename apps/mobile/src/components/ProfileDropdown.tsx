@@ -253,7 +253,7 @@ function createStyles(colors: ThemeColors) {
     },
     backdrop: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.3)',
+      backgroundColor: colors.overlay,
       justifyContent: 'flex-start',
       alignItems: 'flex-end',
       paddingTop: 100,

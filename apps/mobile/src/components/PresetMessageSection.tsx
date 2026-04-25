@@ -187,7 +187,7 @@ export function PresetMessageSection({
             accessibilityState={{ disabled: !presetVoiceId || !presetText || isPending }}
           >
             {isPending ? (
-              <ActivityIndicator color="#FFF" size="small" />
+              <ActivityIndicator color={colors.textOnPrimary} size="small" />
             ) : (
               <Text style={styles.presetGenerateText}>{t('alarmCreate.generatePreset')}</Text>
             )}
@@ -267,7 +267,7 @@ function createLocalStyles(colors: ThemeColors) {
       color: colors.text,
     },
     categoryLabelActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     presetMsgHeader: {
       flexDirection: 'row',
@@ -294,7 +294,7 @@ function createLocalStyles(colors: ThemeColors) {
       marginTop: Spacing.md,
     },
     presetGenerateText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.bold,
     },

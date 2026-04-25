@@ -568,7 +568,7 @@ export default function CreateAlarmScreen() {
         accessibilityState={{ disabled: !selectedMessageId || soundOnlyInvalid || createMutation.isPending }}
       >
         {createMutation.isPending ? (
-          <ActivityIndicator color="#FFF" />
+          <ActivityIndicator color={colors.textOnPrimary} />
         ) : (
           <Text style={localStyles.createText}>{t('alarmCreate.submit')}</Text>
         )}
@@ -602,7 +602,7 @@ function createLocalStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     targetTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     targetHint: {
       fontSize: FontSize.sm,
@@ -621,7 +621,7 @@ function createLocalStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.full,
     },
     emptyMessageBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
     },
@@ -633,7 +633,7 @@ function createLocalStyles(colors: ThemeColors) {
       marginTop: Spacing.xl,
     },
     createText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },

@@ -140,7 +140,7 @@ export default function DiarizeScreen() {
             >
               {diarizeMutation.isPending ? (
                 <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#FFF" />
+                  <ActivityIndicator color={colors.textOnPrimary} />
                   <Text style={styles.analyzeText}>{t('voiceDiarize.analyzing')}</Text>
                 </View>
               ) : (
@@ -235,7 +235,7 @@ export default function DiarizeScreen() {
             accessibilityState={{ disabled: cloneMutation.isPending }}
           >
             {cloneMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.submitText}>{t('voiceDiarize.submit')}</Text>
             )}

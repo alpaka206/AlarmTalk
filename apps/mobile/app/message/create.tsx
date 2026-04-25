@@ -277,7 +277,7 @@ export default function CreateMessageScreen() {
       >
         {ttsMutation.isPending ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color={colors.textOnPrimary} />
             <Text style={styles.generateText}>{t('messageCreate.generating')}</Text>
           </View>
         ) : (

@@ -154,7 +154,7 @@ export default function NoteCreateScreen() {
             accessibilityLabel={t('note.send')}
           >
             {mutation.isPending ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.sendButtonText}>{t('note.send')}</Text>
             )}
@@ -230,7 +230,7 @@ function createStyles(colors: ThemeColors) {
       color: colors.primaryDark,
     },
     chipAvatarTextSelected: {
-      color: '#fff',
+      color: colors.textOnPrimary,
     },
     chipName: {
       fontSize: FontSize.sm,
@@ -274,7 +274,7 @@ function createStyles(colors: ThemeColors) {
     sendButtonText: {
       fontSize: FontSize.md,
       fontFamily: FontFamily.bold,
-      color: '#fff',
+      color: colors.textOnPrimary,
     },
   });
 }

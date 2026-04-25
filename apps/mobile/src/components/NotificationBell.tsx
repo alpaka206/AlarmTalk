@@ -70,7 +70,7 @@ function createStyles(colors: ThemeColors) {
     badgeText: {
       fontSize: 10,
       fontFamily: FontFamily.bold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
   });
 }

@@ -84,7 +84,7 @@ function createStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     actionText: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
     },

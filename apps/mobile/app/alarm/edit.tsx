@@ -487,7 +487,7 @@ export default function EditAlarmScreen() {
         accessibilityState={{ disabled: !selectedMessageId || soundOnlyInvalid || editMutation.isPending }}
       >
         {editMutation.isPending ? (
-          <ActivityIndicator color="#FFF" />
+          <ActivityIndicator color={colors.textOnPrimary} />
         ) : (
           <Text style={localStyles.saveText}>{t('alarmEdit.save')}</Text>
         )}
@@ -518,7 +518,7 @@ function createLocalStyles(colors: ThemeColors) {
       marginTop: Spacing.xl,
     },
     saveText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },
