@@ -1697,4 +1697,4 @@
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
 - [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
-- [ ] stats.ts 라우트 엣지 케이스 테스트 확장 (18 tests / 176 lines)
+- [x] stats.ts 라우트 엣지 케이스 테스트 확장 (18→35 tests, +17 edge cases)
