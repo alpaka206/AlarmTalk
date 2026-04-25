@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P129 (alarmCountdown.ts 단위 테스트)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P129 부분 완료**
+- 마지막 루프: 2026-04-25 — P130 (App Store / Google Play 메타데이터 준비)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P130 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -19,6 +19,7 @@
 - **P127**: 성능 프로파일링 Phase 3 — countdown 분리
 - **P128**: 성능 프로파일링 Phase 4 — people useCallback
 - **P129**: alarmCountdown.ts 단위 테스트 20개
+- **P130**: App Store / Google Play 메타데이터 (store.config.json)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -28,6 +29,8 @@
 - eas.json submit: Android google-service-account.json 생성 필요
 - Sentry DSN 미설정 (사용자가 Sentry 프로젝트 생성 후 설정 필요)
 - react vs react-native-renderer 버전 불일치 (react 19.2.5 / renderer 19.1.0)
+- store.config.json: review.phone placeholder 교체 필요
+- store.config.json: privacy/support URL 실제 호스팅 필요
 
 ## 디자인 토큰 마이그레이션 잔여
 - LoginButtons.tsx 브랜드 색상 — 의도적 유지
@@ -39,7 +42,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1068 tests (57 files)
-- Mobile: 1044 tests (59 files) — +20 alarmCountdown 테스트 추가
+- Mobile: 1044 tests (59 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)

@@ -1571,7 +1571,7 @@
 ## P124 — 향후 작업 후보 (우선순위 미정)
 - [ ] 앱 아이콘 + 스플래시 스크린 디자인 (Expo config)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
-- [ ] App Store / Google Play 메타데이터 준비
+- [x] App Store / Google Play 메타데이터 준비 (P130 — store.config.json 생성, 한국어/영어 이중 언어)
 - [x] 성능 프로파일링: useCallback 최적화 — alarms/voices/library/home 4개 화면 (P125)
 - [x] 성능 프로파일링 Phase 2: React.memo 컴포넌트 추출 (AlarmListItem, LibraryListItem, VoiceProfileItem) (P126)
 - [x] 성능 프로파일링 Phase 3: alarms.tsx countdown 분리 (tick 재렌더 범위 축소) (P127)
