@@ -79,7 +79,7 @@ export function createComposeStyles(colors: ThemeColors) {
     unreadBadgeText: {
       fontSize: FontSize.xs,
       fontFamily: FontFamily.bold,
-      color: '#fff',
+      color: colors.textOnPrimary,
     },
     loader: {
       marginTop: Spacing.lg,

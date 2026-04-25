@@ -1528,9 +1528,39 @@
 - [x] 테스트: OfflineBanner + PeopleSkeletonCard 접근성 검증 추가 (13/13 통과)
 - [x] typecheck 통과, 전체 테스트 통과
 
-## P122 — Hardcoded 색상 디자인 토큰 마이그레이션 (대기)
+## P122 — Hardcoded 색상 디자인 토큰 마이그레이션
 
-- [ ] #FFFFFF / #fff / #FFF → 적절한 테마 토큰으로 교체 (24+ 인스턴스)
-- [ ] rgba() 오버레이 → 토큰화 검토
-- [ ] LoginButtons.tsx 브랜드 색상은 유지 (Google #4285F4, Apple #000000 등)
-- [ ] textOnPrimary 토큰 추가 여부 사용자 확인 필요
+### Batch 1: 토큰 정의 + 스타일 파일 ✅ (2026-04-25)
+- [x] textOnPrimary / overlay 토큰 추가 (packages/ui + apps/mobile)
+- [x] 스타일 파일 14개 hardcoded 색상 교체 (41건)
+- [x] rgba(0,0,0,0.5) 오버레이 → colors.overlay 교체 (messageCreateStyles)
+- [x] rgba(255,255,255,0.8/0.9) — 알람 카드 반투명 텍스트는 의도적 유지
+- [x] backgroundColor: '#FFF' → colors.surface (playerStyles, voiceRecordStyles)
+- [x] typecheck 통과
+
+### Batch 2: 컴포넌트 파일 (대기)
+- [ ] EmailPasswordForm.tsx — #FFFFFF (2건)
+- [ ] ErrorBoundary.tsx — #FFFFFF (1건)
+- [ ] NotificationBell.tsx — #FFF (1건)
+- [ ] OfflineBanner.tsx — #FFFFFF (1건)
+- [ ] PresetMessageSection.tsx — #FFF (3건)
+- [ ] QueryStateView.tsx — #FFF (1건)
+- [ ] StateView.tsx — #FFFFFF (1건)
+- [ ] Toast.tsx — #fff (1건)
+- [ ] CoupleView.tsx — #FFF (2건)
+- [ ] ProfileDropdown.tsx — rgba(0,0,0,0.3) → colors.overlay (1건)
+- [ ] LoginButtons.tsx — 브랜드 색상 유지, #FFFFFF (3건) → colors.textOnPrimary
+
+### Batch 3: 화면 파일 (대기)
+- [ ] code-register/index.tsx — #fff (2건)
+- [ ] alarm/edit.tsx — #FFF (2건)
+- [ ] alarm/create.tsx — #FFF (4건)
+- [ ] note/create.tsx — #fff (2건)
+- [ ] friend/[id].tsx — #FFFFFF (1건)
+- [ ] voice/upload.tsx — #FFF (2건)
+- [ ] voice/picker.tsx — #FFF (1건)
+- [ ] voice/record.tsx — #FFF (1건)
+- [ ] voice/diarize.tsx — #FFF (2건)
+- [ ] message/create.tsx — #FFF (1건)
+- [ ] message/[id].tsx — #fff (1건)
+- [ ] dub/translate.tsx — #FFF (1건)

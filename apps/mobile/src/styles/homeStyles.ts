@@ -72,7 +72,7 @@ export function createHomeStyles(colors: ThemeColors) {
     nextAlarmTime: {
       fontSize: 48,
       fontFamily: FontFamily.bold,
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       marginBottom: Spacing.sm,
     },
     nextAlarmMessage: {
@@ -348,7 +348,7 @@ export function createHomeStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.full,
     },
     loginButtonText: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },

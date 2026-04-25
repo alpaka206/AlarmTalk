@@ -82,7 +82,7 @@ export function createMessageCreateStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     tabTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     categoryRow: {
       marginBottom: Spacing.md,
@@ -112,7 +112,7 @@ export function createMessageCreateStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     categoryLabelActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     presetList: {
       gap: Spacing.sm,
@@ -179,7 +179,7 @@ export function createMessageCreateStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     generateText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },
@@ -225,7 +225,7 @@ export function createMessageCreateStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     useText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
     },
     giftButton: {
@@ -243,7 +243,7 @@ export function createMessageCreateStyles(colors: ThemeColors) {
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
+      backgroundColor: colors.overlay,
       justifyContent: 'flex-end',
     },
     modalContent: {

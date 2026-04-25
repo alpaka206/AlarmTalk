@@ -51,7 +51,7 @@ export function createVoicesStyles(colors: ThemeColors) {
     addButtonText: {
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     addButtonTextDisabled: {
       color: colors.textTertiary,
@@ -195,7 +195,7 @@ export function createVoicesStyles(colors: ThemeColors) {
     emptyCtaText: {
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     swipeDeleteContainer: {
       backgroundColor: colors.error,
@@ -206,7 +206,7 @@ export function createVoicesStyles(colors: ThemeColors) {
       marginBottom: Spacing.md,
     },
     swipeDeleteText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.bold,
       fontSize: FontSize.md,
     },

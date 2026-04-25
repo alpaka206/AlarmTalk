@@ -61,7 +61,7 @@ export function createPlayerStyles(colors: ThemeColors) {
     avatarText: {
       fontSize: 32,
       fontFamily: FontFamily.bold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     voiceName: {
       fontSize: FontSize.xl,
@@ -121,7 +121,7 @@ export function createPlayerStyles(colors: ThemeColors) {
       width: 72,
       height: 72,
       borderRadius: 36,
-      backgroundColor: '#FFF',
+      backgroundColor: colors.surface,
       justifyContent: 'center',
       alignItems: 'center',
       marginBottom: Spacing.xl,
@@ -143,7 +143,7 @@ export function createPlayerStyles(colors: ThemeColors) {
     reactionText: {
       fontSize: FontSize.lg,
       fontFamily: FontFamily.semibold,
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     reactedText: {
       fontSize: FontSize.md,

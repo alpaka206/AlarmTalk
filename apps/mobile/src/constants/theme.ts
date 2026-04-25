@@ -15,6 +15,8 @@ export interface ThemeColorScheme {
   warning: string;
   error: string;
   shadow: string;
+  textOnPrimary: string;
+  overlay: string;
 }
 
 export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
@@ -35,6 +37,8 @@ export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
     warning: '#FF9500',
     error: '#FF3B30',
     shadow: 'rgba(255, 127, 107, 0.15)',
+    textOnPrimary: '#FFFFFF',
+    overlay: 'rgba(0, 0, 0, 0.3)',
   },
   dark: {
     primary: '#FF8F7D',
@@ -53,6 +57,8 @@ export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
     warning: '#FF9F0A',
     error: '#FF453A',
     shadow: 'rgba(0, 0, 0, 0.3)',
+    textOnPrimary: '#FFFFFF',
+    overlay: 'rgba(0, 0, 0, 0.3)',
   },
 };
 

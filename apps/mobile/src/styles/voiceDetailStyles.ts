@@ -72,7 +72,7 @@ export function createVoiceDetailStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.sm,
     },
     renameSaveText: {
-      color: '#fff',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.bold,
     },
@@ -151,7 +151,7 @@ export function createVoiceDetailStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.lg,
     },
     createMessageText: {
-      color: '#fff',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },

@@ -26,7 +26,7 @@ export function createAlarmsStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.full,
     },
     addButtonText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },
@@ -163,7 +163,7 @@ export function createAlarmsStyles(colors: ThemeColors) {
     },
     familyBadgeText: {
       fontSize: FontSize.xs,
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.bold,
     },
     alarmActions: {
@@ -212,7 +212,7 @@ export function createAlarmsStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.full,
     },
     emptyButtonText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },
@@ -225,7 +225,7 @@ export function createAlarmsStyles(colors: ThemeColors) {
       marginBottom: Spacing.md,
     },
     swipeDeleteText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.bold,
       fontSize: FontSize.md,
     },

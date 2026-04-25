@@ -121,7 +121,7 @@ export function createGiftReceivedStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     acceptBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
       fontSize: FontSize.md,
     },

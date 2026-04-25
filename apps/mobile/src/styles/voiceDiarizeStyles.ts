@@ -67,7 +67,7 @@ export function createVoiceDiarizeStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     analyzeText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },
@@ -141,7 +141,7 @@ export function createVoiceDiarizeStyles(colors: ThemeColors) {
       opacity: 0.5,
     },
     submitText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },

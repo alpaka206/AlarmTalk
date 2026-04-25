@@ -45,6 +45,8 @@ export const LightColors = {
   warning: ColorPalette.warning,
   error: ColorPalette.error,
   shadow: 'rgba(255, 127, 107, 0.15)',
+  textOnPrimary: ColorPalette.white,
+  overlay: 'rgba(0, 0, 0, 0.3)',
 } as const;
 
 export const DarkColors = {
@@ -64,6 +66,8 @@ export const DarkColors = {
   warning: ColorPalette.darkWarning,
   error: ColorPalette.darkError,
   shadow: 'rgba(0, 0, 0, 0.3)',
+  textOnPrimary: ColorPalette.white,
+  overlay: 'rgba(0, 0, 0, 0.3)',
 } as const;
 
 export type SemanticColorKey = keyof typeof LightColors;

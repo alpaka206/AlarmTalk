@@ -43,7 +43,7 @@ export function createFamilyAlarmCreateStyles(colors: ThemeColors) {
       color: colors.text,
     },
     recipientTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
     },
     timeInput: {
@@ -101,7 +101,7 @@ export function createFamilyAlarmCreateStyles(colors: ThemeColors) {
       fontFamily: FontFamily.medium,
     },
     dayTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
     },
     repeatHint: {
@@ -122,7 +122,7 @@ export function createFamilyAlarmCreateStyles(colors: ThemeColors) {
       opacity: 0.5,
     },
     submitBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.semibold,
     },

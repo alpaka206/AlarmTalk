@@ -90,7 +90,7 @@ export function createVoiceRecordStyles(colors: ThemeColors) {
       width: 24,
       height: 24,
       borderRadius: 4,
-      backgroundColor: '#FFF',
+      backgroundColor: colors.surface,
     },
     micIcon: {
       justifyContent: 'center',
@@ -144,7 +144,7 @@ export function createVoiceRecordStyles(colors: ThemeColors) {
       opacity: 0.6,
     },
     submitText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },

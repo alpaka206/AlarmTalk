@@ -69,7 +69,7 @@ export function createDubTranslateStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     sourceChipTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     loader: {
       marginVertical: Spacing.lg,
@@ -100,7 +100,7 @@ export function createDubTranslateStyles(colors: ThemeColors) {
       fontFamily: FontFamily.medium,
     },
     langTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.bold,
     },
     experimentBadge: {
@@ -143,7 +143,7 @@ export function createDubTranslateStyles(colors: ThemeColors) {
       borderRadius: BorderRadius.lg,
     },
     playResultText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },
@@ -188,7 +188,7 @@ export function createDubTranslateStyles(colors: ThemeColors) {
       opacity: 0.5,
     },
     startButtonText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.lg,
       fontFamily: FontFamily.bold,
     },

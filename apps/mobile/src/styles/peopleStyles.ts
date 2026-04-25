@@ -47,7 +47,7 @@ export function createPeopleStyles(colors: ThemeColors) {
       opacity: 0.4,
     },
     addBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
       fontSize: FontSize.md,
     },
@@ -136,7 +136,7 @@ export function createPeopleStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     familyAlarmBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },
@@ -161,7 +161,7 @@ export function createPeopleStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     acceptBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
       fontSize: FontSize.sm,
     },
@@ -233,7 +233,7 @@ export function createPeopleStyles(colors: ThemeColors) {
       justifyContent: 'center',
     },
     inviteShareBtnText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.semibold,
       fontSize: FontSize.sm,
     },

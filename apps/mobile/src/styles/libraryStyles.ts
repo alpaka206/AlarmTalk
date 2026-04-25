@@ -55,7 +55,7 @@ export function createLibraryStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     filterTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     cachedBanner: {
       backgroundColor: colors.surfaceVariant,
@@ -175,7 +175,7 @@ export function createLibraryStyles(colors: ThemeColors) {
       marginBottom: Spacing.sm,
     },
     swipeDeleteText: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
       fontFamily: FontFamily.bold,
       fontSize: FontSize.md,
     },

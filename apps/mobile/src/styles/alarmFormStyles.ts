@@ -93,7 +93,7 @@ export function createAlarmFormStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     dayTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     quickDays: {
       flexDirection: 'row',
@@ -132,7 +132,7 @@ export function createAlarmFormStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     snoozeTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     messageList: {
       gap: Spacing.sm,
@@ -219,7 +219,7 @@ export function createAlarmFormStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     modeTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     voiceRow: {
       flexDirection: 'row',
@@ -243,7 +243,7 @@ export function createAlarmFormStyles(colors: ThemeColors) {
       fontFamily: FontFamily.semibold,
     },
     voiceTextActive: {
-      color: '#FFF',
+      color: colors.textOnPrimary,
     },
     voiceHint: {
       fontSize: FontSize.sm,
