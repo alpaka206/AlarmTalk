@@ -194,7 +194,7 @@ npm test             # 전체 테스트 (backend + mobile)
 |------|-----------|----------|
 | 백엔드 | Vitest | 1210 |
 | 모바일 | Jest | 1970 |
-| E2E | Maestro | 11 플로우 |
+| E2E | Maestro | 13 플로우 |
 
 ## 브랜치 전략
 

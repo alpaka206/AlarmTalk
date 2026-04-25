@@ -12,3 +12,5 @@ executionOrder:
     - 09-alarm-voice-toggle.yaml
     - 10-home-character.yaml
     - 11-alarm-edit-delete.yaml
+    - 12-subscription.yaml
+    - 13-library-delete.yaml

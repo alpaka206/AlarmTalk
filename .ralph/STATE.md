@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P168 (billing-mutation 테스트 확장 25개 + any 감사)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P168 전체 완료**
+- 마지막 루프: 2026-04-25 — P169 (Maestro E2E 플로우 2개 추가: subscription, library-delete)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P169 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링

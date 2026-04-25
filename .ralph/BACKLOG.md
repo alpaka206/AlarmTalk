@@ -1675,8 +1675,15 @@
 - [x] TypeScript any 사용 최종 감사 완료 (lib/logger.ts 1건만 — 정당 사용 확인)
 - [x] README 테스트 수 업데이트 (1185→1210)
 
-## P169 — 향후 작업 후보
+## P169 — Maestro E2E 플로우 추가 (subscription, library-delete) ✅ (2026-04-25)
+- [x] 12-subscription.yaml — 구독 관리 화면 E2E (설정→구독관리→플랜확인→업그레이드 다이얼로그)
+- [x] 13-library-delete.yaml — 보관함 삭제 E2E (홈→보관함→필터→스와이프 삭제)
+- [x] config.yaml 실행 순서 추가 (11→13)
+- [x] README 테스트 수 업데이트 (E2E 11→13 플로우)
+
+## P170 — 향후 작업 후보
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
-- [ ] 모바일 E2E 테스트 확장 (Maestro — subscription, library-delete 플로우)
 - [ ] alarm-mutation 통합 테스트 확장 (현재 44개 — 추가 엣지 케이스 탐색)
+- [ ] voice-profile 라우트 엣지 케이스 테스트 확장
+- [ ] notification 라우트 테스트 커버리지 추가
