@@ -341,6 +341,49 @@ export function createHomeStyles(colors: ThemeColors) {
       fontSize: FontSize.sm,
       color: colors.textTertiary,
     },
+    activitySection: {
+      marginBottom: Spacing.lg,
+    },
+    activityItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+    },
+    activityEmoji: {
+      fontSize: 20,
+      width: 32,
+      textAlign: 'center',
+      marginRight: Spacing.sm,
+    },
+    activityContent: {
+      flex: 1,
+    },
+    activityTypeLabel: {
+      fontSize: FontSize.xs,
+      fontFamily: FontFamily.semibold,
+      color: colors.primary,
+      marginBottom: 2,
+    },
+    activityDesc: {
+      fontSize: FontSize.sm,
+      color: colors.text,
+    },
+    activityTime: {
+      fontSize: FontSize.xs,
+      color: colors.textTertiary,
+      marginLeft: Spacing.sm,
+    },
+    activityEmpty: {
+      paddingVertical: Spacing.xl,
+      alignItems: 'center',
+    },
+    activityEmptyText: {
+      fontSize: FontSize.sm,
+      color: colors.textTertiary,
+    },
     loginButton: {
       backgroundColor: colors.primary,
       paddingHorizontal: Spacing.xl,

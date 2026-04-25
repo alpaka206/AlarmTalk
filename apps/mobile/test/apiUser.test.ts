@@ -11,6 +11,7 @@ import {
   updatePlan,
   deleteAccount,
   getStats,
+  getActivity,
   searchUsers,
   getLibrary,
   toggleFavorite,
@@ -83,6 +84,19 @@ describe('Stats API', () => {
 
     expect(mockGet).toHaveBeenCalledWith('/stats');
     expect(result).toEqual(stats);
+  });
+
+  it('getActivity → GET /stats/activity returns activities array', async () => {
+    const activities = [
+      { id: 'a1', type: 'alarm', detail: { time: '08:30' }, created_at: '2026-04-25T00:00:00Z' },
+      { id: 'm1', type: 'message', detail: { text: 'hello' }, created_at: '2026-04-24T00:00:00Z' },
+    ];
+    mockGet.mockResolvedValue({ activities });
+
+    const result = await getActivity();
+
+    expect(mockGet).toHaveBeenCalledWith('/stats/activity');
+    expect(result).toEqual(activities);
   });
 
   it('searchUsers → GET /user/search with query param', async () => {

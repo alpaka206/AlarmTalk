@@ -1620,3 +1620,4 @@
 - [x] API error response 일관성 정규화: friend(9) + gift(11) + alarm-mutation(1) + voice-profile(1) + auth(code→error_code) + middleware/auth(code→error_code 4곳) + user.ts(detail 필드 제거) + i18n 하드코딩 2곳 + a11y ProfileDropdown 보완 (P151)
 - [x] dub/translate i18n 정리 ("beta" → i18n, 소스 언어 상수 추출) + dubHelpers.ts 순수 함수 5개 추출 + 단위 테스트 36개 (SOURCE_LANGUAGES 5 + filterTargetLanguages 7 + validateDubStart 6 + getDubPhase 10 + shouldSaveAudio 8) (P152)
 - [x] activity endpoint i18n 정규화 (summary 한국어 하드코딩 → detail 구조체) + "Lv." 접두사 i18n 전환 (home + character 2 screens) + i18nKeys allowedIdentical 추가 (P153)
+- [x] 홈 화면 최근 활동 피드 통합: getActivity API 함수 + ActivityItem 타입 + activityHelpers 헬퍼 + 홈 UI 섹션 + i18n 12키 + 테스트 10개 (P154)

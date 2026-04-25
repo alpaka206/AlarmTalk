@@ -41,6 +41,19 @@ export async function getStats() {
   return get<Stats>('/stats');
 }
 
+// ===== Activity API =====
+
+export type ActivityItem =
+  | { id: string; type: 'alarm'; detail: { time: string }; created_at: string }
+  | { id: string; type: 'message'; detail: { text: string }; created_at: string }
+  | { id: string; type: 'gift'; detail: { note: string | null; status: string }; created_at: string }
+  | { id: string; type: 'voice'; detail: { name: string; status: string }; created_at: string };
+
+export async function getActivity() {
+  const data = await get<{ activities: ActivityItem[] }>('/stats/activity');
+  return data.activities;
+}
+
 export interface UserSearchResult {
   id: string;
   name: string;

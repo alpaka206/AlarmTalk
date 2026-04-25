@@ -29,7 +29,18 @@
     "activeAlarms": "활성 알람",
     "messages": "메시지",
     "friends": "친구",
-    "pendingGifts": "대기 선물"
+    "pendingGifts": "대기 선물",
+    "recentActivity": "최근 활동",
+    "noActivity": "아직 활동 기록이 없어요",
+    "activityAlarm": "알람 {{time}}",
+    "activityMessage": "\"{{text}}\"",
+    "activityGift": "선물 ({{status}})",
+    "activityGiftNote": "\"{{note}}\" ({{status}})",
+    "activityVoice": "음성 \"{{name}}\"",
+    "activityTypeAlarm": "알람",
+    "activityTypeMessage": "메시지",
+    "activityTypeGift": "선물",
+    "activityTypeVoice": "음성"
   },
   "screen": {
     "voiceRecord": "음성 녹음",

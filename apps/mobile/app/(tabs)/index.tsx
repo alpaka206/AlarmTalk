@@ -16,10 +16,12 @@ import { Spacing, FontSize } from '../../src/constants/theme';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { createHomeStyles } from '../../src/styles/homeStyles';
-import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary } from '../../src/services/api';
-import type { Stats, WeekTrend } from '../../src/services/api';
+import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary, getActivity } from '../../src/services/api';
+import type { Stats, WeekTrend, ActivityItem } from '../../src/services/api';
 import { stageToEmoji, progressBarWidthPct } from '../../src/lib/character';
 import { playAudio, getLocalAudioPath, isAudioCached } from '../../src/services/audio';
+import { activityEmoji, activityTypeLabel, activityDescription } from '../../src/lib/activityHelpers';
+import { formatLastSeen } from '../../src/lib/formatLastSeen';
 import type { LibraryItem } from '../../src/types';
 import LoginButtons from '../../src/components/LoginButtons';
 import EmailPasswordForm from '../../src/components/EmailPasswordForm';
@@ -100,6 +102,12 @@ function HomeScreen() {
     enabled: isAuthenticated && isConnected,
   });
 
+  const { data: activityItems } = useQuery({
+    queryKey: ['activity'],
+    queryFn: getActivity,
+    enabled: isAuthenticated && isConnected,
+  });
+
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (alarms && alarms.length > 0) {
@@ -123,7 +131,7 @@ function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchAlarms(), refetchMessages()]);
+    await Promise.all([refetchAlarms(), refetchMessages(), refetchStats()]);
     setRefreshing(false);
   };
 
@@ -386,6 +394,45 @@ function HomeScreen() {
             ) : (
               <View style={styles.recentEmpty}>
                 <Text style={styles.recentEmptyText}>{t('home.noMessages')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 섹션 구분선 */}
+        {isAuthenticated && <View style={styles.sectionDivider} />}
+
+        {/* 최근 활동 */}
+        {isAuthenticated && (
+          <View style={styles.activitySection}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('home.recentActivity')}
+            </Text>
+            {activityItems && activityItems.length > 0 ? (
+              activityItems.slice(0, 5).map((item: ActivityItem) => (
+                <View
+                  key={`${item.type}-${item.id}`}
+                  style={styles.activityItem}
+                  accessible
+                  accessibilityLabel={`${activityTypeLabel(item.type, t)}: ${activityDescription(item, t)}`}
+                >
+                  <Text style={styles.activityEmoji}>{activityEmoji(item.type)}</Text>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityTypeLabel}>
+                      {activityTypeLabel(item.type, t)}
+                    </Text>
+                    <Text style={styles.activityDesc} numberOfLines={1}>
+                      {activityDescription(item, t)}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityTime}>
+                    {formatLastSeen(item.created_at, t)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.activityEmpty}>
+                <Text style={styles.activityEmptyText}>{t('home.noActivity')}</Text>
               </View>
             )}
           </View>

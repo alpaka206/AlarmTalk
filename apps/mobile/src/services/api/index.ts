@@ -60,12 +60,13 @@ export {
   updatePlan,
   deleteAccount,
   getStats,
+  getActivity,
   searchUsers,
   getLibrary,
   toggleFavorite,
   deleteLibraryItem,
 } from './user';
-export type { WeekTrend, Stats, UserSearchResult } from './user';
+export type { WeekTrend, Stats, ActivityItem, UserSearchResult } from './user';
 
 export {
   getVouchers,

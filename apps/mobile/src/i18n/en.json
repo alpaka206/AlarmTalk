@@ -29,7 +29,18 @@
     "activeAlarms": "Active alarms",
     "messages": "Messages",
     "friends": "Friends",
-    "pendingGifts": "Pending gifts"
+    "pendingGifts": "Pending gifts",
+    "recentActivity": "Recent activity",
+    "noActivity": "No activity yet",
+    "activityAlarm": "Alarm {{time}}",
+    "activityMessage": "\"{{text}}\"",
+    "activityGift": "Gift ({{status}})",
+    "activityGiftNote": "\"{{note}}\" ({{status}})",
+    "activityVoice": "Voice \"{{name}}\"",
+    "activityTypeAlarm": "Alarm",
+    "activityTypeMessage": "Message",
+    "activityTypeGift": "Gift",
+    "activityTypeVoice": "Voice"
   },
   "screen": {
     "voiceRecord": "Voice Recording",
