@@ -85,6 +85,9 @@ export {
   createFamilyInvite,
   getFamilyInvites,
   revokeFamilyInvite,
+  leaveFamilyGroup,
+  transferFamilyOwnership,
+  removeFamilyMember,
 } from './family';
 export type {
   FamilyGroupMember,

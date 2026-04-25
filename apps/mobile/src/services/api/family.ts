@@ -1,4 +1,4 @@
-import { get, post } from './core';
+import { get, post, del } from './core';
 
 // ===== Family Group API =====
 
@@ -81,4 +81,26 @@ export async function getFamilyInvites() {
 
 export async function revokeFamilyInvite(code: string) {
   return post<{ success: boolean }>(`/family/invites/${code}/revoke`, {});
+}
+
+// ===== Family Group Management API =====
+
+export async function leaveFamilyGroup(groupId: string) {
+  return post<{ success: boolean; left_group_id: string }>(
+    `/family/groups/${groupId}/leave`,
+    {},
+  );
+}
+
+export async function transferFamilyOwnership(groupId: string, targetUserId: string) {
+  return post<{
+    success: boolean;
+    group: { id: string; owner_user_id: string; previous_owner_user_id: string };
+  }>(`/family/groups/${groupId}/transfer-ownership`, { target_user_id: targetUserId });
+}
+
+export async function removeFamilyMember(groupId: string, userId: string) {
+  return del<{ success: boolean; removed_user_id: string }>(
+    `/family/groups/${groupId}/members/${userId}`,
+  );
 }

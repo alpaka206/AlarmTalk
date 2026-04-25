@@ -97,7 +97,6 @@ describe('Bundle size audit — dependency baseline', () => {
       'react-dom',
       'react-native-web',
       'expo',
-      'expo-crypto',
       'expo-file-system',
       'react-native-reanimated',
       'react-native-screens',

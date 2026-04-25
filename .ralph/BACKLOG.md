@@ -1638,3 +1638,16 @@
 - [x] settings/index.tsx "플랜 관리" → /code-register 내비게이션 연결
 - [x] settings/index.tsx 음성 품질 dead onPress 제거
 - [x] settings/index.tsx 언어 설정 실제 i18n.changeLanguage() 호출로 교체
+
+## P161 — Family 관리 API 클라이언트 + 의존성 정리 ✅ (2026-04-25)
+- [x] services/api/family.ts에 leaveFamilyGroup/transferFamilyOwnership/removeFamilyMember 3함수 추가
+- [x] services/api/index.ts barrel export에 3함수 추가
+- [x] expo-crypto 미사용 의존성 제거 (package.json + bundleAudit allowedUnused)
+- [x] queryCache.test.ts에 누락된 'activity' 쿼리 키 추가 (P154 누락분)
+- [x] README.md 테스트 수 업데이트 (1890 → 1937)
+
+## P162 — 향후 작업 후보
+- [ ] People 탭에 가족 관리 UI 추가 (탈퇴/양도/멤버 제거 — P161 API 함수 활용)
+- [ ] PATCH /user/me 모바일 API 클라이언트 함수 + 프로필 편집 화면
+- [ ] GET /billing/subscription + POST /billing/checkout 모바일 연동
+- [ ] DELETE /tts/messages/:id 모바일 연동 (라이브러리에서 TTS 메시지 삭제)

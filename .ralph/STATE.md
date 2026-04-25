@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P160 (설정 화면 비활성 UI 5건 수정 + 알림 기본설정 스토어)
+- 마지막 루프: 2026-04-25 — P161 (Family 관리 API 클라이언트 3함수 추가 + expo-crypto 제거 + queryCache 수정)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P160 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -48,6 +48,7 @@
 - **P156**: 알람 편집 PresetMessageSection 추가 (R2 스펙 갭 수정) + AlarmMode/VibrationPattern/WakeMode 타입 중복 정의 제거
 - **P157**: R2 알람 기본 모드 sound-only 수정 + R5 프로필 드롭다운 people 항목 제거 + i18n 정리
 - **P160**: 설정 화면 비활성 UI 5건 수정 (알림 Switch 연결, 플랜 관리 내비게이션, 언어 토글, 음성 품질 dead onPress 제거) + 알림 기본설정 스토어 추가
+- **P161**: Family 관리 API 클라이언트 3함수(leave/transfer/removeMember) + expo-crypto 제거 + queryCache 'activity' 키 수정 + README 테스트 수 업데이트
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -70,7 +71,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1185 tests (58 files)
-- Mobile: 1936 tests (85 files)
+- Mobile: 1937 tests (85 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)

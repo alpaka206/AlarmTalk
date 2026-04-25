@@ -360,6 +360,7 @@ describe('쿼리 키 레지스트리 완전성', () => {
     'notes-sent',
     'library',
     'stats',
+    'activity',
     'dubLanguages',
     'sentGifts',
     'gifts-received',
