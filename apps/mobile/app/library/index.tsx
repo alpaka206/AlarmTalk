@@ -118,7 +118,7 @@ export default function LibraryScreen() {
     },
   });
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     Alert.alert(t('library.deleteTitle'), t('library.deleteConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -127,9 +127,9 @@ export default function LibraryScreen() {
         onPress: () => deleteMutation.mutate(id),
       },
     ]);
-  };
+  }, [t, deleteMutation]);
 
-  const renderDeleteAction = (
+  const renderDeleteAction = useCallback((
     _progress: RNAnimated.AnimatedInterpolation<number>,
     dragX: RNAnimated.AnimatedInterpolation<number>,
   ) => {
@@ -145,20 +145,20 @@ export default function LibraryScreen() {
         </RNAnimated.Text>
       </View>
     );
-  };
+  }, [dynStyles, t]);
 
-  const handleMiniPlay = (messageId: string, sound: Audio.Sound) => {
+  const handleMiniPlay = useCallback((messageId: string, sound: Audio.Sound) => {
     if (currentSound) {
       currentSound.unloadAsync();
     }
     setCurrentSound(sound);
     setPlaying(messageId);
-  };
+  }, [currentSound, setPlaying]);
 
-  const handleMiniStop = () => {
+  const handleMiniStop = useCallback(() => {
     setPlaying(null);
     setCurrentSound(null);
-  };
+  }, [setPlaying]);
 
   const getCategoryEmoji = (category: string) => {
     const map: Record<string, string> = {
@@ -209,7 +209,7 @@ export default function LibraryScreen() {
     [dynStyles, categoryFilter, t, getCategoryLabel],
   );
 
-  const renderItem = ({ item }: { item: LibraryItem }) => {
+  const renderItem = useCallback(({ item }: { item: LibraryItem }) => {
     const isActive = currentPlayingId === item.message_id;
     return (
       <Swipeable
@@ -271,7 +271,7 @@ export default function LibraryScreen() {
         </TouchableOpacity>
       </Swipeable>
     );
-  };
+  }, [dynStyles, router, currentPlayingId, handleDelete, handleMiniPlay, handleMiniStop, getCategoryLabel, renderDeleteAction, favoriteMutation, t]);
 
   return (
     <SafeAreaView style={dynStyles.container} edges={['bottom']}>

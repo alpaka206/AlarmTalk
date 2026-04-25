@@ -1572,6 +1572,9 @@
 - [ ] 앱 아이콘 + 스플래시 스크린 디자인 (Expo config)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] App Store / Google Play 메타데이터 준비
-- [ ] 성능 프로파일링 (불필요한 re-render 감지)
+- [x] 성능 프로파일링: useCallback 최적화 — alarms/voices/library/home 4개 화면 (P125)
+- [ ] 성능 프로파일링 Phase 2: React.memo 컴포넌트 추출 (AlarmListItem, LibraryListItem 등)
+- [ ] 성능 프로파일링 Phase 3: alarms.tsx countdown 분리 (tick 재렌더 범위 축소)
+- [ ] 성능 프로파일링 Phase 4: people/index.tsx renderFriend/renderRequest useCallback
 - [x] player.tsx 시간대 그라데이션 팔레트 → 별도 상수 파일 분리
 - [x] character/index.tsx #8B5E3C (나무 갈색) → 테마 토큰 또는 상수 분리

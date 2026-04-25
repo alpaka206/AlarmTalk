@@ -126,7 +126,7 @@ function VoicesScreen() {
     }
   }, [t, colors]);
 
-  const renderDeleteAction = (
+  const renderDeleteAction = useCallback((
     _progress: RNAnimated.AnimatedInterpolation<number>,
     dragX: RNAnimated.AnimatedInterpolation<number>,
   ) => {
@@ -142,9 +142,9 @@ function VoicesScreen() {
         </RNAnimated.Text>
       </View>
     );
-  };
+  }, [styles, t]);
 
-  const renderProfile = ({ item }: { item: VoiceProfile }) => {
+  const renderProfile = useCallback(({ item }: { item: VoiceProfile }) => {
     const badge = getStatusBadge(item.status);
     return (
       <Swipeable
@@ -183,9 +183,9 @@ function VoicesScreen() {
         </TouchableOpacity>
       </Swipeable>
     );
-  };
+  }, [styles, router, handleDelete, getStatusBadge, renderDeleteAction, t]);
 
-  const renderFamilyProfile = ({ item }: { item: FamilyVoiceProfile }) => (
+  const renderFamilyProfile = useCallback(({ item }: { item: FamilyVoiceProfile }) => (
     <View style={styles.familyCard}>
       <View style={styles.familyAvatar}>
         <Text style={styles.familyAvatarText}>{item.name.charAt(0)}</Text>
@@ -198,7 +198,7 @@ function VoicesScreen() {
       </View>
       <Text style={styles.familyBadge}>{t('voices.familyReadOnly')}</Text>
     </View>
-  );
+  ), [styles, t]);
 
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>

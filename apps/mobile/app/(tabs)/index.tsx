@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -140,7 +140,7 @@ function HomeScreen() {
   const nextAlarm = displayAlarms?.find((a: Alarm) => a.is_active);
   const latestMessage = displayMessages?.[0];
 
-  const handlePlayMessage = async (messageId: string) => {
+  const handlePlayMessage = useCallback(async (messageId: string) => {
     if (currentSound) {
       await currentSound.unloadAsync();
       setCurrentSound(null);
@@ -165,7 +165,7 @@ function HomeScreen() {
         }
       });
     }
-  };
+  }, [currentSound, currentPlayingId, setPlaying]);
 
   return (
     <SafeAreaView style={styles.container}>

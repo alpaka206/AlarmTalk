@@ -236,7 +236,7 @@ function AlarmsScreen() {
     },
   });
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     Alert.alert(t('alarms.deleteTitle'), t('alarms.deleteConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
@@ -245,18 +245,18 @@ function AlarmsScreen() {
         onPress: () => deleteMutation.mutate(id),
       },
     ]);
-  };
+  }, [t, deleteMutation]);
 
-  const formatRepeatDays = (days: number[]) => {
+  const formatRepeatDays = useCallback((days: number[]) => {
     if (days.length === 0) return t('alarms.once');
     if (days.length === 7) return t('alarms.daily');
     const sorted = [...days].sort();
     if (JSON.stringify(sorted) === JSON.stringify([1, 2, 3, 4, 5])) return t('alarms.weekday');
     if (JSON.stringify(sorted) === JSON.stringify([0, 6])) return t('alarms.weekend');
     return days.map((d) => t(DAY_KEYS[d]!)).join(', ');
-  };
+  }, [t]);
 
-  const renderDeleteAction = (
+  const renderDeleteAction = useCallback((
     _progress: RNAnimated.AnimatedInterpolation<number>,
     dragX: RNAnimated.AnimatedInterpolation<number>,
   ) => {
@@ -272,9 +272,9 @@ function AlarmsScreen() {
         </RNAnimated.Text>
       </View>
     );
-  };
+  }, [styles, t]);
 
-  const renderAlarm = ({ item }: { item: Alarm }) => {
+  const renderAlarm = useCallback(({ item }: { item: Alarm }) => {
     const repeatDays = parseRepeatDays(item.repeat_days);
     void tick;
     const nextFireMs = getNextFireMs(item);
@@ -355,7 +355,7 @@ function AlarmsScreen() {
         </TouchableOpacity>
       </Swipeable>
     );
-  };
+  }, [tick, styles, colors, t, router, userId, handlePreview, handleDelete, formatRepeatDays, renderDeleteAction, toggleMutation]);
 
   return (
     <SafeAreaView style={styles.container}>

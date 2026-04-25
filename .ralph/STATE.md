@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P124 일부 (player 그라데이션 팔레트 + character 나무 갈색 상수 분리)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P124 부분 완료**
+- 마지막 루프: 2026-04-25 — P125 (성능 프로파일링: useCallback 최적화 4개 화면)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P125 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -12,9 +12,9 @@
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P121**: 전체 완료
 - **P122**: 디자인 토큰 마이그레이션 전체 완료
-  - Batch 1: 토큰 정의(textOnPrimary, overlay) + 스타일 파일 14개 (41건)
-  - Batch 2: 컴포넌트 파일 10개 (14건)
-  - Batch 3: 화면 파일 12개 (21건) + voice/picker.tsx 에러 색상 2건 추가
+- **P123**: 접근성 누락 보완 완료
+- **P124**: player/character 상수 분리 완료
+- **P125**: 성능 프로파일링 — useCallback 최적화 (alarms, voices, library, home 화면)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -48,3 +48,9 @@
 - 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 - 모바일 소스 `as unknown as` 0건 (db-types.ts typedRow만 의도적 유지)
+
+## 성능 최적화 현황
+- FlatList: initialNumToRender, maxToRenderPerBatch, windowSize, removeClippedSubviews 전체 적용
+- useCallback: alarms, voices, library, home 화면 핸들러/렌더러 최적화 완료
+- React.memo: FamilyMemberRow, PeopleSkeletonCard 적용
+- 추가 최적화 후보: React.memo 컴포넌트 추출 (AlarmListItem 등), countdown 분리
