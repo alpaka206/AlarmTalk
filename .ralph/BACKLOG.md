@@ -1591,3 +1591,4 @@
 - [x] friend.ts 라우트 엣지 케이스 테스트 8개 추가: UUID 검증, 거절 후 재요청, 역방향 pending, target 필드 검증, 파라미터 폴백, null total (P139)
 - [x] auth.ts 엣지 케이스 14개 추가: 이메일 정규화, DB 에러, null name/plan 폴백, /me 삭제 사용자 404, 유효성 검증 + stats.ts 엣지 케이스 4개 추가: 빈 rows 폴백, 큰 숫자, 10개 제한, note 잘림 (P140)
 - [x] billing-helpers.ts 테스트 확장 (5→13): resolveUserPk 5개 + planTypeToUserPlan 엣지 2개 + PAID_PLAN_TYPES 크기 검증 1개 (P141)
+- [x] alarm-mutation 엣지 테스트 19개 추가 (25→44): POST validation 14개 (vibration_pattern/wake_mode/time/message_id/repeat_days/snooze_minutes/JSON.stringify/voice+speaker ID/user 미존재/family 플랜) + PATCH validation 5개 (P142)

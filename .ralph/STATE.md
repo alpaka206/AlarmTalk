@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P141 (billing-helpers.ts 테스트 5→13개, resolveUserPk 커버리지 추가)
+- 마지막 루프: 2026-04-25 — P142 (alarm-mutation 엣지 테스트 25→44개, validation/SQL 바인딩/plan 분기 커버리지)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -31,6 +31,7 @@
 - **P139**: friend.ts 라우트 엣지 케이스 테스트 8개 추가 (UUID 검증, 거절 후 재요청, 파라미터 폴백 등)
 - **P140**: auth.ts 엣지 케이스 14개 + stats.ts 엣지 케이스 4개 추가 (이메일 정규화, DB 에러, null 폴백, 10개 제한 등)
 - **P141**: billing-helpers.ts 테스트 확장 (5→13) — resolveUserPk 5개 + planTypeToUserPlan 엣지 2개 + PAID_PLAN_TYPES 1개
+- **P142**: alarm-mutation 엣지 테스트 19개 추가 (25→44) — POST validation 14개 + PATCH validation 5개
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -52,7 +53,7 @@
 - Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 1133 tests (58 files)
+- Backend: 1151 tests (58 files)
 - Mobile: 1113 tests (65 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 

@@ -192,6 +192,136 @@ describe('POST /alarms', () => {
     expect(body.alarm.voice_profile_id).toBeNull();
     expect(body.alarm.speaker_id).toBeNull();
   });
+
+  it('유효하지 않은 vibration_pattern → 400 INVALID_VIBRATION_PATTERN', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, vibration_pattern: 'ultra' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VIBRATION_PATTERN');
+  });
+
+  it('유효하지 않은 wake_mode → 400 INVALID_WAKE_MODE', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, wake_mode: 'shake' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_WAKE_MODE');
+  });
+
+  it('유효하지 않은 time 형식 → 400 INVALID_TIME_FORMAT', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, time: '7:30' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TIME_FORMAT');
+  });
+
+  it('time 값 범위 초과 (25:00) → 400 INVALID_TIME_VALUE', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, time: '25:00' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_TIME_VALUE');
+  });
+
+  it('유효하지 않은 message_id 형식 → 400 INVALID_MESSAGE_ID', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { message_id: 'not-a-uuid', time: '07:30' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_MESSAGE_ID');
+  });
+
+  it('repeat_days 범위 밖 (7) → 400 INVALID_REPEAT_DAYS', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, repeat_days: [0, 7] }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_REPEAT_DAYS');
+  });
+
+  it('snooze_minutes 범위 밖 (0) → 400 INVALID_SNOOZE_MINUTES', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 0 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_SNOOZE_MINUTES');
+  });
+
+  it('snooze_minutes 범위 밖 (31) → 400 INVALID_SNOOZE_MINUTES', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 31 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_SNOOZE_MINUTES');
+  });
+
+  it('repeat_days INSERT SQL에 JSON.stringify 반영', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, repeat_days: [1, 3, 5] }),
+    );
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
+    expect(insertCall).toBeDefined();
+    expect(insertCall!.args).toContain('[1,3,5]');
+  });
+
+  it('voice_profile_id + speaker_id 지정 시 INSERT 반영 + 응답 포함', async () => {
+    const vpId = '50000000-0000-4000-8000-000000000001';
+    const spkId = '60000000-0000-4000-8000-000000000001';
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, voice_profile_id: vpId, speaker_id: spkId }),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.alarm.voice_profile_id).toBe(vpId);
+    expect(body.alarm.speaker_id).toBe(spkId);
+
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
+    expect(insertCall!.args).toContain(vpId);
+    expect(insertCall!.args).toContain(spkId);
+  });
+
+  it('user 미존재 시 plan 체크 건너뛰고 생성 허용', async () => {
+    // user query → 0 rows (user not found)
+    mockDB.pushResult([]);
+    // message check
+    mockDB.pushResult([{ id: ID.message }]);
+    // INSERT
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
+    expect(res.status).toBe(201);
+  });
+
+  it('family 플랜도 알람 개수 제한 없음', async () => {
+    mockDB.pushResult([{ plan: 'family' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
+    expect(res.status).toBe(201);
+  });
+
+  it('snooze_minutes 커스텀 값 INSERT 반영', async () => {
+    mockDB.pushResult([{ plan: 'personal' }]);
+    mockDB.pushResult([{ id: ID.message }]);
+    mockDB.pushResult([], 1);
+
+    await buildApp().request(
+      jsonReq('POST', '/alarms', { ...validBody, snooze_minutes: 15 }),
+    );
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT'));
+    expect(insertCall!.args).toContain(15);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -327,6 +457,90 @@ describe('PATCH /alarms/:id', () => {
     const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
     expect(updateCall).toBeDefined();
     expect(updateCall!.args).toContain(0);
+  });
+
+  it('유효하지 않은 vibration_pattern → 400', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { vibration_pattern: 'mega' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_VIBRATION_PATTERN');
+  });
+
+  it('유효하지 않은 wake_mode → 400', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { wake_mode: 'shake_phone' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_WAKE_MODE');
+  });
+
+  it('snooze_minutes 범위 밖 → 400', async () => {
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { snooze_minutes: 0 }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_SNOOZE_MINUTES');
+  });
+
+  it('repeat_days 수정 시 JSON.stringify SQL 반영', async () => {
+    mockDB.pushResult([{ id: ID.alarm }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{
+      id: ID.alarm,
+      user_id: 'user-1',
+      target_user_id: null,
+      message_id: ID.message,
+      time: '07:30',
+      repeat_days: '[0,6]',
+      is_active: 1,
+      snooze_minutes: 5,
+      mode: 'tts',
+      vibration_pattern: 'default',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+    }]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { repeat_days: [0, 6] }),
+    );
+    expect(res.status).toBe(200);
+    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
+    expect(updateCall!.args).toContain('[0,6]');
+    expect((await res.json()).alarm.repeat_days).toEqual([0, 6]);
+  });
+
+  it('speaker_id 수정 반영', async () => {
+    const spkId = '60000000-0000-4000-8000-000000000001';
+    mockDB.pushResult([{ id: ID.alarm }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{
+      id: ID.alarm,
+      user_id: 'user-1',
+      target_user_id: null,
+      message_id: ID.message,
+      time: '07:30',
+      repeat_days: '[]',
+      is_active: 1,
+      snooze_minutes: 5,
+      mode: 'tts',
+      vibration_pattern: 'default',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: spkId,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+    }]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { speaker_id: spkId }),
+    );
+    expect(res.status).toBe(200);
+    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE'));
+    expect(updateCall!.args).toContain(spkId);
   });
 
   it('voice_profile_id null 로 해제', async () => {
