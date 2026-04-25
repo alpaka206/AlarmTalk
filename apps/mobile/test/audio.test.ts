@@ -42,6 +42,9 @@ import {
   playAudio,
   deleteLocalAudio,
   getAudioCacheSize,
+  getCachedAudioFiles,
+  cleanupAudioCache,
+  clearAudioCache,
 } from '../src/services/audio';
 
 const mockFs = jest.requireMock<{
@@ -300,5 +303,164 @@ describe('getAudioCacheSize', () => {
     mockFs.readDirectoryAsync.mockResolvedValue(['deleted.mp3', 'exists.mp3']);
 
     expect(await getAudioCacheSize()).toBe(300);
+  });
+});
+
+describe('getCachedAudioFiles', () => {
+  it('파일 목록을 크기와 수정시간과 함께 반환한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 1000, modificationTime: 100 })
+      .mockResolvedValueOnce({ exists: true, size: 2000, modificationTime: 200 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['a.mp3', 'b.mp3']);
+
+    const files = await getCachedAudioFiles();
+    expect(files).toHaveLength(2);
+    expect(files[0]).toEqual({
+      name: 'a.mp3',
+      path: `${AUDIO_DIR}a.mp3`,
+      size: 1000,
+      modificationTime: 100,
+    });
+    expect(files[1]).toEqual({
+      name: 'b.mp3',
+      path: `${AUDIO_DIR}b.mp3`,
+      size: 2000,
+      modificationTime: 200,
+    });
+  });
+
+  it('빈 디렉토리면 빈 배열을 반환한다', async () => {
+    mockFs.getInfoAsync.mockResolvedValue({ exists: true });
+    mockFs.readDirectoryAsync.mockResolvedValue([]);
+
+    expect(await getCachedAudioFiles()).toEqual([]);
+  });
+
+  it('존재하지 않는 파일은 건너뛴다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: false })
+      .mockResolvedValueOnce({ exists: true, size: 500, modificationTime: 50 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['gone.mp3', 'here.mp3']);
+
+    const files = await getCachedAudioFiles();
+    expect(files).toHaveLength(1);
+    expect(files[0]!.name).toBe('here.mp3');
+  });
+
+  it('modificationTime이 없으면 0으로 폴백한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: true, size: 100 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['old.mp3']);
+
+    const files = await getCachedAudioFiles();
+    expect(files[0]!.modificationTime).toBe(0);
+  });
+});
+
+describe('cleanupAudioCache', () => {
+  it('캐시가 제한 이하이면 아무 파일도 삭제하지 않는다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 100, modificationTime: 1 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['small.mp3']);
+
+    const deleted = await cleanupAudioCache(1000);
+    expect(deleted).toBe(0);
+    expect(mockFs.deleteAsync).not.toHaveBeenCalled();
+  });
+
+  it('가장 오래된 파일부터 삭제하여 제한 이하로 맞춘다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 500, modificationTime: 100 })
+      .mockResolvedValueOnce({ exists: true, size: 500, modificationTime: 300 })
+      .mockResolvedValueOnce({ exists: true, size: 500, modificationTime: 200 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['old.mp3', 'new.mp3', 'mid.mp3']);
+
+    const deleted = await cleanupAudioCache(1000);
+    expect(deleted).toBe(1);
+    expect(mockFs.deleteAsync).toHaveBeenCalledWith(`${AUDIO_DIR}old.mp3`);
+    expect(mockFs.deleteAsync).not.toHaveBeenCalledWith(`${AUDIO_DIR}new.mp3`);
+  });
+
+  it('제한에 도달할 때까지 여러 파일을 삭제한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 400, modificationTime: 1 })
+      .mockResolvedValueOnce({ exists: true, size: 400, modificationTime: 2 })
+      .mockResolvedValueOnce({ exists: true, size: 400, modificationTime: 3 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['a.mp3', 'b.mp3', 'c.mp3']);
+
+    const deleted = await cleanupAudioCache(500);
+    expect(deleted).toBe(2);
+    expect(mockFs.deleteAsync).toHaveBeenCalledWith(`${AUDIO_DIR}a.mp3`);
+    expect(mockFs.deleteAsync).toHaveBeenCalledWith(`${AUDIO_DIR}b.mp3`);
+    expect(mockFs.deleteAsync).not.toHaveBeenCalledWith(`${AUDIO_DIR}c.mp3`);
+  });
+
+  it('삭제 실패 시 건너뛰고 계속 진행한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 600, modificationTime: 1 })
+      .mockResolvedValueOnce({ exists: true, size: 600, modificationTime: 2 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['fail.mp3', 'ok.mp3']);
+    mockFs.deleteAsync
+      .mockRejectedValueOnce(new Error('permission denied'))
+      .mockResolvedValueOnce(undefined);
+
+    const deleted = await cleanupAudioCache(500);
+    expect(deleted).toBe(1);
+  });
+
+  it('캐시가 정확히 제한 크기이면 삭제하지 않는다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: true, size: 500, modificationTime: 1 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['exact.mp3']);
+
+    const deleted = await cleanupAudioCache(500);
+    expect(deleted).toBe(0);
+  });
+});
+
+describe('clearAudioCache', () => {
+  it('모든 캐시 파일을 삭제한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true }) // ensureAudioDir
+      .mockResolvedValueOnce({ exists: true, size: 100, modificationTime: 1 })
+      .mockResolvedValueOnce({ exists: true, size: 200, modificationTime: 2 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['a.mp3', 'b.mp3']);
+
+    const deleted = await clearAudioCache();
+    expect(deleted).toBe(2);
+    expect(mockFs.deleteAsync).toHaveBeenCalledWith(`${AUDIO_DIR}a.mp3`);
+    expect(mockFs.deleteAsync).toHaveBeenCalledWith(`${AUDIO_DIR}b.mp3`);
+  });
+
+  it('빈 캐시이면 0을 반환한다', async () => {
+    mockFs.getInfoAsync.mockResolvedValue({ exists: true });
+    mockFs.readDirectoryAsync.mockResolvedValue([]);
+
+    expect(await clearAudioCache()).toBe(0);
+  });
+
+  it('일부 삭제 실패해도 나머지는 계속 삭제한다', async () => {
+    mockFs.getInfoAsync
+      .mockResolvedValueOnce({ exists: true })
+      .mockResolvedValueOnce({ exists: true, size: 100, modificationTime: 1 })
+      .mockResolvedValueOnce({ exists: true, size: 200, modificationTime: 2 })
+      .mockResolvedValueOnce({ exists: true, size: 300, modificationTime: 3 });
+    mockFs.readDirectoryAsync.mockResolvedValue(['a.mp3', 'b.mp3', 'c.mp3']);
+    mockFs.deleteAsync
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('busy'))
+      .mockResolvedValueOnce(undefined);
+
+    const deleted = await clearAudioCache();
+    expect(deleted).toBe(2);
+    expect(mockFs.deleteAsync).toHaveBeenCalledTimes(3);
   });
 });

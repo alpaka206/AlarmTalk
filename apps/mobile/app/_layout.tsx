@@ -14,7 +14,7 @@ import { parseDeepLink } from '../src/lib/deepLink';
 import type * as Notifications from 'expo-notifications';
 import { useAppStore } from '../src/stores/useAppStore';
 import { useTheme } from '../src/hooks/useTheme';
-import { setupAudioSession, ensureAudioDir } from '../src/services/audio';
+import { setupAudioSession, ensureAudioDir, cleanupAudioCache } from '../src/services/audio';
 import { checkForOTAUpdate } from '../src/services/updates';
 import {
   requestNotificationPermissions,
@@ -109,7 +109,7 @@ export default function RootLayout() {
   useEffect(() => {
     loadPersistedState();
     setupAudioSession();
-    ensureAudioDir();
+    ensureAudioDir().then(() => cleanupAudioCache());
     checkForOTAUpdate(t);
     configureNotificationChannels(t);
 

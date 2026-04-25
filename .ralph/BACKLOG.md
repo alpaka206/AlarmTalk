@@ -1501,3 +1501,17 @@
 - [x] `packages/backend/test/voice-profile.test.ts` — 47 tests (목록 pagination/필터, 상세/이름변경/통계, clone 2개 제한+INSERT→UPDATE 순서, DELETE cascade 4단계+ElevenLabs graceful, family ready 필터)
 - [x] `packages/backend/test/voice-upload.test.ts` — 41 tests (업로드 MIME/크기/duration 검증, separate 멱등성+소유권, speakers 정렬, label 수정, diarize duration 계산+DB 미저장)
 - [x] 전체 테스트: backend 1068/1068 (57 suites), mobile 1012/1012, typecheck 0 errors
+
+## P119 — 오디오 캐시 관리 (자동 정리) ✅ (2026-04-25)
+
+- [x] `apps/mobile/src/services/audio.ts` — FileInfo에 modificationTime 추가, getCachedAudioFiles/cleanupAudioCache(200MB LRU)/clearAudioCache 함수 추가
+- [x] `apps/mobile/app/_layout.tsx` — 앱 시작 시 ensureAudioDir→cleanupAudioCache 자동 호출
+- [x] `apps/mobile/test/audio.test.ts` — 12 tests 추가 (getCachedAudioFiles 4, cleanupAudioCache 5, clearAudioCache 3)
+- [x] 전체 테스트: backend 1068/1068 (57 suites), mobile 1024/1024 (58 suites), typecheck 0 errors
+
+## P120 — 설정 화면 캐시 삭제 기능 연결 ✅ (2026-04-25)
+
+- [x] 설정 화면에 캐시 크기 표시 (이미 존재 — getAudioCacheSize)
+- [x] "캐시 삭제" 버튼에 clearAudioCache 연결 (기존엔 Alert만 표시, 실제 삭제 미구현)
+- [x] 삭제 확인 다이얼로그 (취소/삭제 버튼) + 삭제 후 캐시 크기 0으로 갱신
+- [x] typecheck 통과, 전체 테스트 1024/1024 통과

@@ -1,10 +1,10 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P118 voice-profile + voice-upload 통합 테스트
-- 현재 Phase: **R0~R6 전체 완료 + P11~P118 완료**
+- 마지막 루프: 2026-04-25 — P119~P120 오디오 캐시 관리 (자동 정리 + 설정 UI 연결)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P120 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
-- 전체 테스트 통과 (backend 1068/1068, mobile 1012/1012)
+- 전체 테스트 통과 (backend 1068/1068, mobile 1024/1024)
 
 ## 완료된 리팩토링
 
@@ -13,8 +13,8 @@
 - **R6**: 프로젝트 문서화 6건 (docs/R6-A~F.md)
 - **P11~P112**: 전체 완료
 - **P113**: App Store / Google Play 스토어 등록 메타데이터 준비
-  - `docs/P4_NOTION_SYNC.md` — Notion 기획서 동기화 가이드
-  - `docs/STORE_LISTING.md` — 스토어 메타데이터 (한/영 설명, 스크린샷 가이드, 심사 노트, 체크리스트)
+- **P114~P118**: 테스트 커버리지 확장 (backend split modules + voice 전용 테스트)
+- **P119**: 오디오 캐시 관리 — getCachedAudioFiles, cleanupAudioCache(200MB LRU), clearAudioCache + 앱 시작 시 자동 정리
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -38,7 +38,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1068 tests (57 files) — 모든 라우트 + 미들웨어 + 유틸리티 + 전체 split module 테스트 + voice-profile/voice-upload 전용 테스트
-- Mobile: 1012 tests (58 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14) + 화면 비즈니스 로직 (voices/compose/noteCreate)
+- Mobile: 1024 tests (58 files) — API core + 전체 API 서비스 모듈 + hooks + services (전체) + lib + 전체 컴포넌트 (14/14) + 화면 비즈니스 로직 + 오디오 캐시 관리
 - 미테스트: lib/db.ts (최소 로직, re-export만)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 - 모바일 소스 `as unknown as` 0건 (db-types.ts typedRow만 의도적 유지)

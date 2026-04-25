@@ -11,7 +11,7 @@ import { getUserProfile, deleteAccount } from '../../src/services/api';
 import { useState, useEffect, useMemo } from 'react';
 import { Linking } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { getAudioCacheSize } from '../../src/services/audio';
+import { getAudioCacheSize, clearAudioCache } from '../../src/services/audio';
 
 export default function SettingsScreen() {
   const { plan, isAuthenticated, clearAuth, defaultSnoozeMinutes, setDefaultSnoozeMinutes, darkMode, setDarkMode } = useAppStore();
@@ -180,7 +180,17 @@ export default function SettingsScreen() {
               label={t('settings.clearCache')}
               valueColor={colors.error}
               value={t('common.delete')}
-              onPress={() => Alert.alert(t('settings.clearCache'), t('settings.clearCacheConfirm'))}
+              onPress={() => Alert.alert(t('settings.clearCache'), t('settings.clearCacheConfirm'), [
+                { text: t('common.cancel'), style: 'cancel' },
+                {
+                  text: t('common.delete'),
+                  style: 'destructive',
+                  onPress: async () => {
+                    await clearAudioCache();
+                    setCacheSize(0);
+                  },
+                },
+              ])}
             />
           </View>
         </View>
