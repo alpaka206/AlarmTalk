@@ -1724,3 +1724,11 @@
 - [x] 4xx 에러(401, 422 등): 재시도 안 함
 - [x] apiCore.test.ts 재시도 테스트 11개 추가 (22→33)
 - [x] Mobile jest: 2006 passed (1995→2006)
+
+## P179 — 누락된 Stack.Screen 등록 + i18n 키 추가 ✅ (2026-04-25)
+- [x] `voice/picker` Stack.Screen 등록 추가 (presentation: modal, title: screen.speakerPicker)
+- [x] `friend/[id]` Stack.Screen 등록 추가 (title: screen.friendProfile)
+- [x] i18n ko/en: `screen.speakerPicker`, `screen.friendProfile` 키 추가
+- [x] `friend/[id].tsx`: SafeAreaView→View, 커스텀 back 버튼 제거 (Stack 헤더와 중복)
+- [x] typecheck: backend + mobile 0 errors
+- [x] friendProfile + i18nKeys 테스트: 55/55 통과

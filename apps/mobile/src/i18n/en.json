@@ -51,7 +51,9 @@
     "receivedGifts": "Received Gifts",
     "voiceDetail": "Voice Detail",
     "character": "Character",
-    "library": "Library"
+    "library": "Library",
+    "speakerPicker": "Speaker Selection",
+    "friendProfile": "Friend Profile"
   },
   "tab": {
     "home": "Home",

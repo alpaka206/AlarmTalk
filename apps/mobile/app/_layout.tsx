@@ -280,6 +280,14 @@ export default function RootLayout() {
               }}
             />
             <Stack.Screen
+              name="voice/picker"
+              options={{ headerShown: true, title: t('screen.speakerPicker'), presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="friend/[id]"
+              options={{ headerShown: true, title: t('screen.friendProfile') }}
+            />
+            <Stack.Screen
               name="dub/translate"
               options={{ headerShown: true, title: t('dub.title'), presentation: 'modal' }}
             />
