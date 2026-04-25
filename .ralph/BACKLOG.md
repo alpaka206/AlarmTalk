@@ -1609,3 +1609,6 @@
 - [x] auth.ts 엣지 케이스 14개 추가: 이메일 정규화, DB 에러, null name/plan 폴백, /me 삭제 사용자 404, 유효성 검증 + stats.ts 엣지 케이스 4개 추가: 빈 rows 폴백, 큰 숫자, 10개 제한, note 잘림 (P140)
 - [x] billing-helpers.ts 테스트 확장 (5→13): resolveUserPk 5개 + planTypeToUserPlan 엣지 2개 + PAID_PLAN_TYPES 크기 검증 1개 (P141)
 - [x] alarm-mutation 엣지 테스트 19개 추가 (25→44): POST validation 14개 (vibration_pattern/wake_mode/time/message_id/repeat_days/snooze_minutes/JSON.stringify/voice+speaker ID/user 미존재/family 플랜) + PATCH validation 5개 (P142)
+- [x] library.ts 라우트 테스트 확장 (10→34): GET 필터 엣지 11개 + PATCH error_code 5개 + DELETE error_code 4개 + beforeEach 개선 (P143)
+- [x] family-invite.ts 엣지 케이스 테스트 10개 추가 (33→43): max_members null 폴백, expires_at 유효성, 코드 trim, SQL 검증 (P144)
+- [x] 미테스트 스크린 3개 단위 테스트 137개: alarmsScreen(49) + homeScreen(55) + settingsScreen(33) — compareAlarms 정렬, 검색 필터, TrendBadge, getTimeGreeting, formatBytes, getPlanLabel (P145)

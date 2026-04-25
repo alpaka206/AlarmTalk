@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P144 (family-invite.ts 엣지 케이스 테스트 10개 추가, 33→43 tests)
+- 마지막 루프: 2026-04-25 — P145 (alarmsScreen/homeScreen/settingsScreen 단위 테스트 137개 추가, 1113→1250 mobile tests)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -34,6 +34,7 @@
 - **P142**: alarm-mutation 엣지 테스트 19개 추가 (25→44) — POST validation 14개 + PATCH validation 5개
 - **P143**: library.ts 라우트 테스트 확장 (10→34) — GET 필터 엣지 11개 + PATCH error_code 5개 + DELETE error_code 4개 + beforeEach 개선
 - **P144**: family-invite.ts 엣지 케이스 테스트 10개 추가 (33→43) — max_members null 폴백, expires_at 유효성, 코드 trim, SQL 검증
+- **P145**: 미테스트 스크린 3개 (alarms/home/settings) 비즈니스 로직 단위 테스트 137개 추가 (1113→1250)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -56,7 +57,7 @@
 
 ## 테스트 커버리지 현황
 - Backend: 1185 tests (58 files)
-- Mobile: 1113 tests (65 files)
+- Mobile: 1250 tests (68 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
 ## 성능 최적화 현황 (전체 완료)
