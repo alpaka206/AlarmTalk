@@ -335,6 +335,7 @@ export default function CreateAlarmScreen() {
           onPress={() => setMode('tts')}
           accessibilityRole="radio"
           accessibilityState={{ selected: mode === 'tts' }}
+          accessibilityLabel={t('alarmCreate.ttsMode')}
         >
           <Text style={[formStyles.modeText, mode === 'tts' && formStyles.modeTextActive]}>
             🗣️ {t('alarmCreate.ttsMode')}
@@ -345,6 +346,7 @@ export default function CreateAlarmScreen() {
           onPress={() => setMode('sound-only')}
           accessibilityRole="radio"
           accessibilityState={{ selected: mode === 'sound-only' }}
+          accessibilityLabel={t('alarmCreate.soundOnlyMode')}
         >
           <Text style={[formStyles.modeText, mode === 'sound-only' && formStyles.modeTextActive]}>
             🔊 {t('alarmCreate.soundOnlyMode')}
@@ -437,6 +439,7 @@ export default function CreateAlarmScreen() {
               onPress={() => setWakeMode('sound_then_voice')}
               accessibilityRole="radio"
               accessibilityState={{ selected: wakeMode === 'sound_then_voice' }}
+              accessibilityLabel={t('alarmCreate.soundThenVoice')}
             >
               <Text style={[formStyles.modeText, wakeMode === 'sound_then_voice' && formStyles.modeTextActive]}>
                 🔔 {t('alarmCreate.soundThenVoice')}
@@ -447,6 +450,7 @@ export default function CreateAlarmScreen() {
               onPress={() => setWakeMode('voice_only')}
               accessibilityRole="radio"
               accessibilityState={{ selected: wakeMode === 'voice_only' }}
+              accessibilityLabel={t('alarmCreate.voiceOnly')}
             >
               <Text style={[formStyles.modeText, wakeMode === 'voice_only' && formStyles.modeTextActive]}>
                 🗣️ {t('alarmCreate.voiceOnly')}

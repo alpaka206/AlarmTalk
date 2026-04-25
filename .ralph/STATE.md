@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P154 (홈 화면 최근 활동 피드 통합)
+- 마지막 루프: 2026-04-25 — P155 (알람 생성/편집 폼 접근성 레이블 보완)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P154 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -44,6 +44,7 @@
 - **P152**: dub/translate i18n 정리 (하드코딩 "beta" → i18n, 소스 언어 상수 추출) + dubHelpers.ts 비즈니스 로직 5개 추출 + 단위 테스트 36개
 - **P153**: activity endpoint i18n 정규화 (summary 한국어 하드코딩 → detail 구조체) + "Lv." 접두사 i18n 전환 (2 screens)
 - **P154**: 홈 화면 최근 활동 피드 통합 (getActivity API + activityHelpers + 홈 UI 섹션 + i18n 12키 + 테스트 10개)
+- **P155**: 알람 생성/편집 폼 접근성 레이블 누락 8개 보완 (전체 앱 a11y 100% 커버리지 달성)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
