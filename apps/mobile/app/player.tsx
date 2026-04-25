@@ -23,6 +23,7 @@ import {
   WAVEFORM_TOTAL_WIDTH,
   ACTIVE_PULSE_RANGE,
 } from '../src/styles/playerStyles';
+import { TIME_OF_DAY_BACKGROUNDS, TIME_OF_DAY_EMOJIS } from '../src/constants/player';
 
 function WaveformBar({
   height,
@@ -178,25 +179,11 @@ export default function PlayerScreen() {
   );
 
   const getBackgroundColor = () => {
-    const map: Record<string, string[]> = {
-      morning: ['#FFF5E6', '#FFE4C4'],
-      lunch: ['#FFF0E6', '#FFD9C4'],
-      afternoon: ['#F5F0FF', '#E4D9FF'],
-      evening: ['#FFE8E0', '#FFC4B3'],
-      night: ['#E8E0FF', '#C4B3FF'],
-    };
-    return map[params.category]?.[0] || colors.background;
+    return TIME_OF_DAY_BACKGROUNDS[params.category]?.[0] || colors.background;
   };
 
   const getEmoji = () => {
-    const map: Record<string, string> = {
-      morning: '🌅',
-      lunch: '🍽️',
-      afternoon: '☕',
-      evening: '🌆',
-      night: '🌙',
-    };
-    return map[params.category] || '💌';
+    return TIME_OF_DAY_EMOJIS[params.category] || '💌';
   };
 
   const handlePlay = useCallback(async () => {

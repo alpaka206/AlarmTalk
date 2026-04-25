@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P122-B/C + P123 (디자인 토큰 마이그레이션 완료 + 접근성 보완)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P123 완료**
+- 마지막 루프: 2026-04-25 — P124 일부 (player 그라데이션 팔레트 + character 나무 갈색 상수 분리)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P124 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -28,7 +28,8 @@
 ## 디자인 토큰 마이그레이션 잔여
 - LoginButtons.tsx 브랜드 색상 (#FFFFFF, #4285F4, #000000, #DADCE0, #3C4043) — 의도적 유지
 - ProfileDropdown.tsx shadowColor: '#000' — RN 표준 패턴, 의도적 유지
-- player.tsx 시간대 그라데이션 팔레트 (#FFF0E6, #FFD9C4 등) — 의도적 유지
+- player.tsx 시간대 그라데이션 팔레트 → `src/constants/player.ts`로 분리 완료
+- character/index.tsx #8B5E3C → `src/constants/character.ts` TREE_BROWN으로 분리 완료
 
 ## 대형 라우트 파일 분할 현황 (전체 완료)
 - family.ts 834줄 → 13줄 aggregator (P57)

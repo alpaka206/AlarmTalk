@@ -1573,5 +1573,5 @@
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] App Store / Google Play 메타데이터 준비
 - [ ] 성능 프로파일링 (불필요한 re-render 감지)
-- [ ] player.tsx 시간대 그라데이션 팔레트 → 별도 상수 파일 분리
-- [ ] character/index.tsx #8B5E3C (나무 갈색) → 테마 토큰 또는 상수 분리
+- [x] player.tsx 시간대 그라데이션 팔레트 → 별도 상수 파일 분리
+- [x] character/index.tsx #8B5E3C (나무 갈색) → 테마 토큰 또는 상수 분리

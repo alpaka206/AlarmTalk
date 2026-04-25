@@ -25,6 +25,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createCharacterStyles } from '../../src/styles/characterStyles';
+import { TREE_BROWN } from '../../src/constants/character';
 
 const DEV_EVENTS: { event: XpEvent; labelKey: string }[] = [
   { event: 'alarm_completed', labelKey: 'character.devAlarmCompleted' },
@@ -245,7 +246,7 @@ export default function CharacterScreen() {
               label={t('character.statDiligence')}
               value={stats.diligence}
               max={Math.max(stats.diligence, stats.health, stats.consistency, 10)}
-              color="#8B5E3C"
+              color={TREE_BROWN}
               dynStyles={dynStyles}
               t={t}
             />
