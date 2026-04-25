@@ -592,6 +592,7 @@
     "title": "Send Family Alarm",
     "recipient": "Who to send to?",
     "wakeTime": "Wake time",
+    "wakeTimePlaceholder": "07:00",
     "message": "Alarm message",
     "messagePlaceholder": "Leave a warm message (max 500 chars)",
     "repeat": "Repeat days",
@@ -717,6 +718,7 @@
   },
   "profile": {
     "openMenu": "Open profile menu",
+    "menuLabel": "Profile menu",
     "people": "People",
     "codeRegister": "Register Code",
     "settings": "Settings",
@@ -811,6 +813,7 @@
     "name": "Name",
     "namePlaceholder": "John Doe",
     "email": "Email",
+    "emailPlaceholder": "you@example.com",
     "password": "Password",
     "passwordPlaceholder": "8+ characters"
   },

@@ -362,6 +362,5 @@ describe('GET /user/me — edge cases', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error_code).toBe('FETCH_USER_FAILED');
-    expect(body.detail).toBe('DB down');
   });
 });

@@ -1,7 +1,7 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P150 (onboarding/noteCreate/noteDetail/giftReceived/messageDetail 스크린 비즈니스 로직 테스트 130개 추가, 1760→1890 mobile tests)
+- 마지막 루프: 2026-04-25 — P151 (API error response 일관성 정규화 + i18n 하드코딩 2곳 수정 + ProfileDropdown a11y 보완)
 - 현재 Phase: **R0~R6 전체 완료 + P11~P133 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
@@ -40,6 +40,7 @@
 - **P148**: libraryScreen + playerScreen + voiceRecordScreen 비즈니스 로직 테스트 165개 추가 (1449→1614)
 - **P149**: alarmEditScreen + messageCreateScreen + friendProfileScreen 비즈니스 로직 테스트 146개 추가 (1614→1760)
 - **P150**: onboarding/noteCreate/noteDetail/giftReceived/messageDetail 스크린 비즈니스 로직 테스트 130개 추가 (1760→1890)
+- **P151**: API error response 일관성 정규화 (friend/gift/alarm/voice/auth/user 라우트 + middleware, code→error_code 통일) + i18n 하드코딩 2곳 수정 + ProfileDropdown a11y 보완
 
 ## 알려진 이슈
 - [blocked] Perso API 404

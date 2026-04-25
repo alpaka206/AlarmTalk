@@ -194,6 +194,7 @@ describe('i18n — value quality', () => {
       'settings.planFree',
       'settings.languageKorean',
       'compose.title',
+      'authForm.emailPlaceholder',
     ]);
     const filtered = suspectKeys.filter((s) => {
       const k = s.split(':')[0]!;

@@ -140,9 +140,8 @@ voiceProfile.post('/clone', async (c) => {
     if (count >= MAX_VOICE_PROFILES) {
       return c.json(
         {
-          error: 'VOICE_LIMIT_REACHED',
+          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
           error_code: 'VOICE_LIMIT_REACHED',
-          message: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
         },
         403,
       );

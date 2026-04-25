@@ -120,7 +120,7 @@ describe('Protected Routes — 인증 없이 요청 시 401', () => {
       const res = await fetchApp(method, path);
       expect(res.status).toBe(401);
       const body = await res.json();
-      expect(body.code).toBe('AUTH_MISSING');
+      expect(body.error_code).toBe('AUTH_MISSING');
     });
   }
 });
@@ -158,6 +158,6 @@ describe('404 처리', () => {
     const res = await fetchApp('GET', '/api/nonexistent-route-xyz');
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_MISSING');
+    expect(body.error_code).toBe('AUTH_MISSING');
   });
 });

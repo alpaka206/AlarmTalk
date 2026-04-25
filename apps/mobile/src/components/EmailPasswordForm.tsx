@@ -107,7 +107,7 @@ export default function EmailPasswordForm({
         <TextInput
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder={t('authForm.emailPlaceholder')}
           placeholderTextColor={colors.textTertiary}
           autoComplete="email"
           autoCapitalize="none"

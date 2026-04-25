@@ -106,7 +106,7 @@ export function ProfileDropdown() {
           accessibilityRole="button"
           accessibilityLabel={t('common.close')}
         >
-          <Pressable style={styles.menu} onPress={() => {}} accessibilityRole="menu">
+          <Pressable style={styles.menu} onPress={() => {}} accessibilityRole="menu" accessibilityLabel={t('profile.menuLabel')}>
             {isAuthenticated && profile && (
               <View style={styles.profileSection}>
                 <View style={styles.profileAvatar}>

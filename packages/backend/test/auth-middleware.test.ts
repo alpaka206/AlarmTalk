@@ -73,7 +73,7 @@ describe('authMiddleware — Authorization header 검증', () => {
     const res = await reqWithEnv(app, req());
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_MISSING');
+    expect(body.error_code).toBe('AUTH_MISSING');
   });
 
   it('Bearer 스킴이 아니면 401 AUTH_INVALID_SCHEME', async () => {
@@ -81,7 +81,7 @@ describe('authMiddleware — Authorization header 검증', () => {
     const res = await reqWithEnv(app, req('Basic abc123'));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_INVALID_SCHEME');
+    expect(body.error_code).toBe('AUTH_INVALID_SCHEME');
   });
 
   it('Bearer 뒤 공백만 있으면 401 (헤더 trim으로 AUTH_INVALID_SCHEME)', async () => {
@@ -89,7 +89,7 @@ describe('authMiddleware — Authorization header 검증', () => {
     const res = await reqWithEnv(app, req('Bearer '));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_INVALID_SCHEME');
+    expect(body.error_code).toBe('AUTH_INVALID_SCHEME');
   });
 
   it('토큰이 3파트가 아니면 401 AUTH_MALFORMED_TOKEN', async () => {
@@ -97,7 +97,7 @@ describe('authMiddleware — Authorization header 검증', () => {
     const res = await reqWithEnv(app, req('Bearer not-a-jwt'));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_MALFORMED_TOKEN');
+    expect(body.error_code).toBe('AUTH_MALFORMED_TOKEN');
   });
 
   it('토큰이 2파트만 있으면 401 AUTH_MALFORMED_TOKEN', async () => {
@@ -105,7 +105,7 @@ describe('authMiddleware — Authorization header 검증', () => {
     const res = await reqWithEnv(app, req('Bearer part1.part2'));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_MALFORMED_TOKEN');
+    expect(body.error_code).toBe('AUTH_MALFORMED_TOKEN');
   });
 });
 
@@ -140,7 +140,7 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VERIFICATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VERIFICATION_FAILED');
   });
 
   it('앱 JWT 만료 시 AUTH_TOKEN_EXPIRED', async () => {
@@ -151,7 +151,7 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_TOKEN_EXPIRED');
+    expect(body.error_code).toBe('AUTH_TOKEN_EXPIRED');
   });
 
   it('앱 JWT audience 불일치 시 AUTH_AUDIENCE_MISMATCH', async () => {
@@ -162,7 +162,7 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_AUDIENCE_MISMATCH');
+    expect(body.error_code).toBe('AUTH_AUDIENCE_MISMATCH');
   });
 
   it('앱 JWT issuer 불일치 시 AUTH_INVALID_ISSUER', async () => {
@@ -173,7 +173,7 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_INVALID_ISSUER');
+    expect(body.error_code).toBe('AUTH_INVALID_ISSUER');
   });
 
   it('name 없는 앱 JWT도 정상 처리 (userName="")', async () => {
@@ -240,7 +240,7 @@ describe('authMiddleware — Google token', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VERIFICATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VERIFICATION_FAILED');
   });
 
   it('Google 토큰 audience 불일치 시 AUTH_AUDIENCE_MISMATCH', async () => {
@@ -261,7 +261,7 @@ describe('authMiddleware — Google token', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_AUDIENCE_MISMATCH');
+    expect(body.error_code).toBe('AUTH_AUDIENCE_MISMATCH');
   });
 
   it('Google 토큰 만료 시 AUTH_TOKEN_EXPIRED', async () => {
@@ -282,7 +282,7 @@ describe('authMiddleware — Google token', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_TOKEN_EXPIRED');
+    expect(body.error_code).toBe('AUTH_TOKEN_EXPIRED');
   });
 
   it('fetch 네트워크 에러 시 401', async () => {
@@ -336,7 +336,7 @@ describe('authMiddleware — Apple token', () => {
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_TOKEN_EXPIRED');
+    expect(body.error_code).toBe('AUTH_TOKEN_EXPIRED');
   });
 
   it('Apple 토큰 email 없으면 빈 문자열', async () => {

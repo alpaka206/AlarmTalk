@@ -36,7 +36,7 @@ gift.post('/', async (c) => {
       return c.json({ error: '유효한 이메일 주소를 입력해주세요.', error_code: 'INVALID_EMAIL' }, 400);
     }
     if (!body.message_id || !UUID_RE.test(body.message_id)) {
-      return c.json({ error: 'Invalid or missing message_id' }, 400);
+      return c.json({ error: 'Invalid or missing message_id', error_code: 'INVALID_MESSAGE_ID' }, 400);
     }
     if (body.note && body.note.length > 200) {
       return c.json({ error: '메모는 200자 이내로 작성해주세요.', error_code: 'NOTE_TOO_LONG' }, 400);
@@ -66,7 +66,7 @@ gift.post('/', async (c) => {
       args: [body.message_id, userId],
     });
     if (msg.rows.length === 0) {
-      return c.json({ error: 'Message not found' }, 404);
+      return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
     }
 
     const id = crypto.randomUUID();
@@ -78,7 +78,7 @@ gift.post('/', async (c) => {
     return c.json({ gift: { id, message_id: body.message_id, status: 'pending' } }, 201);
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to send gift' }, 500);
+    return c.json({ error: 'Failed to send gift', error_code: 'SEND_GIFT_FAILED' }, 500);
   }
 });
 
@@ -125,7 +125,7 @@ gift.get('/received', async (c) => {
     return c.json({ gifts: result.rows, total, limit, offset });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch received gifts' }, 500);
+    return c.json({ error: 'Failed to fetch received gifts', error_code: 'FETCH_RECEIVED_FAILED' }, 500);
   }
 });
 
@@ -172,7 +172,7 @@ gift.get('/sent', async (c) => {
     return c.json({ gifts: result.rows, total, limit, offset });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to fetch sent gifts' }, 500);
+    return c.json({ error: 'Failed to fetch sent gifts', error_code: 'FETCH_SENT_FAILED' }, 500);
   }
 });
 
@@ -182,7 +182,7 @@ gift.patch('/:id/accept', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid gift ID format' }, 400);
+    return c.json({ error: 'Invalid gift ID format', error_code: 'INVALID_ID_FORMAT' }, 400);
   }
 
   try {
@@ -192,7 +192,7 @@ gift.patch('/:id/accept', async (c) => {
     });
 
     if (existing.rows.length === 0) {
-      return c.json({ error: 'Pending gift not found' }, 404);
+      return c.json({ error: 'Pending gift not found', error_code: 'PENDING_GIFT_NOT_FOUND' }, 404);
     }
 
     await db.execute({
@@ -215,7 +215,7 @@ gift.patch('/:id/accept', async (c) => {
     return c.json({ success: true, gift: updated.rows[0] });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to accept gift' }, 500);
+    return c.json({ error: 'Failed to accept gift', error_code: 'ACCEPT_GIFT_FAILED' }, 500);
   }
 });
 
@@ -225,7 +225,7 @@ gift.patch('/:id/reject', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid gift ID format' }, 400);
+    return c.json({ error: 'Invalid gift ID format', error_code: 'INVALID_ID_FORMAT' }, 400);
   }
 
   try {
@@ -235,7 +235,7 @@ gift.patch('/:id/reject', async (c) => {
     });
 
     if (existing.rows.length === 0) {
-      return c.json({ error: 'Pending gift not found' }, 404);
+      return c.json({ error: 'Pending gift not found', error_code: 'PENDING_GIFT_NOT_FOUND' }, 404);
     }
 
     await db.execute({
@@ -252,7 +252,7 @@ gift.patch('/:id/reject', async (c) => {
     return c.json({ success: true, gift: updated.rows[0] });
   } catch (err) {
     logRouteError(c, err);
-    return c.json({ error: 'Failed to reject gift' }, 500);
+    return c.json({ error: 'Failed to reject gift', error_code: 'REJECT_GIFT_FAILED' }, 500);
   }
 });
 

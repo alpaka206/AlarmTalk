@@ -155,7 +155,7 @@ export default function FamilyAlarmCreateScreen() {
           style={styles.timeInput}
           value={wakeAt}
           onChangeText={setWakeAt}
-          placeholder="07:00"
+          placeholder={t('familyAlarm.wakeTimePlaceholder')}
           placeholderTextColor={colors.textTertiary}
           keyboardType="numbers-and-punctuation"
           maxLength={5}

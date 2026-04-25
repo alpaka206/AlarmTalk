@@ -592,6 +592,7 @@
     "title": "가족 알람 보내기",
     "recipient": "누구에게 보낼까요?",
     "wakeTime": "기상 시간",
+    "wakeTimePlaceholder": "07:00",
     "message": "알람 메시지",
     "messagePlaceholder": "따뜻한 메시지를 남겨보세요 (최대 500자)",
     "repeat": "반복 요일",
@@ -717,6 +718,7 @@
   },
   "profile": {
     "openMenu": "프로필 메뉴 열기",
+    "menuLabel": "프로필 메뉴",
     "people": "내 사람들",
     "codeRegister": "코드 등록",
     "settings": "설정",
@@ -811,6 +813,7 @@
     "name": "이름",
     "namePlaceholder": "홍길동",
     "email": "이메일",
+    "emailPlaceholder": "you@example.com",
     "password": "비밀번호",
     "passwordPlaceholder": "8자 이상"
   },

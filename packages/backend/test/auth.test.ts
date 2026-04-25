@@ -70,7 +70,7 @@ describe('POST /auth/register', () => {
     );
     expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_EMAIL_TAKEN');
+    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
   });
 
   it('약한 비밀번호 → 400', async () => {
@@ -86,7 +86,7 @@ describe('POST /auth/register', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VALIDATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
   });
 
   it('잘못된 이메일 → 400', async () => {
@@ -204,7 +204,7 @@ describe('POST /auth/login', () => {
     );
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_OAUTH_ONLY');
+    expect(body.error_code).toBe('AUTH_OAUTH_ONLY');
   });
 });
 
@@ -269,7 +269,7 @@ describe('GET /auth/me', () => {
     );
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_MISSING');
+    expect(body.error_code).toBe('AUTH_MISSING');
   });
 
   it('삭제된 사용자 토큰 → 404 AUTH_USER_NOT_FOUND', async () => {
@@ -300,7 +300,7 @@ describe('GET /auth/me', () => {
     );
     expect(meRes.status).toBe(404);
     const meBody = await meRes.json();
-    expect(meBody.code).toBe('AUTH_USER_NOT_FOUND');
+    expect(meBody.error_code).toBe('AUTH_USER_NOT_FOUND');
   });
 
   it('/me 응답의 null name/plan → 기본값 매핑', async () => {
@@ -371,7 +371,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VALIDATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
   });
 
   it('빈 문자열 이메일 → 400', async () => {
@@ -413,7 +413,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     );
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_REGISTER_FAILED');
+    expect(body.error_code).toBe('AUTH_REGISTER_FAILED');
 
     mockDB.client.execute = originalExecute;
   });
@@ -430,7 +430,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VALIDATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
   });
 
   it('빈 body {} → 400', async () => {
@@ -438,7 +438,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     const res = await app.request(jsonReq('POST', '/auth/register', {}), undefined, ENV);
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VALIDATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
   });
 });
 
@@ -476,7 +476,7 @@ describe('POST /auth/login — 엣지 케이스', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_INVALID_JSON');
+    expect(body.error_code).toBe('AUTH_INVALID_JSON');
   });
 
   it('빈 body {} → 400 검증 실패', async () => {
@@ -484,7 +484,7 @@ describe('POST /auth/login — 엣지 케이스', () => {
     const res = await app.request(jsonReq('POST', '/auth/login', {}), undefined, ENV);
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_VALIDATION_FAILED');
+    expect(body.error_code).toBe('AUTH_VALIDATION_FAILED');
   });
 
   it('null plan 사용자 → plan "free" 반환', async () => {
@@ -525,7 +525,7 @@ describe('POST /auth/login — 엣지 케이스', () => {
     );
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.code).toBe('AUTH_LOGIN_FAILED');
+    expect(body.error_code).toBe('AUTH_LOGIN_FAILED');
 
     mockDB.client.execute = originalExecute;
   });

@@ -60,8 +60,7 @@ user.get('/me', async (c) => {
     });
   } catch (err) {
     logRouteError(c, err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return c.json({ error: 'Failed to fetch user info', error_code: 'FETCH_USER_FAILED', detail }, 500);
+    return c.json({ error: 'Failed to fetch user info', error_code: 'FETCH_USER_FAILED' }, 500);
   }
 });
 

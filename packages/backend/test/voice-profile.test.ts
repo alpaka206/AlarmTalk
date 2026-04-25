@@ -286,7 +286,7 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
-    expect(body.message).toContain('2');
+    expect(body.error).toContain('2');
   });
 
   it('프로필 정확히 1개이면 통과', async () => {

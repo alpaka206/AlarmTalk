@@ -71,7 +71,7 @@ alarmMutation.post('/', async (c) => {
     args: [body.message_id, userId],
   });
   if (msg.rows.length === 0) {
-    return c.json({ error: 'Message not found' }, 404);
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
 
   const alarmId = crypto.randomUUID();
