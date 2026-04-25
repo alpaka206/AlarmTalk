@@ -1584,3 +1584,4 @@
 - [x] Backend Integration Smoke Test: 전체 앱 라우팅 와이어링 + 보안 헤더 + CORS + 404 검증 25 tests (P132)
 - [x] i18n Key Validation: locale 동기화 + 보간 변수 일치 + 코드 키 사용 검증 + common.close 누락 수정 14 tests (P133)
 - [x] OfflineBanner 테스트 실패 수정 + useTheme mock jest.requireActual 패턴 개선 (3파일) + README 테스트 수 보정 (P134)
+- [x] 미테스트 React.memo 컴포넌트 4개 단위 테스트: BannerCountdown(7), CountdownText(8), VoiceProfileItem(9), LibraryListItem(12) = 36 tests (P135)
