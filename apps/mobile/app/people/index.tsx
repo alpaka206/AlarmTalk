@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -140,13 +140,13 @@ export default function PeopleScreen() {
     },
   });
 
-  const handleSend = () => {
+  const handleSend = useCallback(() => {
     const trimmed = email.trim();
     if (!trimmed) return;
     sendMutation.mutate(trimmed);
-  };
+  }, [email, sendMutation]);
 
-  const handleRemove = (friend: Friend) => {
+  const handleRemove = useCallback((friend: Friend) => {
     Alert.alert(
       t('friends.deleteTitle'),
       t('friends.deleteConfirm', { name: friend.friend_name || friend.friend_email }),
@@ -155,9 +155,9 @@ export default function PeopleScreen() {
         { text: t('common.delete'), style: 'destructive', onPress: () => removeMutation.mutate(friend.id) },
       ],
     );
-  };
+  }, [t, removeMutation]);
 
-  const handleShareInvite = async (invite: FamilyInvite) => {
+  const handleShareInvite = useCallback(async (invite: FamilyInvite) => {
     try {
       await Share.share({
         message: t('people.shareMessage', { code: invite.code }),
@@ -166,7 +166,7 @@ export default function PeopleScreen() {
       await Clipboard.setStringAsync(invite.code);
       toast.show(t('people.codeCopied'));
     }
-  };
+  }, [t, toast]);
 
   const pendingInvites = (invites ?? []).filter((i) => i.status === 'pending');
   const isOwner = familyData?.role === 'owner';
@@ -197,18 +197,7 @@ export default function PeopleScreen() {
   const members = familyData?.members ?? [];
   const isCouple = isFamilyPlan && members.length === 2;
 
-  if (!isAuthenticated) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>👤</Text>
-          <Text style={styles.emptyText}>{t('friends.loginRequired')}</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const renderFriend = ({ item }: { item: Friend }) => (
+  const renderFriend = useCallback(({ item }: { item: Friend }) => (
     <TouchableOpacity
       style={styles.personCard}
       onPress={() => router.push(`/friend/${item.id}`)}
@@ -236,9 +225,9 @@ export default function PeopleScreen() {
         <Text style={styles.removeBtnText}>✕</Text>
       </TouchableOpacity>
     </TouchableOpacity>
-  );
+  ), [styles, router, t, handleRemove]);
 
-  const renderRequest = ({ item }: { item: PendingFriendRequest }) => (
+  const renderRequest = useCallback(({ item }: { item: PendingFriendRequest }) => (
     <View style={styles.personCard}>
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
@@ -258,11 +247,22 @@ export default function PeopleScreen() {
         <Text style={styles.acceptBtnText}>{t('common.accept')}</Text>
       </TouchableOpacity>
     </View>
-  );
+  ), [styles, t, acceptMutation]);
 
-  const renderMember = ({ item }: { item: import('../../src/services/api').FamilyGroupMember }) => (
+  const renderMember = useCallback(({ item }: { item: import('../../src/services/api').FamilyGroupMember }) => (
     <FamilyMemberRow member={item} isCouple={isCouple} />
-  );
+  ), [isCouple]);
+
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>👤</Text>
+          <Text style={styles.emptyText}>{t('friends.loginRequired')}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const renderInviteSection = () => {
     if (!isOwner) return null;

@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { AlarmListItem } from '../../src/components/AlarmListItem';
+import { BannerCountdown } from '../../src/components/BannerCountdown';
 import { useTheme } from '../../src/hooks/useTheme';
 import { createAlarmsStyles } from '../../src/styles/alarmsStyles';
 import { getAlarms, updateAlarm, deleteAlarm, getMessages, getVoiceProfiles } from '../../src/services/api';
@@ -28,55 +29,14 @@ import { cacheAlarms, getCachedAlarms } from '../../src/services/offlineCache';
 import { syncAlarmNotifications } from '../../src/services/notifications';
 import type { Alarm } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
-import { parseRepeatDays } from '../../src/lib/alarmForm';
 import {
   buildAlarmPreviewAction,
   resolveAlarmPlayback,
 } from '../../src/lib/alarmPlayback';
+import { getNextFireMs } from '../../src/lib/alarmCountdown';
 import type { Message, VoiceProfile } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
-
-function getNextFireMs(alarm: Alarm): number | null {
-  if (!alarm.is_active) return null;
-  const [h, m] = alarm.time.split(':').map(Number) as [number, number];
-  const days = parseRepeatDays(alarm.repeat_days);
-  const now = new Date();
-  const todayMinutes = now.getHours() * 60 + now.getMinutes();
-  const alarmMinutes = h * 60 + m;
-  const todayDow = now.getDay();
-
-  if (days.length === 0) {
-    const target = new Date(now);
-    target.setHours(h, m, 0, 0);
-    if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
-    return target.getTime() - now.getTime();
-  }
-
-  for (let offset = 0; offset <= 7; offset++) {
-    const dow = (todayDow + offset) % 7;
-    if (!days.includes(dow)) continue;
-    if (offset === 0 && alarmMinutes <= todayMinutes) continue;
-    const target = new Date(now);
-    target.setDate(target.getDate() + offset);
-    target.setHours(h, m, 0, 0);
-    return target.getTime() - now.getTime();
-  }
-  return null;
-}
-
-function formatCountdown(ms: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
-  const totalSec = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSec / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    return t('alarms.countdownDaysHours', { days, hours: remHours });
-  }
-  if (hours > 0) return t('alarms.countdownHoursMinutes', { hours, minutes: mins });
-  return t('alarms.countdownMinutes', { minutes: mins });
-}
 
 function compareAlarms(a: Alarm, b: Alarm): number {
   if (a.is_active && !b.is_active) return -1;
@@ -102,8 +62,6 @@ function AlarmsScreen() {
   const isConnected = useNetworkStatus();
   const [cachedAlarms, setCachedAlarms] = useState<Alarm[] | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [countdownText, setCountdownText] = useState<string | null>(null);
-  const [tick, setTick] = useState(0);
   const styles = useMemo(() => createAlarmsStyles(colors), [colors]);
 
   useEffect(() => {
@@ -158,27 +116,7 @@ function AlarmsScreen() {
     [messages, voices, router, toast],
   );
 
-  const computeCountdown = useCallback(() => {
-    const all = alarms ?? cachedAlarms;
-    if (!all || all.length === 0) { setCountdownText(null); return; }
-    let nearest = Infinity;
-    for (const a of all) {
-      const ms = getNextFireMs(a);
-      if (ms !== null && ms < nearest) nearest = ms;
-    }
-    setCountdownText(nearest < Infinity ? formatCountdown(nearest, t) : null);
-  }, [alarms, cachedAlarms, t]);
-
   /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    computeCountdown();
-    const id = setInterval(() => {
-      computeCountdown();
-      setTick((t) => t + 1);
-    }, 60_000);
-    return () => clearInterval(id);
-  }, [computeCountdown]);
-
   useEffect(() => {
     if (alarms && alarms.length > 0) {
       cacheAlarms(alarms);
@@ -202,8 +140,7 @@ function AlarmsScreen() {
         )
       : [...displayAlarms];
     return filtered.sort(compareAlarms);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayAlarms, searchQuery, tick]);
+  }, [displayAlarms, searchQuery]);
 
   const resyncNotifications = async () => {
     const fresh = await queryClient.fetchQuery({ queryKey: ['alarms'], queryFn: getAlarms });
@@ -279,26 +216,21 @@ function AlarmsScreen() {
     toggleMutation.mutate({ id, is_active: isActive });
   }, [toggleMutation]);
 
-  const formatCountdownForItem = useCallback((ms: number) => formatCountdown(ms, t), [t]);
-
   const renderAlarm = useCallback(({ item }: { item: Alarm }) => (
     <AlarmListItem
       item={item}
       styles={styles}
       colors={colors}
       userId={userId}
-      tick={tick}
       t={t}
       formatRepeatDays={formatRepeatDays}
-      formatCountdown={formatCountdownForItem}
-      getNextFireMs={getNextFireMs}
       onPress={handleAlarmPress}
       onDelete={handleDelete}
       onPreview={handlePreview}
       onToggle={handleToggle}
       renderDeleteAction={renderDeleteAction}
     />
-  ), [tick, styles, colors, t, userId, handleAlarmPress, handleDelete, handlePreview, handleToggle, formatRepeatDays, formatCountdownForItem, renderDeleteAction]);
+  ), [styles, colors, t, userId, handleAlarmPress, handleDelete, handlePreview, handleToggle, formatRepeatDays, renderDeleteAction]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -329,11 +261,13 @@ function AlarmsScreen() {
         </View>
       )}
 
-      {countdownText && (
-        <View style={styles.countdownBanner}>
-          <Text style={styles.countdownLabel}>{t('alarms.nextIn')}</Text>
-          <Text style={styles.countdownValue}>{countdownText}</Text>
-        </View>
+      {displayAlarms && displayAlarms.length > 0 && (
+        <BannerCountdown
+          alarms={displayAlarms}
+          bannerStyle={styles.countdownBanner}
+          labelStyle={styles.countdownLabel}
+          valueStyle={styles.countdownValue}
+        />
       )}
 
       {showingCached && (

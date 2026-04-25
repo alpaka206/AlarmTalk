@@ -6,6 +6,7 @@ import type { Alarm } from '../types';
 import { parseRepeatDays } from '../lib/alarmForm';
 import { getAlarmModeBadge } from '../lib/alarmPlayback';
 import { buildFamilyAlarmLabel } from '../lib/familyAlarmLabel';
+import { CountdownText } from './CountdownText';
 import type { createAlarmsStyles } from '../styles/alarmsStyles';
 import type { ThemeColors } from '../hooks/useTheme';
 
@@ -14,11 +15,8 @@ interface Props {
   styles: ReturnType<typeof createAlarmsStyles>;
   colors: ThemeColors;
   userId: string | null;
-  tick: number;
   t: TFunction;
   formatRepeatDays: (days: number[]) => string;
-  formatCountdown: (ms: number) => string;
-  getNextFireMs: (alarm: Alarm) => number | null;
   onPress: (alarm: Alarm) => void;
   onDelete: (id: string) => void;
   onPreview: (alarm: Alarm) => void;
@@ -34,11 +32,8 @@ function AlarmListItemInner({
   styles,
   colors,
   userId,
-  tick,
   t,
   formatRepeatDays,
-  formatCountdown,
-  getNextFireMs,
   onPress,
   onDelete,
   onPreview,
@@ -46,9 +41,6 @@ function AlarmListItemInner({
   renderDeleteAction,
 }: Props) {
   const repeatDays = parseRepeatDays(item.repeat_days);
-  void tick;
-  const nextFireMs = getNextFireMs(item);
-  const perAlarmCountdown = nextFireMs !== null ? formatCountdown(nextFireMs) : null;
   const modeBadge = getAlarmModeBadge(item.mode);
   const familyLabel = buildFamilyAlarmLabel(item, userId, t);
 
@@ -74,8 +66,8 @@ function AlarmListItemInner({
             <Text style={[styles.alarmRepeat, !item.is_active && styles.textInactive]}>
               {formatRepeatDays(repeatDays)}
             </Text>
-            {item.is_active && perAlarmCountdown && (
-              <Text style={styles.alarmCountdown}>{perAlarmCountdown}</Text>
+            {item.is_active && (
+              <CountdownText alarm={item} style={styles.alarmCountdown} />
             )}
           </View>
           <View style={styles.alarmMeta}>
