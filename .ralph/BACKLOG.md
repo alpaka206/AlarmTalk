@@ -1579,3 +1579,6 @@
 - [x] alarmCountdown.ts 단위 테스트 (P129)
 - [x] player.tsx 시간대 그라데이션 팔레트 → 별도 상수 파일 분리
 - [x] character/index.tsx #8B5E3C (나무 갈색) → 테마 토큰 또는 상수 분리
+- [x] Maestro E2E 플로우 추가: 07-message-tab, 08-code-register, 09-alarm-voice-toggle (P131)
+- [x] README.md 테스트 수 보정: backend 872→1068, mobile 1012→1044, E2E 6→9 (P131)
+- [x] Backend Integration Smoke Test: 전체 앱 라우팅 와이어링 + 보안 헤더 + CORS + 404 검증 25 tests (P132)

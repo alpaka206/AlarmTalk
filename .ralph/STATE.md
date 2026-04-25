@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P130 (App Store / Google Play 메타데이터 준비)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P130 부분 완료**
+- 마지막 루프: 2026-04-25 — P132 (Backend Integration Smoke Test)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P132 부분 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -20,6 +20,8 @@
 - **P128**: 성능 프로파일링 Phase 4 — people useCallback
 - **P129**: alarmCountdown.ts 단위 테스트 20개
 - **P130**: App Store / Google Play 메타데이터 (store.config.json)
+- **P131**: Maestro E2E 플로우 3개 추가 (message-tab, code-register, alarm-voice-toggle) + README 테스트 수 보정
+- **P132**: Backend Integration Smoke Test (25 tests — health, public, auth, 15 protected routes, security headers, CORS, 404)
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -41,7 +43,7 @@
 - Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 1068 tests (57 files)
+- Backend: 1093 tests (58 files)
 - Mobile: 1044 tests (59 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 
