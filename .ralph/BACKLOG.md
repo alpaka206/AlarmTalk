@@ -1496,7 +1496,8 @@
 - [x] `packages/backend/test/character-query.test.ts` — 14 tests (resolveUserPk/자동생성, loadStats/loadAchievements, XP기반 level/stage 재계산, progress, streak 매핑)
 - [x] 전체 테스트: backend 980/980 (55 suites), mobile 1012/1012, typecheck 0 errors
 
-## P118 — voice-profile + voice-upload 통합 테스트
+## P118 — voice-profile + voice-upload 통합 테스트 ✅
 
-- [ ] `packages/backend/test/voice-profile.test.ts` — 음성 프로필 CRUD, 2개 제한 검증
-- [ ] `packages/backend/test/voice-upload.test.ts` — 파일 업로드, R2 연동 (mock), 형식 검증
+- [x] `packages/backend/test/voice-profile.test.ts` — 47 tests (목록 pagination/필터, 상세/이름변경/통계, clone 2개 제한+INSERT→UPDATE 순서, DELETE cascade 4단계+ElevenLabs graceful, family ready 필터)
+- [x] `packages/backend/test/voice-upload.test.ts` — 41 tests (업로드 MIME/크기/duration 검증, separate 멱등성+소유권, speakers 정렬, label 수정, diarize duration 계산+DB 미저장)
+- [x] 전체 테스트: backend 1068/1068 (57 suites), mobile 1012/1012, typecheck 0 errors
