@@ -1,8 +1,8 @@
 # 현재 상태
 
 - 브랜치: develop_loop
-- 마지막 루프: 2026-04-25 — P174 (alarm-mutation 엣지 케이스 테스트 19개 추가)
-- 현재 Phase: **R0~R6 전체 완료 + P11~P174 전체 완료**
+- 마지막 루프: 2026-04-25 — P175-A (alarm-helpers 엣지 케이스 테스트 25개 추가, 28→58)
+- 현재 Phase: **R0~R6 전체 완료 + P11~P175-A 전체 완료**
 - 전체 typecheck 통과 (backend + mobile 0 errors)
 
 ## 완료된 리팩토링
@@ -62,6 +62,7 @@
 - **P172**: TTS 라우트 엣지 케이스 테스트 19개 추가 (1245→1264) — POST /generate 성공/실패 경로 13개, GET /messages 필터/페이지네이션 6개, DELETE 순서/격리 3개 (일부 겹침으로 19개)
 - **P173**: stats 라우트 엣지 케이스 테스트 17개 추가 (1264→1284) — 문자열 Number() 변환, 독립 트렌드 값, ISO 날짜 바인딩, OR 양방향 검색, 경계값 50/51자, 동일 timestamp 안정성
 - **P174**: alarm-mutation 엣지 케이스 테스트 19개 추가 (1284→1303) — POST: 비문자열 target_user_id, 잘못된 voice_profile_id/speaker_id UUID, 비배열 repeat_days, 소수점/음수 repeat_days, count 문자열 변환, time 경계값 00:00/23:59/24:00, snooze 경계값 1/30; PATCH: voice_profile_id/speaker_id UUID 검증, is_active 비불리언, time 형식, message_id UUID, updated_at SQL 포함, mode SQL 반영
+- **P175-A**: alarm-helpers 엣지 케이스 테스트 25개 추가 (28→58) — normalizeAlarmRow: null/undefined/number repeat_days, JSON→non-array, 빈 JSON배열, NaN필터, 문자열 is_active, non-string category/creator/user_id, spread 보존; validateAlarmFields: 빈문자열 UUID, NaN/Infinity snooze, 검증 우선순위, 전체 유효 동시검증
 
 ## 알려진 이슈
 - [blocked] Perso API 404
@@ -83,7 +84,7 @@
 - Mobile: `strict: true` + `noUncheckedIndexedAccess: true` ✅
 
 ## 테스트 커버리지 현황
-- Backend: 1303 tests (58 files)
+- Backend: 1333 tests (58 files)
 - Mobile: 1970 tests (86 files)
 - 유일한 `any` 사용: lib/logger.ts logRouteError (문서화된 정당한 예외)
 

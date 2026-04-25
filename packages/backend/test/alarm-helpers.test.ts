@@ -96,6 +96,72 @@ describe('normalizeAlarmRow', () => {
     expect(r.sender_email).toBe('k@t.co');
     expect(r.sender_user_id).toBe('u1');
   });
+
+  it('returns [] for null/undefined/number repeat_days', () => {
+    expect(normalizeAlarmRow({ ...base, repeat_days: null }).repeat_days).toEqual([]);
+    expect(normalizeAlarmRow({ ...base, repeat_days: undefined }).repeat_days).toEqual([]);
+    expect(normalizeAlarmRow({ ...base, repeat_days: 42 }).repeat_days).toEqual([]);
+  });
+
+  it('returns [] when JSON parses to non-array', () => {
+    expect(normalizeAlarmRow({ ...base, repeat_days: '42' }).repeat_days).toEqual([]);
+    expect(normalizeAlarmRow({ ...base, repeat_days: '"hello"' }).repeat_days).toEqual([]);
+    expect(normalizeAlarmRow({ ...base, repeat_days: '{}' }).repeat_days).toEqual([]);
+    expect(normalizeAlarmRow({ ...base, repeat_days: 'null' }).repeat_days).toEqual([]);
+  });
+
+  it('returns [] for empty JSON array string', () => {
+    expect(normalizeAlarmRow({ ...base, repeat_days: '[]' }).repeat_days).toEqual([]);
+  });
+
+  it('filters NaN/null/undefined/boolean from repeat_days array', () => {
+    const row = { ...base, repeat_days: [1, NaN, null, undefined, true, 3] };
+    expect(normalizeAlarmRow(row).repeat_days).toEqual([1, 3]);
+  });
+
+  it('treats string is_active as false', () => {
+    expect(normalizeAlarmRow({ ...base, is_active: 'true' }).is_active).toBe(false);
+    expect(normalizeAlarmRow({ ...base, is_active: '1' }).is_active).toBe(false);
+  });
+
+  it('treats undefined is_active as false', () => {
+    expect(normalizeAlarmRow({ ...base, is_active: undefined }).is_active).toBe(false);
+  });
+
+  it('preserves valid voice_profile_id and speaker_id strings', () => {
+    const r = normalizeAlarmRow({ ...base, voice_profile_id: 'vp-1', speaker_id: 'sp-2' });
+    expect(r.voice_profile_id).toBe('vp-1');
+    expect(r.speaker_id).toBe('sp-2');
+  });
+
+  it('treats non-string category as non-family', () => {
+    expect(normalizeAlarmRow({ ...base, category: 123 }).is_family_alarm).toBe(false);
+    expect(normalizeAlarmRow({ ...base, category: null }).is_family_alarm).toBe(false);
+    expect(normalizeAlarmRow({ ...base, category: undefined }).is_family_alarm).toBe(false);
+  });
+
+  it('returns null sender_name/email for non-string values', () => {
+    const r = normalizeAlarmRow({ ...base, creator_name: 42, creator_email: true });
+    expect(r.sender_name).toBeNull();
+    expect(r.sender_email).toBeNull();
+  });
+
+  it('returns null sender_user_id for non-string user_id', () => {
+    const r = normalizeAlarmRow({ ...base, user_id: 999 });
+    expect(r.sender_user_id).toBeNull();
+  });
+
+  it('preserves extra properties via spread', () => {
+    const r = normalizeAlarmRow({ ...base, time: '08:00', message: 'hello' });
+    expect(r.time).toBe('08:00');
+    expect((r as Record<string, unknown>).message).toBe('hello');
+    expect(r.id).toBe('a1');
+  });
+
+  it('is_received_family_alarm false when sender user_id is non-string', () => {
+    const row = { ...base, category: 'family', user_id: 999 };
+    expect(normalizeAlarmRow(row, 'viewer-1').is_received_family_alarm).toBe(false);
+  });
 });
 
 describe('validateAlarmFields', () => {
@@ -204,5 +270,62 @@ describe('validateAlarmFields', () => {
   it('accepts boolean is_active', () => {
     expect(validateAlarmFields({ is_active: true })).toBeNull();
     expect(validateAlarmFields({ is_active: false })).toBeNull();
+  });
+
+  it('rejects empty string message_id', () => {
+    expect(validateAlarmFields({ message_id: '' })?.error_code).toBe('INVALID_MESSAGE_ID');
+  });
+
+  it('accepts empty string target_user_id (is a string)', () => {
+    expect(validateAlarmFields({ target_user_id: '' })).toBeNull();
+  });
+
+  it('rejects NaN and Infinity snooze_minutes', () => {
+    expect(validateAlarmFields({ snooze_minutes: NaN })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+    expect(validateAlarmFields({ snooze_minutes: Infinity })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+    expect(validateAlarmFields({ snooze_minutes: -Infinity })?.error_code).toBe('INVALID_SNOOZE_MINUTES');
+  });
+
+  it('passes when voice_profile_id/speaker_id are undefined', () => {
+    expect(validateAlarmFields({ voice_profile_id: undefined })).toBeNull();
+    expect(validateAlarmFields({ speaker_id: undefined })).toBeNull();
+  });
+
+  it('rejects empty string voice_profile_id and speaker_id', () => {
+    expect(validateAlarmFields({ voice_profile_id: '' })?.error_code).toBe('INVALID_VOICE_PROFILE_ID');
+    expect(validateAlarmFields({ speaker_id: '' })?.error_code).toBe('INVALID_SPEAKER_ID');
+  });
+
+  it('returns first error when multiple fields invalid (validation priority)', () => {
+    const r = validateAlarmFields({
+      message_id: 'bad',
+      mode: 'invalid',
+      time: 'nope',
+    });
+    expect(r?.error_code).toBe('INVALID_MESSAGE_ID');
+  });
+
+  it('accepts all valid fields simultaneously', () => {
+    expect(validateAlarmFields({
+      message_id: '12345678-1234-1234-1234-123456789012',
+      target_user_id: 'user-abc',
+      mode: 'tts',
+      vibration_pattern: 'strong',
+      wake_mode: 'voice_only',
+      voice_profile_id: '12345678-1234-1234-1234-123456789012',
+      speaker_id: '12345678-1234-1234-1234-123456789012',
+      time: '07:30',
+      repeat_days: [0, 1, 2, 3, 4, 5, 6],
+      snooze_minutes: 15,
+      is_active: true,
+    })).toBeNull();
+  });
+
+  it('accepts repeat_days with duplicates', () => {
+    expect(validateAlarmFields({ repeat_days: [1, 1, 1] })).toBeNull();
+  });
+
+  it('rejects time 24:00', () => {
+    expect(validateAlarmFields({ time: '24:00' })?.error_code).toBe('INVALID_TIME_VALUE');
   });
 });

@@ -1702,5 +1702,5 @@
 - [ ] 앱 아이콘 + 스플래시 스크린 에셋 교체 (현재 Expo 기본)
 - [ ] Sentry 에러 모니터링 연동 (DSN 설정 후)
 - [ ] notification 라우트 테스트 커버리지 추가 (push 외 알림 관련)
-- [ ] normalizeAlarmRow 단위 테스트 추가 (JSON 파싱 실패, 미지 mode 폴백, family alarm 판별)
-- [ ] alarm-helpers validateAlarmFields 단위 테스트 분리 (현재 라우트 통합으로만 테스트)
+- [x] normalizeAlarmRow 단위 테스트 추가 (14개 엣지 케이스: null/undefined/number repeat_days, JSON→non-array, 문자열 is_active, non-string 필드, spread 보존 등)
+- [x] alarm-helpers validateAlarmFields 단위 테스트 확장 (11개 엣지 케이스: 빈문자열 UUID, NaN/Infinity snooze, 검증 우선순위, 전체 유효 동시검증 등)
