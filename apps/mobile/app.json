@@ -65,15 +65,7 @@
       "expo-document-picker",
       "expo-web-browser",
       "expo-font",
-      "@sentry/react-native",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "2.0.21"
-          }
-        }
-      ]
+      "@sentry/react-native"
     ],
     "extra": {
       "router": {
