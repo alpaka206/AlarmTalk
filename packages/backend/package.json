@@ -18,10 +18,10 @@
     "wrangler": "^4.85.0"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.2",
+    "@libsql/client": "^0.17.3",
     "@voice-alarm/shared": "*",
     "@voice-alarm/voice": "*",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.14"
+    "hono": "^4.12.15"
   }
 }
