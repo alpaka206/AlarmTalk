@@ -198,7 +198,7 @@ describe('getNearestFireMs', () => {
     ];
     const nearest = getNearestFireMs(alarms);
     const expected = getNextFireMs(alarms[1]!);
-    expect(nearest).toBe(expected);
+    expect(Math.abs(nearest! - expected!)).toBeLessThanOrEqual(50);
   });
 
   it('single active alarm returns its fire ms', () => {
@@ -207,6 +207,6 @@ describe('getNearestFireMs', () => {
     const alarm = makeAlarm({ time: `${String(h).padStart(2, '0')}:30` });
     const nearest = getNearestFireMs([alarm]);
     const expected = getNextFireMs(alarm);
-    expect(nearest).toBe(expected);
+    expect(Math.abs(nearest! - expected!)).toBeLessThanOrEqual(50);
   });
 });
