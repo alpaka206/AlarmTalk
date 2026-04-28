@@ -1,0 +1,39 @@
+{
+  "ko": {
+    "title": "VoiceAlarm - 목소리 알람",
+    "subtitle": "소중한 사람의 목소리로 하루를 시작하세요",
+    "shortDescription": "사랑하는 사람의 음성을 클론하여 매일 아침 알람으로 들려주는 감성 알람 앱",
+    "fullDescription": "VoiceAlarm은 소중한 사람의 목소리를 AI로 클론하여 매일 아침 따뜻한 알람으로 들려주는 앱입니다.\n\n주요 기능:\n- 음성 클론: 짧은 녹음으로 사랑하는 사람의 목소리를 복제\n- 맞춤 알람: 클론된 목소리로 매일 다른 응원 메시지 재생\n- 나무 캐릭터: 매일 기상할수록 성장하는 나만의 캐릭터\n- 가족/커플 연결: 가족이나 연인에게 음성 메시지와 알람 전송\n- 오프라인 지원: 인터넷 없이도 저장된 음성 알람 재생\n\n매일 아침, 기계음 대신 사랑하는 사람의 목소리로 하루를 여세요.",
+    "keywords": "알람,음성,목소리,클론,AI,가족,커플,기상,모닝콜,응원"
+  },
+  "en": {
+    "title": "VoiceAlarm - Voice Alarm",
+    "subtitle": "Start your day with the voice of someone you love",
+    "shortDescription": "A heartfelt alarm app that clones your loved one's voice to wake you up every morning",
+    "fullDescription": "VoiceAlarm clones the voice of someone you love using AI, delivering warm, personalized alarm messages every morning.\n\nKey Features:\n- Voice Cloning: Replicate your loved one's voice from a short recording\n- Custom Alarms: Hear different encouragement messages daily in their voice\n- Tree Character: Grow your own character by waking up consistently\n- Family & Couple: Send voice messages and alarms to family or your partner\n- Offline Support: Play saved voice alarms without internet\n\nEvery morning, wake up to the voice of someone who matters — not a robotic beep.",
+    "keywords": "alarm,voice,clone,AI,family,couple,wake,morning,motivation,encouragement"
+  },
+  "category": {
+    "ios": "Lifestyle",
+    "android": "Lifestyle"
+  },
+  "contentRating": "Everyone",
+  "privacyPolicyUrl": "https://voicealarm.app/privacy",
+  "supportUrl": "https://voicealarm.app/support",
+  "screenshots": {
+    "required": [
+      "home_screen",
+      "alarm_create",
+      "voice_management",
+      "character_growth",
+      "family_messaging"
+    ],
+    "sizes": {
+      "ios_6_7": "1290x2796",
+      "ios_6_5": "1284x2778",
+      "ios_5_5": "1242x2208",
+      "android_phone": "1080x1920",
+      "android_7": "1080x2400"
+    }
+  }
+}

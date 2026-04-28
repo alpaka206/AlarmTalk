@@ -6,7 +6,6 @@
 
 ## 기술 스택
 - App: React Native (Expo) + expo-dev-client
-- Web: React + TypeScript + Vite + Tailwind CSS
 - Backend: Turso DB + Cloudflare Workers
 - AI: Perso.ai API (1차) + ElevenLabs API (보조)
 
@@ -23,4 +22,3 @@
 ## 모노레포 구조
 - apps/mobile - React Native (Expo) 앱
 - packages/backend - Cloudflare Workers API
-- packages/web - React 웹 대시보드

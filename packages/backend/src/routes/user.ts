@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
 
 const user = new Hono<AppEnv>();
 
@@ -19,7 +20,7 @@ user.get('/me', async (c) => {
 
     if (result.rows.length === 0) {
       const id = crypto.randomUUID();
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0]!;
       await db.execute({
         sql: `INSERT INTO users (id, google_id, firebase_uid, email, name, picture, daily_tts_reset_at)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -31,7 +32,7 @@ user.get('/me', async (c) => {
       });
     }
 
-    const u = result.rows[0];
+    const u = result.rows[0]!;
     const [profileCount, alarmCount] = await Promise.all([
       db.execute({
         sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
@@ -39,6 +40,10 @@ user.get('/me', async (c) => {
       }),
       db.execute({
         sql: 'SELECT COUNT(*) as count FROM alarms WHERE user_id = ?',
+        args: [userId],
+      }),
+      db.execute({
+        sql: "UPDATE users SET last_active_at = datetime('now') WHERE google_id = ?",
         args: [userId],
       }),
     ]);
@@ -54,9 +59,8 @@ user.get('/me', async (c) => {
       },
     });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`GET /user/me failed: ${detail}`);
-    return c.json({ error: 'Failed to fetch user info', detail }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to fetch user info', error_code: 'FETCH_USER_FAILED' }, 500);
   }
 });
 
@@ -79,11 +83,11 @@ user.patch('/me', async (c) => {
     .catch(() => ({ allow_family_alarms: undefined }));
 
   if (!('allow_family_alarms' in body) || body.allow_family_alarms === undefined) {
-    return c.json({ error: '변경할 필드가 없습니다' }, 400);
+    return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
   const flag = toBoolFlag(body.allow_family_alarms);
   if (flag === null) {
-    return c.json({ error: 'allow_family_alarms 는 boolean 이어야 합니다' }, 400);
+    return c.json({ error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' }, 400);
   }
 
   const result = await db.execute({
@@ -92,7 +96,7 @@ user.patch('/me', async (c) => {
     args: [flag, userId],
   });
   if (result.rowsAffected === 0) {
-    return c.json({ error: '사용자를 찾을 수 없습니다' }, 404);
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
   return c.json({ success: true, allow_family_alarms: flag === 1 });
@@ -106,7 +110,7 @@ user.patch('/plan', async (c) => {
     const body = await c.req.json<{ plan: 'free' | 'plus' | 'family' }>();
 
     if (!['free', 'plus', 'family'].includes(body.plan)) {
-      return c.json({ error: 'Invalid plan' }, 400);
+      return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
     }
 
     const result = await db.execute({
@@ -115,13 +119,13 @@ user.patch('/plan', async (c) => {
     });
 
     if (result.rowsAffected === 0) {
-      return c.json({ error: 'User not found' }, 404);
+      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
     }
 
     return c.json({ success: true, plan: body.plan });
   } catch (err) {
-    console.error(`PATCH /user/plan failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to update plan' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to update plan', error_code: 'UPDATE_PLAN_FAILED' }, 500);
   }
 });
 
@@ -147,8 +151,8 @@ user.delete('/me', async (c) => {
 
     return c.json({ success: true });
   } catch (err) {
-    console.error(`DELETE /user/me failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to delete account' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to delete account', error_code: 'DELETE_ACCOUNT_FAILED' }, 500);
   }
 });
 
@@ -178,8 +182,8 @@ user.get('/search', async (c) => {
       })),
     });
   } catch (err) {
-    console.error(`GET /user/search failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Search failed' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Search failed', error_code: 'SEARCH_FAILED' }, 500);
   }
 });
 

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,61 +8,54 @@ import {
   FlatList,
   Animated,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../src/constants/theme';
+import { useQueryClient } from '@tanstack/react-query';
+import { Spacing, BorderRadius, FontSize, FontFamily } from '../src/constants/theme';
+import { useTheme, type ThemeColors } from '../src/hooks/useTheme';
 import { useAppStore } from '../src/stores/useAppStore';
+import { getCharacterMe } from '../src/services/api';
 
 const { width } = Dimensions.get('window');
-
-const ONBOARDING_PAGES = [
-  {
-    emoji: '🎙️',
-    titleKey: 'onboarding.page1Title',
-    descKey: 'onboarding.page1Desc',
-    color: '#FFF5F3',
-  },
-  {
-    emoji: '💌',
-    titleKey: 'onboarding.page2Title',
-    descKey: 'onboarding.page2Desc',
-    color: '#FFF0ED',
-  },
-  {
-    emoji: '⏰',
-    titleKey: 'onboarding.page3Title',
-    descKey: 'onboarding.page3Desc',
-    color: '#FFEAE5',
-  },
-];
 
 export default function OnboardingScreen() {
   const router = useRouter();
   const completeOnboarding = useAppStore((s) => s.completeOnboarding);
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
+
+  const ONBOARDING_PAGES = useMemo(() => [
+    { emoji: '🎙️', titleKey: 'onboarding.page1Title', descKey: 'onboarding.page1Desc', bgColor: colors.background },
+    { emoji: '💌', titleKey: 'onboarding.page2Title', descKey: 'onboarding.page2Desc', bgColor: colors.surfaceVariant },
+    { emoji: '⏰', titleKey: 'onboarding.page3Title', descKey: 'onboarding.page3Desc', bgColor: colors.surfaceVariant },
+    { emoji: '🌱', titleKey: 'onboarding.page4Title', descKey: 'onboarding.page4Desc', bgColor: colors.background },
+  ], [colors]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const scrollX = useMemo(() => new Animated.Value(0), []);
+
+  const finishOnboarding = useCallback(async () => {
+    completeOnboarding();
+    queryClient.prefetchQuery({ queryKey: ['character'], queryFn: getCharacterMe });
+    router.replace('/(tabs)');
+  }, [completeOnboarding, queryClient, router]);
 
   const handleNext = () => {
     if (currentIndex < ONBOARDING_PAGES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
       setCurrentIndex(currentIndex + 1);
     } else {
-      completeOnboarding();
-      router.replace('/(tabs)');
+      finishOnboarding();
     }
   };
 
-  const handleSkip = () => {
-    completeOnboarding();
-    router.replace('/(tabs)');
-  };
-
   const renderPage = ({ item }: { item: (typeof ONBOARDING_PAGES)[0] }) => (
-    <View style={[styles.page, { width, backgroundColor: item.color }]}>
+    <View style={[styles.page, { width, backgroundColor: item.bgColor }]}>
       <Text style={styles.emoji}>{item.emoji}</Text>
-      <Text style={styles.title}>{t(item.titleKey)}</Text>
+      <Text style={styles.title} accessibilityRole="header">{t(item.titleKey)}</Text>
       <Text style={styles.description}>{t(item.descKey)}</Text>
     </View>
   );
@@ -70,8 +63,13 @@ export default function OnboardingScreen() {
   const isLastPage = currentIndex === ONBOARDING_PAGES.length - 1;
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity
+        style={styles.skipButton}
+        onPress={finishOnboarding}
+        accessibilityRole="button"
+        accessibilityLabel={t('onboarding.skip')}
+      >
         <Text style={styles.skipText}>{t('onboarding.skip')}</Text>
       </TouchableOpacity>
 
@@ -92,7 +90,6 @@ export default function OnboardingScreen() {
         keyExtractor={(_, i) => i.toString()}
       />
 
-      {/* 인디케이터 */}
       <View style={styles.indicatorRow}>
         {ONBOARDING_PAGES.map((_, i) => {
           const inputRange = [(i - 1) * width, i * width, (i + 1) * width];
@@ -110,30 +107,40 @@ export default function OnboardingScreen() {
         })}
       </View>
 
-      <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
+      <TouchableOpacity
+        style={styles.nextButton}
+        onPress={handleNext}
+        accessibilityRole="button"
+        accessibilityLabel={isLastPage ? t('onboarding.start') : t('onboarding.next')}
+      >
         <Text style={styles.nextText}>
           {isLastPage ? t('onboarding.start') : t('onboarding.next')}
         </Text>
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
+    backgroundColor: colors.background,
   },
   skipButton: {
     position: 'absolute',
-    top: 60,
+    top: Spacing.md,
     right: Spacing.lg,
     zIndex: 10,
     padding: Spacing.sm,
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   skipText: {
     fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
+    fontFamily: FontFamily.medium,
+    color: colors.textSecondary,
   },
   page: {
     flex: 1,
@@ -147,15 +154,16 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: FontSize.hero,
-    fontWeight: '700',
-    color: Colors.light.text,
+    fontFamily: FontFamily.bold,
+    color: colors.text,
     textAlign: 'center',
     lineHeight: 42,
     marginBottom: Spacing.lg,
   },
   description: {
     fontSize: FontSize.lg,
-    color: Colors.light.textSecondary,
+    fontFamily: FontFamily.regular,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 26,
   },
@@ -169,16 +177,18 @@ const styles = StyleSheet.create({
   dot: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: Colors.light.primary,
+    backgroundColor: colors.primary,
   },
   nextButton: {
-    backgroundColor: Colors.light.primary,
+    backgroundColor: colors.primary,
     marginHorizontal: Spacing.xl,
-    marginBottom: 50,
+    marginBottom: Spacing.lg,
     paddingVertical: Spacing.md,
     borderRadius: BorderRadius.full,
     alignItems: 'center',
-    shadowColor: Colors.light.primary,
+    minHeight: 52,
+    justifyContent: 'center',
+    shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -186,7 +196,7 @@ const styles = StyleSheet.create({
   },
   nextText: {
     fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: '#FFF',
+    fontFamily: FontFamily.bold,
+    color: colors.surface,
   },
 });

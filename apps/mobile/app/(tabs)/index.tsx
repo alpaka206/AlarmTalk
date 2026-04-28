@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
@@ -12,10 +11,18 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
-import { getAlarms, getMessages, getStats } from '../../src/services/api';
-import type { Stats, WeekTrend } from '../../src/services/api';
+import { getDateLocale } from '../../src/i18n';
+import { Spacing, FontSize } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
+import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { createHomeStyles } from '../../src/styles/homeStyles';
+import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary, getActivity } from '../../src/services/api';
+import type { Stats, WeekTrend, ActivityItem } from '../../src/services/api';
+import { stageToEmoji, progressBarWidthPct } from '../../src/lib/character';
 import { playAudio, getLocalAudioPath, isAudioCached } from '../../src/services/audio';
+import { activityEmoji, activityTypeLabel, activityDescription } from '../../src/lib/activityHelpers';
+import { formatLastSeen } from '../../src/lib/formatLastSeen';
+import type { LibraryItem } from '../../src/types';
 import LoginButtons from '../../src/components/LoginButtons';
 import EmailPasswordForm from '../../src/components/EmailPasswordForm';
 import { useAppStore } from '../../src/stores/useAppStore';
@@ -29,17 +36,19 @@ import {
 import { Audio } from 'expo-av';
 import type { Alarm, Message } from '../../src/types';
 
-function TrendBadge({ trend }: { trend: WeekTrend }) {
+function TrendBadge({ trend, colors }: { trend: WeekTrend; colors: ThemeColors }) {
   const diff = trend.thisWeek - trend.lastWeek;
   if (trend.thisWeek === 0 && trend.lastWeek === 0) return null;
-  const color = diff > 0 ? '#22c55e' : diff < 0 ? '#f87171' : Colors.light.textSecondary;
+  const color = diff > 0 ? colors.success : diff < 0 ? colors.error : colors.textSecondary;
   const label = diff > 0 ? `+${diff} ↑` : diff < 0 ? `${diff} ↓` : '0';
   return <Text style={{ fontSize: FontSize.xs, color, marginTop: 2 }}>{label}</Text>;
 }
 
-export default function HomeScreen() {
+function HomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createHomeStyles(colors), [colors]);
   const { isAuthenticated, setPlaying, currentPlayingId } = useAppStore();
   const isConnected = useNetworkStatus();
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
@@ -81,6 +90,25 @@ export default function HomeScreen() {
     enabled: isAuthenticated && isConnected,
   });
 
+  const { data: characterData } = useQuery({
+    queryKey: ['character-me'],
+    queryFn: getCharacterMe,
+    enabled: isAuthenticated && isConnected,
+  });
+
+  const { data: libraryItems } = useQuery({
+    queryKey: ['library', 'all'],
+    queryFn: () => getLibrary(),
+    enabled: isAuthenticated && isConnected,
+  });
+
+  const { data: activityItems } = useQuery({
+    queryKey: ['activity'],
+    queryFn: getActivity,
+    enabled: isAuthenticated && isConnected,
+  });
+
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (alarms && alarms.length > 0) {
       cacheAlarms(alarms);
@@ -94,6 +122,7 @@ export default function HomeScreen() {
       setCachedMessagesList(messages);
     }
   }, [messages]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const displayAlarms = alarms ?? cachedAlarmsList;
   const displayMessages = messages ?? cachedMessagesList;
@@ -102,7 +131,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchAlarms(), refetchMessages()]);
+    await Promise.all([refetchAlarms(), refetchMessages(), refetchStats()]);
     setRefreshing(false);
   };
 
@@ -119,7 +148,7 @@ export default function HomeScreen() {
   const nextAlarm = displayAlarms?.find((a: Alarm) => a.is_active);
   const latestMessage = displayMessages?.[0];
 
-  const handlePlayMessage = async (messageId: string) => {
+  const handlePlayMessage = useCallback(async (messageId: string) => {
     if (currentSound) {
       await currentSound.unloadAsync();
       setCurrentSound(null);
@@ -144,7 +173,7 @@ export default function HomeScreen() {
         }
       });
     }
-  };
+  }, [currentSound, currentPlayingId, setPlaying]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -155,14 +184,14 @@ export default function HomeScreen() {
       >
         {/* 인사말 */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>
+          <Text style={styles.greeting} accessibilityRole="header">
             {greeting.emoji} {greeting.text}
           </Text>
           <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
         </View>
 
         {isAuthenticated && (alarmsLoading || messagesLoading) && !refreshing && (
-          <ActivityIndicator color={Colors.light.primary} style={{ marginVertical: Spacing.lg }} />
+          <ActivityIndicator color={colors.primary} style={{ marginVertical: Spacing.lg }} />
         )}
 
         {/* 요약 통계 */}
@@ -171,42 +200,93 @@ export default function HomeScreen() {
             style={styles.statsErrorCard}
             onPress={() => refetchStats()}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.retry')}
           >
-            <Text style={styles.statsErrorText}>{t('common.loadError', '불러오기 실패')}</Text>
-            <Text style={styles.statsErrorRetry}>{t('common.retry', '다시 시도')}</Text>
+            <Text style={styles.statsErrorText}>{t('common.loadError')}</Text>
+            <Text style={styles.statsErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         )}
         {isAuthenticated && stats && (
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <View
+              style={styles.statItem}
+              accessible
+              accessibilityLabel={`${t('home.activeAlarms')} ${stats.alarms.active}`}
+            >
               <Text style={styles.statCount}>{stats.alarms.active}</Text>
-              <Text style={styles.statLabel}>{t('home.activeAlarms', '활성 알람')}</Text>
-              {stats.trends && <TrendBadge trend={stats.trends.alarms} />}
+              <Text style={styles.statLabel}>{t('home.activeAlarms')}</Text>
+              {stats.trends && <TrendBadge trend={stats.trends.alarms} colors={colors} />}
             </View>
-            <View style={styles.statItem}>
+            <View
+              style={styles.statItem}
+              accessible
+              accessibilityLabel={`${t('home.messages')} ${stats.messages.total}`}
+            >
               <Text style={styles.statCount}>{stats.messages.total}</Text>
-              <Text style={styles.statLabel}>{t('home.messages', '메시지')}</Text>
-              {stats.trends && <TrendBadge trend={stats.trends.messages} />}
+              <Text style={styles.statLabel}>{t('home.messages')}</Text>
+              {stats.trends && <TrendBadge trend={stats.trends.messages} colors={colors} />}
             </View>
-            <View style={styles.statItem}>
+            <View
+              style={styles.statItem}
+              accessible
+              accessibilityLabel={`${t('home.friends')} ${stats.friends.total}`}
+            >
               <Text style={styles.statCount}>{stats.friends.total}</Text>
-              <Text style={styles.statLabel}>{t('home.friends', '친구')}</Text>
-              {stats.trends && <TrendBadge trend={stats.trends.friends} />}
+              <Text style={styles.statLabel}>{t('home.friends')}</Text>
+              {stats.trends && <TrendBadge trend={stats.trends.friends} colors={colors} />}
             </View>
             {stats.gifts.receivedPending > 0 && (
               <TouchableOpacity
                 style={styles.statItem}
                 onPress={() => router.push('/gift/received')}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('home.pendingGifts')} ${stats.gifts.receivedPending}`}
               >
-                <Text style={[styles.statCount, { color: Colors.light.accent }]}>
+                <Text style={[styles.statCount, { color: colors.accent }]}>
                   {stats.gifts.receivedPending}
                 </Text>
-                <Text style={[styles.statLabel, { color: Colors.light.accent }]}>
-                  {t('home.pendingGifts', '대기 선물')}
+                <Text style={[styles.statLabel, { color: colors.accent }]}>
+                  {t('home.pendingGifts')}
                 </Text>
               </TouchableOpacity>
             )}
           </View>
+        )}
+
+        {/* 캐릭터 미니 위젯 */}
+        {isAuthenticated && characterData && (
+          <TouchableOpacity
+            style={styles.characterWidget}
+            onPress={() => router.push('/character')}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('home.viewCharacter')}
+          >
+            <Text style={styles.widgetEmoji}>
+              {stageToEmoji(characterData.character.stage)}
+            </Text>
+            <View style={styles.widgetInfo}>
+              <View style={styles.widgetNameRow}>
+                <Text style={styles.widgetName}>{characterData.character.name}</Text>
+                <Text style={styles.widgetLevel}>{t('character.levelDisplay', { level: characterData.character.level })}</Text>
+                {characterData.streak && characterData.streak.current > 0 && (
+                  <Text style={styles.widgetStreak}>
+                    🔥 {characterData.streak.current}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.widgetProgressBg}>
+                <View
+                  style={[
+                    styles.widgetProgressFill,
+                    { width: `${progressBarWidthPct(characterData.progress)}%` },
+                  ]}
+                />
+              </View>
+            </View>
+            <Text style={styles.widgetArrow}>›</Text>
+          </TouchableOpacity>
         )}
 
         {/* 다음 알람 카드 */}
@@ -218,6 +298,8 @@ export default function HomeScreen() {
               : router.push('/alarm/create')
           }
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel={nextAlarm ? `${t('home.nextAlarm')} ${nextAlarm.time}` : t('home.noAlarm')}
         >
           <View style={styles.nextAlarmGradient}>
             <Text style={styles.nextAlarmLabel}>{t('home.nextAlarm')}</Text>
@@ -243,6 +325,8 @@ export default function HomeScreen() {
             style={styles.cheerCard}
             onPress={() => handlePlayMessage(latestMessage.id)}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('home.todayMessage')} ${latestMessage.voice_name}`}
           >
             <View style={styles.cheerHeader}>
               <Text style={styles.cheerEmoji}>💌</Text>
@@ -260,13 +344,112 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
+        {/* 섹션 구분선 */}
+        {isAuthenticated && <View style={styles.sectionDivider} />}
+
+        {/* 최근 메시지 */}
+        {isAuthenticated && (
+          <View style={styles.recentSection}>
+            <View style={styles.recentHeader}>
+              <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.recentMessages')}</Text>
+              {libraryItems && libraryItems.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.push('/library')}
+                  accessibilityRole="link"
+                  accessibilityLabel={t('home.viewAll')}
+                >
+                  <Text style={styles.viewAllLink}>{t('home.viewAll')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            {libraryItems && libraryItems.length > 0 ? (
+              libraryItems.slice(0, 3).map((item: LibraryItem) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.recentItem}
+                  onPress={() => router.push(`/message/${item.message_id}`)}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.voice_name}: ${item.text}`}
+                >
+                  <View style={styles.recentAvatar}>
+                    <Text style={styles.recentAvatarText}>
+                      {(item.voice_name || '?').charAt(0)}
+                    </Text>
+                  </View>
+                  <View style={styles.recentContent}>
+                    <Text style={styles.recentVoiceName}>{item.voice_name}</Text>
+                    <Text style={styles.recentText} numberOfLines={1}>
+                      &quot;{item.text}&quot;
+                    </Text>
+                  </View>
+                  <Text style={styles.recentDate}>
+                    {new Date(item.received_at).toLocaleDateString(getDateLocale(), {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              <View style={styles.recentEmpty}>
+                <Text style={styles.recentEmptyText}>{t('home.noMessages')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 섹션 구분선 */}
+        {isAuthenticated && <View style={styles.sectionDivider} />}
+
+        {/* 최근 활동 */}
+        {isAuthenticated && (
+          <View style={styles.activitySection}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('home.recentActivity')}
+            </Text>
+            {activityItems && activityItems.length > 0 ? (
+              activityItems.slice(0, 5).map((item: ActivityItem) => (
+                <View
+                  key={`${item.type}-${item.id}`}
+                  style={styles.activityItem}
+                  accessible
+                  accessibilityLabel={`${activityTypeLabel(item.type, t)}: ${activityDescription(item, t)}`}
+                >
+                  <Text style={styles.activityEmoji}>{activityEmoji(item.type)}</Text>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityTypeLabel}>
+                      {activityTypeLabel(item.type, t)}
+                    </Text>
+                    <Text style={styles.activityDesc} numberOfLines={1}>
+                      {activityDescription(item, t)}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityTime}>
+                    {formatLastSeen(item.created_at, t)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.activityEmpty}>
+                <Text style={styles.activityEmptyText}>{t('home.noActivity')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 섹션 구분선 */}
+        {isAuthenticated && <View style={styles.sectionDivider} />}
+
         {/* 빠른 액션 */}
         <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>{t('home.quickStart')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.quickStart')}</Text>
           <View style={styles.actionGrid}>
             <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push('/voice/record')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.recordVoice')}
             >
               <Text style={styles.actionEmoji}>🎙️</Text>
               <Text style={styles.actionLabel}>{t('home.recordVoice')}</Text>
@@ -274,6 +457,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push('/voice/upload')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.uploadFile')}
             >
               <Text style={styles.actionEmoji}>📁</Text>
               <Text style={styles.actionLabel}>{t('home.uploadFile')}</Text>
@@ -281,6 +466,8 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push('/message/create')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.writeMessage')}
             >
               <Text style={styles.actionEmoji}>✏️</Text>
               <Text style={styles.actionLabel}>{t('home.writeMessage')}</Text>
@@ -288,20 +475,26 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.actionCard}
               onPress={() => router.push('/alarm/create')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.addAlarm')}
             >
               <Text style={styles.actionEmoji}>⏰</Text>
               <Text style={styles.actionLabel}>{t('home.addAlarm')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/gift/received')}
+              onPress={() => router.push('/code-register')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.codeRegister')}
             >
-              <Text style={styles.actionEmoji}>🎁</Text>
-              <Text style={styles.actionLabel}>{t('home.receivedGifts')}</Text>
+              <Text style={styles.actionEmoji}>🔑</Text>
+              <Text style={styles.actionLabel}>{t('home.codeRegister')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/friends')}
+              onPress={() => router.push('/people')}
+              accessibilityRole="button"
+              accessibilityLabel={t('home.manageFriends')}
             >
               <Text style={styles.actionEmoji}>👥</Text>
               <Text style={styles.actionLabel}>{t('home.manageFriends')}</Text>
@@ -318,7 +511,7 @@ export default function HomeScreen() {
             <EmailPasswordForm />
             <View style={styles.loginDivider}>
               <View style={styles.loginDividerLine} />
-              <Text style={styles.loginDividerText}>또는</Text>
+              <Text style={styles.loginDividerText}>{t('common.or')}</Text>
               <View style={styles.loginDividerLine} />
             </View>
             <LoginButtons />
@@ -329,228 +522,5 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-  },
-  header: {
-    marginBottom: Spacing.lg,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  statItem: {
-    flex: 1,
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
-    alignItems: 'center',
-  },
-  statCount: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.primary,
-  },
-  statLabel: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-  },
-  greeting: {
-    fontSize: FontSize.hero,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.xs,
-  },
-  subtitle: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-  },
-  nextAlarmCard: {
-    borderRadius: BorderRadius.xl,
-    overflow: 'hidden',
-    marginBottom: Spacing.lg,
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  nextAlarmGradient: {
-    backgroundColor: Colors.light.primary,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-  },
-  nextAlarmLabel: {
-    fontSize: FontSize.sm,
-    color: 'rgba(255,255,255,0.8)',
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  nextAlarmTime: {
-    fontSize: 48,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: Spacing.sm,
-  },
-  nextAlarmMessage: {
-    fontSize: FontSize.md,
-    color: 'rgba(255,255,255,0.9)',
-  },
-  cheerCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-    shadowColor: Colors.light.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  cheerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  cheerEmoji: {
-    fontSize: 24,
-    marginRight: Spacing.sm,
-  },
-  cheerTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  cheerText: {
-    fontSize: FontSize.lg,
-    color: Colors.light.text,
-    lineHeight: 26,
-    marginBottom: Spacing.md,
-  },
-  cheerFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  cheerVoice: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-  },
-  playButton: {
-    fontSize: FontSize.sm,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  quickActions: {
-    marginBottom: Spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.md,
-  },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.md,
-  },
-  actionCard: {
-    width: '47%',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    alignItems: 'center',
-    shadowColor: Colors.light.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  actionEmoji: {
-    fontSize: 32,
-    marginBottom: Spacing.sm,
-  },
-  actionLabel: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  loginPrompt: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xl,
-    alignItems: 'center',
-  },
-  loginEmoji: {
-    fontSize: 48,
-    marginBottom: Spacing.md,
-  },
-  loginTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
-  },
-  loginDesc: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: Spacing.lg,
-  },
-  loginDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    marginVertical: Spacing.md,
-    width: '100%',
-  },
-  loginDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.light.border,
-  },
-  loginDividerText: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-  },
-  statsErrorCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.lg,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#f8717133',
-  },
-  statsErrorText: {
-    fontSize: FontSize.sm,
-    color: '#f87171',
-    fontWeight: '600',
-  },
-  statsErrorRetry: {
-    fontSize: FontSize.xs,
-    color: Colors.light.primary,
-    marginTop: 4,
-  },
-  loginButton: {
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-});
+
+export default withErrorBoundary(HomeScreen);

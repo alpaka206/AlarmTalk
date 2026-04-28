@@ -15,7 +15,7 @@ function randomGroup(): string {
   crypto.getRandomValues(bytes);
   let out = '';
   for (let i = 0; i < GROUP_SIZE; i++) {
-    out += VOUCHER_ALPHABET[bytes[i] % VOUCHER_ALPHABET.length];
+    out += VOUCHER_ALPHABET[bytes[i]! % VOUCHER_ALPHABET.length]!;
   }
   return out;
 }

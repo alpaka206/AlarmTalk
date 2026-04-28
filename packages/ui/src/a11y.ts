@@ -5,9 +5,10 @@ export const WCAG_AA_LARGE = 3.0;
 
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace(/^#/, '');
-  const n = h.length === 3
-    ? [h[0] + h[0], h[1] + h[1], h[2] + h[2]]
-    : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
+  const n =
+    h.length === 3
+      ? [h[0] + h[0], h[1] + h[1], h[2] + h[2]]
+      : [h.slice(0, 2), h.slice(2, 4), h.slice(4, 6)];
   return [parseInt(n[0], 16), parseInt(n[1], 16), parseInt(n[2], 16)];
 }
 

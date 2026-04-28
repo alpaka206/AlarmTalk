@@ -363,6 +363,107 @@ export const migrations: Migration[] = [
         WHERE client_nonce IS NOT NULL`,
     ],
   },
+  {
+    id: 13,
+    name: 'character-streak-stats',
+    statements: [
+      // 연속 기상 스트릭 — 클라이언트가 local_date(YYYY-MM-DD)를 전송, 서버가 streak 갱신.
+      `ALTER TABLE characters ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE characters ADD COLUMN longest_streak INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE characters ADD COLUMN last_wakeup_date TEXT`,
+
+      // 능력치: 나무 테마 (뿌리깊이=diligence, 줄기튼튼함=health, 잎무성함=consistency)
+      // 1 캐릭터 = 1 stats 행. 값은 누적 카운트 기반으로 계산.
+      `CREATE TABLE IF NOT EXISTS character_stats (
+        id TEXT PRIMARY KEY,
+        character_id TEXT NOT NULL UNIQUE REFERENCES characters(id),
+        diligence INTEGER NOT NULL DEFAULT 0,
+        health INTEGER NOT NULL DEFAULT 0,
+        consistency INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_character_stats_character ON character_stats(character_id)',
+
+      // 마일스톤 달성 기록: 7일(100XP), 30일(500XP), 90일(2000XP)
+      `CREATE TABLE IF NOT EXISTS streak_achievements (
+        id TEXT PRIMARY KEY,
+        character_id TEXT NOT NULL REFERENCES characters(id),
+        milestone INTEGER NOT NULL,
+        bonus_xp INTEGER NOT NULL,
+        achieved_at TEXT DEFAULT (datetime('now'))
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_streak_achievements_character ON streak_achievements(character_id)',
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_streak_achievements_unique
+        ON streak_achievements(character_id, milestone)`,
+    ],
+  },
+  {
+    id: 14,
+    name: 'push-tokens',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS push_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token TEXT NOT NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('ios','android','web')),
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id)',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_push_tokens_unique ON push_tokens(user_id, token)',
+    ],
+  },
+  {
+    id: 15,
+    name: 'alarm-vibration-pattern',
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN vibration_pattern TEXT NOT NULL DEFAULT 'default'
+         CHECK(vibration_pattern IN ('default','strong','none'))`,
+    ],
+  },
+  {
+    id: 16,
+    name: 'user-last-active',
+    statements: [`ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`],
+  },
+  {
+    id: 17,
+    name: 'alarm-wake-mode',
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice'
+         CHECK(wake_mode IN ('sound_then_voice','voice_only'))`,
+      `ALTER TABLE alarms ADD COLUMN voice_profile_id TEXT DEFAULT NULL`,
+    ],
+  },
+  {
+    id: 18,
+    name: 'notes-table',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        sender_id TEXT NOT NULL REFERENCES users(id),
+        receiver_id TEXT NOT NULL REFERENCES users(id),
+        text TEXT NOT NULL,
+        audio_url TEXT,
+        read_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_receiver ON notes(receiver_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_sender ON notes(sender_id, created_at DESC)`,
+    ],
+  },
+  {
+    id: 19,
+    name: 'composite-indices',
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_friendships_a_status ON friendships(user_a, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_friendships_b_status ON friendships(user_b, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_user_active ON alarms(user_id, is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)`,
+    ],
+  },
 ];
 
 export async function runMigrations(db: Client): Promise<string[]> {

@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Animated } from 'react-native';
 
 export function useToast(duration = 3000) {
   const [message, setMessage] = useState<string | null>(null);
-  const opacity = useRef(new Animated.Value(0)).current;
+  const opacity = useMemo(() => new Animated.Value(0), []);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const show = useCallback((msg: string) => {

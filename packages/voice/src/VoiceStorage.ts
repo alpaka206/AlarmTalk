@@ -27,7 +27,7 @@ export interface VoiceStorage {
   delete(objectKey: string): Promise<boolean>;
 }
 
-// TODO: real object storage integration (R2 / S3 / local filesystem)
+// Production: R2VoiceStorage (packages/backend/src/lib/r2-storage.ts). This in-memory impl is for dev/test fallback.
 export class InMemoryVoiceStorage implements VoiceStorage {
   readonly name = 'memory';
   private items = new Map<string, { meta: StoredObject; bytes: Uint8Array }>();

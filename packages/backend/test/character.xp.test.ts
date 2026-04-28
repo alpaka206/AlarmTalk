@@ -35,11 +35,27 @@ function baseCharacter(over: Partial<Record<string, unknown>> = {}) {
     stage: 'seed',
     daily_xp: 0,
     daily_xp_reset_at: null,
+    current_streak: 0,
+    longest_streak: 0,
+    last_wakeup_date: null,
     created_at: '',
     updated_at: '',
     ...over,
   };
 }
+
+/**
+ * alarm_completed DB call sequence (no milestone, no nonce):
+ *  1. resolveUserPk → SELECT id FROM users
+ *  2. loadOrCreateCharacter → SELECT * FROM characters
+ *  3. UPDATE characters (xp + streak fields)
+ *  4. INSERT INTO character_xp_logs
+ *  5. ensureStatsRow → INSERT OR IGNORE INTO character_stats
+ *  6. UPDATE character_stats
+ *  7. loadOrCreateCharacter (refresh) → SELECT * FROM characters
+ *  8. loadStats → SELECT FROM character_stats
+ *  9. loadAchievements → SELECT FROM streak_achievements
+ */
 
 describe('POST /characters/xp', () => {
   it('event 검증 실패 → 400', async () => {
@@ -63,11 +79,15 @@ describe('POST /characters/xp', () => {
   });
 
   it('여유 내 alarm_completed → 201, XP +30, affection +2', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]); // resolveUserPk
-    mockDB.pushResult([baseCharacter()]); // loadOrCreateCharacter — existing
-    mockDB.pushResult([], 1); // UPDATE characters
-    mockDB.pushResult([], 1); // INSERT character_xp_logs
-    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // refreshed
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // #1 resolveUserPk
+    mockDB.pushResult([baseCharacter()]); // #2 loadOrCreateCharacter
+    mockDB.pushResult([], 1); // #3 UPDATE characters
+    mockDB.pushResult([], 1); // #4 INSERT character_xp_logs
+    mockDB.pushResult([], 1); // #5 ensureStatsRow (INSERT OR IGNORE)
+    mockDB.pushResult([], 1); // #6 UPDATE character_stats
+    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // #7 loadOrCreateCharacter (refresh)
+    mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #8 loadStats
+    mockDB.pushResult([]); // #9 loadAchievements
 
     const app = buildApp();
     const res = await app.request(
@@ -81,12 +101,12 @@ describe('POST /characters/xp', () => {
     expect(body.grant.capped).toBe(false);
     expect(body.grant.duplicated).toBe(false);
     expect(body.character.xp).toBe(30);
-    expect(body.character.level).toBe(1); // threshold(2)=100 → still 1
+    expect(body.character.level).toBe(1);
     expect(body.character.stage).toBe('seed');
   });
 
   it('일일 캡 초과 → 남은 몫만 지급, capped=true', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // #1
     mockDB.pushResult([
       baseCharacter({
         xp: 190,
@@ -94,17 +114,21 @@ describe('POST /characters/xp', () => {
         daily_xp: 190,
         daily_xp_reset_at: TODAY,
       }),
-    ]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    ]); // #2
+    mockDB.pushResult([], 1); // #3 UPDATE characters
+    mockDB.pushResult([], 1); // #4 INSERT log
+    mockDB.pushResult([], 1); // #5 ensureStatsRow
+    mockDB.pushResult([], 1); // #6 UPDATE character_stats
     mockDB.pushResult([
       baseCharacter({
         xp: 200,
-        affection: 12, // 애정도는 캡과 무관하게 +2
+        affection: 12,
         daily_xp: 200,
         daily_xp_reset_at: TODAY,
       }),
-    ]);
+    ]); // #7 refresh
+    mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #8 loadStats
+    mockDB.pushResult([]); // #9 loadAchievements
 
     const app = buildApp();
     const res = await app.request(
@@ -119,23 +143,27 @@ describe('POST /characters/xp', () => {
   });
 
   it('날짜 바뀌면 daily_xp 리셋 후 재지급', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // #1
     mockDB.pushResult([
       baseCharacter({
         xp: 200,
-        daily_xp: 200, // 어제 캡 소진
+        daily_xp: 200,
         daily_xp_reset_at: '2000-01-01',
       }),
-    ]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    ]); // #2
+    mockDB.pushResult([], 1); // #3 UPDATE characters
+    mockDB.pushResult([], 1); // #4 INSERT log
+    mockDB.pushResult([], 1); // #5 ensureStatsRow
+    mockDB.pushResult([], 1); // #6 UPDATE character_stats
     mockDB.pushResult([
       baseCharacter({
         xp: 230,
         daily_xp: 30,
         daily_xp_reset_at: TODAY,
       }),
-    ]);
+    ]); // #7 refresh
+    mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #8 loadStats
+    mockDB.pushResult([]); // #9 loadAchievements
 
     const app = buildApp();
     const res = await app.request(
@@ -146,7 +174,6 @@ describe('POST /characters/xp', () => {
     expect(body.grant.granted_xp).toBe(30);
     expect(body.grant.capped).toBe(false);
     expect(body.character.xp).toBe(230);
-    // UPDATE 에 today 바인딩 확인
     const updateCall = mockDB.calls.find((c) => c.sql.startsWith('UPDATE characters'));
     expect(updateCall).toBeDefined();
     expect(updateCall!.args).toContain(TODAY);
@@ -166,7 +193,9 @@ describe('POST /characters/xp', () => {
         created_at: '2026-04-21',
       },
     ]); // duplicate lookup
-    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // load for response
+    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // loadOrCreateCharacter for dup response
+    mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // loadStats
+    mockDB.pushResult([]); // loadAchievements
 
     const app = buildApp();
     const res = await app.request(
@@ -180,7 +209,6 @@ describe('POST /characters/xp', () => {
     expect(body.grant.duplicated).toBe(true);
     expect(body.grant.granted_xp).toBe(30);
     expect(body.grant.affection).toBe(2);
-    // UPDATE / INSERT 로그 호출이 없어야 함
     expect(mockDB.calls.some((c) => c.sql.startsWith('UPDATE characters'))).toBe(false);
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO character_xp_logs'))).toBe(
       false,
@@ -188,13 +216,14 @@ describe('POST /characters/xp', () => {
   });
 
   it('캐릭터 없으면 자동 생성 후 지급', async () => {
-    mockDB.pushResult([{ id: 'user-pk-2' }]); // resolveUserPk
-    // loadOrCreateCharacter (첫 호출) — 없음 → INSERT → SELECT
-    mockDB.pushResult([]); // SELECT characters
-    mockDB.pushResult([], 1); // INSERT characters
-    mockDB.pushResult([baseCharacter({ id: 'char-new', user_id: 'user-pk-2' })]); // SELECT after insert
-    mockDB.pushResult([], 1); // UPDATE characters
-    mockDB.pushResult([], 1); // INSERT log
+    mockDB.pushResult([{ id: 'user-pk-2' }]); // #1 resolveUserPk
+    mockDB.pushResult([]); // #2 SELECT characters (없음)
+    mockDB.pushResult([], 1); // #3 INSERT characters
+    mockDB.pushResult([baseCharacter({ id: 'char-new', user_id: 'user-pk-2' })]); // #4 SELECT after insert
+    mockDB.pushResult([], 1); // #5 UPDATE characters (xp + streak)
+    mockDB.pushResult([], 1); // #6 INSERT character_xp_logs
+    mockDB.pushResult([], 1); // #7 ensureStatsRow
+    mockDB.pushResult([], 1); // #8 UPDATE character_stats
     mockDB.pushResult([
       baseCharacter({
         id: 'char-new',
@@ -203,7 +232,9 @@ describe('POST /characters/xp', () => {
         affection: 2,
         daily_xp: 30,
       }),
-    ]); // refreshed
+    ]); // #9 loadOrCreateCharacter (refresh)
+    mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #10 loadStats
+    mockDB.pushResult([]); // #11 loadAchievements
 
     const app = buildApp();
     const res = await app.request(
@@ -216,11 +247,14 @@ describe('POST /characters/xp', () => {
   });
 
   it('alarm_dismissed → XP 0, affection 0 이어도 로그는 남음', async () => {
-    mockDB.pushResult([{ id: 'user-pk-1' }]);
-    mockDB.pushResult([baseCharacter()]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([baseCharacter()]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]); // #1
+    mockDB.pushResult([baseCharacter()]); // #2
+    mockDB.pushResult([], 1); // #3 UPDATE characters
+    mockDB.pushResult([], 1); // #4 INSERT log
+    // alarm_dismissed does NOT trigger streak update, no ensureStatsRow/UPDATE stats
+    mockDB.pushResult([baseCharacter()]); // #5 loadOrCreateCharacter (refresh)
+    mockDB.pushResult([]); // #6 loadStats
+    mockDB.pushResult([]); // #7 loadAchievements
 
     const app = buildApp();
     const res = await app.request(

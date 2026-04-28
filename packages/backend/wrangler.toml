@@ -5,6 +5,13 @@ compatibility_date = "2024-12-01"
 [vars]
 ENVIRONMENT = "development"
 
+[[r2_buckets]]
+binding = "VOICE_BUCKET"
+bucket_name = "voice-alarm-voices"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
 # 실제 배포 시 wrangler secret put 으로 설정
 # PERSO_API_KEY = ""
 # ELEVENLABS_API_KEY = ""

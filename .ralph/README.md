@@ -27,7 +27,6 @@ Windows에서는 Git Bash 또는 WSL 에서 실행해야 합니다 (`run.sh` 가
 
 - `packages/backend/.dev.vars` (백엔드 로컬 시크릿)
 - `apps/mobile/.env`
-- `packages/web/.env`
 
 위 파일들이 채워져 있어야 루프가 빌드/테스트를 수행할 수 있습니다.
 

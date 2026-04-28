@@ -12,7 +12,7 @@ import {
 
 describe('ColorPalette', () => {
   it('contains hex color values', () => {
-    for (const [key, val] of Object.entries(ColorPalette)) {
+    for (const [_key, val] of Object.entries(ColorPalette)) {
       expect(val).toMatch(/^#[0-9A-Fa-f]{6}$/);
     }
   });

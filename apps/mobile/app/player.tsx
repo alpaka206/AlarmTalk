@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   Animated,
   PanResponder,
@@ -11,17 +10,19 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../src/constants/theme';
+import { useTheme } from '../src/hooks/useTheme';
 import { playAudio, getLocalAudioPath } from '../src/services/audio';
 import { useAppStore } from '../src/stores/useAppStore';
 import { generateWaveform, formatTime } from '../src/utils/waveform';
-
-const WAVEFORM_BAR_COUNT = 48;
-const WAVEFORM_BAR_WIDTH = 3;
-const WAVEFORM_BAR_GAP = 2;
-const WAVEFORM_HEIGHT = 56;
-const WAVEFORM_TOTAL_WIDTH = WAVEFORM_BAR_COUNT * (WAVEFORM_BAR_WIDTH + WAVEFORM_BAR_GAP);
-const ACTIVE_PULSE_RANGE = 3;
+import {
+  createPlayerStyles,
+  WAVEFORM_BAR_COUNT,
+  WAVEFORM_BAR_WIDTH,
+  WAVEFORM_HEIGHT,
+  WAVEFORM_TOTAL_WIDTH,
+  ACTIVE_PULSE_RANGE,
+} from '../src/styles/playerStyles';
+import { TIME_OF_DAY_BACKGROUNDS, TIME_OF_DAY_EMOJIS } from '../src/constants/player';
 
 function WaveformBar({
   height,
@@ -34,7 +35,8 @@ function WaveformBar({
   isNearPlayhead: boolean;
   isPlaying: boolean;
 }) {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const { colors } = useTheme();
+  const pulseAnim = useMemo(() => new Animated.Value(1), []);
 
   useEffect(() => {
     if (isPlaying && isNearPlayhead) {
@@ -61,10 +63,10 @@ function WaveformBar({
   return (
     <Animated.View
       style={[
-        styles.waveformBar,
+        { width: WAVEFORM_BAR_WIDTH, borderRadius: WAVEFORM_BAR_WIDTH / 2 },
         {
           height: height * WAVEFORM_HEIGHT,
-          backgroundColor: played ? Colors.light.primary : Colors.light.primaryLight,
+          backgroundColor: played ? colors.primary : colors.primaryLight,
           transform: [{ scaleY: pulseAnim }],
         },
       ]}
@@ -82,6 +84,8 @@ export default function PlayerScreen() {
   }>();
 
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const styles = createPlayerStyles(colors);
   const { setPlaying } = useAppStore();
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -94,7 +98,7 @@ export default function PlayerScreen() {
   const waveformWidth = useRef(WAVEFORM_TOTAL_WIDTH);
   const progressRef = useRef(0);
   const durationRef = useRef(0);
-  const playheadAnim = useRef(new Animated.Value(0)).current;
+  const playheadAnim = useMemo(() => new Animated.Value(0), []);
 
   const waveformBars = useMemo(
     () => generateWaveform(params.messageId || 'default', WAVEFORM_BAR_COUNT),
@@ -133,6 +137,7 @@ export default function PlayerScreen() {
     [playheadAnim],
   );
 
+  /* eslint-disable react-hooks/refs */
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -151,6 +156,7 @@ export default function PlayerScreen() {
       }),
     [seekToPosition],
   );
+  /* eslint-enable react-hooks/refs */
 
   const onPlaybackStatus = useCallback(
     (status: AVPlaybackStatus) => {
@@ -172,35 +178,14 @@ export default function PlayerScreen() {
   );
 
   const getBackgroundColor = () => {
-    const map: Record<string, string[]> = {
-      morning: ['#FFF5E6', '#FFE4C4'],
-      lunch: ['#FFF0E6', '#FFD9C4'],
-      afternoon: ['#F5F0FF', '#E4D9FF'],
-      evening: ['#FFE8E0', '#FFC4B3'],
-      night: ['#E8E0FF', '#C4B3FF'],
-    };
-    return map[params.category]?.[0] || Colors.light.background;
+    return TIME_OF_DAY_BACKGROUNDS[params.category]?.[0] || colors.background;
   };
 
   const getEmoji = () => {
-    const map: Record<string, string> = {
-      morning: '🌅',
-      lunch: '🍽️',
-      afternoon: '☕',
-      evening: '🌆',
-      night: '🌙',
-    };
-    return map[params.category] || '💌';
+    return TIME_OF_DAY_EMOJIS[params.category] || '💌';
   };
 
-  useEffect(() => {
-    handlePlay();
-    return () => {
-      soundRef.current?.unloadAsync();
-    };
-  }, []);
-
-  const handlePlay = async () => {
+  const handlePlay = useCallback(async () => {
     if (sound) {
       if (isPlaying) {
         await sound.pauseAsync();
@@ -223,7 +208,16 @@ export default function PlayerScreen() {
     setIsPlaying(true);
     setPlaying(params.messageId);
     newSound.setOnPlaybackStatusUpdate(onPlaybackStatus);
-  };
+  }, [sound, isPlaying, progress, params.messageId, setPlaying, onPlaybackStatus]);
+
+  /* eslint-disable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
+  useEffect(() => {
+    handlePlay();
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+  /* eslint-enable react-hooks/exhaustive-deps, react-hooks/set-state-in-effect */
 
   const handleClose = async () => {
     if (sound) {
@@ -244,14 +238,22 @@ export default function PlayerScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: getBackgroundColor() }]}>
-      <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+      <TouchableOpacity
+        style={styles.closeButton}
+        onPress={handleClose}
+        accessibilityRole="button"
+        accessibilityLabel={t('player.a11yClose')}
+      >
         <Text style={styles.closeText}>✕</Text>
       </TouchableOpacity>
 
       <View style={styles.content}>
-        <Text style={styles.categoryEmoji}>{getEmoji()}</Text>
+        <Text style={styles.categoryEmoji} accessibilityElementsHidden>{getEmoji()}</Text>
 
-        <View style={styles.profileSection}>
+        <View
+          style={styles.profileSection}
+          accessibilityLabel={t('player.a11yVoice', { name: params.voiceName })}
+        >
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{params.voiceName?.charAt(0) || '?'}</Text>
           </View>
@@ -260,7 +262,12 @@ export default function PlayerScreen() {
 
         <Text style={styles.messageText}>"{params.text}"</Text>
 
-        <View style={styles.waveformContainer}>
+        <View
+          style={styles.waveformContainer}
+          accessibilityRole="adjustable"
+          accessibilityLabel={t('player.a11yWaveform')}
+          accessibilityValue={{ min: 0, max: 100, now: Math.round(progress * 100) }}
+        >
           <View
             style={styles.waveformBars}
             onLayout={onWaveformLayout}
@@ -296,12 +303,22 @@ export default function PlayerScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.playButton} onPress={handlePlay}>
+        <TouchableOpacity
+          style={styles.playButton}
+          onPress={handlePlay}
+          accessibilityRole="button"
+          accessibilityLabel={isPlaying ? t('player.a11yPause') : t('player.a11yPlay')}
+        >
           <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
         </TouchableOpacity>
 
         {!reacted ? (
-          <TouchableOpacity style={styles.reactionButton} onPress={() => setReacted(true)}>
+          <TouchableOpacity
+            style={styles.reactionButton}
+            onPress={() => setReacted(true)}
+            accessibilityRole="button"
+            accessibilityLabel={t('player.a11yReaction')}
+          >
             <Text style={styles.reactionText}>{t('player.thanks')}</Text>
           </TouchableOpacity>
         ) : (
@@ -311,145 +328,3 @@ export default function PlayerScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  closeButton: {
-    position: 'absolute',
-    top: 60,
-    right: Spacing.lg,
-    zIndex: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeText: {
-    fontSize: 18,
-    color: Colors.light.text,
-  },
-  content: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.xl,
-  },
-  categoryEmoji: {
-    fontSize: 64,
-    marginBottom: Spacing.xl,
-  },
-  profileSection: {
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.light.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    shadowColor: Colors.light.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  voiceName: {
-    fontSize: FontSize.xl,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  messageText: {
-    fontSize: FontSize.xxl,
-    fontWeight: '600',
-    color: Colors.light.text,
-    textAlign: 'center',
-    lineHeight: 38,
-    marginBottom: Spacing.xxl,
-  },
-  waveformContainer: {
-    width: '100%',
-    marginBottom: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-  },
-  waveformBars: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: WAVEFORM_HEIGHT,
-    position: 'relative',
-  },
-  waveformBarTouch: {
-    width: WAVEFORM_BAR_WIDTH + WAVEFORM_BAR_GAP,
-    height: WAVEFORM_HEIGHT,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  waveformBar: {
-    width: WAVEFORM_BAR_WIDTH,
-    borderRadius: WAVEFORM_BAR_WIDTH / 2,
-  },
-  playhead: {
-    position: 'absolute',
-    left: 0,
-    top: -2,
-    width: 2,
-    height: WAVEFORM_HEIGHT + 4,
-    backgroundColor: Colors.light.primaryDark,
-    borderRadius: 1,
-  },
-  timeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: Spacing.xs,
-  },
-  timeText: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textSecondary,
-    fontVariant: ['tabular-nums'],
-  },
-  playButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#FFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  playIcon: {
-    fontSize: 28,
-  },
-  reactionButton: {
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.full,
-  },
-  reactionText: {
-    fontSize: FontSize.lg,
-    fontWeight: '600',
-    color: '#FFF',
-  },
-  reactedText: {
-    fontSize: FontSize.md,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-});

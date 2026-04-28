@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
-import { Colors, Spacing, FontSize } from '../constants/theme';
+import { Spacing, FontSize } from '../constants/theme';
+import { useTheme, type ThemeColors } from '../hooks/useTheme';
+import { useTranslation } from 'react-i18next';
 import { playAudio, getLocalAudioPath, isAudioCached } from '../services/audio';
 import { generateWaveform, formatTime } from '../utils/waveform';
 
@@ -18,6 +20,9 @@ interface Props {
 }
 
 export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Props) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const dynStyles = useMemo(() => createStyles(colors), [colors]);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -27,6 +32,7 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
 
   const bars = useMemo(() => generateWaveform(messageId, BAR_COUNT), [messageId]);
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isActive && sound) {
       sound.unloadAsync();
@@ -38,6 +44,7 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
       setDurationMs(0);
     }
   }, [isActive, sound]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     return () => {
@@ -91,30 +98,36 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
   };
 
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={handleToggle} style={styles.playBtn} hitSlop={8}>
-        <Text style={styles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
+    <View style={dynStyles.container}>
+      <TouchableOpacity
+        onPress={handleToggle}
+        style={dynStyles.playBtn}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? t('player.a11yPause') : t('player.a11yPlay')}
+      >
+        <Text style={dynStyles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
       </TouchableOpacity>
-      <View style={styles.waveformArea}>
-        <View style={styles.barsRow}>
+      <View style={dynStyles.waveformArea}>
+        <View style={dynStyles.barsRow}>
           {bars.map((h, i) => (
             <View
               key={i}
               style={[
-                styles.bar,
+                dynStyles.bar,
                 {
                   height: h * BAR_HEIGHT,
                   backgroundColor:
                     i / BAR_COUNT < progress
-                      ? Colors.light.primary
-                      : Colors.light.primaryLight,
+                      ? colors.primary
+                      : colors.primaryLight,
                 },
               ]}
             />
           ))}
         </View>
         {isActive && (
-          <Text style={styles.time}>
+          <Text style={dynStyles.time}>
             {formatTime(positionMs)}
             {durationMs > 0 ? ` / ${formatTime(durationMs)}` : ''}
           </Text>
@@ -124,40 +137,42 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  playBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.light.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playIcon: {
-    fontSize: 12,
-  },
-  waveformArea: {
-    alignItems: 'flex-start',
-  },
-  barsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: BAR_HEIGHT,
-    gap: BAR_GAP,
-  },
-  bar: {
-    width: BAR_WIDTH,
-    borderRadius: BAR_WIDTH / 2,
-  },
-  time: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-    fontVariant: ['tabular-nums'],
-  },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.sm,
+    },
+    playBtn: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: colors.primaryLight,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    playIcon: {
+      fontSize: 12,
+    },
+    waveformArea: {
+      alignItems: 'flex-start',
+    },
+    barsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      height: BAR_HEIGHT,
+      gap: BAR_GAP,
+    },
+    bar: {
+      width: BAR_WIDTH,
+      borderRadius: BAR_WIDTH / 2,
+    },
+    time: {
+      fontSize: FontSize.xs,
+      color: colors.textSecondary,
+      marginTop: 2,
+      fontVariant: ['tabular-nums'],
+    },
+  });
+}

@@ -8,7 +8,8 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     emoji: '🎙️',
     title: '누구의 목소리를 듣고 싶나요?',
-    description: '엄마, 아빠, 연인, 친구...\n소중한 사람의 목소리를 등록해보세요.\n짧은 녹음이나 통화 녹음만 있으면 돼요.',
+    description:
+      '엄마, 아빠, 연인, 친구...\n소중한 사람의 목소리를 등록해보세요.\n짧은 녹음이나 통화 녹음만 있으면 돼요.',
   },
   {
     emoji: '💌',
@@ -18,7 +19,8 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     emoji: '⏰',
     title: '소중한 목소리로 하루를 시작하세요',
-    description: '알람부터 퇴근 알림까지,\n하루 종일 소중한 사람의 목소리와 함께.\n지금 바로 시작해볼까요?',
+    description:
+      '알람부터 퇴근 알림까지,\n하루 종일 소중한 사람의 목소리와 함께.\n지금 바로 시작해볼까요?',
   },
 ] as const;
 

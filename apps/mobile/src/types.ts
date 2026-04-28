@@ -23,6 +23,8 @@ export interface Message {
 }
 
 export type AlarmMode = 'tts' | 'sound-only';
+export type VibrationPattern = 'default' | 'strong' | 'none';
+export type WakeMode = 'sound_then_voice' | 'voice_only';
 
 export interface Alarm {
   id: string;
@@ -37,6 +39,8 @@ export interface Alarm {
   created_at: string;
   updated_at: string;
   mode?: AlarmMode;
+  vibration_pattern?: VibrationPattern;
+  wake_mode?: WakeMode;
   voice_profile_id?: string | null;
   speaker_id?: string | null;
   message_text?: string;
@@ -58,6 +62,7 @@ export interface Friend {
   friend_email?: string;
   friend_name?: string;
   friend_picture?: string;
+  friend_last_active_at?: string;
 }
 
 export interface PendingFriendRequest {
@@ -135,17 +140,3 @@ export interface DubResult {
   expected_remaining_minutes?: number;
 }
 
-export function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (
-    err != null &&
-    typeof err === 'object' &&
-    'responseData' in err &&
-    err.responseData != null &&
-    typeof err.responseData === 'object' &&
-    'error' in err.responseData &&
-    typeof (err.responseData as Record<string, unknown>).error === 'string'
-  ) {
-    return (err.responseData as Record<string, unknown>).error as string;
-  }
-  return fallback;
-}

@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 export type CharacterStage = 'seed' | 'sprout' | 'tree' | 'bloom';
 
 const STAGE_EMOJI: Record<CharacterStage, string> = {
@@ -7,39 +9,78 @@ const STAGE_EMOJI: Record<CharacterStage, string> = {
   bloom: '🌸',
 };
 
-const STAGE_LABEL: Record<CharacterStage, string> = {
-  seed: '씨앗',
-  sprout: '새싹',
-  tree: '나무',
-  bloom: '꽃',
+const STAGE_LABEL_KEYS: Record<CharacterStage, string> = {
+  seed: 'character.stageSeed',
+  sprout: 'character.stageSprout',
+  tree: 'character.stageTree',
+  bloom: 'character.stageBloom',
 };
 
-const DIALOGUES: Record<CharacterStage, readonly string[]> = {
+const DIALOGUE_KEYS: Record<CharacterStage, readonly string[]> = {
   seed: [
-    '조용히 자라고 있어요.',
-    '햇살이 필요해요. ☀️',
-    '물 주실래요?',
-    '아직은 작지만, 곧 자랄 거예요.',
+    'character.dlg.seed0',
+    'character.dlg.seed1',
+    'character.dlg.seed2',
+    'character.dlg.seed3',
+    'character.dlg.seed4',
+    'character.dlg.seed5',
+    'character.dlg.seed6',
   ],
   sprout: [
-    '새싹이 돋았어요!',
-    '바람이 기분 좋아요. 🌬️',
-    '오늘도 같이 깨워주세요.',
-    '조금씩 자라고 있어요.',
+    'character.dlg.sprout0',
+    'character.dlg.sprout1',
+    'character.dlg.sprout2',
+    'character.dlg.sprout3',
+    'character.dlg.sprout4',
+    'character.dlg.sprout5',
+    'character.dlg.sprout6',
   ],
   tree: [
-    '그늘을 드리워 드릴게요. 🌳',
-    '오늘 알람 잘 들으셨나요?',
-    '나무가 되었어요!',
-    '가족도 같이 깨워봐요.',
+    'character.dlg.tree0',
+    'character.dlg.tree1',
+    'character.dlg.tree2',
+    'character.dlg.tree3',
+    'character.dlg.tree4',
+    'character.dlg.tree5',
+    'character.dlg.tree6',
   ],
   bloom: [
-    '꽃이 피었어요! 🌸',
-    '완전 잘 자랐죠?',
-    '함께 해주셔서 고마워요.',
-    '이 순간이 제일 좋아요.',
+    'character.dlg.bloom0',
+    'character.dlg.bloom1',
+    'character.dlg.bloom2',
+    'character.dlg.bloom3',
+    'character.dlg.bloom4',
+    'character.dlg.bloom5',
+    'character.dlg.bloom6',
   ],
 };
+
+const STREAK_DIALOGUE_KEYS: { minStreak: number; keys: readonly string[] }[] = [
+  { minStreak: 90, keys: [
+    'character.streak.d90_0',
+    'character.streak.d90_1',
+    'character.streak.d90_2',
+  ]},
+  { minStreak: 30, keys: [
+    'character.streak.d30_0',
+    'character.streak.d30_1',
+    'character.streak.d30_2',
+  ]},
+  { minStreak: 7, keys: [
+    'character.streak.d7_0',
+    'character.streak.d7_1',
+    'character.streak.d7_2',
+  ]},
+  { minStreak: 3, keys: [
+    'character.streak.d3_0',
+    'character.streak.d3_1',
+    'character.streak.d3_2',
+  ]},
+  { minStreak: 1, keys: [
+    'character.streak.d1_0',
+    'character.streak.d1_1',
+  ]},
+];
 
 export interface CharacterPayload {
   stage?: CharacterStage | string;
@@ -63,25 +104,49 @@ export function stageToEmoji(stage: unknown): string {
   return STAGE_EMOJI[normalizeStage(stage)];
 }
 
-export function stageToLabel(stage: unknown): string {
-  return STAGE_LABEL[normalizeStage(stage)];
+export function stageToLabel(stage: unknown, t: TFunction): string {
+  return t(STAGE_LABEL_KEYS[normalizeStage(stage)]);
 }
 
-export function listDialogues(stage: unknown): readonly string[] {
-  return DIALOGUES[normalizeStage(stage)];
+export function listDialogues(stage: unknown, t: TFunction): readonly string[] {
+  return DIALOGUE_KEYS[normalizeStage(stage)].map((key) => t(key));
 }
 
 export function pickRandomDialogue(
   stage: unknown,
+  t: TFunction,
   rng: () => number = Math.random,
 ): string {
-  const list = DIALOGUES[normalizeStage(stage)];
-  if (list.length === 0) return '';
+  const keys = DIALOGUE_KEYS[normalizeStage(stage)];
+  if (keys.length === 0) return '';
   const safeRng = typeof rng === 'function' ? rng : Math.random;
   const raw = safeRng();
   const ratio = Number.isFinite(raw) ? Math.max(0, Math.min(raw, 0.999999)) : 0;
-  const idx = Math.floor(ratio * list.length);
-  return list[idx] ?? list[0];
+  const idx = Math.floor(ratio * keys.length);
+  return t((keys[idx] ?? keys[0])!);
+}
+
+export function pickStreakAwareDialogue(
+  stage: unknown,
+  streak: number,
+  t: TFunction,
+  rng: () => number = Math.random,
+): string {
+  const safeRng = typeof rng === 'function' ? rng : Math.random;
+  const roll = safeRng();
+  const rollRatio = Number.isFinite(roll) ? Math.max(0, Math.min(roll, 0.999999)) : 0;
+
+  if (streak >= 1 && rollRatio < 0.4) {
+    const tier = STREAK_DIALOGUE_KEYS.find((d) => streak >= d.minStreak);
+    if (tier && tier.keys.length > 0) {
+      const r2 = safeRng();
+      const r2Ratio = Number.isFinite(r2) ? Math.max(0, Math.min(r2, 0.999999)) : 0;
+      const idx = Math.floor(r2Ratio * tier.keys.length);
+      return t((tier.keys[idx] ?? tier.keys[0])!);
+    }
+  }
+
+  return pickRandomDialogue(stage, t, safeRng);
 }
 
 export function formatProgress(progress: ProgressPayload | null | undefined): string {

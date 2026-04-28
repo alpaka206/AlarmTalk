@@ -1,18 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
   FlatList,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
+import { createDubTranslateStyles } from '../../src/styles/dubTranslateStyles';
 import {
   getMessages,
   getDubLanguages,
@@ -25,17 +25,26 @@ import {
   saveAudioLocally,
   playAudio,
 } from '../../src/services/audio';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
+import {
+  SOURCE_LANGUAGES,
+  filterTargetLanguages,
+  validateDubStart,
+  getDubPhase,
+  shouldSaveAudio,
+} from '../../src/lib/dubHelpers';
 import type { Message, DubLanguage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
 export default function TranslateScreen() {
   const { message_id } = useLocalSearchParams<{ message_id: string }>();
-  const router = useRouter();
+
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const toast = useToast();
+  const { colors } = useTheme();
+  const styles = createDubTranslateStyles(colors);
 
   const [sourceLanguage, setSourceLanguage] = useState('ko');
   const [targetLanguage, setTargetLanguage] = useState('');
@@ -61,6 +70,11 @@ export default function TranslateScreen() {
   });
 
   const message = messages?.find((m: Message) => m.id === message_id);
+
+  const targetLanguages = useMemo(
+    () => filterTargetLanguages(languages, sourceLanguage),
+    [languages, sourceLanguage],
+  );
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -88,8 +102,8 @@ export default function TranslateScreen() {
         stopPolling();
         setDubStatus('ready');
 
-        if (result.audio_base64 && result.result_message_id) {
-          await saveAudioLocally(result.audio_base64, result.result_message_id, result.audio_format || 'mp3');
+        if (shouldSaveAudio(result)) {
+          await saveAudioLocally(result.audio_base64!, result.result_message_id!, result.audio_format || 'mp3');
           setResultAudioSaved(true);
           queryClient.invalidateQueries({ queryKey: ['messages'] });
           queryClient.invalidateQueries({ queryKey: ['library'] });
@@ -129,17 +143,14 @@ export default function TranslateScreen() {
       }, 5000);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('dub.failed')));
+      toast.show(getApiErrorMessage(err, t, t('dub.failed')));
     },
   });
 
   const handleStart = () => {
-    if (!targetLanguage) {
-      toast.show(t('dub.selectLanguage'));
-      return;
-    }
-    if (sourceLanguage === targetLanguage) {
-      toast.show(t('dub.sameLanguage'));
+    const validationError = validateDubStart(targetLanguage, sourceLanguage);
+    if (validationError) {
+      toast.show(t(`dub.${validationError}`));
       return;
     }
     dubMutation.mutate();
@@ -178,15 +189,19 @@ export default function TranslateScreen() {
     <TouchableOpacity
       style={[styles.langItem, targetLanguage === item.code && styles.langItemActive]}
       onPress={() => setTargetLanguage(item.code)}
+      accessibilityLabel={t('dub.a11yTargetLang', { name: item.name })}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: targetLanguage === item.code }}
     >
       <Text style={[styles.langText, targetLanguage === item.code && styles.langTextActive]}>
         {item.name}
       </Text>
-      {item.experiment && <Text style={styles.experimentBadge}>beta</Text>}
+      {item.experiment && <Text style={styles.experimentBadge}>{t('dub.experimentBadge')}</Text>}
     </TouchableOpacity>
   );
 
-  const isProcessing = dubStatus === 'processing' || dubMutation.isPending;
+  const phase = getDubPhase(dubStatus, dubMutation.isPending);
+  const isProcessing = phase === 'processing';
 
   return (
     <View style={styles.container}>
@@ -194,25 +209,23 @@ export default function TranslateScreen() {
         <Text style={styles.description}>{t('dub.description')}</Text>
 
         {message && (
-          <View style={styles.messagePreview}>
+          <View style={styles.messagePreview} accessibilityLabel={`${message.voice_name || ''}: ${message.text}`}>
             <Text style={styles.messagePreviewLabel}>{message.voice_name || ''}</Text>
             <Text style={styles.messagePreviewText}>"{message.text}"</Text>
           </View>
         )}
 
-        <Text style={styles.sectionTitle}>{t('dub.sourceLanguage')}</Text>
+        <Text style={styles.sectionTitle} accessibilityRole="header">{t('dub.sourceLanguage')}</Text>
         <View style={styles.sourceRow}>
-          {[
-            { code: 'ko', name: '한국어' },
-            { code: 'en', name: 'English' },
-            { code: 'ja', name: '日本語' },
-            { code: 'zh', name: '中文' },
-          ].map((lang) => (
+          {SOURCE_LANGUAGES.map((lang) => (
             <TouchableOpacity
               key={lang.code}
               style={[styles.sourceChip, sourceLanguage === lang.code && styles.sourceChipActive]}
               onPress={() => setSourceLanguage(lang.code)}
               disabled={isProcessing}
+              accessibilityLabel={t('dub.a11ySourceLang', { name: lang.name })}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: sourceLanguage === lang.code, disabled: isProcessing }}
             >
               <Text style={[styles.sourceChipText, sourceLanguage === lang.code && styles.sourceChipTextActive]}>
                 {lang.name}
@@ -221,12 +234,12 @@ export default function TranslateScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionTitle}>{t('dub.targetLanguage')}</Text>
+        <Text style={styles.sectionTitle} accessibilityRole="header">{t('dub.targetLanguage')}</Text>
         {languagesLoading ? (
-          <ActivityIndicator style={styles.loader} color={Colors.light.primary} />
+          <ActivityIndicator style={styles.loader} color={colors.primary} />
         ) : (
           <FlatList
-            data={languages?.filter((l: DubLanguage) => l.code !== sourceLanguage)}
+            data={targetLanguages}
             renderItem={renderLanguageItem}
             keyExtractor={(item: DubLanguage) => item.code}
             scrollEnabled={false}
@@ -236,8 +249,8 @@ export default function TranslateScreen() {
         )}
 
         {dubStatus === 'processing' && (
-          <View style={styles.progressSection}>
-            <ActivityIndicator color={Colors.light.primary} />
+          <View style={styles.progressSection} accessibilityLiveRegion="polite" accessibilityLabel={t('dub.a11yProgress', { progress: dubProgress })}>
+            <ActivityIndicator color={colors.primary} />
             <Text style={styles.progressText}>{t('dub.progress', { progress: dubProgress })}</Text>
             {remainingMinutes != null && (
               <Text style={styles.remainingText}>{t('dub.remainingTime', { minutes: remainingMinutes })}</Text>
@@ -250,7 +263,7 @@ export default function TranslateScreen() {
             <Text style={styles.completeText}>{t('dub.complete')}</Text>
             {resultAudioSaved && (
               <>
-                <TouchableOpacity style={styles.playResultButton} onPress={handlePlayResult}>
+                <TouchableOpacity style={styles.playResultButton} onPress={handlePlayResult} accessibilityRole="button" accessibilityLabel={isPlaying ? t('messageDetail.stop') : t('dub.playResult')}>
                   <Text style={styles.playResultText}>
                     {isPlaying ? t('messageDetail.stop') : t('dub.playResult')}
                   </Text>
@@ -264,7 +277,7 @@ export default function TranslateScreen() {
         {dubStatus === 'failed' && (
           <View style={styles.resultSection}>
             <Text style={styles.failedText}>{t('dub.failed')}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={handleStart}>
+            <TouchableOpacity style={styles.retryButton} onPress={handleStart} accessibilityRole="button" accessibilityLabel={t('dub.retry')}>
               <Text style={styles.retryText}>{t('dub.retry')}</Text>
             </TouchableOpacity>
           </View>
@@ -277,9 +290,12 @@ export default function TranslateScreen() {
             style={[styles.startButton, (!targetLanguage || isProcessing) && styles.startButtonDisabled]}
             onPress={handleStart}
             disabled={!targetLanguage || isProcessing}
+            accessibilityLabel={dubMutation.isPending ? t('dub.processing') : t('dub.start')}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !targetLanguage || isProcessing, busy: dubMutation.isPending }}
           >
             {dubMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.startButtonText}>{t('dub.start')}</Text>
             )}
@@ -291,194 +307,3 @@ export default function TranslateScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: Spacing.lg,
-    paddingBottom: 100,
-  },
-  description: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    lineHeight: 22,
-    marginBottom: Spacing.lg,
-  },
-  messagePreview: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  messagePreviewLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.light.primary,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  messagePreviewText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontStyle: 'italic',
-    lineHeight: 24,
-  },
-  sectionTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-    flexWrap: 'wrap',
-  },
-  sourceChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  sourceChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  sourceChipText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
-  sourceChipTextActive: {
-    color: '#FFF',
-  },
-  loader: {
-    marginVertical: Spacing.lg,
-  },
-  langRow: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
-  },
-  langItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: Colors.light.surface,
-  },
-  langItemActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  langText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.text,
-    fontWeight: '500',
-  },
-  langTextActive: {
-    color: '#FFF',
-    fontWeight: '700',
-  },
-  experimentBadge: {
-    fontSize: 10,
-    color: Colors.light.textTertiary,
-    backgroundColor: Colors.light.surfaceVariant,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  progressText: {
-    fontSize: FontSize.lg,
-    fontWeight: '600',
-    color: Colors.light.primary,
-  },
-  remainingText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textTertiary,
-  },
-  resultSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-    gap: Spacing.md,
-  },
-  completeText: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.success,
-  },
-  playResultButton: {
-    backgroundColor: Colors.light.primary,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
-  },
-  playResultText: {
-    color: '#FFF',
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
-  savedText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textTertiary,
-  },
-  failedText: {
-    fontSize: FontSize.lg,
-    fontWeight: '600',
-    color: Colors.light.error,
-  },
-  retryButton: {
-    borderWidth: 1,
-    borderColor: Colors.light.primary,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
-  },
-  retryText: {
-    color: Colors.light.primary,
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: Spacing.lg,
-    backgroundColor: Colors.light.background,
-    borderTopWidth: 1,
-    borderTopColor: Colors.light.border,
-  },
-  startButton: {
-    backgroundColor: Colors.light.primary,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
-  },
-  startButtonDisabled: {
-    opacity: 0.5,
-  },
-  startButtonText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-});

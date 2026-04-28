@@ -1,6 +1,9 @@
-import { Component, type ReactNode } from 'react';
+import { Component, useMemo, type ReactNode, type ComponentType } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { Colors, Spacing, BorderRadius, FontSize } from '../constants/theme';
+import { useTranslation } from 'react-i18next';
+import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
+import { useTheme, type ThemeColors } from '../hooks/useTheme';
+import { Sentry } from '../lib/sentry';
 
 interface Props {
   children: ReactNode;
@@ -11,11 +14,41 @@ interface State {
   errorMessage: string | null;
 }
 
+function ErrorFallback({ errorMessage, onRetry }: { errorMessage: string | null; onRetry: () => void }) {
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const dynStyles = useMemo(() => createStyles(colors), [colors]);
+  return (
+    <View style={dynStyles.container} accessibilityRole="alert">
+      <Text style={dynStyles.emoji}>😵</Text>
+      <Text style={dynStyles.title}>{t('errorBoundary.title')}</Text>
+      <Text style={dynStyles.subtitle}>{t('errorBoundary.subtitle')}</Text>
+      {errorMessage && (
+        <Text style={dynStyles.detail} numberOfLines={3}>
+          {errorMessage}
+        </Text>
+      )}
+      <Pressable
+        onPress={onRetry}
+        style={dynStyles.retryButton}
+        accessibilityRole="button"
+        accessibilityLabel={t('errorBoundary.retry')}
+      >
+        <Text style={dynStyles.retryText}>{t('errorBoundary.retry')}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, errorMessage: null };
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, errorMessage: error.message };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
   }
 
   handleRetry = () => {
@@ -24,73 +57,68 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      return (
-        <View style={styles.container} accessibilityRole="alert">
-          <Text style={styles.emoji}>😵</Text>
-          <Text style={styles.title}>문제가 발생했습니다</Text>
-          <Text style={styles.subtitle}>앱을 다시 시도해 주세요</Text>
-          {this.state.errorMessage && (
-            <Text style={styles.detail} numberOfLines={3}>
-              {this.state.errorMessage}
-            </Text>
-          )}
-          <Pressable
-            onPress={this.handleRetry}
-            style={styles.retryButton}
-            accessibilityRole="button"
-            accessibilityLabel="다시 시도"
-          >
-            <Text style={styles.retryText}>다시 시도</Text>
-          </Pressable>
-        </View>
-      );
+      return <ErrorFallback errorMessage={this.state.errorMessage} onRetry={this.handleRetry} />;
     }
     return this.props.children;
   }
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xl,
-    backgroundColor: Colors.light.background,
-  },
-  emoji: {
-    fontSize: 48,
-    marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
-  },
-  subtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  detail: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-    marginBottom: Spacing.lg,
-    textAlign: 'center',
-    maxWidth: 280,
-  },
-  retryButton: {
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  retryText: {
-    color: '#FFFFFF',
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-});
+export function withErrorBoundary<P extends object>(WrappedComponent: ComponentType<P>) {
+  function WithErrorBoundaryWrapper(props: P) {
+    return (
+      <ErrorBoundary>
+        <WrappedComponent {...props} />
+      </ErrorBoundary>
+    );
+  }
+  WithErrorBoundaryWrapper.displayName = `withErrorBoundary(${WrappedComponent.displayName || WrappedComponent.name || 'Component'})`;
+  return WithErrorBoundaryWrapper;
+}
+
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: Spacing.xl,
+      backgroundColor: colors.background,
+    },
+    emoji: {
+      fontSize: 48,
+      marginBottom: Spacing.md,
+    },
+    title: {
+      fontSize: FontSize.lg,
+      fontFamily: FontFamily.bold,
+      color: colors.text,
+      marginBottom: Spacing.sm,
+    },
+    subtitle: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
+      marginBottom: Spacing.md,
+      textAlign: 'center',
+    },
+    detail: {
+      fontSize: FontSize.xs,
+      color: colors.textTertiary,
+      marginBottom: Spacing.lg,
+      textAlign: 'center',
+      maxWidth: 280,
+    },
+    retryButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderRadius: BorderRadius.md,
+      minHeight: 44,
+      justifyContent: 'center',
+    },
+    retryText: {
+      color: colors.textOnPrimary,
+      fontSize: FontSize.sm,
+      fontFamily: FontFamily.semibold,
+    },
+  });
+}

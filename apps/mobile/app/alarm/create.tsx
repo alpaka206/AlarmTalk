@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,32 +11,41 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
-import { DAYS_OF_WEEK, PRESET_CATEGORIES } from '../../src/constants/presets';
-import type { PresetCategory } from '../../src/constants/presets';
+import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { DAY_KEYS } from '../../src/constants/presets';
 import {
   getMessages,
   getAlarms,
   createAlarm,
   getFriendList,
   getVoiceProfiles,
+  getFamilyVoiceProfiles,
   generateTTS,
 } from '../../src/services/api';
+import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
-import type { AlarmMode, Friend, Message, VoiceProfile } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import type { AlarmMode, VibrationPattern, Friend, Message, VoiceProfile } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
-import { validateAlarmForm } from '../../src/lib/alarmForm';
+import { PresetMessageSection } from '../../src/components/PresetMessageSection';
+import { validateAlarmForm, getTimeUntilAlarm } from '../../src/lib/alarmForm';
+import { getRecentPresetMessages, addRecentPresetMessage } from '../../src/services/offlineCache';
+import { createAlarmFormStyles } from '../../src/styles/alarmFormStyles';
+import * as Haptics from 'expo-haptics';
 
 export default function CreateAlarmScreen() {
   const router = useRouter();
   const { message_id: paramMessageId } = useLocalSearchParams<{ message_id?: string }>();
   const queryClient = useQueryClient();
-  const { isAuthenticated, userId, defaultSnoozeMinutes } = useAppStore();
+  const { isAuthenticated, userId, defaultSnoozeMinutes, plan } = useAppStore();
   const { t } = useTranslation();
   const toast = useToast();
+  const { colors } = useTheme();
+  const formStyles = useMemo(() => createAlarmFormStyles(colors), [colors]);
+  const localStyles = useMemo(() => createLocalStyles(colors), [colors]);
 
   const [hour, setHour] = useState(7);
   const [minute, setMinute] = useState(0);
@@ -49,8 +58,18 @@ export default function CreateAlarmScreen() {
   const [presetCategory, setPresetCategory] = useState<string>('morning');
   const [presetText, setPresetText] = useState<string | null>(null);
   const [presetVoiceId, setPresetVoiceId] = useState<string | null>(null);
-  const [mode, setMode] = useState<AlarmMode>('tts');
+  const [mode, setMode] = useState<AlarmMode>('sound-only');
+  const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
+  const [wakeMode, setWakeMode] = useState<'sound_then_voice' | 'voice_only'>('sound_then_voice');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
+  const [recentPresets, setRecentPresets] = useState<string[]>([]);
+
+  const loadRecentPresets = useCallback(async () => {
+    const recent = await getRecentPresetMessages();
+    setRecentPresets(recent);
+  }, []);
+
+  useEffect(() => { loadRecentPresets(); }, [loadRecentPresets]);
 
   const { data: messages } = useQuery({
     queryKey: ['messages'],
@@ -65,6 +84,14 @@ export default function CreateAlarmScreen() {
   });
 
   const readyVoices = voices?.filter((v: VoiceProfile) => v.status === 'ready') ?? [];
+
+  const { data: familyVoices } = useQuery({
+    queryKey: ['familyVoiceProfiles'],
+    queryFn: getFamilyVoiceProfiles,
+    enabled: isAuthenticated && plan === 'family',
+  });
+  const readyFamilyVoices: FamilyVoiceProfile[] =
+    familyVoices?.filter((v: FamilyVoiceProfile) => v.status === 'ready') ?? [];
 
   const { data: friends } = useQuery({
     queryKey: ['friends'],
@@ -81,12 +108,25 @@ export default function CreateAlarmScreen() {
       setPresetText(null);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarmCreate.ttsError')));
+      toast.show(getApiErrorMessage(err, t, t('alarmCreate.ttsError')));
     },
   });
 
   const handlePresetGenerate = () => {
     if (!presetVoiceId || !presetText) return;
+    addRecentPresetMessage(presetText).then(() => loadRecentPresets());
+
+    const cached = messages?.find(
+      (m: Message) => m.voice_profile_id === presetVoiceId && m.text === presetText,
+    );
+    if (cached) {
+      setSelectedMessageId(cached.id);
+      setShowPreset(false);
+      setPresetText(null);
+      toast.show(t('alarmCreate.reusedMessage'));
+      return;
+    }
+
     ttsMutation.mutate({
       voice_profile_id: presetVoiceId,
       text: presetText,
@@ -105,12 +145,18 @@ export default function CreateAlarmScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('alarmCreate.createError')));
+      toast.show(getApiErrorMessage(err, t, t('alarmCreate.createError')));
     },
   });
 
   const toggleDay = (day: number) => {
     setRepeatDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
+  };
+
+  const selectVibration = (pattern: VibrationPattern) => {
+    setVibrationPattern(pattern);
+    if (pattern === 'default') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    else if (pattern === 'strong') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   };
 
   const handleSubmit = () => {
@@ -120,10 +166,12 @@ export default function CreateAlarmScreen() {
       time,
       repeatDays,
       mode,
+      vibrationPattern,
+      wakeMode: mode === 'tts' ? wakeMode : undefined,
       voiceProfileId,
       snoozeMinutes: snooze,
       targetUserId,
-    });
+    }, t);
     if (!validated.ok) {
       toast.show(validated.error);
       return;
@@ -140,20 +188,23 @@ export default function CreateAlarmScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView style={formStyles.container} contentContainerStyle={formStyles.content}>
       {/* 누구에게? */}
       {friends && friends.length > 0 && (
         <>
-          <Text style={styles.sectionTitle}>{t('alarmCreate.forWho')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.targetRow}>
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.forWho')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={localStyles.targetRow}>
             <TouchableOpacity
-              style={[styles.targetChip, !targetUserId && styles.targetChipActive]}
+              style={[localStyles.targetChip, !targetUserId && localStyles.targetChipActive]}
               onPress={() => {
                 setTargetUserId(null);
                 setTargetName(null);
               }}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: !targetUserId }}
+              accessibilityLabel={t('alarmCreate.forMe')}
             >
-              <Text style={[styles.targetText, !targetUserId && styles.targetTextActive]}>
+              <Text style={[localStyles.targetText, !targetUserId && localStyles.targetTextActive]}>
                 {t('alarmCreate.forMe')}
               </Text>
             </TouchableOpacity>
@@ -163,13 +214,16 @@ export default function CreateAlarmScreen() {
               return (
                 <TouchableOpacity
                   key={f.id}
-                  style={[styles.targetChip, isSelected && styles.targetChipActive]}
+                  style={[localStyles.targetChip, isSelected && localStyles.targetChipActive]}
                   onPress={() => {
                     setTargetUserId(isSelected ? null : friendId);
                     setTargetName(isSelected ? null : f.friend_name || f.friend_email || null);
                   }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={f.friend_name || f.friend_email?.split('@')[0] || '?'}
                 >
-                  <Text style={[styles.targetText, isSelected && styles.targetTextActive]}>
+                  <Text style={[localStyles.targetText, isSelected && localStyles.targetTextActive]}>
                     {f.friend_name || f.friend_email?.split('@')[0] || '?'}
                   </Text>
                 </TouchableOpacity>
@@ -177,301 +231,350 @@ export default function CreateAlarmScreen() {
             })}
           </ScrollView>
           {targetName && (
-            <Text style={styles.targetHint}>
+            <Text style={localStyles.targetHint}>
               {t('alarmCreate.targetHint', { name: targetName })}
             </Text>
           )}
         </>
       )}
 
-      {/* 시간 선택 */}
-      <Text style={styles.sectionTitle}>{t('alarmCreate.time')}</Text>
-      <View style={styles.timePickerContainer}>
-        <View style={styles.timePicker}>
-          {/* 시 */}
-          <View style={styles.timeColumn}>
-            <TouchableOpacity style={styles.timeArrow} onPress={() => setHour((h) => (h + 1) % 24)}>
-              <Text style={styles.arrowText}>▲</Text>
-            </TouchableOpacity>
-            <Text style={styles.timeValue}>{hour.toString().padStart(2, '0')}</Text>
+      {/* 시간 선�� */}
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.time')}</Text>
+      <View style={formStyles.timePickerContainer}>
+        <Text style={formStyles.ampmLabel}>
+          {hour < 12 ? t('alarmCreate.am') : t('alarmCreate.pm')}
+        </Text>
+        <View style={formStyles.timePicker}>
+          <View style={formStyles.timeColumn}>
             <TouchableOpacity
-              style={styles.timeArrow}
-              onPress={() => setHour((h) => (h - 1 + 24) % 24)}
+              style={formStyles.timeArrow}
+              onPress={() => setHour((h) => (h + 1) % 24)}
+              accessibilityLabel={t('alarmCreate.hourUp')}
+              accessibilityRole="button"
             >
-              <Text style={styles.arrowText}>▼</Text>
+              <Text style={formStyles.arrowText}>▲</Text>
+            </TouchableOpacity>
+            <Text style={formStyles.timeValue}>{hour.toString().padStart(2, '0')}</Text>
+            <TouchableOpacity
+              style={formStyles.timeArrow}
+              onPress={() => setHour((h) => (h - 1 + 24) % 24)}
+              accessibilityLabel={t('alarmCreate.hourDown')}
+              accessibilityRole="button"
+            >
+              <Text style={formStyles.arrowText}>▼</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.timeSeparator}>:</Text>
+          <Text style={formStyles.timeSeparator}>:</Text>
 
-          {/* 분 */}
-          <View style={styles.timeColumn}>
+          <View style={formStyles.timeColumn}>
             <TouchableOpacity
-              style={styles.timeArrow}
+              style={formStyles.timeArrow}
               onPress={() => setMinute((m) => (m + 5) % 60)}
+              accessibilityLabel={t('alarmCreate.minuteUp')}
+              accessibilityRole="button"
             >
-              <Text style={styles.arrowText}>▲</Text>
+              <Text style={formStyles.arrowText}>▲</Text>
             </TouchableOpacity>
-            <Text style={styles.timeValue}>{minute.toString().padStart(2, '0')}</Text>
+            <Text style={formStyles.timeValue}>{minute.toString().padStart(2, '0')}</Text>
             <TouchableOpacity
-              style={styles.timeArrow}
+              style={formStyles.timeArrow}
               onPress={() => setMinute((m) => (m - 5 + 60) % 60)}
+              accessibilityLabel={t('alarmCreate.minuteDown')}
+              accessibilityRole="button"
             >
-              <Text style={styles.arrowText}>▼</Text>
+              <Text style={formStyles.arrowText}>▼</Text>
             </TouchableOpacity>
           </View>
         </View>
+        <Text style={formStyles.timeUntil}>
+          {(() => {
+            const { hours: h, minutes: m } = getTimeUntilAlarm(hour, minute);
+            if (h === 0) return t('alarmCreate.alarmInMinutes', { minutes: m });
+            if (m === 0) return t('alarmCreate.alarmInHours', { hours: h });
+            return t('alarmCreate.alarmIn', { hours: h, minutes: m });
+          })()}
+        </Text>
       </View>
 
       {/* 반복 요일 */}
-      <Text style={styles.sectionTitle}>{t('alarmCreate.repeat')}</Text>
-      <View style={styles.daysRow}>
-        {DAYS_OF_WEEK.map((day, index) => (
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.repeat')}</Text>
+      <View style={formStyles.daysRow}>
+        {DAY_KEYS.map((key, index) => (
           <TouchableOpacity
             key={index}
-            style={[styles.dayChip, repeatDays.includes(index) && styles.dayChipActive]}
+            style={[formStyles.dayChip, repeatDays.includes(index) && formStyles.dayChipActive]}
             onPress={() => toggleDay(index)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: repeatDays.includes(index) }}
+            accessibilityLabel={t(key)}
           >
-            <Text style={[styles.dayText, repeatDays.includes(index) && styles.dayTextActive]}>
-              {day}
+            <Text style={[formStyles.dayText, repeatDays.includes(index) && formStyles.dayTextActive]}>
+              {t(key)}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
-      <View style={styles.quickDays}>
-        <TouchableOpacity style={styles.quickChip} onPress={() => quickSetDays('daily')}>
-          <Text style={styles.quickText}>{t('alarms.daily')}</Text>
+      <View style={formStyles.quickDays}>
+        <TouchableOpacity style={formStyles.quickChip} onPress={() => quickSetDays('daily')} accessibilityRole="button" accessibilityLabel={t('alarms.daily')}>
+          <Text style={formStyles.quickText}>{t('alarms.daily')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickChip} onPress={() => quickSetDays('weekday')}>
-          <Text style={styles.quickText}>{t('alarms.weekday')}</Text>
+        <TouchableOpacity style={formStyles.quickChip} onPress={() => quickSetDays('weekday')} accessibilityRole="button" accessibilityLabel={t('alarms.weekday')}>
+          <Text style={formStyles.quickText}>{t('alarms.weekday')}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.quickChip} onPress={() => quickSetDays('weekend')}>
-          <Text style={styles.quickText}>{t('alarms.weekend')}</Text>
+        <TouchableOpacity style={formStyles.quickChip} onPress={() => quickSetDays('weekend')} accessibilityRole="button" accessibilityLabel={t('alarms.weekend')}>
+          <Text style={formStyles.quickText}>{t('alarms.weekend')}</Text>
         </TouchableOpacity>
       </View>
 
       {/* 재생 모드 */}
-      <Text style={styles.sectionTitle}>재생 모드</Text>
-      <View style={styles.modeRow}>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.playMode')}</Text>
+      <View style={formStyles.modeRow}>
         <TouchableOpacity
-          style={[styles.modeChip, mode === 'tts' && styles.modeChipActive]}
+          style={[formStyles.modeChip, mode === 'tts' && formStyles.modeChipActive]}
           onPress={() => setMode('tts')}
           accessibilityRole="radio"
           accessibilityState={{ selected: mode === 'tts' }}
+          accessibilityLabel={t('alarmCreate.ttsMode')}
         >
-          <Text style={[styles.modeText, mode === 'tts' && styles.modeTextActive]}>
-            🗣️ TTS
+          <Text style={[formStyles.modeText, mode === 'tts' && formStyles.modeTextActive]}>
+            🗣️ {t('alarmCreate.ttsMode')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.modeChip, mode === 'sound-only' && styles.modeChipActive]}
+          style={[formStyles.modeChip, mode === 'sound-only' && formStyles.modeChipActive]}
           onPress={() => setMode('sound-only')}
           accessibilityRole="radio"
           accessibilityState={{ selected: mode === 'sound-only' }}
+          accessibilityLabel={t('alarmCreate.soundOnlyMode')}
         >
-          <Text style={[styles.modeText, mode === 'sound-only' && styles.modeTextActive]}>
-            🔊 원본
+          <Text style={[formStyles.modeText, mode === 'sound-only' && formStyles.modeTextActive]}>
+            🔊 {t('alarmCreate.soundOnlyMode')}
           </Text>
         </TouchableOpacity>
       </View>
 
       {mode === 'sound-only' && (
         <>
-          <Text style={styles.sectionTitle}>음성 프로필</Text>
-          {readyVoices.length === 0 ? (
-            <View style={styles.emptyVoiceBox}>
-              <Text style={styles.emptyVoiceText}>
-                원본 재생 모드는 등록된 음성 프로필이 필요해요.
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.voiceProfile')}</Text>
+          {readyVoices.length === 0 && readyFamilyVoices.length === 0 ? (
+            <View style={formStyles.emptyVoiceBox}>
+              <Text style={formStyles.emptyVoiceText}>
+                {t('alarmCreate.voiceProfileRequired')}
               </Text>
             </View>
           ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.voiceRow}
-            >
-              {readyVoices.map((v: VoiceProfile) => {
-                const selected = voiceProfileId === v.id;
-                return (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={[styles.voiceChip, selected && styles.voiceChipActive]}
-                    onPress={() => setVoiceProfileId(selected ? null : v.id)}
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={formStyles.voiceRow}
+              >
+                {readyVoices.map((v: VoiceProfile) => {
+                  const selected = voiceProfileId === v.id;
+                  return (
+                    <TouchableOpacity
+                      key={v.id}
+                      style={[formStyles.voiceChip, selected && formStyles.voiceChipActive]}
+                      onPress={() => setVoiceProfileId(selected ? null : v.id)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={v.name}
+                    >
+                      <Text style={[formStyles.voiceText, selected && formStyles.voiceTextActive]}>
+                        {v.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+              {readyFamilyVoices.length > 0 && (
+                <>
+                  <Text style={formStyles.voiceSubLabel}>{t('alarmCreate.familyVoices')}</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={formStyles.voiceRow}
                   >
-                    <Text style={[styles.voiceText, selected && styles.voiceTextActive]}>
-                      {v.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                    {readyFamilyVoices.map((v: FamilyVoiceProfile) => {
+                      const selected = voiceProfileId === v.id;
+                      return (
+                        <TouchableOpacity
+                          key={v.id}
+                          style={[formStyles.voiceChip, selected && formStyles.voiceChipActive]}
+                          onPress={() => setVoiceProfileId(selected ? null : v.id)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`${v.name} (${v.owner_name ?? ''})`}
+                        >
+                          <Text style={[formStyles.voiceText, selected && formStyles.voiceTextActive]}>
+                            {v.name}
+                          </Text>
+                          <Text style={formStyles.voiceOwnerText}>
+                            {v.owner_name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+            </>
           )}
           {soundOnlyInvalid && (
-            <Text style={styles.voiceHint}>
-              원본 재생 모드에서는 음성 프로필을 지정해야 합니다.
+            <Text style={formStyles.voiceHint}>
+              {t('alarmCreate.voiceProfileHint')}
             </Text>
           )}
         </>
       )}
 
+      {/* 깨우기 방식 */}
+      {mode === 'tts' && (
+        <>
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.wakeMode')}</Text>
+          <View style={formStyles.modeRow}>
+            <TouchableOpacity
+              style={[formStyles.modeChip, wakeMode === 'sound_then_voice' && formStyles.modeChipActive]}
+              onPress={() => setWakeMode('sound_then_voice')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'sound_then_voice' }}
+              accessibilityLabel={t('alarmCreate.soundThenVoice')}
+            >
+              <Text style={[formStyles.modeText, wakeMode === 'sound_then_voice' && formStyles.modeTextActive]}>
+                🔔 {t('alarmCreate.soundThenVoice')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[formStyles.modeChip, wakeMode === 'voice_only' && formStyles.modeChipActive]}
+              onPress={() => setWakeMode('voice_only')}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: wakeMode === 'voice_only' }}
+              accessibilityLabel={t('alarmCreate.voiceOnly')}
+            >
+              <Text style={[formStyles.modeText, wakeMode === 'voice_only' && formStyles.modeTextActive]}>
+                🗣️ {t('alarmCreate.voiceOnly')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
       {/* 스누즈 */}
-      <Text style={styles.sectionTitle}>{t('alarmCreate.snooze')}</Text>
-      <View style={styles.snoozeRow}>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.snooze')}</Text>
+      <View style={formStyles.snoozeRow}>
         {[5, 10, 15].map((min) => (
           <TouchableOpacity
             key={min}
-            style={[styles.snoozeChip, snooze === min && styles.snoozeChipActive]}
+            style={[formStyles.snoozeChip, snooze === min && formStyles.snoozeChipActive]}
             onPress={() => setSnooze(min)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: snooze === min }}
+            accessibilityLabel={t('alarmCreate.snoozeMin', { min })}
           >
-            <Text style={[styles.snoozeText, snooze === min && styles.snoozeTextActive]}>
+            <Text style={[formStyles.snoozeText, snooze === min && formStyles.snoozeTextActive]}>
               {t('alarmCreate.snoozeMin', { min })}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* 진동 패턴 */}
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.vibration')}</Text>
+      <View style={formStyles.snoozeRow}>
+        {(['default', 'strong', 'none'] as const).map((pattern) => (
+          <TouchableOpacity
+            key={pattern}
+            style={[formStyles.snoozeChip, vibrationPattern === pattern && formStyles.snoozeChipActive]}
+            onPress={() => selectVibration(pattern)}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: vibrationPattern === pattern }}
+            accessibilityLabel={t(`alarmCreate.vibration${pattern.charAt(0).toUpperCase() + pattern.slice(1)}`)}
+          >
+            <Text style={[formStyles.snoozeText, vibrationPattern === pattern && formStyles.snoozeTextActive]}>
+              {t(`alarmCreate.vibration${pattern.charAt(0).toUpperCase() + pattern.slice(1)}`)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {/* 메시지 선택 */}
-      <Text style={styles.sectionTitle}>{t('alarmCreate.message')}</Text>
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.message')}</Text>
       {messages && messages.length > 0 ? (
-        <View style={styles.messageList}>
+        <View style={formStyles.messageList}>
           {messages.map((msg: Message) => (
             <TouchableOpacity
               key={msg.id}
               style={[
-                styles.messageItem,
-                selectedMessageId === msg.id && styles.messageItemSelected,
+                formStyles.messageItem,
+                selectedMessageId === msg.id && formStyles.messageItemSelected,
               ]}
               onPress={() => setSelectedMessageId(msg.id)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedMessageId === msg.id }}
+              accessibilityLabel={`${msg.voice_name}: ${msg.text}`}
             >
-              <View style={styles.messageInfo}>
-                <Text style={styles.messageVoice}>🗣️ {msg.voice_name}</Text>
-                <Text style={styles.messageText} numberOfLines={1}>
+              <View style={formStyles.messageInfo}>
+                <Text style={formStyles.messageVoice}>🗣️ {msg.voice_name}</Text>
+                <Text style={formStyles.messageText} numberOfLines={1}>
                   "{msg.text}"
                 </Text>
               </View>
-              {selectedMessageId === msg.id && <Text style={styles.checkmark}>✓</Text>}
+              {selectedMessageId === msg.id && <Text style={formStyles.checkmark}>✓</Text>}
             </TouchableOpacity>
           ))}
         </View>
       ) : (
-        <View style={styles.emptyMessageBox}>
-          <Text style={styles.emptyMessageEmoji}>💬</Text>
-          <Text style={styles.emptyMessageTitle}>{t('alarmCreate.noMessages')}</Text>
-          <Text style={styles.emptyMessageDesc}>{t('alarmCreate.noMessagesDesc')}</Text>
-          <View style={styles.emptyMessageActions}>
+        <View style={formStyles.emptyMessageBox}>
+          <Text style={formStyles.emptyMessageEmoji}>💬</Text>
+          <Text style={formStyles.emptyMessageTitle}>{t('alarmCreate.noMessages')}</Text>
+          <Text style={[formStyles.emptyMessageDesc, { marginBottom: Spacing.md }]}>{t('alarmCreate.noMessagesDesc')}</Text>
+          <View style={localStyles.emptyMessageActions}>
             <TouchableOpacity
-              style={styles.emptyMessageBtn}
+              style={localStyles.emptyMessageBtn}
               onPress={() => router.push('/message/create')}
+              accessibilityRole="button"
+              accessibilityLabel={t('alarmCreate.goCreate')}
             >
-              <Text style={styles.emptyMessageBtnText}>{t('alarmCreate.goCreate')}</Text>
+              <Text style={localStyles.emptyMessageBtnText}>{t('alarmCreate.goCreate')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
       {/* 프리셋으로 빠르게 만들기 */}
-      <TouchableOpacity
-        style={styles.presetToggle}
-        onPress={() => setShowPreset((v) => !v)}
-      >
-        <Text style={styles.presetToggleText}>
-          {showPreset ? '▲' : '▼'} {t('alarmCreate.quickCreate')}
-        </Text>
-      </TouchableOpacity>
-
-      {showPreset && (
-        <View style={styles.presetSection}>
-          {/* 음성 선택 */}
-          <Text style={styles.presetLabel}>{t('alarmCreate.selectVoice')}</Text>
-          {readyVoices.length === 0 ? (
-            <TouchableOpacity
-              style={styles.emptyMessage}
-              onPress={() => router.push('/voice/record')}
-            >
-              <Text style={styles.emptyMessageText}>{t('alarmCreate.emptyVoice')}</Text>
-            </TouchableOpacity>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetRow}>
-              {readyVoices.map((v: VoiceProfile) => (
-                <TouchableOpacity
-                  key={v.id}
-                  style={[styles.targetChip, presetVoiceId === v.id && styles.targetChipActive]}
-                  onPress={() => setPresetVoiceId(v.id)}
-                >
-                  <Text style={[styles.targetText, presetVoiceId === v.id && styles.targetTextActive]}>
-                    {v.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          )}
-
-          {/* 카테고리 선택 */}
-          <Text style={styles.presetLabel}>{t('alarmCreate.presetCategory')}</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetRow}>
-            {PRESET_CATEGORIES.map((cat: PresetCategory) => (
-              <TouchableOpacity
-                key={cat.key}
-                style={[styles.targetChip, presetCategory === cat.key && styles.targetChipActive]}
-                onPress={() => {
-                  setPresetCategory(cat.key);
-                  setPresetText(null);
-                }}
-              >
-                <Text style={[styles.targetText, presetCategory === cat.key && styles.targetTextActive]}>
-                  {cat.emoji} {cat.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* 프리셋 메시지 목록 */}
-          <View style={styles.messageList}>
-            {PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messages.map((msg, i) => (
-              <TouchableOpacity
-                key={i}
-                style={[styles.messageItem, presetText === msg && styles.messageItemSelected]}
-                onPress={() => setPresetText(msg)}
-              >
-                <View style={styles.messageInfo}>
-                  <Text style={styles.messageText} numberOfLines={2}>"{msg}"</Text>
-                </View>
-                {presetText === msg && <Text style={styles.checkmark}>✓</Text>}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* 생성 버튼 */}
-          <TouchableOpacity
-            style={[
-              styles.presetGenerateBtn,
-              (!presetVoiceId || !presetText || ttsMutation.isPending) && styles.disabled,
-            ]}
-            onPress={handlePresetGenerate}
-            disabled={!presetVoiceId || !presetText || ttsMutation.isPending}
-          >
-            {ttsMutation.isPending ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Text style={styles.presetGenerateText}>{t('alarmCreate.generatePreset')}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+      <PresetMessageSection
+        showPreset={showPreset}
+        onTogglePreset={() => setShowPreset((v) => !v)}
+        readyVoices={readyVoices}
+        presetVoiceId={presetVoiceId}
+        onVoiceSelect={(id) => setPresetVoiceId(id)}
+        recentPresets={recentPresets}
+        presetText={presetText}
+        onPresetTextSelect={setPresetText}
+        presetCategory={presetCategory}
+        onCategorySelect={setPresetCategory}
+        isPending={ttsMutation.isPending}
+        onGenerate={handlePresetGenerate}
+        formStyles={formStyles}
+      />
 
       {/* 생성 버튼 */}
       <TouchableOpacity
         style={[
-          styles.createButton,
-          (!selectedMessageId || soundOnlyInvalid || createMutation.isPending) && styles.disabled,
+          localStyles.createButton,
+          (!selectedMessageId || soundOnlyInvalid || createMutation.isPending) && formStyles.disabled,
         ]}
         onPress={handleSubmit}
         disabled={!selectedMessageId || soundOnlyInvalid || createMutation.isPending}
+        accessibilityRole="button"
+        accessibilityLabel={t('alarmCreate.submit')}
+        accessibilityState={{ disabled: !selectedMessageId || soundOnlyInvalid || createMutation.isPending }}
       >
         {createMutation.isPending ? (
-          <ActivityIndicator color="#FFF" />
+          <ActivityIndicator color={colors.textOnPrimary} />
         ) : (
-          <Text style={styles.createText}>{t('alarmCreate.submit')}</Text>
+          <Text style={localStyles.createText}>{t('alarmCreate.submit')}</Text>
         )}
       </TouchableOpacity>
       <Toast message={toast.message} opacity={toast.opacity} />
@@ -479,352 +582,64 @@ export default function CreateAlarmScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-  },
-  sectionTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.md,
-    marginTop: Spacing.lg,
-  },
-  timePickerContainer: {
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-  },
-  timePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeColumn: {
-    alignItems: 'center',
-  },
-  timeArrow: {
-    padding: Spacing.sm,
-  },
-  arrowText: {
-    fontSize: 20,
-    color: Colors.light.primary,
-  },
-  timeValue: {
-    fontSize: 56,
-    fontWeight: '200',
-    color: Colors.light.text,
-    width: 80,
-    textAlign: 'center',
-  },
-  timeSeparator: {
-    fontSize: 48,
-    fontWeight: '200',
-    color: Colors.light.text,
-    marginHorizontal: Spacing.sm,
-  },
-  daysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.sm,
-  },
-  dayChip: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.light.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  dayChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  dayText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  dayTextActive: {
-    color: '#FFF',
-  },
-  quickDays: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  quickChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.light.surfaceVariant,
-  },
-  quickText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-  },
-  snoozeRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  snoozeChip: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  snoozeChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  snoozeText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  snoozeTextActive: {
-    color: '#FFF',
-  },
-  emptyMessage: {
-    backgroundColor: Colors.light.surfaceVariant,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    alignItems: 'center',
-  },
-  emptyMessageText: {
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  emptyMessageBox: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderStyle: 'dashed',
-  },
-  emptyMessageEmoji: {
-    fontSize: 40,
-    marginBottom: Spacing.sm,
-  },
-  emptyMessageTitle: {
-    fontSize: FontSize.md,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.xs,
-  },
-  emptyMessageDesc: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: Spacing.md,
-  },
-  emptyMessageActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  emptyMessageBtn: {
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-  },
-  emptyMessageBtnText: {
-    color: '#FFF',
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-  messageList: {
-    gap: Spacing.sm,
-  },
-  messageItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  messageItemSelected: {
-    borderColor: Colors.light.primary,
-    backgroundColor: Colors.light.surfaceVariant,
-  },
-  messageInfo: {
-    flex: 1,
-  },
-  messageVoice: {
-    fontSize: FontSize.sm,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  messageText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    marginTop: 2,
-  },
-  checkmark: {
-    fontSize: FontSize.lg,
-    color: Colors.light.primary,
-    fontWeight: '700',
-  },
-  createButton: {
-    backgroundColor: Colors.light.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    marginTop: Spacing.xl,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  createText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  targetRow: {
-    marginBottom: Spacing.sm,
-  },
-  targetChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    marginRight: Spacing.sm,
-  },
-  targetChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  targetText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  targetTextActive: {
-    color: '#FFF',
-  },
-  targetHint: {
-    fontSize: FontSize.sm,
-    color: Colors.light.accent,
-    fontWeight: '500',
-    marginBottom: Spacing.sm,
-  },
-  presetToggle: {
-    marginTop: Spacing.md,
-    paddingVertical: Spacing.sm,
-    alignItems: 'center',
-  },
-  presetToggleText: {
-    fontSize: FontSize.md,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  presetSection: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  presetLabel: {
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-    color: Colors.light.textSecondary,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  presetRow: {
-    marginBottom: Spacing.sm,
-  },
-  presetGenerateBtn: {
-    backgroundColor: Colors.light.accent,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.sm,
-    alignItems: 'center',
-    marginTop: Spacing.md,
-  },
-  presetGenerateText: {
-    color: '#FFF',
-    fontSize: FontSize.md,
-    fontWeight: '700',
-  },
-  modeRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  modeChip: {
-    flex: 1,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    alignItems: 'center',
-  },
-  modeChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  modeText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  modeTextActive: {
-    color: '#FFF',
-  },
-  voiceRow: {
-    flexDirection: 'row',
-  },
-  voiceChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    marginRight: Spacing.sm,
-  },
-  voiceChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  voiceText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  voiceTextActive: {
-    color: '#FFF',
-  },
-  voiceHint: {
-    fontSize: FontSize.sm,
-    color: Colors.light.error,
-    marginTop: Spacing.xs,
-  },
-  emptyVoiceBox: {
-    backgroundColor: Colors.light.surface,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderStyle: 'dashed',
-  },
-  emptyVoiceText: {
-    color: Colors.light.textSecondary,
-    fontSize: FontSize.sm,
-  },
-});
+function createLocalStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    targetRow: {
+      marginBottom: Spacing.sm,
+    },
+    targetChip: {
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      borderRadius: BorderRadius.full,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginRight: Spacing.sm,
+    },
+    targetChipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    targetText: {
+      fontSize: FontSize.md,
+      color: colors.text,
+      fontFamily: FontFamily.semibold,
+    },
+    targetTextActive: {
+      color: colors.textOnPrimary,
+    },
+    targetHint: {
+      fontSize: FontSize.sm,
+      color: colors.accent,
+      fontFamily: FontFamily.medium,
+      marginBottom: Spacing.sm,
+    },
+    emptyMessageActions: {
+      flexDirection: 'row',
+      gap: Spacing.sm,
+    },
+    emptyMessageBtn: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.sm,
+      borderRadius: BorderRadius.full,
+    },
+    emptyMessageBtnText: {
+      color: colors.textOnPrimary,
+      fontSize: FontSize.sm,
+      fontFamily: FontFamily.semibold,
+    },
+    createButton: {
+      backgroundColor: colors.primary,
+      borderRadius: BorderRadius.lg,
+      padding: Spacing.md,
+      alignItems: 'center',
+      marginTop: Spacing.xl,
+    },
+    createText: {
+      color: colors.textOnPrimary,
+      fontSize: FontSize.lg,
+      fontFamily: FontFamily.bold,
+    },
+  });
+}

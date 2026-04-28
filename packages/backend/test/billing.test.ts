@@ -244,6 +244,115 @@ describe('POST /billing/checkout', () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it('plan_key 미지정 → 400 + error_code PLAN_KEY_REQUIRED', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/billing/checkout', {}));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_KEY_REQUIRED');
+  });
+
+  it('없는 plan_key → error_code PLAN_NOT_FOUND', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'nonexistent' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_NOT_FOUND');
+  });
+
+  it('비활성 플랜 → error_code PLAN_INACTIVE', async () => {
+    mockDB.pushResult([{ ...PLAN_PLUS, is_active: 0 }]);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'plus_personal' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_INACTIVE');
+  });
+
+  it('free 플랜 → error_code FREE_NOT_BILLABLE', async () => {
+    mockDB.pushResult([PLAN_FREE]);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'free' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('FREE_NOT_BILLABLE');
+  });
+
+  it('사용자 없음 → error_code USER_NOT_FOUND', async () => {
+    mockDB.pushResult([PLAN_PLUS]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'plus_personal' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('USER_NOT_FOUND');
+  });
+
+  it('malformed JSON body → plan_key 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const req = new Request('http://localhost/billing/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not-json',
+    });
+    const res = await app.request(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_KEY_REQUIRED');
+  });
+
+  it('plan_key 가 문자열이 아닌 경우 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 12345 }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_KEY_REQUIRED');
+  });
+
+  it('period_days 가 0 또는 null 이면 기본값 30일 적용', async () => {
+    mockDB.pushResult([{ ...PLAN_PLUS, period_days: 0 }]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'plus_personal' }),
+    );
+    const body = await res.json();
+    expect(body.plan.period_days).toBe(30);
+    const starts = new Date(body.subscription.starts_at).getTime();
+    const expires = new Date(body.subscription.expires_at).getTime();
+    expect(expires - starts).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  it('DB 에러 → 500', async () => {
+    mockDB.pushResult([PLAN_PLUS]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    // subscription INSERT 가 에러를 발생시킴
+    const app = buildApp();
+    const origExecute = mockDB.client.execute;
+    let callCount = 0;
+    mockDB.client.execute = async (query: { sql: string; args: (string | number | null)[] }) => {
+      callCount++;
+      if (callCount === 3) throw new Error('DB write failed');
+      return origExecute(query);
+    };
+    const res = await app.request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'plus_personal' }),
+    );
+    expect(res.status).toBe(500);
+    mockDB.client.execute = origExecute;
+  });
 });
 
 describe('GET /billing/subscription', () => {
@@ -292,6 +401,43 @@ describe('GET /billing/subscription', () => {
     const sql = mockDB.calls[0].sql;
     expect(sql).toContain("s.status = 'active'");
     expect(sql).toContain("s.expires_at > datetime('now')");
+  });
+
+  it('family 구독이면 plan_group_id 가 non-null', async () => {
+    mockDB.pushResult([
+      {
+        sub_id: 'sub-fam',
+        user_id: 'user-pk-1',
+        plan_id: PLAN_FAMILY.id,
+        plan_group_id: 'group-1',
+        status: 'active',
+        starts_at: '2026-04-21T00:00:00.000Z',
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'family',
+        plan_name: '가족',
+        plan_type: 'family',
+        period_days: 30,
+        max_members: 6,
+        price_krw: 9900,
+      },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/billing/subscription'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subscription.plan_group_id).toBe('group-1');
+    expect(body.plan.plan_type).toBe('family');
+    expect(body.plan.max_members).toBe(6);
+    expect(body.plan.price_krw).toBe(9900);
+  });
+
+  it('DB 에러 → 500', async () => {
+    const app = buildApp();
+    const origExecute = mockDB.client.execute;
+    mockDB.client.execute = async () => { throw new Error('DB read failed'); };
+    const res = await app.request(jsonReq('GET', '/billing/subscription'));
+    expect(res.status).toBe(500);
+    mockDB.client.execute = origExecute;
   });
 });
 
@@ -362,6 +508,52 @@ describe('GET /billing/vouchers', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.vouchers).toEqual([]);
+  });
+
+  it('응답 필드 매핑 정확성 (subscription_id, used_at null 처리)', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        code: 'VA-TEST-CODE-0001',
+        plan_id: PLAN_PLUS.id,
+        issuer_subscription_id: 'sub-99',
+        redeemed_by_user_id: null,
+        status: 'issued',
+        issued_at: '2026-04-21T00:00:00.000Z',
+        used_at: null,
+        expires_at: '2026-05-21T00:00:00.000Z',
+        plan_key: 'plus_personal',
+        plan_name: '플러스 개인',
+        plan_type: 'personal',
+      },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/billing/vouchers'));
+    const body = await res.json();
+    expect(body.vouchers[0].subscription_id).toBe('sub-99');
+    expect(body.vouchers[0].redeemed_by_user_id).toBeNull();
+    expect(body.vouchers[0].used_at).toBeNull();
+    expect(body.vouchers[0].plan_type).toBe('personal');
+  });
+
+  it('SQL 에 issuer_user_id + ORDER BY issued_at DESC 포함', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([]);
+    const app = buildApp();
+    await app.request(jsonReq('GET', '/billing/vouchers'));
+    const voucherQuery = mockDB.calls.find((c) => c.sql.includes('voucher_codes'));
+    expect(voucherQuery?.sql).toContain('v.issuer_user_id = ?');
+    expect(voucherQuery?.sql).toContain('ORDER BY v.issued_at DESC');
+  });
+
+  it('DB 에러 → 500', async () => {
+    const app = buildApp();
+    const origExecute = mockDB.client.execute;
+    mockDB.client.execute = async () => { throw new Error('DB read failed'); };
+    const res = await app.request(jsonReq('GET', '/billing/vouchers'));
+    expect(res.status).toBe(500);
+    mockDB.client.execute = origExecute;
   });
 });
 
@@ -555,6 +747,147 @@ describe('POST /billing/redeem', () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain('본인');
+  });
+
+  it('code 누락 → error_code CODE_REQUIRED', async () => {
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/billing/redeem', {}));
+    const body = await res.json();
+    expect(body.error_code).toBe('CODE_REQUIRED');
+  });
+
+  it('잘못된 포맷 → error_code INVALID_FORMAT', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: 'BAD' }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('INVALID_FORMAT');
+  });
+
+  it('존재하지 않는 코드 → error_code CODE_NOT_FOUND', async () => {
+    mockDB.pushResult([{ id: 'user-pk-2' }]);
+    mockDB.pushResult([]);
+    const app = buildApp('google-2');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('CODE_NOT_FOUND');
+  });
+
+  it('이미 사용된 코드 → error_code CODE_ALREADY_USED', async () => {
+    const hash = await hashVoucherCode(VALID_CODE);
+    mockDB.pushResult([{ id: 'user-pk-2' }]);
+    mockDB.pushResult([
+      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'used', expires_at: FUTURE },
+    ]);
+    const app = buildApp('google-2');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('CODE_ALREADY_USED');
+  });
+
+  it('만료 status → error_code CODE_EXPIRED', async () => {
+    const hash = await hashVoucherCode(VALID_CODE);
+    mockDB.pushResult([{ id: 'user-pk-2' }]);
+    mockDB.pushResult([
+      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'expired', expires_at: PAST },
+    ]);
+    const app = buildApp('google-2');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('CODE_EXPIRED');
+  });
+
+  it('본인 발급 코드 → error_code SELF_ISSUED', async () => {
+    const hash = await hashVoucherCode(VALID_CODE);
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([
+      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+    ]);
+    const app = buildApp('google-1');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    const body = await res.json();
+    expect(body.error_code).toBe('SELF_ISSUED');
+  });
+
+  it('사용자 없음(google_id 매칭 실패) → 404 + USER_NOT_FOUND', async () => {
+    mockDB.pushResult([]); // no user
+    const app = buildApp('ghost');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('USER_NOT_FOUND');
+  });
+
+  it('voucher 에 연결된 플랜이 DB 에 없으면 → 404 + PLAN_NOT_FOUND', async () => {
+    const hash = await hashVoucherCode(VALID_CODE);
+    mockDB.pushResult([{ id: 'user-pk-2' }]);
+    mockDB.pushResult([
+      { id: 'v-1', code_hash: hash, plan_id: 'deleted-plan', issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+    ]);
+    mockDB.pushResult([]); // plan not found
+    const app = buildApp('google-2');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error_code).toBe('PLAN_NOT_FOUND');
+  });
+
+  it('redeem 성공 시 subscription.expires_at 는 plan.period_days 만큼 연장', async () => {
+    const hash = await hashVoucherCode(VALID_CODE);
+    mockDB.pushResult([{ id: 'user-pk-2' }]);
+    mockDB.pushResult([
+      { id: 'v-1', code_hash: hash, plan_id: PLAN_PLUS.id, issuer_user_id: 'user-pk-1', status: 'issued', expires_at: FUTURE },
+    ]);
+    mockDB.pushResult([PLAN_PLUS]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp('google-2');
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    const body = await res.json();
+    const starts = new Date(body.subscription.starts_at).getTime();
+    const expires = new Date(body.subscription.expires_at).getTime();
+    expect(expires - starts).toBe(30 * 24 * 60 * 60 * 1000);
+  });
+
+  it('malformed JSON body → code 빈 문자열 → 400', async () => {
+    const app = buildApp();
+    const req = new Request('http://localhost/billing/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not-json',
+    });
+    const res = await app.request(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('CODE_REQUIRED');
+  });
+
+  it('DB 에러 → 500', async () => {
+    const app = buildApp();
+    const origExecute = mockDB.client.execute;
+    mockDB.client.execute = async () => { throw new Error('DB write failed'); };
+    const res = await app.request(
+      jsonReq('POST', '/billing/redeem', { code: VALID_CODE }),
+    );
+    expect(res.status).toBe(500);
+    mockDB.client.execute = origExecute;
   });
 
   it('소문자 입력도 대문자로 정규화하여 동작', async () => {

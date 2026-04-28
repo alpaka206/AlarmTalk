@@ -33,6 +33,7 @@ export async function loggerMiddleware(c: Context, next: Next) {
   const isSlow = duration_ms >= SLOW_THRESHOLD_MS;
   const isError = status >= 500;
   const isClientError = status >= 400 && status < 500;
+  // eslint-disable-next-line no-console
   const logFn = isError || isSlow ? console.error : isClientError ? console.warn : console.log;
 
   logFn(

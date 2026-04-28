@@ -3,7 +3,10 @@ export type XpEvent =
   | 'alarm_snoozed'
   | 'alarm_dismissed'
   | 'family_alarm_received'
-  | 'friend_invited';
+  | 'friend_invited'
+  | 'streak_bonus_7'
+  | 'streak_bonus_30'
+  | 'streak_bonus_90';
 
 export const DAILY_XP_CAP = 200;
 
@@ -13,6 +16,9 @@ const XP_TABLE: Record<XpEvent, number> = {
   alarm_dismissed: 0,
   family_alarm_received: 10,
   friend_invited: 50,
+  streak_bonus_7: 100,
+  streak_bonus_30: 500,
+  streak_bonus_90: 2000,
 };
 
 const AFFECTION_TABLE: Record<XpEvent, number> = {
@@ -21,13 +27,23 @@ const AFFECTION_TABLE: Record<XpEvent, number> = {
   alarm_dismissed: 0,
   family_alarm_received: 3,
   friend_invited: 5,
+  streak_bonus_7: 0,
+  streak_bonus_30: 0,
+  streak_bonus_90: 0,
 };
 
+const CAP_EXEMPT: Partial<Record<XpEvent, true>> = {
+  streak_bonus_7: true,
+  streak_bonus_30: true,
+  streak_bonus_90: true,
+};
+
+export function isCapExempt(event: XpEvent): boolean {
+  return CAP_EXEMPT[event] === true;
+}
+
 export function isXpEvent(value: unknown): value is XpEvent {
-  return (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(XP_TABLE, value)
-  );
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(XP_TABLE, value);
 }
 
 export function computeXpForEvent(event: XpEvent): number {
@@ -96,8 +112,9 @@ export function computeGrant(
   cap: number = DAILY_XP_CAP,
 ): GrantResult {
   const earned = computeXpForEvent(event);
-  const xp = applyDailyXpCap(earned, alreadyEarnedToday, cap);
-  // 애정도는 일일 XP 캡의 영향을 받지 않는다 — 정서적 보상은 계속 누적.
+  const xp = isCapExempt(event)
+    ? { grantedXp: earned, capped: false, remainingCap: Math.max(cap - alreadyEarnedToday, 0) }
+    : applyDailyXpCap(earned, alreadyEarnedToday, cap);
   const affection = computeAffectionForEvent(event);
   return { xp, affection, event };
 }

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -13,18 +12,21 @@ import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { diarizeAudio, createVoiceClone } from '../../src/services/api';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import type { Speaker } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
+import { createVoiceDiarizeStyles } from '../../src/styles/voiceDiarizeStyles';
 
 export default function DiarizeScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const toast = useToast();
+  const { colors } = useTheme();
+  const styles = createVoiceDiarizeStyles(colors);
   const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [selectedSpeaker, setSelectedSpeaker] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export default function DiarizeScreen() {
       setStep('select');
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceDiarize.analyzeError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceDiarize.analyzeError')));
     },
   });
 
@@ -66,7 +68,7 @@ export default function DiarizeScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceDiarize.cloneError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceDiarize.cloneError')));
     },
   });
 
@@ -77,7 +79,7 @@ export default function DiarizeScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setSelectedFile(result.assets[0]);
+      setSelectedFile(result.assets[0]!);
     }
   };
 
@@ -107,7 +109,6 @@ export default function DiarizeScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Step 1: 파일 업로드 */}
       {step === 'upload' && (
         <>
           <View style={styles.stepHeader}>
@@ -116,7 +117,12 @@ export default function DiarizeScreen() {
             <Text style={styles.stepDesc}>{t('voiceDiarize.step1Desc')}</Text>
           </View>
 
-          <TouchableOpacity style={styles.pickButton} onPress={handlePickFile}>
+          <TouchableOpacity
+            style={styles.pickButton}
+            onPress={handlePickFile}
+            accessibilityRole="button"
+            accessibilityLabel={selectedFile ? t('voiceDiarize.a11yPickFile') + ': ' + selectedFile.name : t('voiceDiarize.a11yPickFile')}
+          >
             <Text style={styles.pickEmoji}>📞</Text>
             <Text style={styles.pickText}>
               {selectedFile ? selectedFile.name : t('voiceDiarize.pickFile')}
@@ -128,10 +134,13 @@ export default function DiarizeScreen() {
               style={[styles.analyzeButton, diarizeMutation.isPending && styles.disabled]}
               onPress={handleAnalyze}
               disabled={diarizeMutation.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={t('voiceDiarize.a11yAnalyze')}
+              accessibilityState={{ disabled: diarizeMutation.isPending }}
             >
               {diarizeMutation.isPending ? (
                 <View style={styles.loadingRow}>
-                  <ActivityIndicator color="#FFF" />
+                  <ActivityIndicator color={colors.textOnPrimary} />
                   <Text style={styles.analyzeText}>{t('voiceDiarize.analyzing')}</Text>
                 </View>
               ) : (
@@ -142,7 +151,6 @@ export default function DiarizeScreen() {
         </>
       )}
 
-      {/* Step 2: 화자 선택 */}
       {step === 'select' && (
         <>
           <View style={styles.stepHeader}>
@@ -161,6 +169,13 @@ export default function DiarizeScreen() {
                 selectedSpeaker === speaker.speaker_id && styles.speakerCardSelected,
               ]}
               onPress={() => handleSelectSpeaker(speaker.speaker_id)}
+              accessibilityRole="button"
+              accessibilityLabel={t('voiceDiarize.a11ySpeaker', {
+                index: index + 1,
+                duration: formatDuration(speaker.total_duration),
+                segments: speaker.segments.length,
+              })}
+              accessibilityState={{ selected: selectedSpeaker === speaker.speaker_id }}
             >
               <View style={styles.speakerAvatar}>
                 <Text style={styles.speakerAvatarText}>{String.fromCharCode(65 + index)}</Text>
@@ -182,13 +197,17 @@ export default function DiarizeScreen() {
             </TouchableOpacity>
           ))}
 
-          <TouchableOpacity style={styles.backButton} onPress={() => setStep('upload')}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setStep('upload')}
+            accessibilityRole="button"
+            accessibilityLabel={t('voiceDiarize.a11yBack')}
+          >
             <Text style={styles.backText}>{t('voiceDiarize.back')}</Text>
           </TouchableOpacity>
         </>
       )}
 
-      {/* Step 3: 이름 지정 */}
       {step === 'name' && (
         <>
           <View style={styles.stepHeader}>
@@ -202,23 +221,32 @@ export default function DiarizeScreen() {
             placeholder={t('voiceDiarize.namePlaceholder')}
             value={name}
             onChangeText={setName}
-            placeholderTextColor={Colors.light.textTertiary}
+            placeholderTextColor={colors.textTertiary}
             autoFocus
+            accessibilityLabel={t('voiceDiarize.a11yNameInput')}
           />
 
           <TouchableOpacity
             style={[styles.submitButton, cloneMutation.isPending && styles.disabled]}
             onPress={handleSubmit}
             disabled={cloneMutation.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={t('voiceDiarize.a11ySubmit')}
+            accessibilityState={{ disabled: cloneMutation.isPending }}
           >
             {cloneMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.submitText}>{t('voiceDiarize.submit')}</Text>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.backButton} onPress={() => setStep('select')}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setStep('select')}
+            accessibilityRole="button"
+            accessibilityLabel={t('voiceDiarize.a11yBack')}
+          >
             <Text style={styles.backText}>{t('voiceDiarize.backToSelect')}</Text>
           </TouchableOpacity>
         </>
@@ -227,155 +255,3 @@ export default function DiarizeScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-  },
-  stepHeader: {
-    marginBottom: Spacing.lg,
-  },
-  stepBadge: {
-    fontSize: FontSize.xs,
-    fontWeight: '700',
-    color: Colors.light.primary,
-    backgroundColor: Colors.light.primaryLight + '40',
-    alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-    marginBottom: Spacing.sm,
-  },
-  stepTitle: {
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
-  },
-  stepDesc: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    lineHeight: 22,
-  },
-  pickButton: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: Colors.light.primary,
-    borderStyle: 'dashed',
-    marginBottom: Spacing.lg,
-  },
-  pickEmoji: {
-    fontSize: 48,
-    marginBottom: Spacing.sm,
-  },
-  pickText: {
-    fontSize: FontSize.md,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  analyzeButton: {
-    backgroundColor: Colors.light.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  analyzeText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  speakerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.md,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  speakerCardSelected: {
-    borderColor: Colors.light.primary,
-  },
-  speakerAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.light.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: Spacing.md,
-  },
-  speakerAvatarText: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.primaryDark,
-  },
-  speakerInfo: {
-    flex: 1,
-  },
-  speakerLabel: {
-    fontSize: FontSize.lg,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  speakerDuration: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-  },
-  speakerSegments: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-    marginTop: 2,
-  },
-  speakerPlay: {
-    fontSize: FontSize.sm,
-    color: Colors.light.primary,
-  },
-  nameInput: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    fontSize: FontSize.lg,
-    color: Colors.light.text,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    marginBottom: Spacing.lg,
-  },
-  submitButton: {
-    backgroundColor: Colors.light.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  submitText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  backButton: {
-    alignItems: 'center',
-    padding: Spacing.md,
-  },
-  backText: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-  },
-});

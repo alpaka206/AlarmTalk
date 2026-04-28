@@ -1,0 +1,63 @@
+appId: com.devrel.voicealarm
+name: "Alarm Voice Toggle & Wake Mode"
+---
+
+- launchApp
+
+- tapOn: "⏰"
+- assertVisible:
+    text: "알람"
+    timeout: 3000
+
+- tapOn:
+    text: ".*추가.*|.*만들기.*"
+    regex: true
+
+- assertVisible:
+    text: "알람 설정"
+    timeout: 3000
+
+- scrollUntilVisible:
+    element:
+      text: ".*🗣️.*"
+      regex: true
+    direction: DOWN
+
+- tapOn:
+    text: ".*🗣️.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: ".*깨우기 방식.*|.*음성.*프로필.*"
+    regex: true
+    timeout: 3000
+    optional: true
+
+- tapOn:
+    text: ".*🔔.*소리.*음성.*|.*sound.*then.*voice.*"
+    regex: true
+    optional: true
+
+- tapOn:
+    text: ".*🗣️.*음성만.*|.*voice.*only.*"
+    regex: true
+    optional: true
+
+- scrollUntilVisible:
+    element:
+      text: ".*🔊.*"
+      regex: true
+    direction: UP
+    optional: true
+
+- tapOn:
+    text: ".*🔊.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: "알람 설정"
+    timeout: 3000
+
+- back

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { loggerMiddleware } from '../src/middleware/logger';
 
-function buildApp(status = 200) {
+function buildApp(_status = 200) {
   const app = new Hono();
   app.use('*', loggerMiddleware);
   app.get('/ok', (c) => c.json({ ok: true }));
@@ -20,6 +20,7 @@ function req(path: string) {
 }
 
 describe('loggerMiddleware', () => {
+  /* eslint-disable no-console */
   const origLog = console.log;
   const origWarn = console.warn;
   const origError = console.error;
@@ -41,6 +42,7 @@ describe('loggerMiddleware', () => {
     console.warn = origWarn;
     console.error = origError;
   });
+  /* eslint-enable no-console */
 
   it('X-Request-Id 헤더 설정', async () => {
     const app = buildApp();

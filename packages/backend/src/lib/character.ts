@@ -26,3 +26,21 @@ export function computeStageFromLevel(level: number): CharacterStage {
 export function computeStageFromXp(xp: number): CharacterStage {
   return computeStageFromLevel(computeLevelFromXp(xp));
 }
+
+export interface CharacterStats {
+  diligence: number;
+  health: number;
+  consistency: number;
+}
+
+export function computeStats(
+  alarmCompletions: number,
+  routineCompletions: number,
+  activeDays: number,
+): CharacterStats {
+  return {
+    diligence: Math.max(0, Math.floor(alarmCompletions)),
+    health: Math.max(0, Math.floor(routineCompletions)),
+    consistency: Math.max(0, Math.floor(activeDays)),
+  };
+}

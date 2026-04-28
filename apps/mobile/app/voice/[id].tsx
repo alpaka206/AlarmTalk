@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Alert,
   View,
   Text,
   TextInput,
-  StyleSheet,
   FlatList,
   ActivityIndicator,
   TouchableOpacity,
@@ -13,11 +12,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
+import { getDateLocale } from '../../src/i18n';
+import { useTheme } from '../../src/hooks/useTheme';
 import { getVoiceProfiles, getMessages, getAlarms, updateVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { sanitizeVoiceName } from '../../src/lib/voiceName';
 import type { Message, Alarm, VoiceProfile } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
+import { createVoiceDetailStyles } from '../../src/styles/voiceDetailStyles';
 
 export default function VoiceDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +27,8 @@ export default function VoiceDetailScreen() {
   const queryClient = useQueryClient();
   const isAuthenticated = useAppStore((s) => s.isAuthenticated);
   const { t } = useTranslation();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createVoiceDetailStyles(colors), [colors]);
 
   const { data: profiles } = useQuery({
     queryKey: ['voiceProfiles'],
@@ -43,7 +47,7 @@ export default function VoiceDetailScreen() {
       setDraftName('');
     },
     onError: (err) => {
-      Alert.alert('이름 변경 실패', err instanceof Error ? err.message : '네트워크 오류');
+      Alert.alert(t('voiceDetail.renameFailed'), getApiErrorMessage(err, t, t('voiceDetail.renameNetworkError')));
     },
   });
 
@@ -53,9 +57,9 @@ export default function VoiceDetailScreen() {
   };
 
   const commitEdit = (currentName: string) => {
-    const sanitized = sanitizeVoiceName(draftName);
+    const sanitized = sanitizeVoiceName(draftName, t);
     if (!sanitized.ok) {
-      Alert.alert('입력 오류', sanitized.error ?? '이름이 올바르지 않습니다.');
+      Alert.alert(t('common.error'), sanitized.error ?? t('voiceDetail.renameInputError'));
       return;
     }
     if (sanitized.value === currentName) {
@@ -84,11 +88,53 @@ export default function VoiceDetailScreen() {
 
   const isLoading = loadingMessages || loadingAlarms;
 
+  type SectionItem = { type: 'section'; title: string };
+  type MessageItem = { type: 'message'; data: Message };
+  type AlarmItem = { type: 'alarm'; data: Alarm };
+  type ListItem = SectionItem | MessageItem | AlarmItem;
+
+  const listData = useMemo<ListItem[]>(() => [
+    ...(voiceMessages.length > 0
+      ? [{ type: 'section' as const, title: t('voiceDetail.messageList') }]
+      : []),
+    ...voiceMessages.map((m) => ({ type: 'message' as const, data: m })),
+    ...(voiceAlarms.length > 0
+      ? [{ type: 'section' as const, title: t('voiceDetail.alarmList') }]
+      : []),
+    ...voiceAlarms.map((a) => ({ type: 'alarm' as const, data: a })),
+  ], [voiceMessages, voiceAlarms, t]);
+
+  const renderListItem = useCallback(({ item }: { item: ListItem }) => {
+    if (item.type === 'section') {
+      return <Text style={styles.sectionTitle}>{item.title}</Text>;
+    }
+    if (item.type === 'message') {
+      const m = item.data as Message;
+      return (
+        <View style={styles.itemCard}>
+          <Text style={styles.itemCategory}>{m.category}</Text>
+          <Text style={styles.itemText} numberOfLines={2}>{m.text}</Text>
+          <Text style={styles.itemDate}>{new Date(m.created_at).toLocaleDateString(getDateLocale())}</Text>
+        </View>
+      );
+    }
+    const a = item.data as Alarm;
+    return (
+      <View style={styles.itemCard}>
+        <Text style={styles.alarmTime}>{a.time}</Text>
+        <Text style={styles.itemText} numberOfLines={1}>{a.message_text}</Text>
+        <Text style={[styles.itemDate, !a.is_active && styles.inactive]}>
+          {a.is_active ? t('voiceDetail.active') : t('voiceDetail.inactive')}
+        </Text>
+      </View>
+    );
+  }, [styles, t]);
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       {profile && (
         <View style={styles.profileHeader}>
-          <View style={styles.avatarLarge}>
+          <View style={styles.avatarLarge} accessibilityLabel={t('voiceDetail.a11yAvatar', { name: profile.name })}>
             <Text style={styles.avatarText}>{profile.name.charAt(0)}</Text>
           </View>
           {isEditingName ? (
@@ -100,50 +146,53 @@ export default function VoiceDetailScreen() {
                 onSubmitEditing={() => commitEdit(profile.name)}
                 maxLength={60}
                 style={styles.renameInput}
-                accessibilityLabel="음성 이름 입력"
+                accessibilityLabel={t('voiceDetail.a11yRenameInput')}
               />
               <TouchableOpacity
-                accessibilityLabel="이름 변경 저장"
+                accessibilityLabel={t('voiceDetail.a11yRenameSave')}
+                accessibilityRole="button"
                 onPress={() => commitEdit(profile.name)}
                 disabled={renameMutation.isPending}
                 style={styles.renameSaveBtn}
               >
                 <Text style={styles.renameSaveText}>
-                  {renameMutation.isPending ? '저장…' : '저장'}
+                  {renameMutation.isPending ? t('voiceDetail.renameSaving') : t('voiceDetail.renameSave')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                accessibilityLabel="이름 변경 취소"
+                accessibilityLabel={t('voiceDetail.a11yRenameCancel')}
+                accessibilityRole="button"
                 onPress={() => {
                   setIsEditingName(false);
                   setDraftName('');
                 }}
                 style={styles.renameCancelBtn}
               >
-                <Text style={styles.renameCancelText}>취소</Text>
+                <Text style={styles.renameCancelText}>{t('voiceDetail.renameCancel')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <>
               <Text style={styles.profileName}>{profile.name}</Text>
               <TouchableOpacity
-                accessibilityLabel="음성 이름 변경"
+                accessibilityLabel={t('voiceDetail.a11yRename')}
+                accessibilityRole="button"
                 onPress={() => beginEdit(profile.name)}
                 style={styles.renameBtn}
               >
-                <Text style={styles.renameText}>이름 변경</Text>
+                <Text style={styles.renameText}>{t('voiceDetail.rename')}</Text>
               </TouchableOpacity>
             </>
           )}
           <Text style={styles.profileDate}>
-            {new Date(profile.created_at).toLocaleDateString('ko-KR')}
+            {new Date(profile.created_at).toLocaleDateString(getDateLocale())}
           </Text>
           <View style={styles.statsRow}>
-            <View style={styles.statItem}>
+            <View style={styles.statItem} accessibilityLabel={t('voiceDetail.a11yStat', { label: t('voiceDetail.messages'), count: voiceMessages.length })}>
               <Text style={styles.statValue}>{voiceMessages.length}</Text>
               <Text style={styles.statLabel}>{t('voiceDetail.messages')}</Text>
             </View>
-            <View style={styles.statItem}>
+            <View style={styles.statItem} accessibilityLabel={t('voiceDetail.a11yStat', { label: t('voiceDetail.alarms'), count: voiceAlarms.length })}>
               <Text style={styles.statValue}>{voiceAlarms.length}</Text>
               <Text style={styles.statLabel}>{t('voiceDetail.alarms')}</Text>
             </View>
@@ -152,6 +201,8 @@ export default function VoiceDetailScreen() {
             <TouchableOpacity
               style={styles.createMessageBtn}
               onPress={() => router.push(`/message/create?voice_id=${id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={t('voiceDetail.a11yCreateMessage')}
             >
               <Text style={styles.createMessageText}>{t('voiceDetail.createMessage')}</Text>
             </TouchableOpacity>
@@ -160,54 +211,19 @@ export default function VoiceDetailScreen() {
       )}
 
       {isLoading ? (
-        <ActivityIndicator color={Colors.light.primary} style={{ marginTop: 40 }} />
+        <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={[
-            ...(voiceMessages.length > 0
-              ? [{ type: 'section', title: t('voiceDetail.messageList') } as const]
-              : []),
-            ...voiceMessages.map((m) => ({ type: 'message' as const, data: m })),
-            ...(voiceAlarms.length > 0
-              ? [{ type: 'section', title: t('voiceDetail.alarmList') } as const]
-              : []),
-            ...voiceAlarms.map((a) => ({ type: 'alarm' as const, data: a })),
-          ]}
+          data={listData}
           keyExtractor={(item, index) =>
             item.type === 'section' ? `section-${index}` : item.data.id
           }
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => {
-            if (item.type === 'section') {
-              return <Text style={styles.sectionTitle}>{item.title}</Text>;
-            }
-            if (item.type === 'message') {
-              const m = item.data as Message;
-              return (
-                <View style={styles.itemCard}>
-                  <Text style={styles.itemCategory}>{m.category}</Text>
-                  <Text style={styles.itemText} numberOfLines={2}>
-                    {m.text}
-                  </Text>
-                  <Text style={styles.itemDate}>
-                    {new Date(m.created_at).toLocaleDateString('ko-KR')}
-                  </Text>
-                </View>
-              );
-            }
-            const a = item.data as Alarm;
-            return (
-              <View style={styles.itemCard}>
-                <Text style={styles.alarmTime}>{a.time}</Text>
-                <Text style={styles.itemText} numberOfLines={1}>
-                  {a.message_text}
-                </Text>
-                <Text style={[styles.itemDate, !a.is_active && styles.inactive]}>
-                  {a.is_active ? t('voiceDetail.active') : t('voiceDetail.inactive')}
-                </Text>
-              </View>
-            );
-          }}
+          renderItem={renderListItem}
+          initialNumToRender={10}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews
           ListEmptyComponent={
             <View style={styles.empty}>
               <Text style={styles.emptyText}>{t('voiceDetail.empty')}</Text>
@@ -218,165 +234,3 @@ export default function VoiceDetailScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  profileHeader: {
-    alignItems: 'center',
-    paddingVertical: Spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.light.border,
-  },
-  avatarLarge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: Colors.light.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  avatarText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: Colors.light.primaryDark,
-  },
-  profileName: {
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    color: Colors.light.text,
-  },
-  profileDate: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textTertiary,
-    marginTop: Spacing.xs,
-  },
-  renameBtn: {
-    marginTop: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-  },
-  renameText: {
-    fontSize: FontSize.sm,
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  renameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    marginTop: Spacing.xs,
-  },
-  renameInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-  },
-  renameSaveBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    backgroundColor: Colors.light.primary,
-    borderRadius: BorderRadius.sm,
-  },
-  renameSaveText: {
-    color: '#fff',
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-  },
-  renameCancelBtn: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-  },
-  renameCancelText: {
-    color: Colors.light.textSecondary,
-    fontSize: FontSize.sm,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: Spacing.xl,
-    marginTop: Spacing.md,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: FontSize.xxl,
-    fontWeight: '700',
-    color: Colors.light.primary,
-  },
-  statLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    marginTop: 2,
-  },
-  list: {
-    padding: Spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  itemCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-  },
-  itemCategory: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  itemText: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    lineHeight: 22,
-  },
-  itemDate: {
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-    marginTop: 4,
-  },
-  alarmTime: {
-    fontSize: FontSize.xl,
-    fontWeight: '300',
-    color: Colors.light.text,
-    marginBottom: 4,
-  },
-  inactive: {
-    color: Colors.light.error,
-  },
-  createMessageBtn: {
-    marginTop: Spacing.md,
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.lg,
-  },
-  createMessageText: {
-    color: '#fff',
-    fontSize: FontSize.md,
-    fontWeight: '600',
-  },
-  empty: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xxl,
-  },
-  emptyText: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-  },
-});

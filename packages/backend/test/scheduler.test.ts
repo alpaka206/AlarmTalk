@@ -78,4 +78,86 @@ describe('selectFiringAlarms', () => {
   it('빈 배열이면 빈 결과', () => {
     expect(selectFiringAlarms([], tuesday0700)).toEqual([]);
   });
+
+  it('모든 알람이 발화 조건에 해당하면 전부 반환', () => {
+    const alarms = [
+      makeAlarm({ id: 'x', time: '07:00', repeat_days: [] }),
+      makeAlarm({ id: 'y', time: '07:00', repeat_days: [2] }),
+    ];
+    const fired = selectFiringAlarms(alarms, tuesday0700);
+    expect(fired).toHaveLength(2);
+  });
+
+  it('어떤 알람도 발화 조건에 해당하지 않으면 빈 배열', () => {
+    const alarms = [
+      makeAlarm({ id: 'a', time: '08:00' }),
+      makeAlarm({ id: 'b', time: '07:00', is_active: false }),
+      makeAlarm({ id: 'c', time: '07:00', repeat_days: [0, 6] }),
+    ];
+    expect(selectFiringAlarms(alarms, tuesday0700)).toEqual([]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — formatHHmm                                            */
+/* ------------------------------------------------------------------ */
+describe('formatHHmm — edge cases', () => {
+  it('자정 00:00', () => {
+    expect(formatHHmm(new Date(Date.UTC(2026, 0, 1, 0, 0, 0)))).toBe('00:00');
+  });
+
+  it('정오 12:00', () => {
+    expect(formatHHmm(new Date(Date.UTC(2026, 0, 1, 12, 0, 0)))).toBe('12:00');
+  });
+
+  it('한 자릿수 시/분 모두 제로패딩', () => {
+    expect(formatHHmm(new Date(Date.UTC(2026, 0, 1, 1, 5, 0)))).toBe('01:05');
+  });
+
+  it('최대 시각 23:59', () => {
+    expect(formatHHmm(new Date(Date.UTC(2026, 0, 1, 23, 59, 59)))).toBe('23:59');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Edge cases — shouldAlarmFire                                       */
+/* ------------------------------------------------------------------ */
+describe('shouldAlarmFire — edge cases', () => {
+  it('repeat_days가 비배열이면 빈 배열로 폴백 → 매일 발화', () => {
+    const alarm = makeAlarm({ time: '07:00', repeat_days: 'invalid' as unknown as number[] });
+    expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
+  });
+
+  it('repeat_days에 7개 요일 모두 포함 → 항상 발화', () => {
+    const alarm = makeAlarm({ time: '07:00', repeat_days: [0, 1, 2, 3, 4, 5, 6] });
+    expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
+  });
+
+  it('repeat_days에 중복 요일 → 정상 발화', () => {
+    const alarm = makeAlarm({ time: '07:00', repeat_days: [2, 2, 2] });
+    expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
+  });
+
+  it('자정 00:00 알람 발화', () => {
+    const midnight = new Date(Date.UTC(2026, 3, 21, 0, 0, 0));
+    const alarm = makeAlarm({ time: '00:00', repeat_days: [] });
+    expect(shouldAlarmFire(alarm, midnight)).toBe(true);
+  });
+
+  it('일요일(0) 알람 — 일요일 시각에 발화', () => {
+    const sunday0700 = new Date(Date.UTC(2026, 3, 19, 7, 0, 0)); // 2026-04-19 일요일
+    const alarm = makeAlarm({ time: '07:00', repeat_days: [0] });
+    expect(shouldAlarmFire(alarm, sunday0700)).toBe(true);
+  });
+
+  it('토요일(6) 알람 — 토요일 시각에 발화', () => {
+    const saturday0700 = new Date(Date.UTC(2026, 3, 25, 7, 0, 0)); // 2026-04-25 토요일
+    const alarm = makeAlarm({ time: '07:00', repeat_days: [6] });
+    expect(shouldAlarmFire(alarm, saturday0700)).toBe(true);
+  });
+
+  it('repeat_days null → 비배열 → 폴백 빈 배열 → 매일 발화', () => {
+    const alarm = makeAlarm({ time: '07:00', repeat_days: null as unknown as number[] });
+    expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
+  });
 });

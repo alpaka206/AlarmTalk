@@ -3,24 +3,24 @@
 ## System Overview
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
-│  Mobile App │     │     Web     │     │  External APIs   │
-│  (Expo RN)  │     │ (React+Vite)│     │                  │
-└──────┬──────┘     └──────┬──────┘     │  - Perso.ai      │
-       │                   │            │  - ElevenLabs    │
-       │   HTTPS + Bearer  │            │  - Google OAuth  │
-       └─────────┬─────────┘            └────────┬─────────┘
-                 │                               │
-         ┌───────▼───────┐                       │
-         │   Cloudflare  │◄──────────────────────┘
-         │   Workers     │   Server-side calls
-         │   (Hono)      │   (API keys never exposed)
-         └───────┬───────┘
-                 │
-         ┌───────▼───────┐
-         │   Turso DB    │
-         │   (SQLite)    │
-         └───────────────┘
+┌─────────────┐     ┌──────────────────┐
+│  Mobile App │     │  External APIs   │
+│  (Expo RN)  │     │                  │
+└──────┬──────┘     │  - Perso.ai      │
+       │            │  - ElevenLabs    │
+       │ HTTPS +    │  - Google OAuth  │
+       │ Bearer     └────────┬─────────┘
+       │                     │
+┌──────▼───────┐             │
+│  Cloudflare  │◄────────────┘
+│  Workers     │   Server-side calls
+│  (Hono)      │   (API keys never exposed)
+└──────┬───────┘
+       │
+┌──────▼───────┐
+│  Turso DB    │
+│  (SQLite)    │
+└──────────────┘
 ```
 
 ## Directory Structure
@@ -29,15 +29,18 @@
 apps/mobile/                    React Native (Expo) 앱
 ├── app/
 │   ├── (auth)/                 로그인/회원가입
-│   ├── (tabs)/                 메인 탭 네비게이션
-│   │   ├── index.tsx           홈 대시보드
-│   │   ├── alarms.tsx          알람 목록
+│   ├── (tabs)/                 메인 탭 네비게이션 (4개)
+│   │   ├── index.tsx           홈 (캐릭터 위젯 + 다음 알람)
 │   │   ├── voices.tsx          음성 프로필 관리
-│   │   ├── library.tsx         메시지 라이브러리
-│   │   ├── friends.tsx         친구 관리
-│   │   └── settings.tsx        설정
-│   ├── alarm/create.tsx        알람 생성
-│   ├── message/create.tsx      메시지 생성 + 선물
+│   │   ├── alarms.tsx          알람 목록
+│   │   └── compose.tsx         메시지 작성 (가족/커플)
+│   ├── alarm/{create,edit}.tsx 알람 생성/편집
+│   ├── character/              캐릭터 (스트릭 + 능력치)
+│   ├── code-register/          코드 등록 (이용권/초대)
+│   ├── family-alarm/create.tsx 가족 알람 예약
+│   ├── note/                   쪽지 작성/조회
+│   ├── people/                 내 사람들 (멤버/친구)
+│   ├── settings/               설정 (프로필 드롭다운)
 │   ├── voice/{record,upload,diarize}.tsx
 │   ├── gift/received.tsx       받은 선물
 │   └── onboarding.tsx          온보딩
@@ -47,34 +50,38 @@ apps/mobile/                    React Native (Expo) 앱
 packages/backend/               Cloudflare Workers API
 ├── src/
 │   ├── index.ts                Hono 앱 진입점
-│   ├── routes/                 API 라우트 핸들러
-│   │   ├── alarm.ts            알람 CRUD
-│   │   ├── voice.ts            음성 프로필 + 클론
+│   ├── routes/                 API 라우트 핸들러 (대형 파일은 aggregator 패턴)
+│   │   ├── alarm.ts            알람 CRUD (→ alarm-helpers/query/mutation)
+│   │   ├── auth.ts             이메일/비밀번호 인증 (register/login)
+│   │   ├── billing.ts          구독 + 이용권 (→ billing-helpers/query/mutation)
+│   │   ├── character.ts        캐릭터 + 스트릭 (→ character-helpers/query/mutation)
+│   │   ├── code.ts             코드 등록 (이용권/초대)
+│   │   ├── dub.ts              음성 더빙 (Perso.ai)
+│   │   ├── family.ts           가족 그룹 (→ family-group/invite/alarm)
+│   │   ├── friend.ts           친구 시스템
+│   │   ├── gift.ts             선물 시스템
+│   │   ├── library.ts          메시지 라이브러리
+│   │   ├── notes.ts            쪽지 (가족 간 텍스트)
+│   │   ├── push.ts             푸시 토큰 관리
+│   │   ├── stats.ts            사용자 활동 통계
 │   │   ├── tts.ts              TTS 생성 + 프리셋
 │   │   ├── user.ts             사용자 프로필
-│   │   ├── library.ts          메시지 라이브러리
-│   │   ├── friend.ts           친구 시스템
-│   │   └── gift.ts             선물 시스템
+│   │   └── voice.ts            음성 프로필 + 클론 (→ voice-upload/profile)
 │   ├── lib/
 │   │   ├── db.ts               Turso 클라이언트 + 스키마
+│   │   ├── migrations.ts       DB 마이그레이션 (13단계)
+│   │   ├── streak.ts           스트릭 계산 로직
+│   │   ├── xpRules.ts          XP 이벤트 규칙
+│   │   ├── character.ts        캐릭터 능력치 계산
+│   │   ├── logger.ts           구조화 로깅 + Sentry 연동
 │   │   ├── perso.ts            Perso.ai 클라이언트
 │   │   └── elevenlabs.ts       ElevenLabs 클라이언트
-│   ├── middleware/auth.ts      JWT 인증 (Google + Apple)
+│   ├── middleware/
+│   │   ├── auth.ts             JWT 인증 (Google + Apple + App JWT)
+│   │   └── cors.ts             CORS 미들웨어
 │   └── types.ts                공유 타입 정의
 └── wrangler.toml               Workers 설정
 
-packages/web/                   React 웹 대시보드
-├── src/
-│   ├── pages/                  페이지 컴포넌트
-│   │   ├── AlarmsPage.tsx
-│   │   ├── VoicesPage.tsx
-│   │   ├── MessagesPage.tsx
-│   │   ├── FriendsPage.tsx
-│   │   ├── GiftsPage.tsx
-│   │   └── SettingsPage.tsx
-│   ├── components/             공유 UI 컴포넌트
-│   └── services/               API 클라이언트
-└── vite.config.ts
 ```
 
 ## Database Schema
@@ -85,45 +92,82 @@ packages/web/                   React 웹 대시보드
 ├──────────────┤     ├──────────────┤     ├──────────────┤
 │ id (PK)      │◄────│ user_id (FK) │  ┌──│ id (PK)      │
 │ google_id    │     │ name         │  │  │ user_id (FK) │
-│ email        │     │ perso_voice_id│  │  │ voice_profile│
-│ name         │     │ elevenlabs_id│  │  │ text         │
-│ plan         │     │ status       │  │  │ audio_url    │
-│ daily_tts_*  │     └──────────────┘  │  │ category     │
+│ email        │     │ perso_voice_id│  │  │ text         │
+│ name         │     │ elevenlabs_id│  │  │ audio_url    │
+│ plan         │     │ status       │  │  │ category     │
+│ password_hash│     └──────────────┘  │  │ is_preset    │
 └──────┬───────┘                       │  └──────────────┘
-       │                               │         │
-       │     ┌──────────────┐          │  ┌──────▼───────┐
+       │                               │
+       │     ┌──────────────┐          │  ┌──────────────┐
        │     │   alarms     │          │  │message_library│
        │     ├──────────────┤          │  ├──────────────┤
        ├────►│ user_id (FK) │          │  │ user_id (FK) │
-       │     │ target_user  │          │  │ message_id   │
-       │     │ message_id ──┼──────────┘  │ is_favorite  │
-       │     │ time         │             └──────────────┘
-       │     │ repeat_days  │
-       │     │ snooze_min   │
+       │     │ message_id ──┼──────────┘  │ message_id   │
+       │     │ time         │             │ is_favorite  │
+       │     │ voice_mode   │             └──────────────┘
+       │     │ wake_style   │
        │     └──────────────┘
        │
        │     ┌──────────────┐     ┌──────────────┐
        │     │ friendships  │     │    gifts      │
        │     ├──────────────┤     ├──────────────┤
        ├────►│ user_a (FK)  │     │ sender_id    │
-       └────►│ user_b (FK)  │     │ recipient_id │
-             │ status       │     │ message_id   │
-             └──────────────┘     │ status       │
-                                  │ note         │
-                                  └──────────────┘
+       ├────►│ user_b (FK)  │     │ recipient_id │
+       │     │ status       │     │ status       │
+       │     └──────────────┘     └──────────────┘
+       │
+       │     ┌──────────────┐     ┌──────────────┐
+       │     │  characters  │     │    notes      │
+       │     ├──────────────┤     ├──────────────┤
+       ├────►│ user_id (FK) │     │ sender_id    │
+       │     │ xp, level    │     │ recipient_id │
+       │     │ stage        │     │ text         │
+       │     │ current_streak│     │ audio_url    │
+       │     └──────┬───────┘     └──────────────┘
+       │            │
+       │     ┌──────▼───────┐     ┌──────────────┐
+       │     │character_stats│     │plan_groups   │
+       │     ├──────────────┤     ├──────────────┤
+       │     │ diligence    │     │ owner_id(FK) │
+       │     │ health       │     │ plan_id      │
+       │     │ consistency  │     │ members[]    │
+       │     └──────────────┘     │ invites[]    │
+       │                          └──────────────┘
+       │     ┌──────────────┐
+       │     │ push_tokens  │
+       │     ├──────────────┤
+       └────►│ user_id (FK) │
+             │ expo_token   │
+             │ device_id    │
+             └──────────────┘
 ```
 
 ### Tables
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `users` | 사용자 프로필 + 플랜 | google_id, email, plan (free/plus/family), daily_tts_count |
-| `voice_profiles` | AI 음성 클론 프로필 | perso_voice_id, elevenlabs_voice_id, status (processing/ready/failed) |
-| `messages` | TTS 생성 메시지 | text, audio_url, category |
-| `alarms` | 알람 설정 | time (HH:mm), repeat_days (JSON), target_user_id (상호 알람) |
+| `users` | 사용자 프로필 + 플랜 | google_id, email, plan, daily_tts_count, password_hash |
+| `voice_profiles` | AI 음성 클론 프로필 | perso_voice_id, elevenlabs_voice_id, status |
+| `voice_uploads` | 원본 음성 업로드 | r2_key, duration_ms, sample_rate |
+| `voice_speakers` | 화자 분리 결과 | upload_id, speaker_label, segments |
+| `messages` | TTS 생성 메시지 | text, audio_url, category, is_preset |
+| `alarms` | 알람 설정 | time, repeat_days, voice_mode, wake_style |
 | `message_library` | 사용자 메시지 보관함 | is_favorite |
-| `friendships` | 친구 관계 | user_a→user_b, status (pending/accepted/blocked) |
-| `gifts` | 메시지 선물 | sender→recipient, status (pending/accepted/rejected) |
+| `friendships` | 친구 관계 | user_a→user_b, status |
+| `gifts` | 메시지 선물 | sender→recipient, status |
+| `characters` | 나무 캐릭터 | xp, level, stage, current_streak, longest_streak |
+| `character_xp_logs` | XP 이벤트 기록 | event_type, xp_amount, nonce |
+| `character_stats` | 캐릭터 능력치 | diligence, health, consistency |
+| `streak_achievements` | 스트릭 마일스톤 | milestone (7/30/90), achieved_at |
+| `plans` | 구독 플랜 정의 | key, price, period_days |
+| `subscriptions` | 사용자 구독 | plan_id, starts_at, expires_at |
+| `voucher_codes` | 이용권/초대 코드 | code, type, redeemed_by |
+| `plan_groups` | 가족 그룹 | owner_id, plan_id |
+| `plan_group_members` | 그룹 멤버 | group_id, user_id, role |
+| `plan_group_invites` | 그룹 초대 | group_id, code, expires_at |
+| `push_tokens` | 푸시 토큰 | expo_token, device_id |
+| `notes` | 가족 쪽지 | sender_id, recipient_id, text, audio_url |
+| `dub_jobs` | 더빙 작업 | perso_project_id, status |
 
 ## Data Flow
 
@@ -198,11 +242,12 @@ Client                    Backend                   Google/Apple
 
 ## Plan Limits
 
-| 리소스 | Free | Plus | Family |
-|--------|------|------|--------|
-| 음성 프로필 | 1개 | 3개 | 10개 |
+| 리소스 | Free | Personal | Family |
+|--------|------|----------|--------|
+| 음성 프로필 | 2개 | 2개 | 2개 (멤버 음성 읽기 전용) |
 | 일일 TTS 생성 | 3회 | 무제한 | 무제한 |
 | 알람 | 2개 | 무제한 | 무제한 |
+| 가족 쪽지 | - | - | 무제한 |
 
 ## External Services
 
@@ -220,13 +265,10 @@ Client                    Backend                   Google/Apple
 develop branch push
         │
         ├──► GitHub Actions: ci.yml
-        │    (TypeScript check matrix: backend + web + mobile)
+        │    (TypeScript check matrix: backend + mobile)
         │
-        ├──► deploy-backend.yml
-        │    (packages/backend/** 변경 시 → Cloudflare Workers)
-        │
-        └──► deploy-web.yml
-             (packages/web/** 변경 시 → Cloudflare Pages)
+        └──► deploy-backend.yml
+             (packages/backend/** 변경 시 → Cloudflare Workers)
 ```
 
 - `develop` → 자동 배포 (CI/CD)

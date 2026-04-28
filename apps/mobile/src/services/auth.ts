@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -26,11 +27,18 @@ export function useGoogleAuth() {
     path: 'redirect',
   });
 
+
+  const [nonce] = useState(
+    () => Math.random().toString(36).substring(2) + Date.now().toString(36),
+  );
+
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
     {
       clientId: GOOGLE_CLIENT_ID,
       scopes: ['openid', 'profile', 'email'],
       responseType: 'id_token',
+      usePKCE: false,
+      extraParams: { nonce },
       redirectUri,
     },
     {
@@ -119,7 +127,7 @@ export function decodeIdToken(idToken: string): {
     const parts = idToken.split('.');
     if (parts.length !== 3) return null;
     // base64url → base64
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
     const payload = JSON.parse(atob(b64));
     return {
       sub: payload.sub,

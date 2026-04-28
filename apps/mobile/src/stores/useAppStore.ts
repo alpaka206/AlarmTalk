@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { unregisterPushTokenFromServer } from '../services/notifications';
 
 export interface VoiceProfile {
   id: string;
@@ -67,6 +68,9 @@ interface AppState {
 
   // Preferences
   defaultSnoozeMinutes: number;
+  darkMode: boolean;
+  alarmNotifications: boolean;
+  messageNotifications: boolean;
 
   // Actions
   setAuth: (token: string, userId: string) => void;
@@ -79,6 +83,9 @@ interface AppState {
   completeOnboarding: () => void;
   incrementTtsCount: () => void;
   setDefaultSnoozeMinutes: (minutes: number) => void;
+  setDarkMode: (enabled: boolean) => void;
+  setAlarmNotifications: (enabled: boolean) => void;
+  setMessageNotifications: (enabled: boolean) => void;
   loadPersistedState: () => Promise<void>;
 }
 
@@ -94,6 +101,9 @@ export const useAppStore = create<AppState>((set, _get) => ({
   hasCompletedOnboarding: false,
   stateLoaded: false,
   defaultSnoozeMinutes: 5,
+  darkMode: false,
+  alarmNotifications: true,
+  messageNotifications: true,
 
   setAuth: async (token, userId) => {
     await AsyncStorage.setItem('auth_token', token);
@@ -102,6 +112,7 @@ export const useAppStore = create<AppState>((set, _get) => ({
   },
 
   clearAuth: async () => {
+    await unregisterPushTokenFromServer();
     await AsyncStorage.removeItem('auth_token');
     await AsyncStorage.removeItem('user_id');
     set({ isAuthenticated: false, firebaseToken: null, userId: null });
@@ -133,11 +144,29 @@ export const useAppStore = create<AppState>((set, _get) => ({
     set({ defaultSnoozeMinutes: minutes });
   },
 
+  setDarkMode: async (enabled) => {
+    await AsyncStorage.setItem('dark_mode', enabled ? 'true' : 'false');
+    set({ darkMode: enabled });
+  },
+
+  setAlarmNotifications: async (enabled) => {
+    await AsyncStorage.setItem('alarm_notifications', enabled ? 'true' : 'false');
+    set({ alarmNotifications: enabled });
+  },
+
+  setMessageNotifications: async (enabled) => {
+    await AsyncStorage.setItem('message_notifications', enabled ? 'true' : 'false');
+    set({ messageNotifications: enabled });
+  },
+
   loadPersistedState: async () => {
     const token = await AsyncStorage.getItem('auth_token');
     const userId = await AsyncStorage.getItem('user_id');
     const onboarding = await AsyncStorage.getItem('onboarding_complete');
     const snooze = await AsyncStorage.getItem('default_snooze_minutes');
+    const dark = await AsyncStorage.getItem('dark_mode');
+    const alarmNotif = await AsyncStorage.getItem('alarm_notifications');
+    const msgNotif = await AsyncStorage.getItem('message_notifications');
 
     set({
       firebaseToken: token,
@@ -145,6 +174,9 @@ export const useAppStore = create<AppState>((set, _get) => ({
       isAuthenticated: !!token,
       hasCompletedOnboarding: onboarding === 'true',
       defaultSnoozeMinutes: snooze ? parseInt(snooze, 10) : 5,
+      darkMode: dark === 'true',
+      alarmNotifications: alarmNotif !== 'false',
+      messageNotifications: msgNotif !== 'false',
       stateLoaded: true,
     });
   },

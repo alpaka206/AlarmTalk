@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 export type AuthMode = 'login' | 'register';
 
 export interface EmailPasswordFormValues {
@@ -7,10 +9,10 @@ export interface EmailPasswordFormValues {
   name: string;
 }
 
-export function validateEmailPasswordForm(values: EmailPasswordFormValues): string | null {
+export function validateEmailPasswordForm(values: EmailPasswordFormValues, t: TFunction): string | null {
   const { mode, email, password, name } = values;
-  if (!email.trim() || !password) return '모든 필드를 입력해주세요.';
-  if (mode === 'register' && !name.trim()) return '모든 필드를 입력해주세요.';
-  if (mode === 'register' && password.length < 8) return '비밀번호는 최소 8자 이상이어야 합니다.';
+  if (!email.trim() || !password) return t('authForm.allFieldsRequired');
+  if (mode === 'register' && !name.trim()) return t('authForm.allFieldsRequired');
+  if (mode === 'register' && password.length < 8) return t('authForm.passwordMinLength');
   return null;
 }

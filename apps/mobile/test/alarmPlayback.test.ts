@@ -105,7 +105,7 @@ describe('resolveAlarmPlayback', () => {
     expect(plan.kind).toBe('fallback');
     if (plan.kind === 'fallback') {
       expect(plan.uri).toBe(MOCK_DEFAULT_ALARM_URI);
-      expect(plan.reason).toContain('지정되지');
+      expect(plan.reasonKey).toBe('alarmPlayback.noVoiceProfile');
     }
   });
 
@@ -116,7 +116,7 @@ describe('resolveAlarmPlayback', () => {
       [READY_VOICE],
     );
     expect(plan.kind).toBe('fallback');
-    if (plan.kind === 'fallback') expect(plan.reason).toContain('찾을 수 없어');
+    if (plan.kind === 'fallback') expect(plan.reasonKey).toBe('alarmPlayback.voiceNotFound');
   });
 
   it('sound-only + processing 상태 voice → fallback (준비되지 않음)', () => {
@@ -126,7 +126,7 @@ describe('resolveAlarmPlayback', () => {
       [PROCESSING_VOICE],
     );
     expect(plan.kind).toBe('fallback');
-    if (plan.kind === 'fallback') expect(plan.reason).toContain('준비');
+    if (plan.kind === 'fallback') expect(plan.reasonKey).toBe('alarmPlayback.voiceNotReady');
   });
 
   it('mode 미지정(undefined) 이면 tts 로 기본 해석', () => {
@@ -140,16 +140,16 @@ describe('resolveAlarmPlayback', () => {
 });
 
 describe('getAlarmModeBadge', () => {
-  it('sound-only → 🔊 원본', () => {
-    expect(getAlarmModeBadge('sound-only')).toEqual({ emoji: '🔊', label: '원본' });
+  it('sound-only → 🔊 + i18n key', () => {
+    expect(getAlarmModeBadge('sound-only')).toEqual({ emoji: '🔊', labelKey: 'alarmPlayback.modeOriginal' });
   });
 
-  it('tts → 🗣️ TTS', () => {
-    expect(getAlarmModeBadge('tts')).toEqual({ emoji: '🗣️', label: 'TTS' });
+  it('tts → 🗣️ + i18n key', () => {
+    expect(getAlarmModeBadge('tts')).toEqual({ emoji: '🗣️', labelKey: 'alarmPlayback.modeTts' });
   });
 
   it('undefined → TTS 기본', () => {
-    expect(getAlarmModeBadge(undefined)).toEqual({ emoji: '🗣️', label: 'TTS' });
+    expect(getAlarmModeBadge(undefined)).toEqual({ emoji: '🗣️', labelKey: 'alarmPlayback.modeTts' });
   });
 });
 
@@ -175,7 +175,7 @@ describe('buildAlarmPreviewAction', () => {
     }
   });
 
-  it('sound-only plan → preview-audio, uri=MOCK_VOICE_SAMPLE_URI + voiceName 캡션', () => {
+  it('sound-only plan → preview-audio, uri=MOCK_VOICE_SAMPLE_URI + captionKey with params', () => {
     const plan: PlaybackPlan = {
       kind: 'sound-only',
       voiceProfileId: 'v1',
@@ -186,31 +186,32 @@ describe('buildAlarmPreviewAction', () => {
     expect(action.type).toBe('preview-audio');
     if (action.type === 'preview-audio') {
       expect(action.uri).toBe(MOCK_VOICE_SAMPLE_URI);
-      expect(action.caption).toContain('아빠');
+      expect(action.captionKey).toBe('alarmPlayback.originalSample');
+      expect(action.captionParams).toEqual({ name: '아빠' });
       expect(action.voiceName).toBe('아빠');
     }
   });
 
-  it('fallback plan → preview-audio, uri=MOCK_DEFAULT_ALARM_URI + 안내 캡션', () => {
+  it('fallback plan → preview-audio, uri=MOCK_DEFAULT_ALARM_URI + reasonKey as captionKey', () => {
     const plan: PlaybackPlan = {
       kind: 'fallback',
       uri: MOCK_DEFAULT_ALARM_URI,
-      reason: '음성 프로필이 지정되지 않아 기본 알람 톤으로 재생합니다.',
+      reasonKey: 'alarmPlayback.noVoiceProfile',
     };
     const action = buildAlarmPreviewAction(plan);
     expect(action.type).toBe('preview-audio');
     if (action.type === 'preview-audio') {
       expect(action.uri).toBe(MOCK_DEFAULT_ALARM_URI);
-      expect(action.caption).toContain('지정되지');
+      expect(action.captionKey).toBe('alarmPlayback.noVoiceProfile');
       expect(action.voiceName).toBe('');
     }
   });
 
-  it('error plan → toast 메시지로 전달', () => {
-    const plan: PlaybackPlan = { kind: 'error', reason: '재생할 메시지를 찾을 수 없습니다.' };
+  it('error plan → toast with messageKey', () => {
+    const plan: PlaybackPlan = { kind: 'error', reasonKey: 'alarmPlayback.noMessage' };
     const action = buildAlarmPreviewAction(plan);
     expect(action.type).toBe('toast');
-    if (action.type === 'toast') expect(action.message).toContain('찾을 수 없');
+    if (action.type === 'toast') expect(action.messageKey).toBe('alarmPlayback.noMessage');
   });
 
   it('resolve → action 엔드투엔드: tts 정상 경로', () => {
@@ -245,6 +246,9 @@ describe('buildAlarmPreviewAction', () => {
     );
     const action = buildAlarmPreviewAction(plan);
     expect(action.type).toBe('preview-audio');
-    if (action.type === 'preview-audio') expect(action.uri).toBe(MOCK_DEFAULT_ALARM_URI);
+    if (action.type === 'preview-audio') {
+      expect(action.uri).toBe(MOCK_DEFAULT_ALARM_URI);
+      expect(action.captionKey).toBe('alarmPlayback.noVoiceProfile');
+    }
   });
 });

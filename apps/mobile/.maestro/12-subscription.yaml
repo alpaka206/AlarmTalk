@@ -1,0 +1,87 @@
+appId: com.devrel.voicealarm
+name: "Subscription Management"
+---
+
+- launchApp
+
+- tapOn: "🏠"
+- assertVisible:
+    text: ".*홈.*"
+    regex: true
+    timeout: 3000
+
+- tapOn:
+    id: "profile-avatar"
+    optional: true
+- tapOn:
+    text: ".*프로필.*"
+    regex: true
+    optional: true
+
+- tapOn:
+    text: ".*설정.*"
+    regex: true
+    optional: true
+    timeout: 3000
+
+- assertVisible:
+    text: ".*구독 관리.*"
+    regex: true
+    timeout: 3000
+
+- tapOn:
+    text: "구독 관리"
+
+- assertVisible:
+    text: ".*현재 플랜.*"
+    regex: true
+    timeout: 3000
+
+- assertVisible:
+    text: "Free"
+    timeout: 3000
+
+- assertVisible:
+    text: "Plus"
+    timeout: 3000
+
+- assertVisible:
+    text: ".*패밀리.*"
+    regex: true
+    timeout: 3000
+
+- scrollUntilVisible:
+    element:
+      text: ".*업그레이드.*"
+      regex: true
+    direction: DOWN
+
+- assertVisible:
+    text: ".*₩3,900.*"
+    regex: true
+
+- assertVisible:
+    text: ".*₩7,900.*"
+    regex: true
+
+- assertVisible:
+    text: ".*이용권 코드.*"
+    regex: true
+
+- tapOn:
+    text: ".*Plus.*업그레이드.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: ".*업그레이드.*하시겠어요.*"
+    regex: true
+    timeout: 3000
+    optional: true
+
+- tapOn:
+    text: ".*취소.*"
+    regex: true
+    optional: true
+
+- back

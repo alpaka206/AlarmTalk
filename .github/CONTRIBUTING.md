@@ -27,9 +27,6 @@ npm run typecheck
 # Run all tests
 npm test
 
-# Web dashboard
-cd packages/web && npm run dev
-
 # Backend (Cloudflare Workers)
 cd packages/backend && npm run dev
 

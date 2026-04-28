@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
+import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 
 const tts = new Hono<AppEnv>();
@@ -18,15 +19,15 @@ tts.post('/generate', async (c) => {
   }>();
 
   if (!body.voice_profile_id || !body.text) {
-    return c.json({ error: 'voice_profile_id and text are required' }, 400);
+    return c.json({ error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' }, 400);
   }
 
   if (!UUID_RE.test(body.voice_profile_id)) {
-    return c.json({ error: 'Invalid voice_profile_id format' }, 400);
+    return c.json({ error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
   if (body.text.length > 200) {
-    return c.json({ error: 'Text must be 200 characters or less' }, 400);
+    return c.json({ error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' }, 400);
   }
 
   const validCategories = [
@@ -42,7 +43,7 @@ tts.post('/generate', async (c) => {
   ];
   if (body.category && !validCategories.includes(body.category)) {
     return c.json(
-      { error: `Invalid category. Must be one of: ${validCategories.join(', ')}` },
+      { error: `Invalid category. Must be one of: ${validCategories.join(', ')}`, error_code: 'INVALID_CATEGORY' },
       400,
     );
   }
@@ -54,9 +55,9 @@ tts.post('/generate', async (c) => {
   });
 
   if (user.rows.length > 0) {
-    const u = user.rows[0];
+    const u = user.rows[0]!;
     const plan = u.plan as string;
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]!;
 
     // 일일 리셋
     if (u.daily_tts_reset_at !== today) {
@@ -71,6 +72,7 @@ tts.post('/generate', async (c) => {
         return c.json(
           {
             error: '오늘의 TTS 생성 횟수를 초과했습니다. 업그레이드하면 무제한으로 사용 가능해요!',
+            error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
           },
           429,
         );
@@ -85,17 +87,17 @@ tts.post('/generate', async (c) => {
   });
 
   if (profile.rows.length === 0) {
-    return c.json({ error: 'Voice profile not found' }, 404);
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  const vp = profile.rows[0];
+  const vp = profile.rows[0]!;
   if (vp.status !== 'ready') {
-    return c.json({ error: 'Voice profile is not ready yet' }, 400);
+    return c.json({ error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' }, 400);
   }
 
   try {
     if (!vp.elevenlabs_voice_id) {
-      return c.json({ error: 'No voice ID available for this profile' }, 400);
+      return c.json({ error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' }, 400);
     }
 
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
@@ -125,7 +127,7 @@ tts.post('/generate', async (c) => {
     const bytes = new Uint8Array(audioBuffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]!);
     }
     const base64Audio = btoa(binary);
 
@@ -143,6 +145,7 @@ tts.post('/generate', async (c) => {
     return c.json(
       {
         error: 'TTS generation failed',
+        error_code: 'TTS_GENERATION_FAILED',
         detail: err instanceof Error ? err.message : 'Unknown error',
       },
       500,
@@ -169,7 +172,7 @@ tts.get('/messages', async (c) => {
 
   if (voiceProfileId) {
     if (!UUID_RE.test(voiceProfileId)) {
-      return c.json({ error: 'Invalid voice_profile_id format' }, 400);
+      return c.json({ error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
     }
     whereClause += ' AND m.voice_profile_id = ?';
     filterArgs.push(voiceProfileId);
@@ -191,7 +194,7 @@ tts.get('/messages', async (c) => {
     }),
   ]);
 
-  const total = Number(countRes.rows[0].total);
+  const total = Number(countRes.rows[0]!.total);
   return c.json({ messages: result.rows, total, limit, offset });
 });
 
@@ -202,18 +205,19 @@ tts.delete('/messages/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid message ID format' }, 400);
+    return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
   }
 
   const alarmCheck = await db.execute({
     sql: 'SELECT COUNT(*) as cnt FROM alarms WHERE message_id = ?',
     args: [id],
   });
-  const alarmCount = Number((alarmCheck.rows[0] as Record<string, unknown>)?.cnt ?? 0);
+  const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]!).cnt ?? 0);
 
   if (alarmCount > 0 && c.req.query('force') !== 'true') {
     return c.json({
       warning: true,
+      error_code: 'MESSAGE_IN_USE',
       alarm_count: alarmCount,
       message: `This message is used by ${alarmCount} alarm(s). Add ?force=true to delete anyway.`,
     }, 409);
@@ -230,7 +234,7 @@ tts.delete('/messages/:id', async (c) => {
   });
 
   if (result.rowsAffected === 0) {
-    return c.json({ error: 'Message not found' }, 404);
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
   }
 
   return c.json({ ok: true, alarms_affected: alarmCount });

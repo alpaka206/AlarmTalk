@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { PersoClient } from '../lib/perso';
 import { getDB } from '../lib/db';
+import { getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 
 const dub = new Hono<AppEnv>();
@@ -9,7 +10,7 @@ const dub = new Hono<AppEnv>();
 async function getSpaceSeq(perso: PersoClient): Promise<number> {
   const { result } = await perso.listSpaces();
   if (!result.length) throw new Error('No Perso spaces available');
-  return result[0].spaceSeq;
+  return result[0]!.spaceSeq;
 }
 
 dub.get('/languages', async (c) => {
@@ -24,21 +25,21 @@ dub.post('/', async (c) => {
   const perso = new PersoClient(c.env.PERSO_API_KEY);
 
   const formData = await c.req.formData();
-  const audioFile = formData.get('audio') as unknown as File | null;
+  const audioFile = getFormFile(formData, 'audio');
   const sourceLanguage = formData.get('source_language') as string | null;
   const targetLanguage = formData.get('target_language') as string | null;
   const sourceMessageId = formData.get('source_message_id') as string | null;
 
   if (!audioFile || !sourceLanguage || !targetLanguage) {
-    return c.json({ error: 'audio, source_language, target_language are required' }, 400);
+    return c.json({ error: 'audio, source_language, target_language are required', error_code: 'MISSING_REQUIRED_FIELDS' }, 400);
   }
 
   if (sourceLanguage === targetLanguage) {
-    return c.json({ error: 'Source and target languages must be different' }, 400);
+    return c.json({ error: 'Source and target languages must be different', error_code: 'SAME_LANGUAGE' }, 400);
   }
 
   if (sourceMessageId && !UUID_RE.test(sourceMessageId)) {
-    return c.json({ error: 'Invalid source_message_id format' }, 400);
+    return c.json({ error: 'Invalid source_message_id format', error_code: 'INVALID_SOURCE_MESSAGE_ID' }, 400);
   }
 
   const jobId = crypto.randomUUID();
@@ -58,7 +59,7 @@ dub.post('/', async (c) => {
     const { blobSasUrl } = await perso.getSasToken(fileName);
     await perso.uploadToBlob(blobSasUrl, audioBuffer);
 
-    const blobUrl = blobSasUrl.split('?')[0];
+    const blobUrl = blobSasUrl.split('?')[0]!;
     const registered = await perso.registerAudio(spaceSeq, blobUrl, fileName);
 
     const { result } = await perso.requestTranslation(spaceSeq, {
@@ -69,7 +70,7 @@ dub.post('/', async (c) => {
       numberOfSpeakers: 1,
     });
 
-    const projectSeq = result.startGenerateProjectIdList[0];
+    const projectSeq = result.startGenerateProjectIdList[0]!;
 
     await db.execute({
       sql: `UPDATE dub_jobs SET status = 'processing', perso_project_seq = ?, perso_media_seq = ? WHERE id = ?`,
@@ -83,7 +84,7 @@ dub.post('/', async (c) => {
       args: [err instanceof Error ? err.message : 'Unknown error', jobId],
     });
     return c.json(
-      { error: 'Failed to start dubbing', detail: err instanceof Error ? err.message : 'Unknown error' },
+      { error: 'Failed to start dubbing', error_code: 'DUB_START_FAILED', detail: err instanceof Error ? err.message : 'Unknown error' },
       500,
     );
   }
@@ -108,7 +109,7 @@ dub.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid dub job ID format' }, 400);
+    return c.json({ error: 'Invalid dub job ID format', error_code: 'INVALID_DUB_JOB_ID' }, 400);
   }
 
   const jobRes = await db.execute({
@@ -117,10 +118,10 @@ dub.get('/:id', async (c) => {
   });
 
   if (jobRes.rows.length === 0) {
-    return c.json({ error: 'Dub job not found' }, 404);
+    return c.json({ error: 'Dub job not found', error_code: 'DUB_JOB_NOT_FOUND' }, 404);
   }
 
-  const job = jobRes.rows[0];
+  const job = jobRes.rows[0]!;
 
   if (job.status === 'ready' || job.status === 'failed') {
     return c.json({
@@ -197,7 +198,7 @@ dub.get('/:id', async (c) => {
     const bytes = new Uint8Array(audioBuffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+      binary += String.fromCharCode(bytes[i]!);
     }
     const audioBase64 = btoa(binary);
 
@@ -211,13 +212,13 @@ dub.get('/:id', async (c) => {
       });
 
       if (srcMsg.rows.length > 0) {
-        const src = srcMsg.rows[0];
+        const src = srcMsg.rows[0]!;
         resultMessageId = crypto.randomUUID();
 
         await db.execute({
           sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category)
                 VALUES (?, ?, ?, ?, ?)`,
-          args: [resultMessageId, userId, src.voice_profile_id, `[${job.target_language}] ${src.text}`, src.category],
+          args: [resultMessageId, userId, src.voice_profile_id!, `[${job.target_language}] ${src.text}`, src.category!],
         });
 
         await db.execute({
@@ -242,7 +243,7 @@ dub.get('/:id', async (c) => {
     });
   } catch (err) {
     return c.json(
-      { error: 'Failed to check dubbing progress', detail: err instanceof Error ? err.message : 'Unknown error' },
+      { error: 'Failed to check dubbing progress', error_code: 'DUB_PROGRESS_CHECK_FAILED', detail: err instanceof Error ? err.message : 'Unknown error' },
       500,
     );
   }

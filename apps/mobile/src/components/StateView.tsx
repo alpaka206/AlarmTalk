@@ -1,6 +1,9 @@
+import { useMemo } from 'react';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { resolveStateView, type StateViewVariant } from '../lib/stateView';
-import { Colors, Spacing, BorderRadius, FontSize } from '../constants/theme';
+import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
+import { useTheme, type ThemeColors } from '../hooks/useTheme';
 
 interface StateViewProps {
   variant: StateViewVariant;
@@ -11,73 +14,79 @@ interface StateViewProps {
 }
 
 export function StateView({ variant, emoji, title, subtitle, action }: StateViewProps) {
-  const cfg = resolveStateView(variant, { emoji, title, subtitle });
+  const { t } = useTranslation();
+  const { colors } = useTheme();
+  const dynStyles = useMemo(() => createStyles(colors), [colors]);
+  const cfg = resolveStateView(variant, t, { emoji, title, subtitle });
 
   return (
     <View
-      style={styles.container}
+      style={dynStyles.container}
       accessibilityRole={variant === 'error' ? 'alert' : 'none'}
     >
       {variant === 'loading' ? (
-        <ActivityIndicator size="large" color={Colors.light.primary} style={styles.spinner} />
+        <ActivityIndicator size="large" color={colors.primary} style={dynStyles.spinner} />
       ) : (
-        <Text style={styles.emoji}>{cfg.emoji}</Text>
+        <Text style={dynStyles.emoji}>{cfg.emoji}</Text>
       )}
-      <Text style={styles.title}>{cfg.title}</Text>
+      <Text style={dynStyles.title}>{cfg.title}</Text>
       {cfg.subtitle ? (
-        <Text style={styles.subtitle}>{cfg.subtitle}</Text>
+        <Text style={dynStyles.subtitle}>{cfg.subtitle}</Text>
       ) : null}
       {action && (
         <Pressable
           onPress={action.onPress}
-          style={styles.actionButton}
+          style={dynStyles.actionButton}
           accessibilityRole="button"
+          accessibilityLabel={action.label}
         >
-          <Text style={styles.actionText}>{action.label}</Text>
+          <Text style={dynStyles.actionText}>{action.label}</Text>
         </Pressable>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 200,
-    padding: Spacing.lg,
-  },
-  spinner: {
-    marginBottom: Spacing.md,
-  },
-  emoji: {
-    fontSize: 40,
-    marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.light.text,
-    marginBottom: Spacing.xs,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textSecondary,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  actionButton: {
-    backgroundColor: Colors.light.primary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.md,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  actionText: {
-    color: '#FFFFFF',
-    fontSize: FontSize.sm,
-    fontWeight: '600',
-  },
-});
+function createStyles(colors: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 200,
+      padding: Spacing.lg,
+    },
+    spinner: {
+      marginBottom: Spacing.md,
+    },
+    emoji: {
+      fontSize: 40,
+      marginBottom: Spacing.md,
+    },
+    title: {
+      fontSize: FontSize.md,
+      fontFamily: FontFamily.semibold,
+      color: colors.text,
+      marginBottom: Spacing.xs,
+      textAlign: 'center',
+    },
+    subtitle: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
+      marginBottom: Spacing.md,
+      textAlign: 'center',
+    },
+    actionButton: {
+      backgroundColor: colors.primary,
+      paddingHorizontal: Spacing.lg,
+      paddingVertical: Spacing.md,
+      borderRadius: BorderRadius.md,
+      minHeight: 44,
+      justifyContent: 'center',
+    },
+    actionText: {
+      color: colors.textOnPrimary,
+      fontSize: FontSize.sm,
+      fontFamily: FontFamily.semibold,
+    },
+  });
+}

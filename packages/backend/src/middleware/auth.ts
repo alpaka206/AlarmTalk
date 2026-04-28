@@ -19,15 +19,18 @@ interface TokenPayload {
 export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
   if (!authHeader) {
-    return c.json({ error: 'Authorization header required', code: 'AUTH_MISSING' }, 401);
+    return c.json({ error: 'Authorization header required', error_code: 'AUTH_MISSING' }, 401);
   }
   if (!authHeader.startsWith('Bearer ')) {
-    return c.json({ error: 'Authorization header must use Bearer scheme', code: 'AUTH_INVALID_SCHEME' }, 401);
+    return c.json(
+      { error: 'Authorization header must use Bearer scheme', error_code: 'AUTH_INVALID_SCHEME' },
+      401,
+    );
   }
 
   const token = authHeader.slice(7);
   if (!token) {
-    return c.json({ error: 'Token is empty', code: 'AUTH_EMPTY_TOKEN' }, 401);
+    return c.json({ error: 'Token is empty', error_code: 'AUTH_EMPTY_TOKEN' }, 401);
   }
 
   try {
@@ -68,14 +71,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
           : message.includes('format')
             ? 'AUTH_MALFORMED_TOKEN'
             : 'AUTH_VERIFICATION_FAILED';
-    return c.json({ error: message, code }, 401);
+    return c.json({ error: message, error_code: code }, 401);
   }
 }
 
 function decodeJwtPayload(token: string): TokenPayload {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid token format');
-  const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
   return JSON.parse(atob(b64));
 }
 

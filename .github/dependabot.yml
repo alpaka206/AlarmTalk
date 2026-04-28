@@ -32,17 +32,6 @@ updates:
       - "backend"
 
   - package-ecosystem: "npm"
-    directory: "/packages/web"
-    target-branch: "develop"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "web"
-
-  - package-ecosystem: "npm"
     directory: "/apps/mobile"
     target-branch: "develop"
     schedule:

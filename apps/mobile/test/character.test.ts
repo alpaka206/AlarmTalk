@@ -6,9 +6,13 @@ import {
   shouldShowStageTransition,
   listDialogues,
   pickRandomDialogue,
+  pickStreakAwareDialogue,
   formatProgress,
   progressBarWidthPct,
 } from '../src/lib/character';
+import type { TFunction } from 'i18next';
+
+const t = ((key: string) => key) as TFunction;
 
 describe('normalizeStage', () => {
   it('returns seed for unknown values', () => {
@@ -30,15 +34,15 @@ describe('normalizeStage', () => {
 describe('stageToEmoji / stageToLabel', () => {
   it('maps seed', () => {
     expect(stageToEmoji('seed')).toBe('🌱');
-    expect(stageToLabel('seed')).toBe('씨앗');
+    expect(stageToLabel('seed', t)).toBe('character.stageSeed');
   });
   it('maps bloom', () => {
     expect(stageToEmoji('bloom')).toBe('🌸');
-    expect(stageToLabel('bloom')).toBe('꽃');
+    expect(stageToLabel('bloom', t)).toBe('character.stageBloom');
   });
   it('falls back to seed for unknown', () => {
     expect(stageToEmoji('xyz')).toBe('🌱');
-    expect(stageToLabel(null)).toBe('씨앗');
+    expect(stageToLabel(null, t)).toBe('character.stageSeed');
   });
 });
 
@@ -70,31 +74,55 @@ describe('shouldShowStageTransition', () => {
 });
 
 describe('listDialogues', () => {
-  it('returns 4 dialogues per stage', () => {
+  it('returns 7 dialogues per stage', () => {
     for (const s of ['seed', 'sprout', 'tree', 'bloom'] as const) {
-      expect(listDialogues(s)).toHaveLength(4);
+      expect(listDialogues(s, t)).toHaveLength(7);
     }
+  });
+  it('returns i18n keys', () => {
+    const keys = listDialogues('seed', t);
+    expect(keys[0]).toBe('character.dlg.seed0');
+    expect(keys[6]).toBe('character.dlg.seed6');
   });
 });
 
 describe('pickRandomDialogue', () => {
   it('uses deterministic rng', () => {
-    const a = pickRandomDialogue('seed', () => 0);
-    const b = pickRandomDialogue('seed', () => 0);
+    const a = pickRandomDialogue('seed', t, () => 0);
+    const b = pickRandomDialogue('seed', t, () => 0);
     expect(a).toBe(b);
   });
   it('different rng values give different dialogues', () => {
-    const a = pickRandomDialogue('seed', () => 0);
-    const b = pickRandomDialogue('seed', () => 0.75);
+    const a = pickRandomDialogue('seed', t, () => 0);
+    const b = pickRandomDialogue('seed', t, () => 0.75);
     expect(a).not.toBe(b);
   });
   it('clamps NaN rng to 0', () => {
-    const result = pickRandomDialogue('tree', () => NaN);
-    expect(result).toBe(listDialogues('tree')[0]);
+    const result = pickRandomDialogue('tree', t, () => NaN);
+    expect(result).toBe(listDialogues('tree', t)[0]);
   });
   it('clamps negative rng', () => {
-    const result = pickRandomDialogue('bloom', () => -1);
-    expect(result).toBe(listDialogues('bloom')[0]);
+    const result = pickRandomDialogue('bloom', t, () => -1);
+    expect(result).toBe(listDialogues('bloom', t)[0]);
+  });
+});
+
+describe('pickStreakAwareDialogue', () => {
+  it('returns stage dialogue when streak is 0', () => {
+    const result = pickStreakAwareDialogue('seed', 0, t, () => 0.1);
+    expect(listDialogues('seed', t)).toContain(result);
+  });
+  it('can return streak dialogue when streak >= 1 and roll < 0.4', () => {
+    const result = pickStreakAwareDialogue('seed', 7, t, () => 0.1);
+    expect(result).toBeTruthy();
+  });
+  it('returns stage dialogue when roll >= 0.4', () => {
+    const result = pickStreakAwareDialogue('tree', 30, t, () => 0.5);
+    expect(listDialogues('tree', t)).toContain(result);
+  });
+  it('handles high streak values', () => {
+    const result = pickStreakAwareDialogue('bloom', 100, t, () => 0.1);
+    expect(result).toBeTruthy();
   });
 });
 

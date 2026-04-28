@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   TextInput,
   ScrollView,
@@ -14,13 +13,14 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
-import { PRESET_CATEGORIES } from '../../src/constants/presets';
+import { useTheme } from '../../src/hooks/useTheme';
+import { createMessageCreateStyles } from '../../src/styles/messageCreateStyles';
+import { PRESET_CATEGORIES, getCategoryLabel } from '../../src/constants/presets';
 import { getVoiceProfiles, generateTTS, getFriendList, sendGift } from '../../src/services/api';
 import { saveAudioLocally, playAudio } from '../../src/services/audio';
 import { useAppStore } from '../../src/stores/useAppStore';
 import type { VoiceProfile, Friend } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
@@ -43,6 +43,8 @@ export default function CreateMessageScreen() {
   const [giftNote, setGiftNote] = useState('');
   const [giftSending, setGiftSending] = useState(false);
   const toast = useToast();
+  const { colors } = useTheme();
+  const styles = createMessageCreateStyles(colors);
 
   const { data: voiceProfiles } = useQuery({
     queryKey: ['voiceProfiles'],
@@ -79,7 +81,7 @@ export default function CreateMessageScreen() {
     onError: (err: unknown) => {
       Alert.alert(
         t('messageCreate.generateErrorTitle'),
-        getApiErrorMessage(err, t('messageCreate.generateError')),
+        getApiErrorMessage(err, t, t('messageCreate.generateError')),
       );
     },
   });
@@ -126,9 +128,9 @@ export default function CreateMessageScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* 음성 프로필 선택 */}
-      <Text style={styles.sectionTitle}>{t('messageCreate.whoseVoice')}</Text>
+      <Text style={styles.sectionTitle} accessibilityRole="header">{t('messageCreate.whoseVoice')}</Text>
       {readyProfiles.length === 0 ? (
-        <TouchableOpacity style={styles.emptyVoice} onPress={() => router.push('/voice/record')}>
+        <TouchableOpacity style={styles.emptyVoice} onPress={() => router.push('/voice/record')} accessibilityRole="button" accessibilityLabel={t('messageCreate.emptyVoice')}>
           <Text style={styles.emptyVoiceText}>{t('messageCreate.emptyVoice')}</Text>
         </TouchableOpacity>
       ) : (
@@ -138,6 +140,9 @@ export default function CreateMessageScreen() {
               key={profile.id}
               style={[styles.voiceChip, selectedVoiceId === profile.id && styles.voiceChipSelected]}
               onPress={() => setSelectedVoiceId(profile.id)}
+              accessibilityLabel={t('messageCreate.a11yVoiceProfile', { name: profile.name })}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedVoiceId === profile.id }}
             >
               <Text style={styles.voiceChipAvatar}>{profile.name.charAt(0)}</Text>
               <Text
@@ -154,10 +159,13 @@ export default function CreateMessageScreen() {
       )}
 
       {/* 탭 선택 */}
-      <View style={styles.tabRow}>
+      <View style={styles.tabRow} accessibilityRole="tablist">
         <TouchableOpacity
           style={[styles.tab, tab === 'preset' && styles.tabActive]}
           onPress={() => setTab('preset')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === 'preset' }}
+          accessibilityLabel={t('messageCreate.presetTab')}
         >
           <Text style={[styles.tabText, tab === 'preset' && styles.tabTextActive]}>
             {t('messageCreate.presetTab')}
@@ -166,6 +174,9 @@ export default function CreateMessageScreen() {
         <TouchableOpacity
           style={[styles.tab, tab === 'custom' && styles.tabActive]}
           onPress={() => setTab('custom')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: tab === 'custom' }}
+          accessibilityLabel={t('messageCreate.customTab')}
         >
           <Text style={[styles.tabText, tab === 'custom' && styles.tabTextActive]}>
             {t('messageCreate.customTab')}
@@ -189,6 +200,9 @@ export default function CreateMessageScreen() {
                   setSelectedCategory(cat.key);
                   setSelectedPreset(null);
                 }}
+                accessibilityLabel={t('messageCreate.a11yCategory', { label: getCategoryLabel(cat, t) })}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: selectedCategory === cat.key }}
               >
                 <Text style={styles.categoryEmoji}>{cat.emoji}</Text>
                 <Text
@@ -197,7 +211,7 @@ export default function CreateMessageScreen() {
                     selectedCategory === cat.key && styles.categoryLabelActive,
                   ]}
                 >
-                  {cat.label}
+                  {getCategoryLabel(cat, t)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -206,11 +220,16 @@ export default function CreateMessageScreen() {
           {/* 메시지 선택 */}
           {selectedCategory && (
             <View style={styles.presetList}>
-              {PRESET_CATEGORIES.find((c) => c.key === selectedCategory)?.messages.map((msg, i) => (
+              {PRESET_CATEGORIES.find((c) => c.key === selectedCategory)?.messageKeys.map((key, i) => {
+                const msg = t(key);
+                return (
                 <TouchableOpacity
                   key={i}
                   style={[styles.presetItem, selectedPreset === msg && styles.presetItemSelected]}
                   onPress={() => setSelectedPreset(msg)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: selectedPreset === msg }}
+                  accessibilityLabel={msg}
                 >
                   <Text
                     style={[styles.presetText, selectedPreset === msg && styles.presetTextSelected]}
@@ -219,7 +238,8 @@ export default function CreateMessageScreen() {
                   </Text>
                   {selectedPreset === msg && <Text style={styles.checkmark}>✓</Text>}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           )}
         </>
@@ -236,7 +256,8 @@ export default function CreateMessageScreen() {
             multiline
             numberOfLines={4}
             textAlignVertical="top"
-            placeholderTextColor={Colors.light.textTertiary}
+            placeholderTextColor={colors.textTertiary}
+            accessibilityLabel={t('messageCreate.customPlaceholder')}
           />
           <Text style={styles.charCount}>{customText.length}/200</Text>
         </View>
@@ -250,10 +271,13 @@ export default function CreateMessageScreen() {
         ]}
         onPress={handleGenerate}
         disabled={!messageText || !selectedVoiceId || ttsMutation.isPending}
+        accessibilityLabel={ttsMutation.isPending ? t('messageCreate.generating') : t('messageCreate.generate')}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: !messageText || !selectedVoiceId || ttsMutation.isPending, busy: ttsMutation.isPending }}
       >
         {ttsMutation.isPending ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color={colors.textOnPrimary} />
             <Text style={styles.generateText}>{t('messageCreate.generating')}</Text>
           </View>
         ) : (
@@ -267,7 +291,7 @@ export default function CreateMessageScreen() {
           <Text style={styles.resultTitle}>{t('messageCreate.resultTitle')}</Text>
           <Text style={styles.resultMessage}>"{messageText}"</Text>
           <View style={styles.resultActions}>
-            <TouchableOpacity style={styles.previewButton} onPress={handlePreview}>
+            <TouchableOpacity style={styles.previewButton} onPress={handlePreview} accessibilityRole="button" accessibilityLabel={currentSound ? t('messageCreate.stop') : t('messageCreate.preview')}>
               <Text style={styles.previewText}>
                 {currentSound ? t('messageCreate.stop') : t('messageCreate.preview')}
               </Text>
@@ -275,12 +299,16 @@ export default function CreateMessageScreen() {
             <TouchableOpacity
               style={styles.useButton}
               onPress={() => router.push(`/alarm/create?message_id=${generatedAudioId}`)}
+              accessibilityRole="button"
+              accessibilityLabel={t('messageCreate.useForAlarm')}
             >
               <Text style={styles.useText}>{t('messageCreate.useForAlarm')}</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity
             style={styles.giftButton}
+            accessibilityRole="button"
+            accessibilityLabel={t('messageCreate.gift')}
             onPress={async () => {
               try {
                 const friends = await getFriendList();
@@ -313,10 +341,11 @@ export default function CreateMessageScreen() {
             <TextInput
               style={styles.giftNoteInput}
               placeholder={t('messageCreate.giftNotePlaceholder')}
-              placeholderTextColor={Colors.light.textTertiary}
+              placeholderTextColor={colors.textTertiary}
               value={giftNote}
               onChangeText={(v) => v.length <= 200 && setGiftNote(v)}
               maxLength={200}
+              accessibilityLabel={t('messageCreate.giftNotePlaceholder')}
             />
             <ScrollView style={styles.friendList}>
               {giftFriends.map((f) => (
@@ -324,6 +353,9 @@ export default function CreateMessageScreen() {
                   key={f.id}
                   style={styles.friendItem}
                   disabled={giftSending}
+                  accessibilityLabel={t('messageCreate.a11ySendGiftTo', { name: f.friend_name || f.friend_email })}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: giftSending }}
                   onPress={async () => {
                     setGiftSending(true);
                     try {
@@ -337,7 +369,7 @@ export default function CreateMessageScreen() {
                     } catch (err: unknown) {
                       Alert.alert(
                         t('common.error'),
-                        getApiErrorMessage(err, t('messageCreate.giftError')),
+                        getApiErrorMessage(err, t, t('messageCreate.giftError')),
                       );
                     } finally {
                       setGiftSending(false);
@@ -346,7 +378,7 @@ export default function CreateMessageScreen() {
                 >
                   <View style={styles.friendAvatar}>
                     <Text style={styles.friendAvatarText}>
-                      {(f.friend_name || f.friend_email || '?')[0].toUpperCase()}
+                      {(f.friend_name || f.friend_email || '?')[0]!.toUpperCase()}
                     </Text>
                   </View>
                   <View style={styles.friendInfo}>
@@ -359,6 +391,8 @@ export default function CreateMessageScreen() {
             <TouchableOpacity
               style={styles.modalCancel}
               onPress={() => setGiftModalVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.cancel')}
             >
               <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
@@ -370,323 +404,3 @@ export default function CreateMessageScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.light.background,
-  },
-  content: {
-    padding: Spacing.lg,
-    paddingBottom: 120,
-  },
-  sectionTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.md,
-  },
-  emptyVoice: {
-    backgroundColor: Colors.light.surfaceVariant,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  emptyVoiceText: {
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  voiceRow: {
-    marginBottom: Spacing.lg,
-  },
-  voiceChip: {
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginRight: Spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    minWidth: 80,
-  },
-  voiceChipSelected: {
-    borderColor: Colors.light.primary,
-    backgroundColor: Colors.light.surfaceVariant,
-  },
-  voiceChipAvatar: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: Colors.light.primary,
-    marginBottom: 4,
-  },
-  voiceChipName: {
-    fontSize: FontSize.sm,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  voiceChipNameSelected: {
-    color: Colors.light.primary,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: 4,
-    marginBottom: Spacing.lg,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    alignItems: 'center',
-  },
-  tabActive: {
-    backgroundColor: Colors.light.primary,
-  },
-  tabText: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
-  tabTextActive: {
-    color: '#FFF',
-  },
-  categoryRow: {
-    marginBottom: Spacing.md,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    marginRight: Spacing.sm,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  categoryChipActive: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  categoryEmoji: {
-    fontSize: 16,
-    marginRight: 4,
-  },
-  categoryLabel: {
-    fontSize: FontSize.sm,
-    color: Colors.light.text,
-    fontWeight: '600',
-  },
-  categoryLabelActive: {
-    color: '#FFF',
-  },
-  presetList: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  presetItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  presetItemSelected: {
-    borderColor: Colors.light.primary,
-    backgroundColor: Colors.light.surfaceVariant,
-  },
-  presetText: {
-    flex: 1,
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-  },
-  presetTextSelected: {
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  checkmark: {
-    fontSize: FontSize.lg,
-    color: Colors.light.primary,
-    fontWeight: '700',
-  },
-  customSection: {
-    marginBottom: Spacing.lg,
-  },
-  customInput: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    minHeight: 120,
-  },
-  charCount: {
-    textAlign: 'right',
-    fontSize: FontSize.xs,
-    color: Colors.light.textTertiary,
-    marginTop: Spacing.xs,
-  },
-  generateButton: {
-    backgroundColor: Colors.light.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  generateText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-  },
-  resultCard: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.light.success + '40',
-  },
-  resultTitle: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.success,
-    marginBottom: Spacing.sm,
-  },
-  resultMessage: {
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    marginBottom: Spacing.md,
-  },
-  resultActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  previewButton: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.light.primary,
-    padding: Spacing.sm,
-    alignItems: 'center',
-  },
-  previewText: {
-    color: Colors.light.primary,
-    fontWeight: '600',
-  },
-  useButton: {
-    flex: 1,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.light.primary,
-    padding: Spacing.sm,
-    alignItems: 'center',
-  },
-  useText: {
-    color: '#FFF',
-    fontWeight: '600',
-  },
-  giftButton: {
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: Colors.light.accent,
-    padding: Spacing.sm + 2,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  giftText: {
-    color: Colors.light.accent,
-    fontWeight: '600',
-    fontSize: FontSize.md,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.light.background,
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    padding: Spacing.lg,
-    maxHeight: '70%',
-  },
-  modalTitle: {
-    fontSize: FontSize.xl,
-    fontWeight: '700',
-    color: Colors.light.text,
-    marginBottom: Spacing.xs,
-  },
-  modalSubtitle: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    marginBottom: Spacing.md,
-  },
-  giftNoteInput: {
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: FontSize.md,
-    color: Colors.light.text,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    marginBottom: Spacing.md,
-  },
-  friendList: {
-    maxHeight: 300,
-  },
-  friendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.light.surface,
-    marginBottom: Spacing.sm,
-  },
-  friendAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.light.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  friendAvatarText: {
-    fontSize: FontSize.lg,
-    fontWeight: '700',
-    color: Colors.light.primaryDark,
-  },
-  friendInfo: {
-    marginLeft: Spacing.md,
-    flex: 1,
-  },
-  friendName: {
-    fontSize: FontSize.md,
-    fontWeight: '600',
-    color: Colors.light.text,
-  },
-  friendEmail: {
-    fontSize: FontSize.sm,
-    color: Colors.light.textTertiary,
-  },
-  modalCancel: {
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    marginTop: Spacing.sm,
-  },
-  modalCancelText: {
-    fontSize: FontSize.md,
-    color: Colors.light.textSecondary,
-    fontWeight: '600',
-  },
-});

@@ -8,10 +8,11 @@ RALPH_DIR="$PROJECT_DIR/.ralph"
 LOG_DIR="$RALPH_DIR/logs"
 JOURNAL_DIR="$RALPH_DIR/JOURNAL"
 
-MAX_ITERATIONS="${MAX_ITERATIONS:-300}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-150}"
 STALL_TIMEOUT="${STALL_TIMEOUT:-1800}"     # 30분 (음성/TTS 통신 시간 고려)
 COOLDOWN="${COOLDOWN:-10}"
-BRANCH="${RALPH_BRANCH:-develop}"          # develop 브랜치에서 작업 (자동 배포 트리거)
+MAX_IDLE="${MAX_IDLE:-5}"                  # 연속 N회 변경 없으면 자동 종료
+BRANCH="${RALPH_BRANCH:-develop_loop}"     # develop_loop 브랜치에서 작업 (리뷰 후 develop으로 PR 머지)
 PUSH_ENABLED="${RALPH_PUSH:-1}"            # 1=push 후 자동배포, 0=로컬만
 
 mkdir -p "$LOG_DIR" "$JOURNAL_DIR"
@@ -39,6 +40,10 @@ echo "[$(date)] Ralph harness start on branch $BRANCH" | tee -a "$LOG_DIR/harnes
 
 # ---------- 메인 루프 ----------
 iteration=0
+idle_count=0
+commit_count=0
+stop_reason=""
+
 while (( iteration < MAX_ITERATIONS )); do
   iteration=$((iteration + 1))
   ts="$(date +%Y%m%d-%H%M%S)"
@@ -50,7 +55,6 @@ while (( iteration < MAX_ITERATIONS )); do
   echo "=== iter $iteration @ $ts ===" | tee -a "$log_file"
 
   # Claude 실행 - 무개입 모드
-  # 백그라운드로 띄우고 PID 저장 (watchdog가 kill 가능하도록)
   timeout --signal=SIGTERM "$STALL_TIMEOUT" \
     claude -p \
       --dangerously-skip-permissions \
@@ -71,16 +75,25 @@ while (( iteration < MAX_ITERATIONS )); do
     git commit -m "ralph: iter ${iteration} @ ${ts} (exit=${exit_code})" \
       --no-verify || true
 
-    # develop 브랜치에 push (auto-deploy 트리거)
     # ⚠️ 자동 배포 비활성화 - 사용자 요청으로 push 주석 처리
     # if [ "$PUSH_ENABLED" = "1" ]; then
     #   git push origin "$BRANCH" 2>>"$log_file" || {
     #     echo "[iter $iteration] push failed, will retry next iter" >> "$log_file"
     #   }
     # fi
-    echo "[iter $iteration] auto-push disabled (commits stay local)" >> "$log_file"
+    echo "[iter $iteration] committed (commits stay local)" >> "$log_file"
+    idle_count=0
+    commit_count=$((commit_count + 1))
   else
-    echo "[iter $iteration] no changes" >> "$log_file"
+    idle_count=$((idle_count + 1))
+    echo "[iter $iteration] no changes (idle ${idle_count}/${MAX_IDLE})" >> "$log_file"
+
+    if (( idle_count >= MAX_IDLE )); then
+      stop_reason="IDLE_LIMIT"
+      echo "[iter $iteration] idle limit reached (${MAX_IDLE} consecutive no-change iterations)" \
+        | tee -a "$log_file"
+      break
+    fi
   fi
 
   # 스톨 기록
@@ -96,5 +109,10 @@ while (( iteration < MAX_ITERATIONS )); do
   sleep "$COOLDOWN"
 done
 
-echo "[$(date)] Ralph harness reached MAX_ITERATIONS=$MAX_ITERATIONS" \
-  | tee -a "$LOG_DIR/harness.log"
+# ---------- 종료 요약 ----------
+if [ -z "$stop_reason" ]; then
+  stop_reason="MAX_ITERATIONS"
+fi
+
+summary="[$(date)] Ralph harness stopped: reason=${stop_reason}, iterations=${iteration}, commits=${commit_count}, final_idle=${idle_count}"
+echo "$summary" | tee -a "$LOG_DIR/harness.log"

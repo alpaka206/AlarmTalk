@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { TouchableOpacity } from 'react-native';
-import { Colors, Spacing, BorderRadius, FontSize } from '../../src/constants/theme';
+import { getDateLocale } from '../../src/i18n';
+import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getFriendList, getSentGifts, getReceivedGifts, getAlarms } from '../../src/services/api';
 import type { Friend, Gift, Alarm } from '../../src/types';
 
@@ -12,7 +12,8 @@ export default function FriendProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { t } = useTranslation();
-  const colors = Colors.light;
+  const { colors } = useTheme();
+  const styles = createStyles(colors);
 
   const { data: friends } = useQuery({
     queryKey: ['friends'],
@@ -25,7 +26,7 @@ export default function FriendProfileScreen() {
   });
 
   const { data: receivedGifts } = useQuery({
-    queryKey: ['receivedGifts'],
+    queryKey: ['gifts-received'],
     queryFn: getReceivedGifts,
   });
 
@@ -38,78 +39,82 @@ export default function FriendProfileScreen() {
 
   if (!friend) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={styles.container}>
         <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 40 }} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   const friendEmail = friend.friend_email ?? '';
   const friendName = friend.friend_name || friendEmail;
-  const initial = (friendName || '?')[0].toUpperCase();
+  const initial = (friendName || '?')[0]!.toUpperCase();
 
   const giftsToFriend = sentGifts?.filter((g: Gift) => g.recipient_id === friend.user_b || g.recipient_id === friend.user_a) ?? [];
   const giftsFromFriend = receivedGifts?.filter((g: Gift) => g.sender_email === friendEmail) ?? [];
   const alarmsForFriend = alarms?.filter((a: Alarm) => a.target_user_id && a.target_user_id !== a.user_id) ?? [];
 
-  const since = new Date(friend.created_at).toLocaleDateString('ko-KR', {
+  const since = new Date(friend.created_at).toLocaleDateString(getDateLocale(), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={[styles.backText, { color: colors.primary }]}>{t('common.back', '< 돌아가기')}</Text>
-        </TouchableOpacity>
+  const statusText = (status: string) =>
+    status === 'pending' ? t('friendProfile.pending') :
+    status === 'accepted' ? t('friendProfile.accepted') :
+    t('friendProfile.rejected');
 
-        <View style={[styles.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.avatar, { backgroundColor: colors.primaryLight }]}>
-            <Text style={[styles.avatarText, { color: colors.primaryDark }]}>{initial}</Text>
+  return (
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        <View style={styles.profileCard}>
+          <View style={styles.avatar} accessibilityLabel={t('friendProfile.a11yAvatar', { name: friendName })}>
+            <Text style={styles.avatarText}>{initial}</Text>
           </View>
-          <Text style={[styles.name, { color: colors.text }]}>{friendName}</Text>
-          <Text style={[styles.email, { color: colors.textSecondary }]}>{friendEmail}</Text>
-          <Text style={[styles.since, { color: colors.textTertiary }]}>
-            {t('friendProfile.since', '{{date}}부터 친구', { date: since })}
+          <Text style={styles.name}>{friendName}</Text>
+          <Text style={styles.email}>{friendEmail}</Text>
+          <Text style={styles.since}>
+            {t('friendProfile.since', { date: since })}
           </Text>
         </View>
 
         <View style={styles.statsRow}>
           <StatCard
-            label={t('friendProfile.giftsSent', '보낸 선물')}
+            label={t('friendProfile.giftsSent')}
             count={giftsToFriend.length}
             emoji="🎁"
             colors={colors}
+            t={t}
           />
           <StatCard
-            label={t('friendProfile.giftsReceived', '받은 선물')}
+            label={t('friendProfile.giftsReceived')}
             count={giftsFromFriend.length}
             emoji="📬"
             colors={colors}
+            t={t}
           />
           <StatCard
-            label={t('friendProfile.alarms', '알람')}
+            label={t('friendProfile.alarms')}
             count={alarmsForFriend.length}
             emoji="⏰"
             colors={colors}
+            t={t}
           />
         </View>
 
         {giftsFromFriend.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {t('friendProfile.recentGiftsFrom', '{{name}}님이 보낸 선물', { name: friend.friend_name || '친구' })}
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('friendProfile.recentGiftsFrom', { name: friend.friend_name || t('friendProfile.friendFallback') })}
             </Text>
             {giftsFromFriend.slice(0, 5).map((g: Gift) => (
-              <View key={g.id} style={[styles.listItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.listItemText, { color: colors.text }]}>"{g.message_text}"</Text>
-                <Text style={[styles.listItemMeta, { color: colors.textTertiary }]}>
-                  {g.status === 'pending' ? t('friendProfile.pending', '대기중') :
-                   g.status === 'accepted' ? t('friendProfile.accepted', '수락됨') :
-                   t('friendProfile.rejected', '거절됨')}
-                </Text>
+              <View
+                key={g.id}
+                style={styles.listItem}
+                accessibilityLabel={t('friendProfile.a11yGiftItem', { text: g.message_text, status: statusText(g.status) })}
+              >
+                <Text style={styles.listItemText}>"{g.message_text}"</Text>
+                <Text style={styles.listItemMeta}>{statusText(g.status)}</Text>
               </View>
             ))}
           </View>
@@ -117,39 +122,43 @@ export default function FriendProfileScreen() {
 
         {giftsToFriend.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              {t('friendProfile.recentGiftsTo', '내가 보낸 선물')}
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('friendProfile.recentGiftsTo')}
             </Text>
             {giftsToFriend.slice(0, 5).map((g: Gift) => (
-              <View key={g.id} style={[styles.listItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.listItemText, { color: colors.text }]}>"{g.message_text}"</Text>
-                <Text style={[styles.listItemMeta, { color: colors.textTertiary }]}>
-                  {g.status === 'pending' ? t('friendProfile.pending', '대기중') :
-                   g.status === 'accepted' ? t('friendProfile.accepted', '수락됨') :
-                   t('friendProfile.rejected', '거절됨')}
-                </Text>
+              <View
+                key={g.id}
+                style={styles.listItem}
+                accessibilityLabel={t('friendProfile.a11yGiftItem', { text: g.message_text, status: statusText(g.status) })}
+              >
+                <Text style={styles.listItemText}>"{g.message_text}"</Text>
+                <Text style={styles.listItemMeta}>{statusText(g.status)}</Text>
               </View>
             ))}
           </View>
         )}
 
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.primary }]}
+          style={styles.actionButton}
           onPress={() => router.push({ pathname: '/alarm/create', params: { friendId: friend.user_b === friend.friend_email ? friend.user_b : friend.user_a } })}
+          accessibilityRole="button"
+          accessibilityLabel={t('friendProfile.a11ySetAlarm')}
         >
-          <Text style={styles.actionButtonText}>{t('friendProfile.setAlarm', '이 친구에게 알람 보내기')}</Text>
+          <Text style={styles.actionButtonText}>{t('friendProfile.setAlarm')}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.giftActionButton, { borderColor: colors.primary }]}
+          style={styles.giftActionButton}
           onPress={() => router.push({ pathname: '/message/create', params: { giftTo: friendEmail } })}
+          accessibilityRole="button"
+          accessibilityLabel={t('friendProfile.a11ySendGift')}
         >
-          <Text style={[styles.giftActionButtonText, { color: colors.primary }]}>
-            {t('friendProfile.sendGift', '이 친구에게 선물하기')}
+          <Text style={styles.giftActionButtonText}>
+            {t('friendProfile.sendGift')}
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -158,32 +167,38 @@ function StatCard({
   count,
   emoji,
   colors,
+  t,
 }: {
   label: string;
   count: number;
   emoji: string;
-  colors: typeof Colors.light;
+  colors: ThemeColors;
+  t: (key: string, params?: Record<string, unknown>) => string;
 }) {
+  const styles = createStyles(colors);
   return (
-    <View style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    <View
+      style={styles.statCard}
+      accessibilityLabel={t('friendProfile.a11yStat', { label, count })}
+    >
       <Text style={styles.statEmoji}>{emoji}</Text>
-      <Text style={[styles.statCount, { color: colors.text }]}>{count}</Text>
-      <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={styles.statCount}>{count}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { padding: Spacing.lg },
-  backButton: { marginBottom: Spacing.md },
-  backText: { fontSize: FontSize.md, fontWeight: '600' },
   profileCard: {
     alignItems: 'center',
     padding: Spacing.xl,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
     marginBottom: Spacing.lg,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   avatar: {
     width: 80,
@@ -192,11 +207,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Spacing.md,
+    backgroundColor: colors.primaryLight,
   },
-  avatarText: { fontSize: 32, fontWeight: '700' },
-  name: { fontSize: FontSize.xl, fontWeight: '700', marginBottom: 4 },
-  email: { fontSize: FontSize.sm, marginBottom: 8 },
-  since: { fontSize: FontSize.xs },
+  avatarText: { fontSize: 32, fontFamily: FontFamily.bold, color: colors.primaryDark },
+  name: { fontSize: FontSize.xl, fontFamily: FontFamily.bold, marginBottom: 4, color: colors.text },
+  email: { fontSize: FontSize.sm, marginBottom: 8, color: colors.textSecondary },
+  since: { fontSize: FontSize.xs, color: colors.textTertiary },
   statsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.lg },
   statCard: {
     flex: 1,
@@ -204,33 +220,39 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
   statEmoji: { fontSize: 24, marginBottom: 4 },
-  statCount: { fontSize: FontSize.xl, fontWeight: '700' },
-  statLabel: { fontSize: FontSize.xs, marginTop: 2 },
+  statCount: { fontSize: FontSize.xl, fontFamily: FontFamily.bold, color: colors.text },
+  statLabel: { fontSize: FontSize.xs, marginTop: 2, color: colors.textSecondary },
   section: { marginBottom: Spacing.lg },
-  sectionTitle: { fontSize: FontSize.md, fontWeight: '600', marginBottom: Spacing.sm },
+  sectionTitle: { fontSize: FontSize.md, fontFamily: FontFamily.semibold, marginBottom: Spacing.sm, color: colors.text },
   listItem: {
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     marginBottom: Spacing.xs,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
   },
-  listItemText: { fontSize: FontSize.sm },
-  listItemMeta: { fontSize: FontSize.xs, marginTop: 4 },
+  listItemText: { fontSize: FontSize.sm, color: colors.text },
+  listItemMeta: { fontSize: FontSize.xs, marginTop: 4, color: colors.textTertiary },
   actionButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
     marginTop: Spacing.sm,
+    backgroundColor: colors.primary,
   },
-  actionButtonText: { color: '#FFFFFF', fontSize: FontSize.md, fontWeight: '700' },
+  actionButtonText: { color: colors.textOnPrimary, fontSize: FontSize.md, fontFamily: FontFamily.bold },
   giftActionButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
     alignItems: 'center' as const,
     marginTop: Spacing.sm,
     borderWidth: 1,
+    borderColor: colors.primary,
   },
-  giftActionButtonText: { fontSize: FontSize.md, fontWeight: '700' as const },
+  giftActionButtonText: { fontSize: FontSize.md, fontFamily: FontFamily.bold, color: colors.primary },
 });

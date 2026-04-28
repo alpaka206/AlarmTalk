@@ -5,6 +5,8 @@ import {
   type AlarmFormInput,
 } from '../src/lib/alarmForm';
 
+const t = ((key: string) => key) as import('i18next').TFunction;
+
 const baseInput: AlarmFormInput = {
   messageId: '10000000-0000-4000-8000-000000000001',
   time: '07:00',
@@ -57,31 +59,32 @@ describe('buildCreatePayload', () => {
 
 describe('validateAlarmForm', () => {
   it('메시지 미선택이면 에러', () => {
-    const res = validateAlarmForm({ ...baseInput, messageId: null });
+    const res = validateAlarmForm({ ...baseInput, messageId: null }, t);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain('메시지');
+    if (!res.ok) expect(res.error).toBe('alarmValidation.messageRequired');
   });
 
   it('잘못된 시간 형식이면 에러', () => {
-    const res = validateAlarmForm({ ...baseInput, time: '7am' });
+    const res = validateAlarmForm({ ...baseInput, time: '7am' }, t);
     expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toBe('alarmValidation.invalidTime');
   });
 
   it('mode 가 허용값 밖이면 에러', () => {
     // @ts-expect-error — intentional 잘못된 모드
-    const res = validateAlarmForm({ ...baseInput, mode: 'video' });
+    const res = validateAlarmForm({ ...baseInput, mode: 'video' }, t);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain('재생 모드');
+    if (!res.ok) expect(res.error).toBe('alarmValidation.invalidMode');
   });
 
   it('sound-only + voice_profile_id 누락이면 에러', () => {
-    const res = validateAlarmForm({ ...baseInput, mode: 'sound-only' });
+    const res = validateAlarmForm({ ...baseInput, mode: 'sound-only' }, t);
     expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toContain('음성 프로필');
+    if (!res.ok) expect(res.error).toBe('alarmValidation.voiceProfileRequired');
   });
 
   it('정상 TTS → ok + payload', () => {
-    const res = validateAlarmForm(baseInput);
+    const res = validateAlarmForm(baseInput, t);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.payload.mode).toBe('tts');
   });
@@ -91,7 +94,7 @@ describe('validateAlarmForm', () => {
       ...baseInput,
       mode: 'sound-only',
       voiceProfileId: '40000000-0000-4000-8000-000000000001',
-    });
+    }, t);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.payload.mode).toBe('sound-only');

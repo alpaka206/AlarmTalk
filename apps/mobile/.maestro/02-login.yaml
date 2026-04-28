@@ -1,0 +1,25 @@
+appId: com.devrel.voicealarm
+name: "Email/Password Login"
+---
+
+- launchApp:
+    clearState: true
+
+- runFlow: 01-onboarding.yaml
+
+- tapOn: "이메일로 로그인"
+
+- tapOn:
+    text: "이메일"
+- inputText: "test@voicealarm.dev"
+
+- tapOn:
+    text: "비밀번호"
+- inputText: "Test1234!"
+
+- tapOn: "로그인"
+
+- assertVisible:
+    text: ".*홈.*"
+    regex: true
+    timeout: 10000
