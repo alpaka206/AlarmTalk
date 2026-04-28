@@ -116,14 +116,6 @@ export default function ReceivedGiftsScreen() {
     },
   });
 
-  if (isLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <SkeletonGiftList count={3} dynStyles={styles} />
-      </SafeAreaView>
-    );
-  }
-
   const statusLabel = useCallback((status: string) => {
     if (status === 'accepted') return t('giftReceived.statusAccepted');
     if (status === 'rejected') return t('giftReceived.statusRejected');
@@ -205,6 +197,14 @@ export default function ReceivedGiftsScreen() {
       )}
     </View>
   ), [styles, t, statusLabel, accept, reject, router]);
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <SkeletonGiftList count={3} dynStyles={styles} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>

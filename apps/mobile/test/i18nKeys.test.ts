@@ -196,7 +196,7 @@ describe('i18n — value quality', () => {
       if (typeof koVal !== 'string' || typeof enVal !== 'string') continue;
       if (koVal === enVal && koVal.length > 5 && !/^[A-Z\s$()./:]+$/.test(koVal) && !/\{\{/.test(koVal)) {
         const hasKorean = /[가-힯]/.test(koVal);
-        const hasOnlyAscii = /^[\x00-\x7F]+$/.test(koVal);
+        const hasOnlyAscii = /^[\x20-\x7E]+$/.test(koVal);
         if (!hasKorean && hasOnlyAscii && !key.startsWith('preset.')) {
           suspectKeys.push(`${key}: "${koVal}"`);
         }

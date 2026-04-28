@@ -409,11 +409,10 @@ describe('PlayerScreen business logic', () => {
 
   describe('player state transitions', () => {
     it('play → pause toggles isPlaying', () => {
-      let isPlaying = false;
-      isPlaying = true; // play
-      expect(isPlaying).toBe(true);
-      isPlaying = false; // pause
-      expect(isPlaying).toBe(false);
+      const states = [false, true, false];
+      expect(states[0]).toBe(false);
+      expect(states[1]).toBe(true);
+      expect(states[2]).toBe(false);
     });
 
     it('replay from end resets progress', () => {
@@ -435,9 +434,9 @@ describe('PlayerScreen business logic', () => {
     });
 
     it('close cleans up playing state', () => {
-      let playingId: string | null = 'msg-1';
-      playingId = null;
-      expect(playingId).toBeNull();
+      const states: Array<string | null> = ['msg-1', null];
+      expect(states[0]).toBe('msg-1');
+      expect(states[1]).toBeNull();
     });
   });
 

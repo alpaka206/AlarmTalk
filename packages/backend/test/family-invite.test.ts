@@ -575,7 +575,6 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
 
   it('skips expiry check when expires_at is invalid date → allows accept', async () => {
     pushResolveUserPk(MEMBER_PK);
-    const future = new Date(Date.now() + 600_000).toISOString();
     mockDB.pushResult([
       {
         id: INVITE_ID,

@@ -6,8 +6,8 @@ export function logStructured(
   data: Record<string, unknown>,
 ): void {
   const entry = { level, ...data };
-  const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   // eslint-disable-next-line no-console
+  const fn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   fn(JSON.stringify(entry));
 }
 
@@ -27,7 +27,6 @@ export function logRouteError(c: Context<any>, err: unknown): void {
   if (uid) entry.uid = uid;
   if (stack) entry.stack = stack;
 
-  // eslint-disable-next-line no-console
   console.error(JSON.stringify(entry));
 
   const sentry = c.get('sentry') as SentryClient | undefined;

@@ -1,5 +1,5 @@
+/* global Buffer, process, console */
 import sharp from 'sharp';
-import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,13 +11,13 @@ const WHITE = '#FFFFFF';
 
 function treeSvg(size, fg = WHITE, padding = 0.2) {
   const s = size;
-  const p = s * padding;
+  const _p = s * padding;
   const cx = s / 2;
 
   const trunkW = s * 0.06;
   const trunkH = s * 0.18;
   const trunkTop = s * 0.62;
-  const trunkBottom = trunkTop + trunkH;
+  const _trunkBottom = trunkTop + trunkH;
 
   const canopyR = s * 0.28;
   const canopyCY = s * 0.38;

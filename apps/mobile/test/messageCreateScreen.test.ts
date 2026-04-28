@@ -381,11 +381,8 @@ describe('messageCreateScreen — tab switching state logic', () => {
   });
 
   test('category change clears selectedPreset (logical requirement)', () => {
-    let selectedPreset: string | null = 'Old message';
-    let selectedCategory: string | null = 'morning';
-
-    selectedCategory = 'cheer';
-    selectedPreset = null;
+    const selectedPreset: string | null = null;
+    const selectedCategory = 'cheer';
 
     const msg = deriveMessageText('preset', selectedPreset, '');
     expect(msg).toBeNull();

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useState } from 'react';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -28,9 +28,8 @@ export function useGoogleAuth() {
   });
 
 
-  const nonce = useMemo(
+  const [nonce] = useState(
     () => Math.random().toString(36).substring(2) + Date.now().toString(36),
-    [],
   );
 
   const [request, response, promptAsync] = AuthSession.useAuthRequest(
