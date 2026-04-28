@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { FontFamily, Spacing } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
@@ -20,6 +21,12 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
 export default function TabLayout() {
   const { t } = useTranslation();
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+
+  const tabBarBaseHeight = 64;
+  const tabBarExtraBreathingRoom = 16;
+  const tabBarBottomPadding =
+    (insets.bottom > 0 ? insets.bottom : 8) + tabBarExtraBreathingRoom;
 
   return (
     <View style={styles.root}>
@@ -36,7 +43,14 @@ export default function TabLayout() {
               <ProfileDropdown />
             </View>
           ),
-          tabBarStyle: [styles.tabBar, { backgroundColor: colors.surface, borderTopColor: colors.border }],
+          tabBarStyle: {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            height: tabBarBaseHeight + tabBarBottomPadding,
+            paddingTop: 10,
+            paddingBottom: tabBarBottomPadding,
+          },
           tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textTertiary,
           tabBarLabelStyle: styles.tabLabel,
@@ -78,12 +92,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  tabBar: {
-    borderTopWidth: 1,
-    height: 85,
-    paddingTop: 8,
-    paddingBottom: 28,
   },
   tabLabel: {
     fontSize: 11,

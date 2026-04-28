@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -163,6 +164,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+      <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -298,6 +300,7 @@ export default function RootLayout() {
           </Stack>
         </AuthProvider>
       </QueryClientProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
     </ErrorBoundary>
   );
