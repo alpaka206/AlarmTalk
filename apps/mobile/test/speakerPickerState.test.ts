@@ -4,6 +4,9 @@ import {
   speakerPickerReducer,
   type SpeakerPickerState,
 } from '../src/lib/speakerPickerState';
+import type { TFunction } from 'i18next';
+
+const t = ((key: string) => key) as TFunction;
 
 const uploadMeta = {
   id: 'u1',
@@ -86,7 +89,7 @@ describe('speakerPickerReducer', () => {
     expect(s.draftLabel).toBe('화자 1');
     s = speakerPickerReducer(s, { type: 'EDIT_CHANGE', label: '엄마' });
     expect(s.draftLabel).toBe('엄마');
-    expect(s.speakers[0].label).toBe('화자 1');
+    expect(s.speakers[0]!.label).toBe('화자 1');
     s = speakerPickerReducer(s, { type: 'EDIT_CANCEL' });
     expect(s.editingSpeakerId).toBeNull();
     expect(s.draftLabel).toBe('');
@@ -105,8 +108,8 @@ describe('speakerPickerReducer', () => {
       speakerId: 's1',
       label: '엄마',
     });
-    expect(next.speakers[0].label).toBe('엄마');
-    expect(next.speakers[1].label).toBe('화자 2');
+    expect(next.speakers[0]!.label).toBe('엄마');
+    expect(next.speakers[1]!.label).toBe('화자 2');
     expect(next.editingSpeakerId).toBeNull();
   });
 
@@ -123,23 +126,23 @@ describe('speakerPickerReducer', () => {
 
 describe('sanitizeLabel', () => {
   it('앞뒤 공백을 제거한다', () => {
-    expect(sanitizeLabel('  엄마  ')).toEqual({ ok: true, value: '엄마' });
+    expect(sanitizeLabel('  엄마  ', t)).toEqual({ ok: true, value: '엄마' });
   });
 
   it('빈 문자열은 거절한다', () => {
-    const r = sanitizeLabel('   ');
+    const r = sanitizeLabel('   ', t);
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('입력');
+    expect(r.error).toBe('speakerPicker.labelRequired');
   });
 
   it('51자 이상이면 거절한다', () => {
-    const r = sanitizeLabel('가'.repeat(51));
+    const r = sanitizeLabel('가'.repeat(51), t);
     expect(r.ok).toBe(false);
-    expect(r.error).toContain('50자');
+    expect(r.error).toBe('speakerPicker.labelTooLong');
   });
 
   it('50자 정확히는 허용', () => {
-    const r = sanitizeLabel('가'.repeat(50));
+    const r = sanitizeLabel('가'.repeat(50), t);
     expect(r.ok).toBe(true);
   });
 });

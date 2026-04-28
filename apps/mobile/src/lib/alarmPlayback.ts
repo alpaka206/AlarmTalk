@@ -22,12 +22,12 @@ export interface SoundOnlyPlaybackPlan {
 export interface FallbackPlaybackPlan {
   kind: 'fallback';
   uri: string;
-  reason: string;
+  reasonKey: string;
 }
 
 export interface ErrorPlaybackPlan {
   kind: 'error';
-  reason: string;
+  reasonKey: string;
 }
 
 export type PlaybackPlan =
@@ -49,7 +49,7 @@ export function resolveAlarmPlayback(
       return {
         kind: 'fallback',
         uri: MOCK_DEFAULT_ALARM_URI,
-        reason: '음성 프로필이 지정되지 않아 기본 알람 톤으로 재생합니다.',
+        reasonKey: 'alarmPlayback.noVoiceProfile',
       };
     }
     const profile = voices.find((v) => v.id === profileId);
@@ -57,14 +57,14 @@ export function resolveAlarmPlayback(
       return {
         kind: 'fallback',
         uri: MOCK_DEFAULT_ALARM_URI,
-        reason: '연결된 음성 프로필을 찾을 수 없어 기본 알람 톤으로 재생합니다.',
+        reasonKey: 'alarmPlayback.voiceNotFound',
       };
     }
     if (profile.status !== 'ready') {
       return {
         kind: 'fallback',
         uri: MOCK_DEFAULT_ALARM_URI,
-        reason: '음성 프로필이 아직 준비되지 않아 기본 알람 톤으로 재생합니다.',
+        reasonKey: 'alarmPlayback.voiceNotReady',
       };
     }
     return {
@@ -80,7 +80,7 @@ export function resolveAlarmPlayback(
   const voiceName = message?.voice_name ?? alarm.voice_name ?? '';
   const category = message?.category ?? alarm.category ?? '';
   if (!alarm.message_id || !text) {
-    return { kind: 'error', reason: '재생할 메시지를 찾을 수 없습니다.' };
+    return { kind: 'error', reasonKey: 'alarmPlayback.noMessage' };
   }
   return {
     kind: 'tts',
@@ -91,9 +91,9 @@ export function resolveAlarmPlayback(
   };
 }
 
-export function getAlarmModeBadge(mode: Alarm['mode']): { emoji: string; label: string } {
-  if (mode === 'sound-only') return { emoji: '🔊', label: '원본' };
-  return { emoji: '🗣️', label: 'TTS' };
+export function getAlarmModeBadge(mode: Alarm['mode']): { emoji: string; labelKey: string } {
+  if (mode === 'sound-only') return { emoji: '🔊', labelKey: 'alarmPlayback.modeOriginal' };
+  return { emoji: '🗣️', labelKey: 'alarmPlayback.modeTts' };
 }
 
 export interface NavigatePreviewAction {
@@ -110,13 +110,14 @@ export interface NavigatePreviewAction {
 export interface AudioPreviewAction {
   type: 'preview-audio';
   uri: string;
-  caption: string;
+  captionKey: string;
+  captionParams?: Record<string, string>;
   voiceName: string;
 }
 
 export interface ToastPreviewAction {
   type: 'toast';
-  message: string;
+  messageKey: string;
 }
 
 export type PreviewAction =
@@ -141,17 +142,18 @@ export function buildAlarmPreviewAction(plan: PlaybackPlan): PreviewAction {
       return {
         type: 'preview-audio',
         uri: plan.uri,
-        caption: `${plan.voiceName} 의 원본 샘플`,
+        captionKey: 'alarmPlayback.originalSample',
+        captionParams: { name: plan.voiceName },
         voiceName: plan.voiceName,
       };
     case 'fallback':
       return {
         type: 'preview-audio',
         uri: plan.uri,
-        caption: plan.reason,
+        captionKey: plan.reasonKey,
         voiceName: '',
       };
     case 'error':
-      return { type: 'toast', message: plan.reason };
+      return { type: 'toast', messageKey: plan.reasonKey };
   }
 }

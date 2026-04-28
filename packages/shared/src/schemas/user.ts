@@ -1,6 +1,6 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-export const UserPlanSchema = z.enum(["free", "plus", "family"]);
+export const UserPlanSchema = z.enum(['free', 'plus', 'family']);
 export type UserPlan = z.infer<typeof UserPlanSchema>;
 
 export const UserSchema = z.object({

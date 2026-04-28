@@ -15,6 +15,8 @@ export interface ThemeColorScheme {
   warning: string;
   error: string;
   shadow: string;
+  textOnPrimary: string;
+  overlay: string;
 }
 
 export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
@@ -28,13 +30,15 @@ export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
     surface: '#FFFFFF',
     surfaceVariant: '#FFF0ED',
     text: '#2D2D2D',
-    textSecondary: '#8E8E93',
+    textSecondary: '#6B7280',
     textTertiary: '#AEAEB2',
     border: '#F2E8E5',
     success: '#34C759',
     warning: '#FF9500',
     error: '#FF3B30',
     shadow: 'rgba(255, 127, 107, 0.15)',
+    textOnPrimary: '#FFFFFF',
+    overlay: 'rgba(0, 0, 0, 0.3)',
   },
   dark: {
     primary: '#FF8F7D',
@@ -46,13 +50,15 @@ export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
     surface: '#2C2C2E',
     surfaceVariant: '#3A3A3C',
     text: '#FFFFFF',
-    textSecondary: '#8E8E93',
+    textSecondary: '#98989D',
     textTertiary: '#636366',
     border: '#38383A',
     success: '#30D158',
     warning: '#FF9F0A',
     error: '#FF453A',
     shadow: 'rgba(0, 0, 0, 0.3)',
+    textOnPrimary: '#FFFFFF',
+    overlay: 'rgba(0, 0, 0, 0.3)',
   },
 };
 

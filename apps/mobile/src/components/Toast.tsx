@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Animated, Text, StyleSheet } from 'react-native';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
@@ -8,16 +8,21 @@ interface ToastProps {
   opacity: Animated.Value;
 }
 
-export function Toast({ message, opacity }: ToastProps) {
+export const Toast = memo(function Toast({ message, opacity }: ToastProps) {
   const { colors } = useTheme();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   if (!message) return null;
   return (
-    <Animated.View style={[dynStyles.toast, { opacity }]} pointerEvents="none">
+    <Animated.View
+      style={[dynStyles.toast, { opacity }]}
+      pointerEvents="none"
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+    >
       <Text style={dynStyles.toastText}>{message}</Text>
     </Animated.View>
   );
-}
+});
 
 function createStyles(colors: ThemeColors) {
   return StyleSheet.create({
@@ -33,7 +38,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     toastText: {
-      color: '#fff',
+      color: colors.textOnPrimary,
       fontSize: FontSize.md,
       fontFamily: FontFamily.semibold,
     },

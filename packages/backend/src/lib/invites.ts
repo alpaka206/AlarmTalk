@@ -14,7 +14,7 @@ export function generateInviteCode(): string {
   crypto.getRandomValues(bytes);
   let out = '';
   for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
-    out += String(bytes[i] % 10);
+    out += String(bytes[i]! % 10);
   }
   return out;
 }

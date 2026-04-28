@@ -1,6 +1,6 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-export const VoiceProfileStatusSchema = z.enum(["processing", "ready", "failed"]);
+export const VoiceProfileStatusSchema = z.enum(['processing', 'ready', 'failed']);
 export type VoiceProfileStatus = z.infer<typeof VoiceProfileStatusSchema>;
 
 export const VoiceProfileSchema = z.object({

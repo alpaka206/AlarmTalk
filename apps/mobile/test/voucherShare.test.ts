@@ -4,6 +4,17 @@ import {
   isVoucherRedeemable,
   buildVoucherShareText,
 } from '../src/lib/voucherShare';
+import type { TFunction } from 'i18next';
+
+const t = ((key: string, opts?: Record<string, string>) => {
+  if (opts) {
+    return Object.entries(opts).reduce(
+      (s, [k, v]) => s.replace(`{{${k}}}`, v),
+      key,
+    );
+  }
+  return key;
+}) as TFunction;
 
 describe('maskVoucherCode (mobile)', () => {
   it('첫 그룹만 공개하고 나머지는 ****', () => {
@@ -17,10 +28,10 @@ describe('maskVoucherCode (mobile)', () => {
 });
 
 describe('formatVoucherStatus (mobile)', () => {
-  it('issued → 미사용, used → 사용됨, expired → 만료', () => {
-    expect(formatVoucherStatus('issued')).toBe('미사용');
-    expect(formatVoucherStatus('used')).toBe('사용됨');
-    expect(formatVoucherStatus('expired')).toBe('만료');
+  it('issued → statusIssued, used → statusUsed, expired → statusExpired', () => {
+    expect(formatVoucherStatus('issued', t)).toBe('voucher.statusIssued');
+    expect(formatVoucherStatus('used', t)).toBe('voucher.statusUsed');
+    expect(formatVoucherStatus('expired', t)).toBe('voucher.statusExpired');
   });
 });
 
@@ -62,15 +73,18 @@ describe('isVoucherRedeemable (mobile)', () => {
 });
 
 describe('buildVoucherShareText (mobile)', () => {
-  it('코드/플랜/만료일이 포함된 공유 문구', () => {
+  it('5줄 공유 텍스트 생성 (i18n 키 기반)', () => {
     const text = buildVoucherShareText({
       code: 'VA-ABCD-EFGH-JKLM',
       planName: '가족',
       expiresAt: '2026-05-21T00:00:00Z',
-    });
-    expect(text).toContain('VA-ABCD-EFGH-JKLM');
-    expect(text).toContain('가족');
-    expect(text).toContain('2026-05-21');
-    expect(text).toContain('이용권 등록');
+    }, t);
+    const lines = text.split('\n');
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toBe('voucher.shareTitle');
+    expect(lines[1]).toBe('voucher.sharePlan');
+    expect(lines[2]).toBe('voucher.shareCode');
+    expect(lines[3]).toBe('voucher.shareExpiry');
+    expect(lines[4]).toBe('voucher.shareInstruction');
   });
 });

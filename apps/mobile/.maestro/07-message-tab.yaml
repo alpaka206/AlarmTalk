@@ -1,0 +1,54 @@
+appId: com.devrel.voicealarm
+name: "Message Tab & Inbox"
+---
+
+- launchApp
+
+- tapOn: "💌"
+- assertVisible:
+    text: "메시지"
+    timeout: 3000
+
+- assertVisible:
+    text: ".*알람 보내기.*|.*쪽지 보내기.*|.*가족.*플랜.*|.*로그인.*"
+    regex: true
+    timeout: 3000
+
+- tapOn:
+    text: ".*알람 보내기.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: ".*가족 알람.*|.*수신자.*|.*가족.*플랜.*"
+    regex: true
+    timeout: 3000
+    optional: true
+
+- back
+    optional: true
+
+- tapOn: "💌"
+  optional: true
+
+- tapOn:
+    text: ".*쪽지 보내기.*"
+    regex: true
+    optional: true
+
+- assertVisible:
+    text: ".*쪽지.*|.*메시지.*|.*가족.*플랜.*"
+    regex: true
+    timeout: 3000
+    optional: true
+
+- back
+    optional: true
+
+- tapOn: "💌"
+  optional: true
+- assertVisible:
+    text: ".*받은 쪽지.*|.*쪽지가 없어요.*|.*가족.*플랜.*"
+    regex: true
+    timeout: 3000
+    optional: true

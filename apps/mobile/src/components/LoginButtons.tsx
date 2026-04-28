@@ -25,7 +25,7 @@ export default function LoginButtons() {
         setAuth(idToken, user.sub);
       }
     } catch {
-      Alert.alert(t('login.error', '로그인 실패'), t('login.saveFailed', '로그인 정보 저장에 실패했습니다.'));
+      Alert.alert(t('login.error'), t('login.saveFailed'));
     } finally {
       setLoading(false);
     }
@@ -39,11 +39,11 @@ export default function LoginButtons() {
       if (idToken) {
         handleLoginSuccess(idToken, 'google');
       } else {
-        Alert.alert(t('login.error', '로그인 실패'), t('login.noToken', '인증 토큰을 받지 못했습니다.'));
+        Alert.alert(t('login.error'), t('login.noToken'));
       }
     } else if (response.type === 'error') {
-      const msg = response.error?.message || t('login.unknownError', '알 수 없는 오류가 발생했습니다.');
-      Alert.alert(t('login.error', '로그인 실패'), msg);
+      const msg = response.error?.message || t('login.unknownError');
+      Alert.alert(t('login.error'), msg);
     }
     // 'dismiss' (사용자가 취소)는 무시
     setLoading(false); // eslint-disable-line react-hooks/set-state-in-effect
@@ -54,7 +54,7 @@ export default function LoginButtons() {
     try {
       await promptAsync();
     } catch {
-      Alert.alert(t('login.error', '로그인 실패'), t('login.googleFailed', 'Google 로그인을 시작할 수 없습니다.'));
+      Alert.alert(t('login.error'), t('login.googleFailed'));
       setLoading(false);
     }
   };
@@ -69,7 +69,7 @@ export default function LoginButtons() {
         setLoading(false);
       }
     } catch {
-      Alert.alert(t('login.error', '로그인 실패'), t('login.appleFailed', 'Apple 로그인에 실패했습니다.'));
+      Alert.alert(t('login.error'), t('login.appleFailed'));
       setLoading(false);
     }
   };

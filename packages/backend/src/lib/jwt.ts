@@ -16,7 +16,7 @@ const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 7;
 function base64UrlEncode(bytes: ArrayBuffer | Uint8Array): string {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let bin = '';
-  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+  for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]!);
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
@@ -73,7 +73,7 @@ export async function verifyAppJwt(token: string, secret: string): Promise<AppJw
   if (!secret) throw new Error('JWT_SECRET is required');
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid token format');
-  const [headerPart, payloadPart, sigPart] = parts;
+  const [headerPart, payloadPart, sigPart] = parts as [string, string, string];
 
   const header = JSON.parse(new TextDecoder().decode(base64UrlDecode(headerPart))) as {
     alg?: string;

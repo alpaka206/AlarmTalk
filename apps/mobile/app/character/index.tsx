@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Pressable,
-  StyleSheet,
   ScrollView,
   ActivityIndicator,
   Animated,
@@ -24,18 +23,19 @@ import {
   stageToLabel,
 } from '../../src/lib/character';
 import { useTranslation } from 'react-i18next';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
-import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { useTheme } from '../../src/hooks/useTheme';
+import { createCharacterStyles } from '../../src/styles/characterStyles';
+import { TREE_BROWN } from '../../src/constants/character';
 
-const DEV_EVENTS: { event: XpEvent; label: string }[] = [
-  { event: 'alarm_completed', label: '알람 정상 종료 +30 XP' },
-  { event: 'alarm_snoozed', label: '스누즈 +5 XP' },
-  { event: 'family_alarm_received', label: '가족 알람 수신 +10 XP' },
+const DEV_EVENTS: { event: XpEvent; labelKey: string }[] = [
+  { event: 'alarm_completed', labelKey: 'character.devAlarmCompleted' },
+  { event: 'alarm_snoozed', labelKey: 'character.devAlarmSnoozed' },
+  { event: 'family_alarm_received', labelKey: 'character.devFamilyAlarmReceived' },
 ];
 
 const MILESTONES = [7, 30, 90] as const;
 
-type DynStyles = ReturnType<typeof createStyles>;
+type DynStyles = ReturnType<typeof createCharacterStyles>;
 
 function StatBar({ label, value, max, color, dynStyles, t }: {
   label: string; value: number; max: number; color: string;
@@ -79,7 +79,7 @@ function MilestoneBadge({ milestone, achieved, dynStyles, t }: {
 
 export default function CharacterScreen() {
   const { colors } = useTheme();
-  const dynStyles = useMemo(() => createStyles(colors), [colors]);
+  const dynStyles = useMemo(() => createCharacterStyles(colors), [colors]);
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dialogueSeed, setDialogueSeed] = useState(0);
@@ -124,8 +124,8 @@ export default function CharacterScreen() {
 
   const currentStreak = data?.streak?.current ?? 0;
   const dialogue = useMemo(
-    () => pickStreakAwareDialogue(stage, currentStreak, () => ((dialogueSeed * 9301 + 49297) % 233280) / 233280),
-    [stage, currentStreak, dialogueSeed],
+    () => pickStreakAwareDialogue(stage, currentStreak, t, () => ((dialogueSeed * 9301 + 49297) % 233280) / 233280),
+    [stage, currentStreak, dialogueSeed, t],
   );
 
   const handleTap = useCallback(() => {
@@ -174,7 +174,7 @@ export default function CharacterScreen() {
             <Text style={dynStyles.characterName}>{character.name}</Text>
             <View style={dynStyles.badge}>
               <Text style={dynStyles.badgeText}>
-                Lv.{character.level} · {stageToLabel(character.stage)}
+                {t('character.levelDisplay', { level: character.level })} · {stageToLabel(character.stage, t)}
               </Text>
             </View>
           </View>
@@ -246,7 +246,7 @@ export default function CharacterScreen() {
               label={t('character.statDiligence')}
               value={stats.diligence}
               max={Math.max(stats.diligence, stats.health, stats.consistency, 10)}
-              color="#8B5E3C"
+              color={TREE_BROWN}
               dynStyles={dynStyles}
               t={t}
             />
@@ -271,7 +271,7 @@ export default function CharacterScreen() {
 
         {__DEV__ && (
         <View style={dynStyles.section}>
-          <Text style={dynStyles.sectionTitle}>{t('character.devXpTitle')}</Text>
+          <Text style={dynStyles.sectionTitle} accessibilityRole="header">{t('character.devXpTitle')}</Text>
           <Text style={dynStyles.devHint}>{t('character.devXpHint')}</Text>
           <View style={dynStyles.devButtonsRow}>
             {DEV_EVENTS.map((e) => (
@@ -280,8 +280,10 @@ export default function CharacterScreen() {
                 onPress={() => grantMutation.mutate({ event: e.event })}
                 disabled={grantMutation.isPending}
                 style={[dynStyles.devButton, grantMutation.isPending && dynStyles.devButtonDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel={t(e.labelKey)}
               >
-                <Text style={dynStyles.devButtonText}>{e.label}</Text>
+                <Text style={dynStyles.devButtonText}>{t(e.labelKey)}</Text>
               </Pressable>
             ))}
           </View>
@@ -297,245 +299,3 @@ export default function CharacterScreen() {
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    scrollContent: {
-      padding: Spacing.lg,
-      paddingBottom: 100,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    errorContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: Spacing.lg,
-    },
-    errorText: {
-      fontSize: FontSize.md,
-      color: colors.textSecondary,
-      textAlign: 'center',
-    },
-    characterCard: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.xl,
-      alignItems: 'center',
-      marginBottom: Spacing.lg,
-    },
-    emoji: {
-      fontSize: 72,
-      marginBottom: Spacing.md,
-    },
-    nameRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-      marginBottom: Spacing.sm,
-    },
-    characterName: {
-      fontSize: FontSize.xl,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-    },
-    badge: {
-      backgroundColor: `${colors.primary}20`,
-      paddingHorizontal: Spacing.sm,
-      paddingVertical: 2,
-      borderRadius: BorderRadius.full,
-    },
-    badgeText: {
-      fontSize: FontSize.xs,
-      color: colors.primary,
-      fontFamily: FontFamily.semibold,
-    },
-    dialogue: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-      textAlign: 'center',
-    },
-    streakCard: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.lg,
-      marginBottom: Spacing.lg,
-      alignItems: 'center',
-    },
-    streakMain: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      gap: Spacing.xs,
-    },
-    streakFire: {
-      fontSize: 28,
-    },
-    streakCount: {
-      fontSize: 36,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-    },
-    streakLabel: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.medium,
-      color: colors.textSecondary,
-    },
-    streakMeta: {
-      marginTop: Spacing.xs,
-    },
-    streakBest: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-    },
-    milestoneRow: {
-      flexDirection: 'row',
-      gap: Spacing.lg,
-      marginTop: Spacing.md,
-    },
-    milestoneBadge: {
-      alignItems: 'center',
-      opacity: 0.35,
-    },
-    milestoneBadgeAchieved: {
-      opacity: 1,
-    },
-    milestoneEmoji: {
-      fontSize: 28,
-    },
-    milestoneDay: {
-      fontSize: FontSize.xs,
-      fontFamily: FontFamily.semibold,
-      color: colors.textTertiary,
-      marginTop: 2,
-    },
-    milestoneDayAchieved: {
-      color: colors.primary,
-    },
-    section: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.xl,
-      borderWidth: 1,
-      borderColor: colors.border,
-      padding: Spacing.lg,
-      marginBottom: Spacing.lg,
-    },
-    sectionTitle: {
-      fontSize: FontSize.sm,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    progressHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'baseline',
-      marginBottom: Spacing.sm,
-    },
-    progressText: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-    },
-    progressBarBg: {
-      height: 10,
-      backgroundColor: colors.surfaceVariant,
-      borderRadius: BorderRadius.full,
-      overflow: 'hidden',
-    },
-    progressBarFill: {
-      height: '100%',
-      backgroundColor: colors.primary,
-      borderRadius: BorderRadius.full,
-    },
-    xpStatsRow: {
-      flexDirection: 'row',
-      marginTop: Spacing.md,
-    },
-    xpStatItem: {
-      flex: 1,
-      alignItems: 'center',
-    },
-    xpStatLabel: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-      marginBottom: 2,
-    },
-    xpStatValue: {
-      fontSize: FontSize.lg,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-    },
-    statBarsContainer: {
-      marginTop: Spacing.md,
-      gap: Spacing.sm,
-    },
-    statBarRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-    },
-    statBarLabel: {
-      fontSize: FontSize.xs,
-      color: colors.textSecondary,
-      width: 80,
-    },
-    statBarTrack: {
-      flex: 1,
-      height: 8,
-      backgroundColor: colors.surfaceVariant,
-      borderRadius: BorderRadius.full,
-      overflow: 'hidden',
-    },
-    statBarFill: {
-      height: '100%',
-      borderRadius: BorderRadius.full,
-    },
-    statBarValue: {
-      fontSize: FontSize.xs,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-      width: 30,
-      textAlign: 'right',
-    },
-    devHint: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-      marginTop: Spacing.xs,
-      marginBottom: Spacing.md,
-    },
-    devButtonsRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: Spacing.sm,
-    },
-    devButton: {
-      backgroundColor: `${colors.primary}15`,
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
-      borderRadius: BorderRadius.sm,
-      minHeight: 44,
-      justifyContent: 'center',
-    },
-    devButtonDisabled: {
-      opacity: 0.5,
-    },
-    devButtonText: {
-      fontSize: FontSize.xs,
-      color: colors.primary,
-      fontFamily: FontFamily.semibold,
-    },
-    grantNotice: {
-      marginTop: Spacing.md,
-      fontSize: FontSize.xs,
-      color: colors.textSecondary,
-    },
-  });
-}

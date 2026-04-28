@@ -43,10 +43,7 @@ export function isCapExempt(event: XpEvent): boolean {
 }
 
 export function isXpEvent(value: unknown): value is XpEvent {
-  return (
-    typeof value === 'string' &&
-    Object.prototype.hasOwnProperty.call(XP_TABLE, value)
-  );
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(XP_TABLE, value);
 }
 
 export function computeXpForEvent(event: XpEvent): number {

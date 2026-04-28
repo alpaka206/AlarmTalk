@@ -1,8 +1,7 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
@@ -10,22 +9,21 @@ import {
   RefreshControl,
   Animated as RNAnimated,
 } from 'react-native';
-import { Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
-import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { getLibrary, toggleFavorite, deleteLibraryItem } from '../../src/services/api';
+import { useTheme } from '../../src/hooks/useTheme';
+import { createLibraryStyles } from '../../src/styles/libraryStyles';
+import { getLibrary, toggleFavorite, deleteLibraryItem, deleteTtsMessage } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheLibrary, getCachedLibrary } from '../../src/services/offlineCache';
 import { ErrorView } from '../../src/components/QueryStateView';
-import { MiniWaveformPlayer } from '../../src/components/MiniWaveformPlayer';
+import { LibraryListItem } from '../../src/components/LibraryListItem';
 import { Audio } from 'expo-av';
 import type { LibraryItem } from '../../src/types';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
@@ -56,7 +54,7 @@ export default function LibraryScreen() {
   const toast = useToast();
   const isConnected = useNetworkStatus();
   const { colors } = useTheme();
-  const dynStyles = useMemo(() => createStyles(colors), [colors]);
+  const dynStyles = useMemo(() => createLibraryStyles(colors), [colors]);
   const [cachedItems, setCachedItems] = useState<LibraryItem[] | null>(null);
 
   useEffect(() => {
@@ -114,22 +112,50 @@ export default function LibraryScreen() {
       queryClient.invalidateQueries({ queryKey: ['library'] });
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('library.deleteError')));
+      toast.show(getApiErrorMessage(err, t, t('library.deleteError')));
     },
   });
 
-  const handleDelete = (id: string) => {
+  const deepDeleteMutation = useMutation({
+    mutationFn: (messageId: string) => deleteTtsMessage(messageId, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['library'] });
+      queryClient.invalidateQueries({ queryKey: ['alarms'] });
+    },
+    onError: (err: unknown) => {
+      toast.show(getApiErrorMessage(err, t, t('library.deleteError')));
+    },
+  });
+
+  const handleDelete = useCallback((id: string, messageId: string) => {
     Alert.alert(t('library.deleteTitle'), t('library.deleteConfirm'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
-        text: t('common.delete'),
-        style: 'destructive',
+        text: t('library.removeFromLibrary'),
         onPress: () => deleteMutation.mutate(id),
       },
+      {
+        text: t('library.deletePermanently'),
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert(
+            t('library.deletePermanentlyTitle'),
+            t('library.deletePermanentlyConfirm'),
+            [
+              { text: t('common.cancel'), style: 'cancel' },
+              {
+                text: t('common.delete'),
+                style: 'destructive',
+                onPress: () => deepDeleteMutation.mutate(messageId),
+              },
+            ],
+          );
+        },
+      },
     ]);
-  };
+  }, [t, deleteMutation, deepDeleteMutation]);
 
-  const renderDeleteAction = (
+  const renderDeleteAction = useCallback((
     _progress: RNAnimated.AnimatedInterpolation<number>,
     dragX: RNAnimated.AnimatedInterpolation<number>,
   ) => {
@@ -145,35 +171,20 @@ export default function LibraryScreen() {
         </RNAnimated.Text>
       </View>
     );
-  };
+  }, [dynStyles, t]);
 
-  const handleMiniPlay = (messageId: string, sound: Audio.Sound) => {
+  const handleMiniPlay = useCallback((messageId: string, sound: Audio.Sound) => {
     if (currentSound) {
       currentSound.unloadAsync();
     }
     setCurrentSound(sound);
     setPlaying(messageId);
-  };
+  }, [currentSound, setPlaying]);
 
-  const handleMiniStop = () => {
+  const handleMiniStop = useCallback(() => {
     setPlaying(null);
     setCurrentSound(null);
-  };
-
-  const getCategoryEmoji = (category: string) => {
-    const map: Record<string, string> = {
-      morning: '🌅',
-      lunch: '🍽️',
-      afternoon: '☕',
-      evening: '🌙',
-      night: '😴',
-      cheer: '💪',
-      love: '❤️',
-      health: '🏥',
-      custom: '✏️',
-    };
-    return map[category] || '💌';
-  };
+  }, [setPlaying]);
 
   const CATEGORY_I18N: Record<string, string> = {
     morning: 'library.categoryMorning',
@@ -187,72 +198,51 @@ export default function LibraryScreen() {
     custom: 'library.categoryCustom',
   };
 
-  const getCategoryLabel = (key: string) =>
-    CATEGORY_I18N[key] ? t(CATEGORY_I18N[key]) : key;
+  const getCategoryLabel = useCallback(
+    (key: string) => (CATEGORY_I18N[key] ? t(CATEGORY_I18N[key]) : key),
+    [t],
+  );
 
-  const renderItem = ({ item }: { item: LibraryItem }) => {
-    const isActive = currentPlayingId === item.message_id;
-    return (
-      <Swipeable
-        renderRightActions={renderDeleteAction}
-        onSwipeableOpen={() => handleDelete(item.id)}
-        overshootRight={false}
+  const renderCategoryItem = useCallback(
+    ({ item: cat }: { item: (typeof CATEGORIES)[number] }) => (
+      <TouchableOpacity
+        style={[dynStyles.categoryChip, categoryFilter === cat.key && dynStyles.categoryChipActive]}
+        onPress={() => setCategoryFilter(cat.key)}
+        accessibilityRole="radio"
+        accessibilityState={{ selected: categoryFilter === cat.key }}
+        accessibilityLabel={cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
       >
-        <TouchableOpacity
-          style={dynStyles.messageCard}
-          onPress={() => router.push(`/message/${item.message_id}`)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.voice_name}, ${getCategoryLabel(item.category)}: ${item.text}`}
-        >
-          <View style={dynStyles.messageLeft}>
-            <View style={dynStyles.avatarSmall}>
-              <Text style={dynStyles.avatarLetter}>{item.voice_name?.charAt(0) || '?'}</Text>
-            </View>
-            <View style={dynStyles.messageContent}>
-              <View style={dynStyles.messageHeader}>
-                <Text style={dynStyles.voiceName}>{item.voice_name}</Text>
-                <Text
-                  style={dynStyles.categoryBadge}
-                  accessibilityLabel={t('library.a11yCategoryBadge', { category: getCategoryLabel(item.category) })}
-                >{getCategoryEmoji(item.category)}</Text>
-              </View>
-              <Text style={dynStyles.messageText} numberOfLines={2}>
-                &quot;{item.text}&quot;
-              </Text>
-              <View style={dynStyles.miniPlayerRow}>
-                <MiniWaveformPlayer
-                  messageId={item.message_id}
-                  isActive={isActive}
-                  onPlay={handleMiniPlay}
-                  onStop={handleMiniStop}
-                />
-              </View>
-              <Text style={dynStyles.messageDate}>
-                {new Date(item.received_at).toLocaleDateString('ko-KR', {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </Text>
-            </View>
-          </View>
+        <Text style={dynStyles.categoryChipText}>
+          {cat.emoji} {cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [dynStyles, categoryFilter, t, getCategoryLabel],
+  );
 
-          <View style={dynStyles.messageActions}>
-            <TouchableOpacity
-              onPress={() => favoriteMutation.mutate(item.id)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={item.is_favorite ? t('library.removeFavorite') : t('library.addFavorite')}
-            >
-              <Text style={dynStyles.favoriteIcon}>{item.is_favorite ? '❤️' : '🤍'}</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Swipeable>
-    );
-  };
+  const handleItemPress = useCallback((messageId: string) => {
+    router.push(`/message/${messageId}`);
+  }, [router]);
+
+  const handleFavorite = useCallback((id: string) => {
+    favoriteMutation.mutate(id);
+  }, [favoriteMutation]);
+
+  const renderItem = useCallback(({ item }: { item: LibraryItem }) => (
+    <LibraryListItem
+      item={item}
+      styles={dynStyles}
+      isActive={currentPlayingId === item.message_id}
+      t={t}
+      getCategoryLabel={getCategoryLabel}
+      onPress={handleItemPress}
+      onDelete={handleDelete}
+      onFavorite={handleFavorite}
+      onPlay={handleMiniPlay}
+      onStop={handleMiniStop}
+      renderDeleteAction={renderDeleteAction}
+    />
+  ), [dynStyles, currentPlayingId, t, getCategoryLabel, handleItemPress, handleDelete, handleFavorite, handleMiniPlay, handleMiniStop, renderDeleteAction]);
 
   return (
     <SafeAreaView style={dynStyles.container} edges={['bottom']}>
@@ -287,19 +277,7 @@ export default function LibraryScreen() {
         data={CATEGORIES}
         keyExtractor={(item) => item.key}
         contentContainerStyle={dynStyles.categoryRow}
-        renderItem={({ item: cat }) => (
-          <TouchableOpacity
-            style={[dynStyles.categoryChip, categoryFilter === cat.key && dynStyles.categoryChipActive]}
-            onPress={() => setCategoryFilter(cat.key)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: categoryFilter === cat.key }}
-            accessibilityLabel={cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
-          >
-            <Text style={dynStyles.categoryChipText}>
-              {cat.emoji} {cat.key === 'all' ? t('library.all') : getCategoryLabel(cat.key)}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderItem={renderCategoryItem}
       />
 
       {showingCached && (
@@ -336,190 +314,14 @@ export default function LibraryScreen() {
           renderItem={renderItem}
           contentContainerStyle={dynStyles.list}
           showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={5}
+          windowSize={5}
+          removeClippedSubviews
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
         />
       )}
       <Toast message={toast.message} opacity={toast.opacity} />
     </SafeAreaView>
   );
-}
-
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    filterRow: {
-      flexDirection: 'row',
-      paddingHorizontal: Spacing.lg,
-      paddingVertical: Spacing.sm,
-      gap: Spacing.sm,
-    },
-    categoryRow: {
-      paddingHorizontal: Spacing.lg,
-      paddingBottom: Spacing.sm,
-      gap: Spacing.xs,
-    },
-    categoryChip: {
-      paddingHorizontal: Spacing.sm + 4,
-      paddingVertical: Spacing.xs + 2,
-      borderRadius: BorderRadius.full,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      marginRight: Spacing.xs,
-    },
-    categoryChipActive: {
-      backgroundColor: colors.primaryLight,
-      borderColor: colors.primary,
-    },
-    categoryChipText: {
-      fontSize: FontSize.xs,
-      color: colors.text,
-      fontFamily: FontFamily.medium,
-    },
-    filterChip: {
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.sm,
-      borderRadius: BorderRadius.full,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    filterChipActive: {
-      backgroundColor: colors.primary,
-      borderColor: colors.primary,
-    },
-    filterText: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-      fontFamily: FontFamily.semibold,
-    },
-    filterTextActive: {
-      color: '#FFF',
-    },
-    cachedBanner: {
-      backgroundColor: colors.surfaceVariant,
-      marginHorizontal: Spacing.lg,
-      marginBottom: Spacing.sm,
-      paddingVertical: Spacing.sm,
-      paddingHorizontal: Spacing.md,
-      borderRadius: BorderRadius.sm,
-      alignItems: 'center',
-    },
-    cachedText: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-    },
-    list: {
-      padding: Spacing.lg,
-    },
-    messageCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.md,
-      marginBottom: Spacing.sm,
-    },
-    messageLeft: {
-      flex: 1,
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    avatarSmall: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.primaryLight,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: Spacing.md,
-    },
-    avatarLetter: {
-      fontSize: FontSize.lg,
-      fontFamily: FontFamily.bold,
-      color: colors.primaryDark,
-    },
-    messageContent: {
-      flex: 1,
-    },
-    messageHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.xs,
-    },
-    voiceName: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    categoryBadge: {
-      fontSize: 14,
-    },
-    messageText: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-      marginTop: 2,
-      lineHeight: 18,
-    },
-    miniPlayerRow: {
-      marginTop: Spacing.xs,
-    },
-    messageDate: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-      marginTop: 4,
-    },
-    messageActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-    },
-    favoriteIcon: {
-      fontSize: 20,
-    },
-    emptyState: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    emptyEmoji: {
-      fontSize: 64,
-      marginBottom: Spacing.md,
-    },
-    emptyText: {
-      fontSize: FontSize.md,
-      color: colors.textSecondary,
-      textAlign: 'center',
-    },
-    emptyCta: {
-      marginTop: Spacing.lg,
-      backgroundColor: colors.primary,
-      paddingHorizontal: Spacing.xl,
-      paddingVertical: Spacing.sm + 4,
-      borderRadius: BorderRadius.full,
-      minHeight: 44,
-      justifyContent: 'center',
-    },
-    emptyCtaText: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.semibold,
-      color: colors.surface,
-    },
-    swipeDeleteContainer: {
-      backgroundColor: colors.error,
-      justifyContent: 'center',
-      alignItems: 'flex-end',
-      paddingHorizontal: Spacing.xl,
-      borderRadius: BorderRadius.lg,
-      marginBottom: Spacing.sm,
-    },
-    swipeDeleteText: {
-      color: '#FFF',
-      fontFamily: FontFamily.bold,
-      fontSize: FontSize.md,
-    },
-  });
 }

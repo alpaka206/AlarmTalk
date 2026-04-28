@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
 
 const stats = new Hono<AppEnv>();
 
@@ -100,8 +101,8 @@ stats.get('/', async (c) => {
       },
     });
   } catch (err) {
-    console.error(`GET /stats failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to fetch stats' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to fetch stats', error_code: 'FETCH_STATS_FAILED' }, 500);
   }
 });
 
@@ -141,25 +142,25 @@ stats.get('/activity', async (c) => {
       ...recentAlarms.rows.map((r) => ({
         id: r.id as string,
         type: 'alarm' as const,
-        summary: `알람 ${r.time}`,
+        detail: { time: r.time as string },
         created_at: r.created_at as string,
       })),
       ...recentMessages.rows.map((r) => ({
         id: r.id as string,
         type: 'message' as const,
-        summary: String(r.text).slice(0, 50),
+        detail: { text: String(r.text).slice(0, 50) },
         created_at: r.created_at as string,
       })),
       ...recentGifts.rows.map((r) => ({
         id: r.id as string,
         type: 'gift' as const,
-        summary: r.note ? String(r.note).slice(0, 50) : `선물 (${r.status})`,
+        detail: { note: r.note ? String(r.note).slice(0, 50) : null, status: r.status as string },
         created_at: r.created_at as string,
       })),
       ...recentVoices.rows.map((r) => ({
         id: r.id as string,
         type: 'voice' as const,
-        summary: `음성 "${r.name}" (${r.status})`,
+        detail: { name: r.name as string, status: r.status as string },
         created_at: r.created_at as string,
       })),
     ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -167,8 +168,8 @@ stats.get('/activity', async (c) => {
 
     return c.json({ activities });
   } catch (err) {
-    console.error(`GET /stats/activity failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to fetch activity' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to fetch activity', error_code: 'FETCH_ACTIVITY_FAILED' }, 500);
   }
 });
 

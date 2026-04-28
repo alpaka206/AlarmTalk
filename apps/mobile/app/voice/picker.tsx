@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
+import { useTranslation } from 'react-i18next';
 import { BorderRadius, FontFamily, FontSize, Spacing } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import {
@@ -24,10 +25,12 @@ import {
   sanitizeLabel,
   speakerPickerReducer,
 } from '../../src/lib/speakerPickerState';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 
 export default function SpeakerPickerScreen() {
   const router = useRouter();
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const styles = createStyles(colors);
   const [state, dispatch] = useReducer(speakerPickerReducer, INITIAL_STATE);
 
@@ -37,7 +40,7 @@ export default function SpeakerPickerScreen() {
       copyToCacheDirectory: true,
     });
     if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
+      const asset = result.assets[0]!;
       dispatch({
         type: 'PICK_FILE',
         file: { uri: asset.uri, name: asset.name, type: asset.mimeType || 'audio/wav' },
@@ -62,16 +65,16 @@ export default function SpeakerPickerScreen() {
       const detected = await separateUpload(upload.id);
       dispatch({ type: 'READY', speakers: detected });
     } catch (err) {
-      dispatch({ type: 'FAIL', message: err instanceof Error ? err.message : '업로드 실패' });
+      dispatch({ type: 'FAIL', message: getApiErrorMessage(err, t, t('speakerPicker.uploadFailed')) });
     }
   }, [state.file]);
 
   const commitEdit = useCallback(
     async (speaker: SpeakerSegment) => {
       if (!state.upload) return;
-      const sanitized = sanitizeLabel(state.draftLabel);
+      const sanitized = sanitizeLabel(state.draftLabel, t);
       if (!sanitized.ok) {
-        dispatch({ type: 'FAIL', message: sanitized.error ?? '라벨 오류' });
+        dispatch({ type: 'FAIL', message: sanitized.error ?? t('speakerPicker.labelError') });
         return;
       }
       if (sanitized.value === speaker.label) {
@@ -84,7 +87,7 @@ export default function SpeakerPickerScreen() {
       } catch (err) {
         dispatch({
           type: 'FAIL',
-          message: err instanceof Error ? err.message : '라벨 수정 실패',
+          message: getApiErrorMessage(err, t, t('speakerPicker.labelEditFailed')),
         });
       }
     },
@@ -94,49 +97,46 @@ export default function SpeakerPickerScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title} accessibilityRole="header">화자 감지 (mock)</Text>
-        <Text style={styles.desc}>
-          오디오를 업로드하면 모의 분리 알고리즘이 화자를 나눕니다. 감지된 화자 중에서 선택하고
-          라벨을 편집할 수 있어요.
-        </Text>
+        <Text style={styles.title} accessibilityRole="header">{t('speakerPicker.title')}</Text>
+        <Text style={styles.desc}>{t('speakerPicker.desc')}</Text>
       </View>
 
       {state.phase === 'idle' && (
         <>
-          <TouchableOpacity style={styles.pickButton} onPress={pickFile} accessibilityRole="button" accessibilityLabel={state.file ? state.file.name : '오디오 파일 선택'}>
+          <TouchableOpacity style={styles.pickButton} onPress={pickFile} accessibilityRole="button" accessibilityLabel={state.file ? state.file.name : t('speakerPicker.pickFile')}>
             <Text style={styles.pickEmoji} accessibilityElementsHidden>📁</Text>
             <Text style={styles.pickText}>
-              {state.file ? state.file.name : '오디오 파일 선택'}
+              {state.file ? state.file.name : t('speakerPicker.pickFile')}
             </Text>
           </TouchableOpacity>
 
           {state.file && (
-            <TouchableOpacity style={styles.primaryButton} onPress={runFlow} accessibilityRole="button" accessibilityLabel="업로드 후 화자 감지">
-              <Text style={styles.primaryText}>업로드 후 화자 감지</Text>
+            <TouchableOpacity style={styles.primaryButton} onPress={runFlow} accessibilityRole="button" accessibilityLabel={t('speakerPicker.uploadAndDetect')}>
+              <Text style={styles.primaryText}>{t('speakerPicker.uploadAndDetect')}</Text>
             </TouchableOpacity>
           )}
         </>
       )}
 
       {(state.phase === 'uploading' || state.phase === 'separating') && (
-        <View style={styles.statusRow} accessibilityLiveRegion="polite" accessibilityLabel={state.phase === 'uploading' ? '업로드 중' : '화자 분리 중'}>
+        <View style={styles.statusRow} accessibilityLiveRegion="polite" accessibilityLabel={state.phase === 'uploading' ? t('speakerPicker.a11yUploading') : t('speakerPicker.a11ySeparating')}>
           <ActivityIndicator color={colors.primary} />
           <Text style={styles.statusText}>
-            {state.phase === 'uploading' ? '업로드 중…' : '화자 분리 중…'}
+            {state.phase === 'uploading' ? t('speakerPicker.uploading') : t('speakerPicker.separating')}
           </Text>
         </View>
       )}
 
       {state.phase === 'error' && (
         <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{state.error ?? '알 수 없는 오류'}</Text>
+          <Text style={styles.errorText}>{state.error ?? t('speakerPicker.unknownError')}</Text>
           <TouchableOpacity
             style={styles.secondaryButton}
             onPress={() => dispatch({ type: 'RESET' })}
             accessibilityRole="button"
-            accessibilityLabel="다시 시도"
+            accessibilityLabel={t('speakerPicker.retry')}
           >
-            <Text style={styles.secondaryText}>다시 시도</Text>
+            <Text style={styles.secondaryText}>{t('speakerPicker.retry')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -144,7 +144,7 @@ export default function SpeakerPickerScreen() {
       {state.phase === 'ready' && (
         <>
           {state.speakers.length === 0 ? (
-            <Text style={styles.emptyText}>감지된 화자가 없습니다.</Text>
+            <Text style={styles.emptyText}>{t('speakerPicker.noSpeakers')}</Text>
           ) : (
             state.speakers.map((sp) => {
               const isSelected = state.selectedSpeakerId === sp.id;
@@ -155,7 +155,7 @@ export default function SpeakerPickerScreen() {
                   key={sp.id}
                   style={[styles.speakerCard, isSelected && styles.speakerCardSelected]}
                   onPress={() => dispatch({ type: 'SELECT', speakerId: sp.id })}
-                  accessibilityLabel={`${sp.label}, ${durationSec.toFixed(1)}초, 신뢰도 ${(sp.confidence * 100).toFixed(0)}%`}
+                  accessibilityLabel={t('speakerPicker.a11ySpeaker', { label: sp.label, duration: durationSec.toFixed(1), confidence: (sp.confidence * 100).toFixed(0) })}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: isSelected }}
                 >
@@ -168,7 +168,7 @@ export default function SpeakerPickerScreen() {
                         onBlur={() => void commitEdit(sp)}
                         onSubmitEditing={() => void commitEdit(sp)}
                         style={styles.labelInput}
-                        accessibilityLabel={`${sp.label} 이름 편집`}
+                        accessibilityLabel={t('speakerPicker.a11yEditLabel', { label: sp.label })}
                       />
                     ) : (
                       <Text style={styles.labelText}>{sp.label}</Text>
@@ -178,21 +178,21 @@ export default function SpeakerPickerScreen() {
                         dispatch({ type: 'EDIT_BEGIN', speakerId: sp.id, label: sp.label })
                       }
                       accessibilityRole="button"
-                      accessibilityLabel={`${sp.label} 이름 변경`}
+                      accessibilityLabel={t('speakerPicker.a11yRename', { label: sp.label })}
                     >
-                      <Text style={styles.renameText}>이름 변경</Text>
+                      <Text style={styles.renameText}>{t('speakerPicker.rename')}</Text>
                     </TouchableOpacity>
                   </View>
                   <Text style={styles.metaText}>
-                    {durationSec.toFixed(1)}초 · 신뢰도 {(sp.confidence * 100).toFixed(0)}%
+                    {t('speakerPicker.durationConfidence', { duration: durationSec.toFixed(1), confidence: (sp.confidence * 100).toFixed(0) })}
                   </Text>
                 </TouchableOpacity>
               );
             })
           )}
 
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="닫기">
-            <Text style={styles.secondaryText}>닫기</Text>
+          <TouchableOpacity style={styles.secondaryButton} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel={t('speakerPicker.close')}>
+            <Text style={styles.secondaryText}>{t('speakerPicker.close')}</Text>
           </TouchableOpacity>
         </>
       )}
@@ -230,7 +230,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
-  primaryText: { color: '#FFF', fontSize: FontSize.lg, fontFamily: FontFamily.bold },
+  primaryText: { color: colors.textOnPrimary, fontSize: FontSize.lg, fontFamily: FontFamily.bold },
   secondaryButton: {
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
@@ -247,13 +247,13 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
   statusText: { marginLeft: Spacing.sm, color: colors.textSecondary },
   errorCard: {
     backgroundColor: colors.surface,
-    borderColor: '#F87171',
+    borderColor: colors.error,
     borderWidth: 1,
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     marginBottom: Spacing.md,
   },
-  errorText: { color: '#B91C1C', fontSize: FontSize.md },
+  errorText: { color: colors.error, fontSize: FontSize.md },
   emptyText: {
     textAlign: 'center',
     color: colors.textSecondary,

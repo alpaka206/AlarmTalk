@@ -424,8 +424,44 @@ export const migrations: Migration[] = [
   {
     id: 16,
     name: 'user-last-active',
+    statements: [`ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`],
+  },
+  {
+    id: 17,
+    name: 'alarm-wake-mode',
     statements: [
-      `ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`,
+      `ALTER TABLE alarms ADD COLUMN wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice'
+         CHECK(wake_mode IN ('sound_then_voice','voice_only'))`,
+      `ALTER TABLE alarms ADD COLUMN voice_profile_id TEXT DEFAULT NULL`,
+    ],
+  },
+  {
+    id: 18,
+    name: 'notes-table',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        sender_id TEXT NOT NULL REFERENCES users(id),
+        receiver_id TEXT NOT NULL REFERENCES users(id),
+        text TEXT NOT NULL,
+        audio_url TEXT,
+        read_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_receiver ON notes(receiver_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_notes_sender ON notes(sender_id, created_at DESC)`,
+    ],
+  },
+  {
+    id: 19,
+    name: 'composite-indices',
+    statements: [
+      `CREATE INDEX IF NOT EXISTS idx_friendships_a_status ON friendships(user_a, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_friendships_b_status ON friendships(user_b, status)`,
+      `CREATE INDEX IF NOT EXISTS idx_gifts_recipient_created ON gifts(recipient_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_gifts_sender_created ON gifts(sender_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_user_active ON alarms(user_id, is_active)`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)`,
     ],
   },
 ];

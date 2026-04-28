@@ -2,7 +2,6 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   TextInput,
   Alert,
@@ -13,15 +12,14 @@ import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
-import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { useTheme } from '../../src/hooks/useTheme';
 import { requestMicPermission, startRecording, stopRecording } from '../../src/services/audio';
 import { createVoiceClone } from '../../src/services/api';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
+import { createVoiceRecordStyles } from '../../src/styles/voiceRecordStyles';
 
-const _LEVEL_BAR_COUNT = 20;
 const LEVEL_HISTORY_SIZE = 20;
 
 function dbToNormalized(db: number): number {
@@ -35,7 +33,7 @@ export default function RecordScreen() {
   const { t } = useTranslation();
   const toast = useToast();
   const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const styles = createVoiceRecordStyles(colors);
   const guideSentences = t('voiceRecord.sentences', { returnObjects: true }) as string[];
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -72,7 +70,7 @@ export default function RecordScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceRecord.cloneError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceRecord.cloneError')));
     },
   });
 
@@ -152,7 +150,6 @@ export default function RecordScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 가이드 문장 */}
       <View style={styles.guideSection}>
         <Text style={styles.guideTitle} accessibilityRole="header">{t('voiceRecord.guideTitle')}</Text>
         {guideSentences.map((sentence, i) => (
@@ -164,7 +161,6 @@ export default function RecordScreen() {
         <Text style={styles.guideTip}>{t('voiceRecord.guideTip')}</Text>
       </View>
 
-      {/* 녹음 컨트롤 */}
       <View style={styles.recordSection}>
         <Text style={styles.timer} accessibilityLabel={t('voiceRecord.a11yDuration', { time: formatTime(duration) })} accessibilityRole="timer">{formatTime(duration)}</Text>
 
@@ -212,7 +208,6 @@ export default function RecordScreen() {
         </Text>
       </View>
 
-      {/* 녹음 완료 후 */}
       {recordedUri && !isRecording && (
         <View style={styles.resultSection}>
           <Text style={styles.resultTitle}>
@@ -237,7 +232,7 @@ export default function RecordScreen() {
             accessibilityState={{ disabled: cloneMutation.isPending, busy: cloneMutation.isPending }}
           >
             {cloneMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.submitText}>{t('voiceRecord.submit')}</Text>
             )}
@@ -248,150 +243,3 @@ export default function RecordScreen() {
     </View>
   );
 }
-
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.xl,
-  },
-  permissionText: {
-    fontSize: FontSize.md,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  guideSection: {
-    padding: Spacing.lg,
-  },
-  guideTitle: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bold,
-    color: colors.text,
-    marginBottom: Spacing.md,
-  },
-  guideSentence: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.sm,
-  },
-  guideNumber: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primaryLight,
-    color: colors.primaryDark,
-    textAlign: 'center',
-    lineHeight: 24,
-    fontSize: FontSize.sm,
-    fontFamily: FontFamily.bold,
-    marginRight: Spacing.sm,
-  },
-  guideText: {
-    flex: 1,
-    fontSize: FontSize.md,
-    color: colors.text,
-    lineHeight: 22,
-  },
-  guideTip: {
-    fontSize: FontSize.sm,
-    color: colors.primary,
-    marginTop: Spacing.md,
-  },
-  recordSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-  },
-  timer: {
-    fontSize: 48,
-    fontFamily: FontFamily.regular,
-    color: colors.text,
-    marginBottom: Spacing.lg,
-  },
-  recordButtonOuter: {
-    marginBottom: Spacing.md,
-  },
-  recordButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  recordButtonActive: {
-    backgroundColor: colors.error,
-  },
-  stopIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 4,
-    backgroundColor: '#FFF',
-  },
-  micIcon: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  levelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 44,
-    gap: 2,
-    marginBottom: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-  },
-  levelBar: {
-    width: 3,
-    borderRadius: 1.5,
-    minHeight: 3,
-  },
-  recordHint: {
-    fontSize: FontSize.sm,
-    color: colors.textSecondary,
-  },
-  resultSection: {
-    padding: Spacing.lg,
-  },
-  resultTitle: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.semibold,
-    color: colors.success,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-  },
-  nameInput: {
-    backgroundColor: colors.surface,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    fontSize: FontSize.md,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: Spacing.md,
-  },
-  submitButton: {
-    backgroundColor: colors.primary,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bold,
-  },
-});

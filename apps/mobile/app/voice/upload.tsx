@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { createVoiceClone } from '../../src/services/api';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 
@@ -46,7 +46,7 @@ export default function UploadScreen() {
       ]);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('voiceUpload.uploadError')));
+      toast.show(getApiErrorMessage(err, t, t('voiceUpload.uploadError')));
     },
   });
 
@@ -57,7 +57,7 @@ export default function UploadScreen() {
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setSelectedFile(result.assets[0]);
+      setSelectedFile(result.assets[0]!);
     }
   };
 
@@ -119,7 +119,7 @@ export default function UploadScreen() {
           accessibilityState={{ disabled: !selectedFile || !name.trim() || cloneMutation.isPending }}
         >
           {cloneMutation.isPending ? (
-            <ActivityIndicator color="#FFF" />
+            <ActivityIndicator color={colors.textOnPrimary} />
           ) : (
             <Text style={styles.submitText}>{t('voiceUpload.submit')}</Text>
           )}
@@ -193,7 +193,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     opacity: 0.5,
   },
   submitText: {
-    color: '#FFF',
+    color: colors.textOnPrimary,
     fontSize: FontSize.lg,
     fontFamily: FontFamily.bold,
   },

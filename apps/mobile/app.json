@@ -8,6 +8,12 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "scheme": "voicealarm",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5165810a-b394-4623-816b-e64ec06d777b"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -16,20 +22,24 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.voicealarm.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "음성을 녹음하기 위해 마이크 접근이 필요합니다.",
         "UIBackgroundModes": [
           "audio",
           "fetch"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/monochrome-icon.png",
         "backgroundColor": "#FF7F6B"
       },
       "package": "com.devrel.voicealarm",
+      "versionCode": 1,
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.SCHEDULE_EXACT_ALARM",
@@ -54,7 +64,8 @@
       "expo-av",
       "expo-document-picker",
       "expo-web-browser",
-      "expo-font"
+      "expo-font",
+      "@sentry/react-native"
     ],
     "extra": {
       "router": {

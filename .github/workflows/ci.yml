@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [packages/backend, packages/shared, apps/mobile]
+        package: [packages/backend, packages/shared, packages/ui, packages/voice, apps/mobile]
     steps:
       - uses: actions/checkout@v6
 
@@ -59,6 +59,10 @@ jobs:
           - package: packages/backend
             command: npm test
           - package: packages/shared
+            command: npm test
+          - package: packages/ui
+            command: npm test
+          - package: packages/voice
             command: npm test
           - package: apps/mobile
             command: npm test

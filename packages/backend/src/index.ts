@@ -6,9 +6,12 @@ import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { publicCache, privateCache, noStore } from './middleware/cache';
+import { securityHeadersMiddleware } from './middleware/securityHeaders';
+import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { sendAlarmPush } from './lib/fcm';
+import { logRouteError, logStructured } from './lib/logger';
 import voiceRoutes from './routes/voice';
 import ttsRoutes from './routes/tts';
 import alarmRoutes from './routes/alarm';
@@ -23,8 +26,16 @@ import billingRoutes from './routes/billing';
 import familyRoutes from './routes/family';
 import characterRoutes from './routes/character';
 import pushRoutes from './routes/push';
+import codeRoutes from './routes/code';
+import notesRoutes from './routes/notes';
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppEnv>();
+
+// Security response headers (OWASP best practices)
+app.use('*', securityHeadersMiddleware);
+
+// Sentry error tracking (no-op if SENTRY_DSN is not set)
+app.use('*', sentryMiddleware);
 
 // Structured request logging
 app.use('*', loggerMiddleware);
@@ -36,10 +47,7 @@ app.use('*', rateLimitMiddleware);
 app.use('*', bodyLimitMiddleware);
 
 // CORS
-const ALLOWED_ORIGINS = [
-  'http://localhost:8081',
-  'exp://localhost:8081',
-];
+const ALLOWED_ORIGINS = ['http://localhost:8081', 'exp://localhost:8081'];
 
 app.use(
   '*',
@@ -115,22 +123,16 @@ api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
 api.route('/characters', characterRoutes);
 api.route('/push', pushRoutes);
+api.route('/code', codeRoutes);
+api.route('/notes', notesRoutes);
 
 app.route('/api', api);
 
 app.onError((err, c) => {
-  const requestId = c.res.headers.get('X-Request-Id') ?? 'unknown';
-  console.error(
-    JSON.stringify({
-      level: 'error',
-      rid: requestId,
-      method: c.req.method,
-      path: c.req.path,
-      error: err.message,
-      stack: err.stack?.split('\n').slice(0, 5).join(' | '),
-    }),
-  );
-  return c.json({ error: 'Internal server error', requestId }, 500);
+  const sentry = c.get('sentry');
+  if (sentry) sentry.captureException(err);
+  logRouteError(c, err);
+  return c.json({ error: 'Internal server error' }, 500);
 });
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml 에 `[triggers] crons = ["* * * * *"]` 등록 시 1분 주기로 호출됨
@@ -165,16 +167,13 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
   const firing = selectFiringAlarms(alarms, now);
 
-  console.warn(
-    JSON.stringify({
-      level: 'info',
-      at: 'scheduled',
-      now: now.toISOString(),
-      checked: alarms.length,
-      firing_count: firing.length,
-      firing_ids: firing.map((a) => a.id),
-    }),
-  );
+  logStructured('info', {
+    at: 'scheduled',
+    now: now.toISOString(),
+    checked: alarms.length,
+    firing_count: firing.length,
+    firing_ids: firing.map((a) => a.id),
+  });
 
   for (const alarm of firing) {
     const targetUserId = alarm.target_user_id ?? alarm.user_id;

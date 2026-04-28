@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 interface FileInfo {
   exists: boolean;
   size?: number;
+  modificationTime?: number;
 }
 
 type GetInfoFn = (path: string) => Promise<FileInfo>;
@@ -78,7 +79,7 @@ export async function startRecording(enableMetering = false): Promise<Audio.Reco
     ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
     isMeteringEnabled: enableMetering,
   };
-  await recording.prepareToRecordAsync(options);
+  await recording.prepareToRecordAsync(options as Audio.RecordingOptions);
   await recording.startAsync();
   return recording;
 }
@@ -94,7 +95,7 @@ export async function stopRecording(recording: Audio.Recording): Promise<{
 
   return {
     uri,
-    duration: (status as unknown as { durationMillis: number }).durationMillis / 1000,
+    duration: status.durationMillis / 1000,
   };
 }
 
@@ -167,4 +168,73 @@ export async function getAudioCacheSize(): Promise<number> {
     }
   }
   return totalSize;
+}
+
+interface CachedAudioFile {
+  name: string;
+  path: string;
+  size: number;
+  modificationTime: number;
+}
+
+const MAX_CACHE_BYTES = 200 * 1024 * 1024; // 200 MB
+
+export async function getCachedAudioFiles(): Promise<CachedAudioFile[]> {
+  if (isWeb) return [];
+  await ensureAudioDir();
+  const fileNames = await readDirectoryAsync(AUDIO_DIR);
+  const files: CachedAudioFile[] = [];
+  for (const name of fileNames) {
+    const path = `${AUDIO_DIR}${name}`;
+    const info = await getInfoAsync(path);
+    if (info.exists && info.size != null) {
+      files.push({
+        name,
+        path,
+        size: info.size,
+        modificationTime: info.modificationTime ?? 0,
+      });
+    }
+  }
+  return files;
+}
+
+export async function cleanupAudioCache(
+  maxSizeBytes: number = MAX_CACHE_BYTES,
+): Promise<number> {
+  if (isWeb) return 0;
+  const files = await getCachedAudioFiles();
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  if (totalSize <= maxSizeBytes) return 0;
+
+  files.sort((a, b) => a.modificationTime - b.modificationTime);
+
+  let currentSize = totalSize;
+  let deletedCount = 0;
+  for (const file of files) {
+    if (currentSize <= maxSizeBytes) break;
+    try {
+      await deleteAsync(file.path);
+      currentSize -= file.size;
+      deletedCount++;
+    } catch {
+      // skip files that fail to delete
+    }
+  }
+  return deletedCount;
+}
+
+export async function clearAudioCache(): Promise<number> {
+  if (isWeb) return 0;
+  const files = await getCachedAudioFiles();
+  let deletedCount = 0;
+  for (const file of files) {
+    try {
+      await deleteAsync(file.path);
+      deletedCount++;
+    } catch {
+      // skip
+    }
+  }
+  return deletedCount;
 }

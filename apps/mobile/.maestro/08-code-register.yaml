@@ -1,0 +1,61 @@
+appId: com.devrel.voicealarm
+name: "Code Registration"
+---
+
+- launchApp
+
+- tapOn: "🏠"
+- assertVisible:
+    text: ".*홈.*"
+    regex: true
+    timeout: 3000
+
+- tapOn:
+    id: "profile-avatar"
+    optional: true
+- tapOn:
+    text: ".*프로필.*"
+    regex: true
+    optional: true
+
+- tapOn:
+    text: ".*코드 등록.*"
+    regex: true
+
+- assertVisible:
+    text: "코드 등록"
+    timeout: 3000
+
+- assertVisible:
+    text: ".*코드 입력.*"
+    regex: true
+
+- assertVisible:
+    text: ".*이용권 코드.*"
+    regex: true
+- assertVisible:
+    text: ".*가족 초대 코드.*"
+    regex: true
+
+- tapOn:
+    text: ".*코드 입력.*"
+    regex: true
+- inputText: "VA-TEST-CODE-1234"
+
+- assertVisible:
+    text: ".*이용권.*"
+    regex: true
+    timeout: 2000
+
+- clearText
+- inputText: "123456"
+
+- assertVisible:
+    text: ".*가족.*초대.*"
+    regex: true
+    timeout: 2000
+
+- assertVisible:
+    text: "등록하기"
+
+- back

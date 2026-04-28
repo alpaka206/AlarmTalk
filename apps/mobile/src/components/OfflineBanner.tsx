@@ -14,7 +14,11 @@ export function OfflineBanner() {
   if (isConnected) return null;
 
   return (
-    <View style={dynStyles.banner}>
+    <View
+      style={dynStyles.banner}
+      accessibilityRole="alert"
+      accessibilityLiveRegion="assertive"
+    >
       <Text style={dynStyles.text}>{t('offline.banner')}</Text>
     </View>
   );
@@ -29,7 +33,7 @@ function createStyles(colors: ThemeColors) {
       alignItems: 'center',
     },
     text: {
-      color: '#FFFFFF',
+      color: colors.textOnPrimary,
       fontSize: FontSize.sm,
       fontFamily: FontFamily.semibold,
     },

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
 
 const friend = new Hono<AppEnv>();
 
@@ -14,7 +15,7 @@ friend.post('/', async (c) => {
     const body = await c.req.json<{ email: string }>();
 
     if (!body.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
-      return c.json({ error: '유효한 이메일 주소를 입력해주세요.' }, 400);
+      return c.json({ error: '유효한 이메일 주소를 입력해주세요.', error_code: 'INVALID_EMAIL' }, 400);
     }
 
     const target = await db.execute({
@@ -23,13 +24,13 @@ friend.post('/', async (c) => {
     });
 
     if (target.rows.length === 0) {
-      return c.json({ error: '해당 이메일의 사용자를 찾을 수 없습니다.' }, 404);
+      return c.json({ error: '해당 이메일의 사용자를 찾을 수 없습니다.', error_code: 'USER_NOT_FOUND' }, 404);
     }
 
-    const targetUserId = target.rows[0].google_id as string;
+    const targetUserId = target.rows[0]!.google_id as string;
 
     if (targetUserId === userId) {
-      return c.json({ error: '자기 자신에게는 친구 요청을 보낼 수 없습니다.' }, 400);
+      return c.json({ error: '자기 자신에게는 친구 요청을 보낼 수 없습니다.', error_code: 'SELF_REQUEST' }, 400);
     }
 
     const existing = await db.execute({
@@ -39,12 +40,12 @@ friend.post('/', async (c) => {
     });
 
     if (existing.rows.length > 0) {
-      const status = existing.rows[0].status;
+      const status = existing.rows[0]!.status;
       if (status === 'accepted') {
-        return c.json({ error: '이미 친구입니다.' }, 409);
+        return c.json({ error: '이미 친구입니다.', error_code: 'ALREADY_FRIENDS' }, 409);
       }
       if (status === 'pending') {
-        return c.json({ error: '이미 친구 요청이 대기 중입니다.' }, 409);
+        return c.json({ error: '이미 친구 요청이 대기 중입니다.', error_code: 'ALREADY_PENDING' }, 409);
       }
     }
 
@@ -60,16 +61,16 @@ friend.post('/', async (c) => {
           id,
           user_a: userId,
           user_b: targetUserId,
-          target_email: target.rows[0].email,
-          target_name: target.rows[0].name,
+          target_email: target.rows[0]!.email,
+          target_name: target.rows[0]!.name,
           status: 'pending',
         },
       },
       201,
     );
   } catch (err) {
-    console.error(`POST /friend failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to send friend request' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to send friend request', error_code: 'FRIEND_REQUEST_FAILED' }, 500);
   }
 });
 
@@ -116,8 +117,8 @@ friend.get('/list', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ friends: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /friend/list failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to fetch friends' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to fetch friends', error_code: 'FETCH_FRIENDS_FAILED' }, 500);
   }
 });
 
@@ -151,8 +152,8 @@ friend.get('/pending', async (c) => {
     const total = Number(countRes.rows[0]?.total ?? 0);
     return c.json({ pending: result.rows, total, limit, offset });
   } catch (err) {
-    console.error(`GET /friend/pending failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to fetch pending requests' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to fetch pending requests', error_code: 'FETCH_PENDING_FAILED' }, 500);
   }
 });
 
@@ -162,7 +163,7 @@ friend.patch('/:id/accept', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid friendship ID format' }, 400);
+    return c.json({ error: 'Invalid friendship ID format', error_code: 'INVALID_ID_FORMAT' }, 400);
   }
 
   try {
@@ -172,7 +173,7 @@ friend.patch('/:id/accept', async (c) => {
     });
 
     if (existing.rows.length === 0) {
-      return c.json({ error: 'Pending friend request not found' }, 404);
+      return c.json({ error: 'Pending friend request not found', error_code: 'PENDING_NOT_FOUND' }, 404);
     }
 
     await db.execute({
@@ -191,8 +192,8 @@ friend.patch('/:id/accept', async (c) => {
 
     return c.json({ success: true, friendship: updated.rows[0] });
   } catch (err) {
-    console.error(`PATCH /friend/${id}/accept failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to accept friend request' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to accept friend request', error_code: 'ACCEPT_FAILED' }, 500);
   }
 });
 
@@ -202,7 +203,7 @@ friend.delete('/:id', async (c) => {
   const db = getDB(c.env);
   const id = c.req.param('id');
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid friendship ID format' }, 400);
+    return c.json({ error: 'Invalid friendship ID format', error_code: 'INVALID_ID_FORMAT' }, 400);
   }
 
   try {
@@ -212,13 +213,13 @@ friend.delete('/:id', async (c) => {
     });
 
     if (result.rowsAffected === 0) {
-      return c.json({ error: 'Friendship not found' }, 404);
+      return c.json({ error: 'Friendship not found', error_code: 'FRIENDSHIP_NOT_FOUND' }, 404);
     }
 
     return c.json({ success: true });
   } catch (err) {
-    console.error(`DELETE /friend/${id} failed: ${err instanceof Error ? err.message : err}`);
-    return c.json({ error: 'Failed to delete friendship' }, 500);
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to delete friendship', error_code: 'DELETE_FAILED' }, 500);
   }
 });
 

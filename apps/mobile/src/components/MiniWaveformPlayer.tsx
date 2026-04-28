@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Spacing, FontSize } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
+import { useTranslation } from 'react-i18next';
 import { playAudio, getLocalAudioPath, isAudioCached } from '../services/audio';
 import { generateWaveform, formatTime } from '../utils/waveform';
 
@@ -20,6 +21,7 @@ interface Props {
 
 export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Props) {
   const { colors } = useTheme();
+  const { t } = useTranslation();
   const dynStyles = useMemo(() => createStyles(colors), [colors]);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -97,7 +99,13 @@ export function MiniWaveformPlayer({ messageId, isActive, onPlay, onStop }: Prop
 
   return (
     <View style={dynStyles.container}>
-      <TouchableOpacity onPress={handleToggle} style={dynStyles.playBtn} hitSlop={8}>
+      <TouchableOpacity
+        onPress={handleToggle}
+        style={dynStyles.playBtn}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={isPlaying ? t('player.a11yPause') : t('player.a11yPlay')}
+      >
         <Text style={dynStyles.playIcon}>{isPlaying ? '⏸' : '▶️'}</Text>
       </TouchableOpacity>
       <View style={dynStyles.waveformArea}>

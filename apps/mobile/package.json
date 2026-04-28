@@ -21,6 +21,7 @@
     "@expo/metro-runtime": "~55.0.10",
     "@react-native-async-storage/async-storage": "3.0.2",
     "@react-native-community/netinfo": "^11.4.1",
+    "@sentry/react-native": "~7.2.0",
     "@tanstack/react-query": "^5.96.2",
     "expo": "~55.0.17",
     "expo-apple-authentication": "~8.0.8",
@@ -39,6 +40,7 @@
     "expo-router": "~6.0.23",
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.16",
     "expo-web-browser": "~15.0.10",
     "i18next": "^24.2.2",
     "react": "19.2.5",
@@ -53,6 +55,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.2.14",
     "babel-preset-expo": "^54.0.10",

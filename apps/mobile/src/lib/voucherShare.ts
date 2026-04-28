@@ -1,3 +1,5 @@
+import type { TFunction } from 'i18next';
+
 export type VoucherStatus = 'issued' | 'used' | 'expired';
 
 export interface VoucherLite {
@@ -14,10 +16,10 @@ export function maskVoucherCode(code: string): string {
   return `${groups[0]}-${groups[1]}-****-****`;
 }
 
-export function formatVoucherStatus(status: string): string {
-  if (status === 'used') return '사용됨';
-  if (status === 'expired') return '만료';
-  return '미사용';
+export function formatVoucherStatus(status: string, t: TFunction): string {
+  if (status === 'used') return t('voucher.statusUsed');
+  if (status === 'expired') return t('voucher.statusExpired');
+  return t('voucher.statusIssued');
 }
 
 export function isVoucherRedeemable(voucher: VoucherLite, now: Date = new Date()): boolean {
@@ -33,16 +35,16 @@ export interface ShareTextInput {
   expiresAt: string;
 }
 
-export function buildVoucherShareText(input: ShareTextInput): string {
+export function buildVoucherShareText(input: ShareTextInput, t: TFunction): string {
   const exp = new Date(input.expiresAt);
   const expLabel = Number.isFinite(exp.getTime())
     ? `${exp.getFullYear()}-${String(exp.getMonth() + 1).padStart(2, '0')}-${String(exp.getDate()).padStart(2, '0')}`
     : input.expiresAt;
   return [
-    'VoiceAlarm 이용권 선물이 도착했어요 🎁',
-    `플랜: ${input.planName}`,
-    `코드: ${input.code}`,
-    `만료: ${expLabel}`,
-    '앱/웹에서 [이용권 등록] 에 입력해 사용하세요.',
+    t('voucher.shareTitle'),
+    t('voucher.sharePlan', { plan: input.planName }),
+    t('voucher.shareCode', { code: input.code }),
+    t('voucher.shareExpiry', { date: expLabel }),
+    t('voucher.shareInstruction'),
   ].join('\n');
 }

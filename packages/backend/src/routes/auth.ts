@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { getDB } from '../lib/db';
+import { logRouteError } from '../lib/logger';
+import { typedRow } from '../lib/db-types';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
 import { RegisterRequestSchema, LoginRequestSchema } from '@voice-alarm/shared';
@@ -8,7 +10,7 @@ import { RegisterRequestSchema, LoginRequestSchema } from '@voice-alarm/shared';
 const auth = new Hono<{ Bindings: Env }>();
 
 function jsonError(code: string, message: string) {
-  return { error: message, code };
+  return { error: message, error_code: code };
 }
 
 auth.post('/register', async (c) => {
@@ -42,7 +44,7 @@ auth.post('/register', async (c) => {
 
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0]!;
 
     await db.execute({
       sql: `INSERT INTO users (id, email, password_hash, name, daily_tts_reset_at)
@@ -60,8 +62,7 @@ auth.post('/register', async (c) => {
       201,
     );
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`POST /auth/register failed: ${detail}`);
+    logRouteError(c, err);
     return c.json(jsonError('AUTH_REGISTER_FAILED', 'Registration failed'), 500);
   }
 });
@@ -93,13 +94,13 @@ auth.post('/login', async (c) => {
       return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
-    const row = result.rows[0] as unknown as {
+    const row = typedRow<{
       id: string;
       email: string;
       password_hash: string | null;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    };
+    }>(result.rows[0]!);
 
     if (!row.password_hash) {
       return c.json(jsonError('AUTH_OAUTH_ONLY', 'This account uses OAuth sign-in'), 401);
@@ -125,8 +126,7 @@ auth.post('/login', async (c) => {
       },
     });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error(`POST /auth/login failed: ${detail}`);
+    logRouteError(c, err);
     return c.json(jsonError('AUTH_LOGIN_FAILED', 'Login failed'), 500);
   }
 });
@@ -147,12 +147,12 @@ auth.get('/me', async (c) => {
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
     }
-    const row = result.rows[0] as unknown as {
+    const row = typedRow<{
       id: string;
       email: string;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
-    };
+    }>(result.rows[0]!);
     return c.json({
       user: {
         id: row.id,

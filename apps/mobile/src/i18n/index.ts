@@ -16,4 +16,10 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+const LOCALE_MAP: Record<string, string> = { ko: 'ko-KR', en: 'en-US' };
+
+export function getDateLocale(): string {
+  return LOCALE_MAP[i18n.language] ?? 'en-US';
+}
+
 export default i18n;

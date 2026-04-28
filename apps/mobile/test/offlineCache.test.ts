@@ -125,8 +125,8 @@ describe('offlineCache — library', () => {
     await cacheLibrary(items);
     const result = await getCachedLibrary();
     expect(result).toHaveLength(2);
-    expect(result![0].is_favorite).toBe(true);
-    expect(result![1].is_favorite).toBe(false);
+    expect(result![0]!.is_favorite).toBe(true);
+    expect(result![1]!.is_favorite).toBe(false);
   });
 });
 

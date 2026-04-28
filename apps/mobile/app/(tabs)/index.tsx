@@ -1,8 +1,7 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
   RefreshControl,
@@ -12,12 +11,17 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { getDateLocale } from '../../src/i18n';
+import { Spacing, FontSize } from '../../src/constants/theme';
+import { withErrorBoundary } from '../../src/components/ErrorBoundary';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
-import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary } from '../../src/services/api';
-import type { Stats, WeekTrend } from '../../src/services/api';
+import { createHomeStyles } from '../../src/styles/homeStyles';
+import { getAlarms, getMessages, getStats, getCharacterMe, getLibrary, getActivity } from '../../src/services/api';
+import type { Stats, WeekTrend, ActivityItem } from '../../src/services/api';
 import { stageToEmoji, progressBarWidthPct } from '../../src/lib/character';
 import { playAudio, getLocalAudioPath, isAudioCached } from '../../src/services/audio';
+import { activityEmoji, activityTypeLabel, activityDescription } from '../../src/lib/activityHelpers';
+import { formatLastSeen } from '../../src/lib/formatLastSeen';
 import type { LibraryItem } from '../../src/types';
 import LoginButtons from '../../src/components/LoginButtons';
 import EmailPasswordForm from '../../src/components/EmailPasswordForm';
@@ -40,11 +44,11 @@ function TrendBadge({ trend, colors }: { trend: WeekTrend; colors: ThemeColors }
   return <Text style={{ fontSize: FontSize.xs, color, marginTop: 2 }}>{label}</Text>;
 }
 
-export default function HomeScreen() {
+function HomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const styles = useMemo(() => createHomeStyles(colors), [colors]);
   const { isAuthenticated, setPlaying, currentPlayingId } = useAppStore();
   const isConnected = useNetworkStatus();
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
@@ -98,6 +102,12 @@ export default function HomeScreen() {
     enabled: isAuthenticated && isConnected,
   });
 
+  const { data: activityItems } = useQuery({
+    queryKey: ['activity'],
+    queryFn: getActivity,
+    enabled: isAuthenticated && isConnected,
+  });
+
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (alarms && alarms.length > 0) {
@@ -121,7 +131,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchAlarms(), refetchMessages()]);
+    await Promise.all([refetchAlarms(), refetchMessages(), refetchStats()]);
     setRefreshing(false);
   };
 
@@ -138,7 +148,7 @@ export default function HomeScreen() {
   const nextAlarm = displayAlarms?.find((a: Alarm) => a.is_active);
   const latestMessage = displayMessages?.[0];
 
-  const handlePlayMessage = async (messageId: string) => {
+  const handlePlayMessage = useCallback(async (messageId: string) => {
     if (currentSound) {
       await currentSound.unloadAsync();
       setCurrentSound(null);
@@ -163,7 +173,7 @@ export default function HomeScreen() {
         }
       });
     }
-  };
+  }, [currentSound, currentPlayingId, setPlaying]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -174,7 +184,7 @@ export default function HomeScreen() {
       >
         {/* 인사말 */}
         <View style={styles.header}>
-          <Text style={styles.greeting}>
+          <Text style={styles.greeting} accessibilityRole="header">
             {greeting.emoji} {greeting.text}
           </Text>
           <Text style={styles.subtitle}>{t('home.subtitle')}</Text>
@@ -190,9 +200,11 @@ export default function HomeScreen() {
             style={styles.statsErrorCard}
             onPress={() => refetchStats()}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.retry')}
           >
-            <Text style={styles.statsErrorText}>{t('common.loadError', '불러오기 실패')}</Text>
-            <Text style={styles.statsErrorRetry}>{t('common.retry', '다시 시도')}</Text>
+            <Text style={styles.statsErrorText}>{t('common.loadError')}</Text>
+            <Text style={styles.statsErrorRetry}>{t('common.retry')}</Text>
           </TouchableOpacity>
         )}
         {isAuthenticated && stats && (
@@ -200,40 +212,42 @@ export default function HomeScreen() {
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.activeAlarms', '활성 알람')} ${stats.alarms.active}`}
+              accessibilityLabel={`${t('home.activeAlarms')} ${stats.alarms.active}`}
             >
               <Text style={styles.statCount}>{stats.alarms.active}</Text>
-              <Text style={styles.statLabel}>{t('home.activeAlarms', '활성 알람')}</Text>
+              <Text style={styles.statLabel}>{t('home.activeAlarms')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.alarms} colors={colors} />}
             </View>
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.messages', '메시지')} ${stats.messages.total}`}
+              accessibilityLabel={`${t('home.messages')} ${stats.messages.total}`}
             >
               <Text style={styles.statCount}>{stats.messages.total}</Text>
-              <Text style={styles.statLabel}>{t('home.messages', '메시지')}</Text>
+              <Text style={styles.statLabel}>{t('home.messages')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.messages} colors={colors} />}
             </View>
             <View
               style={styles.statItem}
               accessible
-              accessibilityLabel={`${t('home.friends', '친구')} ${stats.friends.total}`}
+              accessibilityLabel={`${t('home.friends')} ${stats.friends.total}`}
             >
               <Text style={styles.statCount}>{stats.friends.total}</Text>
-              <Text style={styles.statLabel}>{t('home.friends', '친구')}</Text>
+              <Text style={styles.statLabel}>{t('home.friends')}</Text>
               {stats.trends && <TrendBadge trend={stats.trends.friends} colors={colors} />}
             </View>
             {stats.gifts.receivedPending > 0 && (
               <TouchableOpacity
                 style={styles.statItem}
                 onPress={() => router.push('/gift/received')}
+                accessibilityRole="button"
+                accessibilityLabel={`${t('home.pendingGifts')} ${stats.gifts.receivedPending}`}
               >
                 <Text style={[styles.statCount, { color: colors.accent }]}>
                   {stats.gifts.receivedPending}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.accent }]}>
-                  {t('home.pendingGifts', '대기 선물')}
+                  {t('home.pendingGifts')}
                 </Text>
               </TouchableOpacity>
             )}
@@ -255,7 +269,7 @@ export default function HomeScreen() {
             <View style={styles.widgetInfo}>
               <View style={styles.widgetNameRow}>
                 <Text style={styles.widgetName}>{characterData.character.name}</Text>
-                <Text style={styles.widgetLevel}>Lv.{characterData.character.level}</Text>
+                <Text style={styles.widgetLevel}>{t('character.levelDisplay', { level: characterData.character.level })}</Text>
                 {characterData.streak && characterData.streak.current > 0 && (
                   <Text style={styles.widgetStreak}>
                     🔥 {characterData.streak.current}
@@ -337,9 +351,13 @@ export default function HomeScreen() {
         {isAuthenticated && (
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
-              <Text style={styles.sectionTitle}>{t('home.recentMessages')}</Text>
+              <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.recentMessages')}</Text>
               {libraryItems && libraryItems.length > 0 && (
-                <TouchableOpacity onPress={() => router.push('/library')}>
+                <TouchableOpacity
+                  onPress={() => router.push('/library')}
+                  accessibilityRole="link"
+                  accessibilityLabel={t('home.viewAll')}
+                >
                   <Text style={styles.viewAllLink}>{t('home.viewAll')}</Text>
                 </TouchableOpacity>
               )}
@@ -351,6 +369,8 @@ export default function HomeScreen() {
                   style={styles.recentItem}
                   onPress={() => router.push(`/message/${item.message_id}`)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.voice_name}: ${item.text}`}
                 >
                   <View style={styles.recentAvatar}>
                     <Text style={styles.recentAvatarText}>
@@ -364,7 +384,7 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                   <Text style={styles.recentDate}>
-                    {new Date(item.received_at).toLocaleDateString('ko-KR', {
+                    {new Date(item.received_at).toLocaleDateString(getDateLocale(), {
                       month: 'short',
                       day: 'numeric',
                     })}
@@ -382,9 +402,48 @@ export default function HomeScreen() {
         {/* 섹션 구분선 */}
         {isAuthenticated && <View style={styles.sectionDivider} />}
 
+        {/* 최근 활동 */}
+        {isAuthenticated && (
+          <View style={styles.activitySection}>
+            <Text style={styles.sectionTitle} accessibilityRole="header">
+              {t('home.recentActivity')}
+            </Text>
+            {activityItems && activityItems.length > 0 ? (
+              activityItems.slice(0, 5).map((item: ActivityItem) => (
+                <View
+                  key={`${item.type}-${item.id}`}
+                  style={styles.activityItem}
+                  accessible
+                  accessibilityLabel={`${activityTypeLabel(item.type, t)}: ${activityDescription(item, t)}`}
+                >
+                  <Text style={styles.activityEmoji}>{activityEmoji(item.type)}</Text>
+                  <View style={styles.activityContent}>
+                    <Text style={styles.activityTypeLabel}>
+                      {activityTypeLabel(item.type, t)}
+                    </Text>
+                    <Text style={styles.activityDesc} numberOfLines={1}>
+                      {activityDescription(item, t)}
+                    </Text>
+                  </View>
+                  <Text style={styles.activityTime}>
+                    {formatLastSeen(item.created_at, t)}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.activityEmpty}>
+                <Text style={styles.activityEmptyText}>{t('home.noActivity')}</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 섹션 구분선 */}
+        {isAuthenticated && <View style={styles.sectionDivider} />}
+
         {/* 빠른 액션 */}
         <View style={styles.quickActions}>
-          <Text style={styles.sectionTitle}>{t('home.quickStart')}</Text>
+          <Text style={styles.sectionTitle} accessibilityRole="header">{t('home.quickStart')}</Text>
           <View style={styles.actionGrid}>
             <TouchableOpacity
               style={styles.actionCard}
@@ -424,16 +483,16 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/gift/received')}
+              onPress={() => router.push('/code-register')}
               accessibilityRole="button"
-              accessibilityLabel={t('home.receivedGifts')}
+              accessibilityLabel={t('home.codeRegister')}
             >
-              <Text style={styles.actionEmoji}>🎁</Text>
-              <Text style={styles.actionLabel}>{t('home.receivedGifts')}</Text>
+              <Text style={styles.actionEmoji}>🔑</Text>
+              <Text style={styles.actionLabel}>{t('home.codeRegister')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/people')}
+              onPress={() => router.push('/people')}
               accessibilityRole="button"
               accessibilityLabel={t('home.manageFriends')}
             >
@@ -452,7 +511,7 @@ export default function HomeScreen() {
             <EmailPasswordForm />
             <View style={styles.loginDivider}>
               <View style={styles.loginDividerLine} />
-              <Text style={styles.loginDividerText}>또는</Text>
+              <Text style={styles.loginDividerText}>{t('common.or')}</Text>
               <View style={styles.loginDividerLine} />
             </View>
             <LoginButtons />
@@ -463,355 +522,5 @@ export default function HomeScreen() {
   );
 }
 
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    content: {
-      padding: Spacing.lg,
-      paddingBottom: 120,
-    },
-    header: {
-      marginBottom: Spacing.xl,
-    },
-    statsRow: {
-      flexDirection: 'row',
-      gap: Spacing.sm,
-      marginBottom: Spacing.lg,
-    },
-    statItem: {
-      flex: 1,
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.md,
-      padding: Spacing.sm,
-      alignItems: 'center',
-    },
-    statCount: {
-      fontSize: FontSize.xl,
-      fontFamily: FontFamily.bold,
-      color: colors.primary,
-    },
-    statLabel: {
-      fontSize: FontSize.xs,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    greeting: {
-      fontSize: FontSize.hero,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-      marginBottom: Spacing.xs,
-    },
-    subtitle: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.regular,
-      color: colors.textSecondary,
-    },
-    nextAlarmCard: {
-      borderRadius: BorderRadius.xl,
-      overflow: 'hidden',
-      marginBottom: Spacing.md,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.2,
-      shadowRadius: 12,
-      elevation: 6,
-    },
-    nextAlarmGradient: {
-      backgroundColor: colors.primary,
-      padding: Spacing.lg,
-      borderRadius: BorderRadius.xl,
-    },
-    nextAlarmLabel: {
-      fontSize: FontSize.sm,
-      color: 'rgba(255,255,255,0.8)',
-      fontFamily: FontFamily.semibold,
-      marginBottom: Spacing.xs,
-    },
-    nextAlarmTime: {
-      fontSize: 48,
-      fontFamily: FontFamily.bold,
-      color: '#FFFFFF',
-      marginBottom: Spacing.sm,
-    },
-    nextAlarmMessage: {
-      fontSize: FontSize.md,
-      color: 'rgba(255,255,255,0.9)',
-    },
-    cheerCard: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.lg,
-      marginBottom: Spacing.lg,
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 1,
-      shadowRadius: 8,
-      elevation: 3,
-    },
-    cheerHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: Spacing.md,
-    },
-    cheerEmoji: {
-      fontSize: 24,
-      marginRight: Spacing.sm,
-    },
-    cheerTitle: {
-      fontSize: FontSize.lg,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-    },
-    cheerText: {
-      fontSize: FontSize.lg,
-      color: colors.text,
-      lineHeight: 26,
-      marginBottom: Spacing.md,
-    },
-    cheerFooter: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    cheerVoice: {
-      fontSize: FontSize.sm,
-      color: colors.textSecondary,
-    },
-    playButton: {
-      fontSize: FontSize.sm,
-      color: colors.primary,
-      fontFamily: FontFamily.semibold,
-    },
-    quickActions: {
-      marginBottom: Spacing.lg,
-    },
-    sectionTitle: {
-      fontSize: FontSize.xl,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-      marginBottom: Spacing.md,
-    },
-    actionGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: Spacing.md,
-    },
-    actionCard: {
-      width: '47%',
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.lg,
-      alignItems: 'center',
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 1,
-      shadowRadius: 6,
-      elevation: 2,
-    },
-    actionEmoji: {
-      fontSize: 32,
-      marginBottom: Spacing.sm,
-    },
-    actionLabel: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    loginPrompt: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.xl,
-      padding: Spacing.xl,
-      alignItems: 'center',
-    },
-    loginEmoji: {
-      fontSize: 48,
-      marginBottom: Spacing.md,
-    },
-    loginTitle: {
-      fontSize: FontSize.xl,
-      fontFamily: FontFamily.bold,
-      color: colors.text,
-      marginBottom: Spacing.sm,
-    },
-    loginDesc: {
-      fontSize: FontSize.md,
-      color: colors.textSecondary,
-      textAlign: 'center',
-      lineHeight: 22,
-      marginBottom: Spacing.lg,
-    },
-    loginDivider: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: Spacing.sm,
-      marginVertical: Spacing.md,
-      width: '100%',
-    },
-    loginDividerLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: colors.border,
-    },
-    loginDividerText: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-    },
-    statsErrorCard: {
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.md,
-      padding: Spacing.md,
-      marginBottom: Spacing.lg,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: colors.error + '33',
-    },
-    statsErrorText: {
-      fontSize: FontSize.sm,
-      color: colors.error,
-      fontFamily: FontFamily.semibold,
-    },
-    statsErrorRetry: {
-      fontSize: FontSize.xs,
-      color: colors.primary,
-      marginTop: 4,
-    },
-    characterWidget: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.lg,
-      padding: Spacing.md,
-      marginBottom: Spacing.md,
-      shadowColor: colors.shadow,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 1,
-      shadowRadius: 6,
-      elevation: 2,
-    },
-    widgetEmoji: {
-      fontSize: 36,
-      marginRight: Spacing.md,
-    },
-    widgetInfo: {
-      flex: 1,
-    },
-    widgetNameRow: {
-      flexDirection: 'row',
-      alignItems: 'baseline',
-      gap: Spacing.xs,
-      marginBottom: Spacing.xs,
-    },
-    widgetName: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    widgetLevel: {
-      fontSize: FontSize.xs,
-      color: colors.primary,
-      fontFamily: FontFamily.semibold,
-    },
-    widgetStreak: {
-      fontSize: FontSize.xs,
-      color: colors.warning,
-      fontFamily: FontFamily.semibold,
-    },
-    widgetProgressBg: {
-      height: 6,
-      backgroundColor: colors.surfaceVariant,
-      borderRadius: BorderRadius.full,
-      overflow: 'hidden',
-    },
-    widgetProgressFill: {
-      height: '100%',
-      backgroundColor: colors.primary,
-      borderRadius: BorderRadius.full,
-    },
-    widgetArrow: {
-      fontSize: FontSize.xl,
-      color: colors.textTertiary,
-      marginLeft: Spacing.sm,
-    },
-    sectionDivider: {
-      height: 1,
-      backgroundColor: colors.border,
-      marginVertical: Spacing.sm,
-    },
-    recentSection: {
-      marginBottom: Spacing.lg,
-    },
-    recentHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: Spacing.md,
-    },
-    viewAllLink: {
-      fontSize: FontSize.sm,
-      color: colors.primary,
-      fontFamily: FontFamily.semibold,
-    },
-    recentItem: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: BorderRadius.md,
-      padding: Spacing.md,
-      marginBottom: Spacing.sm,
-    },
-    recentAvatar: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: colors.primaryLight,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginRight: Spacing.md,
-    },
-    recentAvatarText: {
-      fontSize: FontSize.md,
-      fontFamily: FontFamily.bold,
-      color: colors.primaryDark,
-    },
-    recentContent: {
-      flex: 1,
-    },
-    recentVoiceName: {
-      fontSize: FontSize.sm,
-      fontFamily: FontFamily.semibold,
-      color: colors.text,
-    },
-    recentText: {
-      fontSize: FontSize.xs,
-      color: colors.textSecondary,
-      marginTop: 2,
-    },
-    recentDate: {
-      fontSize: FontSize.xs,
-      color: colors.textTertiary,
-      marginLeft: Spacing.sm,
-    },
-    recentEmpty: {
-      paddingVertical: Spacing.xl,
-      alignItems: 'center',
-    },
-    recentEmptyText: {
-      fontSize: FontSize.sm,
-      color: colors.textTertiary,
-    },
-    loginButton: {
-      backgroundColor: colors.primary,
-      paddingHorizontal: Spacing.xl,
-      paddingVertical: Spacing.md,
-      borderRadius: BorderRadius.full,
-    },
-    loginButtonText: {
-      color: '#FFFFFF',
-      fontSize: FontSize.lg,
-      fontFamily: FontFamily.bold,
-    },
-  });
-}
+
+export default withErrorBoundary(HomeScreen);

@@ -1,9 +1,8 @@
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { TouchableOpacity } from 'react-native';
+import { getDateLocale } from '../../src/i18n';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { getFriendList, getSentGifts, getReceivedGifts, getAlarms } from '../../src/services/api';
@@ -27,7 +26,7 @@ export default function FriendProfileScreen() {
   });
 
   const { data: receivedGifts } = useQuery({
-    queryKey: ['receivedGifts'],
+    queryKey: ['gifts-received'],
     queryFn: getReceivedGifts,
   });
 
@@ -40,21 +39,21 @@ export default function FriendProfileScreen() {
 
   if (!friend) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 40 }} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   const friendEmail = friend.friend_email ?? '';
   const friendName = friend.friend_name || friendEmail;
-  const initial = (friendName || '?')[0].toUpperCase();
+  const initial = (friendName || '?')[0]!.toUpperCase();
 
   const giftsToFriend = sentGifts?.filter((g: Gift) => g.recipient_id === friend.user_b || g.recipient_id === friend.user_a) ?? [];
   const giftsFromFriend = receivedGifts?.filter((g: Gift) => g.sender_email === friendEmail) ?? [];
   const alarmsForFriend = alarms?.filter((a: Alarm) => a.target_user_id && a.target_user_id !== a.user_id) ?? [];
 
-  const since = new Date(friend.created_at).toLocaleDateString('ko-KR', {
+  const since = new Date(friend.created_at).toLocaleDateString(getDateLocale(), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -66,17 +65,8 @@ export default function FriendProfileScreen() {
     t('friendProfile.rejected');
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel={t('friendProfile.a11yBack')}
-        >
-          <Text style={styles.backText}>{t('common.back', '< 돌아가기')}</Text>
-        </TouchableOpacity>
-
         <View style={styles.profileCard}>
           <View style={styles.avatar} accessibilityLabel={t('friendProfile.a11yAvatar', { name: friendName })}>
             <Text style={styles.avatarText}>{initial}</Text>
@@ -115,7 +105,7 @@ export default function FriendProfileScreen() {
         {giftsFromFriend.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle} accessibilityRole="header">
-              {t('friendProfile.recentGiftsFrom', { name: friend.friend_name || '친구' })}
+              {t('friendProfile.recentGiftsFrom', { name: friend.friend_name || t('friendProfile.friendFallback') })}
             </Text>
             {giftsFromFriend.slice(0, 5).map((g: Gift) => (
               <View
@@ -168,7 +158,7 @@ export default function FriendProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -201,8 +191,6 @@ function StatCard({
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { padding: Spacing.lg },
-  backButton: { marginBottom: Spacing.md },
-  backText: { fontSize: FontSize.md, fontFamily: FontFamily.semibold, color: colors.primary },
   profileCard: {
     alignItems: 'center',
     padding: Spacing.xl,
@@ -257,7 +245,7 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     marginTop: Spacing.sm,
     backgroundColor: colors.primary,
   },
-  actionButtonText: { color: '#FFFFFF', fontSize: FontSize.md, fontFamily: FontFamily.bold },
+  actionButtonText: { color: colors.textOnPrimary, fontSize: FontSize.md, fontFamily: FontFamily.bold },
   giftActionButton: {
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,

@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
@@ -12,8 +11,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
-import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
-import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
+import { useTheme } from '../../src/hooks/useTheme';
+import { createDubTranslateStyles } from '../../src/styles/dubTranslateStyles';
 import {
   getMessages,
   getDubLanguages,
@@ -26,7 +25,14 @@ import {
   saveAudioLocally,
   playAudio,
 } from '../../src/services/audio';
-import { getApiErrorMessage } from '../../src/types';
+import { getApiErrorMessage } from '../../src/lib/apiErrors';
+import {
+  SOURCE_LANGUAGES,
+  filterTargetLanguages,
+  validateDubStart,
+  getDubPhase,
+  shouldSaveAudio,
+} from '../../src/lib/dubHelpers';
 import type { Message, DubLanguage } from '../../src/types';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
@@ -38,7 +44,7 @@ export default function TranslateScreen() {
   const { t } = useTranslation();
   const toast = useToast();
   const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const styles = createDubTranslateStyles(colors);
 
   const [sourceLanguage, setSourceLanguage] = useState('ko');
   const [targetLanguage, setTargetLanguage] = useState('');
@@ -64,6 +70,11 @@ export default function TranslateScreen() {
   });
 
   const message = messages?.find((m: Message) => m.id === message_id);
+
+  const targetLanguages = useMemo(
+    () => filterTargetLanguages(languages, sourceLanguage),
+    [languages, sourceLanguage],
+  );
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -91,8 +102,8 @@ export default function TranslateScreen() {
         stopPolling();
         setDubStatus('ready');
 
-        if (result.audio_base64 && result.result_message_id) {
-          await saveAudioLocally(result.audio_base64, result.result_message_id, result.audio_format || 'mp3');
+        if (shouldSaveAudio(result)) {
+          await saveAudioLocally(result.audio_base64!, result.result_message_id!, result.audio_format || 'mp3');
           setResultAudioSaved(true);
           queryClient.invalidateQueries({ queryKey: ['messages'] });
           queryClient.invalidateQueries({ queryKey: ['library'] });
@@ -132,17 +143,14 @@ export default function TranslateScreen() {
       }, 5000);
     },
     onError: (err: unknown) => {
-      toast.show(getApiErrorMessage(err, t('dub.failed')));
+      toast.show(getApiErrorMessage(err, t, t('dub.failed')));
     },
   });
 
   const handleStart = () => {
-    if (!targetLanguage) {
-      toast.show(t('dub.selectLanguage'));
-      return;
-    }
-    if (sourceLanguage === targetLanguage) {
-      toast.show(t('dub.sameLanguage'));
+    const validationError = validateDubStart(targetLanguage, sourceLanguage);
+    if (validationError) {
+      toast.show(t(`dub.${validationError}`));
       return;
     }
     dubMutation.mutate();
@@ -188,11 +196,12 @@ export default function TranslateScreen() {
       <Text style={[styles.langText, targetLanguage === item.code && styles.langTextActive]}>
         {item.name}
       </Text>
-      {item.experiment && <Text style={styles.experimentBadge}>beta</Text>}
+      {item.experiment && <Text style={styles.experimentBadge}>{t('dub.experimentBadge')}</Text>}
     </TouchableOpacity>
   );
 
-  const isProcessing = dubStatus === 'processing' || dubMutation.isPending;
+  const phase = getDubPhase(dubStatus, dubMutation.isPending);
+  const isProcessing = phase === 'processing';
 
   return (
     <View style={styles.container}>
@@ -208,12 +217,7 @@ export default function TranslateScreen() {
 
         <Text style={styles.sectionTitle} accessibilityRole="header">{t('dub.sourceLanguage')}</Text>
         <View style={styles.sourceRow}>
-          {[
-            { code: 'ko', name: '한국어' },
-            { code: 'en', name: 'English' },
-            { code: 'ja', name: '日本語' },
-            { code: 'zh', name: '中文' },
-          ].map((lang) => (
+          {SOURCE_LANGUAGES.map((lang) => (
             <TouchableOpacity
               key={lang.code}
               style={[styles.sourceChip, sourceLanguage === lang.code && styles.sourceChipActive]}
@@ -235,7 +239,7 @@ export default function TranslateScreen() {
           <ActivityIndicator style={styles.loader} color={colors.primary} />
         ) : (
           <FlatList
-            data={languages?.filter((l: DubLanguage) => l.code !== sourceLanguage)}
+            data={targetLanguages}
             renderItem={renderLanguageItem}
             keyExtractor={(item: DubLanguage) => item.code}
             scrollEnabled={false}
@@ -291,7 +295,7 @@ export default function TranslateScreen() {
             accessibilityState={{ disabled: !targetLanguage || isProcessing, busy: dubMutation.isPending }}
           >
             {dubMutation.isPending ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <Text style={styles.startButtonText}>{t('dub.start')}</Text>
             )}
@@ -303,194 +307,3 @@ export default function TranslateScreen() {
     </View>
   );
 }
-
-const createStyles = (colors: ThemeColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: Spacing.lg,
-    paddingBottom: 100,
-  },
-  description: {
-    fontSize: FontSize.md,
-    color: colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: Spacing.lg,
-  },
-  messagePreview: {
-    backgroundColor: colors.surface,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  messagePreviewLabel: {
-    fontSize: FontSize.sm,
-    color: colors.primary,
-    fontFamily: FontFamily.semibold,
-    marginBottom: Spacing.xs,
-  },
-  messagePreviewText: {
-    fontSize: FontSize.md,
-    color: colors.text,
-    fontStyle: 'italic',
-    lineHeight: 24,
-  },
-  sectionTitle: {
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.bold,
-    color: colors.text,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  sourceRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-    flexWrap: 'wrap',
-  },
-  sourceChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  sourceChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  sourceChipText: {
-    fontSize: FontSize.sm,
-    color: colors.textSecondary,
-    fontFamily: FontFamily.semibold,
-  },
-  sourceChipTextActive: {
-    color: '#FFF',
-  },
-  loader: {
-    marginVertical: Spacing.lg,
-  },
-  langRow: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
-  },
-  langItem: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  langItemActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  langText: {
-    fontSize: FontSize.sm,
-    color: colors.text,
-    fontFamily: FontFamily.medium,
-  },
-  langTextActive: {
-    color: '#FFF',
-    fontFamily: FontFamily.bold,
-  },
-  experimentBadge: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    backgroundColor: colors.surfaceVariant,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  progressSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-    gap: Spacing.sm,
-  },
-  progressText: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.semibold,
-    color: colors.primary,
-  },
-  remainingText: {
-    fontSize: FontSize.sm,
-    color: colors.textTertiary,
-  },
-  resultSection: {
-    alignItems: 'center',
-    paddingVertical: Spacing.xl,
-    gap: Spacing.md,
-  },
-  completeText: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bold,
-    color: colors.success,
-  },
-  playResultButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
-  },
-  playResultText: {
-    color: '#FFF',
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.semibold,
-  },
-  savedText: {
-    fontSize: FontSize.sm,
-    color: colors.textTertiary,
-  },
-  failedText: {
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.semibold,
-    color: colors.error,
-  },
-  retryButton: {
-    borderWidth: 1,
-    borderColor: colors.primary,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.xl,
-    borderRadius: BorderRadius.lg,
-  },
-  retryText: {
-    color: colors.primary,
-    fontSize: FontSize.md,
-    fontFamily: FontFamily.semibold,
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: Spacing.lg,
-    backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  startButton: {
-    backgroundColor: colors.primary,
-    paddingVertical: Spacing.md,
-    borderRadius: BorderRadius.lg,
-    alignItems: 'center',
-  },
-  startButtonDisabled: {
-    opacity: 0.5,
-  },
-  startButtonText: {
-    color: '#FFF',
-    fontSize: FontSize.lg,
-    fontFamily: FontFamily.bold,
-  },
-});
