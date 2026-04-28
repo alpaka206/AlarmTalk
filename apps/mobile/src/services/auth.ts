@@ -1,33 +1,69 @@
-import { useState } from 'react';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import {
+  GoogleSignin,
+  statusCodes,
+  isErrorWithCode,
+} from '@react-native-google-signin/google-signin';
 
-WebBrowser.maybeCompleteAuthSession();
-
-const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
 const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 
-// ===== Google 로그인 =====
+let googleConfigured = false;
 
-export function useGoogleAuth() {
-  const [nonce] = useState(
-    () => Math.random().toString(36).substring(2) + Date.now().toString(36),
-  );
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: GOOGLE_IOS_CLIENT_ID,
+function ensureGoogleConfigured() {
+  if (googleConfigured) return;
+  GoogleSignin.configure({
     webClientId: GOOGLE_WEB_CLIENT_ID,
-    scopes: ['openid', 'profile', 'email'],
-    responseType: 'id_token',
-    extraParams: { nonce },
+    iosClientId: GOOGLE_IOS_CLIENT_ID || undefined,
+    scopes: ['profile', 'email'],
+    offlineAccess: false,
   });
+  googleConfigured = true;
+}
 
-  return { request, response, promptAsync };
+export type GoogleSignInResult = {
+  idToken: string;
+  user: { id: string; email: string | null; name: string | null; photo: string | null };
+} | null;
+
+export async function signInWithGoogle(): Promise<GoogleSignInResult> {
+  ensureGoogleConfigured();
+  try {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const result = await GoogleSignin.signIn();
+
+    if (result.type !== 'success') return null;
+
+    const { idToken, user } = result.data;
+    if (!idToken) return null;
+
+    return {
+      idToken,
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        name: user.name ?? null,
+        photo: user.photo ?? null,
+      },
+    };
+  } catch (err: unknown) {
+    if (isErrorWithCode(err)) {
+      if (err.code === statusCodes.SIGN_IN_CANCELLED) return null;
+      if (err.code === statusCodes.IN_PROGRESS) return null;
+    }
+    throw err;
+  }
+}
+
+export async function signOutGoogle(): Promise<void> {
+  ensureGoogleConfigured();
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // ignore — sign-out failure shouldn't block local cleanup
+  }
 }
 
 // ===== Apple 로그인 (iOS only) =====
@@ -91,6 +127,7 @@ export async function getAuthProvider(): Promise<'google' | 'apple' | null> {
 }
 
 export async function signOut() {
+  await signOutGoogle();
   await AsyncStorage.removeItem('auth_token');
   await AsyncStorage.removeItem('auth_provider');
   await AsyncStorage.removeItem('user_id');
