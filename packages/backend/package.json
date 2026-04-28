@@ -11,11 +11,11 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260423.1",
+    "@cloudflare/workers-types": "^4.20260426.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5",
-    "wrangler": "^4.84.1"
+    "wrangler": "^4.85.0"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
