@@ -11,18 +11,18 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260423.1",
+    "@cloudflare/workers-types": "^4.20260426.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5",
-    "wrangler": "^4.84.1"
+    "wrangler": "^4.85.0"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.2",
+    "@libsql/client": "^0.17.3",
     "@voice-alarm/shared": "*",
     "@voice-alarm/voice": "*",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.14",
+    "hono": "^4.12.15",
     "toucan-js": "^4.1.1"
   }
 }
