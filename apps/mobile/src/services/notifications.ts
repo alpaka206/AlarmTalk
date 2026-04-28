@@ -45,7 +45,7 @@ export function configureNotificationChannels(t: TFunction): void {
       name: t('settings.channelAlarms'),
       description: t('settings.channelAlarmsDesc'),
       importance: Notifications.AndroidImportance.MAX,
-      sound: 'default',
+      sound: 'default_alarm',
       vibrationPattern: [0, 500, 250, 500],
       enableLights: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
@@ -56,7 +56,7 @@ export function configureNotificationChannels(t: TFunction): void {
       name: t('settings.channelNotes'),
       description: t('settings.channelNotesDesc'),
       importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
+      sound: 'default_alarm',
       vibrationPattern: [0, 250, 200, 250],
       enableLights: true,
     });
@@ -65,7 +65,7 @@ export function configureNotificationChannels(t: TFunction): void {
       name: t('settings.channelReminders'),
       description: t('settings.channelRemindersDesc'),
       importance: Notifications.AndroidImportance.DEFAULT,
-      sound: 'default',
+      sound: 'default_alarm',
     });
 
     Notifications.setNotificationChannelAsync(NotificationChannel.SYSTEM, {
@@ -117,7 +117,7 @@ export async function syncAlarmNotifications(alarms: Alarm[]): Promise<void> {
     const content: Notifications.NotificationContentInput = {
       title,
       body,
-      sound: 'default',
+      sound: 'default_alarm',
       categoryIdentifier: ALARM_CATEGORY,
       data: notificationData,
       ...(Platform.OS === 'android' && { channelId: NotificationChannel.ALARMS }),
@@ -160,7 +160,7 @@ export async function scheduleSnoozeNotification(
     content: {
       title,
       body,
-      sound: 'default',
+      sound: 'default_alarm',
       categoryIdentifier: ALARM_CATEGORY,
       data,
       ...(Platform.OS === 'android' && { channelId: NotificationChannel.ALARMS }),

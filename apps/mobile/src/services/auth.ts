@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import * as AuthSession from 'expo-auth-session';
+import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -7,47 +7,27 @@ import { Platform } from 'react-native';
 
 WebBrowser.maybeCompleteAuthSession();
 
-// ============================
-// Google Cloud Console에서 OAuth 2.0 Client ID를 생성하세요:
-// 1. https://console.cloud.google.com/apis/credentials
-// 2. "Create Credentials" → "OAuth client ID"
-// 3. Application type: "Web application"
-// 4. Authorized redirect URIs에 추가:
-//    - Expo Go: https://auth.expo.io/@your-username/voice-alarm
-//    - 프로덕션: voicealarm://redirect
-// 5. 생성된 Client ID를 아래에 입력
-// ============================
-const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? '';
+const GOOGLE_ANDROID_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? '';
+const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? '';
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
 
 // ===== Google 로그인 =====
 
 export function useGoogleAuth() {
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'voicealarm',
-    path: 'redirect',
-  });
-
-
   const [nonce] = useState(
     () => Math.random().toString(36).substring(2) + Date.now().toString(36),
   );
 
-  const [request, response, promptAsync] = AuthSession.useAuthRequest(
-    {
-      clientId: GOOGLE_CLIENT_ID,
-      scopes: ['openid', 'profile', 'email'],
-      responseType: 'id_token',
-      usePKCE: false,
-      extraParams: { nonce },
-      redirectUri,
-    },
-    {
-      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-      tokenEndpoint: 'https://oauth2.googleapis.com/token',
-    },
-  );
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    scopes: ['openid', 'profile', 'email'],
+    responseType: 'id_token',
+    extraParams: { nonce },
+  });
 
-  return { request, response, promptAsync, redirectUri };
+  return { request, response, promptAsync };
 }
 
 // ===== Apple 로그인 (iOS only) =====
