@@ -280,8 +280,13 @@ describe('뮤테이션 캐시 무효화', () => {
   });
 
   it('음성 녹음/업로드/분리 후 voiceProfiles를 무효화한다', () => {
+    // Match only files under app/voice/ — `app/alarm/source-record.tsx` has
+    // 'record' in its name but is the alarm raw-audio screen, not a voice
+    // profile creator, so it must not be required to invalidate voiceProfiles.
     const voiceFiles = allFiles.filter(
-      (f) => f.file.includes('voice') && (f.file.includes('record') || f.file.includes('upload') || f.file.includes('diarize')),
+      (f) =>
+        /[\\/]voice[\\/]/.test(f.file) &&
+        (f.file.includes('record') || f.file.includes('upload') || f.file.includes('diarize')),
     );
     expect(voiceFiles.length).toBeGreaterThanOrEqual(3);
     for (const vf of voiceFiles) {
