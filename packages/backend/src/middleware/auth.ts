@@ -55,10 +55,55 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       verified = await verifyGoogleToken(token, c.env.GOOGLE_CLIENT_ID);
     }
 
-    c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
     c.set('userPicture', verified.picture || '');
+
+    // Resolve the user row keyed by google_id. Older accounts were created
+    // with a UUID id but the same google_id, so blindly trusting the JWT sub
+    // as users.id breaks foreign keys. Lookup → insert if missing → expose
+    // the real users.id to downstream handlers via c.set('userId', ...).
+    try {
+      const { getDB } = await import('../lib/db');
+      const db = getDB(c.env);
+      const found = await db.execute({
+        sql: 'SELECT id FROM users WHERE google_id = ?',
+        args: [verified.sub],
+      });
+      let resolvedUserId: string;
+      if (found.rows.length > 0) {
+        resolvedUserId = String(found.rows[0]!.id);
+      } else {
+        // First contact for this google account — create the row with sub as
+        // id so handlers see a stable identifier.
+        await db.execute({
+          sql: `INSERT INTO users (id, google_id, email, name, picture)
+                VALUES (?, ?, ?, ?, ?)`,
+          args: [
+            verified.sub,
+            verified.sub,
+            verified.email || `${verified.sub}@unknown`,
+            verified.name || null,
+            verified.picture || null,
+          ],
+        });
+        resolvedUserId = verified.sub;
+      }
+      c.set('userId', resolvedUserId);
+      // eslint-disable-next-line no-console
+      console.log(
+        '[AUTH user-resolve OK]',
+        'sub=', verified.sub,
+        '→ usersId=', resolvedUserId,
+      );
+    } catch (err) {
+      // Fall back to the JWT sub so requests still try to proceed; the
+      // downstream FK error becomes our signal in tail logs.
+      c.set('userId', verified.sub);
+      // eslint-disable-next-line no-console
+      console.log('[AUTH user-resolve FAIL]', err instanceof Error ? err.message : String(err));
+    }
+
     await next();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
