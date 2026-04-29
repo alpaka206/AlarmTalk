@@ -36,6 +36,7 @@ export default function VibrationScreen() {
             style={styles.row}
             onPress={() => handleSelect(pattern)}
             accessibilityRole="radio"
+            accessibilityLabel={label}
             accessibilityState={{ selected }}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>

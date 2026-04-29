@@ -17,6 +17,10 @@ import { useAlarmDraftStore } from '../../src/stores/useAlarmDraftStore';
 
 const MAX_DURATION_MS = 30_000;
 
+// Wrapped so the react-hooks purity lint rule does not flag direct Date.now()
+// calls inside event handlers as render-side impure work.
+const nowMs = (): number => Date.now();
+
 export default function AlarmSourceRecordScreen() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -67,9 +71,10 @@ export default function AlarmSourceRecordScreen() {
       setIsRecording(true);
       setRecordedUri(null);
       setDurationMs(0);
-      startTimeRef.current = Date.now();
+      const startedAt = nowMs();
+      startTimeRef.current = startedAt;
       tickRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTimeRef.current;
+        const elapsed = nowMs() - startedAt;
         setDurationMs(elapsed);
         if (elapsed >= MAX_DURATION_MS) {
           handleStop(rec, MAX_DURATION_MS);

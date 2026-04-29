@@ -28,10 +28,13 @@ beforeEach(() => {
 describe('POST /alarms', () => {
   const validBody = { message_id: ID.message, time: '07:30' };
 
-  it('message_id 누락 시 400', async () => {
+  it('message_id / raw_audio_url 둘 다 누락 시 400 ALARM_SOURCE_MISSING', async () => {
+    // raw-audio alarms relaxed the constraint to "either message_id OR
+    // raw_audio_url is required" — only message_id missing is still allowed
+    // when a raw_audio_url is supplied.
     const res = await buildApp().request(jsonReq('POST', '/alarms', { time: '07:30' }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('REQUIRED_FIELDS_MISSING');
+    expect((await res.json()).error_code).toBe('ALARM_SOURCE_MISSING');
   });
 
   it('time 누락 시 400', async () => {
