@@ -45,6 +45,7 @@
     "expo-updates": "~55.0.21",
     "expo-web-browser": "~55.0.14",
     "i18next": "^24.2.2",
+    "phosphor-react-native": "^3.0.6",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-i18next": "^15.4.1",

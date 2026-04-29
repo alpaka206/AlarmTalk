@@ -464,6 +464,25 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)`,
     ],
   },
+  {
+    id: 20,
+    // Cleanup orphaned `alarms_new` left behind by a half-applied earlier
+    // attempt at the table-recreation migration. No-op on fresh DBs.
+    name: 'alarm-raw-audio-cleanup',
+    statements: [
+      'DROP TABLE IF EXISTS alarms_new',
+    ],
+  },
+  {
+    id: 21,
+    // Add raw_audio columns directly via ALTER. Keeps `message_id` NOT NULL —
+    // raw-audio alarms get a placeholder message row in alarm-mutation.
+    name: 'alarm-raw-audio-columns',
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN raw_audio_url TEXT`,
+      `ALTER TABLE alarms ADD COLUMN raw_audio_duration_ms INTEGER`,
+    ],
+  },
 ];
 
 export async function runMigrations(db: Client): Promise<string[]> {

@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -102,7 +102,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (stateLoaded && !hasCompletedOnboarding && !hasNavigatedToOnboarding.current) {
       hasNavigatedToOnboarding.current = true;
-      router.replace('/onboarding');
+      // Defer outside the current navigation/render cycle to avoid
+      // re-entering the routing queue (causes Maximum update depth).
+      const id = setTimeout(() => router.replace('/onboarding'), 0);
+      return () => clearTimeout(id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateLoaded, hasCompletedOnboarding]);
@@ -164,7 +167,7 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
-      <SafeAreaProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -191,6 +194,10 @@ export default function RootLayout() {
               options={{ headerShown: true, title: t('screen.voiceDetail') }}
             />
             <Stack.Screen
+              name="voice/create"
+              options={{ headerShown: true, title: t('voiceCreate.title'), presentation: 'modal' }}
+            />
+            <Stack.Screen
               name="voice/record"
               options={{ headerShown: true, title: t('screen.voiceRecord'), presentation: 'modal' }}
             />
@@ -213,6 +220,22 @@ export default function RootLayout() {
             <Stack.Screen
               name="alarm/edit"
               options={{ headerShown: true, title: t('alarmEdit.title'), presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="alarm/snooze"
+              options={{ headerShown: true, title: t('alarmCreate.snoozeScreen') }}
+            />
+            <Stack.Screen
+              name="alarm/source-record"
+              options={{ headerShown: true, title: t('alarmSource.screenTitle'), presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="alarm/source-upload"
+              options={{ headerShown: true, title: t('alarmSource.screenTitle'), presentation: 'modal' }}
+            />
+            <Stack.Screen
+              name="alarm/vibration"
+              options={{ headerShown: true, title: t('alarmCreate.vibrationScreen') }}
             />
             <Stack.Screen
               name="message/[id]"

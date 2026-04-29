@@ -19,46 +19,49 @@ export interface ThemeColorScheme {
   overlay: string;
 }
 
+// Mustard Yellow + Deep Navy. Source of truth lives in packages/ui/src/tokens.ts;
+// this is the mobile-side mirror because the mobile app currently does not
+// import from @voice-alarm/ui directly.
 export const Colors: { light: ThemeColorScheme; dark: ThemeColorScheme } = {
   light: {
-    primary: '#FF7F6B',
-    primaryLight: '#FFB4A8',
-    primaryDark: '#E05A47',
-    secondary: '#FFCBA4',
-    accent: '#FF6B8A',
-    background: '#FFF5F3',
+    primary: '#E8B341',          // mustard
+    primaryLight: '#F2C669',
+    primaryDark: '#C9982C',
+    secondary: '#2D3E5C',        // deep navy
+    accent: '#C97B5C',           // terracotta
+    background: '#FBF8F2',       // warm cream
     surface: '#FFFFFF',
-    surfaceVariant: '#FFF0ED',
-    text: '#2D2D2D',
-    textSecondary: '#6B7280',
-    textTertiary: '#AEAEB2',
-    border: '#F2E8E5',
-    success: '#34C759',
-    warning: '#FF9500',
-    error: '#FF3B30',
-    shadow: 'rgba(255, 127, 107, 0.15)',
-    textOnPrimary: '#FFFFFF',
-    overlay: 'rgba(0, 0, 0, 0.3)',
+    surfaceVariant: '#F5EFE0',
+    text: '#2C2620',             // warm charcoal
+    textSecondary: '#6B6358',
+    textTertiary: '#9C9080',
+    border: '#EAE3D2',
+    success: '#5C8A6B',          // sage
+    warning: '#D89A2C',
+    error: '#B84A3D',            // brick
+    shadow: 'rgba(45, 62, 92, 0.12)',
+    textOnPrimary: '#2C2620',    // charcoal on mustard (WCAG AA)
+    overlay: 'rgba(31, 27, 20, 0.5)',
   },
   dark: {
-    primary: '#FF8F7D',
-    primaryLight: '#FFAA99',
-    primaryDark: '#E06A58',
-    secondary: '#FFD4B3',
-    accent: '#FF7B96',
-    background: '#1C1C1E',
-    surface: '#2C2C2E',
-    surfaceVariant: '#3A3A3C',
-    text: '#FFFFFF',
-    textSecondary: '#98989D',
-    textTertiary: '#636366',
-    border: '#38383A',
-    success: '#30D158',
-    warning: '#FF9F0A',
-    error: '#FF453A',
-    shadow: 'rgba(0, 0, 0, 0.3)',
-    textOnPrimary: '#FFFFFF',
-    overlay: 'rgba(0, 0, 0, 0.3)',
+    primary: '#F0C25C',          // chroma-dimmed mustard for dark
+    primaryLight: '#F5D387',
+    primaryDark: '#D8A93D',
+    secondary: '#7B8FB5',        // lifted navy for dark surfaces
+    accent: '#D89677',           // softer terracotta
+    background: '#1F1B14',       // dark mocha (not pure black)
+    surface: '#2A251D',
+    surfaceVariant: '#332C22',
+    text: '#F0EBE0',             // warm cream text
+    textSecondary: '#A89F8F',
+    textTertiary: '#7A7165',
+    border: '#3A332A',
+    success: '#7FA88B',
+    warning: '#E0AB42',
+    error: '#D86F5E',
+    shadow: 'rgba(0, 0, 0, 0.4)',
+    textOnPrimary: '#1F1B14',    // mocha on dimmed mustard
+    overlay: 'rgba(0, 0, 0, 0.6)',
   },
 };
 

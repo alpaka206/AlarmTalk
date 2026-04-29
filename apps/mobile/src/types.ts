@@ -26,6 +26,35 @@ export type AlarmMode = 'tts' | 'sound-only';
 export type VibrationPattern = 'default' | 'strong' | 'none';
 export type WakeMode = 'sound_then_voice' | 'voice_only';
 
+/**
+ * UI-level alarm play mode (Galaxy-style 3-way choice).
+ * Maps to internal `mode` + `wake_mode` + presence of message/voice_profile.
+ */
+export type AlarmPlayMode = 'alarm_only' | 'voice_only' | 'alarm_voice';
+
+export function playModeToBackend(playMode: AlarmPlayMode): {
+  mode: AlarmMode;
+  wakeMode: WakeMode;
+} {
+  switch (playMode) {
+    case 'voice_only':
+      return { mode: 'tts', wakeMode: 'voice_only' };
+    case 'alarm_only':
+    case 'alarm_voice':
+      return { mode: 'tts', wakeMode: 'sound_then_voice' };
+  }
+}
+
+export function backendToPlayMode(
+  _mode: AlarmMode | undefined,
+  wakeMode: WakeMode | undefined,
+  hasVoiceOrMessage: boolean,
+): AlarmPlayMode {
+  if (!hasVoiceOrMessage) return 'alarm_only';
+  if (wakeMode === 'voice_only') return 'voice_only';
+  return 'alarm_voice';
+}
+
 export interface Alarm {
   id: string;
   user_id: string;
@@ -43,6 +72,8 @@ export interface Alarm {
   wake_mode?: WakeMode;
   voice_profile_id?: string | null;
   speaker_id?: string | null;
+  raw_audio_url?: string | null;
+  raw_audio_duration_ms?: number | null;
   message_text?: string;
   voice_name?: string;
   category?: string;

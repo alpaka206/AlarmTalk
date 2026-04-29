@@ -32,6 +32,13 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
   ensureGoogleConfigured();
   try {
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    // 캐시된 계정으로 자동 로그인되지 않도록 먼저 세션 정리 →
+    // 매번 시스템 계정 선택 다이얼로그가 뜬다.
+    try {
+      await GoogleSignin.signOut();
+    } catch {
+      // 로그인된 적 없으면 무시
+    }
     const result = await GoogleSignin.signIn();
 
     if (result.type !== 'success') return null;

@@ -60,10 +60,16 @@ describe('design token color contrast audit', () => {
   it('light mode: primary text on background meets AA for large text', () => {
     expect(meetsAA(LightColors.text, LightColors.background)).toBe(true);
   });
-  it('light mode: primary on surface — coral on white has low contrast (known, decorative use)', () => {
+  it('light mode: primary on surface — mustard on white has low contrast (known, decorative use)', () => {
+    // Mustard primary is intended for icons/CTAs paired with charcoal text,
+    // never for raw primary-on-surface text. Audit just confirms it stays
+    // below AA-large so reviewers do not accidentally rely on it for body copy.
     const ratio = contrastRatio(LightColors.primary, LightColors.surface);
-    expect(ratio).toBeGreaterThan(2);
+    expect(ratio).toBeGreaterThan(1.5);
     expect(ratio).toBeLessThan(WCAG_AA_LARGE);
+  });
+  it('light mode: charcoal on mustard meets AA (textOnPrimary contract)', () => {
+    expect(meetsAA(LightColors.textOnPrimary, LightColors.primary)).toBe(true);
   });
   it('dark mode: text on background meets AA', () => {
     expect(meetsAA(DarkColors.text, DarkColors.background)).toBe(true);

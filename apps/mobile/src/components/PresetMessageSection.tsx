@@ -14,13 +14,11 @@ interface Props {
   readyVoices: VoiceProfile[];
   presetVoiceId: string | null;
   onVoiceSelect: (id: string) => void;
-  recentPresets: string[];
-  presetText: string | null;
-  onPresetTextSelect: (text: string | null) => void;
   presetCategory: string;
   onCategorySelect: (key: string) => void;
   isPending: boolean;
-  onGenerate: () => void;
+  /** Receives the randomly-picked text for the chosen category. */
+  onGenerate: (text: string) => void;
   formStyles: AlarmFormStyles;
 }
 
@@ -30,9 +28,6 @@ export function PresetMessageSection({
   readyVoices,
   presetVoiceId,
   onVoiceSelect,
-  recentPresets,
-  presetText,
-  onPresetTextSelect,
   presetCategory,
   onCategorySelect,
   isPending,
@@ -43,6 +38,15 @@ export function PresetMessageSection({
   const router = useRouter();
   const { colors } = useTheme();
   const styles = useMemo(() => createLocalStyles(colors), [colors]);
+
+  const handleGenerateRandom = () => {
+    const cat = PRESET_CATEGORIES.find((c) => c.key === presetCategory);
+    if (!cat || cat.messageKeys.length === 0) return;
+    const randomKey = cat.messageKeys[Math.floor(Math.random() * cat.messageKeys.length)]!;
+    onGenerate(t(randomKey));
+  };
+
+  const canGenerate = !!presetVoiceId && !isPending;
 
   return (
     <>
@@ -64,7 +68,7 @@ export function PresetMessageSection({
           {readyVoices.length === 0 ? (
             <TouchableOpacity
               style={styles.emptyVoice}
-              onPress={() => router.push('/voice/record')}
+              onPress={() => router.push('/voice/create')}
               accessibilityRole="button"
               accessibilityLabel={t('alarmCreate.emptyVoice')}
             >
@@ -89,29 +93,6 @@ export function PresetMessageSection({
             </ScrollView>
           )}
 
-          {recentPresets.length > 0 && (
-            <>
-              <Text style={styles.presetLabel}>{t('alarmCreate.recentMessages')}</Text>
-              <View style={formStyles.messageList}>
-                {recentPresets.map((msg, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={[formStyles.messageItem, presetText === msg && formStyles.messageItemSelected]}
-                    onPress={() => onPresetTextSelect(msg)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: presetText === msg }}
-                    accessibilityLabel={msg}
-                  >
-                    <View style={formStyles.messageInfo}>
-                      <Text style={formStyles.messageText} numberOfLines={2}>"{msg}"</Text>
-                    </View>
-                    {presetText === msg && <Text style={formStyles.checkmark}>✓</Text>}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-
           <Text style={styles.presetLabel}>{t('alarmCreate.presetCategory')}</Text>
           <View style={styles.categoryGrid}>
             {PRESET_CATEGORIES.map((cat) => {
@@ -121,10 +102,7 @@ export function PresetMessageSection({
                 <TouchableOpacity
                   key={cat.key}
                   style={[styles.categoryCard, selected && styles.categoryCardActive]}
-                  onPress={() => {
-                    onCategorySelect(cat.key);
-                    onPresetTextSelect(null);
-                  }}
+                  onPress={() => onCategorySelect(cat.key)}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
                   accessibilityLabel={label}
@@ -138,53 +116,16 @@ export function PresetMessageSection({
             })}
           </View>
 
-          <View style={styles.presetMsgHeader}>
-            <Text style={[styles.presetLabel, { marginBottom: 0 }]}>{t('alarmCreate.presetMessages')}</Text>
-            <TouchableOpacity
-              style={styles.randomBtn}
-              onPress={() => {
-                const keys = PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messageKeys;
-                if (keys && keys.length > 0) {
-                  onPresetTextSelect(t(keys[Math.floor(Math.random() * keys.length)]!));
-                }
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={t('alarmCreate.randomMessage')}
-            >
-              <Text style={styles.randomBtnText}>{t('alarmCreate.randomMessage')}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={formStyles.messageList}>
-            {PRESET_CATEGORIES.find((c) => c.key === presetCategory)?.messageKeys.map((key, i) => {
-              const msg = t(key);
-              return (
-                <TouchableOpacity
-                  key={i}
-                  style={[formStyles.messageItem, presetText === msg && formStyles.messageItemSelected]}
-                  onPress={() => onPresetTextSelect(msg)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: presetText === msg }}
-                  accessibilityLabel={msg}
-                >
-                  <View style={formStyles.messageInfo}>
-                    <Text style={formStyles.messageText} numberOfLines={2}>"{msg}"</Text>
-                  </View>
-                  {presetText === msg && <Text style={formStyles.checkmark}>✓</Text>}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
           <TouchableOpacity
             style={[
               styles.presetGenerateBtn,
-              (!presetVoiceId || !presetText || isPending) && formStyles.disabled,
+              !canGenerate && formStyles.disabled,
             ]}
-            onPress={onGenerate}
-            disabled={!presetVoiceId || !presetText || isPending}
+            onPress={handleGenerateRandom}
+            disabled={!canGenerate}
             accessibilityRole="button"
             accessibilityLabel={t('alarmCreate.generatePreset')}
-            accessibilityState={{ disabled: !presetVoiceId || !presetText || isPending }}
+            accessibilityState={{ disabled: !canGenerate }}
           >
             {isPending ? (
               <ActivityIndicator color={colors.textOnPrimary} size="small" />
@@ -268,23 +209,6 @@ function createLocalStyles(colors: ThemeColors) {
     },
     categoryLabelActive: {
       color: colors.textOnPrimary,
-    },
-    presetMsgHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: Spacing.sm,
-    },
-    randomBtn: {
-      paddingHorizontal: Spacing.md,
-      paddingVertical: Spacing.xs,
-      borderRadius: BorderRadius.full,
-      backgroundColor: colors.surfaceVariant,
-    },
-    randomBtnText: {
-      fontSize: FontSize.xs,
-      fontFamily: FontFamily.semibold,
-      color: colors.primary,
     },
     presetGenerateBtn: {
       backgroundColor: colors.accent,
