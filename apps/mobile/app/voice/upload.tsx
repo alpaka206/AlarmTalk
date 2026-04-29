@@ -28,6 +28,7 @@ export default function UploadScreen() {
   const styles = createStyles(colors);
   const [selectedFile, setSelectedFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null);
   const [name, setName] = useState('');
+  const [speakerCount, setSpeakerCount] = useState<1 | 2 | 3 | 4>(1);
 
   const cloneMutation = useMutation({
     mutationFn: (params: { file: DocumentPicker.DocumentPickerAsset; name: string }) =>
@@ -62,7 +63,25 @@ export default function UploadScreen() {
   };
 
   const handleSubmit = () => {
-    if (!selectedFile || !name.trim()) {
+    if (!selectedFile) {
+      toast.show(t('voiceUpload.inputRequired'));
+      return;
+    }
+    // Multi-speaker file → diarization flow (file is the only thing we can pass
+    // through the router; diarize screen prompts for per-speaker names there).
+    if (speakerCount > 1) {
+      router.push({
+        pathname: '/voice/diarize',
+        params: {
+          uri: selectedFile.uri,
+          fileName: selectedFile.name,
+          mimeType: selectedFile.mimeType ?? 'audio/wav',
+          speakerCount: String(speakerCount),
+        },
+      });
+      return;
+    }
+    if (!name.trim()) {
       toast.show(t('voiceUpload.inputRequired'));
       return;
     }
@@ -96,34 +115,70 @@ export default function UploadScreen() {
           </View>
         )}
 
-        {/* 이름 입력 */}
-        <TextInput
-          style={styles.nameInput}
-          placeholder={t('voiceUpload.namePlaceholder')}
-          value={name}
-          onChangeText={setName}
-          placeholderTextColor={colors.textTertiary}
-          accessibilityLabel={t('voiceUpload.a11yNameInput')}
-        />
+        {/* 화자 수 */}
+        <Text style={styles.sectionLabel}>{t('voiceUpload.speakerCount')}</Text>
+        <View style={styles.speakerRow}>
+          {([1, 2, 3, 4] as const).map((n) => {
+            const selected = speakerCount === n;
+            return (
+              <TouchableOpacity
+                key={n}
+                style={[styles.speakerChip, selected && styles.speakerChipActive]}
+                onPress={() => setSpeakerCount(n)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                accessibilityLabel={t('voiceUpload.speakerN', { n })}
+              >
+                <Text style={[styles.speakerChipText, selected && styles.speakerChipTextActive]}>
+                  {n === 1 ? t('voiceUpload.singleSpeaker') : t('voiceUpload.speakerN', { n })}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* 이름 입력 (1인 화자만) */}
+        {speakerCount === 1 && (
+          <TextInput
+            style={styles.nameInput}
+            placeholder={t('voiceUpload.namePlaceholder')}
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor={colors.textTertiary}
+            accessibilityLabel={t('voiceUpload.a11yNameInput')}
+          />
+        )}
 
         {/* 제출 */}
+        {(() => {
+          const submitDisabled =
+            !selectedFile ||
+            (speakerCount === 1 && !name.trim()) ||
+            cloneMutation.isPending;
+          const label =
+            speakerCount === 1
+              ? t('voiceUpload.submit')
+              : t('voiceUpload.submitDiarize');
+          return (
         <TouchableOpacity
           style={[
             styles.submitButton,
-            (!selectedFile || !name.trim() || cloneMutation.isPending) && styles.disabled,
+            submitDisabled && styles.disabled,
           ]}
           onPress={handleSubmit}
-          disabled={!selectedFile || !name.trim() || cloneMutation.isPending}
+          disabled={submitDisabled}
           accessibilityRole="button"
           accessibilityLabel={t('voiceUpload.a11ySubmit')}
-          accessibilityState={{ disabled: !selectedFile || !name.trim() || cloneMutation.isPending }}
+          accessibilityState={{ disabled: submitDisabled }}
         >
           {cloneMutation.isPending ? (
             <ActivityIndicator color={colors.textOnPrimary} />
           ) : (
-            <Text style={styles.submitText}>{t('voiceUpload.submit')}</Text>
+            <Text style={styles.submitText}>{label}</Text>
           )}
         </TouchableOpacity>
+          );
+        })()}
       </View>
       <Toast message={toast.message} opacity={toast.opacity} />
     </View>
@@ -182,6 +237,39 @@ const createStyles = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: Spacing.md,
+  },
+  sectionLabel: {
+    fontSize: FontSize.sm,
+    fontFamily: FontFamily.semibold,
+    color: colors.textSecondary,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  speakerRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  speakerChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  speakerChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  speakerChipText: {
+    fontSize: FontSize.sm,
+    color: colors.text,
+    fontFamily: FontFamily.semibold,
+  },
+  speakerChipTextActive: {
+    color: colors.textOnPrimary,
   },
   submitButton: {
     backgroundColor: colors.primary,
