@@ -125,7 +125,9 @@ export function AuthProvider({ children, apiBase, storage, fetchImpl }: AuthProv
         setIsLoading(false);
       }
     })();
-  }, [store, refresh]);
+    // boot은 마운트 시 1회만 실행. refresh/store 변경에도 재실행 금지.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = useCallback(
     async (email: string, password: string): Promise<AuthUser> => {

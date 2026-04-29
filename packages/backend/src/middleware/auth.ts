@@ -71,6 +71,8 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
           : message.includes('format')
             ? 'AUTH_MALFORMED_TOKEN'
             : 'AUTH_VERIFICATION_FAILED';
+    // eslint-disable-next-line no-console
+    console.log('[AUTH 401]', code, '|', message, '| GOOGLE_CLIENT_ID set:', !!c.env.GOOGLE_CLIENT_ID);
     return c.json({ error: message, error_code: code }, 401);
   }
 }

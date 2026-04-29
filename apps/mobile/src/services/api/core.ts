@@ -92,12 +92,18 @@ export async function request<T>(config: RequestConfig): Promise<T> {
         signal: controller.signal,
       });
 
-      if (res.status === 401) {
-        await AsyncStorage.removeItem('auth_token');
-      }
-
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[API ${res.status}] ${config.method} ${config.path}`,
+          'hasToken=', !!token,
+          'tokenLen=', token?.length ?? 0,
+          'body=', JSON.stringify(errData),
+        );
+        if (res.status === 401) {
+          await AsyncStorage.removeItem('auth_token');
+        }
         throw new ApiError(res.status, errData);
       }
 
