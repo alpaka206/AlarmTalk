@@ -12,26 +12,20 @@ import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
 import { initSentry } from '../src/lib/sentry';
 import { parseDeepLink } from '../src/lib/deepLink';
-import type * as Notifications from 'expo-notifications';
 import { useAppStore } from '../src/stores/useAppStore';
 import { useTheme } from '../src/hooks/useTheme';
 import { setupAudioSession, ensureAudioDir, cleanupAudioCache } from '../src/services/audio';
 import { checkForOTAUpdate } from '../src/services/updates';
-import {
-  requestNotificationPermissions,
-  addNotificationResponseListener,
-  scheduleSnoozeNotification,
-  registerPushTokenWithServer,
-  configureNotificationChannels,
-  SNOOZE_ACTION,
-  DISMISS_ACTION,
-} from '../src/services/notifications';
 import { OfflineBanner } from '../src/components/OfflineBanner';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { AuthProvider } from '../src/hooks/useAuth';
 import { startAlarmKeepAlive } from '../src/services/alarmRinger';
 import {
   configureNotifeeAlarmChannel,
+  requestAlarmNotificationPermissions,
+  scheduleNotifeeSnooze,
+  NOTIFEE_SNOOZE_ACTION_ID,
+  NOTIFEE_DISMISS_ACTION_ID,
 } from '../src/services/notifeeAlarms';
 import notifee, { EventType } from '@notifee/react-native';
 import '../src/i18n';
@@ -51,8 +45,11 @@ SplashScreen.preventAutoHideAsync();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30_000,
-      retry: 2,
+      staleTime: 5 * 60 * 1000,   // 30s → 5min: Tailscale 환경 재요청 폭발 방지
+      gcTime: 30 * 60 * 1000,     // 30min: 화면 전환 시 캐시 살아있음
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: 'always',
+      retry: 1,                    // 2 → 1: 재시도 비용이 큰 환경
     },
   },
 });
@@ -63,7 +60,6 @@ export default function RootLayout() {
   const { colors, isDark } = useTheme();
   const { t } = useTranslation();
   const router = useRouter();
-  const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const hasNavigatedToOnboarding = useRef(false);
   const deepLinkHandled = useRef(false);
 
@@ -129,11 +125,18 @@ export default function RootLayout() {
     setupAudioSession();
     ensureAudioDir().then(() => cleanupAudioCache());
     checkForOTAUpdate(t);
-    configureNotificationChannels(t);
     void configureNotifeeAlarmChannel();
     // Start the Alarmy-style background-audio keep-alive. It only actually
     // plays once an active alarm exists (setMonitoredAlarms toggles it).
     void startAlarmKeepAlive();
+
+    if (Platform.OS !== 'web') {
+      // notifee is the single source of truth for alarm notifications;
+      // expo-notifications was removed to avoid double-firing the same
+      // alarm. The dialog this surfaces is POST_NOTIFICATIONS on Android
+      // 13+ and the standard system prompt on iOS.
+      void requestAlarmNotificationPermissions();
+    }
 
     // If the app was launched from a notifee full-screen-intent (cold
     // start while ringing), jump straight to the ringing screen.
@@ -155,13 +158,49 @@ export default function RootLayout() {
         }
       });
 
-    // notifee fullScreenIntent / press → /alarm/ringing
+    // notifee fullScreenIntent / press / action buttons
     const fgUnsub = notifee.onForegroundEvent(({ type, detail }) => {
+      const data = detail.notification?.data as
+        | Record<string, unknown>
+        | undefined;
+
+      if (type === EventType.ACTION_PRESS && data?.alarmId) {
+        const actionId = detail.pressAction?.id;
+        if (actionId === NOTIFEE_DISMISS_ACTION_ID) {
+          // Drop the ongoing notification; the alarm is silenced for
+          // this occurrence (the next scheduled trigger fires as usual).
+          if (detail.notification?.id) {
+            void notifee.cancelTriggerNotification(detail.notification.id);
+            void notifee.cancelDisplayedNotification(detail.notification.id);
+          }
+          return;
+        }
+        if (actionId === NOTIFEE_SNOOZE_ACTION_ID) {
+          const rawMinutes = data.snoozeMinutes;
+          const minutes =
+            typeof rawMinutes === 'string'
+              ? parseInt(rawMinutes, 10)
+              : typeof rawMinutes === 'number'
+                ? rawMinutes
+                : 5;
+          if (detail.notification?.id) {
+            void notifee.cancelDisplayedNotification(detail.notification.id);
+          }
+          void scheduleNotifeeSnooze({
+            alarmId: String(data.alarmId),
+            text: String(data.text ?? ''),
+            voiceName: String(data.voiceName ?? ''),
+            snoozeMinutes: Number.isFinite(minutes) ? minutes : 5,
+            t,
+          });
+          return;
+        }
+      }
+
       if (
         (type === EventType.PRESS || type === EventType.DELIVERED) &&
-        detail.notification?.data?.alarmId
+        data?.alarmId
       ) {
-        const data = detail.notification.data as Record<string, unknown>;
         router.push({
           pathname: '/alarm/ringing',
           params: {
@@ -173,60 +212,7 @@ export default function RootLayout() {
       }
     });
 
-    if (Platform.OS !== 'web') {
-      requestNotificationPermissions().then((granted) => {
-        if (granted) registerPushTokenWithServer();
-      });
-
-      responseListener.current = addNotificationResponseListener((response) => {
-        const actionId = response.actionIdentifier;
-        const { content } = response.notification.request;
-        const data = content.data;
-
-        if (actionId === DISMISS_ACTION) return;
-
-        if (actionId === SNOOZE_ACTION && data) {
-          const minutes = typeof data.snoozeMinutes === 'number' ? data.snoozeMinutes : 5;
-          scheduleSnoozeNotification(
-            content.title || '⏰ VoiceAlarm',
-            content.body || '',
-            data as Record<string, unknown>,
-            minutes,
-          );
-          return;
-        }
-
-        // The default tap (no action button) on an alarm notification
-        // launches the full-screen ringing screen — that's where the
-        // looping alarm sound, vibration and the "알람 끄기" button live.
-        if (data?.alarmId) {
-          router.push({
-            pathname: '/alarm/ringing',
-            params: {
-              alarmId: String(data.alarmId),
-              text: String(data.text || ''),
-              voiceName: String(data.voiceName || ''),
-            },
-          });
-          return;
-        }
-
-        if (data?.messageId) {
-          router.push({
-            pathname: '/player',
-            params: {
-              messageId: String(data.messageId),
-              text: String(data.text || ''),
-              voiceName: String(data.voiceName || ''),
-              category: String(data.category || ''),
-            },
-          });
-        }
-      });
-    }
-
     return () => {
-      responseListener.current?.remove();
       fgUnsub();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

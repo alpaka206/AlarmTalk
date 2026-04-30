@@ -4,7 +4,7 @@ import { createMockDB } from './helpers';
 
 const mockDB = createMockDB();
 
-import { getTokensForUser, sendPushNotifications, sendAlarmPush, sendNotePush } from '../src/lib/fcm';
+import { getTokensForUser, sendPushNotifications, sendAlarmPush } from '../src/lib/fcm';
 
 beforeEach(() => {
   mockDB.reset();
@@ -141,52 +141,6 @@ describe('sendAlarmPush', () => {
   });
 });
 
-describe('sendNotePush', () => {
-  it('토큰 없으면 빈 결과', async () => {
-    mockDB.pushResult([]);
-    const results = await sendNotePush(
-      mockDB.client as never,
-      'user-1',
-      'note-1',
-      'Alice',
-    );
-    expect(results).toEqual([]);
-  });
-
-  it('한국어 기본 body', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'note-tok' }]);
-    await sendNotePush(
-      mockDB.client as never,
-      'user-1',
-      'note-1',
-      'Alice',
-    );
-    const logged = JSON.parse(
-      (vi.mocked(console.log).mock.calls[0][0] as string),
-    );
-    expect(logged.title).toBe('💌 Alice');
-    expect(logged.body).toBe('새 쪽지가 도착했어요');
-  });
-
-  it('영어 로케일 시 영문 body', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'en-tok' }]);
-    await sendNotePush(
-      mockDB.client as never,
-      'user-en',
-      'note-en',
-      'Bob',
-      'en',
-    );
-    const logged = JSON.parse(
-      (vi.mocked(console.log).mock.calls[0][0] as string),
-    );
-    expect(logged.title).toBe('💌 Bob');
-    expect(logged.body).toBe('You have a new note');
-  });
-});
-
 /* ------------------------------------------------------------------ */
 /*  Edge cases — getTokensForUser                                      */
 /* ------------------------------------------------------------------ */
@@ -315,67 +269,3 @@ describe('sendAlarmPush — edge cases', () => {
   });
 });
 
-/* ------------------------------------------------------------------ */
-/*  Edge cases — sendNotePush                                          */
-/* ------------------------------------------------------------------ */
-describe('sendNotePush — edge cases', () => {
-  it('data payload에 type=note, noteId, channelId=notes 포함 확인 (구조 기반)', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'note-dev' }]);
-    const results = await sendNotePush(
-      mockDB.client as never,
-      'user-1',
-      'note-abc',
-      'Alice',
-    );
-    expect(results).toHaveLength(1);
-    expect(results[0].token).toBe('note-dev');
-    expect(results[0].success).toBe(true);
-  });
-
-  it('sender name에 이모지/특수문자 포함', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'emoji-tok' }]);
-    await sendNotePush(
-      mockDB.client as never,
-      'user-e',
-      'note-e',
-      '🦊 여우',
-    );
-    const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('💌 🦊 여우');
-  });
-
-  it('빈 sender name → title에 "💌 " 포함', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'empty-name' }]);
-    await sendNotePush(
-      mockDB.client as never,
-      'user-empty',
-      'note-empty',
-      '',
-    );
-    const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('💌 ');
-  });
-
-  it('여러 디바이스에 동일 note body 전송', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([
-      { token: 'dev-a-xx' },
-      { token: 'dev-b-xx' },
-    ]);
-    const results = await sendNotePush(
-      mockDB.client as never,
-      'user-multi',
-      'note-m',
-      'Bob',
-      'en',
-    );
-    expect(results).toHaveLength(2);
-    for (const call of spy.mock.calls) {
-      const logged = JSON.parse(call[0] as string);
-      expect(logged.body).toBe('You have a new note');
-    }
-  });
-});

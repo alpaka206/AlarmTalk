@@ -6,7 +6,6 @@ import { useTranslation } from 'react-i18next';
 import { FontFamily, Spacing } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
 import { ProfileDropdown } from '../../src/components/ProfileDropdown';
-import { NotificationBell } from '../../src/components/NotificationBell';
 import { AppIcon, type AppIconName } from '../../src/components/AppIcon';
 
 const TAB_ICONS: Record<string, AppIconName> = {
@@ -62,7 +61,6 @@ export default function TabLayout() {
       headerShadowVisible: false,
       headerRight: () => (
         <View style={styles.headerRight}>
-          <NotificationBell />
           <ProfileDropdown />
         </View>
       ),

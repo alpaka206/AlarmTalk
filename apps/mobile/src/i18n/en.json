@@ -750,9 +750,7 @@
     "openMenu": "Open profile menu",
     "menuLabel": "Profile menu",
     "codeRegister": "Register Code",
-    "settings": "Settings",
-    "notifications": "Notifications",
-    "notificationsBadge": "{{count}} notifications"
+    "settings": "Settings"
   },
   "compose": {
     "title": "Compose",

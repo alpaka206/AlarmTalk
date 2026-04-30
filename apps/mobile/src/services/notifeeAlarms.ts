@@ -14,19 +14,27 @@
  *
  * iOS stays on the Alarmy-style background-audio trick in
  * `alarmRinger.ts` — Apple doesn't expose AlarmManager-equivalent APIs.
+ *
+ * This module is the single source of truth for OS-level alarm
+ * scheduling and notification permissions; expo-notifications has been
+ * removed from the runtime to avoid double-firing.
  */
 import { Platform } from 'react-native';
 import notifee, {
   AndroidCategory,
   AndroidImportance,
   AndroidVisibility,
+  AuthorizationStatus,
   TriggerType,
   type TimestampTrigger,
 } from '@notifee/react-native';
+import type { TFunction } from 'i18next';
 import type { Alarm } from '../types';
 import { parseRepeatDays } from '../lib/alarmForm';
 
 const ALARM_CHANNEL_ID = 'alarm-ringing';
+const SNOOZE_ACTION_ID = 'snooze';
+const DISMISS_ACTION_ID = 'dismiss';
 
 function nextOccurrencesMs(alarm: Alarm, daysAhead = 7): number[] {
   const [hStr, mStr] = alarm.time.split(':');
@@ -65,7 +73,22 @@ export async function configureNotifeeAlarmChannel(): Promise<void> {
   });
 }
 
-export async function syncNotifeeAlarms(alarms: Alarm[]): Promise<void> {
+/**
+ * Wraps notifee's permission prompt. notifee on Android 13+ surfaces the
+ * POST_NOTIFICATIONS dialog; on iOS it triggers the standard system prompt.
+ * Web has no concept of a notification permission for our use case so we
+ * short-circuit to false.
+ */
+export async function requestAlarmNotificationPermissions(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  const settings = await notifee.requestPermission();
+  return (
+    settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
+    settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
+  );
+}
+
+export async function syncNotifeeAlarms(alarms: Alarm[], t?: TFunction): Promise<void> {
   if (Platform.OS !== 'android') return;
 
   // Cancel all of *our* previously-scheduled triggers; we recreate them
@@ -78,8 +101,12 @@ export async function syncNotifeeAlarms(alarms: Alarm[]): Promise<void> {
   const active = alarms.filter((a) => a.is_active);
   if (active.length === 0) return;
 
+  const snoozeLabel = t ? t('notification.snoozeAction') : '😴 스누즈';
+  const dismissLabel = t ? t('notification.dismissAction') : '✓ 끄기';
+
   for (const alarm of active) {
     const occurrences = nextOccurrencesMs(alarm, 7);
+    const snoozeMinutes = alarm.snooze_minutes ?? 5;
     for (const ts of occurrences) {
       const trigger: TimestampTrigger = {
         type: TriggerType.TIMESTAMP,
@@ -97,6 +124,9 @@ export async function syncNotifeeAlarms(alarms: Alarm[]): Promise<void> {
             alarmId: alarm.id,
             text: alarm.message_text ?? '',
             voiceName: alarm.voice_name ?? '',
+            // Stash the snooze minutes so the action handler in _layout
+            // can re-schedule without round-tripping to the alarms cache.
+            snoozeMinutes: String(snoozeMinutes),
           },
           android: {
             channelId: ALARM_CHANNEL_ID,
@@ -112,6 +142,16 @@ export async function syncNotifeeAlarms(alarms: Alarm[]): Promise<void> {
             // foreground/background event handler routes to /alarm/ringing.
             pressAction: { id: 'default', launchActivity: 'default' },
             fullScreenAction: { id: 'default', launchActivity: 'default' },
+            actions: [
+              {
+                title: snoozeLabel,
+                pressAction: { id: SNOOZE_ACTION_ID },
+              },
+              {
+                title: dismissLabel,
+                pressAction: { id: DISMISS_ACTION_ID },
+              },
+            ],
           },
         },
         trigger,
@@ -120,4 +160,70 @@ export async function syncNotifeeAlarms(alarms: Alarm[]): Promise<void> {
   }
 }
 
+/**
+ * Schedules a one-shot trigger notification N minutes in the future to
+ * replicate the snooze behaviour of the OS Clock app. Used by the
+ * notifee action handler in `_layout.tsx` and the ringing screen if it
+ * ever wires up a snooze button.
+ */
+export async function scheduleNotifeeSnooze(params: {
+  alarmId: string;
+  text: string;
+  voiceName: string;
+  snoozeMinutes: number;
+  t?: TFunction;
+}): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  const { alarmId, text, voiceName, snoozeMinutes, t } = params;
+  const minutes = snoozeMinutes > 0 ? snoozeMinutes : 5;
+  const ts = Date.now() + minutes * 60_000;
+  const snoozeLabel = t ? t('notification.snoozeAction') : '😴 스누즈';
+  const dismissLabel = t ? t('notification.dismissAction') : '✓ 끄기';
+
+  const trigger: TimestampTrigger = {
+    type: TriggerType.TIMESTAMP,
+    timestamp: ts,
+    alarmManager: { allowWhileIdle: true },
+  };
+
+  await notifee.createTriggerNotification(
+    {
+      id: `alarm:${alarmId}:snooze:${ts}`,
+      title: voiceName ? `🗣️ ${voiceName}` : '⏰ 알람',
+      body: text || '알람 시간이에요',
+      data: {
+        alarmId,
+        text,
+        voiceName,
+        snoozeMinutes: String(minutes),
+      },
+      android: {
+        channelId: ALARM_CHANNEL_ID,
+        category: AndroidCategory.ALARM,
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        sound: 'default_alarm',
+        loopSound: true,
+        ongoing: true,
+        autoCancel: false,
+        pressAction: { id: 'default', launchActivity: 'default' },
+        fullScreenAction: { id: 'default', launchActivity: 'default' },
+        actions: [
+          {
+            title: snoozeLabel,
+            pressAction: { id: SNOOZE_ACTION_ID },
+          },
+          {
+            title: dismissLabel,
+            pressAction: { id: DISMISS_ACTION_ID },
+          },
+        ],
+      },
+    },
+    trigger,
+  );
+}
+
 export const NOTIFEE_ALARM_CHANNEL_ID = ALARM_CHANNEL_ID;
+export const NOTIFEE_SNOOZE_ACTION_ID = SNOOZE_ACTION_ID;
+export const NOTIFEE_DISMISS_ACTION_ID = DISMISS_ACTION_ID;
