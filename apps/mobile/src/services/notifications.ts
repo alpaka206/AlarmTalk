@@ -46,10 +46,13 @@ export function configureNotificationChannels(t: TFunction): void {
       description: t('settings.channelAlarmsDesc'),
       importance: Notifications.AndroidImportance.MAX,
       sound: 'default_alarm',
-      vibrationPattern: [0, 500, 250, 500],
+      // Long, repeating buzz pattern (sleep through me if you can).
+      vibrationPattern: [0, 1000, 500, 1000, 500, 1000, 500, 1000],
       enableLights: true,
+      enableVibrate: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       bypassDnd: true,
+      showBadge: true,
     });
 
     Notifications.setNotificationChannelAsync(NotificationChannel.NOTES, {
@@ -118,6 +121,10 @@ export async function syncAlarmNotifications(alarms: Alarm[]): Promise<void> {
       title,
       body,
       sound: 'default_alarm',
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      vibrate: [0, 1000, 500, 1000, 500, 1000, 500, 1000],
+      sticky: true,
+      autoDismiss: false,
       categoryIdentifier: ALARM_CATEGORY,
       data: notificationData,
       ...(Platform.OS === 'android' && { channelId: NotificationChannel.ALARMS }),

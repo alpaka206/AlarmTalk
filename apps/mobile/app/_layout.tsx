@@ -29,7 +29,21 @@ import {
 import { OfflineBanner } from '../src/components/OfflineBanner';
 import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { AuthProvider } from '../src/hooks/useAuth';
+import { startAlarmKeepAlive } from '../src/services/alarmRinger';
+import {
+  configureNotifeeAlarmChannel,
+} from '../src/services/notifeeAlarms';
+import notifee, { EventType } from '@notifee/react-native';
 import '../src/i18n';
+
+// Module-scope registration — required by notifee so the JS runtime can
+// receive the event even when the app was killed and woken by the
+// alarm fire. The actual ringing UI is shown after the app reaches
+// foreground; this just acknowledges the event.
+notifee.onBackgroundEvent(async () => {
+  // No-op — the press/full-screen-intent will bring the app foreground
+  // and `onForegroundEvent` (registered below) handles routing.
+});
 
 initSentry();
 SplashScreen.preventAutoHideAsync();
@@ -116,6 +130,48 @@ export default function RootLayout() {
     ensureAudioDir().then(() => cleanupAudioCache());
     checkForOTAUpdate(t);
     configureNotificationChannels(t);
+    void configureNotifeeAlarmChannel();
+    // Start the Alarmy-style background-audio keep-alive. It only actually
+    // plays once an active alarm exists (setMonitoredAlarms toggles it).
+    void startAlarmKeepAlive();
+
+    // If the app was launched from a notifee full-screen-intent (cold
+    // start while ringing), jump straight to the ringing screen.
+    void notifee
+      .getInitialNotification()
+      .then((initial: Awaited<ReturnType<typeof notifee.getInitialNotification>>) => {
+        const data = initial?.notification?.data as
+          | Record<string, unknown>
+          | undefined;
+        if (data?.alarmId) {
+          router.push({
+            pathname: '/alarm/ringing',
+            params: {
+              alarmId: String(data.alarmId),
+              text: String(data.text ?? ''),
+              voiceName: String(data.voiceName ?? ''),
+            },
+          });
+        }
+      });
+
+    // notifee fullScreenIntent / press → /alarm/ringing
+    const fgUnsub = notifee.onForegroundEvent(({ type, detail }) => {
+      if (
+        (type === EventType.PRESS || type === EventType.DELIVERED) &&
+        detail.notification?.data?.alarmId
+      ) {
+        const data = detail.notification.data as Record<string, unknown>;
+        router.push({
+          pathname: '/alarm/ringing',
+          params: {
+            alarmId: String(data.alarmId),
+            text: String(data.text ?? ''),
+            voiceName: String(data.voiceName ?? ''),
+          },
+        });
+      }
+    });
 
     if (Platform.OS !== 'web') {
       requestNotificationPermissions().then((granted) => {
@@ -140,6 +196,21 @@ export default function RootLayout() {
           return;
         }
 
+        // The default tap (no action button) on an alarm notification
+        // launches the full-screen ringing screen — that's where the
+        // looping alarm sound, vibration and the "알람 끄기" button live.
+        if (data?.alarmId) {
+          router.push({
+            pathname: '/alarm/ringing',
+            params: {
+              alarmId: String(data.alarmId),
+              text: String(data.text || ''),
+              voiceName: String(data.voiceName || ''),
+            },
+          });
+          return;
+        }
+
         if (data?.messageId) {
           router.push({
             pathname: '/player',
@@ -156,6 +227,7 @@ export default function RootLayout() {
 
     return () => {
       responseListener.current?.remove();
+      fgUnsub();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -236,6 +308,15 @@ export default function RootLayout() {
             <Stack.Screen
               name="alarm/vibration"
               options={{ headerShown: true, title: t('alarmCreate.vibrationScreen') }}
+            />
+            <Stack.Screen
+              name="alarm/ringing"
+              options={{
+                headerShown: false,
+                gestureEnabled: false,
+                animation: 'fade',
+                presentation: 'fullScreenModal',
+              }}
             />
             <Stack.Screen
               name="message/[id]"

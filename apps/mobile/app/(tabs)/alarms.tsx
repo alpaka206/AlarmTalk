@@ -24,9 +24,12 @@ import { playAudio } from '../../src/services/audio';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { DAY_KEYS } from '../../src/constants/presets';
 import { ErrorView } from '../../src/components/QueryStateView';
+import { AppIcon } from '../../src/components/AppIcon';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheAlarms, getCachedAlarms } from '../../src/services/offlineCache';
 import { syncAlarmNotifications } from '../../src/services/notifications';
+import { setMonitoredAlarms } from '../../src/services/alarmRinger';
+import { syncNotifeeAlarms } from '../../src/services/notifeeAlarms';
 import type { Alarm } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import {
@@ -118,10 +121,19 @@ function AlarmsScreen() {
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (alarms && alarms.length > 0) {
+    // Sync the offline cache + OS notifications whenever the live list
+    // changes — including the empty case (last alarm deleted), so stale
+    // cached rows don't stick around and the OS cancels old schedules.
+    if (alarms) {
       cacheAlarms(alarms);
       setCachedAlarms(alarms);
       syncAlarmNotifications(alarms);
+      // iOS: foreground keep-alive ticker (Alarmy-style background audio).
+      setMonitoredAlarms(alarms);
+      // Android: notifee schedules an exact-time, full-screen-intent
+      // alarm so the ringing screen pops over the lock screen even if
+      // the OS killed our process.
+      void syncNotifeeAlarms(alarms);
     }
   }, [alarms]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -161,7 +173,13 @@ function AlarmsScreen() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteAlarm,
-    onSuccess: () => {
+    onSuccess: (_data, deletedId) => {
+      // Drop the row from the cached query data immediately so the list
+      // updates without waiting for the background refetch — invalidate
+      // alone doesn't guarantee instant UI sync.
+      queryClient.setQueryData<Alarm[] | undefined>(['alarms'], (prev) =>
+        prev ? prev.filter((a) => a.id !== deletedId) : prev,
+      );
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
       resyncNotifications();
     },
@@ -282,7 +300,9 @@ function AlarmsScreen() {
         <ErrorView onRetry={refetch} />
       ) : filteredAlarms?.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyEmoji}>⏰</Text>
+          <View style={{ marginBottom: 12 }}>
+            <AppIcon name="alarm" size={56} />
+          </View>
           <Text style={styles.emptyTitle}>{t('alarms.emptyTitle')}</Text>
           <Text style={styles.emptyDesc}>{t('alarms.emptyDesc')}</Text>
           <TouchableOpacity
