@@ -39,6 +39,7 @@ import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { FamilyMemberRow } from '../../src/components/FamilyMemberRow';
 import { CoupleView } from '../../src/components/CoupleView';
+import { AppIcon } from '../../src/components/AppIcon';
 import { PeopleSkeletonCard } from '../../src/components/PeopleSkeletonCard';
 import { formatLastSeen } from '../../src/lib/formatLastSeen';
 
@@ -353,7 +354,9 @@ export default function PeopleScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>👤</Text>
+          <View style={{ marginBottom: 12 }}>
+            <AppIcon name="friends" size={56} />
+          </View>
           <Text style={styles.emptyText}>{t('friends.loginRequired')}</Text>
         </View>
       </SafeAreaView>
@@ -482,7 +485,10 @@ export default function PeopleScreen() {
               accessibilityRole="button"
               accessibilityLabel={t('people.sendFamilyAlarm')}
             >
-              <Text style={styles.familyAlarmBtnText}>⏰ {t('people.sendFamilyAlarm')}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <AppIcon name="alarm" size={18} color="#fff" duotoneColor="#fff" />
+                <Text style={styles.familyAlarmBtnText}>{t('people.sendFamilyAlarm')}</Text>
+              </View>
             </TouchableOpacity>
             {renderInviteSection()}
             {!isOwner && renderLeaveButton()}
@@ -499,7 +505,9 @@ export default function PeopleScreen() {
     if (!friends?.length) {
       return (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>👤</Text>
+          <View style={{ marginBottom: 12 }}>
+            <AppIcon name="friends" size={56} />
+          </View>
           <Text style={styles.emptyText}>{t('friends.emptyFriends')}</Text>
           <Text style={styles.emptyHint}>{t('friends.emptyFriendsHint')}</Text>
         </View>

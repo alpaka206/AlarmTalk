@@ -18,6 +18,7 @@ import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { registerCode, ApiError } from '../../src/services/api';
+import { AppIcon } from '../../src/components/AppIcon';
 
 const VOUCHER_RE = /^VA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 const INVITE_RE = /^[0-9]{6}$/;
@@ -84,7 +85,9 @@ export default function CodeRegisterScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.heroSection}>
-            <Text style={styles.heroEmoji}>🎟️</Text>
+            <View style={{ marginBottom: 12 }}>
+              <AppIcon name="gift" size={56} />
+            </View>
             <Text style={styles.heroTitle}>{t('codeRegister.title')}</Text>
             <Text style={styles.heroSubtitle}>{t('codeRegister.subtitle')}</Text>
           </View>

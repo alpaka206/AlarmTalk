@@ -26,6 +26,7 @@ import {
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { ErrorView } from '../../src/components/QueryStateView';
+import { AppIcon } from '../../src/components/AppIcon';
 import type { VoiceProfile } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
@@ -216,19 +217,17 @@ function VoicesScreen() {
           ) : isError ? (
             <ErrorView onRetry={refetch} />
           ) : !displayProfiles || displayProfiles.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyEmoji}>🎵</Text>
-              <Text style={styles.emptyText}>{t('voices.emptyTitle')}</Text>
-              <Text style={styles.emptyHint}>{t('voices.emptyDesc')}</Text>
-              <TouchableOpacity
-                style={styles.emptyCta}
-                onPress={handleAdd}
-                accessibilityRole="button"
-                accessibilityLabel={t('voices.addVoice')}
-              >
-                <Text style={styles.emptyCtaText}>{t('voices.addVoice')}</Text>
-              </TouchableOpacity>
-            </View>
+            // Hide the "no voices yet" empty state while the add-method
+            // sheet is open — the sheet replaces it as the primary CTA.
+            showAddOptions ? null : (
+              <View style={styles.emptyState}>
+                <View style={{ marginBottom: 12 }}>
+                  <AppIcon name="music" size={56} />
+                </View>
+                <Text style={styles.emptyText}>{t('voices.emptyTitle')}</Text>
+                <Text style={styles.emptyHint}>{t('voices.emptyDesc')}</Text>
+              </View>
+            )
           ) : (
             <FlatList
               data={displayProfiles}
@@ -261,7 +260,9 @@ function VoicesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('voices.record')}
               >
-                <Text style={styles.addOptionEmoji}>🎙️</Text>
+                <View style={styles.addOptionIcon}>
+                  <AppIcon name="mic" size={28} />
+                </View>
                 <View style={styles.addOptionInfo}>
                   <Text style={styles.addOptionTitle}>{t('voices.record')}</Text>
                   <Text style={styles.addOptionDesc}>{t('voices.recordDesc')}</Text>
@@ -273,7 +274,9 @@ function VoicesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('voices.upload')}
               >
-                <Text style={styles.addOptionEmoji}>📁</Text>
+                <View style={styles.addOptionIcon}>
+                  <AppIcon name="upload" size={28} />
+                </View>
                 <View style={styles.addOptionInfo}>
                   <Text style={styles.addOptionTitle}>{t('voices.upload')}</Text>
                   <Text style={styles.addOptionDesc}>{t('voices.uploadDesc')}</Text>
@@ -285,7 +288,9 @@ function VoicesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('voices.diarize')}
               >
-                <Text style={styles.addOptionEmoji}>📞</Text>
+                <View style={styles.addOptionIcon}>
+                  <AppIcon name="phone" size={28} />
+                </View>
                 <View style={styles.addOptionInfo}>
                   <Text style={styles.addOptionTitle}>{t('voices.diarize')}</Text>
                   <Text style={styles.addOptionDesc}>{t('voices.diarizeDesc')}</Text>
@@ -297,7 +302,9 @@ function VoicesScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('voices.speakerPicker')}
               >
-                <Text style={styles.addOptionEmoji}>👥</Text>
+                <View style={styles.addOptionIcon}>
+                  <AppIcon name="friends" size={28} />
+                </View>
                 <View style={styles.addOptionInfo}>
                   <Text style={styles.addOptionTitle}>{t('voices.speakerPicker')}</Text>
                   <Text style={styles.addOptionDesc}>{t('voices.speakerPickerDesc')}</Text>

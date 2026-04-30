@@ -16,6 +16,7 @@ import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme'
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 import { useAppStore } from '../stores/useAppStore';
 import { getUserProfile, deleteAccount } from '../services/api';
+import { AppIcon, type AppIconName } from './AppIcon';
 
 export function ProfileDropdown() {
   const { t, i18n } = useTranslation();
@@ -129,14 +130,16 @@ export function ProfileDropdown() {
             <MenuItem
               styles={styles}
               label={t('profile.codeRegister')}
-              icon="🎟️"
+              icon="gift"
               onPress={() => { setVisible(false); router.push('/code-register'); }}
             />
 
             <View style={styles.divider} />
 
             <View style={styles.menuItem}>
-              <Text style={styles.menuIcon}>🌙</Text>
+              <View style={styles.menuIcon}>
+                <AppIcon name="moon" size={20} />
+              </View>
               <Text style={styles.menuLabel}>{t('settings.darkMode')}</Text>
               <Switch
                 value={darkMode}
@@ -152,14 +155,14 @@ export function ProfileDropdown() {
             <MenuItem
               styles={styles}
               label={i18n.language === 'ko' ? 'English' : '한국어'}
-              icon="🌐"
+              icon="globe"
               onPress={toggleLanguage}
             />
 
             <MenuItem
               styles={styles}
               label={t('profile.settings')}
-              icon="⚙️"
+              icon="settings"
               onPress={() => { setVisible(false); router.push('/settings'); }}
             />
 
@@ -169,14 +172,14 @@ export function ProfileDropdown() {
                 <MenuItem
                   styles={styles}
                   label={t('common.logout')}
-                  icon="🚪"
+                  icon="logout"
                   onPress={handleLogout}
                   destructive
                 />
                 <MenuItem
                   styles={styles}
                   label={t('settings.deleteAccount')}
-                  icon="⚠️"
+                  icon="warning"
                   onPress={handleDeleteAccount}
                   destructive
                   subtle
@@ -200,7 +203,7 @@ function MenuItem({
 }: {
   styles: ReturnType<typeof createStyles>;
   label: string;
-  icon: string;
+  icon: AppIconName;
   onPress: () => void;
   destructive?: boolean;
   subtle?: boolean;
@@ -212,7 +215,9 @@ function MenuItem({
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <Text style={styles.menuIcon}>{icon}</Text>
+      <View style={styles.menuIcon}>
+        <AppIcon name={icon} size={20} />
+      </View>
       <Text
         style={[
           styles.menuLabel,
@@ -322,9 +327,9 @@ function createStyles(colors: ThemeColors) {
       minHeight: 44,
     },
     menuIcon: {
-      fontSize: 18,
       width: 28,
-      textAlign: 'center',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     menuLabel: {
       flex: 1,

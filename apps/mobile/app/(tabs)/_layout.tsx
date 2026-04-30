@@ -5,7 +5,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { FontFamily, Spacing } from '../../src/constants/theme';
 import { useTheme } from '../../src/hooks/useTheme';
-import { OfflineBanner } from '../../src/components/OfflineBanner';
 import { ProfileDropdown } from '../../src/components/ProfileDropdown';
 import { NotificationBell } from '../../src/components/NotificationBell';
 import { AppIcon, type AppIconName } from '../../src/components/AppIcon';
@@ -48,9 +47,13 @@ export default function TabLayout() {
 
   const screenOptions = useMemo(() => {
     const tabBarBaseHeight = 64;
-    const tabBarExtraBreathingRoom = 16;
-    const tabBarBottomPadding =
-      (insets.bottom > 0 ? insets.bottom : 8) + tabBarExtraBreathingRoom;
+    // Just hug the system nav inset — no extra padding. The previous +16
+    // breathing room pushed the tab bar up over the content area, which
+    // showed up as a strip of background color overlaying the last row of
+    // cards on the home screen. Edge-to-edge phones (gesture nav) already
+    // get a comfortable inset; legacy 3-button phones report 0 and the
+    // small floor of 8 keeps the tab labels from touching the system nav.
+    const tabBarBottomPadding = insets.bottom > 0 ? insets.bottom : 8;
 
     return {
       headerShown: true,
@@ -84,12 +87,15 @@ export default function TabLayout() {
 
   return (
     <View style={rootStyle}>
-      <OfflineBanner />
       <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{
           title: t('tab.home'),
+          // Home renders its own header inline (greeting + bell + profile in
+          // one row) so the stack header would just be a blank box clipping
+          // the greeting glyphs.
+          headerShown: false,
           tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} activeColor={colors.primary} inactiveColor={colors.textTertiary} />,
         }}
       />
