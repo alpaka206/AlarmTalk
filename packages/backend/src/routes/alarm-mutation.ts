@@ -35,13 +35,11 @@ alarmMutation.post('/', async (c) => {
   if (!body.time) {
     return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
   }
-  // Either a TTS message OR a raw-audio source must be present.
-  if (!body.message_id && !body.raw_audio_url) {
-    return c.json(
-      { error: 'either message_id or raw_audio_url is required', error_code: 'ALARM_SOURCE_MISSING' },
-      400,
-    );
-  }
+  // Three valid sources for what the alarm plays:
+  //   1. message_id          → TTS / saved voice clip
+  //   2. raw_audio_url       → user-recorded raw audio
+  //   3. neither             → "alarm-only" mode: device default alarm sound
+  // No further check needed; the alarm row stores message_id NULL for case 3.
 
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
