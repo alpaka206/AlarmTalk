@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
+  Pressable,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
@@ -200,10 +201,12 @@ function Column({
     }
   };
 
-  // For small (non-loop) columns, render only labels. For loop columns,
-  // we render the entire repeated list — render volume is bounded (200 × 12
-  // or 200 × 60) and `removeClippedSubviews` is intentionally false because
-  // it kills wheel rendering on Android.
+  // Short non-loop columns (e.g. AM/PM with only two options) don't need a
+  // wheel — scrolling there is meaningless and the overscroll bubbles up to
+  // the parent ScrollView, making the whole screen jiggle. Render those as
+  // a tap-only stack; long loop columns keep the wheel behavior.
+  const isStaticList = !loop && items.length <= VISIBLE_ROWS;
+
   return (
     <ScrollView
       ref={scrollRef}
@@ -218,7 +221,8 @@ function Column({
       }}
       onMomentumScrollEnd={handleEnd}
       onScrollEndDrag={handleEnd}
-      bounces={!loop}
+      scrollEnabled={!isStaticList}
+      bounces={false}
       overScrollMode="never"
       nestedScrollEnabled
       removeClippedSubviews={false}
@@ -228,21 +232,36 @@ function Column({
         const distance = Math.abs(idx - selectedIndex);
         const opacity =
           distance === 0 ? 1 : distance === 1 ? 0.55 : distance === 2 ? 0.25 : 0.12;
+        const content = (
+          <Text
+            style={[
+              styles.itemText,
+              isSelected ? styles.itemTextSelected : null,
+              {
+                opacity,
+                textAlign: align,
+                width: '100%',
+              },
+            ]}
+          >
+            {label}
+          </Text>
+        );
+        if (isStaticList) {
+          return (
+            <Pressable
+              key={`${label}-${idx}`}
+              style={styles.item}
+              onPress={() => onSelect(idx)}
+              accessibilityRole="button"
+            >
+              {content}
+            </Pressable>
+          );
+        }
         return (
           <View key={`${label}-${idx}`} style={styles.item}>
-            <Text
-              style={[
-                styles.itemText,
-                isSelected ? styles.itemTextSelected : null,
-                {
-                  opacity,
-                  textAlign: align,
-                  width: '100%',
-                },
-              ]}
-            >
-              {label}
-            </Text>
+            {content}
           </View>
         );
       })}
