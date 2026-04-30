@@ -8,6 +8,7 @@ import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { createSettingsStyles } from '../../src/styles/settingsStyles';
+import { request } from '../../src/services/api/core';
 import { getUserProfile, updateUserSettings, deleteAccount } from '../../src/services/api';
 import { useState, useEffect, useMemo } from 'react';
 import { Linking } from 'react-native';
@@ -315,6 +316,49 @@ export default function SettingsScreen() {
             >
               <Text style={styles.deleteAccountText}>{t('settings.deleteAccount')}</Text>
             </TouchableOpacity>
+
+            {/* DEV ONLY — wipes voice profiles, alarms, messages, and the
+                users row so auth middleware re-creates a clean account on
+                the next request. Remove before production. */}
+            {__DEV__ && (
+              <TouchableOpacity
+                style={[styles.deleteAccountButton, { marginTop: Spacing.sm, borderColor: '#888' }]}
+                onPress={async () => {
+                  Alert.alert(
+                    'DEV: 전체 데이터 초기화',
+                    '음성 프로필 + 알람 + 메시지 + 사용자 행을 모두 삭제합니다. 다음 호출에서 사용자 행이 새로 생성됩니다.',
+                    [
+                      { text: '취소', style: 'cancel' },
+                      {
+                        text: '삭제',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const res = await request<{
+                              deleted: { profiles: number; messages: number; alarms: number; users: number };
+                            }>({ method: 'DELETE', path: '/voice/_dev/clear-mine' });
+                            Alert.alert(
+                              '초기화 완료',
+                              `프로필 ${res.deleted.profiles}, 메시지 ${res.deleted.messages}, 알람 ${res.deleted.alarms}, 사용자 ${res.deleted.users} 삭제됨.`,
+                              [{ text: '확인', onPress: () => clearAuth() }],
+                            );
+                          } catch (err) {
+                            Alert.alert(
+                              '실패',
+                              err instanceof Error ? err.message : String(err),
+                            );
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="개발자: 전체 데이터 초기화"
+              >
+                <Text style={styles.deleteAccountText}>🧹 DEV: 전체 데이터 초기화</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 

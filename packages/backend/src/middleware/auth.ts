@@ -55,14 +55,16 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       verified = await verifyGoogleToken(token, c.env.GOOGLE_CLIENT_ID);
     }
 
+    // Legacy convention: most routes still query `WHERE google_id = ?`, so
+    // `userId` keeps that meaning (the JWT sub).
+    c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
     c.set('userPicture', verified.picture || '');
 
-    // Resolve the user row keyed by google_id. Older accounts were created
-    // with a UUID id but the same google_id, so blindly trusting the JWT sub
-    // as users.id breaks foreign keys. Lookup → insert if missing → expose
-    // the real users.id to downstream handlers via c.set('userId', ...).
+    // New convention: `userIdPK` is the actual users.id (UUID for legacy
+    // accounts, sub for newly-created ones). Use this for any FOREIGN KEY
+    // refs (voice_profiles.user_id, alarms.user_id, ...).
     try {
       const { getDB } = await import('../lib/db');
       const db = getDB(c.env);
@@ -70,12 +72,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         sql: 'SELECT id FROM users WHERE google_id = ?',
         args: [verified.sub],
       });
-      let resolvedUserId: string;
+      let pk: string;
       if (found.rows.length > 0) {
-        resolvedUserId = String(found.rows[0]!.id);
+        pk = String(found.rows[0]!.id);
       } else {
-        // First contact for this google account — create the row with sub as
-        // id so handlers see a stable identifier.
         await db.execute({
           sql: `INSERT INTO users (id, google_id, email, name, picture)
                 VALUES (?, ?, ?, ?, ?)`,
@@ -87,19 +87,13 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
             verified.picture || null,
           ],
         });
-        resolvedUserId = verified.sub;
+        pk = verified.sub;
       }
-      c.set('userId', resolvedUserId);
+      c.set('userIdPK', pk);
       // eslint-disable-next-line no-console
-      console.log(
-        '[AUTH user-resolve OK]',
-        'sub=', verified.sub,
-        '→ usersId=', resolvedUserId,
-      );
+      console.log('[AUTH user-resolve OK]', 'sub=', verified.sub, '→ usersId=', pk);
     } catch (err) {
-      // Fall back to the JWT sub so requests still try to proceed; the
-      // downstream FK error becomes our signal in tail logs.
-      c.set('userId', verified.sub);
+      c.set('userIdPK', verified.sub);
       // eslint-disable-next-line no-console
       console.log('[AUTH user-resolve FAIL]', err instanceof Error ? err.message : String(err));
     }

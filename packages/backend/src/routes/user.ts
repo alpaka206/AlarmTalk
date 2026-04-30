@@ -7,29 +7,19 @@ const user = new Hono<AppEnv>();
 
 user.get('/me', async (c) => {
   const userId = c.get('userId');
-  const email = c.get('userEmail') || '';
-  const name = c.get('userName') || '';
-  const picture = c.get('userPicture') || '';
   const db = getDB(c.env);
 
   try {
-    let result = await db.execute({
+    // userId is the JWT sub (= users.google_id). Auth middleware guarantees
+    // the row exists. The legacy INSERT branch (referencing the long-gone
+    // firebase_uid column) is removed.
+    const result = await db.execute({
       sql: 'SELECT * FROM users WHERE google_id = ?',
       args: [userId],
     });
 
     if (result.rows.length === 0) {
-      const id = crypto.randomUUID();
-      const today = new Date().toISOString().split('T')[0]!;
-      await db.execute({
-        sql: `INSERT INTO users (id, google_id, firebase_uid, email, name, picture, daily_tts_reset_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: [id, userId, userId, email, name, picture, today],
-      });
-      result = await db.execute({
-        sql: 'SELECT * FROM users WHERE id = ?',
-        args: [id],
-      });
+      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
     }
 
     const u = result.rows[0]!;
