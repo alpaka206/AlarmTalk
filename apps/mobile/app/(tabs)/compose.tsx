@@ -17,6 +17,7 @@ import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { getReceivedNotes, markNoteRead, type ReceivedNote } from '../../src/services/api';
 import { getDateLocale } from '../../src/i18n';
 import { createComposeStyles } from '../../src/styles/composeStyles';
+import { AppIcon } from '../../src/components/AppIcon';
 
 function ComposeScreen() {
   const { t } = useTranslation();
@@ -152,7 +153,7 @@ function ComposeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('compose.sendAlarm')}
               >
-                <Text style={styles.actionEmoji}>⏰</Text>
+                <AppIcon name="alarm" size={28} />
                 <View style={styles.actionInfo}>
                   <Text style={styles.actionTitle}>{t('compose.sendAlarm')}</Text>
                   <Text style={styles.actionDesc}>{t('compose.sendAlarmDesc')}</Text>
@@ -166,7 +167,7 @@ function ComposeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={t('compose.sendNote')}
               >
-                <Text style={styles.actionEmoji}>✉️</Text>
+                <AppIcon name="message" size={28} />
                 <View style={styles.actionInfo}>
                   <Text style={styles.actionTitle}>{t('compose.sendNote')}</Text>
                   <Text style={styles.actionDesc}>{t('compose.sendNoteDesc')}</Text>

@@ -244,6 +244,15 @@ export function createVoicesStyles(colors: ThemeColors) {
       width: 36,
       textAlign: 'center',
     },
+    // Same dimensions as addOptionEmoji so all add-method rows share one
+    // consistent icon-to-text gap regardless of whether the icon is an
+    // emoji or an AppIcon (phosphor svg).
+    addOptionIcon: {
+      width: 36,
+      marginRight: Spacing.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     addOptionInfo: {
       flex: 1,
     },

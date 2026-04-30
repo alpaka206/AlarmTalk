@@ -6,6 +6,7 @@ import {
   EnvelopeSimple,
   Bell,
   User,
+  Users,
   Plus,
   CaretRight,
   CaretLeft,
@@ -26,6 +27,25 @@ import {
   Plant,
   Flower,
   Flame,
+  Sun,
+  Moon,
+  Globe,
+  Key,
+  Phone,
+  Ticket,
+  Warning,
+  SignOut,
+  HandWaving,
+  MusicNote,
+  Clock,
+  SpeakerHigh,
+  ChatCircle,
+  Gift,
+  Confetti,
+  ArrowsClockwise,
+  Upload,
+  UsersThree,
+  Lock,
   type IconProps,
   type IconWeight,
 } from 'phosphor-react-native';
@@ -45,6 +65,7 @@ export type AppIconName =
   | 'message'
   | 'bell'
   | 'user'
+  | 'users'
   | 'plus'
   | 'chevronRight'
   | 'chevronLeft'
@@ -61,6 +82,25 @@ export type AppIconName =
   | 'play'
   | 'pause'
   | 'stop'
+  | 'sun'
+  | 'moon'
+  | 'globe'
+  | 'key'
+  | 'phone'
+  | 'ticket'
+  | 'warning'
+  | 'logout'
+  | 'wave'
+  | 'music'
+  | 'clock'
+  | 'speaker'
+  | 'chat'
+  | 'gift'
+  | 'confetti'
+  | 'refresh'
+  | 'upload'
+  | 'friends'
+  | 'lock'
   // Character growth stages
   | 'acorn'
   | 'sprout'
@@ -75,6 +115,7 @@ const ICONS: Record<AppIconName, React.ComponentType<IconProps>> = {
   message: EnvelopeSimple,
   bell: Bell,
   user: User,
+  users: Users,
   plus: Plus,
   chevronRight: CaretRight,
   chevronLeft: CaretLeft,
@@ -91,6 +132,25 @@ const ICONS: Record<AppIconName, React.ComponentType<IconProps>> = {
   play: Play,
   pause: Pause,
   stop: StopCircle,
+  sun: Sun,
+  moon: Moon,
+  globe: Globe,
+  key: Key,
+  phone: Phone,
+  ticket: Ticket,
+  warning: Warning,
+  logout: SignOut,
+  wave: HandWaving,
+  music: MusicNote,
+  clock: Clock,
+  speaker: SpeakerHigh,
+  chat: ChatCircle,
+  gift: Gift,
+  confetti: Confetti,
+  refresh: ArrowsClockwise,
+  upload: Upload,
+  friends: UsersThree,
+  lock: Lock,
   // Character stages — phosphor lacks a true acorn glyph, fall back to Plant
   // for stage 0 and let the plant→tree→flower progression carry the metaphor.
   acorn: Plant,
