@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getDateLocale } from '../../src/i18n';
 import { Spacing } from '../../src/constants/theme';
@@ -26,7 +26,6 @@ import type { LibraryItem } from '../../src/types';
 import LoginButtons from '../../src/components/LoginButtons';
 import EmailPasswordForm from '../../src/components/EmailPasswordForm';
 import { AppIcon } from '../../src/components/AppIcon';
-import { NotificationBell } from '../../src/components/NotificationBell';
 import { ProfileDropdown } from '../../src/components/ProfileDropdown';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
@@ -44,6 +43,7 @@ function HomeScreen() {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = useMemo(() => createHomeStyles(colors), [colors]);
+  const queryClient = useQueryClient();
   const { isAuthenticated, setPlaying, currentPlayingId } = useAppStore();
   const isConnected = useNetworkStatus();
   const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
@@ -75,6 +75,10 @@ function HomeScreen() {
     enabled: isAuthenticated && isConnected,
   });
 
+  // Secondary widgets (stats / character / library / activity) load with
+  // a longer staleTime + placeholderData so the first paint on the home
+  // tab is alarms+messages only — the rest fill in asynchronously and
+  // surface stale data instantly on revisit instead of refetching.
   const {
     data: stats,
     isError: statsError,
@@ -83,24 +87,36 @@ function HomeScreen() {
     queryKey: ['stats'],
     queryFn: getStats,
     enabled: isAuthenticated && isConnected,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: characterData } = useQuery({
     queryKey: ['character-me'],
     queryFn: getCharacterMe,
     enabled: isAuthenticated && isConnected,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: libraryItems } = useQuery({
     queryKey: ['library', 'all'],
     queryFn: () => getLibrary(),
     enabled: isAuthenticated && isConnected,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   const { data: activityItems } = useQuery({
     queryKey: ['activity'],
     queryFn: getActivity,
     enabled: isAuthenticated && isConnected,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: (prev) => prev,
   });
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -126,7 +142,17 @@ function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([refetchAlarms(), refetchMessages(), refetchStats()]);
+    // Pull-to-refresh forces a full reload across every home widget. The
+    // secondary widgets normally rely on a 10min staleTime, so without
+    // explicit refetch here they wouldn't update on user-initiated pulls.
+    await Promise.all([
+      refetchAlarms(),
+      refetchMessages(),
+      refetchStats(),
+      queryClient.refetchQueries({ queryKey: ['character-me'] }),
+      queryClient.refetchQueries({ queryKey: ['library', 'all'] }),
+      queryClient.refetchQueries({ queryKey: ['activity'] }),
+    ]);
     setRefreshing(false);
   };
 
@@ -190,7 +216,6 @@ function HomeScreen() {
               </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <NotificationBell />
               <ProfileDropdown />
             </View>
           </View>

@@ -12,7 +12,7 @@ import { request } from '../../src/services/api/core';
 import { getUserProfile, updateUserSettings, deleteAccount } from '../../src/services/api';
 import { useState, useEffect, useMemo } from 'react';
 import { Linking } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import notifee, { AuthorizationStatus } from '@notifee/react-native';
 import { getAudioCacheSize, clearAudioCache } from '../../src/services/audio';
 
 export default function SettingsScreen() {
@@ -50,7 +50,16 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     getAudioCacheSize().then(setCacheSize);
-    Notifications.getPermissionsAsync().then(({ status }) => setNotifStatus(status));
+    // notifee replaces expo-notifications as the single permission/scheduling
+    // surface. Map its AuthorizationStatus enum onto the same string we
+    // previously got from expo-notifications so the rest of the screen
+    // (the "permitted/notPermitted" badge, conditional CTAs) keeps working.
+    notifee.getNotificationSettings().then((settings) => {
+      const granted =
+        settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
+        settings.authorizationStatus === AuthorizationStatus.PROVISIONAL;
+      setNotifStatus(granted ? 'granted' : 'denied');
+    });
   }, []);
 
   const formatBytes = (bytes: number) => {
@@ -138,9 +147,12 @@ export default function SettingsScreen() {
               valueColor={notifStatus === 'granted' ? colors.primary : colors.error}
               onPress={async () => {
                 if (notifStatus !== 'granted') {
-                  const { status } = await Notifications.requestPermissionsAsync();
-                  setNotifStatus(status);
-                  if (status !== 'granted') {
+                  const settings = await notifee.requestPermission();
+                  const granted =
+                    settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
+                    settings.authorizationStatus === AuthorizationStatus.PROVISIONAL;
+                  setNotifStatus(granted ? 'granted' : 'denied');
+                  if (!granted) {
                     Linking.openSettings();
                   }
                 }

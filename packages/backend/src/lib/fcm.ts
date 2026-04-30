@@ -3,14 +3,12 @@ import { logStructured } from './logger';
 
 export type PushLocale = 'ko' | 'en';
 
-const pushTexts: Record<PushLocale, { alarmBody: (time: string) => string; noteBody: string }> = {
+const pushTexts: Record<PushLocale, { alarmBody: (time: string) => string }> = {
   ko: {
     alarmBody: (time) => `${time} 알람이 울립니다`,
-    noteBody: '새 쪽지가 도착했어요',
   },
   en: {
     alarmBody: (time) => `Alarm at ${time}`,
-    noteBody: 'You have a new note',
   },
 };
 
@@ -74,27 +72,6 @@ export async function sendAlarmPush(
     title: 'VoiceAlarm',
     body: texts.alarmBody(alarmTime),
     data: { type: 'alarm', alarmId, channelId: 'alarms' },
-  }));
-
-  return sendPushNotifications(messages);
-}
-
-export async function sendNotePush(
-  db: Client,
-  userId: string,
-  noteId: string,
-  senderName: string,
-  locale: PushLocale = 'ko',
-): Promise<FcmSendResult[]> {
-  const tokens = await getTokensForUser(db, userId);
-  if (tokens.length === 0) return [];
-
-  const texts = getTexts(locale);
-  const messages: FcmMessage[] = tokens.map((token) => ({
-    token,
-    title: `💌 ${senderName}`,
-    body: texts.noteBody,
-    data: { type: 'note', noteId, channelId: 'notes' },
   }));
 
   return sendPushNotifications(messages);

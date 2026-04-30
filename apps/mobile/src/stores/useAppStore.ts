@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { unregisterPushTokenFromServer } from '../services/notifications';
 
 export interface VoiceProfile {
   id: string;
@@ -112,7 +111,6 @@ export const useAppStore = create<AppState>((set, _get) => ({
   },
 
   clearAuth: async () => {
-    await unregisterPushTokenFromServer();
     await AsyncStorage.removeItem('auth_token');
     await AsyncStorage.removeItem('user_id');
     set({ isAuthenticated: false, firebaseToken: null, userId: null });

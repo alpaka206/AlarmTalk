@@ -26,7 +26,8 @@ import {
 } from '../../src/services/api';
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
-import { syncAlarmNotifications } from '../../src/services/notifications';
+import { syncNotifeeAlarms } from '../../src/services/notifeeAlarms';
+import { setMonitoredAlarms } from '../../src/services/alarmRinger';
 import type { AlarmPlayMode, Friend, Message, VoiceProfile } from '../../src/types';
 import { playModeToBackend } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
@@ -73,16 +74,24 @@ export default function CreateAlarmScreen() {
     resetAlarmDraft({ snoozeMinutes: defaultSnoozeMinutes, vibrationPattern: 'default' });
   }, [defaultSnoozeMinutes, resetAlarmDraft]);
 
+  // Compute play-mode flags before queries so each fetch can gate on the
+  // section that actually needs the data. alarm_only mode skips both
+  // message and voice queries entirely; voice picker queries also wait
+  // until the user reaches a play mode that needs them.
+  const { mode, wakeMode } = playModeToBackend(playMode);
+  const requiresMessage = playMode !== 'alarm_only';
+  const requiresVoice = playMode !== 'alarm_only';
+
   const { data: messages } = useQuery({
     queryKey: ['messages'],
     queryFn: () => getMessages(),
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && requiresMessage,
   });
 
   const { data: voices } = useQuery({
     queryKey: ['voiceProfiles'],
     queryFn: getVoiceProfiles,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && requiresVoice,
   });
 
   const readyVoices = voices?.filter((v: VoiceProfile) => v.status === 'ready') ?? [];
@@ -90,7 +99,7 @@ export default function CreateAlarmScreen() {
   const { data: familyVoices } = useQuery({
     queryKey: ['familyVoiceProfiles'],
     queryFn: getFamilyVoiceProfiles,
-    enabled: isAuthenticated && plan === 'family',
+    enabled: isAuthenticated && plan === 'family' && requiresVoice,
   });
   const readyFamilyVoices: FamilyVoiceProfile[] =
     familyVoices?.filter((v: FamilyVoiceProfile) => v.status === 'ready') ?? [];
@@ -139,7 +148,8 @@ export default function CreateAlarmScreen() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
       const alarms = await getAlarms();
-      syncAlarmNotifications(alarms);
+      setMonitoredAlarms(alarms);
+      void syncNotifeeAlarms(alarms, t);
       Alert.alert(t('alarmCreate.successTitle'), t('alarmCreate.successDesc'), [
         { text: t('common.confirm'), onPress: () => router.back() },
       ]);
@@ -152,10 +162,6 @@ export default function CreateAlarmScreen() {
   const toggleDay = (day: number) => {
     setRepeatDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
   };
-
-  const { mode, wakeMode } = playModeToBackend(playMode);
-  const requiresMessage = playMode !== 'alarm_only';
-  const requiresVoice = playMode !== 'alarm_only';
 
   const handleSubmit = async () => {
     const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;

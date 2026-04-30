@@ -6,22 +6,19 @@ jest.mock('../src/services/api/core', () => ({
   request: jest.fn(),
 }));
 
-import { get, post, patch, del, request } from '../src/services/api/core';
+import { get, post, patch, del } from '../src/services/api/core';
 import {
   getAlarms,
   getAlarm,
   createAlarm,
   updateAlarm,
   deleteAlarm,
-  registerPushToken,
-  unregisterPushToken,
 } from '../src/services/api/alarm';
 
 const mockGet = get as jest.MockedFunction<typeof get>;
 const mockPost = post as jest.MockedFunction<typeof post>;
 const mockPatch = patch as jest.MockedFunction<typeof patch>;
 const mockDel = del as jest.MockedFunction<typeof del>;
-const mockRequest = request as jest.MockedFunction<typeof request>;
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -111,43 +108,5 @@ describe('Alarm API', () => {
     await deleteAlarm('a1');
 
     expect(mockDel).toHaveBeenCalledWith('/alarm/a1');
-  });
-});
-
-describe('Push Token API', () => {
-  it('registerPushToken → POST /push/token', async () => {
-    mockPost.mockResolvedValue({ success: true });
-
-    const result = await registerPushToken('expo-token-abc', 'android');
-
-    expect(mockPost).toHaveBeenCalledWith('/push/token', {
-      token: 'expo-token-abc',
-      platform: 'android',
-    });
-    expect(result).toEqual({ success: true });
-  });
-
-  it('registerPushToken with ios platform', async () => {
-    mockPost.mockResolvedValue({ success: true });
-
-    await registerPushToken('apns-token', 'ios');
-
-    expect(mockPost).toHaveBeenCalledWith('/push/token', {
-      token: 'apns-token',
-      platform: 'ios',
-    });
-  });
-
-  it('unregisterPushToken → DELETE /push/token with body', async () => {
-    mockRequest.mockResolvedValue({ success: true });
-
-    const result = await unregisterPushToken('old-token');
-
-    expect(mockRequest).toHaveBeenCalledWith({
-      method: 'DELETE',
-      path: '/push/token',
-      body: { token: 'old-token' },
-    });
-    expect(result).toEqual({ success: true });
   });
 });

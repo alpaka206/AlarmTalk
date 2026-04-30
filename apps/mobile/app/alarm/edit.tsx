@@ -28,7 +28,8 @@ import {
 } from '../../src/services/api';
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
-import { syncAlarmNotifications } from '../../src/services/notifications';
+import { syncNotifeeAlarms } from '../../src/services/notifeeAlarms';
+import { setMonitoredAlarms } from '../../src/services/alarmRinger';
 import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile, AlarmPlayMode } from '../../src/types';
 import { playModeToBackend, backendToPlayMode } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
@@ -130,7 +131,8 @@ export default function EditAlarmScreen() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
       const fresh = await getAlarms();
-      syncAlarmNotifications(fresh);
+      setMonitoredAlarms(fresh);
+      void syncNotifeeAlarms(fresh, t);
       Alert.alert(t('alarmEdit.successTitle'), t('alarmEdit.successDesc'), [
         { text: t('common.confirm'), onPress: () => router.back() },
       ]);

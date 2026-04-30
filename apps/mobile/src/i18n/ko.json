@@ -750,9 +750,7 @@
     "openMenu": "프로필 메뉴 열기",
     "menuLabel": "프로필 메뉴",
     "codeRegister": "코드 등록",
-    "settings": "설정",
-    "notifications": "알림",
-    "notificationsBadge": "알림 {{count}}건"
+    "settings": "설정"
   },
   "compose": {
     "title": "메시지 작성",

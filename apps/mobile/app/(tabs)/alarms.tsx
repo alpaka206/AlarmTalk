@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -27,7 +27,6 @@ import { ErrorView } from '../../src/components/QueryStateView';
 import { AppIcon } from '../../src/components/AppIcon';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import { cacheAlarms, getCachedAlarms } from '../../src/services/offlineCache';
-import { syncAlarmNotifications } from '../../src/services/notifications';
 import { setMonitoredAlarms } from '../../src/services/alarmRinger';
 import { syncNotifeeAlarms } from '../../src/services/notifeeAlarms';
 import type { Alarm } from '../../src/types';
@@ -127,15 +126,16 @@ function AlarmsScreen() {
     if (alarms) {
       cacheAlarms(alarms);
       setCachedAlarms(alarms);
-      syncAlarmNotifications(alarms);
       // iOS: foreground keep-alive ticker (Alarmy-style background audio).
       setMonitoredAlarms(alarms);
       // Android: notifee schedules an exact-time, full-screen-intent
       // alarm so the ringing screen pops over the lock screen even if
-      // the OS killed our process.
-      void syncNotifeeAlarms(alarms);
+      // the OS killed our process. notifee is the single source of
+      // truth — expo-notifications is no longer registered to avoid
+      // double-firing the same alarm.
+      void syncNotifeeAlarms(alarms, t);
     }
-  }, [alarms]);
+  }, [alarms, t]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const displayAlarms = alarms ?? cachedAlarms;
@@ -154,36 +154,73 @@ function AlarmsScreen() {
     return filtered.sort(compareAlarms);
   }, [displayAlarms, searchQuery]);
 
-  const resyncNotifications = async () => {
-    const fresh = await queryClient.fetchQuery({ queryKey: ['alarms'], queryFn: getAlarms });
-    if (fresh) syncAlarmNotifications(fresh);
-  };
+  // Debounced notification resync: chained toggles only re-arm the OS
+  // schedule once after the user stops tapping. The optimistic cache is
+  // the source of truth — we feed the latest displayAlarms snapshot in.
+  const resyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleResync = useCallback((next: Alarm[]) => {
+    if (resyncTimerRef.current) {
+      clearTimeout(resyncTimerRef.current);
+    }
+    resyncTimerRef.current = setTimeout(() => {
+      setMonitoredAlarms(next);
+      void syncNotifeeAlarms(next, t);
+      resyncTimerRef.current = null;
+    }, 300);
+  }, [t]);
+
+  useEffect(() => {
+    return () => {
+      if (resyncTimerRef.current) {
+        clearTimeout(resyncTimerRef.current);
+      }
+    };
+  }, []);
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, is_active }: { id: string; is_active: boolean }) =>
       updateAlarm(id, { is_active }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alarms'] });
-      resyncNotifications();
+    onMutate: async ({ id, is_active }) => {
+      // Cancel in-flight refetches so they don't overwrite the optimistic
+      // value, snapshot the previous list for rollback, then write the
+      // toggled row into the cache immediately.
+      await queryClient.cancelQueries({ queryKey: ['alarms'] });
+      const previous = queryClient.getQueryData<Alarm[]>(['alarms']);
+      queryClient.setQueryData<Alarm[] | undefined>(['alarms'], (old) =>
+        old ? old.map((a) => (a.id === id ? { ...a, is_active } : a)) : old,
+      );
+      const next = queryClient.getQueryData<Alarm[]>(['alarms']) ?? previous ?? [];
+      scheduleResync(next);
+      return { previous };
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['alarms'], context.previous);
+        scheduleResync(context.previous);
+      }
       toast.show(getApiErrorMessage(err, t, t('alarms.toggleError')));
     },
+    // No onSettled invalidate: the optimistic cache is the source of
+    // truth. The next user-initiated refetch (pull-to-refresh) reconciles.
   });
 
   const deleteMutation = useMutation({
     mutationFn: deleteAlarm,
-    onSuccess: (_data, deletedId) => {
-      // Drop the row from the cached query data immediately so the list
-      // updates without waiting for the background refetch — invalidate
-      // alone doesn't guarantee instant UI sync.
-      queryClient.setQueryData<Alarm[] | undefined>(['alarms'], (prev) =>
-        prev ? prev.filter((a) => a.id !== deletedId) : prev,
+    onMutate: async (deletedId) => {
+      await queryClient.cancelQueries({ queryKey: ['alarms'] });
+      const previous = queryClient.getQueryData<Alarm[]>(['alarms']);
+      queryClient.setQueryData<Alarm[] | undefined>(['alarms'], (old) =>
+        old ? old.filter((a) => a.id !== deletedId) : old,
       );
-      queryClient.invalidateQueries({ queryKey: ['alarms'] });
-      resyncNotifications();
+      const next = queryClient.getQueryData<Alarm[]>(['alarms']) ?? previous ?? [];
+      scheduleResync(next);
+      return { previous };
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['alarms'], context.previous);
+        scheduleResync(context.previous);
+      }
       toast.show(getApiErrorMessage(err, t, t('alarms.deleteError')));
     },
   });
@@ -249,6 +286,11 @@ function AlarmsScreen() {
       renderDeleteAction={renderDeleteAction}
     />
   ), [styles, colors, t, userId, handleAlarmPress, handleDelete, handlePreview, handleToggle, formatRepeatDays, renderDeleteAction]);
+
+  // Stable keyExtractor: avoids handing FlatList a fresh closure each
+  // render, which would force per-item re-renders even when nothing
+  // about the row changed.
+  const keyExtractor = useCallback((item: Alarm) => item.id, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -317,7 +359,7 @@ function AlarmsScreen() {
       ) : (
         <FlatList
           data={filteredAlarms}
-          keyExtractor={(item) => item.id}
+          keyExtractor={keyExtractor}
           renderItem={renderAlarm}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}

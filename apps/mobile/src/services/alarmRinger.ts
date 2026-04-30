@@ -133,10 +133,15 @@ export function setMonitoredAlarms(alarms: Alarm[]): void {
   }
 }
 
-/** Called when the ringing screen unmounts so the next-day fire can occur. */
-export function clearFiringState(alarmId: string): void {
-  // Keep cooldown so a single ringing event doesn't re-trigger the same
-  // minute, but allow re-fire after the cooldown for the next occurrence.
-  // (Set to "now - cooldown + 5s" so the next minute can refire if needed.)
-  recentlyFired.set(alarmId, Date.now() - (FIRE_COOLDOWN_MS - 5_000));
+/**
+ * Called when the ringing screen unmounts. We deliberately do NOT shorten
+ * the cooldown here — keeping the original "fired at <ts>" timestamp means
+ * `tick()` won't refire within the same minute even after the user dismisses
+ * the alarm. The natural minute rollover takes care of cleanup: once the
+ * clock ticks past HH:mm, `shouldFireNow` returns false and the alarm waits
+ * for its next scheduled occurrence (24h later for non-repeating, or the
+ * next matching weekday).
+ */
+export function clearFiringState(_alarmId: string): void {
+  // no-op
 }

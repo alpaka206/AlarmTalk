@@ -94,13 +94,15 @@ export async function request<T>(config: RequestConfig): Promise<T> {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
-        // eslint-disable-next-line no-console
-        console.log(
-          `[API ${res.status}] ${config.method} ${config.path}`,
-          'hasToken=', !!token,
-          'tokenLen=', token?.length ?? 0,
-          'body=', JSON.stringify(errData),
-        );
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[API ${res.status}] ${config.method} ${config.path}`,
+            'hasToken=', !!token,
+            'tokenLen=', token?.length ?? 0,
+            'body=', JSON.stringify(errData),
+          );
+        }
         if (res.status === 401) {
           await AsyncStorage.removeItem('auth_token');
           await AsyncStorage.removeItem('auth_provider');
