@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../constants/theme';
 import {
-  useGoogleAuth,
+  signInWithGoogle,
   signInWithApple,
   isAppleAuthAvailable,
   saveAuthToken,
@@ -13,7 +13,6 @@ import { useAppStore } from '../stores/useAppStore';
 
 export default function LoginButtons() {
   const { setAuth } = useAppStore();
-  const { request, response, promptAsync } = useGoogleAuth();
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
 
@@ -31,28 +30,15 @@ export default function LoginButtons() {
     }
   }, [setAuth, t]);
 
-  useEffect(() => {
-    if (!response) return;
-
-    if (response.type === 'success') {
-      const idToken = response.params.id_token;
-      if (idToken) {
-        handleLoginSuccess(idToken, 'google');
-      } else {
-        Alert.alert(t('login.error'), t('login.noToken'));
-      }
-    } else if (response.type === 'error') {
-      const msg = response.error?.message || t('login.unknownError');
-      Alert.alert(t('login.error'), msg);
-    }
-    // 'dismiss' (사용자가 취소)는 무시
-    setLoading(false); // eslint-disable-line react-hooks/set-state-in-effect
-  }, [response, handleLoginSuccess, t]);
-
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      await promptAsync();
+      const result = await signInWithGoogle();
+      if (result) {
+        await handleLoginSuccess(result.idToken, 'google');
+      } else {
+        setLoading(false);
+      }
     } catch {
       Alert.alert(t('login.error'), t('login.googleFailed'));
       setLoading(false);
@@ -79,7 +65,7 @@ export default function LoginButtons() {
       <TouchableOpacity
         style={[styles.googleButton, loading && styles.disabledButton]}
         onPress={handleGoogleLogin}
-        disabled={!request || loading}
+        disabled={loading}
         accessibilityRole="button"
         accessibilityLabel={t('login.google')}
       >

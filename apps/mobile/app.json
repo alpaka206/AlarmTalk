@@ -65,7 +65,8 @@
       "expo-document-picker",
       "expo-web-browser",
       "expo-font",
-      "@sentry/react-native"
+      "@sentry/react-native",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {

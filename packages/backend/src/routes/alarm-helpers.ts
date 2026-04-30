@@ -19,6 +19,8 @@ export type AlarmRow = Record<string, unknown> & {
   creator_email?: unknown;
   creator_name?: unknown;
   category?: unknown;
+  raw_audio_url?: unknown;
+  raw_audio_duration_ms?: unknown;
 };
 
 export function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
@@ -65,6 +67,11 @@ export function normalizeAlarmRow(row: AlarmRow, viewerUserId?: string | null) {
     wake_mode: wakeMode,
     voice_profile_id: (row.voice_profile_id ?? null) as string | null,
     speaker_id: (row.speaker_id ?? null) as string | null,
+    raw_audio_url: (row.raw_audio_url ?? null) as string | null,
+    raw_audio_duration_ms:
+      typeof row.raw_audio_duration_ms === 'number'
+        ? row.raw_audio_duration_ms
+        : null,
     sender_user_id: senderUserId,
     sender_name: senderName,
     sender_email: senderEmail,
@@ -84,11 +91,11 @@ export function validateAlarmFields(body: {
   time?: string;
   repeat_days?: number[];
   snooze_minutes?: number;
-  message_id?: string;
+  message_id?: string | null;
   is_active?: boolean;
   target_user_id?: string;
 }): FieldError | null {
-  if (body.message_id !== undefined && !UUID_RE.test(body.message_id)) {
+  if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
   }
 

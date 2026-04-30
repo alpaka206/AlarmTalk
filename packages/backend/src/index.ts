@@ -77,9 +77,23 @@ app.get('/', async (c) => {
   });
 });
 
-// DB 초기화 엔드포인트
+// DB 초기화 엔드포인트 — Workers free plan caps subrequests per invocation
+// (~50), so we run migrations in small batches selected by query params:
+//   POST /api/init-db                    → run all (only safe if not over cap)
+//   POST /api/init-db?fromId=1&toId=10   → run migrations 1..10 inclusive
 app.post('/api/init-db', async (c) => {
   try {
+    const fromId = c.req.query('fromId');
+    const toId = c.req.query('toId');
+    if (fromId && toId) {
+      const { runMigrationsRange } = await import('./lib/migrations');
+      const ran = await runMigrationsRange(
+        (await import('./lib/db')).getDB(c.env),
+        Number(fromId),
+        Number(toId),
+      );
+      return c.json({ success: true, ran, range: { fromId, toId } });
+    }
     await initDB(c.env);
     return c.json({ success: true, message: 'Database initialized' });
   } catch (err) {

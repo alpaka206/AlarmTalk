@@ -7,6 +7,7 @@ import { FontFamily, Spacing } from '../constants/theme';
 import { useTheme, type ThemeColors } from '../hooks/useTheme';
 import { useAppStore } from '../stores/useAppStore';
 import { getPendingRequests } from '../services/api';
+import { AppIcon } from './AppIcon';
 
 export function NotificationBell() {
   const { t } = useTranslation();
@@ -34,7 +35,7 @@ export function NotificationBell() {
           : t('profile.notifications')
       }
     >
-      <Text style={styles.icon}>🔔</Text>
+      <AppIcon name="bell" size={22} weight={badgeCount > 0 ? 'duotone' : 'regular'} />
       {badgeCount > 0 && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>

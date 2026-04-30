@@ -18,7 +18,7 @@ alarmMutation.post('/', async (c) => {
   const db = getDB(c.env);
 
   const body = await c.req.json<{
-    message_id: string;
+    message_id?: string;
     time: string;
     repeat_days?: number[];
     snooze_minutes?: number;
@@ -28,10 +28,19 @@ alarmMutation.post('/', async (c) => {
     wake_mode?: string;
     voice_profile_id?: string;
     speaker_id?: string;
+    raw_audio_url?: string;
+    raw_audio_duration_ms?: number;
   }>();
 
-  if (!body.message_id || !body.time) {
-    return c.json({ error: 'message_id and time are required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
+  if (!body.time) {
+    return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
+  }
+  // Either a TTS message OR a raw-audio source must be present.
+  if (!body.message_id && !body.raw_audio_url) {
+    return c.json(
+      { error: 'either message_id or raw_audio_url is required', error_code: 'ALARM_SOURCE_MISSING' },
+      400,
+    );
   }
 
   const fieldError = validateAlarmFields(body);
@@ -66,12 +75,45 @@ alarmMutation.post('/', async (c) => {
     }
   }
 
-  const msg = await db.execute({
-    sql: 'SELECT id FROM messages WHERE id = ? AND user_id = ?',
-    args: [body.message_id, userId],
-  });
-  if (msg.rows.length === 0) {
-    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  // Raw-audio alarms have no real TTS message but the schema still requires
+  // message_id (NOT NULL). Insert a "raw" placeholder message that points at
+  // the same audio URL so the alarm row is satisfied. We attach it to the
+  // user's first voice profile because messages.voice_profile_id is NOT NULL.
+  let resolvedMessageId: string | null = body.message_id ?? null;
+  if (!resolvedMessageId && body.raw_audio_url) {
+    const firstVoice = await db.execute({
+      sql: 'SELECT id FROM voice_profiles WHERE user_id = ? LIMIT 1',
+      args: [userId],
+    });
+    if (firstVoice.rows.length === 0) {
+      return c.json(
+        {
+          error: 'A voice profile is required to create a raw-audio alarm.',
+          error_code: 'VOICE_PROFILE_REQUIRED',
+        },
+        400,
+      );
+    }
+    const placeholderMsgId = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+            VALUES (?, ?, ?, '', ?, 'raw')`,
+      args: [
+        placeholderMsgId,
+        userId,
+        firstVoice.rows[0]!.id as string,
+        body.raw_audio_url,
+      ],
+    });
+    resolvedMessageId = placeholderMsgId;
+  } else if (resolvedMessageId) {
+    const msg = await db.execute({
+      sql: 'SELECT id FROM messages WHERE id = ? AND user_id = ?',
+      args: [resolvedMessageId, userId],
+    });
+    if (msg.rows.length === 0) {
+      return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+    }
   }
 
   const alarmId = crypto.randomUUID();
@@ -81,13 +123,14 @@ alarmMutation.post('/', async (c) => {
   await db.execute({
     sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
-             mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
+             raw_audio_url, raw_audio_duration_ms)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       alarmId,
       userId,
       body.target_user_id ?? null,
-      body.message_id,
+      resolvedMessageId,
       body.time,
       JSON.stringify(body.repeat_days ?? []),
       body.snooze_minutes ?? 5,
@@ -96,6 +139,8 @@ alarmMutation.post('/', async (c) => {
       wakeMode,
       body.voice_profile_id ?? null,
       body.speaker_id ?? null,
+      body.raw_audio_url ?? null,
+      body.raw_audio_duration_ms ?? null,
     ],
   });
 
@@ -128,12 +173,14 @@ alarmMutation.patch('/:id', async (c) => {
     repeat_days?: number[];
     is_active?: boolean;
     snooze_minutes?: number;
-    message_id?: string;
+    message_id?: string | null;
     mode?: string;
     vibration_pattern?: string;
     wake_mode?: string;
     voice_profile_id?: string | null;
     speaker_id?: string | null;
+    raw_audio_url?: string | null;
+    raw_audio_duration_ms?: number | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -189,6 +236,14 @@ alarmMutation.patch('/:id', async (c) => {
   if (body.speaker_id !== undefined) {
     updates.push('speaker_id = ?');
     args.push(body.speaker_id);
+  }
+  if (body.raw_audio_url !== undefined) {
+    updates.push('raw_audio_url = ?');
+    args.push(body.raw_audio_url);
+  }
+  if (body.raw_audio_duration_ms !== undefined) {
+    updates.push('raw_audio_duration_ms = ?');
+    args.push(body.raw_audio_duration_ms);
   }
 
   if (updates.length === 0) {

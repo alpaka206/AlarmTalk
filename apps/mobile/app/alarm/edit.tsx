@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spacing, BorderRadius, FontSize, FontFamily } from '../../src/constants/theme';
+import { WheelTimePicker } from '../../src/components/WheelTimePicker';
+import { useAlarmDraftStore } from '../../src/stores/useAlarmDraftStore';
 import { useTheme, type ThemeColors } from '../../src/hooks/useTheme';
 import { DAY_KEYS } from '../../src/constants/presets';
 import {
@@ -19,6 +21,7 @@ import {
   getAlarm,
   getAlarms,
   updateAlarm,
+  uploadAlarmSource,
   getVoiceProfiles,
   getFamilyVoiceProfiles,
   generateTTS,
@@ -26,15 +29,15 @@ import {
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
 import { syncAlarmNotifications } from '../../src/services/notifications';
-import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile } from '../../src/types';
+import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile, AlarmPlayMode } from '../../src/types';
+import { playModeToBackend, backendToPlayMode } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
 import { useToast } from '../../src/hooks/useToast';
 import { Toast } from '../../src/components/Toast';
 import { PresetMessageSection } from '../../src/components/PresetMessageSection';
 import { parseRepeatDays, validateAlarmForm, getTimeUntilAlarm } from '../../src/lib/alarmForm';
-import { getRecentPresetMessages, addRecentPresetMessage } from '../../src/services/offlineCache';
+import { addRecentPresetMessage } from '../../src/services/offlineCache';
 import { createAlarmFormStyles } from '../../src/styles/alarmFormStyles';
-import * as Haptics from 'expo-haptics';
 
 export default function EditAlarmScreen() {
   const router = useRouter();
@@ -51,24 +54,18 @@ export default function EditAlarmScreen() {
   const [minute, setMinute] = useState(0);
   const [repeatDays, setRepeatDays] = useState<number[]>([]);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [snooze, setSnooze] = useState(5);
-  const [mode, setMode] = useState<AlarmMode>('tts');
-  const [vibrationPattern, setVibrationPattern] = useState<VibrationPattern>('default');
+  const snooze = useAlarmDraftStore((s) => s.snoozeMinutes);
+  const vibrationPattern = useAlarmDraftStore((s) => s.vibrationPattern);
+  const rawAudio = useAlarmDraftStore((s) => s.rawAudio);
+  const setRawAudio = useAlarmDraftStore((s) => s.setRawAudio);
+  const setSnooze = useAlarmDraftStore((s) => s.setSnoozeMinutes);
+  const setVibrationPattern = useAlarmDraftStore((s) => s.setVibrationPattern);
+  const [playMode, setPlayMode] = useState<AlarmPlayMode>('alarm_voice');
   const [voiceProfileId, setVoiceProfileId] = useState<string | null>(null);
-  const [wakeMode, setWakeMode] = useState<WakeMode>('sound_then_voice');
   const [loaded, setLoaded] = useState(false);
   const [showPreset, setShowPreset] = useState(false);
   const [presetCategory, setPresetCategory] = useState<string>('morning');
-  const [presetText, setPresetText] = useState<string | null>(null);
   const [presetVoiceId, setPresetVoiceId] = useState<string | null>(null);
-  const [recentPresets, setRecentPresets] = useState<string[]>([]);
-
-  const loadRecentPresets = useCallback(async () => {
-    const recent = await getRecentPresetMessages();
-    setRecentPresets(recent);
-  }, []);
-
-  useEffect(() => { loadRecentPresets(); }, [loadRecentPresets]);
 
   const { data: alarm } = useQuery({
     queryKey: ['alarm', id],
@@ -108,10 +105,10 @@ export default function EditAlarmScreen() {
       setRepeatDays(parseRepeatDays(alarm.repeat_days));
       setSelectedMessageId(alarm.message_id);
       setSnooze(alarm.snooze_minutes);
-      setMode(alarm.mode === 'sound-only' ? 'sound-only' : 'tts');
       setVibrationPattern(alarm.vibration_pattern ?? 'default');
       setVoiceProfileId(alarm.voice_profile_id ?? null);
-      setWakeMode(alarm.wake_mode === 'voice_only' ? 'voice_only' : 'sound_then_voice');
+      const hasVoiceOrMessage = !!alarm.voice_profile_id || !!alarm.message_id;
+      setPlayMode(backendToPlayMode(alarm.mode, alarm.wake_mode, hasVoiceOrMessage));
       setLoaded(true);
     }
   }, [alarm, loaded]);
@@ -122,11 +119,13 @@ export default function EditAlarmScreen() {
       time?: string;
       repeat_days?: number[];
       snooze_minutes?: number;
-      message_id?: string;
+      message_id?: string | null;
       mode?: AlarmMode;
       vibration_pattern?: VibrationPattern;
       voice_profile_id?: string | null;
       wake_mode?: WakeMode;
+      raw_audio_url?: string | null;
+      raw_audio_duration_ms?: number | null;
     }) => updateAlarm(id!, params),
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
@@ -147,31 +146,29 @@ export default function EditAlarmScreen() {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       setSelectedMessageId(data.message_id);
       setShowPreset(false);
-      setPresetText(null);
     },
     onError: (err: unknown) => {
       toast.show(getApiErrorMessage(err, t, t('alarmCreate.ttsError')));
     },
   });
 
-  const handlePresetGenerate = () => {
-    if (!presetVoiceId || !presetText) return;
-    addRecentPresetMessage(presetText).then(() => loadRecentPresets());
+  const handlePresetGenerate = (text: string) => {
+    if (!presetVoiceId) return;
+    addRecentPresetMessage(text).catch(() => {/* best-effort cache */});
 
     const cached = messages?.find(
-      (m: Message) => m.voice_profile_id === presetVoiceId && m.text === presetText,
+      (m: Message) => m.voice_profile_id === presetVoiceId && m.text === text,
     );
     if (cached) {
       setSelectedMessageId(cached.id);
       setShowPreset(false);
-      setPresetText(null);
       toast.show(t('alarmCreate.reusedMessage'));
       return;
     }
 
     ttsMutation.mutate({
       voice_profile_id: presetVoiceId,
-      text: presetText,
+      text,
       category: presetCategory,
     });
   };
@@ -180,21 +177,19 @@ export default function EditAlarmScreen() {
     setRepeatDays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]));
   };
 
-  const selectVibration = (pattern: VibrationPattern) => {
-    setVibrationPattern(pattern);
-    if (pattern === 'default') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    else if (pattern === 'strong') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-  };
+  const { mode, wakeMode } = playModeToBackend(playMode);
+  const requiresMessage = playMode !== 'alarm_only';
+  const requiresVoice = playMode !== 'alarm_only';
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
     const validated = validateAlarmForm({
-      messageId: selectedMessageId,
+      messageId: requiresMessage ? selectedMessageId : null,
       time,
       repeatDays,
       mode,
       vibrationPattern,
-      voiceProfileId,
+      voiceProfileId: requiresVoice ? voiceProfileId : null,
       snoozeMinutes: snooze,
     }, t);
     if (!validated.ok) {
@@ -202,6 +197,23 @@ export default function EditAlarmScreen() {
       return;
     }
     const { payload } = validated;
+    let rawAudioUrl: string | undefined;
+    let rawAudioDurationMs: number | undefined;
+    if (rawAudio) {
+      try {
+        const uploaded = await uploadAlarmSource({
+          uri: rawAudio.uri,
+          name: rawAudio.fileName,
+          type: rawAudio.mimeType,
+          durationMs: rawAudio.durationMs,
+        });
+        rawAudioUrl = uploaded.raw_audio_url;
+        rawAudioDurationMs = uploaded.duration_ms;
+      } catch (err) {
+        toast.show(getApiErrorMessage(err, t, t('alarmEdit.editError')));
+        return;
+      }
+    }
     editMutation.mutate({
       message_id: payload.message_id,
       time: payload.time,
@@ -210,11 +222,13 @@ export default function EditAlarmScreen() {
       mode: payload.mode,
       vibration_pattern: payload.vibration_pattern,
       voice_profile_id: payload.voice_profile_id ?? null,
-      wake_mode: mode === 'tts' ? wakeMode : 'sound_then_voice',
+      wake_mode: wakeMode,
+      raw_audio_url: rawAudioUrl ?? null,
+      raw_audio_duration_ms: rawAudioDurationMs ?? null,
     });
   };
 
-  const soundOnlyInvalid = mode === 'sound-only' && !voiceProfileId;
+  const voiceProfileMissing = requiresVoice && !voiceProfileId;
 
   const quickSetDays = (type: 'daily' | 'weekday' | 'weekend') => {
     if (type === 'daily') setRepeatDays([0, 1, 2, 3, 4, 5, 6]);
@@ -237,52 +251,14 @@ export default function EditAlarmScreen() {
       {/* 시간 선택 */}
       <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.time')}</Text>
       <View style={formStyles.timePickerContainer}>
-        <Text style={formStyles.ampmLabel}>
-          {hour < 12 ? t('alarmCreate.am') : t('alarmCreate.pm')}
-        </Text>
-        <View style={formStyles.timePicker}>
-          <View style={formStyles.timeColumn}>
-            <TouchableOpacity
-              style={formStyles.timeArrow}
-              onPress={() => setHour((h) => (h + 1) % 24)}
-              accessibilityLabel={t('alarmCreate.hourUp')}
-              accessibilityRole="button"
-            >
-              <Text style={formStyles.arrowText}>▲</Text>
-            </TouchableOpacity>
-            <Text style={formStyles.timeValue}>{hour.toString().padStart(2, '0')}</Text>
-            <TouchableOpacity
-              style={formStyles.timeArrow}
-              onPress={() => setHour((h) => (h - 1 + 24) % 24)}
-              accessibilityLabel={t('alarmCreate.hourDown')}
-              accessibilityRole="button"
-            >
-              <Text style={formStyles.arrowText}>▼</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={formStyles.timeSeparator}>:</Text>
-
-          <View style={formStyles.timeColumn}>
-            <TouchableOpacity
-              style={formStyles.timeArrow}
-              onPress={() => setMinute((m) => (m + 5) % 60)}
-              accessibilityLabel={t('alarmCreate.minuteUp')}
-              accessibilityRole="button"
-            >
-              <Text style={formStyles.arrowText}>▲</Text>
-            </TouchableOpacity>
-            <Text style={formStyles.timeValue}>{minute.toString().padStart(2, '0')}</Text>
-            <TouchableOpacity
-              style={formStyles.timeArrow}
-              onPress={() => setMinute((m) => (m - 5 + 60) % 60)}
-              accessibilityLabel={t('alarmCreate.minuteDown')}
-              accessibilityRole="button"
-            >
-              <Text style={formStyles.arrowText}>▼</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <WheelTimePicker
+          hour={hour}
+          minute={minute}
+          onChange={(h, m) => {
+            setHour(h);
+            setMinute(m);
+          }}
+        />
         <Text style={formStyles.timeUntil}>
           {(() => {
             const { hours: h, minutes: m } = getTimeUntilAlarm(hour, minute);
@@ -323,34 +299,37 @@ export default function EditAlarmScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 재생 모드 */}
+      {/* 재생 모드: 알람만 / 음성만 / 알람+음성 */}
       <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.playMode')}</Text>
       <View style={formStyles.modeRow}>
-        <TouchableOpacity
-          style={[formStyles.modeChip, mode === 'tts' && formStyles.modeChipActive]}
-          onPress={() => setMode('tts')}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: mode === 'tts' }}
-          accessibilityLabel={t('alarmCreate.ttsMode')}
-        >
-          <Text style={[formStyles.modeText, mode === 'tts' && formStyles.modeTextActive]}>
-            🗣️ {t('alarmCreate.ttsMode')}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[formStyles.modeChip, mode === 'sound-only' && formStyles.modeChipActive]}
-          onPress={() => setMode('sound-only')}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: mode === 'sound-only' }}
-          accessibilityLabel={t('alarmCreate.soundOnlyMode')}
-        >
-          <Text style={[formStyles.modeText, mode === 'sound-only' && formStyles.modeTextActive]}>
-            🔊 {t('alarmCreate.soundOnlyMode')}
-          </Text>
-        </TouchableOpacity>
+        {(['alarm_only', 'voice_only', 'alarm_voice'] as const).map((m) => {
+          const labelKey =
+            m === 'alarm_only'
+              ? 'alarmCreate.modeAlarmOnly'
+              : m === 'voice_only'
+                ? 'alarmCreate.modeVoiceOnly'
+                : 'alarmCreate.modeAlarmVoice';
+          const icon = m === 'alarm_only' ? '🔔' : m === 'voice_only' ? '🗣️' : '🔔🗣️';
+          const selected = playMode === m;
+          return (
+            <TouchableOpacity
+              key={m}
+              style={[formStyles.modeChip, selected && formStyles.modeChipActive]}
+              onPress={() => setPlayMode(m)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+              accessibilityLabel={t(labelKey)}
+            >
+              <Text style={[formStyles.modeText, selected && formStyles.modeTextActive]}>
+                {icon} {t(labelKey)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {mode === 'sound-only' && (
+      {/* 음성 프로필 — 음성을 사용하는 모드일 때만 */}
+      {requiresVoice && (
         <>
           <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.voiceProfile')}</Text>
           {readyVoices.length === 0 && readyFamilyVoices.length === 0 ? (
@@ -417,7 +396,7 @@ export default function EditAlarmScreen() {
               )}
             </>
           )}
-          {soundOnlyInvalid && (
+          {voiceProfileMissing && (
             <Text style={formStyles.voiceHint}>
               {t('alarmCreate.voiceProfileHint')}
             </Text>
@@ -425,76 +404,72 @@ export default function EditAlarmScreen() {
         </>
       )}
 
-      {/* 깨우기 방식 */}
-      {mode === 'tts' && (
-        <>
-          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.wakeMode')}</Text>
-          <View style={formStyles.modeRow}>
-            <TouchableOpacity
-              style={[formStyles.modeChip, wakeMode === 'sound_then_voice' && formStyles.modeChipActive]}
-              onPress={() => setWakeMode('sound_then_voice')}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: wakeMode === 'sound_then_voice' }}
-              accessibilityLabel={t('alarmCreate.soundThenVoice')}
-            >
-              <Text style={[formStyles.modeText, wakeMode === 'sound_then_voice' && formStyles.modeTextActive]}>
-                {t('alarmCreate.soundThenVoice')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[formStyles.modeChip, wakeMode === 'voice_only' && formStyles.modeChipActive]}
-              onPress={() => setWakeMode('voice_only')}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: wakeMode === 'voice_only' }}
-              accessibilityLabel={t('alarmCreate.voiceOnly')}
-            >
-              <Text style={[formStyles.modeText, wakeMode === 'voice_only' && formStyles.modeTextActive]}>
-                {t('alarmCreate.voiceOnly')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </>
+      {/* 원본 음성 (선택사항) */}
+      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmSource.section')}</Text>
+      <Text style={localStyles.sourceHint}>{t('alarmSource.sectionHint')}</Text>
+      {rawAudio ? (
+        <View style={localStyles.sourceCurrent}>
+          <Text style={localStyles.sourceCurrentLabel}>
+            {t('alarmSource.currentLabel')} · {rawAudio.fileName} ({(rawAudio.durationMs / 1000).toFixed(1)}s)
+          </Text>
+          <TouchableOpacity onPress={() => setRawAudio(null)} accessibilityRole="button">
+            <Text style={localStyles.sourceRemove}>{t('alarmSource.remove')}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={localStyles.sourceRow}>
+          <TouchableOpacity
+            style={localStyles.sourceCard}
+            onPress={() => router.push('/alarm/source-record')}
+            accessibilityRole="button"
+          >
+            <Text style={localStyles.sourceCardText}>{t('alarmSource.recordCard')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={localStyles.sourceCard}
+            onPress={() => router.push('/alarm/source-upload')}
+            accessibilityRole="button"
+          >
+            <Text style={localStyles.sourceCardText}>{t('alarmSource.uploadCard')}</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {/* 스누즈 */}
-      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.snooze')}</Text>
-      <View style={formStyles.snoozeRow}>
-        {[5, 10, 15].map((min) => (
-          <TouchableOpacity
-            key={min}
-            style={[formStyles.snoozeChip, snooze === min && formStyles.snoozeChipActive]}
-            onPress={() => setSnooze(min)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: snooze === min }}
-            accessibilityLabel={t('alarmCreate.snoozeMin', { min })}
-          >
-            <Text style={[formStyles.snoozeText, snooze === min && formStyles.snoozeTextActive]}>
-              {t('alarmCreate.snoozeMin', { min })}
+      {/* 다시 울림 / 진동 — sub-screen */}
+      <View style={localStyles.settingsGroup}>
+        <TouchableOpacity
+          style={localStyles.settingsRow}
+          onPress={() => router.push('/alarm/snooze')}
+          accessibilityRole="button"
+          accessibilityLabel={t('alarmCreate.snooze')}
+        >
+          <Text style={localStyles.settingsLabel}>{t('alarmCreate.snooze')}</Text>
+          <View style={localStyles.settingsValueRow}>
+            <Text style={localStyles.settingsValue}>
+              {snooze === 0 ? t('alarmCreate.snoozeOff') : t('alarmCreate.snoozeMin', { min: snooze })}
             </Text>
-          </TouchableOpacity>
-        ))}
+            <Text style={localStyles.settingsChevron}>›</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={localStyles.settingsDivider} />
+        <TouchableOpacity
+          style={localStyles.settingsRow}
+          onPress={() => router.push('/alarm/vibration')}
+          accessibilityRole="button"
+          accessibilityLabel={t('alarmCreate.vibration')}
+        >
+          <Text style={localStyles.settingsLabel}>{t('alarmCreate.vibration')}</Text>
+          <View style={localStyles.settingsValueRow}>
+            <Text style={localStyles.settingsValue}>
+              {t(`alarmCreate.vibration${vibrationPattern.charAt(0).toUpperCase() + vibrationPattern.slice(1)}`)}
+            </Text>
+            <Text style={localStyles.settingsChevron}>›</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
-      {/* 진동 패턴 */}
-      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.vibration')}</Text>
-      <View style={formStyles.snoozeRow}>
-        {(['default', 'strong', 'none'] as const).map((pattern) => (
-          <TouchableOpacity
-            key={pattern}
-            style={[formStyles.snoozeChip, vibrationPattern === pattern && formStyles.snoozeChipActive]}
-            onPress={() => selectVibration(pattern)}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: vibrationPattern === pattern }}
-            accessibilityLabel={t(`alarmCreate.vibration${pattern.charAt(0).toUpperCase() + pattern.slice(1)}`)}
-          >
-            <Text style={[formStyles.snoozeText, vibrationPattern === pattern && formStyles.snoozeTextActive]}>
-              {t(`alarmCreate.vibration${pattern.charAt(0).toUpperCase() + pattern.slice(1)}`)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* 메시지 선택 */}
+      {/* 메시지 선택 — 음성 사용 모드일 때만 */}
+      {requiresMessage && (<>
       <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmCreate.message')}</Text>
       {messages && messages.length > 0 ? (
         <View style={formStyles.messageList}>
@@ -534,34 +509,40 @@ export default function EditAlarmScreen() {
         readyVoices={readyVoices}
         presetVoiceId={presetVoiceId}
         onVoiceSelect={(vid) => setPresetVoiceId(vid)}
-        recentPresets={recentPresets}
-        presetText={presetText}
-        onPresetTextSelect={setPresetText}
         presetCategory={presetCategory}
         onCategorySelect={setPresetCategory}
         isPending={ttsMutation.isPending}
         onGenerate={handlePresetGenerate}
         formStyles={formStyles}
       />
+      </>)}
 
       {/* 저장 버튼 */}
-      <TouchableOpacity
-        style={[
-          localStyles.saveButton,
-          (!selectedMessageId || soundOnlyInvalid || editMutation.isPending) && formStyles.disabled,
-        ]}
-        onPress={handleSubmit}
-        disabled={!selectedMessageId || soundOnlyInvalid || editMutation.isPending}
-        accessibilityRole="button"
-        accessibilityLabel={t('alarmEdit.save')}
-        accessibilityState={{ disabled: !selectedMessageId || soundOnlyInvalid || editMutation.isPending }}
-      >
-        {editMutation.isPending ? (
-          <ActivityIndicator color={colors.textOnPrimary} />
-        ) : (
-          <Text style={localStyles.saveText}>{t('alarmEdit.save')}</Text>
-        )}
-      </TouchableOpacity>
+      {(() => {
+        const submitDisabled =
+          (requiresMessage && !selectedMessageId) ||
+          voiceProfileMissing ||
+          editMutation.isPending;
+        return (
+          <TouchableOpacity
+            style={[
+              localStyles.saveButton,
+              submitDisabled && formStyles.disabled,
+            ]}
+            onPress={handleSubmit}
+            disabled={submitDisabled}
+            accessibilityRole="button"
+            accessibilityLabel={t('alarmEdit.save')}
+            accessibilityState={{ disabled: submitDisabled }}
+          >
+            {editMutation.isPending ? (
+              <ActivityIndicator color={colors.textOnPrimary} />
+            ) : (
+              <Text style={localStyles.saveText}>{t('alarmEdit.save')}</Text>
+            )}
+          </TouchableOpacity>
+        );
+      })()}
       <Toast message={toast.message} opacity={toast.opacity} />
     </ScrollView>
   );
@@ -569,6 +550,86 @@ export default function EditAlarmScreen() {
 
 function createLocalStyles(colors: ThemeColors) {
   return StyleSheet.create({
+    sourceHint: {
+      fontSize: FontSize.sm,
+      color: colors.textSecondary,
+      marginBottom: Spacing.sm,
+    },
+    sourceRow: {
+      flexDirection: 'row' as const,
+      gap: Spacing.sm,
+    },
+    sourceCard: {
+      flex: 1,
+      backgroundColor: colors.surface,
+      borderRadius: BorderRadius.lg,
+      paddingVertical: Spacing.md + 2,
+      paddingHorizontal: Spacing.md,
+      alignItems: 'center' as const,
+    },
+    sourceCardText: {
+      fontSize: FontSize.md,
+      color: colors.text,
+      fontFamily: FontFamily.semibold,
+    },
+    sourceCurrent: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'space-between' as const,
+      backgroundColor: colors.surfaceVariant,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+    },
+    sourceCurrentLabel: {
+      flex: 1,
+      fontSize: FontSize.sm,
+      color: colors.text,
+      fontFamily: FontFamily.medium,
+    },
+    sourceRemove: {
+      fontSize: FontSize.sm,
+      color: colors.error,
+      fontFamily: FontFamily.semibold,
+      marginLeft: Spacing.sm,
+    },
+    settingsGroup: {
+      backgroundColor: colors.surface,
+      borderRadius: BorderRadius.lg,
+      marginTop: Spacing.lg,
+      overflow: 'hidden' as const,
+    },
+    settingsRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'space-between' as const,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.md + 4,
+    },
+    settingsLabel: {
+      fontSize: FontSize.lg,
+      fontFamily: FontFamily.semibold,
+      color: colors.text,
+    },
+    settingsValueRow: {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      gap: Spacing.xs,
+    },
+    settingsValue: {
+      fontSize: FontSize.md,
+      fontFamily: FontFamily.regular,
+      color: colors.textSecondary,
+    },
+    settingsChevron: {
+      fontSize: 22,
+      color: colors.textTertiary,
+      fontFamily: FontFamily.regular,
+    },
+    settingsDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginLeft: Spacing.md,
+    },
     loadingContainer: {
       flex: 1,
       justifyContent: 'center',

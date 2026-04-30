@@ -43,8 +43,10 @@ describe('OfflineBanner', () => {
     mockIsConnected = false;
     const { toJSON } = render(<OfflineBanner />);
     const tree = JSON.stringify(toJSON());
-    expect(tree).toContain('#FF9500');
-    expect(tree).toContain('#FFFFFF');
+    // After mustard+navy palette: light warning is #D89A2C (ochre), text on
+    // primary is charcoal (#2C2620). Banner uses warning + textOnPrimary.
+    expect(tree).toContain('#D89A2C');
+    expect(tree).toContain('#2C2620');
   });
 
   it('오프라인 배너에 alert 접근성 역할이 적용된다', () => {

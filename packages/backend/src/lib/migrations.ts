@@ -424,7 +424,13 @@ export const migrations: Migration[] = [
   {
     id: 16,
     name: 'user-last-active',
-    statements: [`ALTER TABLE users ADD COLUMN last_active_at TEXT DEFAULT (datetime('now'))`],
+    // SQLite ALTER TABLE ADD COLUMN requires a *constant* DEFAULT, so the
+    // datetime('now') call cannot live in the column definition. We backfill
+    // existing rows separately and let new inserts set the value explicitly.
+    statements: [
+      `ALTER TABLE users ADD COLUMN last_active_at TEXT`,
+      `UPDATE users SET last_active_at = datetime('now') WHERE last_active_at IS NULL`,
+    ],
   },
   {
     id: 17,
@@ -464,7 +470,78 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_alarms_target_active ON alarms(target_user_id, is_active)`,
     ],
   },
+  {
+    id: 20,
+    // Cleanup orphaned `alarms_new` left behind by a half-applied earlier
+    // attempt at the table-recreation migration. No-op on fresh DBs.
+    name: 'alarm-raw-audio-cleanup',
+    statements: [
+      'DROP TABLE IF EXISTS alarms_new',
+    ],
+  },
+  {
+    id: 21,
+    // Add raw_audio columns directly via ALTER. Keeps `message_id` NOT NULL —
+    // raw-audio alarms get a placeholder message row in alarm-mutation.
+    name: 'alarm-raw-audio-columns',
+    statements: [
+      `ALTER TABLE alarms ADD COLUMN raw_audio_url TEXT`,
+      `ALTER TABLE alarms ADD COLUMN raw_audio_duration_ms INTEGER`,
+    ],
+  },
 ];
+
+// Errors that mean the statement was already applied — safe to ignore so
+// we can recover databases whose `_migrations` ledger is out of sync with
+// reality (e.g. partial historical migration runs before the ledger existed).
+function isIdempotentDDLError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes('duplicate column name') ||
+    lower.includes('already exists') ||
+    lower.includes('no such index')
+  );
+}
+
+/**
+ * Run only migrations whose id falls inside [fromId, toId] (inclusive).
+ * Useful for batched init under Workers' subrequest cap. Idempotent —
+ * skips DDL errors that imply the statement is already applied.
+ */
+export async function runMigrationsRange(
+  db: Client,
+  fromId: number,
+  toId: number,
+): Promise<string[]> {
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS _migrations (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT DEFAULT (datetime('now'))
+    )`,
+  );
+  const applied = await db.execute('SELECT id FROM _migrations ORDER BY id');
+  const appliedIds = new Set(applied.rows.map((r) => Number(r.id)));
+  const ran: string[] = [];
+  for (const migration of migrations) {
+    if (migration.id < fromId || migration.id > toId) continue;
+    if (appliedIds.has(migration.id)) continue;
+    for (const stmt of migration.statements) {
+      try {
+        await db.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!isIdempotentDDLError(msg)) throw err;
+      }
+    }
+    await db.execute({
+      sql: 'INSERT INTO _migrations (id, name) VALUES (?, ?)',
+      args: [migration.id, migration.name],
+    });
+    ran.push(`${migration.id}_${migration.name}`);
+  }
+  return ran;
+}
 
 export async function runMigrations(db: Client): Promise<string[]> {
   await db.execute(
