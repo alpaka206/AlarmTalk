@@ -489,6 +489,101 @@ export const migrations: Migration[] = [
       `ALTER TABLE alarms ADD COLUMN raw_audio_duration_ms INTEGER`,
     ],
   },
+  {
+    id: 22,
+    // Make alarms.message_id NULLABLE so the "alarm-only" play mode (just a
+    // buzzer, no TTS or voice clip) can store an alarm row without inventing
+    // a placeholder message. SQLite has no ALTER COLUMN DROP NOT NULL, so we
+    // rebuild the table. NOTE: this version (re)introduced FK constraints
+    // that conflict with the established convention of storing the JWT sub
+    // (Google ID) in `user_id` instead of the users.id PK — superseded by
+    // migration 23, which drops those FKs. Kept here for ledger continuity.
+    name: 'alarms-message-id-nullable',
+    statements: [
+      `PRAGMA foreign_keys=off`,
+      `DROP TABLE IF EXISTS alarms_v2`,
+      `CREATE TABLE alarms_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        target_user_id TEXT,
+        message_id TEXT REFERENCES messages(id),
+        time TEXT NOT NULL,
+        repeat_days TEXT DEFAULT '[]',
+        is_active INTEGER DEFAULT 1,
+        snooze_minutes INTEGER DEFAULT 5,
+        mode TEXT NOT NULL DEFAULT 'tts',
+        voice_profile_id TEXT,
+        speaker_id TEXT,
+        vibration_pattern TEXT NOT NULL DEFAULT 'default',
+        wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice',
+        raw_audio_url TEXT,
+        raw_audio_duration_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO alarms_v2 (
+        id, user_id, target_user_id, message_id, time, repeat_days,
+        is_active, snooze_minutes, mode, voice_profile_id, speaker_id,
+        vibration_pattern, wake_mode, raw_audio_url, raw_audio_duration_ms,
+        created_at, updated_at
+      ) SELECT
+        id, user_id, target_user_id, message_id, time, repeat_days,
+        is_active, snooze_minutes, mode, voice_profile_id, speaker_id,
+        vibration_pattern, wake_mode, raw_audio_url, raw_audio_duration_ms,
+        created_at, updated_at
+      FROM alarms`,
+      `DROP TABLE alarms`,
+      `ALTER TABLE alarms_v2 RENAME TO alarms`,
+      `PRAGMA foreign_keys=on`,
+    ],
+  },
+  {
+    id: 23,
+    // Drop the FK constraints (re)added by migration 22. The codebase stores
+    // the Google JWT sub in `alarms.user_id` (rather than the users.id PK)
+    // to match the legacy `WHERE google_id = ?` lookup convention used
+    // across other routes. With the FK enabled, every new alarm fails with
+    // SQLITE_CONSTRAINT: FOREIGN KEY constraint failed because the sub
+    // doesn't match any users.id. Rebuild without FKs; nullability is kept.
+    name: 'alarms-drop-fks',
+    statements: [
+      `PRAGMA foreign_keys=off`,
+      `DROP TABLE IF EXISTS alarms_v3`,
+      `CREATE TABLE alarms_v3 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        target_user_id TEXT,
+        message_id TEXT,
+        time TEXT NOT NULL,
+        repeat_days TEXT DEFAULT '[]',
+        is_active INTEGER DEFAULT 1,
+        snooze_minutes INTEGER DEFAULT 5,
+        mode TEXT NOT NULL DEFAULT 'tts',
+        voice_profile_id TEXT,
+        speaker_id TEXT,
+        vibration_pattern TEXT NOT NULL DEFAULT 'default',
+        wake_mode TEXT NOT NULL DEFAULT 'sound_then_voice',
+        raw_audio_url TEXT,
+        raw_audio_duration_ms INTEGER,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `INSERT INTO alarms_v3 (
+        id, user_id, target_user_id, message_id, time, repeat_days,
+        is_active, snooze_minutes, mode, voice_profile_id, speaker_id,
+        vibration_pattern, wake_mode, raw_audio_url, raw_audio_duration_ms,
+        created_at, updated_at
+      ) SELECT
+        id, user_id, target_user_id, message_id, time, repeat_days,
+        is_active, snooze_minutes, mode, voice_profile_id, speaker_id,
+        vibration_pattern, wake_mode, raw_audio_url, raw_audio_duration_ms,
+        created_at, updated_at
+      FROM alarms`,
+      `DROP TABLE alarms`,
+      `ALTER TABLE alarms_v3 RENAME TO alarms`,
+      `PRAGMA foreign_keys=on`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

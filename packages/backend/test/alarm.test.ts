@@ -490,14 +490,14 @@ describe('DELETE /alarm/:id — 알람 삭제', () => {
 });
 
 describe('error_code 일관성 검증', () => {
-  it('POST — required fields 누락 시 ALARM_SOURCE_MISSING', async () => {
-    // After raw-audio support was added the create endpoint accepts either
-    // message_id or raw_audio_url, so missing message_id alone now returns
-    // ALARM_SOURCE_MISSING (only `time` truly missing yields the legacy code).
+  it('POST — time 누락 시 REQUIRED_FIELDS_MISSING', async () => {
+    // Source-less alarms are now valid ("alarm-only" play mode plays the
+    // device default sound), so the only true required field at create time
+    // is `time`.
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/alarm', { time: '07:00' }));
+    const res = await app.request(jsonReq('POST', '/alarm', {}));
     const body = await res.json();
-    expect(body.error_code).toBe('ALARM_SOURCE_MISSING');
+    expect(body.error_code).toBe('REQUIRED_FIELDS_MISSING');
   });
 
   it('POST — 잘못된 mode 시 INVALID_ALARM_MODE', async () => {

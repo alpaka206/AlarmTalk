@@ -70,10 +70,14 @@ alarmQuery.get('/', async (c) => {
     whereArgs.push(voiceProfileId);
   }
 
+  // LEFT JOIN messages/voice_profiles so the new "alarm-only" play mode
+  // (message_id NULL, no associated voice clip) still appears in the list.
+  // The voice_profile_id filter naturally excludes those rows by requiring
+  // m to be present.
   const [countRes, result] = await Promise.all([
     db.execute({
       sql: `SELECT COUNT(*) as total FROM alarms a
-            JOIN messages m ON a.message_id = m.id
+            LEFT JOIN messages m ON a.message_id = m.id
             ${whereClause}`,
       args: whereArgs,
     }),
@@ -81,8 +85,8 @@ alarmQuery.get('/', async (c) => {
       sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
               creator.email as creator_email, creator.name as creator_name
             FROM alarms a
-            JOIN messages m ON a.message_id = m.id
-            JOIN voice_profiles vp ON m.voice_profile_id = vp.id
+            LEFT JOIN messages m ON a.message_id = m.id
+            LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
             LEFT JOIN users creator ON creator.google_id = a.user_id
             ${whereClause}
             ORDER BY a.time ASC
@@ -109,8 +113,8 @@ alarmQuery.get('/:id', async (c) => {
     sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
             creator.email as creator_email, creator.name as creator_name
           FROM alarms a
-          JOIN messages m ON a.message_id = m.id
-          JOIN voice_profiles vp ON m.voice_profile_id = vp.id
+          LEFT JOIN messages m ON a.message_id = m.id
+          LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
           LEFT JOIN users creator ON creator.google_id = a.user_id
           WHERE a.id = ? AND (a.user_id = ? OR a.target_user_id = ?)`,
     args: [id, userId, userId],
