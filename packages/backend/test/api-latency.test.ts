@@ -295,7 +295,7 @@ describe('API latency baselines', () => {
     it('POST /alarm rejects missing required fields within threshold', async () => {
       const app = buildApp('/alarm', alarmRoutes);
       const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/alarm', { time: '08:00' })),
+        app.request(jsonReq('POST', '/alarm', {})),
       );
       expect(res.status).toBe(400);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
