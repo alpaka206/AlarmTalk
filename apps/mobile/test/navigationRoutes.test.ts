@@ -160,7 +160,13 @@ describe('네비게이션 라우트 유효성', () => {
 describe('라우트 탐색 커버리지', () => {
   it('모든 비-탭 라우트가 적어도 하나의 네비게이션 출발점을 갖는다', () => {
     const tabRoutes = ['/', '/alarms', '/voices', '/compose'];
-    const stackRoutes = validRoutes.filter((r) => !tabRoutes.includes(r));
+    // /player는 src/lib/alarmPlayback.ts의 동적 액션 객체를 통해서만 도달한다
+    // (`router.push({ pathname: action.path })`). extractPushTargets 정규식은
+    // literal pathname만 매칭하므로 변수 path를 false-negative로 처리 → 화이트리스트.
+    const dynamicNavRoutes = ['/player'];
+    const stackRoutes = validRoutes.filter(
+      (r) => !tabRoutes.includes(r) && !dynamicNavRoutes.includes(r),
+    );
 
     const unreachable: string[] = [];
     for (const route of stackRoutes) {

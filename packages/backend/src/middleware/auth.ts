@@ -55,10 +55,49 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       verified = await verifyGoogleToken(token, c.env.GOOGLE_CLIENT_ID);
     }
 
+    // Legacy convention: most routes still query `WHERE google_id = ?`, so
+    // `userId` keeps that meaning (the JWT sub).
     c.set('userId', verified.sub);
     c.set('userEmail', verified.email || '');
     c.set('userName', verified.name || '');
     c.set('userPicture', verified.picture || '');
+
+    // New convention: `userIdPK` is the actual users.id (UUID for legacy
+    // accounts, sub for newly-created ones). Use this for any FOREIGN KEY
+    // refs (voice_profiles.user_id, alarms.user_id, ...).
+    try {
+      const { getDB } = await import('../lib/db');
+      const db = getDB(c.env);
+      const found = await db.execute({
+        sql: 'SELECT id FROM users WHERE google_id = ?',
+        args: [verified.sub],
+      });
+      let pk: string;
+      if (found.rows.length > 0) {
+        pk = String(found.rows[0]!.id);
+      } else {
+        await db.execute({
+          sql: `INSERT INTO users (id, google_id, email, name, picture)
+                VALUES (?, ?, ?, ?, ?)`,
+          args: [
+            verified.sub,
+            verified.sub,
+            verified.email || `${verified.sub}@unknown`,
+            verified.name || null,
+            verified.picture || null,
+          ],
+        });
+        pk = verified.sub;
+      }
+      c.set('userIdPK', pk);
+      // eslint-disable-next-line no-console
+      console.log('[AUTH user-resolve OK]', 'sub=', verified.sub, '→ usersId=', pk);
+    } catch (err) {
+      c.set('userIdPK', verified.sub);
+      // eslint-disable-next-line no-console
+      console.log('[AUTH user-resolve FAIL]', err instanceof Error ? err.message : String(err));
+    }
+
     await next();
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -71,6 +110,8 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
           : message.includes('format')
             ? 'AUTH_MALFORMED_TOKEN'
             : 'AUTH_VERIFICATION_FAILED';
+    // eslint-disable-next-line no-console
+    console.log('[AUTH 401]', code, '|', message, '| GOOGLE_CLIENT_ID set:', !!c.env.GOOGLE_CLIENT_ID);
     return c.json({ error: message, error_code: code }, 401);
   }
 }

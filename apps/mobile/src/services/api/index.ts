@@ -34,8 +34,7 @@ export {
   createAlarm,
   updateAlarm,
   deleteAlarm,
-  registerPushToken,
-  unregisterPushToken,
+  uploadAlarmSource,
 } from './alarm';
 
 export {

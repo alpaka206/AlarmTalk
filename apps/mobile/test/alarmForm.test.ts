@@ -58,10 +58,10 @@ describe('buildCreatePayload', () => {
 });
 
 describe('validateAlarmForm', () => {
-  it('메시지 미선택이면 에러', () => {
+  it('메시지 미선택이면 alarm-only payload로 통과', () => {
     const res = validateAlarmForm({ ...baseInput, messageId: null }, t);
-    expect(res.ok).toBe(false);
-    if (!res.ok) expect(res.error).toBe('alarmValidation.messageRequired');
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.payload.message_id).toBeUndefined();
   });
 
   it('잘못된 시간 형식이면 에러', () => {

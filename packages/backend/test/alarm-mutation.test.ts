@@ -28,10 +28,14 @@ beforeEach(() => {
 describe('POST /alarms', () => {
   const validBody = { message_id: ID.message, time: '07:30' };
 
-  it('message_id 누락 시 400', async () => {
+  it('message_id / raw_audio_url 둘 다 누락 시 alarm-only 모드로 201 (message_id NULL)', async () => {
+    // The "alarm-only" play mode plays just the device's default alarm sound
+    // and stores neither a TTS message nor a raw-audio source. Schema migration
+    // 22 made alarms.message_id nullable so the row stores NULL.
     const res = await buildApp().request(jsonReq('POST', '/alarms', { time: '07:30' }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('REQUIRED_FIELDS_MISSING');
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { alarm: { message_id?: string | null } };
+    expect(body.alarm.message_id ?? null).toBe(null);
   });
 
   it('time 누락 시 400', async () => {

@@ -15,7 +15,10 @@ export interface AlarmFormInput {
 }
 
 export interface AlarmCreatePayload {
-  message_id: string;
+  // Optional because the "alarm-only" play mode (just a buzzer, no TTS or
+  // voice clip) sends no message_id at all. The backend resolves what to
+  // store on the alarm row.
+  message_id?: string;
   time: string;
   repeat_days: number[];
   mode: AlarmMode;
@@ -32,9 +35,6 @@ export type ValidationResult =
   | { ok: false; error: string };
 
 export function validateAlarmForm(input: AlarmFormInput, t: TFunction): ValidationResult {
-  if (!input.messageId) {
-    return { ok: false, error: t('alarmValidation.messageRequired') };
-  }
   if (!/^\d{2}:\d{2}$/.test(input.time)) {
     return { ok: false, error: t('alarmValidation.invalidTime') };
   }
@@ -49,11 +49,11 @@ export function validateAlarmForm(input: AlarmFormInput, t: TFunction): Validati
 
 export function buildCreatePayload(input: AlarmFormInput): AlarmCreatePayload {
   const payload: AlarmCreatePayload = {
-    message_id: input.messageId ?? '',
     time: input.time,
     repeat_days: Array.isArray(input.repeatDays) ? input.repeatDays : [],
     mode: input.mode,
   };
+  if (input.messageId) payload.message_id = input.messageId;
   if (input.vibrationPattern) payload.vibration_pattern = input.vibrationPattern;
   if (input.wakeMode) payload.wake_mode = input.wakeMode;
   if (input.voiceProfileId) payload.voice_profile_id = input.voiceProfileId;

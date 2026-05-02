@@ -16,8 +16,35 @@ dist/
 ios/
 android/
 
+# Native Android local/generated files
+apps/android-native/.gradle/
+apps/android-native/build/
+apps/android-native/**/build/
+apps/android-native/local.properties
+apps/android-native/captures/
+apps/android-native/.idea/
+apps/android-native/*.iml
+*.jks
+*.keystore
+
+# Native iOS local/generated files
+apps/ios-native/DerivedData/
+apps/ios-native/build/
+apps/ios-native/*.xcuserdata/
+apps/ios-native/**/*.xcuserdata/
+apps/ios-native/Pods/
+
 # Logs
 *.log
+*.hprof
+*.trace
+*.apk
+*.aab
+*.ipa
+*.xcarchive
+adb-*.txt
+logcat-*.txt
+dumpsys-*.txt
 .DS_Store
 
 # Ralph harness (logs/heartbeat 만 ignore, 나머지는 버전 관리)
@@ -34,3 +61,12 @@ android/
 test/*
 !test/.gitkeep
 !test/README.md
+
+# Local recordings/audio samples used while testing alarm behavior.
+*.m4a
+*.mp3
+*.wav
+*.aac
+*.caf
+!packages/**/test/**
+!apps/android-native/**/res/raw/**

@@ -16,7 +16,10 @@ export interface SentryClient {
 }
 
 export type AuthVariables = {
+  /** JWT sub (= users.google_id). Legacy convention used by most route SQL. */
   userId: string;
+  /** users.id PK. UUID for accounts created before sub-as-id, sub for new ones. Use for FK refs. */
+  userIdPK: string;
   userEmail: string;
   userName: string;
   userPicture: string;

@@ -24,14 +24,14 @@ describe('useTheme — 라이트 모드', () => {
     expect(result.isDark).toBe(false);
   });
 
-  it('light 모드 배경색은 #FFF5F3이다', () => {
+  it('light 모드 배경색은 웜 크림(#FBF8F2)이다', () => {
     const result = getThemeResult(false);
-    expect(result.colors.background).toBe('#FFF5F3');
+    expect(result.colors.background).toBe('#FBF8F2');
   });
 
-  it('light 모드 primary는 #FF7F6B이다', () => {
+  it('light 모드 primary는 머스타드(#E8B341)이다', () => {
     const result = getThemeResult(false);
-    expect(result.colors.primary).toBe('#FF7F6B');
+    expect(result.colors.primary).toBe('#E8B341');
   });
 });
 
@@ -42,14 +42,14 @@ describe('useTheme — 다크 모드', () => {
     expect(result.isDark).toBe(true);
   });
 
-  it('dark 모드 배경색은 #1C1C1E이다', () => {
+  it('dark 모드 배경색은 다크 모카(#1F1B14)이다', () => {
     const result = getThemeResult(true);
-    expect(result.colors.background).toBe('#1C1C1E');
+    expect(result.colors.background).toBe('#1F1B14');
   });
 
-  it('dark 모드 primary는 #FF8F7D이다', () => {
+  it('dark 모드 primary는 채도 낮춘 머스타드(#F0C25C)이다', () => {
     const result = getThemeResult(true);
-    expect(result.colors.primary).toBe('#FF8F7D');
+    expect(result.colors.primary).toBe('#F0C25C');
   });
 });
 

@@ -9,14 +9,6 @@ vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
 }));
 
-const { mockSendNotePush } = vi.hoisted(() => ({
-  mockSendNotePush: vi.fn().mockResolvedValue([]),
-}));
-
-vi.mock('../src/lib/fcm', () => ({
-  sendNotePush: mockSendNotePush,
-}));
-
 import notesRoutes from '../src/routes/notes';
 
 function buildApp(userId = 'user-1') {
@@ -28,7 +20,6 @@ function buildApp(userId = 'user-1') {
 
 beforeEach(() => {
   mockDB.reset();
-  mockSendNotePush.mockClear();
 });
 
 describe('POST /notes — 쪽지 전송', () => {
@@ -109,7 +100,6 @@ describe('POST /notes — 쪽지 전송', () => {
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: '좋은 아침!' }));
     expect(res.status).toBe(201);
@@ -138,62 +128,11 @@ describe('POST /notes — 쪽지 전송', () => {
     expect(res.status).toBe(400);
   });
 
-  it('sendNotePush 호출 시 올바른 인자 전달 (ko 기본)', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
-    const app = buildApp();
-    await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: '좋은 아침!' }));
-    expect(mockSendNotePush).toHaveBeenCalledTimes(1);
-    const callArgs = mockSendNotePush.mock.calls[0];
-    expect(callArgs[1]).toBe('pk2');
-    expect(callArgs[3]).toBe('Sender');
-    expect(callArgs[4]).toBe('ko');
-  });
-
-  it('Accept-Language: en 시 locale en 전달', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
-    const app = buildApp();
-    const req = jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'hi' });
-    req.headers.set('Accept-Language', 'en-US,en;q=0.9');
-    await app.request(req);
-    expect(mockSendNotePush.mock.calls[0][4]).toBe('en');
-  });
-
-  it('sender name null 시 email 폴백', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: null, email: 'fallback@test.com' }]);
-    const app = buildApp();
-    await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'hi' }));
-    expect(mockSendNotePush.mock.calls[0][3]).toBe('fallback@test.com');
-  });
-
-  it('sender name+email 모두 null 시 Someone 폴백', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: null, email: null }]);
-    const app = buildApp();
-    await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'hi' }));
-    expect(mockSendNotePush.mock.calls[0][3]).toBe('Someone');
-  });
-
   it('text 정확히 500자면 성공', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'x'.repeat(500) }));
     expect(res.status).toBe(201);
@@ -222,7 +161,6 @@ describe('POST /notes — 쪽지 전송', () => {
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: '  hello  ' }));
     expect(res.status).toBe(201);
@@ -275,45 +213,16 @@ describe('POST /notes — type coercion edge cases', () => {
     expect((await res.json()).error_code).toBe('RECEIVER_REQUIRED');
   });
 
-  it('Accept-Language 없으면 ko 기본', async () => {
+  it('생성된 noteId가 UUID 형식', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{ id: 'pk2' }]);
     mockDB.pushResult([{ plan_group_id: 'g1' }]);
     mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
     const app = buildApp();
-    const req = new Request('http://localhost/notes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receiver_id: 'pk2', text: 'hi' }),
-    });
-    await app.request(req);
-    expect(mockSendNotePush.mock.calls[0][4]).toBe('ko');
-  });
-
-  it('Accept-Language "fr-FR" → startsWith("en") false → ko 폴백', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
-    const app = buildApp();
-    const req = jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'bonjour' });
-    req.headers.set('Accept-Language', 'fr-FR,fr;q=0.9');
-    await app.request(req);
-    expect(mockSendNotePush.mock.calls[0][4]).toBe('ko');
-  });
-
-  it('sendNotePush에 noteId가 UUID 형식으로 전달', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    mockDB.pushResult([{ id: 'pk2' }]);
-    mockDB.pushResult([{ plan_group_id: 'g1' }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ name: 'Sender', email: 'sender@test.com' }]);
-    const app = buildApp();
-    await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'hi' }));
-    const noteId = mockSendNotePush.mock.calls[0][2];
-    expect(noteId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    const res = await app.request(jsonReq('POST', '/notes', { receiver_id: 'pk2', text: 'hi' }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.note.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
 

@@ -48,17 +48,20 @@ const allFiles = [...readTsx(APP_DIR), ...readTsx(SRC_DIR)];
 const layoutContent = fs.readFileSync(LAYOUT_FILE, 'utf-8');
 
 describe('QueryClient defaults', () => {
-  it('staleTime은 30초 (30_000ms)', () => {
-    expect(layoutContent).toContain('staleTime: 30_000');
+  it('staleTime은 5분 (Tailscale 등 고지연 환경에서 재요청 폭발 방지)', () => {
+    expect(layoutContent).toContain('staleTime: 5 * 60 * 1000');
   });
 
-  it('retry는 2회', () => {
-    expect(layoutContent).toContain('retry: 2');
+  it('retry는 1회 (고지연 환경에서 재시도 비용이 큼)', () => {
+    expect(layoutContent).toContain('retry: 1');
   });
 
-  it('gcTime은 커스텀 설정 없음 (TanStack 기본값 5분 사용)', () => {
-    expect(layoutContent).not.toMatch(/gcTime/);
-    expect(layoutContent).not.toMatch(/cacheTime/);
+  it('gcTime이 30분으로 설정되어 화면 전환 시 캐시가 살아있다', () => {
+    expect(layoutContent).toContain('gcTime: 30 * 60 * 1000');
+  });
+
+  it('refetchOnWindowFocus는 비활성화', () => {
+    expect(layoutContent).toContain('refetchOnWindowFocus: false');
   });
 
   it('QueryClientProvider가 앱을 감싸고 있다', () => {
@@ -225,12 +228,14 @@ describe('쿼리 enabled 가드', () => {
 });
 
 describe('뮤테이션 캐시 무효화', () => {
-  it('알람 토글/삭제 뮤테이션은 alarms 쿼리를 무효화한다', () => {
+  it('알람 토글/삭제 뮤테이션은 optimistic update로 alarms 캐시를 직접 갱신한다', () => {
+    // invalidateQueries 대신 onMutate에서 setQueryData(['alarms'], ...)로
+    // 즉시 반영. 토글 응답을 체감 0ms로 만들기 위한 의도적 패턴이며,
+    // 다음 사용자 새로고침(pull-to-refresh) 또는 staleTime 만료 시 서버와 재동기.
     const alarmsTab = allFiles.find((f) => f.file.endsWith('alarms.tsx') && f.file.includes('(tabs)'));
     expect(alarmsTab).toBeDefined();
-    const invalidateKeys = extractInvalidateKeys(alarmsTab!.content);
-    const alarmsInvalidated = invalidateKeys.some((k) => k[0] === 'alarms');
-    expect(alarmsInvalidated).toBe(true);
+    expect(alarmsTab!.content).toContain('onMutate');
+    expect(alarmsTab!.content).toMatch(/setQueryData[^\n]*\['alarms'\]/);
   });
 
   it('음성 삭제 뮤테이션은 voiceProfiles 쿼리를 무효화한다', () => {
@@ -280,8 +285,13 @@ describe('뮤테이션 캐시 무효화', () => {
   });
 
   it('음성 녹음/업로드/분리 후 voiceProfiles를 무효화한다', () => {
+    // Match only files under app/voice/ — `app/alarm/source-record.tsx` has
+    // 'record' in its name but is the alarm raw-audio screen, not a voice
+    // profile creator, so it must not be required to invalidate voiceProfiles.
     const voiceFiles = allFiles.filter(
-      (f) => f.file.includes('voice') && (f.file.includes('record') || f.file.includes('upload') || f.file.includes('diarize')),
+      (f) =>
+        /[\\/]voice[\\/]/.test(f.file) &&
+        (f.file.includes('record') || f.file.includes('upload') || f.file.includes('diarize')),
     );
     expect(voiceFiles.length).toBeGreaterThanOrEqual(3);
     for (const vf of voiceFiles) {

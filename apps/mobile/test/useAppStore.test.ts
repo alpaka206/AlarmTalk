@@ -1,9 +1,5 @@
 const store: Record<string, string> = {};
 
-jest.mock('../src/services/notifications', () => ({
-  unregisterPushTokenFromServer: jest.fn(() => Promise.resolve()),
-}));
-
 jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn((key: string, value: string) => {
     store[key] = value;

@@ -274,8 +274,11 @@ describe('WCAG AA 색상 대비 검증', () => {
       );
     });
 
-    test('primaryDark vs 흰색 (버튼 텍스트 역전)', () => {
-      expect(meetsAA(LightColors.primaryDark, '#FFFFFF', true)).toBe(true);
+    test('primaryDark vs 차콜 (textOnPrimary 대비)', () => {
+      // Mustard primary uses charcoal (not white) as textOnPrimary because
+      // yellow-on-white never meets WCAG. So we audit the actual pair the UI
+      // ships with: primaryDark on charcoal text.
+      expect(meetsAA(LightColors.primaryDark, LightColors.textOnPrimary, true)).toBe(true);
     });
 
     test('error vs surface (에러 배지)', () => {

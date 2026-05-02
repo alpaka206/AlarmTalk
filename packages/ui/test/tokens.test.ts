@@ -25,8 +25,8 @@ describe('LightColors / DarkColors', () => {
     expect(lightKeys).toEqual(darkKeys);
   });
 
-  it('primary is coral in light mode', () => {
-    expect(LightColors.primary).toBe('#FF7F6B');
+  it('primary is mustard in light mode', () => {
+    expect(LightColors.primary).toBe('#E8B341');
   });
 
   it('background differs between modes', () => {
