@@ -108,6 +108,7 @@ import com.voicealarm.nativeapp.network.AuthSessionStore
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.RegisterRequest
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
+import com.voicealarm.nativeapp.network.VoiceProfile
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -148,6 +149,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var syncBusy by mutableStateOf(false)
+        private set
+
+    var voiceProfiles by mutableStateOf<List<VoiceProfile>>(emptyList())
+        private set
+
+    var voiceProfileBusy by mutableStateOf(false)
         private set
 
     var message by mutableStateOf<String?>(null)
@@ -301,6 +308,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadVoiceProfiles() {
+        val session = authSession
+        if (session == null) {
+            message = "Sign in before loading voices"
+            return
+        }
+        viewModelScope.launch {
+            voiceProfileBusy = true
+            runCatching {
+                api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
+            }.onSuccess { profiles ->
+                voiceProfiles = profiles
+                message = "Loaded ${profiles.size} voice profiles"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load voice profiles", error)
+                message = error.message ?: "Failed to load voice profiles"
+            }
+            voiceProfileBusy = false
+        }
+    }
+
     fun showCodeAuthUnavailable() {
         message = "Code login needs a backend verification endpoint. Current API supports email/password."
     }
@@ -352,6 +380,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val authSession = viewModel.authSession
     val authBusy = viewModel.authBusy
     val syncBusy = viewModel.syncBusy
+    val voiceProfiles = viewModel.voiceProfiles
+    val voiceProfileBusy = viewModel.voiceProfileBusy
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
@@ -440,6 +470,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 authSession = authSession,
                 authBusy = authBusy,
                 syncBusy = syncBusy,
+                voiceProfiles = voiceProfiles,
+                voiceProfileBusy = voiceProfileBusy,
                 message = message,
                 onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
@@ -447,6 +479,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onVerifyCode = { _, _ -> viewModel.showCodeAuthUnavailable() },
                 onGoogleSignIn = ::launchGoogleSignIn,
                 onSyncNow = viewModel::syncNow,
+                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
                 onLogout = viewModel::logout,
                 onCreateAlarm = { screen = AlarmScreen.Create },
                 onQuickTest = { viewModel.createTestAlarm(1) },
@@ -491,6 +524,8 @@ private fun AlarmListScreen(
     authSession: AuthSession?,
     authBusy: Boolean,
     syncBusy: Boolean,
+    voiceProfiles: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
     message: String?,
     onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -498,6 +533,7 @@ private fun AlarmListScreen(
     onVerifyCode: (String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
+    onLoadVoiceProfiles: () -> Unit,
     onLogout: () -> Unit,
     onCreateAlarm: () -> Unit,
     onQuickTest: () -> Unit,
@@ -520,11 +556,14 @@ private fun AlarmListScreen(
                 authSession = authSession,
                 authBusy = authBusy,
                 syncBusy = syncBusy,
+                voiceProfiles = voiceProfiles,
+                voiceProfileBusy = voiceProfileBusy,
                 onLogin = onLogin,
                 onRegister = onRegister,
                 onVerifyCode = onVerifyCode,
                 onGoogleSignIn = onGoogleSignIn,
                 onSyncNow = onSyncNow,
+                onLoadVoiceProfiles = onLoadVoiceProfiles,
                 onLogout = onLogout,
             )
         }
@@ -1041,11 +1080,14 @@ private fun AccountPanel(
     authSession: AuthSession?,
     authBusy: Boolean,
     syncBusy: Boolean,
+    voiceProfiles: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String) -> Unit,
     onVerifyCode: (String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
+    onLoadVoiceProfiles: () -> Unit,
     onLogout: () -> Unit,
 ) {
     var mode by remember { mutableStateOf("login") }
@@ -1091,6 +1133,31 @@ private fun AccountPanel(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text("Sign out")
+                    }
+                }
+                OutlinedButton(
+                    onClick = onLoadVoiceProfiles,
+                    enabled = !voiceProfileBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (voiceProfileBusy) "Loading voices" else "Load voices")
+                }
+                if (voiceProfiles.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        voiceProfiles.take(3).forEach { profile ->
+                            Text(
+                                text = "${profile.name} (${profile.status ?: "ready"})",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (voiceProfiles.size > 3) {
+                            Text(
+                                text = "+${voiceProfiles.size - 3} more",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             } else {
