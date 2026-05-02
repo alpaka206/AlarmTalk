@@ -329,10 +329,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun showCodeAuthUnavailable() {
-        message = "Code login needs a backend verification endpoint. Current API supports email/password."
-    }
-
     fun showGoogleSetupRequired() {
         message = "Set voiceAlarmGoogleWebClientId to enable Google sign-in."
     }
@@ -476,7 +472,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
                 onRegister = viewModel::register,
-                onVerifyCode = { _, _ -> viewModel.showCodeAuthUnavailable() },
                 onGoogleSignIn = ::launchGoogleSignIn,
                 onSyncNow = viewModel::syncNow,
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
@@ -530,7 +525,6 @@ private fun AlarmListScreen(
     onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String) -> Unit,
-    onVerifyCode: (String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLoadVoiceProfiles: () -> Unit,
@@ -560,7 +554,6 @@ private fun AlarmListScreen(
                 voiceProfileBusy = voiceProfileBusy,
                 onLogin = onLogin,
                 onRegister = onRegister,
-                onVerifyCode = onVerifyCode,
                 onGoogleSignIn = onGoogleSignIn,
                 onSyncNow = onSyncNow,
                 onLoadVoiceProfiles = onLoadVoiceProfiles,
@@ -1084,7 +1077,6 @@ private fun AccountPanel(
     voiceProfileBusy: Boolean,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String) -> Unit,
-    onVerifyCode: (String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLoadVoiceProfiles: () -> Unit,
@@ -1094,7 +1086,6 @@ private fun AccountPanel(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
 
     OutlinedCard {
         Column(
@@ -1165,7 +1156,6 @@ private fun AccountPanel(
                     options = listOf(
                         "login" to "Login",
                         "register" to "Register",
-                        "code" to "Code",
                     ),
                     selected = mode,
                     onSelect = { mode = it },
@@ -1197,62 +1187,36 @@ private fun AccountPanel(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                if (mode == "code") {
-                    OutlinedTextField(
-                        value = code,
-                        onValueChange = { code = it },
-                        label = { Text("Verification code") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Done,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        onClick = { onVerifyCode(email, code) },
-                        enabled = !authBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text("Verify code")
-                    }
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Done,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        if (mode == "register") {
+                            onRegister(email, password, name)
+                        } else {
+                            onLogin(email, password)
+                        }
+                    },
+                    enabled = !authBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Text(
-                        text = "The deployed API does not expose code-login endpoints yet.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done,
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Button(
-                        onClick = {
-                            if (mode == "register") {
-                                onRegister(email, password, name)
-                            } else {
-                                onLogin(email, password)
-                            }
+                        when {
+                            authBusy -> "Working"
+                            mode == "register" -> "Create account"
+                            else -> "Sign in"
                         },
-                        enabled = !authBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            when {
-                                authBusy -> "Working"
-                                mode == "register" -> "Create account"
-                                else -> "Sign in"
-                            },
-                        )
-                    }
+                    )
                 }
 
                 OutlinedButton(

@@ -11,7 +11,7 @@ Phase 1-4 Android native alarm PoC. This project is intentionally scoped to loca
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
 - app theme matched to the legacy mobile mustard/navy/terracotta tokens
 - email/password auth against the deployed VoiceAlarm API
-- Google ID-token auth support when a web client ID is configured
+- Google ID-token auth support
 - manual alarm metadata sync to the deployed VoiceAlarm API
 - `AlarmManager.setExactAndAllowWhileIdle`
 - full-screen ringing activity through an alarm foreground service notification
@@ -41,20 +41,25 @@ Current deployed auth support:
 
 - Email/password: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
 - Google: protected routes accept a Google ID token as a bearer token, matching the legacy app behavior.
-- Code-login: not exposed by the deployed API yet. The Android UI has the code-entry surface, but pressing Verify reports that the backend verification endpoint is missing.
+- Email-code login: intentionally skipped for the MVP because it needs backend code issuance, email delivery, expiration, throttling, and token exchange.
 - Apple: iOS should add Sign in with Apple later. The current backend accepts Apple ID-token payloads on protected routes, but production-grade Apple JWKS signature verification still needs backend hardening before treating it as final.
 
 No ElevenLabs, Perso, TTS generation, voice clone, diarization, or upload endpoints are called by this Android PoC.
 
 ### Google Sign-In Config
 
-Google sign-in needs a Web OAuth client ID. Pass it as a Gradle property:
+Google sign-in needs a Web OAuth client ID for `requestIdToken()`. The current debug build uses:
+
+```text
+Web client ID: 869967951972-6honvq43o8knpe8r71auengnd33rt5pb.apps.googleusercontent.com
+Android client ID: 869967951972-a66elsu635bd8klj123ac16kc5m3hba0.apps.googleusercontent.com
+```
+
+Override the Web client ID with a Gradle property when needed:
 
 ```powershell
 .\gradlew.bat -PvoiceAlarmGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDebug
 ```
-
-Without that property, the Google button stays safe and reports that configuration is required.
 
 ## Build
 
