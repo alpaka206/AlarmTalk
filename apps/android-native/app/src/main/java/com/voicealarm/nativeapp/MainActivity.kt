@@ -21,6 +21,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -106,6 +107,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import androidx.lifecycle.AndroidViewModel
@@ -2006,9 +2008,8 @@ private fun AlarmTimePickerCard(
                     hour = workingHour,
                     itemHeight = itemHeight,
                     selectedColor = selectedTextColor,
-                    onSelect = { selectedIsPm ->
-                        val isPm = workingHour >= 12
-                        if (selectedIsPm != isPm) {
+                    onStep = { steps ->
+                        if (abs(steps) % 2 == 1) {
                             commitTime((workingHour + 12) % 24, workingMinute)
                         }
                     },
@@ -2059,43 +2060,91 @@ private fun AmPmWheelColumn(
     hour: Int,
     itemHeight: androidx.compose.ui.unit.Dp,
     selectedColor: Color,
-    onSelect: (Boolean) -> Unit,
+    onStep: (Int) -> Unit,
 ) {
-    val isPm = hour >= 12
+    val amPmIndex = if (hour >= 12) 1 else 0
+    val isPm = amPmIndex == 1
+    val scope = rememberCoroutineScope()
+    val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    var dragOffsetPx by remember { mutableStateOf(0f) }
+    val minOffset = if (isPm) -itemHeightPx * 0.22f else -itemHeightPx * 0.72f
+    val maxOffset = if (isPm) itemHeightPx * 0.72f else itemHeightPx * 0.22f
     val rows = if (isPm) {
-        listOf(false to "오전", true to "오후", null to "")
+        listOf(-1 to "오전", 0 to "오후", null to "")
     } else {
-        listOf(null to "", false to "오전", true to "오후")
+        listOf(null to "", 0 to "오전", 1 to "오후")
     }
-    Column(
+    val draggableState = rememberDraggableState { delta ->
+        dragOffsetPx = (dragOffsetPx + delta).coerceIn(minOffset, maxOffset)
+    }
+
+    Box(
         modifier = Modifier
-            .width(92.dp)
-            .height(itemHeight * 3),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .width(96.dp)
+            .height(itemHeight * 3)
+            .clipToBounds()
+            .draggable(
+                state = draggableState,
+                orientation = Orientation.Vertical,
+                onDragStopped = { velocity ->
+                    val minFlingVelocity = itemHeightPx * 3.5f
+                    val requestedStep = when {
+                        !isPm && (dragOffsetPx <= -itemHeightPx * 0.38f || velocity < -minFlingVelocity) -> 1
+                        isPm && (dragOffsetPx >= itemHeightPx * 0.38f || velocity > minFlingVelocity) -> -1
+                        else -> 0
+                    }
+                    val startOffset = dragOffsetPx
+                    scope.launch {
+                        animateWheelSettle(
+                            startOffsetPx = startOffset,
+                            steps = requestedStep,
+                            itemHeightPx = itemHeightPx,
+                            onStep = onStep,
+                            onOffsetChange = { dragOffsetPx = it },
+                        )
+                    }
+                },
+            ),
+        contentAlignment = Alignment.Center,
     ) {
-        rows.forEach { (value, label) ->
-            val selected = value == isPm
-            val enabled = value != null
-            Surface(
-                onClick = { if (enabled) onSelect(value == true) },
-                color = Color.Transparent,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(itemHeight),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = label,
-                        style = if (selected) {
-                            MaterialTheme.typography.displaySmall
-                        } else {
-                            MaterialTheme.typography.headlineMedium
-                        },
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                        color = selectedColor.copy(alpha = if (selected) 1f else 0.22f),
-                        textAlign = TextAlign.Center,
-                    )
+        Column(
+            modifier = Modifier.offset { IntOffset(0, dragOffsetPx.roundToInt()) },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            rows.forEach { (step, label) ->
+                val selected = step == 0
+                Surface(
+                    onClick = {
+                        if (step != null && step != 0) {
+                            scope.launch {
+                                animateWheelSettle(
+                                    startOffsetPx = 0f,
+                                    steps = step,
+                                    itemHeightPx = itemHeightPx,
+                                    onStep = onStep,
+                                    onOffsetChange = { dragOffsetPx = it },
+                                )
+                            }
+                        }
+                    },
+                    color = Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(itemHeight),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = label,
+                            fontSize = if (selected) 38.sp else 32.sp,
+                            lineHeight = if (selected) 42.sp else 36.sp,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                            color = selectedColor.copy(alpha = if (selected) 1f else 0.18f),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
                 }
             }
         }
@@ -2115,6 +2164,24 @@ private fun DraggableTimeWheelColumn(
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     var gestureSteps by remember { mutableIntStateOf(0) }
+
+    fun remainingStepsFor(nextSteps: Int): Int {
+        return if (nextSteps > 0) {
+            nextSteps.coerceAtMost(maxStepsPerGesture - gestureSteps)
+        } else {
+            nextSteps.coerceAtLeast(-maxStepsPerGesture - gestureSteps)
+        }
+    }
+
+    fun flingStepsFor(velocity: Float): Int {
+        val minFlingVelocity = itemHeightPx * 3.5f
+        if (abs(velocity) < minFlingVelocity) return 0
+        val rawSteps = ((abs(velocity) / itemHeightPx) * 0.18f)
+            .roundToInt()
+            .coerceAtLeast(1)
+        return if (velocity < 0f) rawSteps else -rawSteps
+    }
+
     val draggableState = rememberDraggableState { delta ->
         dragOffsetPx += delta
         while (dragOffsetPx <= -itemHeightPx && gestureSteps < maxStepsPerGesture) {
@@ -2143,19 +2210,25 @@ private fun DraggableTimeWheelColumn(
                 state = draggableState,
                 orientation = Orientation.Vertical,
                 onDragStarted = { gestureSteps = 0 },
-                onDragStopped = {
+                onDragStopped = { velocity ->
                     val startOffset = dragOffsetPx
-                    gestureSteps = 0
+                    val snapStep = when {
+                        startOffset <= -itemHeightPx * 0.45f -> 1
+                        startOffset >= itemHeightPx * 0.45f -> -1
+                        else -> 0
+                    }
+                    val velocitySteps = flingStepsFor(velocity)
+                    val requestedSteps = if (velocitySteps != 0) velocitySteps else snapStep
+                    val stepsToSettle = remainingStepsFor(requestedSteps)
                     scope.launch {
-                        Animatable(startOffset).animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow,
-                            ),
-                        ) {
-                            dragOffsetPx = value
-                        }
+                        animateWheelSettle(
+                            startOffsetPx = startOffset,
+                            steps = stepsToSettle,
+                            itemHeightPx = itemHeightPx,
+                            onStep = onStep,
+                            onOffsetChange = { dragOffsetPx = it },
+                        )
+                        gestureSteps = 0
                     }
                 },
             ),
@@ -2178,7 +2251,19 @@ private fun DraggableTimeWheelColumn(
                     MaterialTheme.typography.displayMedium
                 }
                 Surface(
-                    onClick = { if (offset != 0) onStep(offset) },
+                    onClick = {
+                        if (offset != 0) {
+                            scope.launch {
+                                animateWheelSettle(
+                                    startOffsetPx = 0f,
+                                    steps = offset.coerceIn(-maxStepsPerGesture, maxStepsPerGesture),
+                                    itemHeightPx = itemHeightPx,
+                                    onStep = onStep,
+                                    onOffsetChange = { dragOffsetPx = it },
+                                )
+                            }
+                        }
+                    },
                     color = Color.Transparent,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
@@ -2192,11 +2277,49 @@ private fun DraggableTimeWheelColumn(
                             fontWeight = FontWeight.Bold,
                             color = selectedColor.copy(alpha = alpha),
                             textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            softWrap = false,
                         )
                     }
                 }
             }
         }
+    }
+}
+
+private suspend fun animateWheelSettle(
+    startOffsetPx: Float,
+    steps: Int,
+    itemHeightPx: Float,
+    onStep: (Int) -> Unit,
+    onOffsetChange: (Float) -> Unit,
+) {
+    if (steps == 0) {
+        Animatable(startOffsetPx).animateTo(
+            targetValue = 0f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+        ) {
+            onOffsetChange(value)
+        }
+        return
+    }
+
+    val direction = if (steps > 0) 1 else -1
+    var currentOffset = startOffsetPx
+    repeat(abs(steps)) {
+        val targetOffset = if (direction > 0) -itemHeightPx else itemHeightPx
+        Animatable(currentOffset).animateTo(
+            targetValue = targetOffset,
+            animationSpec = tween(durationMillis = 64),
+        ) {
+            onOffsetChange(value)
+        }
+        onStep(direction)
+        onOffsetChange(0f)
+        currentOffset = 0f
     }
 }
 
@@ -2481,9 +2604,9 @@ private fun EditorActionButtons(
     }
 }
 
-private fun amPmLabel(hour: Int): String = if (hour < 12) "오전" else "오후"
+private fun amPmLabel(hour: Int): String = if (floorMod(hour, 24) < 12) "오전" else "오후"
 
-private fun hour12(hour: Int): Int = when (val value = hour % 12) {
+private fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
 }
