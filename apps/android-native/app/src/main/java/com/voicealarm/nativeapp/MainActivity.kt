@@ -748,8 +748,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                         Text(
                             text = when (screen) {
                                 AlarmScreen.List -> "Voice Alarm"
-                                AlarmScreen.Create -> "Create Alarm"
-                                is AlarmScreen.Edit -> "Edit Alarm"
+                                AlarmScreen.Create -> "알람 설정"
+                                is AlarmScreen.Edit -> "알람 편집"
                             },
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -1814,168 +1814,516 @@ private fun AlarmEditorScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            OutlinedCard {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    OutlinedTextField(
-                        value = editor.label,
-                        onValueChange = { editor.label = it },
-                        label = { Text("Label") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    StepperField(
-                        label = "Hour",
-                        valueLabel = "%02d".format(editor.hour),
-                        onDecrease = { editor.hour = (editor.hour + 23) % 24 },
-                        onIncrease = { editor.hour = (editor.hour + 1) % 24 },
-                    )
-
-                    StepperField(
-                        label = "Minute",
-                        valueLabel = "%02d".format(editor.minute),
-                        onDecrease = { editor.minute = (editor.minute + 59) % 60 },
-                        onIncrease = { editor.minute = (editor.minute + 1) % 60 },
-                    )
-
-                    StepperField(
-                        label = "Snooze",
-                        valueLabel = "${editor.snoozeMinutes} min",
-                        onDecrease = { editor.snoozeMinutes = (editor.snoozeMinutes - 1).coerceAtLeast(1) },
-                        onIncrease = { editor.snoozeMinutes = (editor.snoozeMinutes + 1).coerceAtMost(30) },
-                    )
-                }
-            }
+            AlarmEditorIntro(alarm = alarm)
         }
 
         item {
-            OptionSection(title = "Repeat") {
-                DayRows(
-                    repeatDaysMask = editor.repeatDaysMask,
-                    onToggleDay = { dayIndex ->
-                        editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
+            EditorSectionTitle("시간")
+            AlarmTimePickerCard(
+                hour = editor.hour,
+                minute = editor.minute,
+                onHourDown = { editor.hour = (editor.hour + 23) % 24 },
+                onHourUp = { editor.hour = (editor.hour + 1) % 24 },
+                onMinuteDown = { editor.minute = (editor.minute + 59) % 60 },
+                onMinuteUp = { editor.minute = (editor.minute + 1) % 60 },
+            )
+        }
+
+        item {
+            EditorSectionTitle("반복")
+            RepeatSelector(
+                repeatDaysMask = editor.repeatDaysMask,
+                onToggleDay = { dayIndex ->
+                    editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
+                },
+                onQuickSelect = { mask -> editor.repeatDaysMask = mask },
+            )
+        }
+
+        item {
+            EditorSectionTitle("재생 모드")
+            PlayModeSelector(
+                selected = editor.playMode,
+                onSelect = { editor.playMode = it },
+            )
+        }
+
+        item {
+            EditorSectionTitle("음성")
+            VoiceAudioCard(
+                localAudioUri = editor.localAudioUri,
+                audioMessage = audioMessage,
+                isRecording = isRecording,
+                onPick = { pickAudioLauncher.launch("audio/*") },
+                onRecord = {
+                    if (isRecording) {
+                        stopRecording()
+                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        startRecording()
+                    } else {
+                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onClear = {
+                    editor.clearAudio()
+                    audioMessage = "음성 오디오를 지웠어요"
+                },
+            )
+        }
+
+        item {
+            AlarmSettingsCard(
+                snoozeMinutes = editor.snoozeMinutes,
+                vibrationPattern = editor.vibrationPattern,
+                onSnoozeDown = { editor.snoozeMinutes = (editor.snoozeMinutes - 1).coerceAtLeast(1) },
+                onSnoozeUp = { editor.snoozeMinutes = (editor.snoozeMinutes + 1).coerceAtMost(30) },
+                onVibrationSelect = { editor.vibrationPattern = it },
+            )
+        }
+
+        item {
+            EditorSectionTitle("알람 이름")
+            OutlinedTextField(
+                value = editor.label,
+                onValueChange = { editor.label = it },
+                label = { Text("이름") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
+        item {
+            EditorActionButtons(
+                isEditing = alarm != null,
+                onCancel = onCancel,
+                onSave = { onSave(editor.toDraft()) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AlarmEditorIntro(alarm: AlarmEntity?) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = if (alarm == null) "알람 설정" else "알람 편집",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "울리는 순간에는 로컬에 저장된 시간과 오디오만 사용합니다.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun EditorSectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+    )
+}
+
+@Composable
+private fun AlarmTimePickerCard(
+    hour: Int,
+    minute: Int,
+    onHourDown: () -> Unit,
+    onHourUp: () -> Unit,
+    onMinuteDown: () -> Unit,
+    onMinuteUp: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Text(
+                    text = amPmLabel(hour),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TimeWheelColumn(
+                    value = "%02d".format(hour12(hour)),
+                    contentDescription = "시간",
+                    onDecrease = onHourDown,
+                    onIncrease = onHourUp,
+                )
+                Text(
+                    text = ":",
+                    style = MaterialTheme.typography.displayMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+                TimeWheelColumn(
+                    value = "%02d".format(minute),
+                    contentDescription = "분",
+                    onDecrease = onMinuteDown,
+                    onIncrease = onMinuteUp,
+                )
+            }
+            Text(
+                text = timeUntilAlarmLabel(hour, minute),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimeWheelColumn(
+    value: String,
+    contentDescription: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        IconButton(onClick = onIncrease) {
+            Icon(Icons.Outlined.Add, contentDescription = "$contentDescription 올리기")
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.displayLarge,
+            fontWeight = FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        IconButton(onClick = onDecrease) {
+            Icon(Icons.Outlined.Remove, contentDescription = "$contentDescription 내리기")
+        }
+    }
+}
+
+@Composable
+private fun RepeatSelector(
+    repeatDaysMask: Int,
+    onToggleDay: (Int) -> Unit,
+    onQuickSelect: (Int) -> Unit,
+) {
+    val days = listOf("일", "월", "화", "수", "목", "금", "토")
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            days.forEachIndexed { index, label ->
+                DayCircleChip(
+                    label = label,
+                    selected = repeatDaysMask and (1 shl index) != 0,
+                    onClick = { onToggleDay(index) },
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            QuickChip(label = "매일", onClick = { onQuickSelect(0b1111111) })
+            QuickChip(label = "평일", onClick = { onQuickSelect(0b0111110) })
+            QuickChip(label = "주말", onClick = { onQuickSelect(0b1000001) })
+            QuickChip(label = "한 번", onClick = { onQuickSelect(0) })
+        }
+        MutedText(if (repeatDaysMask == 0) "한 번만 울려요" else repeatLabel(repeatDaysMask))
+    }
+}
+
+@Composable
+private fun DayCircleChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(42.dp),
+        shape = CircleShape,
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickChip(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PlayModeSelector(
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PlayModeChip(
+            label = "알람만",
+            selected = selected == AlarmPlayModes.ALARM_ONLY,
+            onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
+            modifier = Modifier.weight(1f),
+        )
+        PlayModeChip(
+            label = "음성만",
+            selected = selected == AlarmPlayModes.VOICE_ONLY,
+            onClick = { onSelect(AlarmPlayModes.VOICE_ONLY) },
+            modifier = Modifier.weight(1f),
+        )
+        PlayModeChip(
+            label = "알람+음성",
+            selected = selected == AlarmPlayModes.ALARM_VOICE,
+            onClick = { onSelect(AlarmPlayModes.ALARM_VOICE) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun PlayModeChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
+}
+
+@Composable
+private fun VoiceAudioCard(
+    localAudioUri: String?,
+    audioMessage: String?,
+    isRecording: Boolean,
+    onPick: () -> Unit,
+    onRecord: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = localAudioUri?.let(::audioFileLabel) ?: "선택된 음성 오디오가 없어요",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onPick,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("파일 선택")
+                }
+                Button(
+                    onClick = onRecord,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (isRecording) "녹음 종료" else "녹음")
+                }
+            }
+            if (localAudioUri != null) {
+                OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
+                    Text("음성 지우기")
+                }
+            }
+            Text(
+                text = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 사용할 수 있어요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (audioMessage != null) {
+                Text(
+                    text = audioMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isRecording) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
         }
+    }
+}
 
-        item {
-            OptionSection(title = "Vibration") {
-                OptionChips(
-                    options = listOf(
-                        VibrationPatterns.DEFAULT to "Default",
-                        VibrationPatterns.STRONG to "Strong",
-                        VibrationPatterns.NONE to "None",
-                    ),
-                    selected = editor.vibrationPattern,
-                    onSelect = { editor.vibrationPattern = it },
-                )
-            }
-        }
-
-        item {
-            OptionSection(title = "Voice audio") {
-                Text(
-                    text = editor.localAudioUri?.let(::audioFileLabel) ?: "No voice audio",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = { pickAudioLauncher.launch("audio/*") },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("Pick")
-                    }
-                    Button(
-                        onClick = {
-                            if (isRecording) {
-                                stopRecording()
-                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                startRecording()
-                            } else {
-                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (isRecording) "Stop" else "Record")
-                    }
-                    if (editor.localAudioUri != null) {
-                        OutlinedButton(onClick = {
-                            editor.clearAudio()
-                            audioMessage = "Voice audio cleared"
-                        }) {
-                            Text("Clear")
-                        }
-                    }
-                }
-                Text(
-                    text = "Max ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}s",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (audioMessage != null) {
-                    Text(
-                        text = requireNotNull(audioMessage),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isRecording) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
-        }
-
-        item {
-            OptionSection(title = "Play mode") {
-                OptionChips(
-                    options = listOf(
-                        AlarmPlayModes.ALARM_ONLY to "Alarm",
-                        AlarmPlayModes.VOICE_ONLY to "Voice",
-                        AlarmPlayModes.ALARM_VOICE to "Alarm + Voice",
-                    ),
-                    selected = editor.playMode,
-                    onSelect = { editor.playMode = it },
-                )
-            }
-        }
-
-        item {
+@Composable
+private fun AlarmSettingsCard(
+    snoozeMinutes: Int,
+    vibrationPattern: String,
+    onSnoozeDown: () -> Unit,
+    onSnoozeUp: () -> Unit,
+    onVibrationSelect: (String) -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("Cancel")
+                Column {
+                    Text("다시 울림", fontWeight = FontWeight.SemiBold)
+                    MutedText("${snoozeMinutes}분")
                 }
-                Button(
-                    onClick = { onSave(editor.toDraft()) },
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Outlined.Save, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Save")
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onSnoozeDown) {
+                        Icon(Icons.Outlined.Remove, contentDescription = "다시 울림 줄이기")
+                    }
+                    IconButton(onClick = onSnoozeUp) {
+                        Icon(Icons.Outlined.Add, contentDescription = "다시 울림 늘리기")
+                    }
                 }
             }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+            Text("진동", fontWeight = FontWeight.SemiBold)
+            OptionChips(
+                options = listOf(
+                    VibrationPatterns.DEFAULT to "기본",
+                    VibrationPatterns.STRONG to "강하게",
+                    VibrationPatterns.NONE to "없음",
+                ),
+                selected = vibrationPattern,
+                onSelect = onVibrationSelect,
+            )
         }
+    }
+}
+
+@Composable
+private fun EditorActionButtons(
+    isEditing: Boolean,
+    onCancel: () -> Unit,
+    onSave: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.weight(1f),
+        ) {
+            Text("취소")
+        }
+        Button(
+            onClick = onSave,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Icon(Icons.Outlined.Save, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (isEditing) "변경사항 저장" else "알람 설정하기")
+        }
+    }
+}
+
+private fun amPmLabel(hour: Int): String = if (hour < 12) "오전" else "오후"
+
+private fun hour12(hour: Int): Int = when (val value = hour % 12) {
+    0 -> 12
+    else -> value
+}
+
+private fun timeUntilAlarmLabel(hour: Int, minute: Int): String {
+    val now = java.time.LocalDateTime.now()
+    var fireAt = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
+    if (!fireAt.isAfter(now)) fireAt = fireAt.plusDays(1)
+    val duration = java.time.Duration.between(now, fireAt)
+    val hours = duration.toHours()
+    val minutes = duration.minusHours(hours).toMinutes()
+    return when {
+        hours == 0L -> "${minutes.coerceAtLeast(1)}분 후에 울려요"
+        minutes == 0L -> "${hours}시간 후에 울려요"
+        else -> "${hours}시간 ${minutes}분 후에 울려요"
     }
 }
 
