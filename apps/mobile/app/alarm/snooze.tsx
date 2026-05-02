@@ -34,6 +34,7 @@ export default function SnoozeScreen() {
             style={styles.row}
             onPress={() => handleSelect(value)}
             accessibilityRole="radio"
+            accessibilityLabel={label}
             accessibilityState={{ selected }}
           >
             <Text style={[styles.label, selected && styles.labelSelected]}>{label}</Text>
