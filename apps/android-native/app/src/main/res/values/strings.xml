@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Voice Alarm Native</string>
+    <string name="ringing_notification_title">Voice Alarm</string>
+    <string name="ringing_notification_text">Alarm is ringing</string>
+</resources>
