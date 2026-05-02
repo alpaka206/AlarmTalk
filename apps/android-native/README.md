@@ -1,6 +1,6 @@
 # Voice Alarm Android Native PoC
 
-Phase 1-4 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, and user-triggered backend sync only:
+Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, social sharing, and post-alarm growth sync:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -13,6 +13,10 @@ Phase 1-4 Android native alarm PoC. This project is intentionally scoped to loca
 - email/password auth against the deployed VoiceAlarm API
 - Google ID-token auth support
 - manual alarm metadata sync to the deployed VoiceAlarm API
+- friend list, pending friend requests, and friend request creation
+- family group, invite code creation/accept/revoke, and shared voice profile lookup
+- post-alarm character XP event queue with manual sync
+- character, streak, subscription, voucher, and unified code status surfaces
 - `AlarmManager.setExactAndAllowWhileIdle`
 - full-screen ringing activity through an alarm foreground service notification
 - bundled local alarm tone generated into the APK at build time
@@ -44,7 +48,7 @@ Current deployed auth support:
 - Email-code login: intentionally skipped for the MVP because it needs backend code issuance, email delivery, expiration, throttling, and token exchange.
 - Apple: iOS should add Sign in with Apple later. The current backend accepts Apple ID-token payloads on protected routes, but production-grade Apple JWKS signature verification still needs backend hardening before treating it as final.
 
-No ElevenLabs, Perso, TTS generation, voice clone, diarization, or upload endpoints are called by this Android PoC.
+No ElevenLabs, Perso, TTS generation, voice clone, diarization, checkout, or upload endpoints are called by this Android PoC.
 
 ### Google Sign-In Config
 
@@ -221,6 +225,49 @@ Expected:
 - Local voice files are not uploaded automatically. If an alarm uses a device-local file, sync writes alarm metadata only and keeps the audio on-device.
 
 To verify the ring path is still offline, sync once, enable airplane mode, then let a local alarm fire. Ringing should still use Room state and local audio only.
+
+### Social / Sharing
+
+Social APIs are user-triggered only:
+
+1. Sign in.
+2. Tap Refresh in People.
+3. Send a friend request by email.
+4. Accept any pending friend request.
+5. Create a family invite as a family owner.
+6. Join a family invite with a six digit code.
+7. Confirm shared family voices are listed.
+
+Expected:
+
+- Friend/family errors from the backend are shown as app messages.
+- Family invite actions use `/api/family/invites`.
+- Shared voices use `GET /api/voice/family`.
+- Shared-voice TTS generation is not called.
+
+### Character / Billing
+
+Dismiss and snooze enqueue local character events in Room:
+
+- Dismiss queues `alarm_completed`.
+- Snooze queues `alarm_snoozed`.
+- Duplicate event nonces are ignored locally.
+- Sync XP sends queued events to `POST /api/characters/xp`.
+
+Verification flow:
+
+1. Let an alarm ring and tap Dismiss.
+2. Open the app and confirm Growth shows one queued event.
+3. Sign in and tap Sync XP.
+4. Tap Refresh in Growth.
+
+Expected:
+
+- Character/streak/XP refreshes from `/api/characters/me`.
+- Subscription loads from `/api/billing/subscription`.
+- Issued vouchers load from `/api/billing/vouchers`.
+- Coupon or invite code entry uses `/api/code/register`.
+- Checkout and paid provider APIs are not called.
 
 ### Dismiss / Snooze
 

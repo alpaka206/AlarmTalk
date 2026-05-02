@@ -91,12 +91,12 @@ private fun RingingRoute(
 ) {
     MaterialTheme(
         colorScheme = androidx.compose.material3.darkColorScheme(
-            primary = Color(0xFF60A5FA),
-            secondary = Color(0xFF5EEAD4),
-            background = Color(0xFF0F172A),
-            surface = Color(0xFF111827),
-            onPrimary = Color(0xFF071326),
-            onSurface = Color.White,
+            primary = Color(0xFFF0C25C),
+            secondary = Color(0xFF7B8FB5),
+            background = Color(0xFF1F1B14),
+            surface = Color(0xFF2A251D),
+            onPrimary = Color(0xFF1F1B14),
+            onSurface = Color(0xFFF0EBE0),
         ),
     ) {
         Column(
@@ -122,7 +122,7 @@ private fun RingingRoute(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Alarm ringing",
-                color = Color(0xFFCBD5E1),
+                color = Color(0xFFA89F8F),
                 style = MaterialTheme.typography.titleMedium,
             )
             Spacer(Modifier.height(48.dp))

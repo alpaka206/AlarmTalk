@@ -8,12 +8,13 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AlarmEntity::class],
-    version = 3,
+    entities = [AlarmEntity::class, CharacterEventEntity::class],
+    version = 4,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
+    abstract fun characterEventDao(): CharacterEventDao
 
     companion object {
         @Volatile
@@ -25,7 +26,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     context.applicationContext,
                     AlarmDatabase::class.java,
                     "voice-alarm.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -46,6 +47,27 @@ abstract class AlarmDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN remoteAlarmId TEXT")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN lastSyncedAtMillis INTEGER")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN syncState TEXT NOT NULL DEFAULT '${AlarmSyncStates.LOCAL_ONLY}'")
+            }
+        }
+
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS character_events (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        event TEXT NOT NULL,
+                        clientNonce TEXT NOT NULL,
+                        localDate TEXT NOT NULL,
+                        sourceAlarmId TEXT,
+                        state TEXT NOT NULL,
+                        createdAtMillis INTEGER NOT NULL,
+                        syncedAtMillis INTEGER,
+                        lastError TEXT
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_character_events_clientNonce ON character_events(clientNonce)")
             }
         }
     }

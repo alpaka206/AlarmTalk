@@ -101,14 +101,25 @@ import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
+import com.voicealarm.nativeapp.data.CharacterEventEntity
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
+import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.CharacterResponse
+import com.voicealarm.nativeapp.network.CodeRegisterRequest
+import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyInvite
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.Friend
+import com.voicealarm.nativeapp.network.FriendRequestBody
 import com.voicealarm.nativeapp.network.LoginRequest
+import com.voicealarm.nativeapp.network.PendingFriendRequest
 import com.voicealarm.nativeapp.network.RegisterRequest
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.VoucherItem
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
@@ -142,6 +153,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val characterEvents: StateFlow<List<CharacterEventEntity>> = repository.observeCharacterEvents()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     var authSession by mutableStateOf<AuthSession?>(authSessionStore.read())
         private set
 
@@ -155,6 +169,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var voiceProfileBusy by mutableStateOf(false)
+        private set
+
+    var socialBusy by mutableStateOf(false)
+        private set
+
+    var friends by mutableStateOf<List<Friend>>(emptyList())
+        private set
+
+    var pendingFriends by mutableStateOf<List<PendingFriendRequest>>(emptyList())
+        private set
+
+    var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(null)
+        private set
+
+    var familyInvites by mutableStateOf<List<FamilyInvite>>(emptyList())
+        private set
+
+    var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
+        private set
+
+    var characterBusy by mutableStateOf(false)
+        private set
+
+    var characterResponse by mutableStateOf<CharacterResponse?>(null)
+        private set
+
+    var billingBusy by mutableStateOf(false)
+        private set
+
+    var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(null)
+        private set
+
+    var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
         private set
 
     var message by mutableStateOf<String?>(null)
@@ -329,6 +376,187 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshSocial() {
+        val authorization = bearerOrMessage("Sign in before loading social data") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                val friendList = api.listFriends(authorization).friends
+                val pendingList = api.listPendingFriends(authorization).pending
+                val group = api.getFamilyGroup(authorization)
+                val invites = api.listFamilyInvites(authorization).invites
+                val sharedVoices = api.listFamilyVoiceProfiles(authorization).profiles
+                SocialSnapshot(
+                    friends = friendList,
+                    pendingFriends = pendingList,
+                    familyGroup = group,
+                    familyInvites = invites,
+                    familyVoices = sharedVoices,
+                )
+            }.onSuccess { snapshot ->
+                friends = snapshot.friends
+                pendingFriends = snapshot.pendingFriends
+                familyGroup = snapshot.familyGroup
+                familyInvites = snapshot.familyInvites
+                familyVoices = snapshot.familyVoices
+                message = "Social data loaded"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to refresh social data", error)
+                message = error.message ?: "Failed to load social data"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun sendFriendRequest(email: String) {
+        val authorization = bearerOrMessage("Sign in before sending friend requests") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                api.sendFriendRequest(authorization, FriendRequestBody(email.trim()))
+            }.onSuccess {
+                message = "Friend request sent"
+                refreshSocial()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to send friend request", error)
+                message = error.message ?: "Friend request failed"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun acceptFriendRequest(id: String) {
+        val authorization = bearerOrMessage("Sign in before accepting requests") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                api.acceptFriendRequest(authorization, id)
+            }.onSuccess {
+                message = "Friend request accepted"
+                refreshSocial()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to accept friend request id=$id", error)
+                message = error.message ?: "Accept failed"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun createFamilyInvite() {
+        val authorization = bearerOrMessage("Sign in before creating invites") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                api.createFamilyInvite(authorization, emptyMap()).invite
+            }.onSuccess { invite ->
+                familyInvites = listOf(invite) + familyInvites
+                message = "Invite code ${invite.code} created"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to create family invite", error)
+                message = error.message ?: "Invite creation failed"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun acceptFamilyInvite(code: String) {
+        val authorization = bearerOrMessage("Sign in before accepting invites") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                api.acceptFamilyInvite(authorization, code.trim(), emptyMap())
+            }.onSuccess {
+                message = "Invite accepted"
+                refreshSocial()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to accept family invite", error)
+                message = error.message ?: "Invite accept failed"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun revokeFamilyInvite(code: String) {
+        val authorization = bearerOrMessage("Sign in before revoking invites") ?: return
+        viewModelScope.launch {
+            socialBusy = true
+            runCatching {
+                api.revokeFamilyInvite(authorization, code, emptyMap())
+            }.onSuccess {
+                message = "Invite revoked"
+                refreshSocial()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to revoke family invite code=$code", error)
+                message = error.message ?: "Invite revoke failed"
+            }
+            socialBusy = false
+        }
+    }
+
+    fun refreshCharacterAndBilling() {
+        val authorization = bearerOrMessage("Sign in before loading character") ?: return
+        viewModelScope.launch {
+            characterBusy = true
+            billingBusy = true
+            runCatching {
+                CharacterBillingSnapshot(
+                    character = api.getCharacter(authorization),
+                    subscription = api.getSubscription(authorization),
+                    vouchers = api.listVouchers(authorization).vouchers,
+                )
+            }.onSuccess { snapshot ->
+                characterResponse = snapshot.character
+                subscriptionResponse = snapshot.subscription
+                vouchers = snapshot.vouchers
+                message = "Character and plan loaded"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load character or billing", error)
+                message = error.message ?: "Failed to load character"
+            }
+            characterBusy = false
+            billingBusy = false
+        }
+    }
+
+    fun syncCharacterEvents() {
+        val session = authSession
+        if (session == null) {
+            message = "Sign in before syncing character events"
+            return
+        }
+        viewModelScope.launch {
+            characterBusy = true
+            runCatching {
+                repository.syncCharacterEvents(api, session.token)
+            }.onSuccess { result ->
+                message = "XP sync: ${result.synced} synced, ${result.failed} failed"
+                refreshCharacterAndBilling()
+            }.onFailure { error ->
+                Log.e(TAG, "Character event sync failed", error)
+                message = error.message ?: "XP sync failed"
+            }
+            characterBusy = false
+        }
+    }
+
+    fun registerCode(code: String) {
+        val authorization = bearerOrMessage("Sign in before registering codes") ?: return
+        viewModelScope.launch {
+            billingBusy = true
+            runCatching {
+                api.registerCode(authorization, CodeRegisterRequest(code.trim()))
+            }.onSuccess { response ->
+                message = "Code registered${response.type?.let { ": $it" } ?: ""}"
+                refreshSocial()
+                refreshCharacterAndBilling()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to register code", error)
+                message = error.message ?: "Code registration failed"
+            }
+            billingBusy = false
+        }
+    }
+
     fun showGoogleSetupRequired() {
         message = "Set voiceAlarmGoogleWebClientId to enable Google sign-in."
     }
@@ -359,7 +587,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    private fun bearerOrMessage(fallbackMessage: String): String? {
+        val session = authSession
+        if (session == null) {
+            message = fallbackMessage
+            return null
+        }
+        return VoiceAlarmApiClient.bearer(session.token)
+    }
 }
+
+private data class SocialSnapshot(
+    val friends: List<Friend>,
+    val pendingFriends: List<PendingFriendRequest>,
+    val familyGroup: FamilyGroupCurrentResponse,
+    val familyInvites: List<FamilyInvite>,
+    val familyVoices: List<FamilyVoiceProfile>,
+)
+
+private data class CharacterBillingSnapshot(
+    val character: CharacterResponse,
+    val subscription: BillingSubscriptionResponse,
+    val vouchers: List<VoucherItem>,
+)
 
 private sealed interface AlarmScreen {
     data object List : AlarmScreen
@@ -378,6 +629,18 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
     val voiceProfileBusy = viewModel.voiceProfileBusy
+    val socialBusy = viewModel.socialBusy
+    val friends = viewModel.friends
+    val pendingFriends = viewModel.pendingFriends
+    val familyGroup = viewModel.familyGroup
+    val familyInvites = viewModel.familyInvites
+    val familyVoices = viewModel.familyVoices
+    val characterEvents by viewModel.characterEvents.collectAsStateWithLifecycle()
+    val characterBusy = viewModel.characterBusy
+    val characterResponse = viewModel.characterResponse
+    val billingBusy = viewModel.billingBusy
+    val subscriptionResponse = viewModel.subscriptionResponse
+    val vouchers = viewModel.vouchers
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
@@ -468,6 +731,18 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 syncBusy = syncBusy,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
+                socialBusy = socialBusy,
+                friends = friends,
+                pendingFriends = pendingFriends,
+                familyGroup = familyGroup,
+                familyInvites = familyInvites,
+                familyVoices = familyVoices,
+                characterEvents = characterEvents,
+                characterBusy = characterBusy,
+                characterResponse = characterResponse,
+                billingBusy = billingBusy,
+                subscriptionResponse = subscriptionResponse,
+                vouchers = vouchers,
                 message = message,
                 onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
@@ -476,6 +751,15 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSyncNow = viewModel::syncNow,
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
                 onLogout = viewModel::logout,
+                onRefreshSocial = viewModel::refreshSocial,
+                onSendFriendRequest = viewModel::sendFriendRequest,
+                onAcceptFriendRequest = viewModel::acceptFriendRequest,
+                onCreateFamilyInvite = viewModel::createFamilyInvite,
+                onAcceptFamilyInvite = viewModel::acceptFamilyInvite,
+                onRevokeFamilyInvite = viewModel::revokeFamilyInvite,
+                onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
+                onSyncCharacterEvents = viewModel::syncCharacterEvents,
+                onRegisterCode = viewModel::registerCode,
                 onCreateAlarm = { screen = AlarmScreen.Create },
                 onQuickTest = { viewModel.createTestAlarm(1) },
                 onToggleEnabled = viewModel::setAlarmEnabled,
@@ -521,6 +805,18 @@ private fun AlarmListScreen(
     syncBusy: Boolean,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
+    socialBusy: Boolean,
+    friends: List<Friend>,
+    pendingFriends: List<PendingFriendRequest>,
+    familyGroup: FamilyGroupCurrentResponse?,
+    familyInvites: List<FamilyInvite>,
+    familyVoices: List<FamilyVoiceProfile>,
+    characterEvents: List<CharacterEventEntity>,
+    characterBusy: Boolean,
+    characterResponse: CharacterResponse?,
+    billingBusy: Boolean,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    vouchers: List<VoucherItem>,
     message: String?,
     onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -529,6 +825,15 @@ private fun AlarmListScreen(
     onSyncNow: () -> Unit,
     onLoadVoiceProfiles: () -> Unit,
     onLogout: () -> Unit,
+    onRefreshSocial: () -> Unit,
+    onSendFriendRequest: (String) -> Unit,
+    onAcceptFriendRequest: (String) -> Unit,
+    onCreateFamilyInvite: () -> Unit,
+    onAcceptFamilyInvite: (String) -> Unit,
+    onRevokeFamilyInvite: (String) -> Unit,
+    onRefreshCharacterBilling: () -> Unit,
+    onSyncCharacterEvents: () -> Unit,
+    onRegisterCode: (String) -> Unit,
     onCreateAlarm: () -> Unit,
     onQuickTest: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
@@ -559,6 +864,39 @@ private fun AlarmListScreen(
                 onLoadVoiceProfiles = onLoadVoiceProfiles,
                 onLogout = onLogout,
             )
+        }
+
+        if (authSession != null) {
+            item {
+                SocialPanel(
+                    socialBusy = socialBusy,
+                    friends = friends,
+                    pendingFriends = pendingFriends,
+                    familyGroup = familyGroup,
+                    familyInvites = familyInvites,
+                    familyVoices = familyVoices,
+                    onRefreshSocial = onRefreshSocial,
+                    onSendFriendRequest = onSendFriendRequest,
+                    onAcceptFriendRequest = onAcceptFriendRequest,
+                    onCreateFamilyInvite = onCreateFamilyInvite,
+                    onAcceptFamilyInvite = onAcceptFamilyInvite,
+                    onRevokeFamilyInvite = onRevokeFamilyInvite,
+                )
+            }
+
+            item {
+                CharacterBillingPanel(
+                    characterEvents = characterEvents,
+                    characterBusy = characterBusy,
+                    characterResponse = characterResponse,
+                    billingBusy = billingBusy,
+                    subscriptionResponse = subscriptionResponse,
+                    vouchers = vouchers,
+                    onRefresh = onRefreshCharacterBilling,
+                    onSyncEvents = onSyncCharacterEvents,
+                    onRegisterCode = onRegisterCode,
+                )
+            }
         }
 
         item {
@@ -1232,6 +1570,301 @@ private fun AccountPanel(
 }
 
 @Composable
+private fun SocialPanel(
+    socialBusy: Boolean,
+    friends: List<Friend>,
+    pendingFriends: List<PendingFriendRequest>,
+    familyGroup: FamilyGroupCurrentResponse?,
+    familyInvites: List<FamilyInvite>,
+    familyVoices: List<FamilyVoiceProfile>,
+    onRefreshSocial: () -> Unit,
+    onSendFriendRequest: (String) -> Unit,
+    onAcceptFriendRequest: (String) -> Unit,
+    onCreateFamilyInvite: () -> Unit,
+    onAcceptFamilyInvite: (String) -> Unit,
+    onRevokeFamilyInvite: (String) -> Unit,
+) {
+    var friendEmail by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf("") }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PanelHeader(
+                title = "People",
+                actionLabel = if (socialBusy) "Loading" else "Refresh",
+                enabled = !socialBusy,
+                onAction = onRefreshSocial,
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = friendEmail,
+                    onValueChange = { friendEmail = it },
+                    label = { Text("Friend email") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = { onSendFriendRequest(friendEmail) },
+                    enabled = friendEmail.isNotBlank() && !socialBusy,
+                ) {
+                    Text("Send")
+                }
+            }
+
+            if (pendingFriends.isNotEmpty()) {
+                Text("Pending requests", fontWeight = FontWeight.SemiBold)
+                pendingFriends.take(3).forEach { request ->
+                    CompactActionRow(
+                        title = request.requesterName ?: request.requesterEmail ?: "Pending request",
+                        subtitle = request.requesterEmail ?: request.createdAt.orEmpty(),
+                        actionLabel = "Accept",
+                        onAction = { onAcceptFriendRequest(request.id) },
+                    )
+                }
+            }
+
+            Text("Friends ${friends.size}", fontWeight = FontWeight.SemiBold)
+            if (friends.isEmpty()) {
+                MutedText("No accepted friends loaded")
+            } else {
+                friends.take(4).forEach { friend ->
+                    MutedText(friend.friendName ?: friend.friendEmail ?: friend.id)
+                }
+            }
+
+            Text("Family", fontWeight = FontWeight.SemiBold)
+            val group = familyGroup
+            if (group?.group == null) {
+                MutedText("No family group loaded")
+            } else {
+                MutedText("${group.role ?: "member"} - ${group.members.size}/${group.group.maxMembers} members")
+                group.members.take(4).forEach { member ->
+                    MutedText("${member.name ?: member.email ?: member.userId} (${member.role})")
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = inviteCode,
+                    onValueChange = { inviteCode = it },
+                    label = { Text("Invite code") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = { onAcceptFamilyInvite(inviteCode) },
+                    enabled = inviteCode.isNotBlank() && !socialBusy,
+                ) {
+                    Text("Join")
+                }
+            }
+
+            OutlinedButton(
+                onClick = onCreateFamilyInvite,
+                enabled = !socialBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Create family invite")
+            }
+
+            familyInvites.take(3).forEach { invite ->
+                CompactActionRow(
+                    title = invite.code,
+                    subtitle = "${invite.status} - expires ${invite.expiresAt ?: "unknown"}",
+                    actionLabel = "Revoke",
+                    enabled = invite.status == "pending" && !socialBusy,
+                    onAction = { onRevokeFamilyInvite(invite.code) },
+                )
+            }
+
+            Text("Shared voices ${familyVoices.size}", fontWeight = FontWeight.SemiBold)
+            if (familyVoices.isEmpty()) {
+                MutedText("No shared voices loaded")
+            } else {
+                familyVoices.take(4).forEach { voice ->
+                    MutedText("${voice.name} - ${voice.ownerName ?: "family"} (${voice.status ?: "ready"})")
+                }
+            }
+
+            MutedText("Shared-voice TTS generation is intentionally not called here.")
+        }
+    }
+}
+
+@Composable
+private fun CharacterBillingPanel(
+    characterEvents: List<CharacterEventEntity>,
+    characterBusy: Boolean,
+    characterResponse: CharacterResponse?,
+    billingBusy: Boolean,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    vouchers: List<VoucherItem>,
+    onRefresh: () -> Unit,
+    onSyncEvents: () -> Unit,
+    onRegisterCode: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    val pendingEvents = characterEvents.count { it.state != "synced" }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PanelHeader(
+                title = "Growth",
+                actionLabel = if (characterBusy || billingBusy) "Loading" else "Refresh",
+                enabled = !characterBusy && !billingBusy,
+                onAction = onRefresh,
+            )
+
+            if (characterResponse == null) {
+                MutedText("Character data not loaded")
+            } else {
+                val character = characterResponse.character
+                Text(
+                    text = "${stageEmoji(character.stage)} ${character.name}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                MutedText(
+                    "Level ${character.level} - ${stageLabel(character.stage)} - XP ${character.xp} - affection ${character.affection}",
+                )
+                MutedText(
+                    "Streak ${characterResponse.streak.current} days - longest ${characterResponse.streak.longest}",
+                )
+                MutedText(
+                    "Progress ${characterResponse.progress.xpIntoLevel}/${characterResponse.progress.levelSpan}",
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = onSyncEvents,
+                    enabled = pendingEvents > 0 && !characterBusy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Sync XP")
+                }
+                OutlinedButton(
+                    onClick = onRefresh,
+                    enabled = !characterBusy && !billingBusy,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("$pendingEvents queued")
+                }
+            }
+
+            val plan = subscriptionResponse?.plan
+            Text("Plan", fontWeight = FontWeight.SemiBold)
+            if (plan == null) {
+                MutedText("Free plan or no active subscription")
+            } else {
+                MutedText("${plan.name} - ${plan.planType} - ${plan.maxMembers} members")
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it },
+                    label = { Text("Coupon or invite code") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = { onRegisterCode(code) },
+                    enabled = code.isNotBlank() && !billingBusy,
+                ) {
+                    Text("Apply")
+                }
+            }
+
+            Text("Coupons ${vouchers.size}", fontWeight = FontWeight.SemiBold)
+            if (vouchers.isEmpty()) {
+                MutedText("No issued coupons loaded")
+            } else {
+                vouchers.take(3).forEach { voucher ->
+                    MutedText("${voucher.code} - ${voucher.planName} - ${voucher.status}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PanelHeader(
+    title: String,
+    actionLabel: String,
+    enabled: Boolean,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        TextButton(onClick = onAction, enabled = enabled) {
+            Text(actionLabel)
+        }
+    }
+}
+
+@Composable
+private fun CompactActionRow(
+    title: String,
+    subtitle: String,
+    actionLabel: String,
+    enabled: Boolean = true,
+    onAction: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            MutedText(subtitle)
+        }
+        TextButton(onClick = onAction, enabled = enabled) {
+            Text(actionLabel)
+        }
+    }
+}
+
+@Composable
+private fun MutedText(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+@Composable
 private fun PermissionPanel(
     permissions: PermissionSnapshot,
     onRequestNotifications: () -> Unit,
@@ -1496,6 +2129,20 @@ private fun playModeLabel(mode: String): String = when (mode) {
     AlarmPlayModes.VOICE_ONLY -> "voice only"
     AlarmPlayModes.ALARM_VOICE -> "alarm + voice"
     else -> "alarm only"
+}
+
+private fun stageEmoji(stage: String): String = when (stage) {
+    "sprout" -> "Sprout"
+    "tree" -> "Tree"
+    "bloom" -> "Bloom"
+    else -> "Seed"
+}
+
+private fun stageLabel(stage: String): String = when (stage) {
+    "sprout" -> "sprout"
+    "tree" -> "tree"
+    "bloom" -> "flower"
+    else -> "seed"
 }
 
 private fun syncStateLabel(state: String): String = when (state) {

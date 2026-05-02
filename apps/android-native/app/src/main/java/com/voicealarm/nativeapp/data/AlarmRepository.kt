@@ -6,6 +6,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.RemoteAlarmMapper
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
+import com.voicealarm.nativeapp.network.CharacterXpRequest
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
@@ -16,11 +17,20 @@ data class AlarmSyncResult(
     val failed: Int,
 )
 
+data class CharacterEventSyncResult(
+    val total: Int,
+    val synced: Int,
+    val failed: Int,
+)
+
 class AlarmRepository(
     private val alarmDao: AlarmDao,
+    private val characterEventDao: CharacterEventDao,
     private val alarmScheduler: AlarmScheduler,
 ) {
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
+
+    fun observeCharacterEvents(): Flow<List<CharacterEventEntity>> = characterEventDao.observeEvents()
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -218,6 +228,11 @@ class AlarmRepository(
                 updatedAtMillis = now,
             )
         }
+        queueCharacterEvent(
+            event = CharacterEventTypes.ALARM_COMPLETED,
+            sourceAlarmId = alarmId,
+            nowMillis = now,
+        )
         Log.i(TAG, "Alarm dismissed id=$alarmId")
     }
 
@@ -237,6 +252,11 @@ class AlarmRepository(
         )
         alarmDao.upsert(next)
         alarmScheduler.schedule(next)
+        queueCharacterEvent(
+            event = CharacterEventTypes.ALARM_SNOOZED,
+            sourceAlarmId = alarmId,
+            nowMillis = now,
+        )
         Log.i(TAG, "Alarm snoozed id=$alarmId minutes=${current.snoozeMinutes} nextFireAt=${next.fireAtMillis}")
         return next
     }
@@ -339,6 +359,47 @@ class AlarmRepository(
         )
     }
 
+    suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult {
+        val authorization = VoiceAlarmApiClient.bearer(token)
+        val pending = characterEventDao.getEventsByState(
+            listOf(CharacterEventStates.PENDING, CharacterEventStates.FAILED),
+        )
+        var synced = 0
+        var failed = 0
+
+        pending.forEach { event ->
+            runCatching {
+                api.grantCharacterXp(
+                    authorization = authorization,
+                    request = CharacterXpRequest(
+                        event = event.event,
+                        clientNonce = event.clientNonce,
+                        localDate = event.localDate,
+                    ),
+                )
+                characterEventDao.setSyncState(
+                    id = event.id,
+                    state = CharacterEventStates.SYNCED,
+                    syncedAtMillis = System.currentTimeMillis(),
+                    lastError = null,
+                )
+                synced += 1
+            }.onFailure { error ->
+                failed += 1
+                Log.e(TAG, "Failed to sync character event id=${event.id} event=${event.event}", error)
+                characterEventDao.setSyncState(
+                    id = event.id,
+                    state = CharacterEventStates.FAILED,
+                    syncedAtMillis = null,
+                    lastError = error.message,
+                )
+            }
+        }
+
+        Log.i(TAG, "Character event sync complete total=${pending.size} synced=$synced failed=$failed")
+        return CharacterEventSyncResult(total = pending.size, synced = synced, failed = failed)
+    }
+
     private fun validateDraft(draft: AlarmDraft) {
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
@@ -350,4 +411,34 @@ class AlarmRepository(
 
     private fun AlarmEntity.nextLocalSyncState(): String =
         if (remoteAlarmId == null) AlarmSyncStates.LOCAL_ONLY else AlarmSyncStates.DIRTY
+
+    private suspend fun queueCharacterEvent(
+        event: String,
+        sourceAlarmId: String?,
+        nowMillis: Long = System.currentTimeMillis(),
+    ) {
+        val localDate = java.time.Instant.ofEpochMilli(nowMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalDate()
+            .toString()
+        val nonce = listOfNotNull(event, sourceAlarmId, localDate).joinToString(":")
+        val inserted = characterEventDao.insertIgnore(
+            CharacterEventEntity(
+                id = UUID.randomUUID().toString(),
+                event = event,
+                clientNonce = nonce,
+                localDate = localDate,
+                sourceAlarmId = sourceAlarmId,
+                state = CharacterEventStates.PENDING,
+                createdAtMillis = nowMillis,
+                syncedAtMillis = null,
+                lastError = null,
+            ),
+        )
+        if (inserted == -1L) {
+            Log.i(TAG, "Character event already queued nonce=$nonce")
+        } else {
+            Log.i(TAG, "Queued character event event=$event nonce=$nonce")
+        }
+    }
 }

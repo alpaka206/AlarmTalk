@@ -126,7 +126,7 @@ class RingingService : Service() {
 
         return NotificationCompat.Builder(this, NotificationChannels.RINGING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_alarm_24)
-            .setColor(0xFF2563EB.toInt())
+            .setColor(0xFFE8B341.toInt())
             .setContentTitle(getString(R.string.ringing_notification_title))
             .setContentText(getString(R.string.ringing_notification_text))
             .setCategory(NotificationCompat.CATEGORY_ALARM)
