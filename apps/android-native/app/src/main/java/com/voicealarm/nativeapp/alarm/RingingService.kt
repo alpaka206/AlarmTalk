@@ -25,6 +25,7 @@ import com.voicealarm.nativeapp.alarm.AlarmContract.ACTION_START_RINGING
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,7 +97,13 @@ class RingingService : Service() {
         }
 
         startAlarmSound()
-        startVibration()
+        serviceScope.launch {
+            val pattern = AlarmAppContainer.repository(applicationContext)
+                .getAlarm(alarmId)
+                ?.vibrationPattern
+                ?: VibrationPatterns.DEFAULT
+            startVibration(pattern)
+        }
         openRingingActivity(alarmId)
         Log.i(TAG, "Ringing started id=$alarmId")
     }
@@ -175,8 +182,16 @@ class RingingService : Service() {
         }
     }
 
-    private fun startVibration() {
-        val pattern = longArrayOf(0L, 700L, 350L, 900L)
+    private fun startVibration(patternName: String) {
+        if (patternName == VibrationPatterns.NONE) {
+            Log.i(TAG, "Vibration disabled for ringing alarm")
+            return
+        }
+
+        val pattern = when (patternName) {
+            VibrationPatterns.STRONG -> longArrayOf(0L, 1_000L, 250L, 1_000L, 250L)
+            else -> longArrayOf(0L, 700L, 350L, 900L)
+        }
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

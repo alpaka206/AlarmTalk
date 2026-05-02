@@ -12,15 +12,29 @@ class AlarmRepository(
 ) {
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
 
+    suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
+
     suspend fun createTestAlarm(delayMinutes: Int): AlarmEntity {
         require(delayMinutes in 1..5) { "Test alarm delay must be between 1 and 5 minutes." }
 
         val now = System.currentTimeMillis()
+        val fireAtMillis = now + delayMinutes * 60_000L
+        val localTime = java.time.Instant.ofEpochMilli(fireAtMillis)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toLocalTime()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = "Test alarm",
-            fireAtMillis = now + delayMinutes * 60_000L,
+            hour = localTime.hour,
+            minute = localTime.minute,
+            fireAtMillis = fireAtMillis,
+            repeatDaysMask = 0,
             snoozeMinutes = 5,
+            vibrationPattern = VibrationPatterns.DEFAULT,
+            playMode = AlarmPlayModes.ALARM_ONLY,
+            defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
+            localAudioUri = null,
+            rawAudioUri = null,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -31,6 +45,115 @@ class AlarmRepository(
         alarmScheduler.schedule(alarm)
         Log.i(TAG, "Created test alarm id=${alarm.id} delayMinutes=$delayMinutes fireAt=${alarm.fireAtMillis}")
         return alarm
+    }
+
+    suspend fun createAlarm(draft: AlarmDraft): AlarmEntity {
+        validateDraft(draft)
+
+        val now = System.currentTimeMillis()
+        val alarm = AlarmEntity(
+            id = UUID.randomUUID().toString(),
+            label = draft.label.trim().ifBlank { "Alarm" },
+            hour = draft.hour,
+            minute = draft.minute,
+            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                hour = draft.hour,
+                minute = draft.minute,
+                repeatDaysMask = draft.repeatDaysMask,
+                nowMillis = now,
+            ),
+            repeatDaysMask = draft.repeatDaysMask,
+            snoozeMinutes = draft.snoozeMinutes,
+            vibrationPattern = draft.vibrationPattern,
+            playMode = draft.playMode,
+            defaultAlarmSoundId = draft.defaultAlarmSoundId,
+            localAudioUri = draft.localAudioUri,
+            rawAudioUri = draft.rawAudioUri,
+            enabled = true,
+            state = AlarmStates.SCHEDULED,
+            createdAtMillis = now,
+            updatedAtMillis = now,
+        )
+
+        alarmDao.upsert(alarm)
+        alarmScheduler.schedule(alarm)
+        Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+        return alarm
+    }
+
+    suspend fun updateAlarm(alarmId: String, draft: AlarmDraft): AlarmEntity {
+        validateDraft(draft)
+        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
+        val now = System.currentTimeMillis()
+        val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+            hour = draft.hour,
+            minute = draft.minute,
+            repeatDaysMask = draft.repeatDaysMask,
+            nowMillis = now,
+        )
+        val updated = current.copy(
+            label = draft.label.trim().ifBlank { "Alarm" },
+            hour = draft.hour,
+            minute = draft.minute,
+            fireAtMillis = nextFireAt,
+            repeatDaysMask = draft.repeatDaysMask,
+            snoozeMinutes = draft.snoozeMinutes,
+            vibrationPattern = draft.vibrationPattern,
+            playMode = draft.playMode,
+            defaultAlarmSoundId = draft.defaultAlarmSoundId,
+            localAudioUri = draft.localAudioUri,
+            rawAudioUri = draft.rawAudioUri,
+            state = if (current.enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
+            updatedAtMillis = now,
+        )
+
+        alarmScheduler.cancel(alarmId)
+        alarmDao.upsert(updated)
+        if (updated.enabled) alarmScheduler.schedule(updated)
+        Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
+        return updated
+    }
+
+    suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity {
+        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
+        val now = System.currentTimeMillis()
+        alarmScheduler.cancel(alarmId)
+
+        val updated = if (enabled) {
+            current.copy(
+                fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                    hour = current.hour,
+                    minute = current.minute,
+                    repeatDaysMask = current.repeatDaysMask,
+                    nowMillis = now,
+                ),
+                enabled = true,
+                state = AlarmStates.SCHEDULED,
+                updatedAtMillis = now,
+            )
+        } else {
+            current.copy(
+                enabled = false,
+                state = AlarmStates.DISABLED,
+                updatedAtMillis = now,
+            )
+        }
+
+        alarmDao.upsert(updated)
+        if (enabled) alarmScheduler.schedule(updated)
+        Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")
+        return updated
+    }
+
+    suspend fun deleteAlarm(alarmId: String) {
+        val current = alarmDao.getById(alarmId)
+        if (current == null) {
+            Log.w(TAG, "Delete requested for missing alarm id=$alarmId")
+            return
+        }
+        alarmScheduler.cancel(alarmId)
+        alarmDao.delete(current)
+        Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
     suspend fun markRinging(alarmId: String) {
@@ -44,13 +167,38 @@ class AlarmRepository(
     }
 
     suspend fun dismiss(alarmId: String) {
-        alarmScheduler.cancel(alarmId)
-        alarmDao.setState(
-            id = alarmId,
-            state = AlarmStates.DISMISSED,
-            enabled = false,
-            updatedAtMillis = System.currentTimeMillis(),
-        )
+        val current = alarmDao.getById(alarmId)
+        if (current == null) {
+            alarmScheduler.cancel(alarmId)
+            Log.w(TAG, "Dismiss requested for missing alarm id=$alarmId")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (current.repeatDaysMask != 0) {
+            val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+                hour = current.hour,
+                minute = current.minute,
+                repeatDaysMask = current.repeatDaysMask,
+                nowMillis = now,
+            )
+            val next = current.copy(
+                fireAtMillis = nextFireAt,
+                enabled = true,
+                state = AlarmStates.SCHEDULED,
+                updatedAtMillis = now,
+            )
+            alarmDao.upsert(next)
+            alarmScheduler.schedule(next)
+        } else {
+            alarmScheduler.cancel(alarmId)
+            alarmDao.setState(
+                id = alarmId,
+                state = AlarmStates.DISMISSED,
+                enabled = false,
+                updatedAtMillis = now,
+            )
+        }
         Log.i(TAG, "Alarm dismissed id=$alarmId")
     }
 
@@ -76,12 +224,34 @@ class AlarmRepository(
 
     suspend fun reschedulePendingAlarms(): Int {
         val now = System.currentTimeMillis()
-        val pending = alarmDao.getPendingAlarms(now)
+        val enabledAlarms = alarmDao.getEnabledAlarms()
         var scheduled = 0
 
-        pending.forEach { alarm ->
+        enabledAlarms.forEach { alarm ->
             runCatching {
-                alarmScheduler.schedule(alarm)
+                val alarmToSchedule = if (alarm.fireAtMillis > now) {
+                    alarm
+                } else if (alarm.repeatDaysMask != 0) {
+                    alarm.copy(
+                        fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                            hour = alarm.hour,
+                            minute = alarm.minute,
+                            repeatDaysMask = alarm.repeatDaysMask,
+                            nowMillis = now,
+                        ),
+                        state = AlarmStates.SCHEDULED,
+                        updatedAtMillis = now,
+                    ).also { alarmDao.upsert(it) }
+                } else {
+                    alarm.copy(
+                        enabled = false,
+                        state = AlarmStates.FAILED,
+                        updatedAtMillis = now,
+                    ).also { alarmDao.upsert(it) }
+                    return@forEach
+                }
+
+                alarmScheduler.schedule(alarmToSchedule)
                 scheduled += 1
             }.onFailure { error ->
                 Log.e(TAG, "Failed to restore alarm id=${alarm.id}", error)
@@ -94,7 +264,16 @@ class AlarmRepository(
             }
         }
 
-        Log.i(TAG, "Boot restore complete pending=${pending.size} scheduled=$scheduled")
+        Log.i(TAG, "Boot restore complete pending=${enabledAlarms.size} scheduled=$scheduled")
         return scheduled
+    }
+
+    private fun validateDraft(draft: AlarmDraft) {
+        require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
+        require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
+        require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
+        require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
+        require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
+        require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
     }
 }
