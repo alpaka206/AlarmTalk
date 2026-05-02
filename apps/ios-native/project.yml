@@ -1,0 +1,35 @@
+name: VoiceAlarmNative
+options:
+  deploymentTarget:
+    iOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  VoiceAlarm:
+    type: application
+    platform: iOS
+    sources:
+      - VoiceAlarm
+      - Shared
+    dependencies:
+      - target: VoiceAlarmWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
+        INFOPLIST_FILE: VoiceAlarm/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  VoiceAlarmWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - VoiceAlarmWidget
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.widget
+        INFOPLIST_FILE: VoiceAlarmWidget/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
