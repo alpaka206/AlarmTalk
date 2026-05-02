@@ -18,7 +18,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +35,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -86,14 +93,18 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
@@ -146,6 +157,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1826,10 +1839,10 @@ private fun AlarmEditorScreen(
             AlarmTimePickerCard(
                 hour = editor.hour,
                 minute = editor.minute,
-                onHourDown = { editor.hour = (editor.hour + 23) % 24 },
-                onHourUp = { editor.hour = (editor.hour + 1) % 24 },
-                onMinuteDown = { editor.minute = (editor.minute + 59) % 60 },
-                onMinuteUp = { editor.minute = (editor.minute + 1) % 60 },
+                onTimeChange = { selectedHour, selectedMinute ->
+                    editor.hour = selectedHour
+                    editor.minute = selectedMinute
+                },
             )
         }
 
@@ -1938,61 +1951,101 @@ private fun EditorSectionTitle(title: String) {
 private fun AlarmTimePickerCard(
     hour: Int,
     minute: Int,
-    onHourDown: () -> Unit,
-    onHourUp: () -> Unit,
-    onMinuteDown: () -> Unit,
-    onMinuteUp: () -> Unit,
+    onTimeChange: (Int, Int) -> Unit,
 ) {
+    val currentOnTimeChange by rememberUpdatedState(onTimeChange)
+    val itemHeight = 76.dp
+    var workingHour by remember { mutableIntStateOf(hour) }
+    var workingMinute by remember { mutableIntStateOf(minute) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val selectedTextColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val pickerColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
+
+    LaunchedEffect(hour, minute) {
+        workingHour = hour
+        workingMinute = minute
+    }
+
+    fun commitTime(nextHour: Int, nextMinute: Int) {
+        workingHour = nextHour
+        workingMinute = nextMinute
+        currentOnTimeChange(nextHour, nextMinute)
+    }
+
+    fun applyHourSteps(steps: Int) {
+        if (steps == 0) return
+        commitTime(floorMod(workingHour + steps, 24), workingMinute)
+    }
+
+    fun applyMinuteSteps(steps: Int) {
+        if (steps == 0) return
+        val totalMinutes = floorMod(workingHour * 60 + workingMinute + steps, 24 * 60)
+        val nextHour = totalMinutes / 60
+        val nextMinute = totalMinutes % 60
+        commitTime(nextHour, nextMinute)
+    }
+
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(containerColor = pickerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 20.dp),
+                .padding(horizontal = 20.dp, vertical = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Text(
-                    text = amPmLabel(hour),
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Row(
-                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TimeWheelColumn(
-                    value = "%02d".format(hour12(hour)),
-                    contentDescription = "시간",
-                    onDecrease = onHourDown,
-                    onIncrease = onHourUp,
+                AmPmWheelColumn(
+                    hour = workingHour,
+                    itemHeight = itemHeight,
+                    selectedColor = selectedTextColor,
+                    onSelect = { selectedIsPm ->
+                        val isPm = workingHour >= 12
+                        if (selectedIsPm != isPm) {
+                            commitTime((workingHour + 12) % 24, workingMinute)
+                        }
+                    },
                 )
-                Text(
-                    text = ":",
-                    style = MaterialTheme.typography.displayMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 4.dp),
+                DraggableTimeWheelColumn(
+                    itemHeight = itemHeight,
+                    selectedColor = selectedTextColor,
+                    itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
+                    maxStepsPerGesture = 15,
+                    onStep = ::applyHourSteps,
+                    modifier = Modifier.weight(1f),
                 )
-                TimeWheelColumn(
-                    value = "%02d".format(minute),
-                    contentDescription = "분",
-                    onDecrease = onMinuteDown,
-                    onIncrease = onMinuteUp,
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(itemHeight * 3),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = ":",
+                        style = MaterialTheme.typography.displayLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = selectedTextColor,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                DraggableTimeWheelColumn(
+                    itemHeight = itemHeight,
+                    selectedColor = selectedTextColor,
+                    itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
+                    maxStepsPerGesture = 15,
+                    onStep = ::applyMinuteSteps,
+                    modifier = Modifier.weight(1f),
                 )
             }
             Text(
-                text = timeUntilAlarmLabel(hour, minute),
+                text = timeUntilAlarmLabel(workingHour, workingMinute),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -2002,30 +2055,152 @@ private fun AlarmTimePickerCard(
 }
 
 @Composable
-private fun TimeWheelColumn(
-    value: String,
-    contentDescription: String,
-    onDecrease: () -> Unit,
-    onIncrease: () -> Unit,
+private fun AmPmWheelColumn(
+    hour: Int,
+    itemHeight: androidx.compose.ui.unit.Dp,
+    selectedColor: Color,
+    onSelect: (Boolean) -> Unit,
 ) {
+    val isPm = hour >= 12
+    val rows = if (isPm) {
+        listOf(false to "오전", true to "오후", null to "")
+    } else {
+        listOf(null to "", false to "오전", true to "오후")
+    }
     Column(
+        modifier = Modifier
+            .width(92.dp)
+            .height(itemHeight * 3),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        IconButton(onClick = onIncrease) {
-            Icon(Icons.Outlined.Add, contentDescription = "$contentDescription 올리기")
-        }
-        Text(
-            text = value,
-            style = MaterialTheme.typography.displayLarge,
-            fontWeight = FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        IconButton(onClick = onDecrease) {
-            Icon(Icons.Outlined.Remove, contentDescription = "$contentDescription 내리기")
+        rows.forEach { (value, label) ->
+            val selected = value == isPm
+            val enabled = value != null
+            Surface(
+                onClick = { if (enabled) onSelect(value == true) },
+                color = Color.Transparent,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(itemHeight),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = label,
+                        style = if (selected) {
+                            MaterialTheme.typography.displaySmall
+                        } else {
+                            MaterialTheme.typography.headlineMedium
+                        },
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                        color = selectedColor.copy(alpha = if (selected) 1f else 0.22f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun DraggableTimeWheelColumn(
+    itemHeight: androidx.compose.ui.unit.Dp,
+    selectedColor: Color,
+    itemLabel: (Int) -> String,
+    maxStepsPerGesture: Int,
+    onStep: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
+    var dragOffsetPx by remember { mutableStateOf(0f) }
+    var gestureSteps by remember { mutableIntStateOf(0) }
+    val draggableState = rememberDraggableState { delta ->
+        dragOffsetPx += delta
+        while (dragOffsetPx <= -itemHeightPx && gestureSteps < maxStepsPerGesture) {
+            dragOffsetPx += itemHeightPx
+            gestureSteps += 1
+            onStep(1)
+        }
+        while (dragOffsetPx >= itemHeightPx && gestureSteps > -maxStepsPerGesture) {
+            dragOffsetPx -= itemHeightPx
+            gestureSteps -= 1
+            onStep(-1)
+        }
+        if (gestureSteps >= maxStepsPerGesture && dragOffsetPx < -itemHeightPx * 0.6f) {
+            dragOffsetPx = -itemHeightPx * 0.6f
+        }
+        if (gestureSteps <= -maxStepsPerGesture && dragOffsetPx > itemHeightPx * 0.6f) {
+            dragOffsetPx = itemHeightPx * 0.6f
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .height(itemHeight * 3)
+            .clipToBounds()
+            .draggable(
+                state = draggableState,
+                orientation = Orientation.Vertical,
+                onDragStarted = { gestureSteps = 0 },
+                onDragStopped = {
+                    val startOffset = dragOffsetPx
+                    gestureSteps = 0
+                    scope.launch {
+                        Animatable(startOffset).animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow,
+                            ),
+                        ) {
+                            dragOffsetPx = value
+                        }
+                    }
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.offset { IntOffset(0, dragOffsetPx.roundToInt()) },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            (-1..1).forEach { offset ->
+                val distance = abs(offset)
+                val alpha = when (distance) {
+                    0 -> 1f
+                    1 -> 0.18f
+                    else -> 0.08f
+                }
+                val style = if (distance == 0) {
+                    MaterialTheme.typography.displayLarge
+                } else {
+                    MaterialTheme.typography.displayMedium
+                }
+                Surface(
+                    onClick = { if (offset != 0) onStep(offset) },
+                    color = Color.Transparent,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(itemHeight),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = itemLabel(offset),
+                            style = style,
+                            fontWeight = FontWeight.Bold,
+                            color = selectedColor.copy(alpha = alpha),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun floorMod(value: Int, divisor: Int): Int = ((value % divisor) + divisor) % divisor
 
 @Composable
 private fun RepeatSelector(
