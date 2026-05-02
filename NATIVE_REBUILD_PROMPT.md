@@ -20,6 +20,19 @@ Use the existing repository only as a reference and backend source. Do not try t
 
 Repository branch: `develop_loop`
 
+Legacy stack from the existing project:
+
+- Mobile: React Native, Expo SDK 54, expo-router
+- Backend: Cloudflare Workers, Hono, Turso/libSQL
+- Storage: Cloudflare R2 for voice files
+- Voice AI: Perso.ai primary, ElevenLabs fallback/secondary
+- Auth: app-issued JWT + email/password with bcrypt
+- Push: FCM/APNs through expo-notifications and server-side token management
+- Monitoring: Sentry mobile via `@sentry/react-native`, backend via `toucan-js`
+- Billing: stubbed entitlement/code-based plan flow
+- Font: Pretendard for Korean/English/Japanese
+- Tests: Vitest backend, Jest mobile, Maestro E2E
+
 Useful assets to reuse:
 
 - Cloudflare Workers + Hono backend
@@ -212,4 +225,3 @@ Then implement Milestone 1 only:
 10. Provide exact physical-device test instructions.
 
 Stop after Milestone 1 is verifiable on a real Android phone.
-

@@ -1,37 +1,51 @@
 # Voice Alarm Native Rebuild Goal
 
-Voice Alarm을 Android/iOS 풀 네이티브 알람 서비스로 완성한다.
+Voice Alarm is being rebuilt as a native Android/iOS alarm product.
 
-최종 완료 기준은 MVP 기획서의 핵심 기능이 실제 기기에서 안정적으로 작동하는 것이다.
+The completion target is not "the app compiles." The target is that the core MVP features actually work on real devices:
 
-- 일반 알람
-- 보이스 알람
-- 원본 음성 알람
-- 음성 프로필 등록
-- 앱 내 녹음
-- 파일 업로드
-- 30초 이내 crop/제한 정책
-- perso.ai 음성 복제
-- TTS 메시지 생성
-- 프리셋/랜덤 메시지
-- 알람만 / 음성만 / 알람 + 음성
-- 반복 요일
-- 스누즈
-- 진동
-- 로그인/회원가입
-- 백엔드 동기화
-- 로컬 오디오 캐싱
-- 초대 코드 기반 가족/연인 연결
-- 상대방 보이스 공유
-- 캐릭터 성장/스트릭/XP
-- 구독 플랜/사용 제한
+- normal alarm
+- voice alarm
+- original recorded audio alarm
+- voice profile registration
+- direct recording
+- file upload with 30-second crop/limit
+- Perso.ai voice cloning
+- TTS message generation
+- preset/random message themes
+- alarm only / voice only / alarm + voice play modes
+- repeat weekdays
+- snooze
+- vibration
+- login and account flow
+- backend sync
+- local audio caching
+- invite-code based family/partner connection
+- shared partner/family voice selection
+- character growth, streak, and XP
+- subscription/plan limits
 
-핵심 조건:
+Non-negotiable behavior:
 
-- 이 앱은 notification/reminder 앱이 아니라 실제 알람 앱이다.
-- 알람은 push notification이나 서버 cron에 의존하지 않는다.
-- 알람은 OS 네이티브 알람 메커니즘과 로컬 오디오 기반으로 동작한다.
-- 울리는 시점에는 네트워크 fetch 없이 로컬 DB와 로컬 오디오만 사용한다.
-- Android는 Kotlin/Jetpack Compose로 먼저 완성한다.
-- iOS는 SwiftUI/AlarmKit 가능성을 초반에 검증하고, Android MVP가 안정화된 뒤 본구현한다.
+- This is a real alarm app, not a notification/reminder app.
+- Core alarm ringing must not depend on push notifications or server cron.
+- Alarm ringing must be driven by OS-native alarm mechanisms and local audio.
+- At ring time, the app must use local database state and local audio only, with no network fetch requirement.
+- Android is implemented first with Kotlin and Jetpack Compose.
+- iOS is implemented later with SwiftUI, but an AlarmKit feasibility PoC must happen early.
+- Do not assume iOS can exactly copy Android until AlarmKit behavior is documented.
 
+Legacy stack to preserve as reference:
+
+- Mobile reference: React Native, Expo SDK 54, expo-router
+- Backend: Cloudflare Workers, Hono, Turso/libSQL
+- Storage: Cloudflare R2 for voice files
+- Voice AI: Perso.ai primary, ElevenLabs secondary
+- Auth: app-issued JWT + email/password with bcrypt
+- Push: FCM/APNs through expo-notifications and server-side token management
+- Monitoring: Sentry mobile and backend
+- Billing: stubbed entitlement/code-based plan flow
+- Font: Pretendard
+- Tests: Vitest, Jest, Maestro
+
+Use `apps/mobile` and `packages/ui` only as references for UX, copy, API behavior, and design tokens. Do not continue the old React Native alarm runtime.
