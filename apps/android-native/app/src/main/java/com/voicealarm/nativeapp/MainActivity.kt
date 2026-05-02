@@ -18,7 +18,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,11 +28,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -42,11 +47,16 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Message
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -63,6 +73,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +88,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -618,6 +631,41 @@ private sealed interface AlarmScreen {
     data class Edit(val alarm: AlarmEntity) : AlarmScreen
 }
 
+private enum class NativeTab {
+    Home,
+    Voices,
+    Alarms,
+    People,
+    Growth,
+}
+
+private val VoiceAlarmFontFamily = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_semibold, FontWeight.SemiBold),
+    Font(R.font.pretendard_bold, FontWeight.Bold),
+)
+
+private val VoiceAlarmTypography = Typography().let { base ->
+    base.copy(
+        displayLarge = base.displayLarge.copy(fontFamily = VoiceAlarmFontFamily),
+        displayMedium = base.displayMedium.copy(fontFamily = VoiceAlarmFontFamily),
+        displaySmall = base.displaySmall.copy(fontFamily = VoiceAlarmFontFamily),
+        headlineLarge = base.headlineLarge.copy(fontFamily = VoiceAlarmFontFamily),
+        headlineMedium = base.headlineMedium.copy(fontFamily = VoiceAlarmFontFamily),
+        headlineSmall = base.headlineSmall.copy(fontFamily = VoiceAlarmFontFamily),
+        titleLarge = base.titleLarge.copy(fontFamily = VoiceAlarmFontFamily),
+        titleMedium = base.titleMedium.copy(fontFamily = VoiceAlarmFontFamily),
+        titleSmall = base.titleSmall.copy(fontFamily = VoiceAlarmFontFamily),
+        bodyLarge = base.bodyLarge.copy(fontFamily = VoiceAlarmFontFamily),
+        bodyMedium = base.bodyMedium.copy(fontFamily = VoiceAlarmFontFamily),
+        bodySmall = base.bodySmall.copy(fontFamily = VoiceAlarmFontFamily),
+        labelLarge = base.labelLarge.copy(fontFamily = VoiceAlarmFontFamily),
+        labelMedium = base.labelMedium.copy(fontFamily = VoiceAlarmFontFamily),
+        labelSmall = base.labelSmall.copy(fontFamily = VoiceAlarmFontFamily),
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
@@ -642,6 +690,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
+    var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -693,28 +742,36 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = when (screen) {
-                            AlarmScreen.List -> "Voice Alarm"
-                            AlarmScreen.Create -> "Create Alarm"
-                            is AlarmScreen.Edit -> "Edit Alarm"
-                        },
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    if (screen !is AlarmScreen.List) {
+            if (screen !is AlarmScreen.List) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = when (screen) {
+                                AlarmScreen.List -> "Voice Alarm"
+                                AlarmScreen.Create -> "Create Alarm"
+                                is AlarmScreen.Edit -> "Edit Alarm"
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
+                    navigationIcon = {
                         IconButton(onClick = { screen = AlarmScreen.List }) {
                             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
+        },
+        bottomBar = {
+            if (screen is AlarmScreen.List) {
+                VoiceAlarmBottomBar(
+                    selectedTab = selectedTab,
+                    onSelectTab = { selectedTab = it },
+                )
+            }
         },
         floatingActionButton = {
-            if (screen is AlarmScreen.List) {
+            if (screen is AlarmScreen.List && selectedTab == NativeTab.Alarms) {
                 FloatingActionButton(onClick = { screen = AlarmScreen.Create }) {
                     Icon(Icons.Outlined.Add, contentDescription = "Create alarm")
                 }
@@ -724,6 +781,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         when (val current = screen) {
             AlarmScreen.List -> AlarmListScreen(
                 contentPadding = padding,
+                selectedTab = selectedTab,
+                onSelectTab = { selectedTab = it },
                 permissions = permissions,
                 alarms = alarms,
                 authSession = authSession,
@@ -796,8 +855,118 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 }
 
 @Composable
+private fun VoiceAlarmBottomBar(
+    selectedTab: NativeTab,
+    onSelectTab: (NativeTab) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            VoiceAlarmTabItem(
+                tab = NativeTab.Home,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Home,
+                label = "홈",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Voices,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Mic,
+                label = "음성",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Alarms,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Alarm,
+                label = "알람",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.People,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Message,
+                label = "메시지",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceAlarmTabItem(
+    tab: NativeTab,
+    selectedTab: NativeTab,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onSelectTab: (NativeTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selected = selectedTab == tab
+    TextButton(
+        onClick = { onSelectTab(tab) },
+        modifier = modifier,
+        contentPadding = PaddingValues(vertical = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else {
+                        Color.Transparent
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                )
+                .padding(vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AlarmListScreen(
     contentPadding: PaddingValues,
+    selectedTab: NativeTab,
+    onSelectTab: (NativeTab) -> Unit,
     permissions: PermissionSnapshot,
     alarms: List<AlarmEntity>,
     authSession: AuthSession?,
@@ -843,134 +1012,717 @@ private fun AlarmListScreen(
     onRequestExactAlarms: () -> Unit,
     onRequestFullScreen: () -> Unit,
 ) {
+    val sortedAlarms = remember(alarms) {
+        alarms.sortedWith(
+            compareByDescending<AlarmEntity> { it.enabled }
+                .thenBy { it.fireAtMillis },
+        )
+    }
+    val nextAlarm = remember(alarms) {
+        alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(20.dp),
+        contentPadding = PaddingValues(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            AccountPanel(
-                authSession = authSession,
-                authBusy = authBusy,
-                syncBusy = syncBusy,
-                voiceProfiles = voiceProfiles,
-                voiceProfileBusy = voiceProfileBusy,
-                onLogin = onLogin,
-                onRegister = onRegister,
-                onGoogleSignIn = onGoogleSignIn,
-                onSyncNow = onSyncNow,
-                onLoadVoiceProfiles = onLoadVoiceProfiles,
-                onLogout = onLogout,
-            )
-        }
-
-        if (authSession != null) {
-            item {
-                SocialPanel(
-                    socialBusy = socialBusy,
-                    friends = friends,
-                    pendingFriends = pendingFriends,
-                    familyGroup = familyGroup,
-                    familyInvites = familyInvites,
-                    familyVoices = familyVoices,
-                    onRefreshSocial = onRefreshSocial,
-                    onSendFriendRequest = onSendFriendRequest,
-                    onAcceptFriendRequest = onAcceptFriendRequest,
-                    onCreateFamilyInvite = onCreateFamilyInvite,
-                    onAcceptFamilyInvite = onAcceptFamilyInvite,
-                    onRevokeFamilyInvite = onRevokeFamilyInvite,
-                )
-            }
-
-            item {
-                CharacterBillingPanel(
-                    characterEvents = characterEvents,
-                    characterBusy = characterBusy,
-                    characterResponse = characterResponse,
-                    billingBusy = billingBusy,
-                    subscriptionResponse = subscriptionResponse,
-                    vouchers = vouchers,
-                    onRefresh = onRefreshCharacterBilling,
-                    onSyncEvents = onSyncCharacterEvents,
-                    onRegisterCode = onRegisterCode,
-                )
-            }
-        }
-
-        item {
-            PermissionPanel(
-                permissions = permissions,
-                onRequestNotifications = onRequestNotifications,
-                onRequestExactAlarms = onRequestExactAlarms,
-                onRequestFullScreen = onRequestFullScreen,
-            )
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Button(
-                    onClick = onCreateAlarm,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Outlined.AlarmAdd, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("New alarm")
+        when (selectedTab) {
+            NativeTab.Home -> {
+                item { HomeHeader(authSession = authSession) }
+                item {
+                    HomeStatsRow(
+                        activeAlarms = alarms.count { it.enabled },
+                        voiceCount = voiceProfiles.size,
+                        friendCount = friends.size,
+                    )
                 }
-                OutlinedButton(
-                    onClick = onQuickTest,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("1 min test")
-                }
-            }
-        }
-
-        if (message != null) {
-            item {
-                AssistChip(
-                    onClick = onClearMessage,
-                    label = { Text(message) },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
+                if (authSession != null && characterResponse != null) {
+                    item {
+                        CharacterMiniCard(
+                            characterResponse = characterResponse,
+                            pendingEvents = characterEvents.count { it.state != "synced" },
+                            onClick = { onSelectTab(NativeTab.Growth) },
                         )
-                    },
-                )
+                    }
+                }
+                item {
+                    NextAlarmHeroCard(
+                        nextAlarm = nextAlarm,
+                        onClick = {
+                            if (nextAlarm == null) {
+                                onCreateAlarm()
+                            } else {
+                                onEditAlarm(nextAlarm)
+                            }
+                        },
+                    )
+                }
+                if (message != null) {
+                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
+                }
+                item {
+                    QuickStartGrid(
+                        onRecordVoice = onCreateAlarm,
+                        onAddAlarm = onCreateAlarm,
+                        onLoadVoices = {
+                            onSelectTab(NativeTab.Voices)
+                            onLoadVoiceProfiles()
+                        },
+                        onManagePeople = { onSelectTab(NativeTab.People) },
+                    )
+                }
+                if (authSession == null) {
+                    item {
+                        AccountPanel(
+                            authSession = authSession,
+                            authBusy = authBusy,
+                            syncBusy = syncBusy,
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onLogin = onLogin,
+                            onRegister = onRegister,
+                            onGoogleSignIn = onGoogleSignIn,
+                            onSyncNow = onSyncNow,
+                            onLoadVoiceProfiles = onLoadVoiceProfiles,
+                            onLogout = onLogout,
+                        )
+                    }
+                }
+            }
+
+            NativeTab.Voices -> {
+                item {
+                    ScreenHeader(
+                        title = "음성",
+                        subtitle = "알람 전에 쓸 목소리를 로컬에 준비해요.",
+                    )
+                }
+                item {
+                    AccountPanel(
+                        authSession = authSession,
+                        authBusy = authBusy,
+                        syncBusy = syncBusy,
+                        voiceProfiles = voiceProfiles,
+                        voiceProfileBusy = voiceProfileBusy,
+                        onLogin = onLogin,
+                        onRegister = onRegister,
+                        onGoogleSignIn = onGoogleSignIn,
+                        onSyncNow = onSyncNow,
+                        onLoadVoiceProfiles = onLoadVoiceProfiles,
+                        onLogout = onLogout,
+                    )
+                }
+                item { VoiceMethodGrid(onCreateAlarm = onCreateAlarm) }
+            }
+
+            NativeTab.Alarms -> {
+                item { AlarmsHeader(onCreateAlarm = onCreateAlarm) }
+                if (nextAlarm != null) {
+                    item { CountdownBanner(nextAlarm = nextAlarm) }
+                }
+                item {
+                    PermissionPanel(
+                        permissions = permissions,
+                        onRequestNotifications = onRequestNotifications,
+                        onRequestExactAlarms = onRequestExactAlarms,
+                        onRequestFullScreen = onRequestFullScreen,
+                    )
+                }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = onCreateAlarm,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Outlined.AlarmAdd, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("New alarm")
+                        }
+                        OutlinedButton(
+                            onClick = onQuickTest,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("1 min test")
+                        }
+                    }
+                }
+                if (message != null) {
+                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
+                }
+                if (sortedAlarms.isEmpty()) {
+                    item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
+                } else {
+                    items(sortedAlarms, key = { it.id }) { alarm ->
+                        AlarmRow(
+                            alarm = alarm,
+                            onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
+                            onEditAlarm = { onEditAlarm(alarm) },
+                            onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                        )
+                    }
+                }
+            }
+
+            NativeTab.People -> {
+                item {
+                    ScreenHeader(
+                        title = "메시지",
+                        subtitle = "친구와 가족에게 알람과 목소리를 공유해요.",
+                    )
+                }
+                if (authSession == null) {
+                    item {
+                        AccountPanel(
+                            authSession = authSession,
+                            authBusy = authBusy,
+                            syncBusy = syncBusy,
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onLogin = onLogin,
+                            onRegister = onRegister,
+                            onGoogleSignIn = onGoogleSignIn,
+                            onSyncNow = onSyncNow,
+                            onLoadVoiceProfiles = onLoadVoiceProfiles,
+                            onLogout = onLogout,
+                        )
+                    }
+                } else {
+                    item {
+                        SocialPanel(
+                            socialBusy = socialBusy,
+                            friends = friends,
+                            pendingFriends = pendingFriends,
+                            familyGroup = familyGroup,
+                            familyInvites = familyInvites,
+                            familyVoices = familyVoices,
+                            onRefreshSocial = onRefreshSocial,
+                            onSendFriendRequest = onSendFriendRequest,
+                            onAcceptFriendRequest = onAcceptFriendRequest,
+                            onCreateFamilyInvite = onCreateFamilyInvite,
+                            onAcceptFamilyInvite = onAcceptFamilyInvite,
+                            onRevokeFamilyInvite = onRevokeFamilyInvite,
+                        )
+                    }
+                }
+            }
+
+            NativeTab.Growth -> {
+                item {
+                    ScreenHeader(
+                        title = "성장",
+                        subtitle = "알람을 끄고 다시 울릴 때마다 캐릭터가 자라요.",
+                    )
+                }
+                if (authSession == null) {
+                    item {
+                        AccountPanel(
+                            authSession = authSession,
+                            authBusy = authBusy,
+                            syncBusy = syncBusy,
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onLogin = onLogin,
+                            onRegister = onRegister,
+                            onGoogleSignIn = onGoogleSignIn,
+                            onSyncNow = onSyncNow,
+                            onLoadVoiceProfiles = onLoadVoiceProfiles,
+                            onLogout = onLogout,
+                        )
+                    }
+                } else {
+                    item {
+                        CharacterBillingPanel(
+                            characterEvents = characterEvents,
+                            characterBusy = characterBusy,
+                            characterResponse = characterResponse,
+                            billingBusy = billingBusy,
+                            subscriptionResponse = subscriptionResponse,
+                            vouchers = vouchers,
+                            onRefresh = onRefreshCharacterBilling,
+                            onSyncEvents = onSyncCharacterEvents,
+                            onRegisterCode = onRegisterCode,
+                        )
+                    }
+                }
             }
         }
+    }
+}
 
-        item {
+@Composable
+private fun StatusChip(
+    message: String,
+    onClearMessage: () -> Unit,
+) {
+    AssistChip(
+        onClick = onClearMessage,
+        label = { Text(message) },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Outlined.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        },
+    )
+}
+
+@Composable
+private fun HomeHeader(authSession: AuthSession?) {
+    val hour = java.time.LocalTime.now().hour
+    val greeting = when {
+        hour < 6 -> "좋은 밤이에요"
+        hour < 12 -> "좋은 아침이에요"
+        hour < 17 -> "좋은 오후예요"
+        hour < 21 -> "좋은 저녁이에요"
+        else -> "좋은 밤이에요"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (hour in 6..20) Icons.Outlined.Home else Icons.Outlined.Alarm,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+                Text(
+                    text = greeting,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
             Text(
-                text = "Local alarms",
-                style = MaterialTheme.typography.titleMedium,
+                text = "소중한 사람의 목소리가 기다리고 있어요",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        AvatarBubble(label = authSession?.user?.name ?: authSession?.user?.email)
+    }
+}
+
+@Composable
+private fun AvatarBubble(label: String?) {
+    Box(
+        modifier = Modifier
+            .size(42.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label?.firstOrNull()?.uppercaseChar()?.toString() ?: "V",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun ScreenHeader(
+    title: String,
+    subtitle: String,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun HomeStatsRow(
+    activeAlarms: Int,
+    voiceCount: Int,
+    friendCount: Int,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatPill(label = "활성 알람", count = activeAlarms, modifier = Modifier.weight(1f))
+        StatPill(label = "음성", count = voiceCount, modifier = Modifier.weight(1f))
+        StatPill(label = "친구", count = friendCount, modifier = Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun StatPill(
+    label: String,
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CharacterMiniCard(
+    characterResponse: CharacterResponse,
+    pendingEvents: Int,
+    onClick: () -> Unit,
+) {
+    val character = characterResponse.character
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stageEmoji(character.stage),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = character.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Lv.${character.level} - ${stageLabel(character.stage)} - streak ${characterResponse.streak.current}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(
+                                fraction = (
+                                    characterResponse.progress.xpIntoLevel.toFloat() /
+                                        characterResponse.progress.levelSpan.toFloat().coerceAtLeast(1f)
+                                    ).coerceIn(0f, 1f),
+                            )
+                            .height(6.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(999.dp)),
+                    )
+                }
+            }
+            Text(
+                text = if (pendingEvents > 0) "$pendingEvents sync" else ">",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
             )
         }
+    }
+}
 
-        if (alarms.isEmpty()) {
-            item {
-                Text(
-                    text = "No local alarms",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+@Composable
+private fun NextAlarmHeroCard(
+    nextAlarm: AlarmEntity?,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "다음 알람",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = nextAlarm?.let { "%02d:%02d".format(it.hour, it.minute) } ?: "--:--",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Bold,
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Alarm,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                    modifier = Modifier.size(18.dp),
                 )
-            }
-        } else {
-            items(alarms, key = { it.id }) { alarm ->
-                AlarmRow(
-                    alarm = alarm,
-                    onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
-                    onEditAlarm = { onEditAlarm(alarm) },
-                    onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                Text(
+                    text = nextAlarm?.let { "${it.label} - ${playModeLabel(it.playMode)}" }
+                        ?: "아직 설정된 알람이 없어요. 눌러서 만들어보세요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.86f),
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun QuickStartGrid(
+    onRecordVoice: () -> Unit,
+    onAddAlarm: () -> Unit,
+    onLoadVoices: () -> Unit,
+    onManagePeople: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "빠른 시작",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HomeActionCard(
+                label = "음성 녹음",
+                icon = Icons.Outlined.Mic,
+                onClick = onRecordVoice,
+                modifier = Modifier.weight(1f),
+            )
+            HomeActionCard(
+                label = "알람 추가",
+                icon = Icons.Outlined.Alarm,
+                onClick = onAddAlarm,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HomeActionCard(
+                label = "음성 불러오기",
+                icon = Icons.Outlined.Message,
+                onClick = onLoadVoices,
+                modifier = Modifier.weight(1f),
+            )
+            HomeActionCard(
+                label = "친구 관리",
+                icon = Icons.Outlined.People,
+                onClick = onManagePeople,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeActionCard(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 20.dp, horizontal = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(30.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceMethodGrid(onCreateAlarm: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "등록 방법",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HomeActionCard(
+                label = "녹음",
+                icon = Icons.Outlined.Mic,
+                onClick = onCreateAlarm,
+                modifier = Modifier.weight(1f),
+            )
+            HomeActionCard(
+                label = "파일 업로드",
+                icon = Icons.Outlined.Message,
+                onClick = onCreateAlarm,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        MutedText("선택하거나 녹음한 오디오는 알람 예약 전에 로컬에 저장됩니다.")
+    }
+}
+
+@Composable
+private fun AlarmsHeader(onCreateAlarm: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "알람",
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Button(
+            onClick = onCreateAlarm,
+            shape = RoundedCornerShape(999.dp),
+            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+        ) {
+            Text("+ 추가")
+        }
+    }
+}
+
+@Composable
+private fun CountdownBanner(nextAlarm: AlarmEntity) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "다음 알람",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = formatFireTime(nextAlarm.fireAtMillis),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Alarm,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(56.dp),
+            )
+            Text(
+                text = "알람이 없어요",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "소중한 사람의 목소리로 하루를 시작해보세요.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
+                Text("첫 알람 만들기")
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyPanel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
     }
 }
 
@@ -1431,7 +2183,7 @@ private fun AccountPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Account",
+                text = "계정",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -1455,13 +2207,13 @@ private fun AccountPanel(
                         enabled = !syncBusy,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text(if (syncBusy) "Syncing" else "Sync now")
+                        Text(if (syncBusy) "동기화 중" else "지금 동기화")
                     }
                     OutlinedButton(
                         onClick = onLogout,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("Sign out")
+                        Text("로그아웃")
                     }
                 }
                 OutlinedButton(
@@ -1469,7 +2221,7 @@ private fun AccountPanel(
                     enabled = !voiceProfileBusy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (voiceProfileBusy) "Loading voices" else "Load voices")
+                    Text(if (voiceProfileBusy) "불러오는 중" else "음성 불러오기")
                 }
                 if (voiceProfiles.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1492,8 +2244,8 @@ private fun AccountPanel(
             } else {
                 OptionChips(
                     options = listOf(
-                        "login" to "Login",
-                        "register" to "Register",
+                        "login" to "로그인",
+                        "register" to "가입",
                     ),
                     selected = mode,
                     onSelect = { mode = it },
@@ -1503,7 +2255,7 @@ private fun AccountPanel(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Name") },
+                        label = { Text("이름") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Text,
@@ -1516,7 +2268,7 @@ private fun AccountPanel(
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email") },
+                    label = { Text("이메일") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Email,
@@ -1528,7 +2280,7 @@ private fun AccountPanel(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text("비밀번호") },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
@@ -1551,8 +2303,8 @@ private fun AccountPanel(
                     Text(
                         when {
                             authBusy -> "Working"
-                            mode == "register" -> "Create account"
-                            else -> "Sign in"
+                            mode == "register" -> "계정 만들기"
+                            else -> "로그인"
                         },
                     )
                 }
@@ -1562,7 +2314,7 @@ private fun AccountPanel(
                     enabled = !authBusy,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("Continue with Google")
+                    Text("Google로 계속하기")
                 }
             }
         }
@@ -1956,14 +2708,14 @@ private fun AlarmRow(
     onEditAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
 ) {
-    OutlinedCard(
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1973,10 +2725,24 @@ private fun AlarmRow(
                 Column {
                     Text(
                         text = "%02d:%02d".format(alarm.hour, alarm.minute),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.displaySmall,
+                        fontWeight = FontWeight.Normal,
+                        color = if (alarm.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
-                    Text(text = alarm.label, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = alarm.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (alarm.enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
                 Switch(
                     checked = alarm.enabled,
@@ -2002,11 +2768,22 @@ private fun AlarmRow(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "${alarm.state} - ${syncStateLabel(alarm.syncState)}",
-                    color = if (alarm.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        text = "${alarm.state} - ${syncStateLabel(alarm.syncState)}",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        color = if (alarm.enabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = onEditAlarm) {
                         Icon(Icons.Outlined.Edit, contentDescription = "Edit alarm")
@@ -2170,6 +2947,7 @@ private fun VoiceAlarmTheme(content: @Composable () -> Unit) {
             onSurface = Color(0xFFF0EBE0),
             onSurfaceVariant = Color(0xFFA89F8F),
             outline = Color(0xFF3A332A),
+            outlineVariant = Color(0xFF3A332A),
             error = Color(0xFFD86F5E),
         )
     } else {
@@ -2188,11 +2966,15 @@ private fun VoiceAlarmTheme(content: @Composable () -> Unit) {
             onSurface = Color(0xFF2C2620),
             onSurfaceVariant = Color(0xFF6B6358),
             outline = Color(0xFFEAE3D2),
+            outlineVariant = Color(0xFFEAE3D2),
             error = Color(0xFFB84A3D),
         )
     }
 
-    MaterialTheme(colorScheme = colorScheme) {
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = VoiceAlarmTypography,
+    ) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
