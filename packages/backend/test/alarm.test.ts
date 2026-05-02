@@ -150,10 +150,10 @@ describe('GET /alarm/:id — 단일 조회 정규화', () => {
 });
 
 describe('POST /alarm — 알람 생성', () => {
-  it('message_id 누락이면 400', async () => {
+  it('message_id 누락이면 alarm-only 알람으로 생성', async () => {
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/alarm', { time: '07:00' }));
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
   });
 
   it('time 누락이면 400', async () => {
