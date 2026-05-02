@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp
 
 import android.Manifest
+import android.app.Activity
 import android.app.AlarmManager
 import android.app.Application
 import android.app.NotificationManager
@@ -25,12 +26,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
@@ -66,16 +67,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
@@ -86,7 +91,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
@@ -94,9 +98,19 @@ import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.network.AuthTokenResponse
+import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.AuthSessionStore
+import com.voicealarm.nativeapp.network.LoginRequest
+import com.voicealarm.nativeapp.network.RegisterRequest
+import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -121,9 +135,20 @@ class MainActivity : ComponentActivity() {
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = AlarmAppContainer.repository(application)
+    private val api = VoiceAlarmApiClient.create()
+    private val authSessionStore = AuthSessionStore(application)
 
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    var authSession by mutableStateOf<AuthSession?>(authSessionStore.read())
+        private set
+
+    var authBusy by mutableStateOf(false)
+        private set
+
+    var syncBusy by mutableStateOf(false)
+        private set
 
     var message by mutableStateOf<String?>(null)
         private set
@@ -138,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "Startup alarm sync failed", error)
             }
         }
+        refreshAppSession()
     }
 
     fun createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
@@ -207,8 +233,107 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun login(email: String, password: String) {
+        viewModelScope.launch {
+            authBusy = true
+            runCatching {
+                api.login(LoginRequest(email = email.trim(), password = password))
+            }.onSuccess { response ->
+                authSession = authSessionStore.saveAppSession(response)
+                message = "Signed in as ${response.user.email}"
+            }.onFailure { error ->
+                Log.e(TAG, "Email login failed", error)
+                message = error.message ?: "Sign in failed"
+            }
+            authBusy = false
+        }
+    }
+
+    fun register(email: String, password: String, name: String) {
+        viewModelScope.launch {
+            authBusy = true
+            runCatching {
+                api.register(RegisterRequest(email = email.trim(), password = password, name = name.trim()))
+            }.onSuccess { response ->
+                authSession = authSessionStore.saveAppSession(response)
+                message = "Registered ${response.user.email}"
+            }.onFailure { error ->
+                Log.e(TAG, "Email registration failed", error)
+                message = error.message ?: "Registration failed"
+            }
+            authBusy = false
+        }
+    }
+
+    fun finishGoogleLogin(idToken: String, id: String, email: String, name: String) {
+        authSession = authSessionStore.saveGoogleSession(
+            idToken = idToken,
+            id = id,
+            email = email,
+            name = name,
+        )
+        message = "Signed in with Google"
+    }
+
+    fun logout() {
+        authSessionStore.clear()
+        authSession = null
+        message = "Signed out"
+    }
+
+    fun syncNow() {
+        val session = authSession
+        if (session == null) {
+            message = "Sign in before syncing"
+            return
+        }
+        viewModelScope.launch {
+            syncBusy = true
+            runCatching {
+                repository.syncWithBackend(api, session.token)
+            }.onSuccess { result ->
+                message = "Sync complete: ${result.created} created, ${result.updated} updated, ${result.failed} failed"
+            }.onFailure { error ->
+                Log.e(TAG, "Backend sync failed", error)
+                message = error.message ?: "Sync failed"
+            }
+            syncBusy = false
+        }
+    }
+
+    fun showCodeAuthUnavailable() {
+        message = "Code login needs a backend verification endpoint. Current API supports email/password."
+    }
+
+    fun showGoogleSetupRequired() {
+        message = "Set voiceAlarmGoogleWebClientId to enable Google sign-in."
+    }
+
+    fun showGoogleSignInFailed(reason: String? = null) {
+        message = reason ?: "Google sign-in failed"
+    }
+
     fun clearMessage() {
         message = null
+    }
+
+    private fun refreshAppSession() {
+        val session = authSession ?: return
+        if (session.provider != AuthSessionStore.PROVIDER_APP) return
+        viewModelScope.launch {
+            runCatching {
+                api.me(VoiceAlarmApiClient.bearer(session.token)).user
+            }.onSuccess { user ->
+                authSession = authSessionStore.saveAppSession(
+                    AuthTokenResponse(
+                        token = session.token,
+                        user = user,
+                    ),
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "Auth refresh failed", error)
+            }
+        }
     }
 }
 
@@ -224,6 +349,9 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val message = viewModel.message
+    val authSession = viewModel.authSession
+    val authBusy = viewModel.authBusy
+    val syncBusy = viewModel.syncBusy
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
@@ -231,6 +359,43 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         contract = ActivityResultContracts.RequestPermission(),
     ) {
         permissions = PermissionSnapshot.read(context)
+    }
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            viewModel.showGoogleSignInFailed("Google sign-in cancelled")
+            return@rememberLauncherForActivityResult
+        }
+        val account = runCatching {
+            GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
+        }.onFailure { error ->
+            Log.e(TAG, "Google sign-in failed", error)
+        }.getOrNull()
+        val idToken = account?.idToken
+        if (idToken.isNullOrBlank()) {
+            viewModel.showGoogleSignInFailed("Google ID token was not returned")
+        } else {
+            viewModel.finishGoogleLogin(
+                idToken = idToken,
+                id = account.id ?: account.email.orEmpty(),
+                email = account.email.orEmpty(),
+                name = account.displayName.orEmpty(),
+            )
+        }
+    }
+
+    fun launchGoogleSignIn() {
+        val clientId = BuildConfig.VOICE_ALARM_GOOGLE_WEB_CLIENT_ID
+        if (clientId.isBlank()) {
+            viewModel.showGoogleSetupRequired()
+            return
+        }
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(clientId)
+            .requestEmail()
+            .build()
+        googleSignInLauncher.launch(GoogleSignIn.getClient(context, options).signInIntent)
     }
 
     RefreshPermissionsOnResume {
@@ -272,8 +437,17 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 contentPadding = padding,
                 permissions = permissions,
                 alarms = alarms,
+                authSession = authSession,
+                authBusy = authBusy,
+                syncBusy = syncBusy,
                 message = message,
                 onClearMessage = viewModel::clearMessage,
+                onLogin = viewModel::login,
+                onRegister = viewModel::register,
+                onVerifyCode = { _, _ -> viewModel.showCodeAuthUnavailable() },
+                onGoogleSignIn = ::launchGoogleSignIn,
+                onSyncNow = viewModel::syncNow,
+                onLogout = viewModel::logout,
                 onCreateAlarm = { screen = AlarmScreen.Create },
                 onQuickTest = { viewModel.createTestAlarm(1) },
                 onToggleEnabled = viewModel::setAlarmEnabled,
@@ -314,8 +488,17 @@ private fun AlarmListScreen(
     contentPadding: PaddingValues,
     permissions: PermissionSnapshot,
     alarms: List<AlarmEntity>,
+    authSession: AuthSession?,
+    authBusy: Boolean,
+    syncBusy: Boolean,
     message: String?,
     onClearMessage: () -> Unit,
+    onLogin: (String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
+    onVerifyCode: (String, String) -> Unit,
+    onGoogleSignIn: () -> Unit,
+    onSyncNow: () -> Unit,
+    onLogout: () -> Unit,
     onCreateAlarm: () -> Unit,
     onQuickTest: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
@@ -332,6 +515,20 @@ private fun AlarmListScreen(
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        item {
+            AccountPanel(
+                authSession = authSession,
+                authBusy = authBusy,
+                syncBusy = syncBusy,
+                onLogin = onLogin,
+                onRegister = onRegister,
+                onVerifyCode = onVerifyCode,
+                onGoogleSignIn = onGoogleSignIn,
+                onSyncNow = onSyncNow,
+                onLogout = onLogout,
+            )
+        }
+
         item {
             PermissionPanel(
                 permissions = permissions,
@@ -840,6 +1037,170 @@ private fun OptionChips(
 }
 
 @Composable
+private fun AccountPanel(
+    authSession: AuthSession?,
+    authBusy: Boolean,
+    syncBusy: Boolean,
+    onLogin: (String, String) -> Unit,
+    onRegister: (String, String, String) -> Unit,
+    onVerifyCode: (String, String) -> Unit,
+    onGoogleSignIn: () -> Unit,
+    onSyncNow: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    var mode by remember { mutableStateOf("login") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Account",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+
+            if (authSession != null) {
+                Text(
+                    text = authSession.user.email.ifBlank { authSession.user.name.ifBlank { authSession.provider } },
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Provider ${authSession.provider} - plan ${authSession.user.plan}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(
+                        onClick = onSyncNow,
+                        enabled = !syncBusy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (syncBusy) "Syncing" else "Sync now")
+                    }
+                    OutlinedButton(
+                        onClick = onLogout,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Sign out")
+                    }
+                }
+            } else {
+                OptionChips(
+                    options = listOf(
+                        "login" to "Login",
+                        "register" to "Register",
+                        "code" to "Code",
+                    ),
+                    selected = mode,
+                    onSelect = { mode = it },
+                )
+
+                if (mode == "register") {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Name") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Next,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                if (mode == "code") {
+                    OutlinedTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        label = { Text("Verification code") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = { onVerifyCode(email, code) },
+                        enabled = !authBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Verify code")
+                    }
+                    Text(
+                        text = "The deployed API does not expose code-login endpoints yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Button(
+                        onClick = {
+                            if (mode == "register") {
+                                onRegister(email, password, name)
+                            } else {
+                                onLogin(email, password)
+                            }
+                        },
+                        enabled = !authBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            when {
+                                authBusy -> "Working"
+                                mode == "register" -> "Create account"
+                                else -> "Sign in"
+                            },
+                        )
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onGoogleSignIn,
+                    enabled = !authBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Continue with Google")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PermissionPanel(
     permissions: PermissionSnapshot,
     onRequestNotifications: () -> Unit,
@@ -968,7 +1329,7 @@ private fun AlarmRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${repeatLabel(alarm.repeatDaysMask)} · snooze ${alarm.snoozeMinutes} min · ${vibrationLabel(alarm.vibrationPattern)} · ${playModeLabel(alarm.playMode)}",
+                text = "${repeatLabel(alarm.repeatDaysMask)} - snooze ${alarm.snoozeMinutes} min - ${vibrationLabel(alarm.vibrationPattern)} - ${playModeLabel(alarm.playMode)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -978,7 +1339,7 @@ private fun AlarmRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = alarm.state,
+                    text = "${alarm.state} - ${syncStateLabel(alarm.syncState)}",
                     color = if (alarm.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelLarge,
                 )
@@ -1106,17 +1467,52 @@ private fun playModeLabel(mode: String): String = when (mode) {
     else -> "alarm only"
 }
 
+private fun syncStateLabel(state: String): String = when (state) {
+    AlarmSyncStates.SYNCED -> "synced"
+    AlarmSyncStates.DIRTY -> "changed"
+    AlarmSyncStates.FAILED -> "sync failed"
+    else -> "local only"
+}
+
 @Composable
 private fun VoiceAlarmTheme(content: @Composable () -> Unit) {
-    val colorScheme = androidx.compose.material3.lightColorScheme(
-        primary = androidx.compose.ui.graphics.Color(0xFF2563EB),
-        secondary = androidx.compose.ui.graphics.Color(0xFF0F766E),
-        error = androidx.compose.ui.graphics.Color(0xFFB42318),
-        surface = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
-        background = androidx.compose.ui.graphics.Color(0xFFF8FAFC),
-        onSurface = androidx.compose.ui.graphics.Color(0xFF111827),
-        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF4B5563),
-    )
+    val colorScheme = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        androidx.compose.material3.darkColorScheme(
+            primary = Color(0xFFF0C25C),
+            onPrimary = Color(0xFF1F1B14),
+            primaryContainer = Color(0xFFD8A93D),
+            onPrimaryContainer = Color(0xFF1F1B14),
+            secondary = Color(0xFF7B8FB5),
+            onSecondary = Color(0xFF1F1B14),
+            tertiary = Color(0xFFD89677),
+            background = Color(0xFF1F1B14),
+            onBackground = Color(0xFFF0EBE0),
+            surface = Color(0xFF2A251D),
+            surfaceVariant = Color(0xFF332C22),
+            onSurface = Color(0xFFF0EBE0),
+            onSurfaceVariant = Color(0xFFA89F8F),
+            outline = Color(0xFF3A332A),
+            error = Color(0xFFD86F5E),
+        )
+    } else {
+        androidx.compose.material3.lightColorScheme(
+            primary = Color(0xFFE8B341),
+            onPrimary = Color(0xFF2C2620),
+            primaryContainer = Color(0xFFF2C669),
+            onPrimaryContainer = Color(0xFF2C2620),
+            secondary = Color(0xFF2D3E5C),
+            onSecondary = Color(0xFFFFFFFF),
+            tertiary = Color(0xFFC97B5C),
+            background = Color(0xFFFBF8F2),
+            onBackground = Color(0xFF2C2620),
+            surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFF5EFE0),
+            onSurface = Color(0xFF2C2620),
+            onSurfaceVariant = Color(0xFF6B6358),
+            outline = Color(0xFFEAE3D2),
+            error = Color(0xFFB84A3D),
+        )
+    }
 
     MaterialTheme(colorScheme = colorScheme) {
         Surface(

@@ -23,6 +23,9 @@ interface AlarmDao {
     )
     suspend fun getEnabledAlarms(): List<AlarmEntity>
 
+    @Query("SELECT * FROM alarms ORDER BY enabled DESC, fireAtMillis ASC, updatedAtMillis DESC")
+    suspend fun getAllAlarms(): List<AlarmEntity>
+
     @Upsert
     suspend fun upsert(alarm: AlarmEntity)
 
@@ -58,6 +61,24 @@ interface AlarmDao {
         fireAtMillis: Long,
         state: String,
         enabled: Boolean,
+        updatedAtMillis: Long,
+    )
+
+    @Query(
+        """
+        UPDATE alarms
+        SET remoteAlarmId = :remoteAlarmId,
+            lastSyncedAtMillis = :lastSyncedAtMillis,
+            syncState = :syncState,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+        """,
+    )
+    suspend fun setSyncState(
+        id: String,
+        remoteAlarmId: String?,
+        lastSyncedAtMillis: Long?,
+        syncState: String,
         updatedAtMillis: Long,
     )
 }

@@ -3,8 +3,18 @@ package com.voicealarm.nativeapp.data
 import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.network.RemoteAlarmMapper
+import com.voicealarm.nativeapp.network.VoiceAlarmApi
+import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+
+data class AlarmSyncResult(
+    val total: Int,
+    val created: Int,
+    val updated: Int,
+    val failed: Int,
+)
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
@@ -35,6 +45,9 @@ class AlarmRepository(
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = null,
             rawAudioUri = null,
+            remoteAlarmId = null,
+            lastSyncedAtMillis = null,
+            syncState = AlarmSyncStates.LOCAL_ONLY,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -69,6 +82,9 @@ class AlarmRepository(
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
             rawAudioUri = draft.rawAudioUri,
+            remoteAlarmId = null,
+            lastSyncedAtMillis = null,
+            syncState = AlarmSyncStates.LOCAL_ONLY,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -103,6 +119,7 @@ class AlarmRepository(
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
             rawAudioUri = draft.rawAudioUri,
+            syncState = current.nextLocalSyncState(),
             state = if (current.enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
             updatedAtMillis = now,
         )
@@ -129,12 +146,14 @@ class AlarmRepository(
                 ),
                 enabled = true,
                 state = AlarmStates.SCHEDULED,
+                syncState = current.nextLocalSyncState(),
                 updatedAtMillis = now,
             )
         } else {
             current.copy(
                 enabled = false,
                 state = AlarmStates.DISABLED,
+                syncState = current.nextLocalSyncState(),
                 updatedAtMillis = now,
             )
         }
@@ -268,6 +287,58 @@ class AlarmRepository(
         return scheduled
     }
 
+    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult {
+        val authorization = VoiceAlarmApiClient.bearer(token)
+        val localAlarms = alarmDao.getAllAlarms()
+        var created = 0
+        var updated = 0
+        var failed = 0
+
+        localAlarms.forEach { alarm ->
+            val now = System.currentTimeMillis()
+            runCatching {
+                val request = RemoteAlarmMapper.toWriteRequest(alarm)
+                val remoteAlarm = if (alarm.remoteAlarmId == null) {
+                    api.createAlarm(authorization, request).alarm.also {
+                        created += 1
+                    }
+                } else {
+                    api.updateAlarm(authorization, alarm.remoteAlarmId, request).alarm.also {
+                        updated += 1
+                    }
+                }
+                alarmDao.setSyncState(
+                    id = alarm.id,
+                    remoteAlarmId = remoteAlarm.id,
+                    lastSyncedAtMillis = now,
+                    syncState = AlarmSyncStates.SYNCED,
+                    updatedAtMillis = now,
+                )
+                if (alarm.localAudioUri != null && alarm.rawAudioUri?.startsWith("http", ignoreCase = true) != true) {
+                    Log.i(TAG, "Synced alarm metadata only; local voice audio remains on-device id=${alarm.id}")
+                }
+            }.onFailure { error ->
+                failed += 1
+                Log.e(TAG, "Failed to sync alarm id=${alarm.id}", error)
+                alarmDao.setSyncState(
+                    id = alarm.id,
+                    remoteAlarmId = alarm.remoteAlarmId,
+                    lastSyncedAtMillis = alarm.lastSyncedAtMillis,
+                    syncState = AlarmSyncStates.FAILED,
+                    updatedAtMillis = now,
+                )
+            }
+        }
+
+        Log.i(TAG, "Backend alarm sync complete total=${localAlarms.size} created=$created updated=$updated failed=$failed")
+        return AlarmSyncResult(
+            total = localAlarms.size,
+            created = created,
+            updated = updated,
+            failed = failed,
+        )
+    }
+
     private fun validateDraft(draft: AlarmDraft) {
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
@@ -276,4 +347,7 @@ class AlarmRepository(
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
     }
+
+    private fun AlarmEntity.nextLocalSyncState(): String =
+        if (remoteAlarmId == null) AlarmSyncStates.LOCAL_ONLY else AlarmSyncStates.DIRTY
 }

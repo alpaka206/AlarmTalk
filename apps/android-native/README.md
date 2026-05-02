@@ -1,6 +1,6 @@
 # Voice Alarm Android Native PoC
 
-Phase 1-3 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, and local alarm audio only:
+Phase 1-4 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, and user-triggered backend sync only:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -9,6 +9,10 @@ Phase 1-3 Android native alarm PoC. This project is intentionally scoped to loca
 - local voice recording and local audio file selection
 - 30 second voice audio limit
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
+- app theme matched to the legacy mobile mustard/navy/terracotta tokens
+- email/password auth against the deployed VoiceAlarm API
+- Google ID-token auth support when a web client ID is configured
+- manual alarm metadata sync to the deployed VoiceAlarm API
 - `AlarmManager.setExactAndAllowWhileIdle`
 - full-screen ringing activity through an alarm foreground service notification
 - bundled local alarm tone generated into the APK at build time
@@ -16,6 +20,41 @@ Phase 1-3 Android native alarm PoC. This project is intentionally scoped to loca
 - boot/package-replaced restore from local Room state
 
 The alarm ring path does not use push notifications, server cron, network fetch, paid TTS/persona APIs, or the legacy React Native alarm runtime. Any later TTS output must be downloaded before scheduling and cached as a local audio file.
+
+## Backend API
+
+The native app defaults to the deployed API used by the legacy mobile app:
+
+```text
+https://voice-alarm-api.voicealarm.workers.dev/api/
+```
+
+Root health was verified with:
+
+```powershell
+Invoke-RestMethod -Uri https://voice-alarm-api.voicealarm.workers.dev/
+```
+
+Expected response includes `status: ok` and `db: ok`.
+
+Current deployed auth support:
+
+- Email/password: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`.
+- Google: protected routes accept a Google ID token as a bearer token, matching the legacy app behavior.
+- Code-login: not exposed by the deployed API yet. The Android UI has the code-entry surface, but pressing Verify reports that the backend verification endpoint is missing.
+- Apple: iOS should add Sign in with Apple later. The current backend accepts Apple ID-token payloads on protected routes, but production-grade Apple JWKS signature verification still needs backend hardening before treating it as final.
+
+No ElevenLabs, Perso, TTS generation, voice clone, diarization, or upload endpoints are called by this Android PoC.
+
+### Google Sign-In Config
+
+Google sign-in needs a Web OAuth client ID. Pass it as a Gradle property:
+
+```powershell
+.\gradlew.bat -PvoiceAlarmGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDebug
+```
+
+Without that property, the Google button stays safe and reports that configuration is required.
 
 ## Build
 
@@ -154,6 +193,29 @@ Restore radios after testing:
 ```powershell
 adb shell cmd connectivity airplane-mode disable
 ```
+
+### Backend Auth / Manual Sync
+
+Network is only used when the user signs in or taps Sync now.
+
+1. Open the app.
+2. Sign in with email/password, or configure Google sign-in and continue with Google.
+3. Create or edit local alarms.
+4. Tap Sync now from the Account panel.
+5. Watch logs:
+
+```powershell
+adb logcat | findstr VoiceAlarm
+```
+
+Expected:
+
+- Local alarms keep ringing offline after sync.
+- Sync logs `Backend alarm sync complete`.
+- Alarm rows show `synced`, `changed`, `sync failed`, or `local only`.
+- Local voice files are not uploaded automatically. If an alarm uses a device-local file, sync writes alarm metadata only and keeps the audio on-device.
+
+To verify the ring path is still offline, sync once, enable airplane mode, then let a local alarm fire. Ringing should still use Room state and local audio only.
 
 ### Dismiss / Snooze
 

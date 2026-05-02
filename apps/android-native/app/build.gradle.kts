@@ -87,6 +87,19 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    val voiceAlarmApiBaseUrl = providers.gradleProperty("voiceAlarmApiBaseUrl")
+        .orElse("https://voice-alarm-api.voicealarm.workers.dev/api/")
+        .get()
+    val voiceAlarmGoogleWebClientId = providers.gradleProperty("voiceAlarmGoogleWebClientId")
+        .orElse("")
+        .get()
+
+    buildTypes.configureEach {
+        buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmApiBaseUrl\"")
+        buildConfigField("String", "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID", "\"$voiceAlarmGoogleWebClientId\"")
     }
 
     compileOptions {
@@ -120,6 +133,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.squareup.retrofit2:retrofit:2.11.0")
 
     ksp("androidx.room:room-compiler:2.6.1")
 

@@ -17,6 +17,9 @@ data class AlarmEntity(
     val defaultAlarmSoundId: String,
     val localAudioUri: String?,
     val rawAudioUri: String?,
+    val remoteAlarmId: String?,
+    val lastSyncedAtMillis: Long?,
+    val syncState: String,
     val enabled: Boolean,
     val state: String,
     val createdAtMillis: Long,
@@ -30,6 +33,13 @@ object AlarmStates {
     const val DISMISSED = "dismissed"
     const val DISABLED = "disabled"
     const val FAILED = "failed"
+}
+
+object AlarmSyncStates {
+    const val LOCAL_ONLY = "local_only"
+    const val SYNCED = "synced"
+    const val DIRTY = "dirty"
+    const val FAILED = "sync_failed"
 }
 
 object VibrationPatterns {

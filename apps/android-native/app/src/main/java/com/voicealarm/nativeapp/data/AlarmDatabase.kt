@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -25,7 +25,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     context.applicationContext,
                     AlarmDatabase::class.java,
                     "voice-alarm.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -38,6 +38,14 @@ abstract class AlarmDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN defaultAlarmSoundId TEXT NOT NULL DEFAULT '${DefaultAlarmSounds.BUNDLED_DEFAULT}'")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN localAudioUri TEXT")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN rawAudioUri TEXT")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN remoteAlarmId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN lastSyncedAtMillis INTEGER")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN syncState TEXT NOT NULL DEFAULT '${AlarmSyncStates.LOCAL_ONLY}'")
             }
         }
     }
