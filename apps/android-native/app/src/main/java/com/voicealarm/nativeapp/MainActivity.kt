@@ -7,6 +7,7 @@ import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -63,10 +64,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,17 +89,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.data.AlarmAudioLimits
+import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
+import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -405,6 +415,81 @@ private fun AlarmEditorScreen(
     onSave: (AlarmDraft) -> Unit,
 ) {
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
+    val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
+    val scope = rememberCoroutineScope()
+    var audioMessage by remember { mutableStateOf<String?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+
+    fun applyCachedAudio(audio: CachedAlarmAudio) {
+        editor.setCachedAudio(audio)
+        val seconds = audio.durationMillis?.let { " (${it / 1000}s)" } ?: ""
+        audioMessage = "Voice audio ready$seconds"
+    }
+
+    fun cacheSelectedAudio(uri: Uri) {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { audioStore.cacheFromUri(uri) }
+            }.onSuccess(::applyCachedAudio)
+                .onFailure { error ->
+                    Log.e(TAG, "Failed to cache selected audio", error)
+                    audioMessage = error.message ?: "Unable to use selected audio"
+                }
+        }
+    }
+
+    fun stopRecording() {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { recorder.stop() }
+            }.onSuccess { audio ->
+                isRecording = false
+                applyCachedAudio(audio)
+            }.onFailure { error ->
+                isRecording = false
+                Log.e(TAG, "Failed to stop recording", error)
+                audioMessage = error.message ?: "Recording failed"
+            }
+        }
+    }
+
+    fun startRecording() {
+        runCatching {
+            recorder.start()
+            isRecording = true
+            audioMessage = "Recording..."
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to start recording", error)
+            audioMessage = error.message ?: "Unable to start recording"
+        }
+    }
+
+    val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) cacheSelectedAudio(uri)
+    }
+    val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            startRecording()
+        } else {
+            audioMessage = "Microphone permission is required"
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            delay(AlarmAudioLimits.MAX_DURATION_MILLIS)
+            if (isRecording) stopRecording()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (recorder.isRecording) recorder.cancel()
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -477,6 +562,67 @@ private fun AlarmEditorScreen(
         }
 
         item {
+            OptionSection(title = "Voice audio") {
+                Text(
+                    text = editor.localAudioUri?.let(::audioFileLabel) ?: "No voice audio",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { pickAudioLauncher.launch("audio/*") },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Pick")
+                    }
+                    Button(
+                        onClick = {
+                            if (isRecording) {
+                                stopRecording()
+                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startRecording()
+                            } else {
+                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (isRecording) "Stop" else "Record")
+                    }
+                    if (editor.localAudioUri != null) {
+                        OutlinedButton(onClick = {
+                            editor.clearAudio()
+                            audioMessage = "Voice audio cleared"
+                        }) {
+                            Text("Clear")
+                        }
+                    }
+                }
+                Text(
+                    text = "Max ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}s",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (audioMessage != null) {
+                    Text(
+                        text = requireNotNull(audioMessage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isRecording) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        }
+
+        item {
             OptionSection(title = "Play mode") {
                 OptionChips(
                     options = listOf(
@@ -522,6 +668,8 @@ private class AlarmEditorState(
     snoozeMinutes: Int,
     vibrationPattern: String,
     playMode: String,
+    localAudioUri: String?,
+    rawAudioUri: String?,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -530,6 +678,8 @@ private class AlarmEditorState(
     var snoozeMinutes by mutableIntStateOf(snoozeMinutes)
     var vibrationPattern by mutableStateOf(vibrationPattern)
     var playMode by mutableStateOf(playMode)
+    var localAudioUri by mutableStateOf(localAudioUri)
+    var rawAudioUri by mutableStateOf(rawAudioUri)
 
     fun toDraft(): AlarmDraft = AlarmDraft(
         label = label,
@@ -539,7 +689,19 @@ private class AlarmEditorState(
         snoozeMinutes = snoozeMinutes,
         vibrationPattern = vibrationPattern,
         playMode = playMode,
+        localAudioUri = localAudioUri,
+        rawAudioUri = rawAudioUri,
     )
+
+    fun setCachedAudio(audio: CachedAlarmAudio) {
+        localAudioUri = audio.localAudioUri
+        rawAudioUri = audio.rawAudioUri
+    }
+
+    fun clearAudio() {
+        localAudioUri = null
+        rawAudioUri = null
+    }
 
     companion object {
         fun from(alarm: AlarmEntity?): AlarmEditorState {
@@ -552,6 +714,8 @@ private class AlarmEditorState(
                 snoozeMinutes = alarm?.snoozeMinutes ?: 5,
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
                 playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
+                localAudioUri = alarm?.localAudioUri,
+                rawAudioUri = alarm?.rawAudioUri,
             )
         }
     }
@@ -916,6 +1080,12 @@ private fun formatFireTime(millis: Long): String {
         .atZone(ZoneId.systemDefault())
         .format(formatter)
 }
+
+private fun audioFileLabel(localAudioUri: String): String =
+    Uri.parse(localAudioUri).lastPathSegment
+        ?.substringAfterLast('/')
+        ?.ifBlank { null }
+        ?: "Local voice audio"
 
 private fun repeatLabel(mask: Int): String {
     if (mask == 0) return "Once"

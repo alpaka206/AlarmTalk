@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -25,6 +26,8 @@ import com.voicealarm.nativeapp.alarm.AlarmContract.ACTION_START_RINGING
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.data.AlarmEntity
+import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +40,7 @@ class RingingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var audioSequenceActive = false
 
     override fun onCreate() {
         super.onCreate()
@@ -96,12 +100,10 @@ class RingingService : Service() {
             startForeground(RINGING_NOTIFICATION_ID, notification)
         }
 
-        startAlarmSound()
         serviceScope.launch {
-            val pattern = AlarmAppContainer.repository(applicationContext)
-                .getAlarm(alarmId)
-                ?.vibrationPattern
-                ?: VibrationPatterns.DEFAULT
+            val alarm = AlarmAppContainer.repository(applicationContext).getAlarm(alarmId)
+            startRingingAudio(alarm)
+            val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
             startVibration(pattern)
         }
         openRingingActivity(alarmId)
@@ -162,14 +164,41 @@ class RingingService : Service() {
         )
     }
 
-    private fun startAlarmSound() {
+    private fun startRingingAudio(alarm: AlarmEntity?) {
         if (mediaPlayer?.isPlaying == true) return
 
+        val voiceUri = alarm?.localAudioUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        Log.i(TAG, "Starting ringing audio playMode=${alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY} hasVoiceAudio=${voiceUri != null}")
+        when {
+            alarm?.playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
+                startVoiceLoop(voiceUri)
+            }
+
+            alarm?.playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
+                startAlarmVoiceSequence(voiceUri)
+            }
+
+            alarm?.playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
+                Log.w(TAG, "Voice-only alarm has no local voice audio; falling back to bundled alarm")
+                startBundledAlarmLoop()
+            }
+
+            alarm?.playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
+                Log.w(TAG, "Alarm+voice alarm has no local voice audio; falling back to bundled alarm")
+                startBundledAlarmLoop()
+            }
+
+            else -> startBundledAlarmLoop()
+        }
+    }
+
+    private fun startBundledAlarmLoop() {
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
 
+        audioSequenceActive = false
         mediaPlayer?.release()
         mediaPlayer = MediaPlayer.create(this, R.raw.voice_alarm_default, alarmAttributes, 0)?.apply {
             setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
@@ -181,6 +210,79 @@ class RingingService : Service() {
             Log.e(TAG, "Failed to create bundled alarm MediaPlayer")
         }
     }
+
+    private fun startVoiceLoop(voiceUri: Uri) {
+        audioSequenceActive = false
+        mediaPlayer?.release()
+        mediaPlayer = createVoicePlayer(voiceUri)?.apply {
+            isLooping = true
+            start()
+        }
+        if (mediaPlayer == null) {
+            Log.e(TAG, "Failed to create voice MediaPlayer; falling back to bundled alarm")
+            startBundledAlarmLoop()
+        }
+    }
+
+    private fun startAlarmVoiceSequence(voiceUri: Uri) {
+        audioSequenceActive = true
+        mediaPlayer?.release()
+        playSequenceStep(voiceUri = voiceUri, playAlarmTone = true)
+    }
+
+    private fun playSequenceStep(voiceUri: Uri, playAlarmTone: Boolean) {
+        if (!audioSequenceActive) return
+
+        val nextPlayer = if (playAlarmTone) {
+            createBundledAlarmPlayer(looping = false)
+        } else {
+            createVoicePlayer(voiceUri)
+        }
+
+        if (nextPlayer == null) {
+            Log.e(TAG, "Failed to create sequence MediaPlayer; falling back to bundled alarm")
+            startBundledAlarmLoop()
+            return
+        }
+
+        mediaPlayer = nextPlayer.apply {
+            isLooping = false
+            setOnCompletionListener { completed ->
+                completed.release()
+                if (mediaPlayer === completed) mediaPlayer = null
+                playSequenceStep(voiceUri, playAlarmTone = !playAlarmTone)
+            }
+            start()
+        }
+    }
+
+    private fun createBundledAlarmPlayer(looping: Boolean): MediaPlayer? {
+        val alarmAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        return MediaPlayer.create(this, R.raw.voice_alarm_default, alarmAttributes, 0)?.apply {
+            setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+            isLooping = looping
+        }
+    }
+
+    private fun createVoicePlayer(voiceUri: Uri): MediaPlayer? =
+        runCatching {
+            MediaPlayer().apply {
+                setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build(),
+                )
+                setDataSource(applicationContext, voiceUri)
+                prepare()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to prepare voice audio uri=$voiceUri", error)
+        }.getOrNull()
 
     private fun startVibration(patternName: String) {
         if (patternName == VibrationPatterns.NONE) {
@@ -239,6 +341,7 @@ class RingingService : Service() {
     }
 
     private fun stopRingingOutputs() {
+        audioSequenceActive = false
         mediaPlayer?.run {
             runCatching {
                 if (isPlaying) stop()

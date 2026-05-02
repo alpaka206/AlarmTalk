@@ -1,18 +1,21 @@
 # Voice Alarm Android Native PoC
 
-Phase 1-2 Android native alarm PoC. This project is intentionally scoped to local alarm reliability and local alarm app behavior only:
+Phase 1-3 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, and local alarm audio only:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
 - alarm list, create, edit, delete, enable/disable
 - repeat days, snooze minutes, vibration pattern, and play mode persistence
+- local voice recording and local audio file selection
+- 30 second voice audio limit
+- `alarm_only`, `voice_only`, and `alarm_voice` playback modes
 - `AlarmManager.setExactAndAllowWhileIdle`
 - full-screen ringing activity through an alarm foreground service notification
 - bundled local alarm tone generated into the APK at build time
 - looping playback, repeating vibration, dismiss, snooze
 - boot/package-replaced restore from local Room state
 
-The alarm ring path does not use push notifications, server cron, network fetch, paid TTS/persona APIs, or the legacy React Native alarm runtime. Phase 2 stores `playMode` and local audio URI fields for later phases, but ringing still uses bundled local alarm audio.
+The alarm ring path does not use push notifications, server cron, network fetch, paid TTS/persona APIs, or the legacy React Native alarm runtime. Any later TTS output must be downloaded before scheduling and cached as a local audio file.
 
 ## Build
 
@@ -121,6 +124,36 @@ adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
 Expected: `VoiceAlarm` logs show create, update, enabled changed, deleted, and scheduled/cancelled events. No network calls are required.
 
 Opening the alarm list also performs a startup sync from Room to `AlarmManager`, so future enabled alarms are restored and expired one-shot alarms are marked inactive.
+
+### Local Voice Audio
+
+1. Tap New alarm or edit an existing alarm.
+2. In Voice audio, tap Record and grant microphone permission.
+3. Stop before 30 seconds, or let the app stop at the 30 second limit.
+4. Save with play mode `Voice` or `Alarm + Voice`.
+5. Confirm the alarm rings without network access.
+
+To verify file selection:
+
+1. Tap Pick and choose an `audio/*` file.
+2. Files longer than 30 seconds should be rejected.
+3. Save and confirm `VoiceAlarm` logs show local audio caching.
+
+Airplane-mode check:
+
+```powershell
+adb shell cmd connectivity airplane-mode enable
+adb logcat -c
+adb logcat | findstr VoiceAlarm
+```
+
+Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` repeats bundled alarm audio followed by the cached voice file. No fetch is allowed at ring time.
+
+Restore radios after testing:
+
+```powershell
+adb shell cmd connectivity airplane-mode disable
+```
 
 ### Dismiss / Snooze
 
