@@ -112,10 +112,11 @@ Expected: Snooze logs `Alarm snoozed` and re-registers; Dismiss logs `Alarm dism
 
 ### Boot Restore Broadcast
 
-Create a future alarm, then send the receiver broadcast:
+Create a future alarm, then send the receiver broadcast. On some Android builds, including Samsung Android 13, shell cannot send the protected `BOOT_COMPLETED` action. Use the debug restore action for adb verification in that case; real reboot still uses `BOOT_COMPLETED`.
 
 ```powershell
 adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n com.voicealarm.nativeapp/.alarm.BootCompletedReceiver
+adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_RESTORE_ALARMS -n com.voicealarm.nativeapp/.alarm.BootCompletedReceiver
 adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
 ```
 
