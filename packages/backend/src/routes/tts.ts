@@ -4,6 +4,7 @@ import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
+import { R2VoiceStorage } from '../lib/r2-storage';
 
 const tts = new Hono<AppEnv>();
 
@@ -16,6 +17,7 @@ tts.post('/generate', async (c) => {
     voice_profile_id: string;
     text: string;
     category?: string;
+    language?: string;
   }>();
 
   if (!body.voice_profile_id || !body.text) {
@@ -36,6 +38,9 @@ tts.post('/generate', async (c) => {
     'afternoon',
     'evening',
     'night',
+    'sleep',
+    'medicine',
+    'study',
     'cheer',
     'love',
     'health',
@@ -102,13 +107,28 @@ tts.post('/generate', async (c) => {
 
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
     const audioBuffer = await client.textToSpeech(vp.elevenlabs_voice_id as string, body.text);
+    const bytes = new Uint8Array(audioBuffer);
+
+    let audioObjectKey: string | null = null;
+    let audioUrl: string | null = null;
+    if (c.env.VOICE_BUCKET) {
+      const storage = new R2VoiceStorage(c.env.VOICE_BUCKET);
+      const stored = await storage.store({
+        bytes,
+        userId,
+        mimeType: 'audio/mpeg',
+        originalName: `tts_${Date.now()}.mp3`,
+      });
+      audioObjectKey = stored.objectKey;
+      audioUrl = `r2://${stored.objectKey}`;
+    }
 
     // 메시지 DB 저장
     const messageId = crypto.randomUUID();
     await db.execute({
-      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [messageId, userId, body.voice_profile_id, body.text, body.category ?? 'custom'],
+      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, audio_url)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [messageId, userId, body.voice_profile_id, body.text, body.category ?? 'custom', audioUrl],
     });
 
     // 사용량 증가
@@ -124,7 +144,6 @@ tts.post('/generate', async (c) => {
     });
 
     // 오디오 데이터를 base64로 반환 (클라이언트에서 로컬 저장)
-    const bytes = new Uint8Array(audioBuffer);
     let binary = '';
     for (let i = 0; i < bytes.length; i++) {
       binary += String.fromCharCode(bytes[i]!);
@@ -136,8 +155,11 @@ tts.post('/generate', async (c) => {
         message_id: messageId,
         audio_base64: base64Audio,
         audio_format: 'mp3',
+        audio_url: audioUrl,
+        audio_object_key: audioObjectKey,
         text: body.text,
         voice_profile_id: body.voice_profile_id,
+        language: body.language ?? 'ko',
       },
       201,
     );
