@@ -30,6 +30,7 @@
             android:finishOnTaskLaunch="true"
             android:launchMode="singleTask"
             android:resizeableActivity="false"
+            android:screenOrientation="portrait"
             android:showWhenLocked="true"
             android:taskAffinity="com.voicealarm.nativeapp.ringing"
             android:turnScreenOn="true"
