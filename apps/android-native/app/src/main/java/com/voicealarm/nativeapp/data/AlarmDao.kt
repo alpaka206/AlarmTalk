@@ -26,6 +26,16 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms ORDER BY enabled DESC, fireAtMillis ASC, updatedAtMillis DESC")
     suspend fun getAllAlarms(): List<AlarmEntity>
 
+    @Query(
+        """
+        SELECT COUNT(*) FROM alarms
+        WHERE hour = :hour
+          AND minute = :minute
+          AND (:excludeId IS NULL OR id != :excludeId)
+        """,
+    )
+    suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
+
     @Upsert
     suspend fun upsert(alarm: AlarmEntity)
 

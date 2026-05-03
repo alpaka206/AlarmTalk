@@ -42,6 +42,7 @@ class AlarmRepository(
         val localTime = java.time.Instant.ofEpochMilli(fireAtMillis)
             .atZone(java.time.ZoneId.systemDefault())
             .toLocalTime()
+        requireUniqueTime(localTime.hour, localTime.minute)
         requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
@@ -82,6 +83,7 @@ class AlarmRepository(
 
     suspend fun createAlarm(draft: AlarmDraft): AlarmEntity {
         validateDraft(draft)
+        requireUniqueTime(draft.hour, draft.minute)
 
         val now = System.currentTimeMillis()
         val alarm = AlarmEntity(
@@ -131,6 +133,7 @@ class AlarmRepository(
     suspend fun updateAlarm(alarmId: String, draft: AlarmDraft): AlarmEntity {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
+        requireUniqueTime(draft.hour, draft.minute, excludeAlarmId = alarmId)
         val now = System.currentTimeMillis()
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
@@ -222,12 +225,16 @@ class AlarmRepository(
     suspend fun copyAlarm(alarmId: String): AlarmEntity {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
+        val copiedTime = copyTargetTime(current.hour, current.minute)
+        requireUniqueTime(copiedTime.hour, copiedTime.minute)
         val copied = current.copy(
             id = UUID.randomUUID().toString(),
             label = current.label.takeIf { it.isNotBlank() }?.let { "$it 복사본" } ?: "복사한 알람",
+            hour = copiedTime.hour,
+            minute = copiedTime.minute,
             fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = current.hour,
-                minute = current.minute,
+                hour = copiedTime.hour,
+                minute = copiedTime.minute,
                 repeatDaysMask = current.repeatDaysMask,
                 holidayOff = current.holidayOff,
                 nowMillis = now,
@@ -480,6 +487,15 @@ class AlarmRepository(
             require(!draft.localAudioUri.isNullOrBlank()) { "Voice audio must be cached before saving this alarm." }
         }
     }
+
+    private suspend fun requireUniqueTime(hour: Int, minute: Int, excludeAlarmId: String? = null) {
+        require(alarmDao.countAtTime(hour, minute, excludeAlarmId) == 0) {
+            "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
+        }
+    }
+
+    private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
+        java.time.LocalTime.of(hour, minute).plusMinutes(10)
 
     private fun requireExactAlarmPermission() {
         require(alarmScheduler.canScheduleExactAlarms()) {
