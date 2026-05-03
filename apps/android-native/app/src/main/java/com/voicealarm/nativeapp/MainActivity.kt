@@ -837,16 +837,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         topBar = {
             if (screen !is AlarmScreen.List) {
                 TopAppBar(
-                    title = {
-                        Text(
-                            text = when (screen) {
-                                AlarmScreen.List -> "Voice Alarm"
-                                AlarmScreen.Create -> "알람 설정"
-                                is AlarmScreen.Edit -> "알람 편집"
-                            },
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    },
+                    title = {},
                     navigationIcon = {
                         IconButton(onClick = ::goBackInApp) {
                             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
@@ -2055,15 +2046,10 @@ private fun AlarmEditorScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 36.dp),
+        contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         item {
-            AlarmEditorIntro(alarm = alarm)
-        }
-
-        item {
-            EditorSectionTitle("시간")
             AlarmTimePickerCard(
                 hour = editor.hour,
                 minute = editor.minute,
@@ -2071,6 +2057,7 @@ private fun AlarmEditorScreen(
                     editor.hour = selectedHour
                     editor.minute = selectedMinute
                 },
+                modifier = Modifier.fillParentMaxWidth(),
             )
         }
 
@@ -2165,17 +2152,6 @@ private fun AlarmEditorScreen(
 }
 
 @Composable
-private fun AlarmEditorIntro(alarm: AlarmEntity?) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = if (alarm == null) "알람 설정" else "알람 편집",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
 private fun EditorSectionTitle(title: String) {
     Text(
         text = title,
@@ -2190,6 +2166,7 @@ private fun AlarmTimePickerCard(
     hour: Int,
     minute: Int,
     onTimeChange: (Int, Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val currentOnTimeChange by rememberUpdatedState(onTimeChange)
     val itemHeight = 76.dp
@@ -2197,7 +2174,6 @@ private fun AlarmTimePickerCard(
     var workingMinute by remember { mutableIntStateOf(minute) }
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val selectedTextColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
-    val pickerColor = if (isDark) Color.Black else MaterialTheme.colorScheme.surface
 
     LaunchedEffect(hour, minute) {
         workingHour = hour
@@ -2223,71 +2199,65 @@ private fun AlarmTimePickerCard(
         commitTime(nextHour, nextMinute)
     }
 
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = pickerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
+            AmPmWheelColumn(
+                hour = workingHour,
+                itemHeight = itemHeight,
+                selectedColor = selectedTextColor,
+                onStep = { steps ->
+                    if (abs(steps) % 2 == 1) {
+                        commitTime((workingHour + 12) % 24, workingMinute)
+                    }
+                },
+            )
+            DraggableTimeWheelColumn(
+                itemHeight = itemHeight,
+                selectedColor = selectedTextColor,
+                itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
+                maxStepsPerGesture = 15,
+                onStep = ::applyHourSteps,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .width(24.dp)
+                    .height(itemHeight * 3),
+                contentAlignment = Alignment.Center,
             ) {
-                AmPmWheelColumn(
-                    hour = workingHour,
-                    itemHeight = itemHeight,
-                    selectedColor = selectedTextColor,
-                    onStep = { steps ->
-                        if (abs(steps) % 2 == 1) {
-                            commitTime((workingHour + 12) % 24, workingMinute)
-                        }
-                    },
+                Text(
+                    text = ":",
+                    style = MaterialTheme.typography.displayLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = selectedTextColor,
+                    textAlign = TextAlign.Center,
                 )
-                DraggableTimeWheelColumn(
-                    itemHeight = itemHeight,
-                    selectedColor = selectedTextColor,
-                    itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
-                    maxStepsPerGesture = 15,
-                    onStep = ::applyHourSteps,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier = Modifier
-                        .width(24.dp)
-                        .height(itemHeight * 3),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = ":",
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = selectedTextColor,
-                        textAlign = TextAlign.Center,
-                    )
                 }
-                DraggableTimeWheelColumn(
-                    itemHeight = itemHeight,
-                    selectedColor = selectedTextColor,
-                    itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
-                    maxStepsPerGesture = 15,
-                    onStep = ::applyMinuteSteps,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Text(
-                text = timeUntilAlarmLabel(workingHour, workingMinute),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
+            DraggableTimeWheelColumn(
+                itemHeight = itemHeight,
+                selectedColor = selectedTextColor,
+                itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
+                maxStepsPerGesture = 15,
+                onStep = ::applyMinuteSteps,
+                modifier = Modifier.weight(1f),
             )
         }
+        Text(
+            text = timeUntilAlarmLabel(workingHour, workingMinute),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
