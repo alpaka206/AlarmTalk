@@ -91,7 +91,7 @@ class RingingService : Service() {
     }
 
     private fun startRinging(alarmId: String) {
-        val notification = buildRingingNotification(alarmId)
+        val notification = RingingNotificationFactory(this).build(alarmId)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 RINGING_NOTIFICATION_ID,
@@ -112,60 +112,6 @@ class RingingService : Service() {
         }
         openRingingActivity(alarmId)
         Log.i(TAG, "Ringing started id=$alarmId")
-    }
-
-    private fun buildRingingNotification(alarmId: String): Notification {
-        val activityIntent = Intent(this, RingingActivity::class.java).apply {
-            putExtra(EXTRA_ALARM_ID, alarmId)
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                Intent.FLAG_ACTIVITY_NO_ANIMATION
-        }
-        val fullScreenIntent = PendingIntent.getActivity(
-            this,
-            RINGING_ACTIVITY_REQUEST_CODE,
-            activityIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        return NotificationCompat.Builder(this, NotificationChannels.RINGING_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_alarm_24)
-            .setColor(0xFFE8B341.toInt())
-            .setContentTitle(getString(R.string.ringing_notification_title))
-            .setContentText(getString(R.string.ringing_notification_text))
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .setSound(null)
-            .setVibrate(null)
-            .setContentIntent(fullScreenIntent)
-            .setFullScreenIntent(fullScreenIntent, true)
-            .addAction(
-                R.drawable.ic_alarm_24,
-                "Snooze",
-                servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
-            )
-            .addAction(
-                R.drawable.ic_alarm_24,
-                "Dismiss",
-                servicePendingIntent(ACTION_DISMISS, alarmId, DISMISS_REQUEST_CODE),
-            )
-            .build()
-    }
-
-    private fun servicePendingIntent(action: String, alarmId: String, requestCode: Int): PendingIntent {
-        val intent = Intent(this, RingingService::class.java).apply {
-            this.action = action
-            putExtra(EXTRA_ALARM_ID, alarmId)
-        }
-        return PendingIntent.getService(
-            this,
-            requestCode,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
     }
 
     private fun startRingingAudio(alarm: AlarmEntity?) {
@@ -409,9 +355,6 @@ class RingingService : Service() {
 
     companion object {
         private const val RINGING_NOTIFICATION_ID = 1001
-        private const val RINGING_ACTIVITY_REQUEST_CODE = 2001
-        private const val DISMISS_REQUEST_CODE = 2002
-        private const val SNOOZE_REQUEST_CODE = 2003
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {
