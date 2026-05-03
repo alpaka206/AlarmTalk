@@ -220,6 +220,75 @@ tts.get('/messages', async (c) => {
   return c.json({ messages: result.rows, total, limit, offset });
 });
 
+/** 저장된 메시지 오디오 다운로드 */
+tts.get('/messages/:id/audio', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
+  }
+
+  const result = await db.execute({
+    sql: `SELECT id, user_id, voice_profile_id, text, audio_url, category
+          FROM messages
+          WHERE id = ? AND user_id = ?`,
+    args: [id, userId],
+  });
+
+  if (result.rows.length === 0) {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
+
+  const message = typedRow<{
+    id: string;
+    voice_profile_id: string;
+    text: string | null;
+    audio_url: string | null;
+    category: string | null;
+  }>(result.rows[0]!);
+  const audioUrl = message.audio_url;
+  if (!audioUrl) {
+    return c.json({ error: 'Message has no stored audio', error_code: 'MESSAGE_AUDIO_MISSING' }, 404);
+  }
+
+  let bytes: Uint8Array;
+  let format = audioFormatFromUrl(audioUrl);
+
+  if (audioUrl.startsWith('r2://')) {
+    if (!c.env.VOICE_BUCKET) {
+      return c.json({ error: 'R2 voice bucket is not configured', error_code: 'VOICE_BUCKET_MISSING' }, 500);
+    }
+    const objectKey = audioUrl.slice('r2://'.length);
+    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(objectKey);
+    if (!stored) {
+      return c.json({ error: 'Stored audio object not found', error_code: 'MESSAGE_AUDIO_NOT_FOUND' }, 404);
+    }
+    bytes = stored.bytes;
+    format = audioFormatFromMime(stored.meta.mimeType) ?? format;
+  } else if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) {
+      return c.json({ error: 'Stored audio download failed', error_code: 'MESSAGE_AUDIO_DOWNLOAD_FAILED' }, 502);
+    }
+    bytes = new Uint8Array(await audioRes.arrayBuffer());
+    format = audioFormatFromMime(audioRes.headers.get('content-type')) ?? format;
+  } else {
+    return c.json({ error: 'Unsupported audio URL', error_code: 'UNSUPPORTED_MESSAGE_AUDIO_URL' }, 400);
+  }
+
+  return c.json({
+    message_id: message.id,
+    audio_base64: uint8ToBase64(bytes),
+    audio_format: format,
+    audio_url: audioUrl,
+    text: message.text ?? '',
+    category: message.category ?? 'custom',
+    voice_profile_id: message.voice_profile_id,
+  });
+});
+
 /** 메시지 삭제 */
 tts.delete('/messages/:id', async (c) => {
   const userId = c.get('userId');
@@ -267,5 +336,28 @@ tts.get('/presets', async (c) => {
   const { PRESETS } = await import('../data/presets');
   return c.json({ presets: PRESETS });
 });
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+function audioFormatFromMime(mimeType: string | null | undefined): string | null {
+  if (!mimeType) return null;
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+  if (mimeType.includes('wav')) return 'wav';
+  if (mimeType.includes('mp4') || mimeType.includes('aac')) return 'm4a';
+  return null;
+}
+
+function audioFormatFromUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes('.wav')) return 'wav';
+  if (lower.includes('.m4a') || lower.includes('.aac') || lower.includes('.mp4')) return 'm4a';
+  return 'mp3';
+}
 
 export default tts;

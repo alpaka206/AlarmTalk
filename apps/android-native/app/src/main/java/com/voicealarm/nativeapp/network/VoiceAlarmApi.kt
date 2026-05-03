@@ -117,6 +117,33 @@ data class TtsGenerateResponse(
     @SerializedName("voice_profile_id") val voiceProfileId: String,
 )
 
+data class TtsMessageListResponse(
+    val messages: List<TtsMessage>,
+    val total: Int? = null,
+    val limit: Int? = null,
+    val offset: Int? = null,
+)
+
+data class TtsMessage(
+    val id: String,
+    val text: String = "",
+    val category: String? = null,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
+    @SerializedName("voice_name") val voiceName: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class TtsMessageAudioResponse(
+    @SerializedName("message_id") val messageId: String,
+    @SerializedName("audio_base64") val audioBase64: String,
+    @SerializedName("audio_format") val audioFormat: String,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    val text: String = "",
+    val category: String? = null,
+    @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
+)
+
 data class FriendListResponse(
     val friends: List<Friend>,
     val total: Int? = null,
@@ -347,6 +374,15 @@ interface VoiceAlarmApi {
         @Header("Authorization") authorization: String,
         @Body request: TtsGenerateRequest,
     ): TtsGenerateResponse
+
+    @GET("tts/messages")
+    suspend fun listTtsMessages(@Header("Authorization") authorization: String): TtsMessageListResponse
+
+    @GET("tts/messages/{id}/audio")
+    suspend fun getTtsMessageAudio(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): TtsMessageAudioResponse
 
     @GET("friend/list")
     suspend fun listFriends(@Header("Authorization") authorization: String): FriendListResponse

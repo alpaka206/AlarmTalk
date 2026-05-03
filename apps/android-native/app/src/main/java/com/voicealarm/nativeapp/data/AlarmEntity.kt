@@ -69,8 +69,9 @@ object AlarmPlayModes {
 object VoiceSources {
     const val LOCAL_AUDIO = "local_audio"
     const val TTS_PROFILE = "tts_profile"
+    const val SERVER_TTS = "server_tts"
 
-    val all = listOf(LOCAL_AUDIO, TTS_PROFILE)
+    val all = listOf(LOCAL_AUDIO, TTS_PROFILE, SERVER_TTS)
 }
 
 object DefaultAlarmSounds {

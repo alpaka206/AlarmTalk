@@ -176,7 +176,7 @@ Opening the alarm list also performs a startup sync from Room to `AlarmManager`,
 ### Alarm Editor Modes
 
 - `Alarm only`: uses only the bundled local alarm sound. Voice audio is not required or saved for this mode.
-- `Voice only`: requires either a generated voice-profile TTS clip or a recorded/selected local audio clip.
+- `Voice only`: requires a generated voice-profile TTS clip, a server-saved dubbed/TTS clip, or a recorded/selected local audio clip.
 - `Alarm + Voice`: rings the bundled alarm first. When the user dismisses the alarm tone, the cached voice clip plays once, then the alarm is dismissed/rescheduled.
 
 If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips major fixed-date Korean public holidays locally without a network fetch.
@@ -229,6 +229,23 @@ Expected:
 - The backend uses ElevenLabs TTS, stores the mp3 bytes in Cloudflare R2 when `VOICE_BUCKET` is bound, and returns base64 audio plus `message_id`.
 - Android decodes the response, caches it under app-private storage, and stores only local audio for the ring path.
 - At ring time, no ElevenLabs, Perso, R2, push, cron, or network fetch is used.
+
+### Server-Saved Dubbed / TTS Audio
+
+This path does not generate new provider audio. It reuses audio already stored on the backend.
+
+1. Sign in.
+2. Select `Voice only` or `Alarm + Voice`.
+3. Select `Server voice`.
+4. Tap Load and choose a saved message that has `audio_url`.
+5. Tap Save.
+
+Expected:
+
+- Android calls `GET /api/tts/messages` to list saved audio.
+- Android calls `GET /api/tts/messages/{id}/audio` while saving to download the existing audio.
+- Android caches the downloaded audio in app-private storage.
+- At ring time, playback uses the cached local file only.
 
 ### Backend Auth / Manual Sync
 

@@ -148,6 +148,8 @@ import com.voicealarm.nativeapp.network.PendingFriendRequest
 import com.voicealarm.nativeapp.network.RegisterRequest
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
+import com.voicealarm.nativeapp.network.TtsMessage
+import com.voicealarm.nativeapp.network.TtsMessageAudioResponse
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoucherItem
@@ -202,6 +204,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var voiceProfileBusy by mutableStateOf(false)
+        private set
+
+    var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
+        private set
+
+    var ttsMessageBusy by mutableStateOf(false)
         private set
 
     var socialBusy by mutableStateOf(false)
@@ -413,6 +421,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val session = authSession ?: throw IllegalStateException("Sign in before generating voice audio")
         return withContext(Dispatchers.IO) {
             api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)
+        }
+    }
+
+    fun loadTtsMessages() {
+        val session = authSession
+        if (session == null) {
+            message = "Sign in before loading saved voices"
+            return
+        }
+        viewModelScope.launch {
+            ttsMessageBusy = true
+            runCatching {
+                api.listTtsMessages(VoiceAlarmApiClient.bearer(session.token)).messages
+            }.onSuccess { messages ->
+                ttsMessages = messages
+                message = "Loaded ${messages.size} saved voices"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load saved TTS messages", error)
+                message = error.message ?: "Failed to load saved voices"
+            }
+            ttsMessageBusy = false
+        }
+    }
+
+    suspend fun downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
+        val session = authSession ?: throw IllegalStateException("Sign in before loading saved voice audio")
+        return withContext(Dispatchers.IO) {
+            api.getTtsMessageAudio(VoiceAlarmApiClient.bearer(session.token), messageId)
         }
     }
 
@@ -704,6 +740,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
     val voiceProfileBusy = viewModel.voiceProfileBusy
+    val ttsMessages = viewModel.ttsMessages
+    val ttsMessageBusy = viewModel.ttsMessageBusy
     val socialBusy = viewModel.socialBusy
     val friends = viewModel.friends
     val pendingFriends = viewModel.pendingFriends
@@ -866,9 +904,13 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 authSession = authSession,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
+                ttsMessages = ttsMessages,
+                ttsMessageBusy = ttsMessageBusy,
                 onCancel = { screen = AlarmScreen.List },
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
+                onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
+                onDownloadTtsMessageAudio = viewModel::downloadTtsMessageAudio,
                 onSave = { draft ->
                     viewModel.createAlarm(draft) { screen = AlarmScreen.List }
                 },
@@ -880,9 +922,13 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 authSession = authSession,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
+                ttsMessages = ttsMessages,
+                ttsMessageBusy = ttsMessageBusy,
                 onCancel = { screen = AlarmScreen.List },
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
+                onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
+                onDownloadTtsMessageAudio = viewModel::downloadTtsMessageAudio,
                 onSave = { draft ->
                     viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
                 },
@@ -1770,9 +1816,13 @@ private fun AlarmEditorScreen(
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
+    ttsMessages: List<TtsMessage>,
+    ttsMessageBusy: Boolean,
     onCancel: () -> Unit,
     onLoadVoiceProfiles: () -> Unit,
+    onLoadTtsMessages: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onDownloadTtsMessageAudio: suspend (String) -> TtsMessageAudioResponse,
     onSave: (AlarmDraft) -> Unit,
 ) {
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
@@ -1842,6 +1892,52 @@ private fun AlarmEditorScreen(
                 return
             }
             onSave(editor.toDraft())
+            return
+        }
+        if (editor.voiceSource == VoiceSources.SERVER_TTS) {
+            val messageId = editor.ttsMessageId
+            if (authSession == null) {
+                audioMessage = "서버에 저장된 음성은 로그인 후 사용할 수 있어요"
+                return
+            }
+            if (messageId.isNullOrBlank()) {
+                audioMessage = "사용할 서버 음성을 선택해 주세요"
+                return
+            }
+            if (editor.localAudioUri != null) {
+                onSave(editor.toDraft())
+                return
+            }
+
+            scope.launch {
+                isSaving = true
+                audioMessage = "서버 음성을 내려받아 로컬에 저장하는 중..."
+                runCatching {
+                    val response = onDownloadTtsMessageAudio(messageId)
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                    val cachedAudio = withContext(Dispatchers.IO) {
+                        audioStore.cacheGeneratedAudio(
+                            bytes = audioBytes,
+                            format = response.audioFormat,
+                            rawAudioUri = response.audioUrl,
+                        )
+                    }
+                    editor.setServerTtsAudio(
+                        audio = cachedAudio,
+                        messageId = response.messageId,
+                        text = response.text,
+                        category = response.category,
+                        voiceProfileId = response.voiceProfileId,
+                        rawAudioUri = response.audioUrl,
+                    )
+                    audioMessage = "서버 음성을 로컬에 저장했어요"
+                    onSave(editor.toDraft())
+                }.onFailure { error ->
+                    Log.e(TAG, "Failed to cache server TTS alarm audio", error)
+                    audioMessage = error.message ?: "서버 음성을 저장하지 못했어요"
+                }
+                isSaving = false
+            }
             return
         }
 
@@ -1989,9 +2085,12 @@ private fun AlarmEditorScreen(
                     authSession = authSession,
                     voiceProfiles = voiceProfiles,
                     voiceProfileBusy = voiceProfileBusy,
+                    ttsMessages = ttsMessages,
+                    ttsMessageBusy = ttsMessageBusy,
                     audioMessage = audioMessage,
                     isRecording = isRecording,
                     onLoadVoiceProfiles = onLoadVoiceProfiles,
+                    onLoadTtsMessages = onLoadTtsMessages,
                     onPick = { pickAudioLauncher.launch("audio/*") },
                     onRecord = {
                         if (isRecording) {
@@ -2044,11 +2143,6 @@ private fun AlarmEditorIntro(alarm: AlarmEntity?) {
             text = if (alarm == null) "알람 설정" else "알람 편집",
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = "울리는 순간에는 로컬에 저장된 시간과 오디오만 사용합니다.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -2606,9 +2700,12 @@ private fun VoiceAudioCard(
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
+    ttsMessages: List<TtsMessage>,
+    ttsMessageBusy: Boolean,
     audioMessage: String?,
     isRecording: Boolean,
     onLoadVoiceProfiles: () -> Unit,
+    onLoadTtsMessages: () -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
     onClear: () -> Unit,
@@ -2627,12 +2724,16 @@ private fun VoiceAudioCard(
             OptionChips(
                 options = listOf(
                     VoiceSources.TTS_PROFILE to "음성 프로필",
+                    VoiceSources.SERVER_TTS to "서버 음성",
                     VoiceSources.LOCAL_AUDIO to "녹음/파일",
                 ),
                 selected = editor.voiceSource,
                 onSelect = {
                     editor.voiceSource = it
                     if (it == VoiceSources.TTS_PROFILE) {
+                        editor.clearAudio()
+                        editor.clearTtsMeta()
+                    } else if (it == VoiceSources.SERVER_TTS) {
                         editor.clearAudio()
                         editor.clearTtsMeta()
                     } else {
@@ -2727,6 +2828,53 @@ private fun VoiceAudioCard(
                         if (editor.voiceRandomPrompt) editor.voiceText = ""
                     },
                 )
+                if (editor.localAudioUri != null) {
+                    MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
+                }
+            } else if (editor.voiceSource == VoiceSources.SERVER_TTS) {
+                Text(
+                    text = "서버에 저장된 더빙/TTS 음성을 알람 저장 시 로컬에 캐시합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("저장된 음성", fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(
+                        onClick = onLoadTtsMessages,
+                        enabled = authSession != null && !ttsMessageBusy,
+                    ) {
+                        Text(if (ttsMessageBusy) "불러오는 중" else "불러오기")
+                    }
+                }
+                val usableMessages = ttsMessages.filter { !it.audioUrl.isNullOrBlank() }
+                if (authSession == null) {
+                    MutedText("로그인 후 서버에 저장된 음성을 사용할 수 있어요.")
+                } else if (ttsMessages.isEmpty()) {
+                    MutedText("저장된 서버 음성이 없어요.")
+                } else if (usableMessages.isEmpty()) {
+                    MutedText("오디오 URL이 있는 서버 음성이 없어요. 새 TTS/더빙 결과부터 사용할 수 있어요.")
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        usableMessages.take(8).forEach { message ->
+                            FilterChip(
+                                selected = editor.ttsMessageId == message.id,
+                                onClick = {
+                                    editor.setPendingServerTts(message)
+                                },
+                                label = {
+                                    Text(
+                                        text = message.text.ifBlank { message.voiceName ?: "서버 음성" }.take(32),
+                                        maxLines = 1,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
                 if (editor.localAudioUri != null) {
                     MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
                 }
@@ -3067,11 +3215,11 @@ private class AlarmEditorState(
             localAudioUri = if (alarmOnly) null else localAudioUri,
             rawAudioUri = if (alarmOnly) null else rawAudioUri,
             voiceSource = if (alarmOnly) VoiceSources.LOCAL_AUDIO else voiceSource,
-            voiceProfileId = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceProfileId,
-            voiceText = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else ttsTextForSave(),
-            voiceCategory = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceCategory,
-            voiceLanguage = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceLanguage,
-            ttsMessageId = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else ttsMessageId,
+            voiceProfileId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceProfileId,
+            voiceText = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsTextForSave(),
+            voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceCategory,
+            voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceLanguage,
+            ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId,
         )
     }
 
@@ -3118,6 +3266,37 @@ private class AlarmEditorState(
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         ttsMessageId = messageId
         generatedTtsKey = buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
+    }
+
+    fun setPendingServerTts(message: TtsMessage) {
+        voiceSource = VoiceSources.SERVER_TTS
+        ttsMessageId = message.id
+        voiceProfileId = message.voiceProfileId
+        voiceText = message.text
+        voiceCategory = message.category ?: "custom"
+        voiceRandomPrompt = false
+        localAudioUri = null
+        rawAudioUri = message.audioUrl
+        generatedTtsKey = null
+    }
+
+    fun setServerTtsAudio(
+        audio: CachedAlarmAudio,
+        messageId: String,
+        text: String,
+        category: String?,
+        voiceProfileId: String?,
+        rawAudioUri: String?,
+    ) {
+        voiceSource = VoiceSources.SERVER_TTS
+        ttsMessageId = messageId
+        voiceText = text
+        voiceCategory = category ?: "custom"
+        voiceRandomPrompt = false
+        this.voiceProfileId = voiceProfileId
+        localAudioUri = audio.localAudioUri
+        this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
+        generatedTtsKey = null
     }
 
     companion object {

@@ -21,7 +21,7 @@ object RemoteAlarmMapper {
             },
             isActive = alarm.enabled,
             messageId = alarm.ttsMessageId,
-            voiceProfileId = alarm.voiceProfileId.takeIf { alarm.voiceSource == VoiceSources.TTS_PROFILE },
+            voiceProfileId = alarm.voiceProfileId.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO },
             rawAudioUrl = rawAudioUrl,
             rawAudioDurationMs = null,
         )
