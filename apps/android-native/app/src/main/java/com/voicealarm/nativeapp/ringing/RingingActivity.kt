@@ -147,14 +147,14 @@ private fun RingingRoute(
             )
             Spacer(Modifier.height(22.dp))
             Text(
-                text = "Voice Alarm",
+                text = "보이스 알람",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 36.sp,
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Alarm ringing",
+                text = "알람이 울리는 중",
                 color = Color(0xFFA89F8F),
                 style = MaterialTheme.typography.titleMedium,
             )
@@ -170,14 +170,14 @@ private fun RingingRoute(
                     ) {
                         Icon(Icons.Outlined.Snooze, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Snooze")
+                        Text("다시 울림")
                     }
                 }
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Dismiss")
+                    Text("끄기")
                 }
             }
         }

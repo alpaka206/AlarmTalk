@@ -274,7 +274,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onDone()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to create alarm", error)
-                message = error.message ?: "Failed to create alarm"
+                message = userFacingError(error, "알람 저장에 실패했어요")
             }
         }
     }
@@ -288,7 +288,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 onDone()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to update alarm id=$alarmId", error)
-                message = error.message ?: "Failed to update alarm"
+                message = userFacingError(error, "알람 수정에 실패했어요")
             }
         }
     }
@@ -305,7 +305,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to change alarm enabled id=$alarmId", error)
-                message = error.message ?: "Failed to update alarm"
+                message = userFacingError(error, "알람 상태 변경에 실패했어요")
             }
         }
     }
@@ -315,10 +315,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.deleteAlarm(alarmId)
             }.onSuccess {
-                message = "Deleted alarm"
+                message = "알람을 삭제했어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to delete alarm id=$alarmId", error)
-                message = error.message ?: "Failed to delete alarm"
+                message = userFacingError(error, "알람 삭제에 실패했어요")
             }
         }
     }
@@ -331,7 +331,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 message = "알람을 복사했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to copy alarm id=$alarmId", error)
-                message = error.message ?: "알람 복사에 실패했어요"
+                message = userFacingError(error, "알람 복사에 실패했어요")
             }
         }
     }
@@ -344,7 +344,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 message = "테스트 알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to create test alarm", error)
-                message = error.message ?: "Failed to schedule alarm"
+                message = userFacingError(error, "테스트 알람 예약에 실패했어요")
             }
         }
     }
@@ -356,10 +356,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.login(LoginRequest(email = email.trim(), password = password))
             }.onSuccess { response ->
                 authSession = authSessionStore.saveAppSession(response)
-                message = "Signed in as ${response.user.email}"
+                message = "${response.user.email} 계정으로 로그인했어요"
             }.onFailure { error ->
                 Log.e(TAG, "Email login failed", error)
-                message = error.message ?: "Sign in failed"
+                message = userFacingError(error, "로그인에 실패했어요")
             }
             authBusy = false
         }
@@ -372,10 +372,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.register(RegisterRequest(email = email.trim(), password = password, name = name.trim()))
             }.onSuccess { response ->
                 authSession = authSessionStore.saveAppSession(response)
-                message = "Registered ${response.user.email}"
+                message = "${response.user.email} 계정을 만들었어요"
             }.onFailure { error ->
                 Log.e(TAG, "Email registration failed", error)
-                message = error.message ?: "Registration failed"
+                message = userFacingError(error, "회원가입에 실패했어요")
             }
             authBusy = false
         }
@@ -388,19 +388,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             email = email,
             name = name,
         )
-        message = "Signed in with Google"
+        message = "Google 계정으로 로그인했어요"
     }
 
     fun logout() {
         authSessionStore.clear()
         authSession = null
-        message = "Signed out"
+        message = "로그아웃했어요"
     }
 
     fun syncNow() {
         val session = authSession
         if (session == null) {
-            message = "Sign in before syncing"
+            message = "동기화하려면 먼저 로그인해 주세요"
             return
         }
         viewModelScope.launch {
@@ -408,10 +408,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.syncWithBackend(api, session.token)
             }.onSuccess { result ->
-                message = "Sync complete: ${result.created} created, ${result.updated} updated, ${result.failed} failed"
+                message = "동기화 완료: 생성 ${result.created}개, 수정 ${result.updated}개, 실패 ${result.failed}개"
             }.onFailure { error ->
                 Log.e(TAG, "Backend sync failed", error)
-                message = error.message ?: "Sync failed"
+                message = userFacingError(error, "동기화에 실패했어요")
             }
             syncBusy = false
         }
@@ -429,7 +429,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun fetchVoiceProfiles(showMessage: Boolean) {
         val session = authSession
         if (session == null) {
-            if (showMessage) message = "Sign in before loading voices"
+            if (showMessage) message = "음성을 불러오려면 먼저 로그인해 주세요"
             return
         }
         viewModelScope.launch {
@@ -439,17 +439,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 voiceProfiles = profiles
-                if (showMessage) message = "Loaded ${profiles.size} voice profiles"
+                if (showMessage) message = "음성 프로필 ${profiles.size}개를 불러왔어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load voice profiles", error)
-                if (showMessage) message = error.message ?: "Failed to load voice profiles"
+                if (showMessage) message = userFacingError(error, "음성 프로필을 불러오지 못했어요")
             }
             voiceProfileBusy = false
         }
     }
 
     suspend fun generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-        val session = authSession ?: throw IllegalStateException("Sign in before generating voice audio")
+        val session = authSession ?: throw IllegalStateException("음성 오디오를 만들려면 먼저 로그인해 주세요")
         return withContext(Dispatchers.IO) {
             api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)
         }
@@ -458,7 +458,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun loadTtsMessages() {
         val session = authSession
         if (session == null) {
-            message = "Sign in before loading saved voices"
+            message = "저장된 음성을 불러오려면 먼저 로그인해 주세요"
             return
         }
         viewModelScope.launch {
@@ -467,24 +467,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 api.listTtsMessages(VoiceAlarmApiClient.bearer(session.token)).messages
             }.onSuccess { messages ->
                 ttsMessages = messages
-                message = "Loaded ${messages.size} saved voices"
+                message = "저장된 음성 ${messages.size}개를 불러왔어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load saved TTS messages", error)
-                message = error.message ?: "Failed to load saved voices"
+                message = userFacingError(error, "저장된 음성을 불러오지 못했어요")
             }
             ttsMessageBusy = false
         }
     }
 
     suspend fun downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
-        val session = authSession ?: throw IllegalStateException("Sign in before loading saved voice audio")
+        val session = authSession ?: throw IllegalStateException("저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요")
         return withContext(Dispatchers.IO) {
             api.getTtsMessageAudio(VoiceAlarmApiClient.bearer(session.token), messageId)
         }
     }
 
     fun refreshSocial() {
-        val authorization = bearerOrMessage("Sign in before loading social data") ?: return
+        val authorization = bearerOrMessage("사람들 정보를 불러오려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
@@ -506,102 +506,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 familyGroup = snapshot.familyGroup
                 familyInvites = snapshot.familyInvites
                 familyVoices = snapshot.familyVoices
-                message = "Social data loaded"
+                message = "사람들 정보를 불러왔어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to refresh social data", error)
-                message = error.message ?: "Failed to load social data"
+                message = userFacingError(error, "사람들 정보를 불러오지 못했어요")
             }
             socialBusy = false
         }
     }
 
     fun sendFriendRequest(email: String) {
-        val authorization = bearerOrMessage("Sign in before sending friend requests") ?: return
+        val authorization = bearerOrMessage("친구 요청을 보내려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
                 api.sendFriendRequest(authorization, FriendRequestBody(email.trim()))
             }.onSuccess {
-                message = "Friend request sent"
+                message = "친구 요청을 보냈어요"
                 refreshSocial()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to send friend request", error)
-                message = error.message ?: "Friend request failed"
+                message = userFacingError(error, "친구 요청에 실패했어요")
             }
             socialBusy = false
         }
     }
 
     fun acceptFriendRequest(id: String) {
-        val authorization = bearerOrMessage("Sign in before accepting requests") ?: return
+        val authorization = bearerOrMessage("친구 요청을 수락하려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
                 api.acceptFriendRequest(authorization, id)
             }.onSuccess {
-                message = "Friend request accepted"
+                message = "친구 요청을 수락했어요"
                 refreshSocial()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to accept friend request id=$id", error)
-                message = error.message ?: "Accept failed"
+                message = userFacingError(error, "친구 요청 수락에 실패했어요")
             }
             socialBusy = false
         }
     }
 
     fun createFamilyInvite() {
-        val authorization = bearerOrMessage("Sign in before creating invites") ?: return
+        val authorization = bearerOrMessage("초대 코드를 만들려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
                 api.createFamilyInvite(authorization, emptyMap()).invite
             }.onSuccess { invite ->
                 familyInvites = listOf(invite) + familyInvites
-                message = "Invite code ${invite.code} created"
+                message = "초대 코드 ${invite.code}를 만들었어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to create family invite", error)
-                message = error.message ?: "Invite creation failed"
+                message = userFacingError(error, "초대 코드 생성에 실패했어요")
             }
             socialBusy = false
         }
     }
 
     fun acceptFamilyInvite(code: String) {
-        val authorization = bearerOrMessage("Sign in before accepting invites") ?: return
+        val authorization = bearerOrMessage("초대를 수락하려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
                 api.acceptFamilyInvite(authorization, code.trim(), emptyMap())
             }.onSuccess {
-                message = "Invite accepted"
+                message = "초대를 수락했어요"
                 refreshSocial()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to accept family invite", error)
-                message = error.message ?: "Invite accept failed"
+                message = userFacingError(error, "초대 수락에 실패했어요")
             }
             socialBusy = false
         }
     }
 
     fun revokeFamilyInvite(code: String) {
-        val authorization = bearerOrMessage("Sign in before revoking invites") ?: return
+        val authorization = bearerOrMessage("초대 코드를 취소하려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
                 api.revokeFamilyInvite(authorization, code, emptyMap())
             }.onSuccess {
-                message = "Invite revoked"
+                message = "초대 코드를 취소했어요"
                 refreshSocial()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to revoke family invite code=$code", error)
-                message = error.message ?: "Invite revoke failed"
+                message = userFacingError(error, "초대 코드 취소에 실패했어요")
             }
             socialBusy = false
         }
     }
 
     fun refreshCharacterAndBilling() {
-        val authorization = bearerOrMessage("Sign in before loading character") ?: return
+        val authorization = bearerOrMessage("성장 정보를 불러오려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             characterBusy = true
             billingBusy = true
@@ -615,10 +615,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 characterResponse = snapshot.character
                 subscriptionResponse = snapshot.subscription
                 vouchers = snapshot.vouchers
-                message = "Character and plan loaded"
+                message = "캐릭터와 플랜 정보를 불러왔어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load character or billing", error)
-                message = error.message ?: "Failed to load character"
+                message = userFacingError(error, "성장 정보를 불러오지 못했어요")
             }
             characterBusy = false
             billingBusy = false
@@ -628,7 +628,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun syncCharacterEvents() {
         val session = authSession
         if (session == null) {
-            message = "Sign in before syncing character events"
+            message = "성장 기록을 동기화하려면 먼저 로그인해 주세요"
             return
         }
         viewModelScope.launch {
@@ -636,40 +636,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.syncCharacterEvents(api, session.token)
             }.onSuccess { result ->
-                message = "XP sync: ${result.synced} synced, ${result.failed} failed"
+                message = "XP 동기화: 완료 ${result.synced}개, 실패 ${result.failed}개"
                 refreshCharacterAndBilling()
             }.onFailure { error ->
                 Log.e(TAG, "Character event sync failed", error)
-                message = error.message ?: "XP sync failed"
+                message = userFacingError(error, "XP 동기화에 실패했어요")
             }
             characterBusy = false
         }
     }
 
     fun registerCode(code: String) {
-        val authorization = bearerOrMessage("Sign in before registering codes") ?: return
+        val authorization = bearerOrMessage("코드를 등록하려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             billingBusy = true
             runCatching {
                 api.registerCode(authorization, CodeRegisterRequest(code.trim()))
             }.onSuccess { response ->
-                message = "Code registered${response.type?.let { ": $it" } ?: ""}"
+                message = "코드를 등록했어요${response.type?.let { ": ${codeTypeLabel(it)}" } ?: ""}"
                 refreshSocial()
                 refreshCharacterAndBilling()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to register code", error)
-                message = error.message ?: "Code registration failed"
+                message = userFacingError(error, "코드 등록에 실패했어요")
             }
             billingBusy = false
         }
     }
 
     fun showGoogleSetupRequired() {
-        message = "Set voiceAlarmGoogleWebClientId to enable Google sign-in."
+        message = "Google 로그인을 쓰려면 voiceAlarmGoogleWebClientId를 설정해 주세요."
     }
 
     fun showGoogleSignInFailed(reason: String? = null) {
-        message = reason ?: "Google sign-in failed"
+        message = reason ?: "Google 로그인에 실패했어요"
     }
 
     fun clearMessage() {
@@ -812,14 +812,14 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 viewModel.showGoogleSignInFailed(googleSignInErrorMessage(error.statusCode))
             } else {
                 Log.e(TAG, "Google sign-in failed resultCode=${result.resultCode}", error)
-                viewModel.showGoogleSignInFailed(error.message ?: "Google sign-in failed")
+                viewModel.showGoogleSignInFailed(userFacingError(error, "Google 로그인에 실패했어요"))
             }
         }.getOrNull()
         if (account == null) return@rememberLauncherForActivityResult
 
         val idToken = account?.idToken
         if (idToken.isNullOrBlank()) {
-            viewModel.showGoogleSignInFailed("Google ID token was not returned")
+            viewModel.showGoogleSignInFailed("Google ID 토큰을 받지 못했어요")
         } else {
             viewModel.finishGoogleLogin(
                 idToken = idToken,
@@ -882,7 +882,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         floatingActionButton = {
             if (screen is AlarmScreen.List && selectedTab == NativeTab.Alarms) {
                 FloatingActionButton(onClick = { screen = AlarmScreen.Create }) {
-                    Icon(Icons.Outlined.Add, contentDescription = "Create alarm")
+                    Icon(Icons.Outlined.Add, contentDescription = "알람 만들기")
                 }
             }
         },
@@ -1016,7 +1016,7 @@ private fun VoiceAlarmBottomBar(
                 tab = NativeTab.People,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Message,
-                label = "메시지",
+                label = "사람들",
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -1256,13 +1256,13 @@ private fun AlarmListScreen(
                         ) {
                             Icon(Icons.Outlined.AlarmAdd, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("New alarm")
+                            Text("새 알람")
                         }
                         OutlinedButton(
                             onClick = onQuickTest,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Text("1 min test")
+                            Text("1분 테스트")
                         }
                     }
                 }
@@ -1287,8 +1287,8 @@ private fun AlarmListScreen(
             NativeTab.People -> {
                 item {
                     ScreenHeader(
-                        title = "메시지",
-                        subtitle = "친구와 가족에게 알람과 목소리를 공유해요.",
+                        title = "사람들",
+                        subtitle = "가족과 연인의 목소리를 초대 코드로 연결해요.",
                     )
                 }
                 if (authSession == null) {
@@ -1538,7 +1538,7 @@ private fun CharacterMiniCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Lv.${character.level} - ${stageLabel(character.stage)} - streak ${characterResponse.streak.current}",
+                    text = "레벨 ${character.level} - ${stageLabel(character.stage)} - 연속 ${characterResponse.streak.current}일",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1563,7 +1563,7 @@ private fun CharacterMiniCard(
                 }
             }
             Text(
-                text = if (pendingEvents > 0) "$pendingEvents sync" else ">",
+                text = if (pendingEvents > 0) "동기화 ${pendingEvents}개" else ">",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -1863,7 +1863,7 @@ private fun AlarmEditorScreen(
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
         val seconds = audio.durationMillis?.let { " (${it / 1000}s)" } ?: ""
-        audioMessage = "Voice audio ready$seconds"
+        audioMessage = "음성 오디오가 준비됐어요$seconds"
     }
 
     fun cacheSelectedAudio(uri: Uri) {
@@ -1873,7 +1873,7 @@ private fun AlarmEditorScreen(
             }.onSuccess(::applyCachedAudio)
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache selected audio", error)
-                    audioMessage = error.message ?: "Unable to use selected audio"
+                    audioMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요")
                 }
         }
     }
@@ -1888,7 +1888,7 @@ private fun AlarmEditorScreen(
             }.onFailure { error ->
                 isRecording = false
                 Log.e(TAG, "Failed to stop recording", error)
-                audioMessage = error.message ?: "Recording failed"
+                audioMessage = userFacingError(error, "녹음에 실패했어요")
             }
         }
     }
@@ -1897,10 +1897,10 @@ private fun AlarmEditorScreen(
         runCatching {
             recorder.start()
             isRecording = true
-            audioMessage = "Recording..."
+            audioMessage = "녹음 중..."
         }.onFailure { error ->
             Log.e(TAG, "Failed to start recording", error)
-            audioMessage = error.message ?: "Unable to start recording"
+            audioMessage = userFacingError(error, "녹음을 시작할 수 없어요")
         }
     }
 
@@ -1997,7 +1997,7 @@ private fun AlarmEditorScreen(
                 onSave(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
-                audioMessage = error.message ?: "음성 생성에 실패했어요"
+                audioMessage = userFacingError(error, "음성 생성에 실패했어요")
             }
             isSaving = false
         }
@@ -2010,7 +2010,7 @@ private fun AlarmEditorScreen(
         if (granted) {
             startRecording()
         } else {
-            audioMessage = "Microphone permission is required"
+            audioMessage = "마이크 권한이 필요해요"
         }
     }
 
@@ -2709,8 +2709,8 @@ private val TtsCategories = listOf(
 
 private val TtsLanguages = listOf(
     "ko" to "한국어",
-    "en" to "English",
-    "ja" to "日本語",
+    "en" to "영어",
+    "ja" to "일본어",
 )
 
 @Composable
@@ -3374,10 +3374,10 @@ private fun StepperField(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             IconButton(onClick = onDecrease) {
-                Icon(Icons.Outlined.Remove, contentDescription = "Decrease $label")
+                Icon(Icons.Outlined.Remove, contentDescription = "$label 줄이기")
             }
             IconButton(onClick = onIncrease) {
-                Icon(Icons.Outlined.Add, contentDescription = "Increase $label")
+                Icon(Icons.Outlined.Add, contentDescription = "$label 늘리기")
             }
         }
     }
@@ -3410,13 +3410,13 @@ private fun DayRows(
     onToggleDay: (Int) -> Unit,
 ) {
     val days = listOf(
-        0 to "Sun",
-        1 to "Mon",
-        2 to "Tue",
-        3 to "Wed",
-        4 to "Thu",
-        5 to "Fri",
-        6 to "Sat",
+        0 to "일",
+        1 to "월",
+        2 to "화",
+        3 to "수",
+        4 to "목",
+        5 to "금",
+        6 to "토",
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3505,7 +3505,7 @@ private fun AccountPanel(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "Provider ${authSession.provider} - plan ${authSession.user.plan}",
+                    text = "로그인 방식 ${providerLabel(authSession.provider)} - 플랜 ${planTypeLabel(authSession.user.plan)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -3534,14 +3534,14 @@ private fun AccountPanel(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         voiceProfiles.take(3).forEach { profile ->
                             Text(
-                                text = "${profile.name} (${profile.status ?: "ready"})",
+                                text = "${profile.name} (${voiceStatusLabel(profile.status)})",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                         if (voiceProfiles.size > 3) {
                             Text(
-                                text = "+${voiceProfiles.size - 3} more",
+                                text = "외 ${voiceProfiles.size - 3}개 더",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -3609,7 +3609,7 @@ private fun AccountPanel(
                 ) {
                     Text(
                         when {
-                            authBusy -> "Working"
+                            authBusy -> "처리 중"
                             mode == "register" -> "계정 만들기"
                             else -> "로그인"
                         },
@@ -3696,8 +3696,8 @@ private fun SocialPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PanelHeader(
-                title = "People",
-                actionLabel = if (socialBusy) "Loading" else "Refresh",
+                title = "사람들",
+                actionLabel = if (socialBusy) "불러오는 중" else "새로고침",
                 enabled = !socialBusy,
                 onAction = onRefreshSocial,
             )
@@ -3709,7 +3709,7 @@ private fun SocialPanel(
                 OutlinedTextField(
                     value = friendEmail,
                     onValueChange = { friendEmail = it },
-                    label = { Text("Friend email") },
+                    label = { Text("친구 이메일") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                     modifier = Modifier.weight(1f),
@@ -3718,39 +3718,39 @@ private fun SocialPanel(
                     onClick = { onSendFriendRequest(friendEmail) },
                     enabled = friendEmail.isNotBlank() && !socialBusy,
                 ) {
-                    Text("Send")
+                    Text("보내기")
                 }
             }
 
             if (pendingFriends.isNotEmpty()) {
-                Text("Pending requests", fontWeight = FontWeight.SemiBold)
+                Text("받은 요청", fontWeight = FontWeight.SemiBold)
                 pendingFriends.take(3).forEach { request ->
                     CompactActionRow(
-                        title = request.requesterName ?: request.requesterEmail ?: "Pending request",
+                        title = request.requesterName ?: request.requesterEmail ?: "대기 중인 요청",
                         subtitle = request.requesterEmail ?: request.createdAt.orEmpty(),
-                        actionLabel = "Accept",
+                        actionLabel = "수락",
                         onAction = { onAcceptFriendRequest(request.id) },
                     )
                 }
             }
 
-            Text("Friends ${friends.size}", fontWeight = FontWeight.SemiBold)
+            Text("친구 ${friends.size}명", fontWeight = FontWeight.SemiBold)
             if (friends.isEmpty()) {
-                MutedText("No accepted friends loaded")
+                MutedText("수락된 친구가 아직 없어요.")
             } else {
                 friends.take(4).forEach { friend ->
                     MutedText(friend.friendName ?: friend.friendEmail ?: friend.id)
                 }
             }
 
-            Text("Family", fontWeight = FontWeight.SemiBold)
+            Text("가족/커플", fontWeight = FontWeight.SemiBold)
             val group = familyGroup
             if (group?.group == null) {
-                MutedText("No family group loaded")
+                MutedText("아직 연결된 그룹이 없어요.")
             } else {
-                MutedText("${group.role ?: "member"} - ${group.members.size}/${group.group.maxMembers} members")
+                MutedText("${roleLabel(group.role)} - ${group.members.size}/${group.group.maxMembers}명")
                 group.members.take(4).forEach { member ->
-                    MutedText("${member.name ?: member.email ?: member.userId} (${member.role})")
+                    MutedText("${member.name ?: member.email ?: member.userId} (${roleLabel(member.role)})")
                 }
             }
 
@@ -3761,7 +3761,7 @@ private fun SocialPanel(
                 OutlinedTextField(
                     value = inviteCode,
                     onValueChange = { inviteCode = it },
-                    label = { Text("Invite code") },
+                    label = { Text("초대 코드") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f),
@@ -3770,7 +3770,7 @@ private fun SocialPanel(
                     onClick = { onAcceptFamilyInvite(inviteCode) },
                     enabled = inviteCode.isNotBlank() && !socialBusy,
                 ) {
-                    Text("Join")
+                    Text("참여")
                 }
             }
 
@@ -3779,29 +3779,29 @@ private fun SocialPanel(
                 enabled = !socialBusy,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Create family invite")
+                Text("초대 코드 만들기")
             }
 
             familyInvites.take(3).forEach { invite ->
                 CompactActionRow(
                     title = invite.code,
-                    subtitle = "${invite.status} - expires ${invite.expiresAt ?: "unknown"}",
-                    actionLabel = "Revoke",
+                    subtitle = "${inviteStatusLabel(invite.status)} - 만료 ${invite.expiresAt ?: "알 수 없음"}",
+                    actionLabel = "취소",
                     enabled = invite.status == "pending" && !socialBusy,
                     onAction = { onRevokeFamilyInvite(invite.code) },
                 )
             }
 
-            Text("Shared voices ${familyVoices.size}", fontWeight = FontWeight.SemiBold)
+            Text("공유 음성 ${familyVoices.size}개", fontWeight = FontWeight.SemiBold)
             if (familyVoices.isEmpty()) {
-                MutedText("No shared voices loaded")
+                MutedText("공유된 음성이 아직 없어요.")
             } else {
                 familyVoices.take(4).forEach { voice ->
-                    MutedText("${voice.name} - ${voice.ownerName ?: "family"} (${voice.status ?: "ready"})")
+                    MutedText("${voice.name} - ${voice.ownerName ?: "가족"} (${voiceStatusLabel(voice.status)})")
                 }
             }
 
-            MutedText("Shared-voice TTS generation is intentionally not called here.")
+            MutedText("이 화면에서는 비용이 발생하는 공유 음성 TTS 생성을 호출하지 않아요.")
         }
     }
 }
@@ -3827,14 +3827,14 @@ private fun CharacterBillingPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PanelHeader(
-                title = "Growth",
-                actionLabel = if (characterBusy || billingBusy) "Loading" else "Refresh",
+                title = "성장",
+                actionLabel = if (characterBusy || billingBusy) "불러오는 중" else "새로고침",
                 enabled = !characterBusy && !billingBusy,
                 onAction = onRefresh,
             )
 
             if (characterResponse == null) {
-                MutedText("Character data not loaded")
+                MutedText("캐릭터 정보를 아직 불러오지 않았어요.")
             } else {
                 val character = characterResponse.character
                 Text(
@@ -3843,13 +3843,13 @@ private fun CharacterBillingPanel(
                     fontWeight = FontWeight.SemiBold,
                 )
                 MutedText(
-                    "Level ${character.level} - ${stageLabel(character.stage)} - XP ${character.xp} - affection ${character.affection}",
+                    "레벨 ${character.level} - ${stageLabel(character.stage)} - XP ${character.xp} - 애정도 ${character.affection}",
                 )
                 MutedText(
-                    "Streak ${characterResponse.streak.current} days - longest ${characterResponse.streak.longest}",
+                    "연속 ${characterResponse.streak.current}일 - 최장 ${characterResponse.streak.longest}일",
                 )
                 MutedText(
-                    "Progress ${characterResponse.progress.xpIntoLevel}/${characterResponse.progress.levelSpan}",
+                    "진행도 ${characterResponse.progress.xpIntoLevel}/${characterResponse.progress.levelSpan}",
                 )
             }
 
@@ -3862,23 +3862,23 @@ private fun CharacterBillingPanel(
                     enabled = pendingEvents > 0 && !characterBusy,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Sync XP")
+                    Text("XP 동기화")
                 }
                 OutlinedButton(
                     onClick = onRefresh,
                     enabled = !characterBusy && !billingBusy,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("$pendingEvents queued")
+                    Text("대기 ${pendingEvents}개")
                 }
             }
 
             val plan = subscriptionResponse?.plan
-            Text("Plan", fontWeight = FontWeight.SemiBold)
+            Text("플랜", fontWeight = FontWeight.SemiBold)
             if (plan == null) {
-                MutedText("Free plan or no active subscription")
+                MutedText("무료 플랜 또는 활성 구독 없음")
             } else {
-                MutedText("${plan.name} - ${plan.planType} - ${plan.maxMembers} members")
+                MutedText("${plan.name} - ${planTypeLabel(plan.planType)} - 최대 ${plan.maxMembers}명")
             }
 
             Row(
@@ -3888,7 +3888,7 @@ private fun CharacterBillingPanel(
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
-                    label = { Text("Coupon or invite code") },
+                    label = { Text("쿠폰 또는 초대 코드") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
@@ -3896,16 +3896,16 @@ private fun CharacterBillingPanel(
                     onClick = { onRegisterCode(code) },
                     enabled = code.isNotBlank() && !billingBusy,
                 ) {
-                    Text("Apply")
+                    Text("적용")
                 }
             }
 
-            Text("Coupons ${vouchers.size}", fontWeight = FontWeight.SemiBold)
+            Text("쿠폰 ${vouchers.size}개", fontWeight = FontWeight.SemiBold)
             if (vouchers.isEmpty()) {
-                MutedText("No issued coupons loaded")
+                MutedText("발급된 쿠폰이 없어요.")
             } else {
                 vouchers.take(3).forEach { voucher ->
-                    MutedText("${voucher.code} - ${voucher.planName} - ${voucher.status}")
+                    MutedText("${voucher.code} - ${voucher.planName} - ${voucherStatusLabel(voucher.status)}")
                 }
             }
         }
@@ -4002,29 +4002,29 @@ private fun PermissionPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = "Permissions",
+                text = "권한",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             PermissionRow(
                 icon = Icons.Outlined.Alarm,
-                label = "Exact alarms",
+                label = "정확한 알람",
                 granted = permissions.exactAlarms,
-                actionLabel = "Open",
+                actionLabel = "열기",
                 onAction = onRequestExactAlarms,
             )
             PermissionRow(
                 icon = Icons.Outlined.Notifications,
-                label = "Notifications",
+                label = "알림",
                 granted = permissions.notifications,
-                actionLabel = "Allow",
+                actionLabel = "허용",
                 onAction = onRequestNotifications,
             )
             PermissionRow(
                 icon = Icons.Outlined.Fullscreen,
-                label = "Full screen",
+                label = "전체화면 알람",
                 granted = permissions.fullScreenIntent,
-                actionLabel = "Open",
+                actionLabel = "열기",
                 onAction = onRequestFullScreen,
             )
         }
@@ -4052,7 +4052,7 @@ private fun PermissionRow(
             Column {
                 Text(text = label, fontWeight = FontWeight.Medium)
                 Text(
-                    text = if (granted) "Allowed" else "Required",
+                    text = if (granted) "허용됨" else "필요함",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (granted) {
                         MaterialTheme.colorScheme.primary
@@ -4125,9 +4125,9 @@ private fun AlarmRow(
             }
             Text(
                 text = if (alarm.enabled) {
-                    "Next ${formatFireTime(alarm.fireAtMillis)}"
+                    "다음 ${formatFireTime(alarm.fireAtMillis)}"
                 } else {
-                    "Inactive"
+                    "꺼짐"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4153,7 +4153,7 @@ private fun AlarmRow(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Text(
-                        text = "${alarm.state} - ${syncStateLabel(alarm.syncState)}",
+                        text = "${alarmStateLabel(alarm.state)} - ${syncStateLabel(alarm.syncState)}",
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         color = if (alarm.enabled) {
                             MaterialTheme.colorScheme.primary
@@ -4166,13 +4166,13 @@ private fun AlarmRow(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = onEditAlarm) {
-                        Icon(Icons.Outlined.Edit, contentDescription = "Edit alarm")
+                        Icon(Icons.Outlined.Edit, contentDescription = "알람 수정")
                     }
                     IconButton(onClick = onCopyAlarm) {
                         Icon(Icons.Outlined.ContentCopy, contentDescription = "알람 복사")
                     }
                     IconButton(onClick = onDeleteAlarm) {
-                        Icon(Icons.Outlined.Delete, contentDescription = "Delete alarm")
+                        Icon(Icons.Outlined.Delete, contentDescription = "알람 삭제")
                     }
                 }
             }
@@ -4270,7 +4270,7 @@ private fun audioFileLabel(localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
         ?.substringAfterLast('/')
         ?.ifBlank { null }
-        ?: "Local voice audio"
+        ?: "로컬 음성 오디오"
 
 private fun repeatLabel(mask: Int): String {
     if (mask == 0) return "반복 없음"
@@ -4291,25 +4291,90 @@ private fun playModeLabel(mode: String): String = when (mode) {
     else -> "알람만"
 }
 
+private fun userFacingError(error: Throwable, fallback: String): String =
+    error.message?.takeIf { it.any { char -> char in '\uAC00'..'\uD7A3' } } ?: fallback
+
+private fun providerLabel(provider: String?): String = when (provider) {
+    "google" -> "Google"
+    "app" -> "이메일"
+    else -> provider ?: "앱"
+}
+
+private fun roleLabel(role: String?): String = when (role) {
+    "owner" -> "소유자"
+    "admin" -> "관리자"
+    "member" -> "멤버"
+    else -> role ?: "멤버"
+}
+
+private fun inviteStatusLabel(status: String?): String = when (status) {
+    "pending" -> "대기 중"
+    "used" -> "사용됨"
+    "expired" -> "만료됨"
+    "revoked" -> "취소됨"
+    else -> status ?: "알 수 없음"
+}
+
+private fun voiceStatusLabel(status: String?): String = when (status) {
+    null, "ready" -> "사용 가능"
+    "processing" -> "준비 중"
+    "failed" -> "실패"
+    else -> status
+}
+
+private fun planTypeLabel(type: String?): String = when (type) {
+    "free" -> "무료"
+    "personal", "individual", "plus" -> "개인"
+    "couple" -> "커플"
+    "family" -> "가족"
+    else -> type ?: "플랜"
+}
+
+private fun voucherStatusLabel(status: String?): String = when (status) {
+    "active" -> "사용 가능"
+    "pending" -> "대기 중"
+    "redeemed", "used" -> "사용됨"
+    "expired" -> "만료됨"
+    "revoked" -> "취소됨"
+    else -> status ?: "알 수 없음"
+}
+
+private fun codeTypeLabel(type: String): String = when (type) {
+    "voucher" -> "쿠폰"
+    "invite" -> "초대 코드"
+    "subscription" -> "구독"
+    else -> type
+}
+
+private fun alarmStateLabel(state: String?): String = when (state) {
+    "scheduled" -> "예약됨"
+    "ringing" -> "울리는 중"
+    "snoozed" -> "다시 울림"
+    "dismissed" -> "종료됨"
+    "missed" -> "놓침"
+    "failed" -> "실패"
+    else -> state ?: "로컬"
+}
+
 private fun stageEmoji(stage: String): String = when (stage) {
-    "sprout" -> "Sprout"
-    "tree" -> "Tree"
-    "bloom" -> "Bloom"
-    else -> "Seed"
+    "sprout" -> "새싹"
+    "tree" -> "나무"
+    "bloom" -> "꽃"
+    else -> "씨앗"
 }
 
 private fun stageLabel(stage: String): String = when (stage) {
-    "sprout" -> "sprout"
-    "tree" -> "tree"
-    "bloom" -> "flower"
-    else -> "seed"
+    "sprout" -> "새싹"
+    "tree" -> "나무"
+    "bloom" -> "꽃"
+    else -> "씨앗"
 }
 
 private fun syncStateLabel(state: String): String = when (state) {
-    AlarmSyncStates.SYNCED -> "synced"
-    AlarmSyncStates.DIRTY -> "changed"
-    AlarmSyncStates.FAILED -> "sync failed"
-    else -> "local only"
+    AlarmSyncStates.SYNCED -> "동기화됨"
+    AlarmSyncStates.DIRTY -> "변경됨"
+    AlarmSyncStates.FAILED -> "동기화 실패"
+    else -> "로컬만"
 }
 
 @Composable
