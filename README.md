@@ -4,6 +4,8 @@ Voice Alarm is being rebuilt as a native Android/iOS alarm app.
 
 The existing React Native/Expo app remains in `apps/mobile` as a legacy reference. Use it for UX flow, screen behavior, copy, API usage, and design-token reference. Do not extend its alarm runtime.
 
+Legacy mobile references that must survive before deleting `apps/mobile` are extracted in `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md`.
+
 ## Read First
 
 - `AGENTS.md`
@@ -41,4 +43,3 @@ npm test
 ```
 
 Android commands will be added after the native project is created.
-

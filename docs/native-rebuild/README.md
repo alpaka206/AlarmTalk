@@ -13,6 +13,7 @@
 7. `06_PROMPT_PHASE_5_SOCIAL_SHARING.md`
 8. `07_PROMPT_PHASE_6_CHARACTER_BILLING.md`
 9. `08_PROMPT_PHASE_7_IOS_NATIVE.md`
+10. `09_LEGACY_REFERENCE_EXTRACT.md`
 
 ## Codex에 요청하는 방식
 
@@ -23,4 +24,3 @@
 ## 가장 중요한 원칙
 
 알람 엔진이 실기기에서 검증되기 전까지 로그인, 캐릭터, 가족/연인, 결제 기능을 구현하지 않는다.
-
