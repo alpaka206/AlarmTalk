@@ -3687,6 +3687,7 @@ private fun GoogleSignInButton(
                 .fillMaxWidth()
                 .padding(start = 12.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_google_g),
