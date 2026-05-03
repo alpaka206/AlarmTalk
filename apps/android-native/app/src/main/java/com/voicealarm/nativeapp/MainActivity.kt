@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -756,6 +757,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val vouchers = viewModel.vouchers
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
+    var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -805,6 +807,29 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         permissions = PermissionSnapshot.read(context)
     }
 
+    fun navigateToTab(tab: NativeTab) {
+        if (selectedTab == tab) return
+        tabBackStack = tabBackStack + selectedTab
+        selectedTab = tab
+    }
+
+    fun goBackInApp() {
+        if (screen !is AlarmScreen.List) {
+            screen = AlarmScreen.List
+            return
+        }
+        val previousTab = tabBackStack.lastOrNull()
+        if (previousTab != null) {
+            tabBackStack = tabBackStack.dropLast(1)
+            selectedTab = previousTab
+        }
+    }
+
+    BackHandler(
+        enabled = screen !is AlarmScreen.List || tabBackStack.isNotEmpty(),
+        onBack = ::goBackInApp,
+    )
+
     Scaffold(
         topBar = {
             if (screen !is AlarmScreen.List) {
@@ -820,7 +845,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = { screen = AlarmScreen.List }) {
+                        IconButton(onClick = ::goBackInApp) {
                             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -831,7 +856,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
-                    onSelectTab = { selectedTab = it },
+                    onSelectTab = ::navigateToTab,
                 )
             }
         },
@@ -847,7 +872,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             AlarmScreen.List -> AlarmListScreen(
                 contentPadding = padding,
                 selectedTab = selectedTab,
-                onSelectTab = { selectedTab = it },
+                onSelectTab = ::navigateToTab,
                 permissions = permissions,
                 alarms = alarms,
                 authSession = authSession,
@@ -906,7 +931,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 voiceProfileBusy = voiceProfileBusy,
                 ttsMessages = ttsMessages,
                 ttsMessageBusy = ttsMessageBusy,
-                onCancel = { screen = AlarmScreen.List },
+                onCancel = ::goBackInApp,
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
                 onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
@@ -924,7 +949,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 voiceProfileBusy = voiceProfileBusy,
                 ttsMessages = ttsMessages,
                 ttsMessageBusy = ttsMessageBusy,
-                onCancel = { screen = AlarmScreen.List },
+                onCancel = ::goBackInApp,
                 onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
                 onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
