@@ -1,13 +1,18 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
-import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
+import { R2VoiceStorage } from '../lib/r2-storage';
+import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import {
+  createSynthesisAttempts,
+  noVoiceProviderError,
+  UnsupportedVoiceProviderError,
+} from '../lib/voice-provider';
 
 const tts = new Hono<AppEnv>();
 
-/** TTS 생성 - 텍스트를 클론된 음성으로 변환 */
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -16,6 +21,7 @@ tts.post('/generate', async (c) => {
     voice_profile_id: string;
     text: string;
     category?: string;
+    language?: string;
   }>();
 
   if (!body.voice_profile_id || !body.text) {
@@ -36,6 +42,9 @@ tts.post('/generate', async (c) => {
     'afternoon',
     'evening',
     'night',
+    'sleep',
+    'medicine',
+    'study',
     'cheer',
     'love',
     'health',
@@ -48,7 +57,7 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  // 사용량 체크
+  let dailyLimitExceeded = false;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE google_id = ?',
     args: [userId],
@@ -59,7 +68,6 @@ tts.post('/generate', async (c) => {
     const plan = u.plan as string;
     const today = new Date().toISOString().split('T')[0]!;
 
-    // 일일 리셋
     if (u.daily_tts_reset_at !== today) {
       await db.execute({
         sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE google_id = ?`,
@@ -69,18 +77,11 @@ tts.post('/generate', async (c) => {
       const count = Number(u.daily_tts_count);
       const limits: Record<string, number> = { free: 3, plus: 9999, family: 9999 };
       if (count >= (limits[plan] ?? 3)) {
-        return c.json(
-          {
-            error: '오늘의 TTS 생성 횟수를 초과했습니다. 업그레이드하면 무제한으로 사용 가능해요!',
-            error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
-          },
-          429,
-        );
+        dailyLimitExceeded = true;
       }
     }
   }
 
-  // 음성 프로필 조회
   const profile = await db.execute({
     sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
     args: [body.voice_profile_id, userId],
@@ -96,51 +97,154 @@ tts.post('/generate', async (c) => {
   }
 
   try {
-    if (!vp.elevenlabs_voice_id) {
+    const attempts = createSynthesisAttempts({
+      env: c.env,
+      profile: {
+        perso_voice_id: vp.perso_voice_id as string | null | undefined,
+        elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
+      },
+      text: body.text,
+      language: body.language ?? 'ko',
+    });
+
+    if (attempts.length === 0) {
       return c.json({ error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' }, 400);
     }
 
-    const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-    const audioBuffer = await client.textToSpeech(vp.elevenlabs_voice_id as string, body.text);
-
-    // 메시지 DB 저장
-    const messageId = crypto.randomUUID();
-    await db.execute({
-      sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [messageId, userId, body.voice_profile_id, body.text, body.category ?? 'custom'],
-    });
-
-    // 사용량 증가
-    await db.execute({
-      sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1 WHERE google_id = ?`,
-      args: [userId],
-    });
-
-    // 라이브러리에도 추가
-    await db.execute({
-      sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
-      args: [crypto.randomUUID(), userId, messageId],
-    });
-
-    // 오디오 데이터를 base64로 반환 (클라이언트에서 로컬 저장)
-    const bytes = new Uint8Array(audioBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]!);
-    }
-    const base64Audio = btoa(binary);
-
-    return c.json(
-      {
-        message_id: messageId,
-        audio_base64: base64Audio,
-        audio_format: 'mp3',
+    const preparedAttempts = await Promise.all(attempts.map(async (attempt) => {
+      const cacheKey = await computeTtsCacheKey({
+        provider: attempt.provider,
+        providerVoiceId: attempt.providerVoiceId,
+        voiceProfileId: body.voice_profile_id,
+        modelId: attempt.modelId,
+        language: body.language ?? 'ko',
         text: body.text,
-        voice_profile_id: body.voice_profile_id,
-      },
-      201,
-    );
+        outputFormat: attempt.outputFormat,
+      });
+      return { attempt, cacheKey };
+    }));
+
+    for (const { cacheKey } of preparedAttempts) {
+      const cached = await findCachedGeneratedAudio(c, userId, cacheKey);
+      if (cached) {
+        return c.json(
+          {
+            message_id: cached.messageId,
+            audio_base64: uint8ToBase64(cached.bytes),
+            audio_format: cached.audioFormat,
+            audio_url: cached.audioUrl,
+            audio_object_key: cached.audioObjectKey,
+            text: cached.text,
+            voice_profile_id: body.voice_profile_id,
+            language: body.language ?? 'ko',
+            provider: cached.provider,
+            cache_key: cacheKey,
+            cache_hit: true,
+          },
+          200,
+        );
+      }
+    }
+
+    if (dailyLimitExceeded) {
+      return c.json(
+        {
+          error: 'Daily TTS generation limit exceeded.',
+          error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
+        },
+        429,
+      );
+    }
+
+    let lastError: unknown = noVoiceProviderError();
+    for (const { attempt, cacheKey } of preparedAttempts) {
+      try {
+        const generated = await attempt.synthesize();
+        const bytes = generated.bytes;
+
+        let audioObjectKey: string | null = null;
+        let audioUrl: string | null = null;
+        if (c.env.VOICE_BUCKET) {
+          const storage = new R2VoiceStorage(c.env.VOICE_BUCKET);
+          audioObjectKey = generatedTtsObjectKey(userId, cacheKey, generated.outputFormat);
+          await storage.storeAtKey(audioObjectKey, {
+            bytes,
+            userId,
+            mimeType: generated.mimeType,
+            originalName: `tts_${cacheKey}.${generated.outputFormat}`,
+          });
+          audioUrl = `r2://${audioObjectKey}`;
+        }
+
+        const messageId = crypto.randomUUID();
+        await db.execute({
+          sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, audio_url)
+                VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [messageId, userId, body.voice_profile_id, body.text, body.category ?? 'custom', audioUrl],
+        });
+
+        if (audioUrl) {
+          await db.execute({
+            sql: `INSERT OR IGNORE INTO generated_audio_assets
+                  (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
+                   model_id, language, request_hash, text, category, audio_url,
+                   audio_object_key, audio_format, mime_type, size_bytes)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              crypto.randomUUID(),
+              userId,
+              body.voice_profile_id,
+              messageId,
+              generated.provider,
+              generated.providerVoiceId,
+              generated.modelId,
+              body.language ?? 'ko',
+              cacheKey,
+              body.text,
+              body.category ?? 'custom',
+              audioUrl,
+              audioObjectKey,
+              generated.outputFormat,
+              generated.mimeType,
+              bytes.byteLength,
+            ],
+          });
+        }
+
+        await db.execute({
+          sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1 WHERE google_id = ?`,
+          args: [userId],
+        });
+
+        await db.execute({
+          sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
+          args: [crypto.randomUUID(), userId, messageId],
+        });
+
+        return c.json(
+          {
+            message_id: messageId,
+            audio_base64: uint8ToBase64(bytes),
+            audio_format: generated.outputFormat,
+            audio_url: audioUrl,
+            audio_object_key: audioObjectKey,
+            text: body.text,
+            voice_profile_id: body.voice_profile_id,
+            language: body.language ?? 'ko',
+            provider: generated.provider,
+            cache_key: cacheKey,
+            cache_hit: false,
+          },
+          201,
+        );
+      } catch (err) {
+        lastError = err;
+        if (err instanceof UnsupportedVoiceProviderError) continue;
+        if (attempt !== attempts[attempts.length - 1]) continue;
+      }
+    }
+
+    throw lastError;
   } catch (err) {
     return c.json(
       {
@@ -153,7 +257,6 @@ tts.post('/generate', async (c) => {
   }
 });
 
-/** 메시지 목록 조회 */
 tts.get('/messages', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -198,7 +301,54 @@ tts.get('/messages', async (c) => {
   return c.json({ messages: result.rows, total, limit, offset });
 });
 
-/** 메시지 삭제 */
+tts.get('/messages/:id/audio', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: 'Invalid message ID format', error_code: 'INVALID_MESSAGE_ID' }, 400);
+  }
+
+  const result = await db.execute({
+    sql: `SELECT id, user_id, voice_profile_id, text, audio_url, category
+          FROM messages
+          WHERE id = ? AND user_id = ?`,
+    args: [id, userId],
+  });
+
+  if (result.rows.length === 0) {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
+
+  const message = typedRow<{
+    id: string;
+    voice_profile_id: string;
+    text: string | null;
+    audio_url: string | null;
+    category: string | null;
+  }>(result.rows[0]!);
+  const audioUrl = message.audio_url;
+  if (!audioUrl) {
+    return c.json({ error: 'Message has no stored audio', error_code: 'MESSAGE_AUDIO_MISSING' }, 404);
+  }
+
+  const loaded = await loadAudioBytes(c, audioUrl);
+  if (!loaded) {
+    return c.json({ error: 'Stored audio object not found', error_code: 'MESSAGE_AUDIO_NOT_FOUND' }, 404);
+  }
+
+  return c.json({
+    message_id: message.id,
+    audio_base64: uint8ToBase64(loaded.bytes),
+    audio_format: loaded.format,
+    audio_url: audioUrl,
+    text: message.text ?? '',
+    category: message.category ?? 'custom',
+    voice_profile_id: message.voice_profile_id,
+  });
+});
+
 tts.delete('/messages/:id', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -228,6 +378,11 @@ tts.delete('/messages/:id', async (c) => {
     args: [id, userId],
   });
 
+  await db.execute({
+    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id = ?',
+    args: [id, userId],
+  });
+
   const result = await db.execute({
     sql: 'DELETE FROM messages WHERE id = ? AND user_id = ?',
     args: [id, userId],
@@ -240,10 +395,107 @@ tts.delete('/messages/:id', async (c) => {
   return c.json({ ok: true, alarms_affected: alarmCount });
 });
 
-/** 프리셋 메시지 목록 */
 tts.get('/presets', async (c) => {
   const { PRESETS } = await import('../data/presets');
   return c.json({ presets: PRESETS });
 });
+
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]!);
+  }
+  return btoa(binary);
+}
+
+async function findCachedGeneratedAudio(
+  c: Context<AppEnv>,
+  userId: string,
+  cacheKey: string,
+): Promise<{
+  messageId: string;
+  provider: string;
+  text: string;
+  audioUrl: string;
+  audioObjectKey: string | null;
+  audioFormat: string;
+  bytes: Uint8Array;
+} | null> {
+  const db = getDB(c.env);
+  const result = await db.execute({
+    sql: `SELECT ga.message_id, ga.provider, ga.text, ga.audio_url, ga.audio_object_key,
+                 ga.audio_format, ga.mime_type
+          FROM generated_audio_assets ga
+          JOIN messages m ON m.id = ga.message_id
+          WHERE ga.user_id = ? AND ga.request_hash = ?
+          LIMIT 1`,
+    args: [userId, cacheKey],
+  });
+
+  if (result.rows.length === 0) return null;
+  const cached = typedRow<{
+    message_id: string;
+    provider: string;
+    text: string;
+    audio_url: string | null;
+    audio_object_key: string | null;
+    audio_format: string | null;
+  }>(result.rows[0]!);
+
+  if (!cached.audio_url) return null;
+  const loaded = await loadAudioBytes(c, cached.audio_url);
+  if (!loaded) return null;
+
+  return {
+    messageId: cached.message_id,
+    provider: cached.provider,
+    text: cached.text,
+    audioUrl: cached.audio_url,
+    audioObjectKey: cached.audio_object_key,
+    audioFormat: cached.audio_format ?? loaded.format,
+    bytes: loaded.bytes,
+  };
+}
+
+async function loadAudioBytes(
+  c: Context<AppEnv>,
+  audioUrl: string,
+): Promise<{ bytes: Uint8Array; format: string } | null> {
+  let bytes: Uint8Array;
+  let format = audioFormatFromUrl(audioUrl);
+
+  if (audioUrl.startsWith('r2://')) {
+    if (!c.env.VOICE_BUCKET) return null;
+    const objectKey = audioUrl.slice('r2://'.length);
+    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(objectKey);
+    if (!stored) return null;
+    bytes = stored.bytes;
+    format = audioFormatFromMime(stored.meta.mimeType) ?? format;
+  } else if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+    const audioRes = await fetch(audioUrl);
+    if (!audioRes.ok) return null;
+    bytes = new Uint8Array(await audioRes.arrayBuffer());
+    format = audioFormatFromMime(audioRes.headers.get('content-type')) ?? format;
+  } else {
+    return null;
+  }
+
+  return { bytes, format };
+}
+
+function audioFormatFromMime(mimeType: string | null | undefined): string | null {
+  if (!mimeType) return null;
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+  if (mimeType.includes('wav')) return 'wav';
+  if (mimeType.includes('mp4') || mimeType.includes('aac')) return 'm4a';
+  return null;
+}
+
+function audioFormatFromUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (lower.includes('.wav')) return 'wav';
+  if (lower.includes('.m4a') || lower.includes('.aac') || lower.includes('.mp4')) return 'm4a';
+  return 'mp3';
+}
 
 export default tts;

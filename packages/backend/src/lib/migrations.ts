@@ -584,6 +584,35 @@ export const migrations: Migration[] = [
       `PRAGMA foreign_keys=on`,
     ],
   },
+  {
+    id: 24,
+    name: 'generated-audio-assets-cache',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS generated_audio_assets (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        voice_profile_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_voice_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        language TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        text TEXT NOT NULL,
+        category TEXT DEFAULT 'custom',
+        audio_url TEXT,
+        audio_object_key TEXT,
+        audio_format TEXT NOT NULL DEFAULT 'mp3',
+        mime_type TEXT NOT NULL DEFAULT 'audio/mpeg',
+        size_bytes INTEGER,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_generated_audio_assets_request ON generated_audio_assets(request_hash)',
+      'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_user ON generated_audio_assets(user_id, created_at DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_voice ON generated_audio_assets(voice_profile_id)',
+      'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_message ON generated_audio_assets(message_id)',
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

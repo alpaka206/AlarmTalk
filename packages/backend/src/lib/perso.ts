@@ -1,5 +1,5 @@
 const PERSO_API_BASE = 'https://api.perso.ai';
-const PERSO_FILE_BASE = 'https://perso.ai';
+const PERSO_FILE_BASE = 'https://portal-media.perso.ai';
 
 export class PersoClient {
   constructor(private apiKey: string) {}

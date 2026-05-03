@@ -201,7 +201,7 @@ describe('PersoClient', () => {
   describe('toFileUrl (static)', () => {
     it('상대 경로를 절대 URL로 변환', () => {
       expect(PersoClient.toFileUrl('/uploads/audio/test.wav')).toBe(
-        'https://perso.ai/uploads/audio/test.wav',
+        'https://portal-media.perso.ai/uploads/audio/test.wav',
       );
     });
   });
