@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -62,6 +63,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -129,6 +131,7 @@ import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.CharacterEventEntity
 import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
@@ -143,6 +146,8 @@ import com.voicealarm.nativeapp.network.FriendRequestBody
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.PendingFriendRequest
 import com.voicealarm.nativeapp.network.RegisterRequest
+import com.voicealarm.nativeapp.network.TtsGenerateRequest
+import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoucherItem
@@ -401,6 +406,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 message = error.message ?: "Failed to load voice profiles"
             }
             voiceProfileBusy = false
+        }
+    }
+
+    suspend fun generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
+        val session = authSession ?: throw IllegalStateException("Sign in before generating voice audio")
+        return withContext(Dispatchers.IO) {
+            api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)
         }
     }
 
@@ -851,7 +863,12 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             AlarmScreen.Create -> AlarmEditorScreen(
                 contentPadding = padding,
                 alarm = null,
+                authSession = authSession,
+                voiceProfiles = voiceProfiles,
+                voiceProfileBusy = voiceProfileBusy,
                 onCancel = { screen = AlarmScreen.List },
+                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
+                onGenerateTts = viewModel::generateTtsAudio,
                 onSave = { draft ->
                     viewModel.createAlarm(draft) { screen = AlarmScreen.List }
                 },
@@ -860,7 +877,12 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             is AlarmScreen.Edit -> AlarmEditorScreen(
                 contentPadding = padding,
                 alarm = current.alarm,
+                authSession = authSession,
+                voiceProfiles = voiceProfiles,
+                voiceProfileBusy = voiceProfileBusy,
                 onCancel = { screen = AlarmScreen.List },
+                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
+                onGenerateTts = viewModel::generateTtsAudio,
                 onSave = { draft ->
                     viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
                 },
@@ -1745,7 +1767,12 @@ private fun LegacyPanel(
 private fun AlarmEditorScreen(
     contentPadding: PaddingValues,
     alarm: AlarmEntity?,
+    authSession: AuthSession?,
+    voiceProfiles: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
+    onLoadVoiceProfiles: () -> Unit,
+    onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onSave: (AlarmDraft) -> Unit,
 ) {
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
@@ -1756,6 +1783,7 @@ private fun AlarmEditorScreen(
     val scope = rememberCoroutineScope()
     var audioMessage by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
@@ -1798,6 +1826,80 @@ private fun AlarmEditorScreen(
         }.onFailure { error ->
             Log.e(TAG, "Failed to start recording", error)
             audioMessage = error.message ?: "Unable to start recording"
+        }
+    }
+
+    fun saveEditor() {
+        if (isSaving) return
+        if (editor.playMode == AlarmPlayModes.ALARM_ONLY) {
+            editor.clearAudio()
+            onSave(editor.toDraft())
+            return
+        }
+        if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
+            if (editor.localAudioUri.isNullOrBlank()) {
+                audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
+                return
+            }
+            onSave(editor.toDraft())
+            return
+        }
+
+        val profileId = editor.voiceProfileId
+            ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
+        if (authSession == null) {
+            audioMessage = "음성 프로필 TTS는 로그인 후 사용할 수 있어요"
+            return
+        }
+        if (profileId.isNullOrBlank()) {
+            audioMessage = "사용할 음성 프로필을 선택해 주세요"
+            return
+        }
+        val text = editor.ttsTextForSave()
+        if (text.isBlank()) {
+            audioMessage = "읽어줄 문구를 입력하거나 랜덤 문구를 켜 주세요"
+            return
+        }
+        if (editor.hasFreshTtsAudio(profileId, text)) {
+            onSave(editor.toDraft())
+            return
+        }
+
+        scope.launch {
+            isSaving = true
+            audioMessage = "음성을 생성해서 저장하는 중..."
+            runCatching {
+                val response = onGenerateTts(
+                    TtsGenerateRequest(
+                        voiceProfileId = profileId,
+                        text = text,
+                        category = editor.voiceCategory,
+                        language = editor.voiceLanguage,
+                    ),
+                )
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
+                val cachedAudio = withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = audioBytes,
+                        format = response.audioFormat,
+                        rawAudioUri = rawAudioUri,
+                    )
+                }
+                editor.setGeneratedTtsAudio(
+                    audio = cachedAudio,
+                    profileId = profileId,
+                    text = response.text,
+                    messageId = response.messageId,
+                    rawAudioUri = rawAudioUri,
+                )
+                audioMessage = "생성한 음성을 로컬에 저장했어요"
+                onSave(editor.toDraft())
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to generate TTS alarm audio", error)
+                audioMessage = error.message ?: "음성 생성에 실패했어요"
+            }
+            isSaving = false
         }
     }
 
@@ -1849,60 +1951,6 @@ private fun AlarmEditorScreen(
         }
 
         item {
-            EditorSectionTitle("반복")
-            RepeatSelector(
-                repeatDaysMask = editor.repeatDaysMask,
-                onToggleDay = { dayIndex ->
-                    editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                },
-                onQuickSelect = { mask -> editor.repeatDaysMask = mask },
-            )
-        }
-
-        item {
-            EditorSectionTitle("재생 모드")
-            PlayModeSelector(
-                selected = editor.playMode,
-                onSelect = { editor.playMode = it },
-            )
-        }
-
-        item {
-            EditorSectionTitle("음성")
-            VoiceAudioCard(
-                localAudioUri = editor.localAudioUri,
-                audioMessage = audioMessage,
-                isRecording = isRecording,
-                onPick = { pickAudioLauncher.launch("audio/*") },
-                onRecord = {
-                    if (isRecording) {
-                        stopRecording()
-                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-                        startRecording()
-                    } else {
-                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                    }
-                },
-                onClear = {
-                    editor.clearAudio()
-                    audioMessage = "음성 오디오를 지웠어요"
-                },
-            )
-        }
-
-        item {
-            AlarmSettingsCard(
-                snoozeMinutes = editor.snoozeMinutes,
-                vibrationPattern = editor.vibrationPattern,
-                onSnoozeDown = { editor.snoozeMinutes = (editor.snoozeMinutes - 1).coerceAtLeast(1) },
-                onSnoozeUp = { editor.snoozeMinutes = (editor.snoozeMinutes + 1).coerceAtMost(30) },
-                onVibrationSelect = { editor.vibrationPattern = it },
-            )
-        }
-
-        item {
             EditorSectionTitle("알람 이름")
             OutlinedTextField(
                 value = editor.label,
@@ -1914,10 +1962,76 @@ private fun AlarmEditorScreen(
         }
 
         item {
+            EditorSectionTitle("반복")
+            RepeatSelector(
+                repeatDaysMask = editor.repeatDaysMask,
+                holidayOff = editor.holidayOff,
+                onToggleDay = { dayIndex ->
+                    editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
+                },
+                onHolidayOffChange = { editor.holidayOff = it },
+            )
+        }
+
+        item {
+            EditorSectionTitle("재생 모드")
+            PlayModeSelector(
+                selected = editor.playMode,
+                onSelect = { editor.playMode = it },
+            )
+        }
+
+        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            item {
+                EditorSectionTitle("음성")
+                VoiceAudioCard(
+                    editor = editor,
+                    authSession = authSession,
+                    voiceProfiles = voiceProfiles,
+                    voiceProfileBusy = voiceProfileBusy,
+                    audioMessage = audioMessage,
+                    isRecording = isRecording,
+                    onLoadVoiceProfiles = onLoadVoiceProfiles,
+                    onPick = { pickAudioLauncher.launch("audio/*") },
+                    onRecord = {
+                        if (isRecording) {
+                            stopRecording()
+                        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            startRecording()
+                        } else {
+                            recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onClear = {
+                        editor.clearAudio()
+                        audioMessage = "음성 오디오를 지웠어요"
+                    },
+                )
+            }
+        }
+
+        item {
+            AlarmSettingsCard(
+                snoozeEnabled = editor.snoozeEnabled,
+                snoozeMinutes = editor.snoozeMinutes,
+                vibrationPattern = editor.vibrationPattern,
+                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                onVibrationEnabledChange = {
+                    editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                },
+                onVibrationSelect = { editor.vibrationPattern = it },
+            )
+        }
+
+        item {
             EditorActionButtons(
                 isEditing = alarm != null,
+                isSaving = isSaving,
                 onCancel = onCancel,
-                onSave = { onSave(editor.toDraft()) },
+                onSave = ::saveEditor,
             )
         }
     }
@@ -2328,8 +2442,9 @@ private fun floorMod(value: Int, divisor: Int): Int = ((value % divisor) + divis
 @Composable
 private fun RepeatSelector(
     repeatDaysMask: Int,
+    holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
-    onQuickSelect: (Int) -> Unit,
+    onHolidayOffChange: (Boolean) -> Unit,
 ) {
     val days = listOf("일", "월", "화", "수", "목", "금", "토")
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -2345,13 +2460,23 @@ private fun RepeatSelector(
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            QuickChip(label = "매일", onClick = { onQuickSelect(0b1111111) })
-            QuickChip(label = "평일", onClick = { onQuickSelect(0b0111110) })
-            QuickChip(label = "주말", onClick = { onQuickSelect(0b1000001) })
-            QuickChip(label = "한 번", onClick = { onQuickSelect(0) })
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
+                MutedText("반복 알람이 주요 공휴일과 겹치면 다음 선택 요일로 넘겨요")
+            }
+            Switch(
+                checked = holidayOff,
+                onCheckedChange = onHolidayOffChange,
+            )
         }
-        MutedText(if (repeatDaysMask == 0) "한 번만 울려요" else repeatLabel(repeatDaysMask))
+        if (repeatDaysMask != 0) {
+            MutedText(repeatLabel(repeatDaysMask))
+        }
     }
 }
 
@@ -2445,9 +2570,12 @@ private fun PlayModeChip(
     ) {
         Text(
             text = label,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 14.dp),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
             color = if (selected) {
                 MaterialTheme.colorScheme.onPrimary
             } else {
@@ -2457,11 +2585,30 @@ private fun PlayModeChip(
     }
 }
 
+private val TtsCategories = listOf(
+    "morning" to "아침 기상",
+    "lunch" to "점심",
+    "sleep" to "취침",
+    "medicine" to "약",
+    "study" to "영어 공부",
+    "custom" to "직접 입력",
+)
+
+private val TtsLanguages = listOf(
+    "ko" to "한국어",
+    "en" to "English",
+    "ja" to "日本語",
+)
+
 @Composable
 private fun VoiceAudioCard(
-    localAudioUri: String?,
+    editor: AlarmEditorState,
+    authSession: AuthSession?,
+    voiceProfiles: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
     audioMessage: String?,
     isRecording: Boolean,
+    onLoadVoiceProfiles: () -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
     onClear: () -> Unit,
@@ -2477,38 +2624,146 @@ private fun VoiceAudioCard(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = localAudioUri?.let(::audioFileLabel) ?: "선택된 음성 오디오가 없어요",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            OptionChips(
+                options = listOf(
+                    VoiceSources.TTS_PROFILE to "음성 프로필",
+                    VoiceSources.LOCAL_AUDIO to "녹음/파일",
+                ),
+                selected = editor.voiceSource,
+                onSelect = {
+                    editor.voiceSource = it
+                    if (it == VoiceSources.TTS_PROFILE) {
+                        editor.clearAudio()
+                        editor.clearTtsMeta()
+                    } else {
+                        editor.clearTtsMeta()
+                    }
+                },
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(
-                    onClick = onPick,
-                    modifier = Modifier.weight(1f),
+
+            if (editor.voiceSource == VoiceSources.TTS_PROFILE) {
+                Text(
+                    text = "음성 프로필로 문구를 생성해 로컬에 저장합니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("파일 선택")
+                    Text("음성 프로필", fontWeight = FontWeight.SemiBold)
+                    OutlinedButton(
+                        onClick = onLoadVoiceProfiles,
+                        enabled = authSession != null && !voiceProfileBusy,
+                    ) {
+                        Text(if (voiceProfileBusy) "불러오는 중" else "불러오기")
+                    }
                 }
-                Button(
-                    onClick = onRecord,
-                    modifier = Modifier.weight(1f),
+                val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
+                if (authSession == null) {
+                    MutedText("로그인 후 저장해 둔 음성 프로필을 사용할 수 있어요.")
+                } else if (voiceProfiles.isEmpty()) {
+                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만든 뒤 불러와 주세요.")
+                } else if (readyProfiles.isEmpty()) {
+                    MutedText("준비 완료된 음성 프로필이 아직 없어요.")
+                } else {
+                    ChipGrid(
+                        options = readyProfiles.map { it.id to it.name },
+                        selected = editor.voiceProfileId ?: "",
+                        onSelect = {
+                            editor.voiceProfileId = it
+                            editor.clearTtsMeta()
+                        },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(if (isRecording) "녹음 종료" else "녹음")
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
+                        MutedText("카테고리와 언어에 맞는 문구를 자동으로 넣어요")
+                    }
+                    Switch(
+                        checked = editor.voiceRandomPrompt,
+                        onCheckedChange = {
+                            editor.voiceRandomPrompt = it
+                            editor.clearTtsMeta()
+                            if (it) editor.voiceText = ""
+                        },
+                    )
                 }
-            }
-            if (localAudioUri != null) {
-                OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
-                    Text("음성 지우기")
+                if (!editor.voiceRandomPrompt) {
+                    OutlinedTextField(
+                        value = editor.voiceText,
+                        onValueChange = {
+                            editor.voiceText = it.take(200)
+                            editor.clearTtsMeta()
+                        },
+                        label = { Text("읽어줄 문구") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
+                Text("카테고리", fontWeight = FontWeight.SemiBold)
+                ChipGrid(
+                    options = TtsCategories,
+                    selected = editor.voiceCategory,
+                    onSelect = {
+                        editor.voiceCategory = it
+                        editor.clearTtsMeta()
+                        if (editor.voiceRandomPrompt) editor.voiceText = ""
+                    },
+                )
+                Text("언어", fontWeight = FontWeight.SemiBold)
+                ChipGrid(
+                    options = TtsLanguages,
+                    selected = editor.voiceLanguage,
+                    onSelect = {
+                        editor.voiceLanguage = it
+                        editor.clearTtsMeta()
+                        if (editor.voiceRandomPrompt) editor.voiceText = ""
+                    },
+                )
+                if (editor.localAudioUri != null) {
+                    MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
+                }
+            } else {
+                Text(
+                    text = editor.localAudioUri?.let(::audioFileLabel) ?: "선택된 음성 오디오가 없어요",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = onPick,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("파일 선택")
+                    }
+                    Button(
+                        onClick = onRecord,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (isRecording) "녹음 종료" else "녹음")
+                    }
+                }
+                if (editor.localAudioUri != null) {
+                    OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
+                        Text("음성 지우기")
+                    }
+                }
+                Text(
+                    text = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 사용할 수 있고, 긴 파일은 30초로 자릅니다.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Text(
-                text = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 사용할 수 있어요",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (audioMessage != null) {
                 Text(
                     text = audioMessage,
@@ -2525,13 +2780,37 @@ private fun VoiceAudioCard(
 }
 
 @Composable
+private fun ChipGrid(
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.chunked(3).forEach { rowOptions ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowOptions.forEach { (value, label) ->
+                    FilterChip(
+                        selected = selected == value,
+                        onClick = { onSelect(value) },
+                        label = { Text(label) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun AlarmSettingsCard(
+    snoozeEnabled: Boolean,
     snoozeMinutes: Int,
     vibrationPattern: String,
-    onSnoozeDown: () -> Unit,
-    onSnoozeUp: () -> Unit,
+    onSnoozeEnabledChange: (Boolean) -> Unit,
+    onSnoozeMinutesChange: (Int) -> Unit,
+    onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
 ) {
+    var detailDialog by remember { mutableStateOf<String?>(null) }
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2543,18 +2822,20 @@ private fun AlarmSettingsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column {
-                    Text("다시 울림", fontWeight = FontWeight.SemiBold)
-                    MutedText("${snoozeMinutes}분")
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onSnoozeDown) {
-                        Icon(Icons.Outlined.Remove, contentDescription = "다시 울림 줄이기")
-                    }
-                    IconButton(onClick = onSnoozeUp) {
-                        Icon(Icons.Outlined.Add, contentDescription = "다시 울림 늘리기")
+                Surface(
+                    onClick = { detailDialog = "snooze" },
+                    color = Color.Transparent,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text("다시 울림", fontWeight = FontWeight.SemiBold)
+                        MutedText(if (snoozeEnabled) "${snoozeMinutes}분" else "꺼짐")
                     }
                 }
+                Switch(
+                    checked = snoozeEnabled,
+                    onCheckedChange = onSnoozeEnabledChange,
+                )
             }
             Box(
                 modifier = Modifier
@@ -2562,23 +2843,112 @@ private fun AlarmSettingsCard(
                     .height(1.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
-            Text("진동", fontWeight = FontWeight.SemiBold)
-            OptionChips(
-                options = listOf(
-                    VibrationPatterns.DEFAULT to "기본",
-                    VibrationPatterns.STRONG to "강하게",
-                    VibrationPatterns.NONE to "없음",
-                ),
-                selected = vibrationPattern,
-                onSelect = onVibrationSelect,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    onClick = { detailDialog = "vibration" },
+                    color = Color.Transparent,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text("진동", fontWeight = FontWeight.SemiBold)
+                        MutedText(vibrationLabel(vibrationPattern))
+                    }
+                }
+                Switch(
+                    checked = vibrationPattern != VibrationPatterns.NONE,
+                    onCheckedChange = onVibrationEnabledChange,
+                )
+            }
         }
+    }
+
+    if (detailDialog == "snooze") {
+        AlertDialog(
+            onDismissRequest = { detailDialog = null },
+            title = { Text("다시 울림") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (snoozeEnabled) "켜짐" else "꺼짐", fontWeight = FontWeight.SemiBold)
+                        Switch(
+                            checked = snoozeEnabled,
+                            onCheckedChange = onSnoozeEnabledChange,
+                        )
+                    }
+                    StepperField(
+                        label = "간격",
+                        valueLabel = "${snoozeMinutes}분",
+                        onDecrease = { onSnoozeMinutesChange((snoozeMinutes - 1).coerceAtLeast(1)) },
+                        onIncrease = { onSnoozeMinutesChange((snoozeMinutes + 1).coerceAtMost(30)) },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailDialog = null }) {
+                    Text("완료")
+                }
+            },
+        )
+    }
+
+    if (detailDialog == "vibration") {
+        AlertDialog(
+            onDismissRequest = { detailDialog = null },
+            title = { Text("진동") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (vibrationPattern == VibrationPatterns.NONE) "꺼짐" else "켜짐",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Switch(
+                            checked = vibrationPattern != VibrationPatterns.NONE,
+                            onCheckedChange = onVibrationEnabledChange,
+                        )
+                    }
+                    OptionChips(
+                        options = listOf(
+                            VibrationPatterns.DEFAULT to "기본",
+                            VibrationPatterns.STRONG to "강하게",
+                        ),
+                        selected = if (vibrationPattern == VibrationPatterns.NONE) {
+                            VibrationPatterns.DEFAULT
+                        } else {
+                            vibrationPattern
+                        },
+                        onSelect = {
+                            onVibrationEnabledChange(true)
+                            onVibrationSelect(it)
+                        },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailDialog = null }) {
+                    Text("완료")
+                }
+            },
+        )
     }
 }
 
 @Composable
 private fun EditorActionButtons(
     isEditing: Boolean,
+    isSaving: Boolean,
     onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
@@ -2588,18 +2958,26 @@ private fun EditorActionButtons(
     ) {
         OutlinedButton(
             onClick = onCancel,
+            enabled = !isSaving,
             modifier = Modifier.weight(1f),
         ) {
             Text("취소")
         }
         Button(
             onClick = onSave,
+            enabled = !isSaving,
             modifier = Modifier.weight(1f),
             shape = RoundedCornerShape(16.dp),
         ) {
             Icon(Icons.Outlined.Save, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text(if (isEditing) "변경사항 저장" else "알람 설정하기")
+            Text(
+                when {
+                    isSaving -> "저장 중"
+                    isEditing -> "변경사항 저장"
+                    else -> "알람 설정하기"
+                },
+            )
         }
     }
 }
@@ -2630,42 +3008,116 @@ private class AlarmEditorState(
     hour: Int,
     minute: Int,
     repeatDaysMask: Int,
+    holidayOff: Boolean,
+    snoozeEnabled: Boolean,
     snoozeMinutes: Int,
     vibrationPattern: String,
     playMode: String,
     localAudioUri: String?,
     rawAudioUri: String?,
+    voiceSource: String,
+    voiceProfileId: String?,
+    voiceText: String?,
+    voiceCategory: String?,
+    voiceLanguage: String?,
+    voiceRandomPrompt: Boolean,
+    ttsMessageId: String?,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
     var minute by mutableIntStateOf(minute)
     var repeatDaysMask by mutableIntStateOf(repeatDaysMask)
+    var holidayOff by mutableStateOf(holidayOff)
+    var snoozeEnabled by mutableStateOf(snoozeEnabled)
     var snoozeMinutes by mutableIntStateOf(snoozeMinutes)
     var vibrationPattern by mutableStateOf(vibrationPattern)
     var playMode by mutableStateOf(playMode)
     var localAudioUri by mutableStateOf(localAudioUri)
     var rawAudioUri by mutableStateOf(rawAudioUri)
-
-    fun toDraft(): AlarmDraft = AlarmDraft(
-        label = label,
-        hour = hour,
-        minute = minute,
-        repeatDaysMask = repeatDaysMask,
-        snoozeMinutes = snoozeMinutes,
-        vibrationPattern = vibrationPattern,
-        playMode = playMode,
-        localAudioUri = localAudioUri,
-        rawAudioUri = rawAudioUri,
+    var voiceSource by mutableStateOf(voiceSource)
+    var voiceProfileId by mutableStateOf(voiceProfileId)
+    var voiceText by mutableStateOf(voiceText ?: "")
+    var voiceCategory by mutableStateOf(voiceCategory ?: "morning")
+    var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
+    var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
+    var ttsMessageId by mutableStateOf(ttsMessageId)
+    private var generatedTtsKey by mutableStateOf(
+        ttsMessageId?.let {
+            buildTtsKey(
+                profileId = voiceProfileId.orEmpty(),
+                text = voiceText.orEmpty(),
+                category = voiceCategory ?: "morning",
+                language = voiceLanguage ?: "ko",
+            )
+        },
     )
 
+    fun toDraft(): AlarmDraft {
+        val alarmOnly = playMode == AlarmPlayModes.ALARM_ONLY
+        return AlarmDraft(
+            label = label,
+            hour = hour,
+            minute = minute,
+            repeatDaysMask = repeatDaysMask,
+            holidayOff = holidayOff,
+            snoozeEnabled = snoozeEnabled,
+            snoozeMinutes = snoozeMinutes,
+            vibrationPattern = vibrationPattern,
+            playMode = playMode,
+            localAudioUri = if (alarmOnly) null else localAudioUri,
+            rawAudioUri = if (alarmOnly) null else rawAudioUri,
+            voiceSource = if (alarmOnly) VoiceSources.LOCAL_AUDIO else voiceSource,
+            voiceProfileId = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceProfileId,
+            voiceText = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else ttsTextForSave(),
+            voiceCategory = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceCategory,
+            voiceLanguage = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else voiceLanguage,
+            ttsMessageId = if (alarmOnly || voiceSource != VoiceSources.TTS_PROFILE) null else ttsMessageId,
+        )
+    }
+
     fun setCachedAudio(audio: CachedAlarmAudio) {
+        voiceSource = VoiceSources.LOCAL_AUDIO
         localAudioUri = audio.localAudioUri
         rawAudioUri = audio.rawAudioUri
+        clearTtsMeta()
     }
 
     fun clearAudio() {
         localAudioUri = null
         rawAudioUri = null
+    }
+
+    fun clearTtsMeta() {
+        ttsMessageId = null
+        generatedTtsKey = null
+    }
+
+    fun ttsTextForSave(): String =
+        if (voiceRandomPrompt && voiceText.isBlank()) {
+            randomTtsPrompt(voiceCategory, voiceLanguage)
+        } else {
+            voiceText.trim()
+        }
+
+    fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
+        !localAudioUri.isNullOrBlank() &&
+            ttsMessageId != null &&
+            generatedTtsKey == buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
+
+    fun setGeneratedTtsAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        text: String,
+        messageId: String,
+        rawAudioUri: String?,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceText = text
+        localAudioUri = audio.localAudioUri
+        this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
+        ttsMessageId = messageId
+        generatedTtsKey = buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
     }
 
     companion object {
@@ -2676,14 +3128,56 @@ private class AlarmEditorState(
                 hour = alarm?.hour ?: defaultTime.hour,
                 minute = alarm?.minute ?: defaultTime.minute,
                 repeatDaysMask = alarm?.repeatDaysMask ?: 0,
+                holidayOff = alarm?.holidayOff ?: false,
+                snoozeEnabled = alarm?.snoozeEnabled ?: true,
                 snoozeMinutes = alarm?.snoozeMinutes ?: 5,
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
                 playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
                 localAudioUri = alarm?.localAudioUri,
                 rawAudioUri = alarm?.rawAudioUri,
+                voiceSource = alarm?.voiceSource ?: VoiceSources.LOCAL_AUDIO,
+                voiceProfileId = alarm?.voiceProfileId,
+                voiceText = alarm?.voiceText,
+                voiceCategory = alarm?.voiceCategory ?: "morning",
+                voiceLanguage = alarm?.voiceLanguage ?: "ko",
+                voiceRandomPrompt = alarm?.let {
+                    it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
+                } ?: false,
+                ttsMessageId = alarm?.ttsMessageId,
             )
         }
     }
+}
+
+private fun buildTtsKey(profileId: String, text: String, category: String, language: String): String =
+    listOf(profileId, text.trim(), category, language).joinToString("|")
+
+private fun randomTtsPrompt(category: String, language: String): String {
+    val ko = when (category) {
+        "lunch" -> listOf("점심 시간이에요. 잠깐 쉬고 맛있게 챙겨 먹어요.", "몸도 마음도 충전할 시간이에요.")
+        "sleep" -> listOf("이제 하루를 정리하고 편하게 쉬어요.", "내일을 위해 잠들 준비를 해요.")
+        "medicine" -> listOf("약 먹을 시간이에요. 물과 함께 챙겨 주세요.", "건강을 위해 지금 약을 챙겨요.")
+        "study" -> listOf("영어 공부할 시간이에요. 오늘도 한 문장부터 시작해요.", "짧게라도 영어 루틴을 이어가요.")
+        else -> listOf("일어날 시간이에요. 오늘도 차분하게 시작해요.", "좋은 아침이에요. 지금 일어나요.")
+    }
+    val en = when (category) {
+        "lunch" -> listOf("It is lunch time. Take a short break and recharge.", "Time for lunch. Enjoy your meal.")
+        "sleep" -> listOf("It is time to wind down and get some rest.", "Prepare for sleep and let today go.")
+        "medicine" -> listOf("It is time to take your medicine with water.", "Please take your medicine now.")
+        "study" -> listOf("It is English study time. Start with one sentence.", "Keep your English routine going today.")
+        else -> listOf("Good morning. It is time to wake up.", "Wake up now and start your day calmly.")
+    }
+    val ja = when (category) {
+        "sleep" -> listOf("そろそろ休む時間です。ゆっくり眠りましょう。")
+        "study" -> listOf("英語を勉強する時間です。短く始めましょう。")
+        else -> listOf("起きる時間です。今日も落ち着いて始めましょう。")
+    }
+    val pool = when (language) {
+        "en" -> en
+        "ja" -> ja
+        else -> ko
+    }
+    return pool.random()
 }
 
 @Composable
@@ -2764,7 +3258,7 @@ private fun DayRows(
             }
         }
         Text(
-            text = if (repeatDaysMask == 0) "Once" else repeatLabel(repeatDaysMask),
+            text = repeatLabel(repeatDaysMask),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -3405,7 +3899,13 @@ private fun AlarmRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${repeatLabel(alarm.repeatDaysMask)} - snooze ${alarm.snoozeMinutes} min - ${vibrationLabel(alarm.vibrationPattern)} - ${playModeLabel(alarm.playMode)}",
+                text = listOf(
+                    repeatLabel(alarm.repeatDaysMask),
+                    if (alarm.holidayOff) "공휴일 끔" else null,
+                    if (alarm.snoozeEnabled) "다시 울림 ${alarm.snoozeMinutes}분" else "다시 울림 꺼짐",
+                    vibrationLabel(alarm.vibrationPattern),
+                    playModeLabel(alarm.playMode),
+                ).filterNotNull().joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -3536,22 +4036,22 @@ private fun audioFileLabel(localAudioUri: String): String =
         ?: "Local voice audio"
 
 private fun repeatLabel(mask: Int): String {
-    if (mask == 0) return "Once"
-    if (mask == 0b1111111) return "Every day"
-    val days = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+    if (mask == 0) return "반복 없음"
+    if (mask == 0b1111111) return "매일"
+    val days = listOf("일", "월", "화", "수", "목", "금", "토")
     return days.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.joinToString(", ")
 }
 
 private fun vibrationLabel(pattern: String): String = when (pattern) {
-    VibrationPatterns.STRONG -> "strong vibration"
-    VibrationPatterns.NONE -> "no vibration"
-    else -> "default vibration"
+    VibrationPatterns.STRONG -> "강한 진동"
+    VibrationPatterns.NONE -> "진동 꺼짐"
+    else -> "기본 진동"
 }
 
 private fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "voice only"
-    AlarmPlayModes.ALARM_VOICE -> "alarm + voice"
-    else -> "alarm only"
+    AlarmPlayModes.VOICE_ONLY -> "음성만"
+    AlarmPlayModes.ALARM_VOICE -> "알람+음성"
+    else -> "알람만"
 }
 
 private fun stageEmoji(stage: String): String = when (stage) {

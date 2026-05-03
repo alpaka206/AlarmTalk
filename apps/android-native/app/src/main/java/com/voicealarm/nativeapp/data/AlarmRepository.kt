@@ -49,12 +49,20 @@ class AlarmRepository(
             minute = localTime.minute,
             fireAtMillis = fireAtMillis,
             repeatDaysMask = 0,
+            holidayOff = false,
+            snoozeEnabled = true,
             snoozeMinutes = 5,
             vibrationPattern = VibrationPatterns.DEFAULT,
             playMode = AlarmPlayModes.ALARM_ONLY,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = null,
             rawAudioUri = null,
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+            voiceProfileId = null,
+            voiceText = null,
+            voiceCategory = null,
+            voiceLanguage = null,
+            ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -83,15 +91,24 @@ class AlarmRepository(
                 hour = draft.hour,
                 minute = draft.minute,
                 repeatDaysMask = draft.repeatDaysMask,
+                holidayOff = draft.holidayOff,
                 nowMillis = now,
             ),
             repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
             vibrationPattern = draft.vibrationPattern,
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
             rawAudioUri = draft.rawAudioUri,
+            voiceSource = draft.voiceSource,
+            voiceProfileId = draft.voiceProfileId,
+            voiceText = draft.voiceText,
+            voiceCategory = draft.voiceCategory,
+            voiceLanguage = draft.voiceLanguage,
+            ttsMessageId = draft.ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -115,6 +132,7 @@ class AlarmRepository(
             hour = draft.hour,
             minute = draft.minute,
             repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
             nowMillis = now,
         )
         val updated = current.copy(
@@ -123,12 +141,20 @@ class AlarmRepository(
             minute = draft.minute,
             fireAtMillis = nextFireAt,
             repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
             vibrationPattern = draft.vibrationPattern,
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
             rawAudioUri = draft.rawAudioUri,
+            voiceSource = draft.voiceSource,
+            voiceProfileId = draft.voiceProfileId,
+            voiceText = draft.voiceText,
+            voiceCategory = draft.voiceCategory,
+            voiceLanguage = draft.voiceLanguage,
+            ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
             state = if (current.enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
             updatedAtMillis = now,
@@ -152,6 +178,7 @@ class AlarmRepository(
                     hour = current.hour,
                     minute = current.minute,
                     repeatDaysMask = current.repeatDaysMask,
+                    holidayOff = current.holidayOff,
                     nowMillis = now,
                 ),
                 enabled = true,
@@ -209,6 +236,7 @@ class AlarmRepository(
                 hour = current.hour,
                 minute = current.minute,
                 repeatDaysMask = current.repeatDaysMask,
+                holidayOff = current.holidayOff,
                 nowMillis = now,
             )
             val next = current.copy(
@@ -240,6 +268,10 @@ class AlarmRepository(
         val current = alarmDao.getById(alarmId)
         if (current == null) {
             Log.w(TAG, "Snooze requested for missing alarm id=$alarmId")
+            return null
+        }
+        if (!current.snoozeEnabled) {
+            Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
             return null
         }
 
@@ -276,6 +308,7 @@ class AlarmRepository(
                             hour = alarm.hour,
                             minute = alarm.minute,
                             repeatDaysMask = alarm.repeatDaysMask,
+                            holidayOff = alarm.holidayOff,
                             nowMillis = now,
                         ),
                         state = AlarmStates.SCHEDULED,
@@ -407,6 +440,10 @@ class AlarmRepository(
         require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
+        require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }
+        if (draft.playMode != AlarmPlayModes.ALARM_ONLY) {
+            require(!draft.localAudioUri.isNullOrBlank()) { "Voice audio must be cached before saving this alarm." }
+        }
     }
 
     private fun AlarmEntity.nextLocalSyncState(): String =

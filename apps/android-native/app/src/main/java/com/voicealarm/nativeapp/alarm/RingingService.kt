@@ -41,6 +41,8 @@ class RingingService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var audioSequenceActive = false
+    private var currentAlarm: AlarmEntity? = null
+    private var voiceAfterAlarmStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -102,6 +104,8 @@ class RingingService : Service() {
 
         serviceScope.launch {
             val alarm = AlarmAppContainer.repository(applicationContext).getAlarm(alarmId)
+            currentAlarm = alarm
+            voiceAfterAlarmStarted = false
             startRingingAudio(alarm)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
             startVibration(pattern)
@@ -175,7 +179,7 @@ class RingingService : Service() {
             }
 
             alarm?.playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                startAlarmVoiceSequence(voiceUri)
+                startBundledAlarmLoop()
             }
 
             alarm?.playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
@@ -317,8 +321,16 @@ class RingingService : Service() {
     }
 
     private fun dismiss(alarmId: String, startId: Int) {
-        stopRingingOutputs()
         serviceScope.launch {
+            val alarm = currentAlarm ?: AlarmAppContainer.repository(applicationContext).getAlarm(alarmId)
+            val voiceUri = alarm?.localAudioUri
+                ?.takeIf { it.isNotBlank() && alarm.playMode == AlarmPlayModes.ALARM_VOICE }
+                ?.let(Uri::parse)
+            if (voiceUri != null && !voiceAfterAlarmStarted) {
+                startDismissVoiceThenFinish(alarmId, startId, voiceUri)
+                return@launch
+            }
+            stopRingingOutputs()
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
             }.onFailure { error ->
@@ -326,6 +338,41 @@ class RingingService : Service() {
             }
             stopSelf(startId)
         }
+    }
+
+    private fun startDismissVoiceThenFinish(alarmId: String, startId: Int, voiceUri: Uri) {
+        voiceAfterAlarmStarted = true
+        stopMediaAndVibration()
+        val player = createVoicePlayer(voiceUri)
+        if (player == null) {
+            Log.e(TAG, "Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
+            serviceScope.launch {
+                finishDismiss(alarmId, startId)
+            }
+            return
+        }
+        mediaPlayer = player.apply {
+            isLooping = false
+            setOnCompletionListener { completed ->
+                completed.release()
+                if (mediaPlayer === completed) mediaPlayer = null
+                serviceScope.launch {
+                    finishDismiss(alarmId, startId)
+                }
+            }
+            start()
+        }
+        Log.i(TAG, "Alarm tone dismissed; playing voice once before finish id=$alarmId")
+    }
+
+    private suspend fun finishDismiss(alarmId: String, startId: Int) {
+        stopRingingOutputs()
+        runCatching {
+            AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to dismiss alarm id=$alarmId", error)
+        }
+        stopSelf(startId)
     }
 
     private fun snooze(alarmId: String, startId: Int) {
@@ -341,6 +388,14 @@ class RingingService : Service() {
     }
 
     private fun stopRingingOutputs() {
+        stopMediaAndVibration()
+        NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
+        runCatching {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        }
+    }
+
+    private fun stopMediaAndVibration() {
         audioSequenceActive = false
         mediaPlayer?.run {
             runCatching {
@@ -350,10 +405,6 @@ class RingingService : Service() {
         }
         mediaPlayer = null
         vibrator?.cancel()
-        NotificationManagerCompat.from(this).cancel(RINGING_NOTIFICATION_ID)
-        runCatching {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        }
     }
 
     companion object {

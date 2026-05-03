@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, CharacterEventEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -26,7 +26,8 @@ abstract class AlarmDatabase : RoomDatabase() {
                     context.applicationContext,
                     AlarmDatabase::class.java,
                     "voice-alarm.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+                    .also { instance = it }
             }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -68,6 +69,19 @@ abstract class AlarmDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_character_events_clientNonce ON character_events(clientNonce)")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN holidayOff INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN snoozeEnabled INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceSource TEXT NOT NULL DEFAULT '${VoiceSources.LOCAL_AUDIO}'")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceProfileId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceText TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceCategory TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceLanguage TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN ttsMessageId TEXT")
             }
         }
     }

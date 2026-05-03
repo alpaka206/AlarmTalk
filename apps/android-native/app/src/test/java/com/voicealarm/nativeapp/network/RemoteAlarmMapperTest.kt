@@ -6,6 +6,7 @@ import com.voicealarm.nativeapp.data.AlarmStates
 import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.DefaultAlarmSounds
 import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.data.VoiceSources
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -45,10 +46,31 @@ class RemoteAlarmMapperTest {
         assertEquals("https://cdn.example.com/alarm.m4a", request.rawAudioUrl)
     }
 
+    @Test
+    fun generatedTtsUsesMessageIdInsteadOfRawR2Url() {
+        val alarm = alarm(
+            playMode = AlarmPlayModes.ALARM_VOICE,
+            rawAudioUri = "r2://voices/user/audio",
+            voiceSource = VoiceSources.TTS_PROFILE,
+            ttsMessageId = "message-id",
+            voiceProfileId = "profile-id",
+        )
+
+        val request = RemoteAlarmMapper.toWriteRequest(alarm)
+
+        assertEquals("tts", request.mode)
+        assertEquals("message-id", request.messageId)
+        assertEquals("profile-id", request.voiceProfileId)
+        assertNull(request.rawAudioUrl)
+    }
+
     private fun alarm(
         playMode: String = AlarmPlayModes.ALARM_ONLY,
         localAudioUri: String? = null,
         rawAudioUri: String? = null,
+        voiceSource: String = VoiceSources.LOCAL_AUDIO,
+        ttsMessageId: String? = null,
+        voiceProfileId: String? = null,
     ): AlarmEntity =
         AlarmEntity(
             id = "local-id",
@@ -57,12 +79,20 @@ class RemoteAlarmMapperTest {
             minute = 30,
             fireAtMillis = 1_000L,
             repeatDaysMask = 0b1000101,
+            holidayOff = false,
+            snoozeEnabled = true,
             snoozeMinutes = 5,
             vibrationPattern = VibrationPatterns.DEFAULT,
             playMode = playMode,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = localAudioUri,
             rawAudioUri = rawAudioUri,
+            voiceSource = voiceSource,
+            voiceProfileId = voiceProfileId,
+            voiceText = null,
+            voiceCategory = null,
+            voiceLanguage = null,
+            ttsMessageId = ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,

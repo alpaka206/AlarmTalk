@@ -11,12 +11,20 @@ data class AlarmEntity(
     val minute: Int,
     val fireAtMillis: Long,
     val repeatDaysMask: Int,
+    val holidayOff: Boolean,
+    val snoozeEnabled: Boolean,
     val snoozeMinutes: Int,
     val vibrationPattern: String,
     val playMode: String,
     val defaultAlarmSoundId: String,
     val localAudioUri: String?,
     val rawAudioUri: String?,
+    val voiceSource: String,
+    val voiceProfileId: String?,
+    val voiceText: String?,
+    val voiceCategory: String?,
+    val voiceLanguage: String?,
+    val ttsMessageId: String?,
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
     val syncState: String,
@@ -58,6 +66,13 @@ object AlarmPlayModes {
     val all = listOf(ALARM_ONLY, VOICE_ONLY, ALARM_VOICE)
 }
 
+object VoiceSources {
+    const val LOCAL_AUDIO = "local_audio"
+    const val TTS_PROFILE = "tts_profile"
+
+    val all = listOf(LOCAL_AUDIO, TTS_PROFILE)
+}
+
 object DefaultAlarmSounds {
     const val BUNDLED_DEFAULT = "bundled_default"
 }
@@ -67,10 +82,18 @@ data class AlarmDraft(
     val hour: Int,
     val minute: Int,
     val repeatDaysMask: Int,
+    val holidayOff: Boolean = false,
+    val snoozeEnabled: Boolean = true,
     val snoozeMinutes: Int,
     val vibrationPattern: String,
     val playMode: String,
     val defaultAlarmSoundId: String = DefaultAlarmSounds.BUNDLED_DEFAULT,
     val localAudioUri: String? = null,
     val rawAudioUri: String? = null,
+    val voiceSource: String = VoiceSources.LOCAL_AUDIO,
+    val voiceProfileId: String? = null,
+    val voiceText: String? = null,
+    val voiceCategory: String? = null,
+    val voiceLanguage: String? = null,
+    val ttsMessageId: String? = null,
 )

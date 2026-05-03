@@ -156,7 +156,7 @@ Expected: exact alarm fires in idle, using local DB state and bundled audio.
 Use only local app controls and local storage:
 
 1. Tap New alarm.
-2. Change label, hour, minute, snooze, repeat days, vibration, and play mode.
+2. Change label, hour, minute, repeat days, holiday-off, snooze, vibration, and play mode.
 3. Save and confirm the alarm appears in the list.
 4. Confirm the next fire time is registered with the OS:
 
@@ -173,18 +173,27 @@ Expected: `VoiceAlarm` logs show create, update, enabled changed, deleted, and s
 
 Opening the alarm list also performs a startup sync from Room to `AlarmManager`, so future enabled alarms are restored and expired one-shot alarms are marked inactive.
 
+### Alarm Editor Modes
+
+- `Alarm only`: uses only the bundled local alarm sound. Voice audio is not required or saved for this mode.
+- `Voice only`: requires either a generated voice-profile TTS clip or a recorded/selected local audio clip.
+- `Alarm + Voice`: rings the bundled alarm first. When the user dismisses the alarm tone, the cached voice clip plays once, then the alarm is dismissed/rescheduled.
+
+If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips major fixed-date Korean public holidays locally without a network fetch.
+
 ### Local Voice Audio
 
 1. Tap New alarm or edit an existing alarm.
-2. In Voice audio, tap Record and grant microphone permission.
-3. Stop before 30 seconds, or let the app stop at the 30 second limit.
-4. Save with play mode `Voice` or `Alarm + Voice`.
-5. Confirm the alarm rings without network access.
+2. Choose `Voice only` or `Alarm + Voice`.
+3. Select `Record/File`.
+4. Tap Record and grant microphone permission.
+5. Stop before 30 seconds, or let the app stop at the 30 second limit.
+6. Save and confirm the alarm rings without network access.
 
 To verify file selection:
 
 1. Tap Pick and choose an `audio/*` file.
-2. Files longer than 30 seconds should be rejected.
+2. Files longer than 30 seconds should be trimmed to the first 30 seconds when the Android media stack can mux the selected format. If trimming fails, retry with m4a/aac/mp4.
 3. Save and confirm `VoiceAlarm` logs show local audio caching.
 
 Airplane-mode check:
@@ -195,13 +204,31 @@ adb logcat -c
 adb logcat | findstr VoiceAlarm
 ```
 
-Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` repeats bundled alarm audio followed by the cached voice file. No fetch is allowed at ring time.
+Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` loops bundled alarm audio until Dismiss, then plays the cached voice once. No fetch is allowed at ring time.
 
 Restore radios after testing:
 
 ```powershell
 adb shell cmd connectivity airplane-mode disable
 ```
+
+### Voice Profile TTS
+
+This path calls paid providers only when the user taps Save for a voice-profile alarm. Do not run it unless you intend to spend provider credits.
+
+1. Sign in.
+2. Load voice profiles and choose a ready profile.
+3. Select `Voice only` or `Alarm + Voice`.
+4. Select `Voice profile`.
+5. Enter text, or enable random prompt and choose category/language.
+6. Tap Save.
+
+Expected:
+
+- Android calls `POST /api/tts/generate`.
+- The backend uses ElevenLabs TTS, stores the mp3 bytes in Cloudflare R2 when `VOICE_BUCKET` is bound, and returns base64 audio plus `message_id`.
+- Android decodes the response, caches it under app-private storage, and stores only local audio for the ring path.
+- At ring time, no ElevenLabs, Perso, R2, push, cron, or network fetch is used.
 
 ### Backend Auth / Manual Sync
 

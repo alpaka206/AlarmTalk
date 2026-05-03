@@ -70,6 +70,8 @@ data class RemoteAlarmWriteRequest(
     @SerializedName("vibration_pattern") val vibrationPattern: String,
     @SerializedName("wake_mode") val wakeMode: String,
     @SerializedName("is_active") val isActive: Boolean? = null,
+    @SerializedName("message_id") val messageId: String? = null,
+    @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
     @SerializedName("raw_audio_url") val rawAudioUrl: String? = null,
     @SerializedName("raw_audio_duration_ms") val rawAudioDurationMs: Long? = null,
 )
@@ -96,6 +98,23 @@ data class FamilyVoiceProfile(
 
 data class FamilyVoiceProfileListResponse(
     val profiles: List<FamilyVoiceProfile>,
+)
+
+data class TtsGenerateRequest(
+    @SerializedName("voice_profile_id") val voiceProfileId: String,
+    val text: String,
+    val category: String,
+    val language: String,
+)
+
+data class TtsGenerateResponse(
+    @SerializedName("message_id") val messageId: String,
+    @SerializedName("audio_base64") val audioBase64: String,
+    @SerializedName("audio_format") val audioFormat: String,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    @SerializedName("audio_object_key") val audioObjectKey: String? = null,
+    val text: String,
+    @SerializedName("voice_profile_id") val voiceProfileId: String,
 )
 
 data class FriendListResponse(
@@ -322,6 +341,12 @@ interface VoiceAlarmApi {
 
     @GET("voice/family")
     suspend fun listFamilyVoiceProfiles(@Header("Authorization") authorization: String): FamilyVoiceProfileListResponse
+
+    @POST("tts/generate")
+    suspend fun generateTts(
+        @Header("Authorization") authorization: String,
+        @Body request: TtsGenerateRequest,
+    ): TtsGenerateResponse
 
     @GET("friend/list")
     suspend fun listFriends(@Header("Authorization") authorization: String): FriendListResponse

@@ -25,6 +25,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.alarm.RingingService
+import com.voicealarm.nativeapp.data.AlarmAppContainer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class RingingActivity : ComponentActivity() {
     private var alarmId: String? = null
@@ -43,7 +51,17 @@ class RingingActivity : ComponentActivity() {
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
 
         setContent {
+            var snoozeEnabled by remember { mutableStateOf(true) }
+            val currentAlarmId = alarmId
+            LaunchedEffect(currentAlarmId) {
+                snoozeEnabled = currentAlarmId?.let { id ->
+                    withContext(Dispatchers.IO) {
+                        AlarmAppContainer.repository(applicationContext).getAlarm(id)?.snoozeEnabled
+                    }
+                } ?: true
+            }
             RingingRoute(
+                snoozeEnabled = snoozeEnabled,
                 onDismiss = {
                     alarmId?.let { RingingService.dismiss(this, it) }
                     finishAndRemoveTask()
@@ -86,6 +104,7 @@ class RingingActivity : ComponentActivity() {
 
 @Composable
 private fun RingingRoute(
+    snoozeEnabled: Boolean,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
@@ -130,13 +149,15 @@ private fun RingingRoute(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                OutlinedButton(
-                    onClick = onSnooze,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Outlined.Snooze, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Snooze")
+                if (snoozeEnabled) {
+                    OutlinedButton(
+                        onClick = onSnooze,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Outlined.Snooze, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Snooze")
+                    }
                 }
                 Button(
                     onClick = onDismiss,

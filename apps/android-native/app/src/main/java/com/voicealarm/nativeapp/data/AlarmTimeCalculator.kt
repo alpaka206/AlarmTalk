@@ -10,6 +10,7 @@ object AlarmTimeCalculator {
         hour: Int,
         minute: Int,
         repeatDaysMask: Int,
+        holidayOff: Boolean = false,
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
     ): Long {
@@ -32,11 +33,19 @@ object AlarmTimeCalculator {
         for (offset in 0..7) {
             val date = today.plusDays(offset.toLong())
             if (!isSelected(date, repeatDaysMask)) continue
+            if (holidayOff && LocalHolidayCalendar.isHoliday(date)) continue
 
             val candidate = LocalDateTime.of(date, java.time.LocalTime.of(hour, minute))
             if (candidate.isAfter(now)) {
                 return candidate.atZone(zoneId).toInstant().toEpochMilli()
             }
+        }
+
+        for (offset in 8..21) {
+            val date = today.plusDays(offset.toLong())
+            if (!isSelected(date, repeatDaysMask)) continue
+            if (holidayOff && LocalHolidayCalendar.isHoliday(date)) continue
+            return candidateMillis(date, hour, minute, zoneId)
         }
 
         return candidateMillis(today.plusDays(1), hour, minute, zoneId)
