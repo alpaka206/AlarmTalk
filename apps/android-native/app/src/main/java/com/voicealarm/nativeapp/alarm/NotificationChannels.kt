@@ -6,7 +6,7 @@ import android.content.Context
 import androidx.core.content.getSystemService
 
 object NotificationChannels {
-    const val RINGING_CHANNEL_ID = "voice_alarm_ringing"
+    const val RINGING_CHANNEL_ID = "voice_alarm_ringing_v2"
 
     fun ensure(context: Context) {
         val notificationManager = requireNotNull(context.getSystemService<NotificationManager>())

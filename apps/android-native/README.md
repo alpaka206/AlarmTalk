@@ -19,11 +19,13 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - family group, invite code creation/accept/revoke, and shared voice profile lookup
 - post-alarm character XP event queue with manual sync
 - character, streak, subscription, voucher, and unified code status surfaces
-- `AlarmManager.setExactAndAllowWhileIdle`
-- full-screen ringing activity through an alarm foreground service notification
+- `AlarmManager.setAlarmClock`
+- full-screen ringing activity through a high-importance alarm foreground-service notification carrier
 - bundled local alarm tone generated into the APK at build time
 - looping playback, repeating vibration, dismiss, snooze
 - boot/package-replaced restore from local Room state
+
+The ringing screen is a dedicated non-resizeable `RingingActivity` task. It uses `showWhenLocked` / `turnScreenOn` and hides system bars, but it does not request keyguard dismissal; the intended behavior is to appear over the lock screen, not to unlock into the normal app task.
 
 The alarm ring path does not use push notifications, server cron, network fetch, paid TTS/persona APIs, or the legacy React Native alarm runtime. Any later TTS output must be downloaded before scheduling and cached as a local audio file.
 
@@ -116,7 +118,7 @@ Some devices do not expose every command above. In that case, use the app's perm
 Current verified device:
 
 - Samsung SM-A325N, Android 13 / API 33.
-- Verified with debug receiver on 2026-05-04: exact alarm scheduled, `AlarmReceiver` fired, `RingingService` started, bundled local alarm audio started, `RingingActivity` launch was requested, and dismiss stopped the alarm.
+- Verified with debug receiver on 2026-05-04: alarm-clock schedule fired, `AlarmReceiver` fired, `RingingService` started, bundled local alarm audio started, `RingingActivity` launched as a dedicated full-screen task, and dismiss stopped the alarm.
 - Samsung Android 13 does not expose `cmd notification allow_full_screen_intent`; use the in-app permission row or system settings when full-screen access needs manual approval.
 
 ### Foreground
@@ -129,7 +131,7 @@ Current verified device:
 adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
 ```
 
-Expected: `VoiceAlarm` logs show `Scheduled exact alarm`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
+Expected: `VoiceAlarm` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
 
 For locked-device or CI-style debug verification where UI tapping is not available, debug builds include an adb-only test receiver. It is declared under `src/debug`, so it is not packaged in release builds:
 
@@ -141,7 +143,7 @@ adb logcat | findstr VoiceAlarm
 adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_DISMISS_LAST_ALARM -n com.voicealarm.nativeapp/.debug.DebugAlarmReceiver
 ```
 
-Expected logs include `Scheduled exact alarm`, `Debug test alarm created`, `Alarm received`, `Starting ringing audio`, `Ringing started`, and `Alarm dismissed`.
+Expected logs include `Scheduled alarm clock`, `Debug test alarm created`, `Alarm received`, `Starting ringing audio`, `Ringing started`, and `Alarm dismissed`.
 
 ### Background
 

@@ -27,7 +27,12 @@
             android:name=".ringing.RingingActivity"
             android:excludeFromRecents="true"
             android:exported="false"
-            android:launchMode="singleTop"
+            android:finishOnTaskLaunch="true"
+            android:launchMode="singleTask"
+            android:resizeableActivity="false"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.voicealarm.nativeapp.ringing"
+            android:turnScreenOn="true"
             android:theme="@style/Theme.VoiceAlarm.Ringing" />
 
         <activity

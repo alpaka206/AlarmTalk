@@ -118,8 +118,8 @@ class RingingService : Service() {
         val activityIntent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
         val fullScreenIntent = PendingIntent.getActivity(
             this,
@@ -310,8 +310,8 @@ class RingingService : Service() {
         val intent = Intent(this, RingingActivity::class.java).apply {
             putExtra(EXTRA_ALARM_ID, alarmId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                Intent.FLAG_ACTIVITY_NO_ANIMATION
         }
         runCatching {
             startActivity(intent)

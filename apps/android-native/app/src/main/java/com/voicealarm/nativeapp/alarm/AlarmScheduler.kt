@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import androidx.core.content.getSystemService
+import com.voicealarm.nativeapp.MainActivity
 import com.voicealarm.nativeapp.alarm.AlarmContract.ACTION_ALARM_TRIGGER
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
@@ -29,20 +30,19 @@ class AlarmScheduler(
         val pendingIntent = requireNotNull(pendingIntentFor(alarm.id, PendingIntent.FLAG_UPDATE_CURRENT)) {
             "Unable to create alarm PendingIntent."
         }
-        alarmManager.setExactAndAllowWhileIdle(
-            AlarmManager.RTC_WAKEUP,
-            alarm.fireAtMillis,
+        alarmManager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(alarm.fireAtMillis, showAlarmIntentFor(alarm.id)),
             pendingIntent,
         )
 
-        Log.i(TAG, "Scheduled exact alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+        Log.i(TAG, "Scheduled alarm clock id=${alarm.id} fireAt=${alarm.fireAtMillis}")
     }
 
     fun cancel(alarmId: String) {
         val pendingIntent = pendingIntentFor(alarmId, PendingIntent.FLAG_NO_CREATE) ?: return
         alarmManager.cancel(pendingIntent)
         pendingIntent.cancel()
-        Log.i(TAG, "Cancelled exact alarm id=$alarmId")
+        Log.i(TAG, "Cancelled alarm clock id=$alarmId")
     }
 
     private fun pendingIntentFor(alarmId: String, flags: Int): PendingIntent? {
@@ -55,6 +55,21 @@ class AlarmScheduler(
             requestCodeFor(alarmId),
             intent,
             flags or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    private fun showAlarmIntentFor(alarmId: String): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, alarmId)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCodeFor("show:$alarmId"),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
