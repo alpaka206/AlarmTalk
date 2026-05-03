@@ -3682,24 +3682,25 @@ private fun GoogleSignInButton(
         contentColor = Color(0xFF1F1F1F),
         border = BorderStroke(1.dp, Color(0xFF747775)),
     ) {
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 12.dp, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_google_g),
                 contentDescription = null,
                 modifier = Modifier
+                    .align(Alignment.CenterStart)
                     .size(18.dp)
                     .padding(0.dp),
                 alpha = contentAlpha,
             )
-            Spacer(Modifier.width(10.dp))
             Text(
                 text = "Google로 계속하기",
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 32.dp),
                 color = Color(0xFF1F1F1F).copy(alpha = contentAlpha),
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Medium,
