@@ -142,6 +142,7 @@ class AlarmRepository(
             holidayOff = draft.holidayOff,
             nowMillis = now,
         )
+        requireExactAlarmPermission()
         val updated = current.copy(
             label = draft.label.trim().ifBlank { "알람" },
             hour = draft.hour,
@@ -164,13 +165,13 @@ class AlarmRepository(
             voiceLanguage = draft.voiceLanguage,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
-            state = if (current.enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
+            enabled = true,
+            state = AlarmStates.SCHEDULED,
             updatedAtMillis = now,
         )
 
-        if (updated.enabled) requireExactAlarmPermission()
         alarmScheduler.cancel(alarmId)
-        if (updated.enabled) alarmScheduler.schedule(updated)
+        alarmScheduler.schedule(updated)
         alarmDao.upsert(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
         return updated

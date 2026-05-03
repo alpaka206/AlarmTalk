@@ -54,7 +54,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fullscreen
@@ -835,11 +834,6 @@ private enum class NativeTab {
     Growth,
 }
 
-private enum class SwipeRevealSide {
-    Start,
-    End,
-}
-
 private const val MAX_VOICE_PROFILES = 2
 
 private val VoiceAlarmFontFamily = FontFamily(
@@ -1025,7 +1019,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onCreateAlarm = { screen = AlarmScreen.Create },
                 onToggleEnabled = viewModel::setAlarmEnabled,
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
-                onCopyAlarm = viewModel::copyAlarm,
                 onDeleteAlarm = viewModel::deleteAlarm,
             )
 
@@ -1212,7 +1205,6 @@ private fun AlarmListScreen(
     onCreateAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
-    onCopyAlarm: (String) -> Unit,
     onDeleteAlarm: (String) -> Unit,
 ) {
     val sortedAlarms = remember(alarms) {
@@ -1331,10 +1323,9 @@ private fun AlarmListScreen(
                     items(sortedAlarms, key = { it.id }) { alarm ->
                         AlarmRow(
                             alarm = alarm,
-                onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
-                onEditAlarm = { onEditAlarm(alarm) },
-                onCopyAlarm = { onCopyAlarm(alarm.id) },
-                onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                            onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
+                            onEditAlarm = { onEditAlarm(alarm) },
+                            onDeleteAlarm = { onDeleteAlarm(alarm.id) },
                         )
                     }
                 }
@@ -4443,33 +4434,23 @@ private fun AlarmRow(
     alarm: AlarmEntity,
     onToggleEnabled: (Boolean) -> Unit,
     onEditAlarm: () -> Unit,
-    onCopyAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
 ) {
     val deleteWidth = 92.dp
     val deleteWidthPx = with(LocalDensity.current) { deleteWidth.toPx() }
-    var revealedSide by remember(alarm.id) { mutableStateOf<SwipeRevealSide?>(null) }
+    var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
     var dragOffsetPx by remember(alarm.id) { mutableStateOf(0f) }
-    val settledOffsetPx = when (revealedSide) {
-        SwipeRevealSide.Start -> deleteWidthPx
-        SwipeRevealSide.End -> -deleteWidthPx
-        null -> 0f
-    }
+    val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
     val currentOffsetPx = if (dragOffsetPx != 0f) dragOffsetPx else settledOffsetPx
     val dragState = rememberDraggableState { delta ->
-        dragOffsetPx = (dragOffsetPx + delta).coerceIn(-deleteWidthPx, deleteWidthPx)
+        dragOffsetPx = (dragOffsetPx + delta).coerceIn(-deleteWidthPx, 0f)
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.matchParentSize(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.End,
         ) {
-            DeleteRevealButton(
-                modifier = Modifier.width(deleteWidth),
-                onDelete = onDeleteAlarm,
-            )
-            Spacer(Modifier.weight(1f))
             DeleteRevealButton(
                 modifier = Modifier.width(deleteWidth),
                 onDelete = onDeleteAlarm,
@@ -4478,10 +4459,10 @@ private fun AlarmRow(
 
         Card(
             onClick = {
-                if (revealedSide == null) {
+                if (!deleteRevealed) {
                     onEditAlarm()
                 } else {
-                    revealedSide = null
+                    deleteRevealed = false
                     dragOffsetPx = 0f
                 }
             },
@@ -4492,14 +4473,10 @@ private fun AlarmRow(
                     orientation = Orientation.Horizontal,
                     onDragStarted = {
                         dragOffsetPx = settledOffsetPx
-                        revealedSide = null
+                        deleteRevealed = false
                     },
                     onDragStopped = {
-                        revealedSide = when {
-                            dragOffsetPx <= -deleteWidthPx * 0.42f -> SwipeRevealSide.End
-                            dragOffsetPx >= deleteWidthPx * 0.42f -> SwipeRevealSide.Start
-                            else -> null
-                        }
+                        deleteRevealed = dragOffsetPx <= -deleteWidthPx * 0.42f
                         dragOffsetPx = 0f
                     },
                 ),
@@ -4561,14 +4538,6 @@ private fun AlarmRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    IconButton(onClick = onCopyAlarm) {
-                        Icon(Icons.Outlined.ContentCopy, contentDescription = "알람 복사")
-                    }
-                }
             }
         }
     }
