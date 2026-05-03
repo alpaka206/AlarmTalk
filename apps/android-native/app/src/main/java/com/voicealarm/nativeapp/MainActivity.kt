@@ -156,10 +156,12 @@ import com.voicealarm.nativeapp.network.TtsMessage
 import com.voicealarm.nativeapp.network.TtsMessageAudioResponse
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -170,6 +172,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -443,6 +449,108 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, "음성 프로필을 불러오지 못했어요")
+            }
+            voiceProfileBusy = false
+        }
+    }
+
+    fun createVoiceProfile(name: String, audio: CachedAlarmAudio) {
+        val session = authSession
+        if (session == null) {
+            message = "음성 프로필을 만들려면 먼저 로그인해 주세요"
+            return
+        }
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            message = "음성 프로필 이름을 입력해 주세요"
+            return
+        }
+        if (voiceProfiles.size >= MAX_VOICE_PROFILES) {
+            message = "음성 프로필은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
+            return
+        }
+
+        viewModelScope.launch {
+            if (voiceProfileBusy) return@launch
+            voiceProfileBusy = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    api.createVoiceClone(
+                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        audio = voiceUploadPart(audio),
+                        name = trimmedName.toRequestBody("text/plain".toMediaType()),
+                    ).profile
+                }
+            }.onSuccess { profile ->
+                voiceProfiles = listOf(profile) + voiceProfiles.filterNot { it.id == profile.id }
+                message = "음성 프로필 '${profile.name}'을 만들었어요"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to create voice profile", error)
+                message = userFacingError(error, "음성 프로필 생성에 실패했어요")
+            }
+            voiceProfileBusy = false
+        }
+    }
+
+    fun renameVoiceProfile(profileId: String, name: String) {
+        val session = authSession
+        if (session == null) {
+            message = "음성 프로필을 수정하려면 먼저 로그인해 주세요"
+            return
+        }
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            message = "음성 프로필 이름을 입력해 주세요"
+            return
+        }
+
+        viewModelScope.launch {
+            if (voiceProfileBusy) return@launch
+            voiceProfileBusy = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    api.updateVoiceProfile(
+                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        id = profileId,
+                        request = VoiceProfileUpdateRequest(name = trimmedName),
+                    ).profile
+                }
+            }.onSuccess { profile ->
+                voiceProfiles = voiceProfiles.map {
+                    if (it.id == profile.id) it.copy(name = profile.name) else it
+                }
+                message = "음성 프로필 이름을 바꿨어요"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
+                message = userFacingError(error, "음성 프로필 이름 변경에 실패했어요")
+            }
+            voiceProfileBusy = false
+        }
+    }
+
+    fun deleteVoiceProfile(profileId: String) {
+        val session = authSession
+        if (session == null) {
+            message = "음성 프로필을 삭제하려면 먼저 로그인해 주세요"
+            return
+        }
+
+        viewModelScope.launch {
+            if (voiceProfileBusy) return@launch
+            voiceProfileBusy = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    api.deleteVoiceProfile(
+                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        id = profileId,
+                    )
+                }
+            }.onSuccess {
+                voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
+                message = "음성 프로필을 삭제했어요"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
+                message = userFacingError(error, "사용 중인 음성 프로필은 삭제할 수 없어요")
             }
             voiceProfileBusy = false
         }
@@ -733,6 +841,8 @@ private enum class NativeTab {
     Growth,
 }
 
+private const val MAX_VOICE_PROFILES = 2
+
 private val VoiceAlarmFontFamily = FontFamily(
     Font(R.font.pretendard_regular, FontWeight.Normal),
     Font(R.font.pretendard_medium, FontWeight.Medium),
@@ -918,6 +1028,10 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onGoogleSignIn = ::launchGoogleSignIn,
                 onSyncNow = viewModel::syncNow,
                 onLogout = viewModel::logout,
+                onRefreshVoiceProfiles = viewModel::loadVoiceProfiles,
+                onCreateVoiceProfile = viewModel::createVoiceProfile,
+                onRenameVoiceProfile = viewModel::renameVoiceProfile,
+                onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                 onRefreshSocial = viewModel::refreshSocial,
                 onSendFriendRequest = viewModel::sendFriendRequest,
                 onAcceptFriendRequest = viewModel::acceptFriendRequest,
@@ -1110,6 +1224,10 @@ private fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
+    onRefreshVoiceProfiles: () -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio) -> Unit,
+    onRenameVoiceProfile: (String, String) -> Unit,
+    onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onSendFriendRequest: (String) -> Unit,
     onAcceptFriendRequest: (String) -> Unit,
@@ -1212,24 +1330,23 @@ private fun AlarmListScreen(
                 item {
                     ScreenHeader(
                         title = "음성",
-                        subtitle = "알람 전에 쓸 목소리를 로컬에 준비해요.",
+                        subtitle = "내 목소리를 AI 음성 프로필로 만들고 관리해요.",
                     )
                 }
-                item {
-                    AccountPanel(
-                        authSession = authSession,
-                        authBusy = authBusy,
-                        syncBusy = syncBusy,
-                        voiceProfiles = voiceProfiles,
-                        voiceProfileBusy = voiceProfileBusy,
-                        onLogin = onLogin,
-                        onRegister = onRegister,
-                        onGoogleSignIn = onGoogleSignIn,
-                        onSyncNow = onSyncNow,
-                        onLogout = onLogout,
-                    )
+                if (authSession == null) {
+                    item { VoiceLoginRequiredCard() }
+                } else {
+                    item {
+                        VoiceProfileManagementPanel(
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onRefresh = onRefreshVoiceProfiles,
+                            onCreateVoiceProfile = onCreateVoiceProfile,
+                            onRenameVoiceProfile = onRenameVoiceProfile,
+                            onDeleteVoiceProfile = onDeleteVoiceProfile,
+                        )
+                    }
                 }
-                item { VoiceMethodGrid(onCreateAlarm = onCreateAlarm) }
             }
 
             NativeTab.Alarms -> {
@@ -1704,28 +1821,336 @@ private fun HomeActionCard(
 }
 
 @Composable
-private fun VoiceMethodGrid(onCreateAlarm: () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = "등록 방법",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HomeActionCard(
-                label = "녹음",
-                icon = Icons.Outlined.Mic,
-                onClick = onCreateAlarm,
-                modifier = Modifier.weight(1f),
+private fun VoiceLoginRequiredCard() {
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "로그인이 필요해요",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
-            HomeActionCard(
-                label = "파일 업로드",
-                icon = Icons.Outlined.Message,
-                onClick = onCreateAlarm,
-                modifier = Modifier.weight(1f),
-            )
+            MutedText("음성 프로필은 계정에 저장됩니다. 홈 탭에서 로그인한 뒤 다시 열어 주세요.")
         }
-        MutedText("선택하거나 녹음한 오디오는 알람 예약 전에 로컬에 저장됩니다.")
+    }
+}
+
+@Composable
+private fun VoiceProfileManagementPanel(
+    voiceProfiles: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
+    onRefresh: () -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio) -> Unit,
+    onRenameVoiceProfile: (String, String) -> Unit,
+    onDeleteVoiceProfile: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
+    val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
+    val scope = rememberCoroutineScope()
+    var profileName by remember { mutableStateOf("") }
+    var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
+    var localMessage by remember { mutableStateOf<String?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+    var showCreateConfirm by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
+    var renameName by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
+    val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
+
+    fun applySelectedAudio(audio: CachedAlarmAudio) {
+        selectedAudio = audio
+        val seconds = audio.durationMillis?.let { " (${it / 1000}초)" } ?: ""
+        localMessage = "프로필 생성용 오디오를 준비했어요$seconds"
+    }
+
+    fun cacheSelectedAudio(uri: Uri) {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { audioStore.cacheFromUri(uri) }
+            }.onSuccess(::applySelectedAudio)
+                .onFailure { error ->
+                    Log.e(TAG, "Failed to cache voice profile audio", error)
+                    localMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요")
+                }
+        }
+    }
+
+    fun stopRecording() {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { recorder.stop() }
+            }.onSuccess { audio ->
+                isRecording = false
+                applySelectedAudio(audio)
+            }.onFailure { error ->
+                isRecording = false
+                Log.e(TAG, "Failed to stop voice profile recording", error)
+                localMessage = userFacingError(error, "녹음에 실패했어요")
+            }
+        }
+    }
+
+    fun startRecording() {
+        runCatching {
+            recorder.start()
+            isRecording = true
+            localMessage = "녹음 중..."
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to start voice profile recording", error)
+            localMessage = userFacingError(error, "녹음을 시작할 수 없어요")
+        }
+    }
+
+    val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) cacheSelectedAudio(uri)
+    }
+    val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            startRecording()
+        } else {
+            localMessage = "마이크 권한이 필요해요"
+        }
+    }
+
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            delay(AlarmAudioLimits.MAX_DURATION_MILLIS)
+            if (isRecording) stopRecording()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (recorder.isRecording) recorder.cancel()
+        }
+    }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            PanelHeader(
+                title = "내 음성 프로필",
+                actionLabel = if (voiceProfileBusy) "처리 중" else "새로고침",
+                enabled = !voiceProfileBusy,
+                onAction = onRefresh,
+            )
+            MutedText("등록 ${voiceProfiles.size}/${MAX_VOICE_PROFILES}개")
+
+            if (isLimitReached) {
+                MutedText("음성 프로필은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요.")
+            } else {
+                OutlinedTextField(
+                    value = profileName,
+                    onValueChange = { profileName = it.take(50) },
+                    label = { Text("프로필 이름") },
+                    placeholder = { Text("예: 내 목소리") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = selectedAudio?.let { "선택된 오디오: ${audioFileLabel(it.localAudioUri)}" }
+                        ?: "30초 이하 녹음 또는 음성 파일을 선택해 주세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { pickAudioLauncher.launch("audio/*") },
+                        enabled = !voiceProfileBusy && !isRecording,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("파일 선택")
+                    }
+                    Button(
+                        onClick = {
+                            if (isRecording) {
+                                stopRecording()
+                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startRecording()
+                            } else {
+                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        enabled = !voiceProfileBusy,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(if (isRecording) "녹음 종료" else "녹음")
+                    }
+                }
+                Button(
+                    onClick = { showCreateConfirm = true },
+                    enabled = profileName.isNotBlank() && selectedAudio != null && !voiceProfileBusy && !isRecording,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Text("음성 프로필 만들기")
+                }
+                MutedText("프로필 만들기는 음성 복제 API를 호출하므로 실제 크레딧이 발생할 수 있어요.")
+            }
+
+            if (localMessage != null) {
+                MutedText(localMessage.orEmpty())
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+
+            Text("프로필 목록", fontWeight = FontWeight.SemiBold)
+            if (voiceProfiles.isEmpty()) {
+                MutedText("아직 만든 음성 프로필이 없어요.")
+            } else {
+                voiceProfiles.forEach { profile ->
+                    VoiceProfileRow(
+                        profile = profile,
+                        enabled = !voiceProfileBusy,
+                        onRename = {
+                            renameTarget = profile
+                            renameName = profile.name
+                        },
+                        onDelete = { deleteTarget = profile },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCreateConfirm) {
+        val audio = selectedAudio
+        AlertDialog(
+            onDismissRequest = { showCreateConfirm = false },
+            title = { Text("음성 프로필 만들기") },
+            text = {
+                Text("이 작업은 음성 복제 API를 호출해 크레딧이 발생할 수 있어요. 계속할까요?")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCreateConfirm = false
+                        if (audio != null) onCreateVoiceProfile(profileName, audio)
+                    },
+                ) {
+                    Text("만들기")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateConfirm = false }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+
+    renameTarget?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("이름 변경") },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it.take(50) },
+                    label = { Text("프로필 이름") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRenameVoiceProfile(profile.id, renameName)
+                        renameTarget = null
+                    },
+                    enabled = renameName.isNotBlank(),
+                ) {
+                    Text("저장")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+
+    deleteTarget?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("음성 프로필 삭제") },
+            text = {
+                Text("'${profile.name}' 프로필을 삭제할까요? 연결된 메시지가 있으면 삭제가 실패할 수 있어요.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDeleteVoiceProfile(profile.id)
+                        deleteTarget = null
+                    },
+                ) {
+                    Text("삭제")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun VoiceProfileRow(
+    profile: VoiceProfile,
+    enabled: Boolean,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    AvatarBubble(label = profile.name)
+                    Column {
+                        Text(profile.name, fontWeight = FontWeight.SemiBold)
+                        MutedText("${voiceStatusLabel(profile.status)} · ${profile.createdAt ?: "생성일 알 수 없음"}")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TextButton(onClick = onRename, enabled = enabled) {
+                        Text("이름")
+                    }
+                    TextButton(onClick = onDelete, enabled = enabled) {
+                        Text("삭제")
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -4271,6 +4696,26 @@ private fun audioFileLabel(localAudioUri: String): String =
         ?.substringAfterLast('/')
         ?.ifBlank { null }
         ?: "로컬 음성 오디오"
+
+private fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
+    val uri = Uri.parse(audio.localAudioUri)
+    require(uri.scheme == "file") { "로컬에 저장된 오디오만 업로드할 수 있어요." }
+    val file = File(requireNotNull(uri.path) { "오디오 파일 경로를 찾을 수 없어요." })
+    require(file.exists()) { "오디오 파일을 찾을 수 없어요." }
+    val mediaType = when (file.extension.lowercase()) {
+        "m4a", "mp4", "aac" -> "audio/mp4"
+        "mp3" -> "audio/mpeg"
+        "wav" -> "audio/wav"
+        "ogg" -> "audio/ogg"
+        else -> "application/octet-stream"
+    }.toMediaType()
+    val uploadName = audio.displayName.ifBlank { file.name }
+    return MultipartBody.Part.createFormData(
+        name = "audio",
+        filename = uploadName,
+        body = file.asRequestBody(mediaType),
+    )
+}
 
 private fun repeatLabel(mask: Int): String {
     if (mask == 0) return "반복 없음"
