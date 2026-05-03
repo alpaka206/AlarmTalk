@@ -24,6 +24,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -101,6 +103,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -3653,14 +3656,56 @@ private fun AccountPanel(
                     )
                 }
 
-                OutlinedButton(
-                    onClick = onGoogleSignIn,
+                GoogleSignInButton(
                     enabled = !authBusy,
+                    onClick = onGoogleSignIn,
                     modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Google로 계속하기")
-                }
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun GoogleSignInButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val contentAlpha = if (enabled) 1f else 0.38f
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(40.dp),
+        shape = RoundedCornerShape(999.dp),
+        color = Color.White,
+        contentColor = Color(0xFF1F1F1F),
+        border = BorderStroke(1.dp, Color(0xFF747775)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_google_g),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(18.dp)
+                    .padding(0.dp),
+                alpha = contentAlpha,
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = "Google로 계속하기",
+                color = Color(0xFF1F1F1F).copy(alpha = contentAlpha),
+                fontFamily = FontFamily.Default,
+                fontWeight = FontWeight.Medium,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                maxLines = 1,
+            )
         }
     }
 }
