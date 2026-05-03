@@ -31,6 +31,48 @@ const ENV: Env = {
   ENVIRONMENT: 'test',
 };
 
+function createMockR2Bucket(initial: Record<string, Uint8Array> = {}) {
+  const store = new Map<string, { body: ArrayBuffer; contentType?: string; meta: Record<string, string> }>();
+  for (const [key, bytes] of Object.entries(initial)) {
+    store.set(key, {
+      body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      contentType: 'audio/mpeg',
+      meta: { mimeType: 'audio/mpeg', userId: 'user-1', sizeBytes: String(bytes.byteLength) },
+    });
+  }
+  const bucket = {
+    put: async (
+      key: string,
+      value: ArrayBufferLike,
+      options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> },
+    ) => {
+      const body = value instanceof ArrayBuffer
+        ? value
+        : new Uint8Array(value as ArrayBufferLike).buffer;
+      store.set(key, {
+        body,
+        contentType: options?.httpMetadata?.contentType,
+        meta: options?.customMetadata ?? {},
+      });
+    },
+    get: async (key: string) => {
+      const item = store.get(key);
+      if (!item) return null;
+      return {
+        customMetadata: item.meta,
+        httpMetadata: item.contentType ? { contentType: item.contentType } : undefined,
+        size: item.body.byteLength,
+        uploaded: new Date('2026-05-01T00:00:00Z'),
+        arrayBuffer: async () => item.body,
+      };
+    },
+    delete: async (key: string) => {
+      store.delete(key);
+    },
+  };
+  return { bucket: bucket as unknown as R2Bucket, store };
+}
+
 import ttsRoutes from '../src/routes/tts';
 
 function buildApp(userId = 'user-1') {
@@ -87,8 +129,10 @@ describe('POST /tts/generate — TTS 생성', () => {
   it('일일 제한 초과면 429', async () => {
     const today = new Date().toISOString().split('T')[0];
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(
+    const res = await reqWithEnv(app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(429);
@@ -183,6 +227,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     mockDB.pushResult([{ cnt: 2 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}?force=true`));
     expect(res.status).toBe(200);
@@ -195,6 +240,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 0);
     mockDB.pushResult([], 0);
+    mockDB.pushResult([], 0);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M404}`));
     expect(res.status).toBe(404);
@@ -202,6 +248,7 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
 
   it('정상 삭제', async () => {
     mockDB.pushResult([{ cnt: 0 }]);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -255,8 +302,10 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('알 수 없는 plan이면 기본 제한 3으로 폴백', async () => {
     mockDB.pushResult([{ plan: 'enterprise', daily_tts_count: 3, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(
+    const res = await reqWithEnv(app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(429);
@@ -320,6 +369,97 @@ describe('POST /tts/generate — edge cases', () => {
     // category defaults to 'custom'
     const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
     expect(insertSql!.args[4]).toBe('custom');
+  });
+
+  it('R2 bucket configured: stores generated TTS under a deterministic cache object key', async () => {
+    const r2 = createMockR2Bucket();
+    mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.cache_hit).toBe(false);
+    expect(body.cache_key).toBeDefined();
+    expect(body.audio_object_key).toContain(`generated-tts/${encodeURIComponent('user-1')}/`);
+    expect([...r2.store.keys()][0]).toBe(body.audio_object_key);
+    expect(mockTextToSpeech).toHaveBeenCalledOnce();
+
+    const cacheInsert = mockDB.calls.find(c => c.sql.includes('INSERT OR IGNORE INTO generated_audio_assets'));
+    expect(cacheInsert).toBeDefined();
+    expect(cacheInsert!.args).toContain(body.cache_key);
+  });
+
+  it('generated audio cache hit skips provider calls and daily generation count', async () => {
+    const objectKey = 'generated-tts/user-1/cached.mp3';
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([{
+      message_id: M1,
+      provider: 'elevenlabs',
+      text: 'hello',
+      audio_url: `r2://${objectKey}`,
+      audio_object_key: objectKey,
+      audio_format: 'mp3',
+    }]);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cache_hit).toBe(true);
+    expect(body.message_id).toBe(M1);
+    expect(body.audio_base64).toBe('Q0g=');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+    expect(mockDB.calls.some(c => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(false);
+    expect(mockDB.calls.some(c => c.sql.includes('INSERT INTO messages'))).toBe(false);
+  });
+
+  it('checks all provider cache keys before enforcing the daily generation limit', async () => {
+    const objectKey = 'generated-tts/user-1/eleven-cached.mp3';
+    const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([69, 76]) });
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{
+      id: V1,
+      status: 'ready',
+      perso_voice_id: 'perso-voice-1',
+      elevenlabs_voice_id: 'el-voice-1',
+    }]);
+    mockDB.pushResult([]); // Perso cache miss.
+    mockDB.pushResult([{
+      message_id: M1,
+      provider: 'elevenlabs',
+      text: 'hello',
+      audio_url: `r2://${objectKey}`,
+      audio_object_key: objectKey,
+      audio_format: 'mp3',
+    }]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+      undefined,
+      { ...ENV, VOICE_BUCKET: r2.bucket },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cache_hit).toBe(true);
+    expect(body.provider).toBe('elevenlabs');
+    expect(body.audio_base64).toBe('RUw=');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+    expect(mockDB.calls.some(c => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(false);
   });
 
   it('성공 시 category 명시하면 해당 category 저장', async () => {
@@ -470,25 +610,30 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
   it('삭제 시 message_library부터 삭제 후 messages 삭제 (순서 검증)', async () => {
     mockDB.pushResult([{ cnt: 0 }]);  // alarm check
     mockDB.pushResult([], 1);         // DELETE message_library
+    mockDB.pushResult([], 1);         // DELETE generated_audio_assets
     mockDB.pushResult([], 1);         // DELETE messages
     const app = buildApp();
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(mockDB.calls[1].sql).toContain('DELETE FROM message_library');
-    expect(mockDB.calls[2].sql).toContain('DELETE FROM messages');
+    expect(mockDB.calls[2].sql).toContain('DELETE FROM generated_audio_assets');
+    expect(mockDB.calls[3].sql).toContain('DELETE FROM messages');
   });
 
   it('삭제 SQL에 user_id 포함 (사용자 격리)', async () => {
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp('user-99');
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(mockDB.calls[1].args).toContain('user-99');
     expect(mockDB.calls[2].args).toContain('user-99');
+    expect(mockDB.calls[3].args).toContain('user-99');
   });
 
   it('force=true이고 알람 0개여도 정상 삭제', async () => {
     mockDB.pushResult([{ cnt: 0 }]);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();

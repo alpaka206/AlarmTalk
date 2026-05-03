@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VoiceAlarm" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+        <item name="android:statusBarColor">@android:color/white</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.VoiceAlarm.Ringing" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:keepScreenOn">true</item>
+        <item name="android:navigationBarColor">@color/voice_alarm_status_bar</item>
+        <item name="android:statusBarColor">@color/voice_alarm_status_bar</item>
+    </style>
+</resources>

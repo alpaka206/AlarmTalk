@@ -254,6 +254,7 @@ function Column({
               style={styles.item}
               onPress={() => onSelect(idx)}
               accessibilityRole="button"
+              accessibilityLabel={label}
             >
               {content}
             </Pressable>

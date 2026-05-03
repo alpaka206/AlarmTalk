@@ -216,9 +216,16 @@ dub.get('/:id', async (c) => {
         resultMessageId = crypto.randomUUID();
 
         await db.execute({
-          sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category)
-                VALUES (?, ?, ?, ?, ?)`,
-          args: [resultMessageId, userId, src.voice_profile_id!, `[${job.target_language}] ${src.text}`, src.category!],
+          sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
+                VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [
+            resultMessageId,
+            userId,
+            src.voice_profile_id!,
+            `[${job.target_language}] ${src.text}`,
+            audioUrl,
+            src.category!,
+          ],
         });
 
         await db.execute({
