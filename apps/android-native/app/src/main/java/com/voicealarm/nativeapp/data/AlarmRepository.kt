@@ -3,31 +3,19 @@ package com.voicealarm.nativeapp.data
 import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
-import com.voicealarm.nativeapp.network.RemoteAlarmMapper
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
-import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
-import com.voicealarm.nativeapp.network.CharacterXpRequest
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
-
-data class AlarmSyncResult(
-    val total: Int,
-    val created: Int,
-    val updated: Int,
-    val failed: Int,
-)
-
-data class CharacterEventSyncResult(
-    val total: Int,
-    val synced: Int,
-    val failed: Int,
-)
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
     private val characterEventDao: CharacterEventDao,
     private val alarmScheduler: AlarmScheduler,
 ) {
+    private val characterEvents = CharacterEventRepository(characterEventDao)
+    private val alarmSyncService = AlarmSyncService(alarmDao)
+    private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
+
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
 
     fun observeCharacterEvents(): Flow<List<CharacterEventEntity>> = characterEventDao.observeEvents()
@@ -299,7 +287,7 @@ class AlarmRepository(
                 updatedAtMillis = now,
             )
         }
-        queueCharacterEvent(
+        characterEvents.queue(
             event = CharacterEventTypes.ALARM_COMPLETED,
             sourceAlarmId = alarmId,
             nowMillis = now,
@@ -327,7 +315,7 @@ class AlarmRepository(
         )
         alarmDao.upsert(next)
         alarmScheduler.schedule(next)
-        queueCharacterEvent(
+        characterEvents.queue(
             event = CharacterEventTypes.ALARM_SNOOZED,
             sourceAlarmId = alarmId,
             nowMillis = now,
@@ -383,98 +371,11 @@ class AlarmRepository(
         return scheduled
     }
 
-    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
-        val localAlarms = alarmDao.getAllAlarms()
-        var created = 0
-        var updated = 0
-        var failed = 0
+    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
+        alarmSyncService.syncWithBackend(api, token)
 
-        localAlarms.forEach { alarm ->
-            val now = System.currentTimeMillis()
-            runCatching {
-                val request = RemoteAlarmMapper.toWriteRequest(alarm)
-                val remoteAlarm = if (alarm.remoteAlarmId == null) {
-                    api.createAlarm(authorization, request).alarm.also {
-                        created += 1
-                    }
-                } else {
-                    api.updateAlarm(authorization, alarm.remoteAlarmId, request).alarm.also {
-                        updated += 1
-                    }
-                }
-                alarmDao.setSyncState(
-                    id = alarm.id,
-                    remoteAlarmId = remoteAlarm.id,
-                    lastSyncedAtMillis = now,
-                    syncState = AlarmSyncStates.SYNCED,
-                    updatedAtMillis = now,
-                )
-                if (alarm.localAudioUri != null && alarm.rawAudioUri?.startsWith("http", ignoreCase = true) != true) {
-                    Log.i(TAG, "Synced alarm metadata only; local voice audio remains on-device id=${alarm.id}")
-                }
-            }.onFailure { error ->
-                failed += 1
-                Log.e(TAG, "Failed to sync alarm id=${alarm.id}", error)
-                alarmDao.setSyncState(
-                    id = alarm.id,
-                    remoteAlarmId = alarm.remoteAlarmId,
-                    lastSyncedAtMillis = alarm.lastSyncedAtMillis,
-                    syncState = AlarmSyncStates.FAILED,
-                    updatedAtMillis = now,
-                )
-            }
-        }
-
-        Log.i(TAG, "Backend alarm sync complete total=${localAlarms.size} created=$created updated=$updated failed=$failed")
-        return AlarmSyncResult(
-            total = localAlarms.size,
-            created = created,
-            updated = updated,
-            failed = failed,
-        )
-    }
-
-    suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
-        val pending = characterEventDao.getEventsByState(
-            listOf(CharacterEventStates.PENDING, CharacterEventStates.FAILED),
-        )
-        var synced = 0
-        var failed = 0
-
-        pending.forEach { event ->
-            runCatching {
-                api.grantCharacterXp(
-                    authorization = authorization,
-                    request = CharacterXpRequest(
-                        event = event.event,
-                        clientNonce = event.clientNonce,
-                        localDate = event.localDate,
-                    ),
-                )
-                characterEventDao.setSyncState(
-                    id = event.id,
-                    state = CharacterEventStates.SYNCED,
-                    syncedAtMillis = System.currentTimeMillis(),
-                    lastError = null,
-                )
-                synced += 1
-            }.onFailure { error ->
-                failed += 1
-                Log.e(TAG, "Failed to sync character event id=${event.id} event=${event.event}", error)
-                characterEventDao.setSyncState(
-                    id = event.id,
-                    state = CharacterEventStates.FAILED,
-                    syncedAtMillis = null,
-                    lastError = error.message,
-                )
-            }
-        }
-
-        Log.i(TAG, "Character event sync complete total=${pending.size} synced=$synced failed=$failed")
-        return CharacterEventSyncResult(total = pending.size, synced = synced, failed = failed)
-    }
+    suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
+        characterEventSyncService.sync(api, token)
 
     private fun validateDraft(draft: AlarmDraft) {
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
@@ -506,34 +407,4 @@ class AlarmRepository(
 
     private fun AlarmEntity.nextLocalSyncState(): String =
         if (remoteAlarmId == null) AlarmSyncStates.LOCAL_ONLY else AlarmSyncStates.DIRTY
-
-    private suspend fun queueCharacterEvent(
-        event: String,
-        sourceAlarmId: String?,
-        nowMillis: Long = System.currentTimeMillis(),
-    ) {
-        val localDate = java.time.Instant.ofEpochMilli(nowMillis)
-            .atZone(java.time.ZoneId.systemDefault())
-            .toLocalDate()
-            .toString()
-        val nonce = listOfNotNull(event, sourceAlarmId, localDate).joinToString(":")
-        val inserted = characterEventDao.insertIgnore(
-            CharacterEventEntity(
-                id = UUID.randomUUID().toString(),
-                event = event,
-                clientNonce = nonce,
-                localDate = localDate,
-                sourceAlarmId = sourceAlarmId,
-                state = CharacterEventStates.PENDING,
-                createdAtMillis = nowMillis,
-                syncedAtMillis = null,
-                lastError = null,
-            ),
-        )
-        if (inserted == -1L) {
-            Log.i(TAG, "Character event already queued nonce=$nonce")
-        } else {
-            Log.i(TAG, "Queued character event event=$event nonce=$nonce")
-        }
-    }
 }

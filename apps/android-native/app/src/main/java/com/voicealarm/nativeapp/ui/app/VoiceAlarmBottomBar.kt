@@ -1,0 +1,128 @@
+package com.voicealarm.nativeapp
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+
+@Composable
+internal fun VoiceAlarmBottomBar(
+    selectedTab: NativeTab,
+    onSelectTab: (NativeTab) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp)
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            VoiceAlarmTabItem(
+                tab = NativeTab.Home,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Home,
+                label = "홈",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Voices,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Mic,
+                label = "음성",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Alarms,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Alarm,
+                label = "알람",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun VoiceAlarmTabItem(
+    tab: NativeTab,
+    selectedTab: NativeTab,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onSelectTab: (NativeTab) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selected = selectedTab == tab
+    TextButton(
+        onClick = { onSelectTab(tab) },
+        modifier = modifier,
+        contentPadding = PaddingValues(vertical = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else {
+                        Color.Transparent
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                )
+                .padding(vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(22.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            )
+        }
+    }
+}
