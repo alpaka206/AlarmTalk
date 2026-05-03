@@ -5340,10 +5340,10 @@ private fun alarmStateLabel(state: String?): String = when (state) {
 }
 
 private fun stageEmoji(stage: String): String = when (stage) {
-    "sprout" -> "새싹"
-    "tree" -> "나무"
-    "bloom" -> "꽃"
-    else -> "씨앗"
+    "sprout" -> "\uD83C\uDF31"
+    "tree" -> "\uD83C\uDF33"
+    "bloom" -> "\uD83C\uDF38"
+    else -> "\uD83C\uDF30"
 }
 
 private fun stageLabel(stage: String): String = when (stage) {
