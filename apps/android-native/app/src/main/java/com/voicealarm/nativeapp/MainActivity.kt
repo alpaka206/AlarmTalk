@@ -69,8 +69,11 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -138,15 +141,15 @@ import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
+import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
-import com.voicealarm.nativeapp.network.Friend
-import com.voicealarm.nativeapp.network.FriendRequestBody
 import com.voicealarm.nativeapp.network.LoginRequest
-import com.voicealarm.nativeapp.network.PendingFriendRequest
+import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.RegisterRequest
+import com.voicealarm.nativeapp.network.SendNoteRequest
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.TtsMessage
@@ -222,12 +225,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var socialBusy by mutableStateOf(false)
         private set
 
-    var friends by mutableStateOf<List<Friend>>(emptyList())
-        private set
-
-    var pendingFriends by mutableStateOf<List<PendingFriendRequest>>(emptyList())
-        private set
-
     var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(null)
         private set
 
@@ -250,6 +247,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
+        private set
+
+    var noteBusy by mutableStateOf(false)
+        private set
+
+    var receivedNotes by mutableStateOf<List<ReceivedNote>>(emptyList())
         private set
 
     var message by mutableStateOf<String?>(null)
@@ -585,66 +588,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshSocial() {
-        val authorization = bearerOrMessage("사람들 정보를 불러오려면 먼저 로그인해 주세요") ?: return
+        val authorization = bearerOrMessage("커플/가족 정보를 불러오려면 먼저 로그인해 주세요") ?: return
         viewModelScope.launch {
             socialBusy = true
             runCatching {
-                val friendList = api.listFriends(authorization).friends
-                val pendingList = api.listPendingFriends(authorization).pending
                 val group = api.getFamilyGroup(authorization)
                 val invites = api.listFamilyInvites(authorization).invites
                 val sharedVoices = api.listFamilyVoiceProfiles(authorization).profiles
                 SocialSnapshot(
-                    friends = friendList,
-                    pendingFriends = pendingList,
                     familyGroup = group,
                     familyInvites = invites,
                     familyVoices = sharedVoices,
                 )
             }.onSuccess { snapshot ->
-                friends = snapshot.friends
-                pendingFriends = snapshot.pendingFriends
                 familyGroup = snapshot.familyGroup
                 familyInvites = snapshot.familyInvites
                 familyVoices = snapshot.familyVoices
-                message = "사람들 정보를 불러왔어요"
+                message = "커플/가족 정보를 불러왔어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to refresh social data", error)
-                message = userFacingError(error, "사람들 정보를 불러오지 못했어요")
-            }
-            socialBusy = false
-        }
-    }
-
-    fun sendFriendRequest(email: String) {
-        val authorization = bearerOrMessage("친구 요청을 보내려면 먼저 로그인해 주세요") ?: return
-        viewModelScope.launch {
-            socialBusy = true
-            runCatching {
-                api.sendFriendRequest(authorization, FriendRequestBody(email.trim()))
-            }.onSuccess {
-                message = "친구 요청을 보냈어요"
-                refreshSocial()
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to send friend request", error)
-                message = userFacingError(error, "친구 요청에 실패했어요")
-            }
-            socialBusy = false
-        }
-    }
-
-    fun acceptFriendRequest(id: String) {
-        val authorization = bearerOrMessage("친구 요청을 수락하려면 먼저 로그인해 주세요") ?: return
-        viewModelScope.launch {
-            socialBusy = true
-            runCatching {
-                api.acceptFriendRequest(authorization, id)
-            }.onSuccess {
-                message = "친구 요청을 수락했어요"
-                refreshSocial()
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to accept friend request id=$id", error)
-                message = userFacingError(error, "친구 요청 수락에 실패했어요")
+                message = userFacingError(error, "커플/가족 정보를 불러오지 못했어요")
             }
             socialBusy = false
         }
@@ -765,6 +728,105 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun refreshNotes() {
+        val authorization = bearerOrMessage("음성 메시지를 불러오려면 먼저 로그인해 주세요") ?: return
+        viewModelScope.launch {
+            noteBusy = true
+            runCatching {
+                api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
+            }.onSuccess { notes ->
+                receivedNotes = notes
+                message = "받은 메시지 ${notes.size}개를 불러왔어요"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to refresh notes", error)
+                message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
+            }
+            noteBusy = false
+        }
+    }
+
+    fun sendNote(receiverId: String, text: String) {
+        val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+        val trimmedText = text.trim()
+        if (receiverId.isBlank()) {
+            message = "받는 사람을 선택해 주세요"
+            return
+        }
+        if (trimmedText.isBlank()) {
+            message = "메시지를 입력해 주세요"
+            return
+        }
+        viewModelScope.launch {
+            noteBusy = true
+            runCatching {
+                api.sendNote(
+                    authorization = authorization,
+                    request = SendNoteRequest(receiverId = receiverId, text = trimmedText),
+                )
+            }.onSuccess {
+                message = "메시지를 보냈어요"
+                refreshNotes()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to send note", error)
+                message = userFacingError(error, "메시지 전송에 실패했어요")
+            }
+            noteBusy = false
+        }
+    }
+
+    fun markNoteRead(noteId: String) {
+        val authorization = bearerOrMessage("메시지를 읽음 처리하려면 먼저 로그인해 주세요") ?: return
+        viewModelScope.launch {
+            runCatching {
+                api.markNoteRead(authorization, noteId)
+            }.onSuccess {
+                receivedNotes = receivedNotes.map { note ->
+                    if (note.id == noteId && note.readAt == null) {
+                        note.copy(readAt = Instant.now().toString())
+                    } else {
+                        note
+                    }
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to mark note read id=$noteId", error)
+            }
+        }
+    }
+
+    fun checkoutPlan(planKey: String) {
+        val authorization = bearerOrMessage("구독을 변경하려면 먼저 로그인해 주세요") ?: return
+        viewModelScope.launch {
+            billingBusy = true
+            runCatching {
+                api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey))
+            }.onSuccess { response ->
+                subscriptionResponse = BillingSubscriptionResponse(
+                    subscription = response.subscription,
+                    plan = response.plan,
+                )
+                response.voucher?.let { voucher ->
+                    vouchers = listOf(
+                        VoucherItem(
+                            id = voucher.id,
+                            code = voucher.code,
+                            planName = response.plan.name,
+                            planType = response.plan.planType,
+                            status = "issued",
+                            expiresAt = voucher.expiresAt,
+                        ),
+                    ) + vouchers
+                }
+                message = "${response.plan.name} 플랜을 적용했어요"
+                refreshAppSession()
+                refreshSocial()
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to checkout plan key=$planKey", error)
+                message = userFacingError(error, "구독 변경에 실패했어요")
+            }
+            billingBusy = false
+        }
+    }
+
     fun showGoogleSetupRequired() {
         message = "Google 로그인을 쓰려면 voiceAlarmGoogleWebClientId를 설정해 주세요."
     }
@@ -807,8 +869,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 }
 
 private data class SocialSnapshot(
-    val friends: List<Friend>,
-    val pendingFriends: List<PendingFriendRequest>,
     val familyGroup: FamilyGroupCurrentResponse,
     val familyInvites: List<FamilyInvite>,
     val familyVoices: List<FamilyVoiceProfile>,
@@ -818,6 +878,14 @@ private data class CharacterBillingSnapshot(
     val character: CharacterResponse,
     val subscription: BillingSubscriptionResponse,
     val vouchers: List<VoucherItem>,
+)
+
+private data class SubscriptionPlanOption(
+    val key: String,
+    val name: String,
+    val price: String,
+    val description: String,
+    val features: List<String>,
 )
 
 private sealed interface AlarmScreen {
@@ -831,7 +899,9 @@ private enum class NativeTab {
     Voices,
     Alarms,
     People,
+    Messages,
     Growth,
+    Billing,
 }
 
 private const val MAX_VOICE_PROFILES = 2
@@ -875,8 +945,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val voiceProfiles = viewModel.voiceProfiles
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val socialBusy = viewModel.socialBusy
-    val friends = viewModel.friends
-    val pendingFriends = viewModel.pendingFriends
     val familyGroup = viewModel.familyGroup
     val familyInvites = viewModel.familyInvites
     val familyVoices = viewModel.familyVoices
@@ -886,12 +954,28 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val billingBusy = viewModel.billingBusy
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
+    val noteBusy = viewModel.noteBusy
+    val receivedNotes = viewModel.receivedNotes
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) viewModel.preloadVoiceProfiles()
+    }
+
+    LaunchedEffect(selectedTab, authSession?.token) {
+        if (authSession == null) return@LaunchedEffect
+        when (selectedTab) {
+            NativeTab.People -> viewModel.refreshSocial()
+            NativeTab.Messages -> {
+                viewModel.refreshSocial()
+                viewModel.refreshNotes()
+            }
+            NativeTab.Growth,
+            NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
+            else -> Unit
+        }
     }
 
     val googleSignInLauncher = rememberLauncherForActivityResult(
@@ -985,8 +1069,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
                 socialBusy = socialBusy,
-                friends = friends,
-                pendingFriends = pendingFriends,
                 familyGroup = familyGroup,
                 familyInvites = familyInvites,
                 familyVoices = familyVoices,
@@ -996,6 +1078,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 billingBusy = billingBusy,
                 subscriptionResponse = subscriptionResponse,
                 vouchers = vouchers,
+                noteBusy = noteBusy,
+                receivedNotes = receivedNotes,
                 message = message,
                 onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
@@ -1008,14 +1092,16 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onRenameVoiceProfile = viewModel::renameVoiceProfile,
                 onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                 onRefreshSocial = viewModel::refreshSocial,
-                onSendFriendRequest = viewModel::sendFriendRequest,
-                onAcceptFriendRequest = viewModel::acceptFriendRequest,
                 onCreateFamilyInvite = viewModel::createFamilyInvite,
                 onAcceptFamilyInvite = viewModel::acceptFamilyInvite,
                 onRevokeFamilyInvite = viewModel::revokeFamilyInvite,
                 onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
                 onSyncCharacterEvents = viewModel::syncCharacterEvents,
                 onRegisterCode = viewModel::registerCode,
+                onRefreshNotes = viewModel::refreshNotes,
+                onSendNote = viewModel::sendNote,
+                onMarkNoteRead = viewModel::markNoteRead,
+                onCheckoutPlan = viewModel::checkoutPlan,
                 onCreateAlarm = { screen = AlarmScreen.Create },
                 onToggleEnabled = viewModel::setAlarmEnabled,
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
@@ -1092,14 +1178,6 @@ private fun VoiceAlarmBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-            VoiceAlarmTabItem(
-                tab = NativeTab.People,
-                selectedTab = selectedTab,
-                icon = Icons.Outlined.Message,
-                label = "사람들",
-                onSelectTab = onSelectTab,
-                modifier = Modifier.weight(1f),
-            )
         }
     }
 }
@@ -1171,8 +1249,6 @@ private fun AlarmListScreen(
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
     socialBusy: Boolean,
-    friends: List<Friend>,
-    pendingFriends: List<PendingFriendRequest>,
     familyGroup: FamilyGroupCurrentResponse?,
     familyInvites: List<FamilyInvite>,
     familyVoices: List<FamilyVoiceProfile>,
@@ -1182,6 +1258,8 @@ private fun AlarmListScreen(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     vouchers: List<VoucherItem>,
+    noteBusy: Boolean,
+    receivedNotes: List<ReceivedNote>,
     message: String?,
     onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
@@ -1194,14 +1272,16 @@ private fun AlarmListScreen(
     onRenameVoiceProfile: (String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
-    onSendFriendRequest: (String) -> Unit,
-    onAcceptFriendRequest: (String) -> Unit,
     onCreateFamilyInvite: () -> Unit,
     onAcceptFamilyInvite: (String) -> Unit,
     onRevokeFamilyInvite: (String) -> Unit,
     onRefreshCharacterBilling: () -> Unit,
     onSyncCharacterEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
+    onRefreshNotes: () -> Unit,
+    onSendNote: (String, String) -> Unit,
+    onMarkNoteRead: (String) -> Unit,
+    onCheckoutPlan: (String) -> Unit,
     onCreateAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
@@ -1226,12 +1306,20 @@ private fun AlarmListScreen(
     ) {
         when (selectedTab) {
             NativeTab.Home -> {
-                item { HomeHeader(authSession = authSession) }
+                item {
+                    HomeHeader(
+                        authSession = authSession,
+                        syncBusy = syncBusy,
+                        onSelectTab = onSelectTab,
+                        onSyncNow = onSyncNow,
+                        onLogout = onLogout,
+                    )
+                }
                 item {
                     HomeStatsRow(
                         activeAlarms = alarms.count { it.enabled },
                         voiceCount = voiceProfiles.size,
-                        friendCount = friends.size,
+                        connectionCount = familyGroup?.members?.size ?: 0,
                     )
                 }
                 if (authSession != null && characterResponse != null) {
@@ -1265,7 +1353,7 @@ private fun AlarmListScreen(
                         onOpenVoices = {
                             onSelectTab(NativeTab.Voices)
                         },
-                        onManagePeople = { onSelectTab(NativeTab.People) },
+                        onOpenGrowth = { onSelectTab(NativeTab.Growth) },
                     )
                 }
                 if (authSession == null) {
@@ -1334,8 +1422,8 @@ private fun AlarmListScreen(
             NativeTab.People -> {
                 item {
                     ScreenHeader(
-                        title = "사람들",
-                        subtitle = "가족과 연인의 목소리를 초대 코드로 연결해요.",
+                        title = "커플/가족 연결",
+                        subtitle = "초대 코드로 연결하고, 공유 허용된 음성만 알람에 사용할 수 있어요.",
                     )
                 }
                 if (authSession == null) {
@@ -1355,19 +1443,60 @@ private fun AlarmListScreen(
                     }
                 } else {
                     item {
-                        SocialPanel(
+                        FamilyConnectionPanel(
                             socialBusy = socialBusy,
-                            friends = friends,
-                            pendingFriends = pendingFriends,
                             familyGroup = familyGroup,
                             familyInvites = familyInvites,
                             familyVoices = familyVoices,
+                            subscriptionResponse = subscriptionResponse,
                             onRefreshSocial = onRefreshSocial,
-                            onSendFriendRequest = onSendFriendRequest,
-                            onAcceptFriendRequest = onAcceptFriendRequest,
                             onCreateFamilyInvite = onCreateFamilyInvite,
                             onAcceptFamilyInvite = onAcceptFamilyInvite,
                             onRevokeFamilyInvite = onRevokeFamilyInvite,
+                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                        )
+                    }
+                }
+            }
+
+            NativeTab.Messages -> {
+                item {
+                    ScreenHeader(
+                        title = "음성 메시지",
+                        subtitle = "커플/가족 플랜에서 연결된 사람에게 메시지를 보내고 받은 메시지를 확인해요.",
+                    )
+                }
+                if (authSession == null) {
+                    item {
+                        AccountPanel(
+                            authSession = authSession,
+                            authBusy = authBusy,
+                            syncBusy = syncBusy,
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onLogin = onLogin,
+                            onRegister = onRegister,
+                            onGoogleSignIn = onGoogleSignIn,
+                            onSyncNow = onSyncNow,
+                            onLogout = onLogout,
+                        )
+                    }
+                } else {
+                    item {
+                        VoiceMessagePanel(
+                            authSession = authSession,
+                            noteBusy = noteBusy,
+                            familyGroup = familyGroup,
+                            subscriptionResponse = subscriptionResponse,
+                            receivedNotes = receivedNotes,
+                            onRefresh = {
+                                onRefreshSocial()
+                                onRefreshNotes()
+                            },
+                            onSendNote = onSendNote,
+                            onMarkNoteRead = onMarkNoteRead,
+                            onOpenFamily = { onSelectTab(NativeTab.People) },
+                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         )
                     }
                 }
@@ -1376,7 +1505,7 @@ private fun AlarmListScreen(
             NativeTab.Growth -> {
                 item {
                     ScreenHeader(
-                        title = "성장",
+                        title = "캐릭터",
                         subtitle = "알람을 끄고 다시 울릴 때마다 캐릭터가 자라요.",
                     )
                 }
@@ -1411,6 +1540,42 @@ private fun AlarmListScreen(
                     }
                 }
             }
+
+            NativeTab.Billing -> {
+                item {
+                    ScreenHeader(
+                        title = "구독/이용권",
+                        subtitle = "플랜을 확인하고 이용권 코드를 등록해요.",
+                    )
+                }
+                if (authSession == null) {
+                    item {
+                        AccountPanel(
+                            authSession = authSession,
+                            authBusy = authBusy,
+                            syncBusy = syncBusy,
+                            voiceProfiles = voiceProfiles,
+                            voiceProfileBusy = voiceProfileBusy,
+                            onLogin = onLogin,
+                            onRegister = onRegister,
+                            onGoogleSignIn = onGoogleSignIn,
+                            onSyncNow = onSyncNow,
+                            onLogout = onLogout,
+                        )
+                    }
+                } else {
+                    item {
+                        SubscriptionPanel(
+                            billingBusy = billingBusy,
+                            subscriptionResponse = subscriptionResponse,
+                            vouchers = vouchers,
+                            onRefresh = onRefreshCharacterBilling,
+                            onRegisterCode = onRegisterCode,
+                            onCheckoutPlan = onCheckoutPlan,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1434,7 +1599,13 @@ private fun StatusChip(
 }
 
 @Composable
-private fun HomeHeader(authSession: AuthSession?) {
+private fun HomeHeader(
+    authSession: AuthSession?,
+    syncBusy: Boolean,
+    onSelectTab: (NativeTab) -> Unit,
+    onSyncNow: () -> Unit,
+    onLogout: () -> Unit,
+) {
     val hour = java.time.LocalTime.now().hour
     val greeting = when {
         hour < 6 -> "좋은 밤이에요"
@@ -1471,8 +1642,92 @@ private fun HomeHeader(authSession: AuthSession?) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        AvatarBubble(label = authSession?.user?.name ?: authSession?.user?.email)
+        ProfileMenu(
+            authSession = authSession,
+            syncBusy = syncBusy,
+            onSelectTab = onSelectTab,
+            onSyncNow = onSyncNow,
+            onLogout = onLogout,
+        )
     }
+}
+
+@Composable
+private fun ProfileMenu(
+    authSession: AuthSession?,
+    syncBusy: Boolean,
+    onSelectTab: (NativeTab) -> Unit,
+    onSyncNow: () -> Unit,
+    onLogout: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            AvatarBubble(label = authSession?.user?.name ?: authSession?.user?.email)
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(
+                            text = authSession?.user?.name?.takeIf { it.isNotBlank() }
+                                ?: authSession?.user?.email
+                                ?: "로그인이 필요해요",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = authSession?.user?.email ?: "홈에서 로그인하면 모든 기능을 사용할 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                onClick = { expanded = false },
+            )
+            HorizontalDivider()
+            ProfileMenuItem("커플/가족 연결") {
+                expanded = false
+                onSelectTab(NativeTab.People)
+            }
+            ProfileMenuItem("음성 메시지") {
+                expanded = false
+                onSelectTab(NativeTab.Messages)
+            }
+            ProfileMenuItem("캐릭터") {
+                expanded = false
+                onSelectTab(NativeTab.Growth)
+            }
+            ProfileMenuItem("구독/이용권") {
+                expanded = false
+                onSelectTab(NativeTab.Billing)
+            }
+            HorizontalDivider()
+            ProfileMenuItem(if (syncBusy) "동기화 중" else "지금 동기화") {
+                expanded = false
+                onSyncNow()
+            }
+            if (authSession != null) {
+                ProfileMenuItem("로그아웃") {
+                    expanded = false
+                    onLogout()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileMenuItem(
+    label: String,
+    onClick: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -1514,12 +1769,12 @@ private fun ScreenHeader(
 private fun HomeStatsRow(
     activeAlarms: Int,
     voiceCount: Int,
-    friendCount: Int,
+    connectionCount: Int,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         StatPill(label = "활성 알람", count = activeAlarms, modifier = Modifier.weight(1f))
         StatPill(label = "음성", count = voiceCount, modifier = Modifier.weight(1f))
-        StatPill(label = "친구", count = friendCount, modifier = Modifier.weight(1f))
+        StatPill(label = "연결", count = connectionCount, modifier = Modifier.weight(1f))
     }
 }
 
@@ -1674,7 +1929,7 @@ private fun QuickStartGrid(
     onRecordVoice: () -> Unit,
     onAddAlarm: () -> Unit,
     onOpenVoices: () -> Unit,
-    onManagePeople: () -> Unit,
+    onOpenGrowth: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -1704,9 +1959,9 @@ private fun QuickStartGrid(
                 modifier = Modifier.weight(1f),
             )
             HomeActionCard(
-                label = "친구 관리",
+                label = "캐릭터",
                 icon = Icons.Outlined.People,
-                onClick = onManagePeople,
+                onClick = onOpenGrowth,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -4028,22 +4283,22 @@ private fun GoogleSignInButton(
 }
 
 @Composable
-private fun SocialPanel(
+private fun FamilyConnectionPanel(
     socialBusy: Boolean,
-    friends: List<Friend>,
-    pendingFriends: List<PendingFriendRequest>,
     familyGroup: FamilyGroupCurrentResponse?,
     familyInvites: List<FamilyInvite>,
     familyVoices: List<FamilyVoiceProfile>,
+    subscriptionResponse: BillingSubscriptionResponse?,
     onRefreshSocial: () -> Unit,
-    onSendFriendRequest: (String) -> Unit,
-    onAcceptFriendRequest: (String) -> Unit,
     onCreateFamilyInvite: () -> Unit,
     onAcceptFamilyInvite: (String) -> Unit,
     onRevokeFamilyInvite: (String) -> Unit,
+    onOpenBilling: () -> Unit,
 ) {
-    var friendEmail by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
+    val group = familyGroup
+    val isGroupReady = group?.group != null
+    val plan = subscriptionResponse?.plan
 
     OutlinedCard {
         Column(
@@ -4051,64 +4306,26 @@ private fun SocialPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             PanelHeader(
-                title = "사람들",
+                title = "커플/가족",
                 actionLabel = if (socialBusy) "불러오는 중" else "새로고침",
                 enabled = !socialBusy,
                 onAction = onRefreshSocial,
             )
 
-            Row(
+            Text("현재 플랜", fontWeight = FontWeight.SemiBold)
+            if (plan == null) {
+                MutedText("무료 플랜 또는 활성 구독이 없어요.")
+            } else {
+                MutedText("${plan.name} - ${planTypeLabel(plan.planType)} - 최대 ${plan.maxMembers}명")
+            }
+            OutlinedButton(
+                onClick = onOpenBilling,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(
-                    value = friendEmail,
-                    onValueChange = { friendEmail = it },
-                    label = { Text("친구 이메일") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = { onSendFriendRequest(friendEmail) },
-                    enabled = friendEmail.isNotBlank() && !socialBusy,
-                ) {
-                    Text("보내기")
-                }
+                Text("구독/이용권 관리")
             }
 
-            if (pendingFriends.isNotEmpty()) {
-                Text("받은 요청", fontWeight = FontWeight.SemiBold)
-                pendingFriends.take(3).forEach { request ->
-                    CompactActionRow(
-                        title = request.requesterName ?: request.requesterEmail ?: "대기 중인 요청",
-                        subtitle = request.requesterEmail ?: request.createdAt.orEmpty(),
-                        actionLabel = "수락",
-                        onAction = { onAcceptFriendRequest(request.id) },
-                    )
-                }
-            }
-
-            Text("친구 ${friends.size}명", fontWeight = FontWeight.SemiBold)
-            if (friends.isEmpty()) {
-                MutedText("수락된 친구가 아직 없어요.")
-            } else {
-                friends.take(4).forEach { friend ->
-                    MutedText(friend.friendName ?: friend.friendEmail ?: friend.id)
-                }
-            }
-
-            Text("가족/커플", fontWeight = FontWeight.SemiBold)
-            val group = familyGroup
-            if (group?.group == null) {
-                MutedText("아직 연결된 그룹이 없어요.")
-            } else {
-                MutedText("${roleLabel(group.role)} - ${group.members.size}/${group.group.maxMembers}명")
-                group.members.take(4).forEach { member ->
-                    MutedText("${member.name ?: member.email ?: member.userId} (${roleLabel(member.role)})")
-                }
-            }
-
+            Text("초대 코드 등록", fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -4122,10 +4339,23 @@ private fun SocialPanel(
                     modifier = Modifier.weight(1f),
                 )
                 Button(
-                    onClick = { onAcceptFamilyInvite(inviteCode) },
+                    onClick = {
+                        onAcceptFamilyInvite(inviteCode)
+                        inviteCode = ""
+                    },
                     enabled = inviteCode.isNotBlank() && !socialBusy,
                 ) {
                     Text("참여")
+                }
+            }
+
+            Text("연결된 멤버", fontWeight = FontWeight.SemiBold)
+            if (!isGroupReady) {
+                MutedText("아직 연결된 커플/가족 그룹이 없어요. 초대 코드를 등록하거나 구독 후 코드를 발급하세요.")
+            } else {
+                MutedText("${roleLabel(group.role)} - ${group.members.size}/${group.group.maxMembers}명")
+                group.members.forEach { member ->
+                    MutedText("${member.name ?: member.email ?: member.userId} (${roleLabel(member.role)})")
                 }
             }
 
@@ -4147,16 +4377,396 @@ private fun SocialPanel(
                 )
             }
 
-            Text("공유 음성 ${familyVoices.size}개", fontWeight = FontWeight.SemiBold)
+            Text("공유 음성", fontWeight = FontWeight.SemiBold)
             if (familyVoices.isEmpty()) {
                 MutedText("공유된 음성이 아직 없어요.")
             } else {
-                familyVoices.take(4).forEach { voice ->
+                familyVoices.forEach { voice ->
                     MutedText("${voice.name} - ${voice.ownerName ?: "가족"} (${voiceStatusLabel(voice.status)})")
                 }
             }
 
-            MutedText("이 화면에서는 비용이 발생하는 공유 음성 TTS 생성을 호출하지 않아요.")
+            MutedText("커플/가족 연결 안에서 허용된 음성만 공유됩니다.")
+        }
+    }
+}
+
+@Composable
+private fun VoiceMessagePanel(
+    authSession: AuthSession,
+    noteBusy: Boolean,
+    familyGroup: FamilyGroupCurrentResponse?,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    receivedNotes: List<ReceivedNote>,
+    onRefresh: () -> Unit,
+    onSendNote: (String, String) -> Unit,
+    onMarkNoteRead: (String) -> Unit,
+    onOpenFamily: () -> Unit,
+    onOpenBilling: () -> Unit,
+) {
+    val isAvailable = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+    val recipients = remember(familyGroup, authSession.user.id, authSession.user.email) {
+        familyGroup?.members.orEmpty().filterNot { member ->
+            member.userId == authSession.user.id || member.email == authSession.user.email
+        }
+    }
+    var selectedRecipientId by remember(recipients) { mutableStateOf(recipients.firstOrNull()?.userId) }
+    var text by remember { mutableStateOf("") }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PanelHeader(
+                title = "메시지",
+                actionLabel = if (noteBusy) "불러오는 중" else "새로고침",
+                enabled = !noteBusy,
+                onAction = onRefresh,
+            )
+
+            if (!isAvailable) {
+                MutedText("음성 메시지는 커플/가족 플랜에서만 사용할 수 있어요.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onOpenFamily,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("연결하기")
+                    }
+                    Button(
+                        onClick = onOpenBilling,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("플랜 보기")
+                    }
+                }
+                return@Column
+            }
+
+            Text("받는 사람", fontWeight = FontWeight.SemiBold)
+            if (recipients.isEmpty()) {
+                MutedText("같은 커플/가족 그룹에 보낼 사람이 없어요.")
+                OutlinedButton(
+                    onClick = onOpenFamily,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("초대 코드 관리")
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    recipients.take(3).forEach { member ->
+                        val selected = selectedRecipientId == member.userId
+                        FilterChip(
+                            selected = selected,
+                            onClick = { selectedRecipientId = member.userId },
+                            label = {
+                                Text(
+                                    text = member.name ?: member.email ?: "멤버",
+                                    maxLines = 1,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(500) },
+                label = { Text("메시지") },
+                placeholder = { Text("전하고 싶은 말을 입력하세요") },
+                minLines = 3,
+                maxLines = 5,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = "${text.length}/500",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.End),
+            )
+            Button(
+                onClick = {
+                    val recipientId = selectedRecipientId
+                    if (recipientId != null) {
+                        onSendNote(recipientId, text)
+                        text = ""
+                    }
+                },
+                enabled = selectedRecipientId != null && text.isNotBlank() && !noteBusy,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Text("메시지 보내기")
+            }
+            MutedText("보낸 메시지는 상대의 메시지함에 표시돼요. 음성 파일이 첨부된 메시지는 목록에서 확인할 수 있어요.")
+
+            HorizontalDivider()
+
+            Text("받은 메시지", fontWeight = FontWeight.SemiBold)
+            if (receivedNotes.isEmpty()) {
+                MutedText("아직 받은 메시지가 없어요.")
+            } else {
+                receivedNotes.take(8).forEach { note ->
+                    NoteRow(note = note, onClick = { onMarkNoteRead(note.id) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoteRow(
+    note: ReceivedNote,
+    onClick: () -> Unit,
+) {
+    val unread = note.readAt == null
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (unread) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = note.senderName ?: note.senderEmail ?: "보낸 사람",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (unread) {
+                    AssistChip(
+                        onClick = onClick,
+                        label = { Text("새 메시지") },
+                    )
+                }
+            }
+            Text(
+                text = note.text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            val meta = buildList {
+                if (note.audioUrl != null) add("음성 파일 있음")
+                note.createdAt?.let { add(it.take(10)) }
+            }.joinToString(" · ")
+            if (meta.isNotBlank()) {
+                MutedText(meta)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionPanel(
+    billingBusy: Boolean,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    vouchers: List<VoucherItem>,
+    onRefresh: () -> Unit,
+    onRegisterCode: (String) -> Unit,
+    onCheckoutPlan: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    var checkoutTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
+    val currentPlan = subscriptionResponse?.plan
+    val options = remember {
+        listOf(
+            SubscriptionPlanOption(
+                key = "free",
+                name = "무료",
+                price = "무료",
+                description = "일반 알람",
+                features = listOf("로컬 일반 알람", "스누즈", "반복 요일"),
+            ),
+            SubscriptionPlanOption(
+                key = "plus_personal",
+                name = "개인",
+                price = "월 4,900원",
+                description = "AI 음성 알람과 캐릭터",
+                features = listOf("AI 음성 프로필 2개", "TTS 알람", "캐릭터/스트릭"),
+            ),
+            SubscriptionPlanOption(
+                key = "family",
+                name = "커플/가족",
+                price = "월 9,900원",
+                description = "연결된 사람과 음성을 공유",
+                features = listOf("초대 코드", "공유 음성", "메시지", "최대 6명"),
+            ),
+        )
+    }
+
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            PanelHeader(
+                title = "구독",
+                actionLabel = if (billingBusy) "불러오는 중" else "새로고침",
+                enabled = !billingBusy,
+                onAction = onRefresh,
+            )
+
+            Text("현재 플랜", fontWeight = FontWeight.SemiBold)
+            if (currentPlan == null) {
+                MutedText("무료 플랜 또는 활성 구독 없음")
+            } else {
+                MutedText("${currentPlan.name} - ${planTypeLabel(currentPlan.planType)} - 최대 ${currentPlan.maxMembers}명")
+            }
+
+            options.forEach { option ->
+                val isCurrent = if (option.key == "free") {
+                    currentPlan == null
+                } else {
+                    currentPlan?.key == option.key
+                }
+                SubscriptionPlanCard(
+                    option = option,
+                    isCurrent = isCurrent,
+                    busy = billingBusy,
+                    onCheckout = { checkoutTarget = option },
+                )
+            }
+
+            HorizontalDivider()
+
+            Text("이용권 코드 등록", fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it.uppercase().take(18) },
+                    label = { Text("VA-XXXX-XXXX-XXXX") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = {
+                        onRegisterCode(code)
+                        code = ""
+                    },
+                    enabled = code.isNotBlank() && !billingBusy,
+                ) {
+                    Text("등록")
+                }
+            }
+
+            Text("발급된 이용권", fontWeight = FontWeight.SemiBold)
+            if (vouchers.isEmpty()) {
+                MutedText("발급된 이용권이 없어요.")
+            } else {
+                vouchers.take(6).forEach { voucher ->
+                    MutedText("${voucher.code} - ${voucher.planName} - ${voucherStatusLabel(voucher.status)}")
+                }
+            }
+        }
+    }
+
+    checkoutTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { checkoutTarget = null },
+            title = { Text("${target.name} 플랜 변경") },
+            text = {
+                Text("선택한 플랜으로 변경할까요? 적용 후 선물용 이용권 코드가 발급됩니다.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        checkoutTarget = null
+                        onCheckoutPlan(target.key)
+                    },
+                ) {
+                    Text("적용")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { checkoutTarget = null }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SubscriptionPlanCard(
+    option: SubscriptionPlanOption,
+    isCurrent: Boolean,
+    busy: Boolean,
+    onCheckout: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCurrent) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(option.name, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        option.price,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                if (isCurrent) {
+                    AssistChip(onClick = {}, label = { Text("현재") })
+                }
+            }
+            MutedText(option.description)
+            option.features.forEach { feature ->
+                MutedText("• $feature")
+            }
+            if (!isCurrent && option.key != "free") {
+                Button(
+                    onClick = onCheckout,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("${option.name} 적용")
+                }
+            }
         }
     }
 }
@@ -4173,7 +4783,6 @@ private fun CharacterBillingPanel(
     onSyncEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
 ) {
-    var code by remember { mutableStateOf("") }
     val pendingEvents = characterEvents.count { it.state != "synced" }
 
     OutlinedCard {
@@ -4227,42 +4836,7 @@ private fun CharacterBillingPanel(
                     Text("대기 ${pendingEvents}개")
                 }
             }
-
-            val plan = subscriptionResponse?.plan
-            Text("플랜", fontWeight = FontWeight.SemiBold)
-            if (plan == null) {
-                MutedText("무료 플랜 또는 활성 구독 없음")
-            } else {
-                MutedText("${plan.name} - ${planTypeLabel(plan.planType)} - 최대 ${plan.maxMembers}명")
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it },
-                    label = { Text("쿠폰 또는 초대 코드") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = { onRegisterCode(code) },
-                    enabled = code.isNotBlank() && !billingBusy,
-                ) {
-                    Text("적용")
-                }
-            }
-
-            Text("쿠폰 ${vouchers.size}개", fontWeight = FontWeight.SemiBold)
-            if (vouchers.isEmpty()) {
-                MutedText("발급된 쿠폰이 없어요.")
-            } else {
-                vouchers.take(3).forEach { voucher ->
-                    MutedText("${voucher.code} - ${voucher.planName} - ${voucherStatusLabel(voucher.status)}")
-                }
-            }
+            MutedText("구독과 이용권 코드는 홈 오른쪽 위 프로필 메뉴의 구독/이용권에서 관리해요.")
         }
     }
 }
@@ -4695,6 +5269,18 @@ private fun providerLabel(provider: String?): String = when (provider) {
     "google" -> "Google"
     "app" -> "이메일"
     else -> provider ?: "앱"
+}
+
+private fun hasCoupleOrFamilyAccess(
+    subscriptionResponse: BillingSubscriptionResponse?,
+    familyGroup: FamilyGroupCurrentResponse?,
+): Boolean {
+    val plan = subscriptionResponse?.plan
+    return familyGroup?.group != null ||
+        plan?.key == "family" ||
+        plan?.key == "couple" ||
+        plan?.planType == "family" ||
+        plan?.planType == "couple"
 }
 
 private fun roleLabel(role: String?): String = when (role) {

@@ -160,37 +160,6 @@ data class TtsMessageAudioResponse(
     @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
 )
 
-data class FriendListResponse(
-    val friends: List<Friend>,
-    val total: Int? = null,
-)
-
-data class Friend(
-    val id: String,
-    @SerializedName("user_a") val userA: String? = null,
-    @SerializedName("user_b") val userB: String? = null,
-    @SerializedName("friend_email") val friendEmail: String? = null,
-    @SerializedName("friend_name") val friendName: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null,
-)
-
-data class PendingFriendListResponse(
-    val pending: List<PendingFriendRequest>,
-    val total: Int? = null,
-)
-
-data class PendingFriendRequest(
-    val id: String,
-    @SerializedName("user_a") val userA: String? = null,
-    @SerializedName("requester_email") val requesterEmail: String? = null,
-    @SerializedName("requester_name") val requesterName: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null,
-)
-
-data class FriendRequestBody(
-    val email: String,
-)
-
 data class FamilyGroupCurrentResponse(
     val group: FamilyGroup?,
     val role: String?,
@@ -347,6 +316,59 @@ data class VoucherItem(
     @SerializedName("expires_at") val expiresAt: String,
 )
 
+data class NoteListResponse(
+    val notes: List<ReceivedNote>,
+    val total: Int? = null,
+    val limit: Int? = null,
+    val offset: Int? = null,
+)
+
+data class ReceivedNote(
+    val id: String,
+    @SerializedName("sender_id") val senderId: String,
+    @SerializedName("sender_name") val senderName: String? = null,
+    @SerializedName("sender_email") val senderEmail: String? = null,
+    @SerializedName("sender_picture") val senderPicture: String? = null,
+    val text: String,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    @SerializedName("read_at") val readAt: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class SendNoteRequest(
+    @SerializedName("receiver_id") val receiverId: String,
+    val text: String,
+)
+
+data class SendNoteResponse(
+    val success: Boolean,
+    val note: ReceivedNote,
+)
+
+data class MarkNoteReadResponse(
+    val success: Boolean,
+    @SerializedName("already_read") val alreadyRead: Boolean? = null,
+    @SerializedName("read_at") val readAt: String? = null,
+)
+
+data class CheckoutRequest(
+    @SerializedName("plan_key") val planKey: String,
+)
+
+data class CheckoutResponse(
+    val success: Boolean,
+    @SerializedName("checkout_stub") val checkoutStub: Boolean = false,
+    val subscription: BillingSubscription,
+    val plan: BillingPlan,
+    val voucher: CheckoutVoucher? = null,
+)
+
+data class CheckoutVoucher(
+    val id: String,
+    val code: String,
+    @SerializedName("expires_at") val expiresAt: String,
+)
+
 interface VoiceAlarmApi {
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthTokenResponse
@@ -422,24 +444,6 @@ interface VoiceAlarmApi {
         @Path("id") id: String,
     ): TtsMessageAudioResponse
 
-    @GET("friend/list")
-    suspend fun listFriends(@Header("Authorization") authorization: String): FriendListResponse
-
-    @GET("friend/pending")
-    suspend fun listPendingFriends(@Header("Authorization") authorization: String): PendingFriendListResponse
-
-    @POST("friend")
-    suspend fun sendFriendRequest(
-        @Header("Authorization") authorization: String,
-        @Body request: FriendRequestBody,
-    )
-
-    @PATCH("friend/{id}/accept")
-    suspend fun acceptFriendRequest(
-        @Header("Authorization") authorization: String,
-        @Path("id") id: String,
-    )
-
     @GET("family/groups/current")
     suspend fun getFamilyGroup(@Header("Authorization") authorization: String): FamilyGroupCurrentResponse
 
@@ -486,4 +490,29 @@ interface VoiceAlarmApi {
 
     @GET("billing/vouchers")
     suspend fun listVouchers(@Header("Authorization") authorization: String): VoucherListResponse
+
+    @POST("billing/checkout")
+    suspend fun checkoutPlan(
+        @Header("Authorization") authorization: String,
+        @Body request: CheckoutRequest,
+    ): CheckoutResponse
+
+    @GET("notes/received")
+    suspend fun listReceivedNotes(
+        @Header("Authorization") authorization: String,
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+    ): NoteListResponse
+
+    @POST("notes")
+    suspend fun sendNote(
+        @Header("Authorization") authorization: String,
+        @Body request: SendNoteRequest,
+    ): SendNoteResponse
+
+    @PATCH("notes/{id}/read")
+    suspend fun markNoteRead(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): MarkNoteReadResponse
 }
