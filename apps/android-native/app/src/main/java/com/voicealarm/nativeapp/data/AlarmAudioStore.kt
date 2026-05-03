@@ -14,7 +14,9 @@ import androidx.core.net.toUri
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.util.Locale
+import java.util.Properties
 
 object AlarmAudioLimits {
     const val MAX_DURATION_MILLIS = 30_000L
@@ -25,6 +27,8 @@ data class CachedAlarmAudio(
     val rawAudioUri: String?,
     val displayName: String,
     val durationMillis: Long?,
+    val cacheKey: String?,
+    val messageId: String? = null,
 )
 
 class AlarmAudioStore(
@@ -37,13 +41,24 @@ class AlarmAudioStore(
         File(audioDir, "recording_${System.currentTimeMillis()}.m4a")
 
     fun cachedRecording(file: File): CachedAlarmAudio {
-        val uri = file.toUri()
+        val bytes = file.readBytes()
+        val cacheKey = audioCacheKeyForBytes(bytes)
+        val extension = file.extension.takeIf { it.isNotBlank() } ?: "m4a"
+        val cachedFile = findCachedFile(cacheKey) ?: File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { target ->
+            if (target.absolutePath != file.absolutePath) {
+                file.copyTo(target, overwrite = false)
+                file.delete()
+            }
+        }
+        val uri = cachedFile.toUri()
         val durationMillis = readDurationMillis(uri)
         return CachedAlarmAudio(
             localAudioUri = uri.toString(),
             rawAudioUri = null,
-            displayName = file.name,
+            displayName = cachedFile.name,
             durationMillis = durationMillis,
+            cacheKey = cacheKey,
+            messageId = null,
         )
     }
 
@@ -51,12 +66,25 @@ class AlarmAudioStore(
         val durationMillis = readDurationMillis(sourceUri)
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
+        val cacheKey = audioCacheKeyForSource(sourceUri.toString(), durationMillis)
+        findCachedFile(cacheKey)?.let { cached ->
+            val cachedUri = cached.toUri()
+            val metadata = readMetadata(cacheKey)
+            return CachedAlarmAudio(
+                localAudioUri = cachedUri.toString(),
+                rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
+                displayName = cached.name,
+                durationMillis = readDurationMillis(cachedUri) ?: durationMillis,
+                cacheKey = cacheKey,
+                messageId = metadata.messageId,
+            )
+        }
         val target = if (durationMillis != null && durationMillis > AlarmAudioLimits.MAX_DURATION_MILLIS) {
-            File(audioDir, "voice_${System.currentTimeMillis()}.m4a").also {
+            File(audioDir, "${safeCacheKey(cacheKey)}.m4a").also {
                 trimToMaxDuration(sourceUri, it)
             }
         } else {
-            File(audioDir, "voice_${System.currentTimeMillis()}.$extension").also { file ->
+            File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
                 context.contentResolver.openInputStream(sourceUri).use { input ->
                     requireNotNull(input) { "Unable to open selected audio." }
                     file.outputStream().use { output -> input.copyTo(output) }
@@ -73,6 +101,8 @@ class AlarmAudioStore(
             rawAudioUri = sourceUri.toString(),
             displayName = displayName,
             durationMillis = cachedDurationMillis,
+            cacheKey = cacheKey,
+            messageId = null,
         )
     }
 
@@ -81,10 +111,30 @@ class AlarmAudioStore(
         format: String,
         rawAudioUri: String?,
         displayName: String = "generated_voice_${System.currentTimeMillis()}",
+        cacheKey: String? = null,
+        messageId: String? = null,
     ): CachedAlarmAudio {
         val extension = format.lowercase(Locale.US).substringBefore(';').takeIf { it.length in 2..5 } ?: "mp3"
-        val target = File(audioDir, "$displayName.$extension")
+        val resolvedCacheKey = cacheKey ?: audioCacheKeyForBytes(bytes)
+        findCachedFile(resolvedCacheKey)?.let { cached ->
+            val cachedUri = cached.toUri()
+            val metadata = readMetadata(resolvedCacheKey)
+            return CachedAlarmAudio(
+                localAudioUri = cachedUri.toString(),
+                rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
+                displayName = cached.name,
+                durationMillis = readDurationMillis(cachedUri),
+                cacheKey = resolvedCacheKey,
+                messageId = metadata.messageId ?: messageId,
+            )
+        }
+        val target = File(audioDir, "${safeCacheKey(resolvedCacheKey)}.$extension")
         target.writeBytes(bytes)
+        writeMetadata(
+            cacheKey = resolvedCacheKey,
+            rawAudioUri = rawAudioUri,
+            messageId = messageId,
+        )
         val durationMillis = readDurationMillis(target.toUri())
         requireWithinLimit(durationMillis)
         Log.i(TAG, "Cached generated voice audio path=${target.absolutePath} durationMillis=$durationMillis")
@@ -93,6 +143,22 @@ class AlarmAudioStore(
             rawAudioUri = rawAudioUri,
             displayName = target.name,
             durationMillis = durationMillis,
+            cacheKey = resolvedCacheKey,
+            messageId = messageId,
+        )
+    }
+
+    fun getCachedAudio(cacheKey: String, rawAudioUri: String? = null): CachedAlarmAudio? {
+        val cached = findCachedFile(cacheKey) ?: return null
+        val uri = cached.toUri()
+        val metadata = readMetadata(cacheKey)
+        return CachedAlarmAudio(
+            localAudioUri = uri.toString(),
+            rawAudioUri = metadata.rawAudioUri ?: rawAudioUri,
+            displayName = cached.name,
+            durationMillis = readDurationMillis(uri),
+            cacheKey = cacheKey,
+            messageId = metadata.messageId,
         )
     }
 
@@ -178,7 +244,69 @@ class AlarmAudioStore(
         return MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: "m4a"
     }
 
+    private fun findCachedFile(cacheKey: String): File? {
+        val safeKey = safeCacheKey(cacheKey)
+        return audioDir.listFiles()?.firstOrNull { file ->
+            file.isFile && file.nameWithoutExtension == safeKey && file.extension != META_EXTENSION
+        }
+    }
+
+    private fun metadataFile(cacheKey: String): File =
+        File(audioDir, "${safeCacheKey(cacheKey)}.$META_EXTENSION")
+
+    private fun writeMetadata(cacheKey: String, rawAudioUri: String?, messageId: String?) {
+        val props = Properties()
+        rawAudioUri?.takeIf { it.isNotBlank() }?.let { props.setProperty("rawAudioUri", it) }
+        messageId?.takeIf { it.isNotBlank() }?.let { props.setProperty("messageId", it) }
+        if (props.isEmpty()) return
+        metadataFile(cacheKey).outputStream().use { props.store(it, null) }
+    }
+
+    private fun readMetadata(cacheKey: String): CachedAudioMetadata {
+        val file = metadataFile(cacheKey)
+        if (!file.exists()) return CachedAudioMetadata()
+        val props = Properties()
+        return runCatching {
+            file.inputStream().use { props.load(it) }
+            CachedAudioMetadata(
+                rawAudioUri = props.getProperty("rawAudioUri"),
+                messageId = props.getProperty("messageId"),
+            )
+        }.getOrDefault(CachedAudioMetadata())
+    }
+
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
+        private const val META_EXTENSION = "meta"
+
+        fun ttsCacheKey(
+            profileId: String,
+            text: String,
+            category: String,
+            language: String,
+            serverCacheKey: String? = null,
+        ): String =
+            serverCacheKey?.takeIf { it.isNotBlank() }
+                ?: sha256(listOf("tts", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
+
+        fun audioCacheKeyForSource(sourceUri: String, durationMillis: Long?): String =
+            sha256(listOf("source", sourceUri, durationMillis?.toString().orEmpty()).joinToString("|"))
+
+        fun audioCacheKeyForBytes(bytes: ByteArray): String = sha256(bytes)
+
+        fun safeCacheKey(cacheKey: String): String =
+            cacheKey.lowercase(Locale.US).replace(Regex("[^a-z0-9_-]"), "_").take(96)
+
+        private fun sha256(input: String): String = sha256(input.toByteArray(Charsets.UTF_8))
+
+        private fun sha256(bytes: ByteArray): String {
+            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+            return digest.joinToString("") { "%02x".format(it) }
+        }
     }
 }
+
+private data class CachedAudioMetadata(
+    val rawAudioUri: String? = null,
+    val messageId: String? = null,
+)

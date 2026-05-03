@@ -115,6 +115,9 @@ data class TtsGenerateResponse(
     @SerializedName("audio_object_key") val audioObjectKey: String? = null,
     val text: String,
     @SerializedName("voice_profile_id") val voiceProfileId: String,
+    @SerializedName("cache_key") val cacheKey: String? = null,
+    @SerializedName("cache_hit") val cacheHit: Boolean = false,
+    val provider: String? = null,
 )
 
 data class TtsMessageListResponse(

@@ -86,6 +86,7 @@ class RemoteAlarmMapperTest {
             playMode = playMode,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = localAudioUri,
+            audioCacheKey = null,
             rawAudioUri = rawAudioUri,
             voiceSource = voiceSource,
             voiceProfileId = voiceProfileId,

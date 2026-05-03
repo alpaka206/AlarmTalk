@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,11 +51,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -83,9 +84,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -270,7 +271,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.createAlarm(draft)
             }.onSuccess { alarm ->
-                message = "Scheduled ${alarm.label}"
+                message = "알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
                 onDone()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to create alarm", error)
@@ -284,7 +285,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.updateAlarm(alarmId, draft)
             }.onSuccess { alarm ->
-                message = "Updated ${alarm.label}"
+                message = "변경사항을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
                 onDone()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to update alarm id=$alarmId", error)
@@ -298,7 +299,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching {
                 repository.setEnabled(alarmId, enabled)
             }.onSuccess { alarm ->
-                message = if (alarm.enabled) "Enabled ${alarm.label}" else "Disabled ${alarm.label}"
+                message = if (alarm.enabled) {
+                    "알람을 켰어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+                } else {
+                    "알람을 껐어요"
+                }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to change alarm enabled id=$alarmId", error)
                 message = error.message ?: "Failed to update alarm"
@@ -319,12 +324,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun copyAlarm(alarmId: String) {
+        viewModelScope.launch {
+            runCatching {
+                repository.copyAlarm(alarmId)
+            }.onSuccess { alarm ->
+                message = "알람을 복사했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to copy alarm id=$alarmId", error)
+                message = error.message ?: "알람 복사에 실패했어요"
+            }
+        }
+    }
+
     fun createTestAlarm(delayMinutes: Int) {
         viewModelScope.launch {
             runCatching {
                 repository.createTestAlarm(delayMinutes)
             }.onSuccess { alarm ->
-                message = "Scheduled ${alarm.label} in $delayMinutes min"
+                message = "테스트 알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to create test alarm", error)
                 message = error.message ?: "Failed to schedule alarm"
@@ -401,21 +419,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadVoiceProfiles() {
+        fetchVoiceProfiles(showMessage = true)
+    }
+
+    fun preloadVoiceProfiles() {
+        if (authSession == null || voiceProfileBusy || voiceProfiles.isNotEmpty()) return
+        fetchVoiceProfiles(showMessage = false)
+    }
+
+    private fun fetchVoiceProfiles(showMessage: Boolean) {
         val session = authSession
         if (session == null) {
-            message = "Sign in before loading voices"
+            if (showMessage) message = "Sign in before loading voices"
             return
         }
         viewModelScope.launch {
+            if (voiceProfileBusy) return@launch
             voiceProfileBusy = true
             runCatching {
                 api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 voiceProfiles = profiles
-                message = "Loaded ${profiles.size} voice profiles"
+                if (showMessage) message = "Loaded ${profiles.size} voice profiles"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load voice profiles", error)
-                message = error.message ?: "Failed to load voice profiles"
+                if (showMessage) message = error.message ?: "Failed to load voice profiles"
             }
             voiceProfileBusy = false
         }
@@ -744,8 +772,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val syncBusy = viewModel.syncBusy
     val voiceProfiles = viewModel.voiceProfiles
     val voiceProfileBusy = viewModel.voiceProfileBusy
-    val ttsMessages = viewModel.ttsMessages
-    val ttsMessageBusy = viewModel.ttsMessageBusy
     val socialBusy = viewModel.socialBusy
     val friends = viewModel.friends
     val pendingFriends = viewModel.pendingFriends
@@ -763,6 +789,10 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
     var permissions by remember { mutableStateOf(PermissionSnapshot.read(context)) }
 
+    LaunchedEffect(authSession?.token) {
+        if (authSession != null) viewModel.preloadVoiceProfiles()
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) {
@@ -771,15 +801,23 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        if (result.resultCode != Activity.RESULT_OK) {
-            viewModel.showGoogleSignInFailed("Google sign-in cancelled")
-            return@rememberLauncherForActivityResult
-        }
         val account = runCatching {
             GoogleSignIn.getSignedInAccountFromIntent(result.data).getResult(ApiException::class.java)
         }.onFailure { error ->
-            Log.e(TAG, "Google sign-in failed", error)
+            if (error is ApiException) {
+                Log.e(
+                    TAG,
+                    "Google sign-in failed resultCode=${result.resultCode} statusCode=${error.statusCode}",
+                    error,
+                )
+                viewModel.showGoogleSignInFailed(googleSignInErrorMessage(error.statusCode))
+            } else {
+                Log.e(TAG, "Google sign-in failed resultCode=${result.resultCode}", error)
+                viewModel.showGoogleSignInFailed(error.message ?: "Google sign-in failed")
+            }
         }.getOrNull()
+        if (account == null) return@rememberLauncherForActivityResult
+
         val idToken = account?.idToken
         if (idToken.isNullOrBlank()) {
             viewModel.showGoogleSignInFailed("Google ID token was not returned")
@@ -834,18 +872,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     )
 
     Scaffold(
-        topBar = {
-            if (screen !is AlarmScreen.List) {
-                TopAppBar(
-                    title = {},
-                    navigationIcon = {
-                        IconButton(onClick = ::goBackInApp) {
-                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                )
-            }
-        },
         bottomBar = {
             if (screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
@@ -892,7 +918,6 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onRegister = viewModel::register,
                 onGoogleSignIn = ::launchGoogleSignIn,
                 onSyncNow = viewModel::syncNow,
-                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
                 onLogout = viewModel::logout,
                 onRefreshSocial = viewModel::refreshSocial,
                 onSendFriendRequest = viewModel::sendFriendRequest,
@@ -907,6 +932,7 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onQuickTest = { viewModel.createTestAlarm(1) },
                 onToggleEnabled = viewModel::setAlarmEnabled,
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
+                onCopyAlarm = viewModel::copyAlarm,
                 onDeleteAlarm = viewModel::deleteAlarm,
                 onRequestNotifications = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -923,13 +949,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 authSession = authSession,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
-                ttsMessages = ttsMessages,
-                ttsMessageBusy = ttsMessageBusy,
                 onCancel = ::goBackInApp,
-                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
-                onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
-                onDownloadTtsMessageAudio = viewModel::downloadTtsMessageAudio,
                 onSave = { draft ->
                     viewModel.createAlarm(draft) { screen = AlarmScreen.List }
                 },
@@ -941,13 +962,8 @@ private fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 authSession = authSession,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
-                ttsMessages = ttsMessages,
-                ttsMessageBusy = ttsMessageBusy,
                 onCancel = ::goBackInApp,
-                onLoadVoiceProfiles = viewModel::loadVoiceProfiles,
-                onLoadTtsMessages = viewModel::loadTtsMessages,
                 onGenerateTts = viewModel::generateTtsAudio,
-                onDownloadTtsMessageAudio = viewModel::downloadTtsMessageAudio,
                 onSave = { draft ->
                     viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
                 },
@@ -1094,7 +1110,6 @@ private fun AlarmListScreen(
     onRegister: (String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
-    onLoadVoiceProfiles: () -> Unit,
     onLogout: () -> Unit,
     onRefreshSocial: () -> Unit,
     onSendFriendRequest: (String) -> Unit,
@@ -1109,6 +1124,7 @@ private fun AlarmListScreen(
     onQuickTest: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
+    onCopyAlarm: (String) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestNotifications: () -> Unit,
     onRequestExactAlarms: () -> Unit,
@@ -1169,9 +1185,8 @@ private fun AlarmListScreen(
                     QuickStartGrid(
                         onRecordVoice = onCreateAlarm,
                         onAddAlarm = onCreateAlarm,
-                        onLoadVoices = {
+                        onOpenVoices = {
                             onSelectTab(NativeTab.Voices)
-                            onLoadVoiceProfiles()
                         },
                         onManagePeople = { onSelectTab(NativeTab.People) },
                     )
@@ -1188,7 +1203,6 @@ private fun AlarmListScreen(
                             onRegister = onRegister,
                             onGoogleSignIn = onGoogleSignIn,
                             onSyncNow = onSyncNow,
-                            onLoadVoiceProfiles = onLoadVoiceProfiles,
                             onLogout = onLogout,
                         )
                     }
@@ -1213,7 +1227,6 @@ private fun AlarmListScreen(
                         onRegister = onRegister,
                         onGoogleSignIn = onGoogleSignIn,
                         onSyncNow = onSyncNow,
-                        onLoadVoiceProfiles = onLoadVoiceProfiles,
                         onLogout = onLogout,
                     )
                 }
@@ -1263,9 +1276,10 @@ private fun AlarmListScreen(
                     items(sortedAlarms, key = { it.id }) { alarm ->
                         AlarmRow(
                             alarm = alarm,
-                            onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
-                            onEditAlarm = { onEditAlarm(alarm) },
-                            onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
+                onEditAlarm = { onEditAlarm(alarm) },
+                onCopyAlarm = { onCopyAlarm(alarm.id) },
+                onDeleteAlarm = { onDeleteAlarm(alarm.id) },
                         )
                     }
                 }
@@ -1290,7 +1304,6 @@ private fun AlarmListScreen(
                             onRegister = onRegister,
                             onGoogleSignIn = onGoogleSignIn,
                             onSyncNow = onSyncNow,
-                            onLoadVoiceProfiles = onLoadVoiceProfiles,
                             onLogout = onLogout,
                         )
                     }
@@ -1333,7 +1346,6 @@ private fun AlarmListScreen(
                             onRegister = onRegister,
                             onGoogleSignIn = onGoogleSignIn,
                             onSyncNow = onSyncNow,
-                            onLoadVoiceProfiles = onLoadVoiceProfiles,
                             onLogout = onLogout,
                         )
                     }
@@ -1615,7 +1627,7 @@ private fun NextAlarmHeroCard(
 private fun QuickStartGrid(
     onRecordVoice: () -> Unit,
     onAddAlarm: () -> Unit,
-    onLoadVoices: () -> Unit,
+    onOpenVoices: () -> Unit,
     onManagePeople: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1640,9 +1652,9 @@ private fun QuickStartGrid(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HomeActionCard(
-                label = "음성 불러오기",
+                label = "음성 관리",
                 icon = Icons.Outlined.Message,
-                onClick = onLoadVoices,
+                onClick = onOpenVoices,
                 modifier = Modifier.weight(1f),
             )
             HomeActionCard(
@@ -1835,13 +1847,8 @@ private fun AlarmEditorScreen(
     authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
-    ttsMessages: List<TtsMessage>,
-    ttsMessageBusy: Boolean,
     onCancel: () -> Unit,
-    onLoadVoiceProfiles: () -> Unit,
-    onLoadTtsMessages: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
-    onDownloadTtsMessageAudio: suspend (String) -> TtsMessageAudioResponse,
     onSave: (AlarmDraft) -> Unit,
 ) {
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
@@ -1905,6 +1912,10 @@ private fun AlarmEditorScreen(
             onSave(editor.toDraft())
             return
         }
+        if (authSession == null) {
+            audioMessage = "로그인 후에 사용 가능합니다"
+            return
+        }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
             if (editor.localAudioUri.isNullOrBlank()) {
                 audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
@@ -1913,59 +1924,8 @@ private fun AlarmEditorScreen(
             onSave(editor.toDraft())
             return
         }
-        if (editor.voiceSource == VoiceSources.SERVER_TTS) {
-            val messageId = editor.ttsMessageId
-            if (authSession == null) {
-                audioMessage = "서버에 저장된 음성은 로그인 후 사용할 수 있어요"
-                return
-            }
-            if (messageId.isNullOrBlank()) {
-                audioMessage = "사용할 서버 음성을 선택해 주세요"
-                return
-            }
-            if (editor.localAudioUri != null) {
-                onSave(editor.toDraft())
-                return
-            }
-
-            scope.launch {
-                isSaving = true
-                audioMessage = "서버 음성을 내려받아 로컬에 저장하는 중..."
-                runCatching {
-                    val response = onDownloadTtsMessageAudio(messageId)
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    val cachedAudio = withContext(Dispatchers.IO) {
-                        audioStore.cacheGeneratedAudio(
-                            bytes = audioBytes,
-                            format = response.audioFormat,
-                            rawAudioUri = response.audioUrl,
-                        )
-                    }
-                    editor.setServerTtsAudio(
-                        audio = cachedAudio,
-                        messageId = response.messageId,
-                        text = response.text,
-                        category = response.category,
-                        voiceProfileId = response.voiceProfileId,
-                        rawAudioUri = response.audioUrl,
-                    )
-                    audioMessage = "서버 음성을 로컬에 저장했어요"
-                    onSave(editor.toDraft())
-                }.onFailure { error ->
-                    Log.e(TAG, "Failed to cache server TTS alarm audio", error)
-                    audioMessage = error.message ?: "서버 음성을 저장하지 못했어요"
-                }
-                isSaving = false
-            }
-            return
-        }
-
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
-        if (authSession == null) {
-            audioMessage = "음성 프로필 TTS는 로그인 후 사용할 수 있어요"
-            return
-        }
         if (profileId.isNullOrBlank()) {
             audioMessage = "사용할 음성 프로필을 선택해 주세요"
             return
@@ -1976,6 +1936,24 @@ private fun AlarmEditorScreen(
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
+            onSave(editor.toDraft())
+            return
+        }
+        val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
+            profileId = profileId,
+            text = text,
+            category = editor.voiceCategory,
+            language = editor.voiceLanguage,
+        )
+        audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
+            editor.setGeneratedTtsAudio(
+                audio = cached,
+                profileId = profileId,
+                text = text,
+                messageId = cached.messageId ?: editor.ttsMessageId ?: "",
+                rawAudioUri = cached.rawAudioUri,
+            )
+            audioMessage = "기존 음성 캐시를 사용했어요"
             onSave(editor.toDraft())
             return
         }
@@ -1994,11 +1972,19 @@ private fun AlarmEditorScreen(
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
+                val cacheKey = AlarmAudioStore.ttsCacheKey(
+                    profileId = profileId,
+                    text = response.text,
+                    category = editor.voiceCategory,
+                    language = editor.voiceLanguage,
+                )
                 val cachedAudio = withContext(Dispatchers.IO) {
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
                         rawAudioUri = rawAudioUri,
+                        cacheKey = cacheKey,
+                        messageId = response.messageId,
                     )
                 }
                 editor.setGeneratedTtsAudio(
@@ -2042,12 +2028,14 @@ private fun AlarmEditorScreen(
         }
     }
 
+    val editorHorizontalPadding = 24.dp
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+        contentPadding = PaddingValues(bottom = 36.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         item {
             AlarmTimePickerCard(
@@ -2062,91 +2050,118 @@ private fun AlarmEditorScreen(
         }
 
         item {
-            EditorSectionTitle("알람 이름")
-            OutlinedTextField(
-                value = editor.label,
-                onValueChange = { editor.label = it },
-                label = { Text("이름") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        item {
-            EditorSectionTitle("반복")
-            RepeatSelector(
-                repeatDaysMask = editor.repeatDaysMask,
-                holidayOff = editor.holidayOff,
-                onToggleDay = { dayIndex ->
-                    editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                },
-                onHolidayOffChange = { editor.holidayOff = it },
-            )
-        }
-
-        item {
-            EditorSectionTitle("재생 모드")
-            PlayModeSelector(
-                selected = editor.playMode,
-                onSelect = { editor.playMode = it },
-            )
-        }
-
-        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            item {
-                EditorSectionTitle("음성")
-                VoiceAudioCard(
-                    editor = editor,
-                    authSession = authSession,
-                    voiceProfiles = voiceProfiles,
-                    voiceProfileBusy = voiceProfileBusy,
-                    ttsMessages = ttsMessages,
-                    ttsMessageBusy = ttsMessageBusy,
-                    audioMessage = audioMessage,
-                    isRecording = isRecording,
-                    onLoadVoiceProfiles = onLoadVoiceProfiles,
-                    onLoadTtsMessages = onLoadTtsMessages,
-                    onPick = { pickAudioLauncher.launch("audio/*") },
-                    onRecord = {
-                        if (isRecording) {
-                            stopRecording()
-                        } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                            PackageManager.PERMISSION_GRANTED
-                        ) {
-                            startRecording()
-                        } else {
-                            recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                    onClear = {
-                        editor.clearAudio()
-                        audioMessage = "음성 오디오를 지웠어요"
-                    },
+            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                OutlinedTextField(
+                    value = editor.label,
+                    onValueChange = { editor.label = it },
+                    placeholder = { Text("알람 이름") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
 
         item {
-            AlarmSettingsCard(
-                snoozeEnabled = editor.snoozeEnabled,
-                snoozeMinutes = editor.snoozeMinutes,
-                vibrationPattern = editor.vibrationPattern,
-                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                onVibrationEnabledChange = {
-                    editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
-                },
-                onVibrationSelect = { editor.vibrationPattern = it },
-            )
+            Column(
+                modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+            ) {
+                RepeatSelector(
+                    repeatDaysMask = editor.repeatDaysMask,
+                    holidayOff = editor.holidayOff,
+                    onToggleDay = { dayIndex ->
+                        editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
+                    },
+                    onHolidayOffChange = { editor.holidayOff = it },
+                )
+            }
         }
 
         item {
-            EditorActionButtons(
-                isEditing = alarm != null,
-                isSaving = isSaving,
-                onCancel = onCancel,
-                onSave = ::saveEditor,
-            )
+            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                PlayModeSelector(
+                    selected = editor.playMode,
+                    onSelect = { selectedMode ->
+                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
+                            Toast.makeText(
+                                context,
+                                "음성 알람은 로그인 후 사용할 수 있어요",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            editor.playMode = AlarmPlayModes.ALARM_ONLY
+                            editor.voiceSource = VoiceSources.TTS_PROFILE
+                            editor.clearTtsMeta()
+                            return@PlayModeSelector
+                        }
+                        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
+                        editor.playMode = selectedMode
+                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
+                            editor.voiceSource = VoiceSources.TTS_PROFILE
+                            editor.clearTtsMeta()
+                        }
+                    },
+                )
+            }
+        }
+
+        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            item {
+                Column(
+                    modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    EditorSectionTitle("음성")
+                    VoiceAudioCard(
+                        editor = editor,
+                        voiceProfiles = voiceProfiles,
+                        voiceProfileBusy = voiceProfileBusy,
+                        audioMessage = audioMessage,
+                        isRecording = isRecording,
+                        onPick = { pickAudioLauncher.launch("audio/*") },
+                        onRecord = {
+                            if (isRecording) {
+                                stopRecording()
+                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startRecording()
+                            } else {
+                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        onClear = {
+                            editor.clearAudio()
+                            audioMessage = "음성 오디오를 지웠어요"
+                        },
+                    )
+                }
+            }
+        }
+
+        item {
+            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                AlarmSettingsCard(
+                    snoozeEnabled = editor.snoozeEnabled,
+                    snoozeMinutes = editor.snoozeMinutes,
+                    vibrationPattern = editor.vibrationPattern,
+                    onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                    onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                    onVibrationEnabledChange = {
+                        editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                    },
+                    onVibrationSelect = { editor.vibrationPattern = it },
+                )
+            }
+        }
+
+        item {
+            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                EditorActionButtons(
+                    isEditing = alarm != null,
+                    isSaving = isSaving,
+                    onCancel = onCancel,
+                    onSave = ::saveEditor,
+                )
+            }
         }
     }
 }
@@ -2169,11 +2184,13 @@ private fun AlarmTimePickerCard(
     modifier: Modifier = Modifier,
 ) {
     val currentOnTimeChange by rememberUpdatedState(onTimeChange)
-    val itemHeight = 76.dp
+    val itemHeight = 88.dp
+    val verticalWheelPadding = 44.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val selectedTextColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val wheelBackgroundColor = Color(0xFF050505)
+    val selectedTextColor = Color.White
+    val unselectedTextColor = Color.White
 
     LaunchedEffect(hour, minute) {
         workingHour = hour
@@ -2200,64 +2217,67 @@ private fun AlarmTimePickerCard(
     }
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
+            color = wheelBackgroundColor,
         ) {
-            AmPmWheelColumn(
-                hour = workingHour,
-                itemHeight = itemHeight,
-                selectedColor = selectedTextColor,
-                onStep = { steps ->
-                    if (abs(steps) % 2 == 1) {
-                        commitTime((workingHour + 12) % 24, workingMinute)
-                    }
-                },
-            )
-            DraggableTimeWheelColumn(
-                itemHeight = itemHeight,
-                selectedColor = selectedTextColor,
-                itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
-                maxStepsPerGesture = 15,
-                onStep = ::applyHourSteps,
-                modifier = Modifier.weight(1f),
-            )
-            Box(
+            Row(
                 modifier = Modifier
-                    .width(24.dp)
-                    .height(itemHeight * 3),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .height(itemHeight * 3 + verticalWheelPadding * 2)
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = ":",
-                    style = MaterialTheme.typography.displayLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = selectedTextColor,
-                    textAlign = TextAlign.Center,
+                AmPmWheelColumn(
+                    hour = workingHour,
+                    itemHeight = itemHeight,
+                    selectedTextColor = selectedTextColor,
+                    unselectedTextColor = unselectedTextColor,
+                    onStep = { steps ->
+                        if (abs(steps) % 2 == 1) {
+                            commitTime((workingHour + 12) % 24, workingMinute)
+                        }
+                    },
                 )
+                DraggableTimeWheelColumn(
+                    itemHeight = itemHeight,
+                    selectedTextColor = selectedTextColor,
+                    unselectedTextColor = unselectedTextColor,
+                    itemLabel = { offset -> "%d".format(hour12(workingHour + offset)) },
+                    maxStepsPerGesture = 15,
+                    onStep = ::applyHourSteps,
+                    modifier = Modifier.weight(1f),
+                )
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(itemHeight * 3),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = ":",
+                        style = MaterialTheme.typography.displayLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = selectedTextColor,
+                        textAlign = TextAlign.Center,
+                    )
                 }
-            DraggableTimeWheelColumn(
-                itemHeight = itemHeight,
-                selectedColor = selectedTextColor,
-                itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
-                maxStepsPerGesture = 15,
-                onStep = ::applyMinuteSteps,
-                modifier = Modifier.weight(1f),
-            )
+                DraggableTimeWheelColumn(
+                    itemHeight = itemHeight,
+                    selectedTextColor = selectedTextColor,
+                    unselectedTextColor = unselectedTextColor,
+                    itemLabel = { offset -> "%02d".format(floorMod(workingMinute + offset, 60)) },
+                    maxStepsPerGesture = 15,
+                    onStep = ::applyMinuteSteps,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
-        Text(
-            text = timeUntilAlarmLabel(workingHour, workingMinute),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-        )
     }
 }
 
@@ -2265,7 +2285,8 @@ private fun AlarmTimePickerCard(
 private fun AmPmWheelColumn(
     hour: Int,
     itemHeight: androidx.compose.ui.unit.Dp,
-    selectedColor: Color,
+    selectedTextColor: Color,
+    unselectedTextColor: Color,
     onStep: (Int) -> Unit,
 ) {
     val amPmIndex = if (hour >= 12) 1 else 0
@@ -2345,7 +2366,11 @@ private fun AmPmWheelColumn(
                             fontSize = if (selected) 38.sp else 32.sp,
                             lineHeight = if (selected) 42.sp else 36.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                            color = selectedColor.copy(alpha = if (selected) 1f else 0.18f),
+                            color = if (selected) {
+                                selectedTextColor
+                            } else {
+                                unselectedTextColor.copy(alpha = 0.18f)
+                            },
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             softWrap = false,
@@ -2360,7 +2385,8 @@ private fun AmPmWheelColumn(
 @Composable
 private fun DraggableTimeWheelColumn(
     itemHeight: androidx.compose.ui.unit.Dp,
-    selectedColor: Color,
+    selectedTextColor: Color,
+    unselectedTextColor: Color,
     itemLabel: (Int) -> String,
     maxStepsPerGesture: Int,
     onStep: (Int) -> Unit,
@@ -2481,7 +2507,11 @@ private fun DraggableTimeWheelColumn(
                             text = itemLabel(offset),
                             style = style,
                             fontWeight = FontWeight.Bold,
-                            color = selectedColor.copy(alpha = alpha),
+                            color = if (distance == 0) {
+                                selectedTextColor
+                            } else {
+                                unselectedTextColor.copy(alpha = alpha)
+                            },
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             softWrap = false,
@@ -2561,7 +2591,7 @@ private fun RepeatSelector(
                 Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
                 MutedText("반복 알람이 주요 공휴일과 겹치면 다음 선택 요일로 넘겨요")
             }
-            Switch(
+            VoiceAlarmSwitch(
                 checked = holidayOff,
                 onCheckedChange = onHolidayOffChange,
             )
@@ -2695,19 +2725,27 @@ private val TtsLanguages = listOf(
 @Composable
 private fun VoiceAudioCard(
     editor: AlarmEditorState,
-    authSession: AuthSession?,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
-    ttsMessages: List<TtsMessage>,
-    ttsMessageBusy: Boolean,
     audioMessage: String?,
     isRecording: Boolean,
-    onLoadVoiceProfiles: () -> Unit,
-    onLoadTtsMessages: () -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
     onClear: () -> Unit,
 ) {
+    val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
+        VoiceSources.TTS_PROFILE
+    } else {
+        editor.voiceSource
+    }
+
+    LaunchedEffect(editor.voiceSource) {
+        if (editor.voiceSource == VoiceSources.SERVER_TTS) {
+            editor.voiceSource = VoiceSources.TTS_PROFILE
+            editor.clearTtsMeta()
+        }
+    }
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2722,16 +2760,12 @@ private fun VoiceAudioCard(
             OptionChips(
                 options = listOf(
                     VoiceSources.TTS_PROFILE to "음성 프로필",
-                    VoiceSources.SERVER_TTS to "서버 음성",
                     VoiceSources.LOCAL_AUDIO to "녹음/파일",
                 ),
-                selected = editor.voiceSource,
+                selected = visibleVoiceSource,
                 onSelect = {
                     editor.voiceSource = it
                     if (it == VoiceSources.TTS_PROFILE) {
-                        editor.clearAudio()
-                        editor.clearTtsMeta()
-                    } else if (it == VoiceSources.SERVER_TTS) {
                         editor.clearAudio()
                         editor.clearTtsMeta()
                     } else {
@@ -2740,30 +2774,27 @@ private fun VoiceAudioCard(
                 },
             )
 
-            if (editor.voiceSource == VoiceSources.TTS_PROFILE) {
+            if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
                 Text(
-                    text = "음성 프로필로 문구를 생성해 로컬에 저장합니다.",
+                    text = "서버에서 음성을 만들고, 알람 전에 기기에 저장합니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("음성 프로필", fontWeight = FontWeight.SemiBold)
-                    OutlinedButton(
-                        onClick = onLoadVoiceProfiles,
-                        enabled = authSession != null && !voiceProfileBusy,
+                val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
+                LaunchedEffect(visibleVoiceSource, readyProfiles) {
+                    if (
+                        visibleVoiceSource == VoiceSources.TTS_PROFILE &&
+                        editor.voiceProfileId.isNullOrBlank() &&
+                        readyProfiles.isNotEmpty()
                     ) {
-                        Text(if (voiceProfileBusy) "불러오는 중" else "불러오기")
+                        editor.voiceProfileId = readyProfiles.first().id
                     }
                 }
-                val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
-                if (authSession == null) {
-                    MutedText("로그인 후 저장해 둔 음성 프로필을 사용할 수 있어요.")
+                Text("음성 프로필", fontWeight = FontWeight.SemiBold)
+                if (voiceProfileBusy) {
+                    MutedText("음성 프로필을 불러오는 중이에요.")
                 } else if (voiceProfiles.isEmpty()) {
-                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만든 뒤 불러와 주세요.")
+                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들면 자동으로 표시됩니다.")
                 } else if (readyProfiles.isEmpty()) {
                     MutedText("준비 완료된 음성 프로필이 아직 없어요.")
                 } else {
@@ -2785,7 +2816,7 @@ private fun VoiceAudioCard(
                         Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
                         MutedText("카테고리와 언어에 맞는 문구를 자동으로 넣어요")
                     }
-                    Switch(
+                    VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,
                         onCheckedChange = {
                             editor.voiceRandomPrompt = it
@@ -2826,53 +2857,6 @@ private fun VoiceAudioCard(
                         if (editor.voiceRandomPrompt) editor.voiceText = ""
                     },
                 )
-                if (editor.localAudioUri != null) {
-                    MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
-                }
-            } else if (editor.voiceSource == VoiceSources.SERVER_TTS) {
-                Text(
-                    text = "서버에 저장된 더빙/TTS 음성을 알람 저장 시 로컬에 캐시합니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("저장된 음성", fontWeight = FontWeight.SemiBold)
-                    OutlinedButton(
-                        onClick = onLoadTtsMessages,
-                        enabled = authSession != null && !ttsMessageBusy,
-                    ) {
-                        Text(if (ttsMessageBusy) "불러오는 중" else "불러오기")
-                    }
-                }
-                val usableMessages = ttsMessages.filter { !it.audioUrl.isNullOrBlank() }
-                if (authSession == null) {
-                    MutedText("로그인 후 서버에 저장된 음성을 사용할 수 있어요.")
-                } else if (ttsMessages.isEmpty()) {
-                    MutedText("저장된 서버 음성이 없어요.")
-                } else if (usableMessages.isEmpty()) {
-                    MutedText("오디오 URL이 있는 서버 음성이 없어요. 새 TTS/더빙 결과부터 사용할 수 있어요.")
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        usableMessages.take(8).forEach { message ->
-                            FilterChip(
-                                selected = editor.ttsMessageId == message.id,
-                                onClick = {
-                                    editor.setPendingServerTts(message)
-                                },
-                                label = {
-                                    Text(
-                                        text = message.text.ifBlank { message.voiceName ?: "서버 음성" }.take(32),
-                                        maxLines = 1,
-                                    )
-                                },
-                            )
-                        }
-                    }
-                }
                 if (editor.localAudioUri != null) {
                     MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
                 }
@@ -2978,7 +2962,7 @@ private fun AlarmSettingsCard(
                         MutedText(if (snoozeEnabled) "${snoozeMinutes}분" else "꺼짐")
                     }
                 }
-                Switch(
+                VoiceAlarmSwitch(
                     checked = snoozeEnabled,
                     onCheckedChange = onSnoozeEnabledChange,
                 )
@@ -3004,7 +2988,7 @@ private fun AlarmSettingsCard(
                         MutedText(vibrationLabel(vibrationPattern))
                     }
                 }
-                Switch(
+                VoiceAlarmSwitch(
                     checked = vibrationPattern != VibrationPatterns.NONE,
                     onCheckedChange = onVibrationEnabledChange,
                 )
@@ -3024,7 +3008,7 @@ private fun AlarmSettingsCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(if (snoozeEnabled) "켜짐" else "꺼짐", fontWeight = FontWeight.SemiBold)
-                        Switch(
+                        VoiceAlarmSwitch(
                             checked = snoozeEnabled,
                             onCheckedChange = onSnoozeEnabledChange,
                         )
@@ -3060,7 +3044,7 @@ private fun AlarmSettingsCard(
                             if (vibrationPattern == VibrationPatterns.NONE) "꺼짐" else "켜짐",
                             fontWeight = FontWeight.SemiBold,
                         )
-                        Switch(
+                        VoiceAlarmSwitch(
                             checked = vibrationPattern != VibrationPatterns.NONE,
                             onCheckedChange = onVibrationEnabledChange,
                         )
@@ -3135,18 +3119,28 @@ private fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     else -> value
 }
 
-private fun timeUntilAlarmLabel(hour: Int, minute: Int): String {
-    val now = java.time.LocalDateTime.now()
-    var fireAt = now.withHour(hour).withMinute(minute).withSecond(0).withNano(0)
-    if (!fireAt.isAfter(now)) fireAt = fireAt.plusDays(1)
-    val duration = java.time.Duration.between(now, fireAt)
-    val hours = duration.toHours()
-    val minutes = duration.minusHours(hours).toMinutes()
+private fun timeUntilAlarmLabel(fireAtMillis: Long): String {
+    val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
+    val duration = java.time.Duration.ofMillis(millisUntilFire)
+    val days = duration.toDays()
+    val hours = duration.minusDays(days).toHours()
+    val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
     return when {
-        hours == 0L -> "${minutes.coerceAtLeast(1)}분 후에 울려요"
-        minutes == 0L -> "${hours}시간 후에 울려요"
-        else -> "${hours}시간 ${minutes}분 후에 울려요"
+        days > 0L && hours == 0L -> "약 ${days}일 뒤에 울려요"
+        days > 0L -> "약 ${days}일 ${hours}시간 뒤에 울려요"
+        hours == 0L -> "${minutes.coerceAtLeast(1)}분 뒤에 울려요"
+        minutes == 0L -> "${hours}시간 뒤에 울려요"
+        else -> "${hours}시간 ${minutes}분 뒤에 울려요"
     }
+}
+
+private fun googleSignInErrorMessage(statusCode: Int): String = when (statusCode) {
+    10 -> "Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요."
+    7 -> "네트워크 연결을 확인한 뒤 다시 시도해 주세요."
+    12500 -> "Google 로그인에 실패했어요."
+    12501 -> "Google 로그인을 취소했어요."
+    12502 -> "Google 로그인이 이미 진행 중이에요."
+    else -> "Google 로그인에 실패했어요. status=$statusCode"
 }
 
 private class AlarmEditorState(
@@ -3160,6 +3154,7 @@ private class AlarmEditorState(
     vibrationPattern: String,
     playMode: String,
     localAudioUri: String?,
+    audioCacheKey: String?,
     rawAudioUri: String?,
     voiceSource: String,
     voiceProfileId: String?,
@@ -3179,6 +3174,7 @@ private class AlarmEditorState(
     var vibrationPattern by mutableStateOf(vibrationPattern)
     var playMode by mutableStateOf(playMode)
     var localAudioUri by mutableStateOf(localAudioUri)
+    var audioCacheKey by mutableStateOf(audioCacheKey)
     var rawAudioUri by mutableStateOf(rawAudioUri)
     var voiceSource by mutableStateOf(voiceSource)
     var voiceProfileId by mutableStateOf(voiceProfileId)
@@ -3211,25 +3207,28 @@ private class AlarmEditorState(
             vibrationPattern = vibrationPattern,
             playMode = playMode,
             localAudioUri = if (alarmOnly) null else localAudioUri,
+            audioCacheKey = if (alarmOnly) null else audioCacheKey,
             rawAudioUri = if (alarmOnly) null else rawAudioUri,
             voiceSource = if (alarmOnly) VoiceSources.LOCAL_AUDIO else voiceSource,
             voiceProfileId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceProfileId,
             voiceText = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsTextForSave(),
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceCategory,
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceLanguage,
-            ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId,
+            ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
         )
     }
 
     fun setCachedAudio(audio: CachedAlarmAudio) {
         voiceSource = VoiceSources.LOCAL_AUDIO
         localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
         rawAudioUri = audio.rawAudioUri
         clearTtsMeta()
     }
 
     fun clearAudio() {
         localAudioUri = null
+        audioCacheKey = null
         rawAudioUri = null
     }
 
@@ -3246,9 +3245,10 @@ private class AlarmEditorState(
         }
 
     fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
-        !localAudioUri.isNullOrBlank() &&
-            ttsMessageId != null &&
-            generatedTtsKey == buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
+        !localAudioUri.isNullOrBlank() && (
+            generatedTtsKey == buildTtsKey(profileId, text, voiceCategory, voiceLanguage) ||
+                audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, voiceCategory, voiceLanguage)
+            )
 
     fun setGeneratedTtsAudio(
         audio: CachedAlarmAudio,
@@ -3261,8 +3261,9 @@ private class AlarmEditorState(
         voiceProfileId = profileId
         voiceText = text
         localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
-        ttsMessageId = messageId
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
         generatedTtsKey = buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
     }
 
@@ -3274,6 +3275,7 @@ private class AlarmEditorState(
         voiceCategory = message.category ?: "custom"
         voiceRandomPrompt = false
         localAudioUri = null
+        audioCacheKey = null
         rawAudioUri = message.audioUrl
         generatedTtsKey = null
     }
@@ -3293,6 +3295,7 @@ private class AlarmEditorState(
         voiceRandomPrompt = false
         this.voiceProfileId = voiceProfileId
         localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         generatedTtsKey = null
     }
@@ -3301,7 +3304,7 @@ private class AlarmEditorState(
         fun from(alarm: AlarmEntity?): AlarmEditorState {
             val defaultTime = java.time.LocalTime.now().plusMinutes(5)
             return AlarmEditorState(
-                label = alarm?.label ?: "Morning alarm",
+                label = alarm?.label ?: "",
                 hour = alarm?.hour ?: defaultTime.hour,
                 minute = alarm?.minute ?: defaultTime.minute,
                 repeatDaysMask = alarm?.repeatDaysMask ?: 0,
@@ -3311,8 +3314,9 @@ private class AlarmEditorState(
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
                 playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
                 localAudioUri = alarm?.localAudioUri,
+                audioCacheKey = alarm?.audioCacheKey,
                 rawAudioUri = alarm?.rawAudioUri,
-                voiceSource = alarm?.voiceSource ?: VoiceSources.LOCAL_AUDIO,
+                voiceSource = alarm?.voiceSource ?: VoiceSources.TTS_PROFILE,
                 voiceProfileId = alarm?.voiceProfileId,
                 voiceText = alarm?.voiceText,
                 voiceCategory = alarm?.voiceCategory ?: "morning",
@@ -3486,7 +3490,6 @@ private fun AccountPanel(
     onRegister: (String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
-    onLoadVoiceProfiles: () -> Unit,
     onLogout: () -> Unit,
 ) {
     var mode by remember { mutableStateOf("login") }
@@ -3533,12 +3536,8 @@ private fun AccountPanel(
                         Text("로그아웃")
                     }
                 }
-                OutlinedButton(
-                    onClick = onLoadVoiceProfiles,
-                    enabled = !voiceProfileBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (voiceProfileBusy) "불러오는 중" else "음성 불러오기")
+                if (voiceProfileBusy) {
+                    MutedText("음성 프로필을 불러오는 중이에요")
                 }
                 if (voiceProfiles.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -3978,6 +3977,28 @@ private fun MutedText(text: String) {
 }
 
 @Composable
+private fun VoiceAlarmSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = if (isDark) Color(0xFFE4D8C6) else Color.White,
+            uncheckedTrackColor = if (isDark) Color(0xFF40372B) else Color(0xFFE7DDCB),
+            uncheckedBorderColor = if (isDark) Color(0xFF5A4D3B) else Color(0xFFD5C8B4),
+        ),
+    )
+}
+
+@Composable
 private fun PermissionPanel(
     permissions: PermissionSnapshot,
     onRequestNotifications: () -> Unit,
@@ -4067,6 +4088,7 @@ private fun AlarmRow(
     alarm: AlarmEntity,
     onToggleEnabled: (Boolean) -> Unit,
     onEditAlarm: () -> Unit,
+    onCopyAlarm: () -> Unit,
     onDeleteAlarm: () -> Unit,
 ) {
     Card(
@@ -4105,7 +4127,7 @@ private fun AlarmRow(
                         },
                     )
                 }
-                Switch(
+                VoiceAlarmSwitch(
                     checked = alarm.enabled,
                     onCheckedChange = onToggleEnabled,
                 )
@@ -4154,6 +4176,9 @@ private fun AlarmRow(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = onEditAlarm) {
                         Icon(Icons.Outlined.Edit, contentDescription = "Edit alarm")
+                    }
+                    IconButton(onClick = onCopyAlarm) {
+                        Icon(Icons.Outlined.ContentCopy, contentDescription = "알람 복사")
                     }
                     IconButton(onClick = onDeleteAlarm) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Delete alarm")

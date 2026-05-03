@@ -56,6 +56,7 @@ class AlarmRepository(
             playMode = AlarmPlayModes.ALARM_ONLY,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = null,
+            audioCacheKey = null,
             rawAudioUri = null,
             voiceSource = VoiceSources.LOCAL_AUDIO,
             voiceProfileId = null,
@@ -84,7 +85,7 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = draft.label.trim().ifBlank { "Alarm" },
+            label = draft.label.trim().ifBlank { "알람" },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
@@ -102,6 +103,7 @@ class AlarmRepository(
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
+            audioCacheKey = draft.audioCacheKey,
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
@@ -136,7 +138,7 @@ class AlarmRepository(
             nowMillis = now,
         )
         val updated = current.copy(
-            label = draft.label.trim().ifBlank { "Alarm" },
+            label = draft.label.trim().ifBlank { "알람" },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = nextFireAt,
@@ -148,6 +150,7 @@ class AlarmRepository(
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
             localAudioUri = draft.localAudioUri,
+            audioCacheKey = draft.audioCacheKey,
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
@@ -210,6 +213,33 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
         alarmDao.delete(current)
         Log.i(TAG, "Deleted alarm id=$alarmId")
+    }
+
+    suspend fun copyAlarm(alarmId: String): AlarmEntity {
+        val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
+        val now = System.currentTimeMillis()
+        val copied = current.copy(
+            id = UUID.randomUUID().toString(),
+            label = current.label.takeIf { it.isNotBlank() }?.let { "$it 복사본" } ?: "복사한 알람",
+            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                hour = current.hour,
+                minute = current.minute,
+                repeatDaysMask = current.repeatDaysMask,
+                holidayOff = current.holidayOff,
+                nowMillis = now,
+            ),
+            remoteAlarmId = null,
+            lastSyncedAtMillis = null,
+            syncState = AlarmSyncStates.LOCAL_ONLY,
+            enabled = true,
+            state = AlarmStates.SCHEDULED,
+            createdAtMillis = now,
+            updatedAtMillis = now,
+        )
+        alarmDao.upsert(copied)
+        alarmScheduler.schedule(copied)
+        Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
+        return copied
     }
 
     suspend fun markRinging(alarmId: String) {

@@ -422,6 +422,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     mockDB.pushResult([{ cnt: 3 }]);
     mockDB.pushResult([], 2); // DELETE alarms
     mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([], 1); // DELETE generated_audio_assets
     mockDB.pushResult([], 3); // DELETE messages
     mockDB.pushResult([], 1); // DELETE voice_profiles
     const res = await req(
@@ -434,11 +435,12 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(body.messages_deleted).toBe(3);
 
     const deleteQueries = mockDB.calls.filter((c) => c.sql.startsWith('DELETE'));
-    expect(deleteQueries).toHaveLength(4);
+    expect(deleteQueries).toHaveLength(5);
     expect(deleteQueries[0]!.sql).toContain('alarms');
     expect(deleteQueries[1]!.sql).toContain('message_library');
-    expect(deleteQueries[2]!.sql).toContain('messages');
-    expect(deleteQueries[3]!.sql).toContain('voice_profiles');
+    expect(deleteQueries[2]!.sql).toContain('generated_audio_assets');
+    expect(deleteQueries[3]!.sql).toContain('messages');
+    expect(deleteQueries[4]!.sql).toContain('voice_profiles');
   });
 
   it('연관 메시지 없으면 바로 삭제 (cascade 스킵)', async () => {
@@ -664,6 +666,7 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     mockDB.pushResult([{ cnt: 2 }]);
     mockDB.pushResult([], 1); // DELETE alarms
     mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([], 1); // DELETE generated_audio_assets
     mockDB.pushResult([], 2); // DELETE messages
     mockDB.pushResult([], 1); // DELETE voice_profiles
     mockDeleteVoice.mockResolvedValue(undefined);

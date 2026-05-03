@@ -8,6 +8,8 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - repeat days, snooze minutes, vibration pattern, and play mode persistence
 - local voice recording and local audio file selection
 - 30 second voice audio limit
+- reusable local audio cache keys for generated TTS, recordings, and selected files
+- copy alarm action that reuses the cached local audio file
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
 - app theme matched to the legacy mobile mustard/navy/terracotta tokens
 - email/password auth against the deployed VoiceAlarm API
@@ -48,7 +50,14 @@ Current deployed auth support:
 - Email-code login: intentionally skipped for the MVP because it needs backend code issuance, email delivery, expiration, throttling, and token exchange.
 - Apple: iOS should add Sign in with Apple later. The current backend accepts Apple ID-token payloads on protected routes, but production-grade Apple JWKS signature verification still needs backend hardening before treating it as final.
 
-No ElevenLabs, Perso, TTS generation, voice clone, diarization, checkout, or upload endpoints are called by this Android PoC.
+Provider-costing endpoints are only called from explicit user actions such as saving a new voice-profile TTS alarm or cloning a voice profile. Automated QA should not tap those paths unless provider credit spend is intended.
+
+### Voice Provider Status
+
+- ElevenLabs is the active direct voice provider. The backend uses its Instant Voice Clone flow and `POST /v1/text-to-speech/:voice_id` TTS flow.
+- Perso remains first in the product strategy, but the currently public Perso developer surface is video dubbing, lip sync, media, editing, STT, audio separation, and language APIs. Direct `voice_id` cloning/TTS is treated as unavailable until that API contract is confirmed.
+- The backend provider layer keeps Perso first in the attempt chain, but the current Perso direct clone/TTS attempt exits locally as unsupported and falls through to ElevenLabs without making an uncertain paid Perso call.
+- References: ElevenLabs TTS `https://elevenlabs.io/docs/api-reference/text-to-speech/convert`, ElevenLabs Instant Voice Clone `https://elevenlabs.io/docs/eleven-api/guides/how-to/voices/instant-voice-cloning`, Perso developers `https://developers.perso.ai/overview`.
 
 ### Google Sign-In Config
 
@@ -115,6 +124,18 @@ adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
 ```
 
 Expected: `VoiceAlarm` logs show `Scheduled exact alarm`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
+
+For locked-device or CI-style debug verification where UI tapping is not available, debug builds include an adb-only test receiver. It is declared under `src/debug`, so it is not packaged in release builds:
+
+```powershell
+adb logcat -c
+adb shell input keyevent KEYCODE_SLEEP
+adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_CREATE_TEST_ALARM -n com.voicealarm.nativeapp/.debug.DebugAlarmReceiver --ei delay_minutes 1
+adb logcat | findstr VoiceAlarm
+adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_DISMISS_LAST_ALARM -n com.voicealarm.nativeapp/.debug.DebugAlarmReceiver
+```
+
+Expected logs include `Scheduled exact alarm`, `Debug test alarm created`, `Alarm received`, `Starting ringing audio`, `Ringing started`, and `Alarm dismissed`.
 
 ### Background
 
@@ -226,26 +247,21 @@ This path calls paid providers only when the user taps Save for a voice-profile 
 Expected:
 
 - Android calls `POST /api/tts/generate`.
-- The backend uses ElevenLabs TTS, stores the mp3 bytes in Cloudflare R2 when `VOICE_BUCKET` is bound, and returns base64 audio plus `message_id`.
-- Android decodes the response, caches it under app-private storage, and stores only local audio for the ring path.
+- The backend checks the deterministic generated-audio cache first. On a cache hit, it returns existing audio without calling Perso or ElevenLabs.
+- On a cache miss, the backend tries the provider chain. Perso direct voice TTS is currently treated as unsupported until its direct API contract is proven, then ElevenLabs is used.
+- The backend stores generated mp3 bytes in Cloudflare R2 under a deterministic key when `VOICE_BUCKET` is bound and returns base64 audio plus `message_id`, `cache_key`, and object metadata.
+- Android decodes the response, caches it under app-private storage with a stable local cache key, and stores only local audio for the ring path.
+- Editing only the alarm time, copying an alarm, or recreating the same profile/text/category/language on the same device reuses the local cached audio and does not call the provider again.
 - At ring time, no ElevenLabs, Perso, R2, push, cron, or network fetch is used.
 
-### Server-Saved Dubbed / TTS Audio
+Cache reuse QA without provider spend:
 
-This path does not generate new provider audio. It reuses audio already stored on the backend.
+1. First create one voice-profile TTS alarm only when provider spend is acceptable.
+2. Edit only its time and save.
+3. Copy the alarm from the alarm list.
+4. Create another alarm with the same voice profile, text, category, and language on the same device.
 
-1. Sign in.
-2. Select `Voice only` or `Alarm + Voice`.
-3. Select `Server voice`.
-4. Tap Load and choose a saved message that has `audio_url`.
-5. Tap Save.
-
-Expected:
-
-- Android calls `GET /api/tts/messages` to list saved audio.
-- Android calls `GET /api/tts/messages/{id}/audio` while saving to download the existing audio.
-- Android caches the downloaded audio in app-private storage.
-- At ring time, playback uses the cached local file only.
+Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call Perso or ElevenLabs.
 
 ### Backend Auth / Manual Sync
 

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <receiver
+            android:name=".debug.DebugAlarmReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.voicealarm.nativeapp.action.DEBUG_CREATE_TEST_ALARM" />
+                <action android:name="com.voicealarm.nativeapp.action.DEBUG_DISMISS_LAST_ALARM" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

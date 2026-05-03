@@ -5,6 +5,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
+import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 2;
@@ -47,6 +48,13 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
     `DELETE FROM message_library WHERE user_id IN (${ph})
      OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
     [...ids, ...ids],
+  );
+  await tryDel(
+    'generated_audio_assets',
+    `DELETE FROM generated_audio_assets WHERE user_id IN (${ph})
+     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids, ...ids],
   );
   await tryDel(
     'dub_jobs',
@@ -271,15 +279,41 @@ voiceProfile.post('/clone', async (c) => {
       args: [profileId, userId, name],
     });
 
-    const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-    const result = await client.createInstantClone(audioBuffer, name);
-    const voiceId = result.voice_id;
-
-    await db.execute({
-      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [voiceId, profileId],
+    const attempts = createEnrollmentAttempts({
+      env: c.env,
+      audioData: audioBuffer,
+      name,
     });
+    let lastError: unknown = new Error('No voice provider is configured.');
+    let provider = '';
+    let voiceId = '';
+    for (const attempt of attempts) {
+      try {
+        const result = await attempt.enroll();
+        provider = result.provider;
+        voiceId = result.providerVoiceId;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof UnsupportedVoiceProviderError) continue;
+        if (attempt !== attempts[attempts.length - 1]) continue;
+      }
+    }
+    if (!voiceId) throw lastError;
+
+    if (provider === 'perso') {
+      await db.execute({
+        sql: `UPDATE voice_profiles SET perso_voice_id = ?, status = 'ready', updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [voiceId, profileId],
+      });
+    } else {
+      await db.execute({
+        sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [voiceId, profileId],
+      });
+    }
 
     return c.json(
       {
@@ -287,6 +321,7 @@ voiceProfile.post('/clone', async (c) => {
           id: profileId,
           name,
           voice_id: voiceId,
+          provider,
           status: 'ready',
         },
       },
@@ -398,6 +433,10 @@ voiceProfile.delete('/:id', async (c) => {
     });
     await db.execute({
       sql: 'DELETE FROM message_library WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
+      args: [id],
+    });
+    await db.execute({
+      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
       args: [id],
     });
     await db.execute({
