@@ -42,6 +42,7 @@ class AlarmRepository(
         val localTime = java.time.Instant.ofEpochMilli(fireAtMillis)
             .atZone(java.time.ZoneId.systemDefault())
             .toLocalTime()
+        requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = "Test alarm",
@@ -73,8 +74,8 @@ class AlarmRepository(
             updatedAtMillis = now,
         )
 
-        alarmDao.upsert(alarm)
         alarmScheduler.schedule(alarm)
+        alarmDao.upsert(alarm)
         Log.i(TAG, "Created test alarm id=${alarm.id} delayMinutes=$delayMinutes fireAt=${alarm.fireAtMillis}")
         return alarm
     }
@@ -120,8 +121,9 @@ class AlarmRepository(
             updatedAtMillis = now,
         )
 
-        alarmDao.upsert(alarm)
+        requireExactAlarmPermission()
         alarmScheduler.schedule(alarm)
+        alarmDao.upsert(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
         return alarm
     }
@@ -163,9 +165,10 @@ class AlarmRepository(
             updatedAtMillis = now,
         )
 
+        if (updated.enabled) requireExactAlarmPermission()
         alarmScheduler.cancel(alarmId)
-        alarmDao.upsert(updated)
         if (updated.enabled) alarmScheduler.schedule(updated)
+        alarmDao.upsert(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -173,6 +176,7 @@ class AlarmRepository(
     suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
+        if (enabled) requireExactAlarmPermission()
         alarmScheduler.cancel(alarmId)
 
         val updated = if (enabled) {
@@ -198,8 +202,8 @@ class AlarmRepository(
             )
         }
 
-        alarmDao.upsert(updated)
         if (enabled) alarmScheduler.schedule(updated)
+        alarmDao.upsert(updated)
         Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -236,8 +240,9 @@ class AlarmRepository(
             createdAtMillis = now,
             updatedAtMillis = now,
         )
-        alarmDao.upsert(copied)
+        requireExactAlarmPermission()
         alarmScheduler.schedule(copied)
+        alarmDao.upsert(copied)
         Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
         return copied
     }
@@ -473,6 +478,12 @@ class AlarmRepository(
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }
         if (draft.playMode != AlarmPlayModes.ALARM_ONLY) {
             require(!draft.localAudioUri.isNullOrBlank()) { "Voice audio must be cached before saving this alarm." }
+        }
+    }
+
+    private fun requireExactAlarmPermission() {
+        require(alarmScheduler.canScheduleExactAlarms()) {
+            "정확한 알람 권한을 허용한 뒤 다시 시도해 주세요."
         }
     }
 

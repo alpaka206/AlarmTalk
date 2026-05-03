@@ -113,6 +113,12 @@ Some devices do not expose every command above. In that case, use the app's perm
 - Exact alarms: system exact alarm access screen.
 - Full screen: Android 14+ full-screen intent access screen.
 
+Current verified device:
+
+- Samsung SM-A325N, Android 13 / API 33.
+- Verified with debug receiver on 2026-05-04: exact alarm scheduled, `AlarmReceiver` fired, `RingingService` started, bundled local alarm audio started, `RingingActivity` launch was requested, and dismiss stopped the alarm.
+- Samsung Android 13 does not expose `cmd notification allow_full_screen_intent`; use the in-app permission row or system settings when full-screen access needs manual approval.
+
 ### Foreground
 
 1. Open the app.
@@ -204,6 +210,8 @@ If no repeat days are selected, the alarm is a one-shot alarm and is disabled af
 
 ### Local Voice Audio
 
+Local recording/file voice alarms do not require login. Login is only required for voice-profile TTS, shared/server voice features, and backend sync.
+
 1. Tap New alarm or edit an existing alarm.
 2. Choose `Voice only` or `Alarm + Voice`.
 3. Select `Record/File`.
@@ -214,7 +222,7 @@ If no repeat days are selected, the alarm is a one-shot alarm and is disabled af
 To verify file selection:
 
 1. Tap Pick and choose an `audio/*` file.
-2. Files longer than 30 seconds should be trimmed to the first 30 seconds when the Android media stack can mux the selected format. If trimming fails, retry with m4a/aac/mp4.
+2. Files longer than 30 seconds should be trimmed to the first 30 seconds when the Android media stack can mux the selected format. If duration cannot be read or trimming fails, retry with m4a/aac/mp4.
 3. Save and confirm `VoiceAlarm` logs show local audio caching.
 
 Airplane-mode check:

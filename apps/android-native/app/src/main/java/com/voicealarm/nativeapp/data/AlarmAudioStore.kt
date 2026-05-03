@@ -64,6 +64,7 @@ class AlarmAudioStore(
 
     fun cacheFromUri(sourceUri: Uri): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
+            ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
         val cacheKey = audioCacheKeyForSource(sourceUri.toString(), durationMillis)
@@ -209,7 +210,7 @@ class AlarmAudioStore(
                     buffer.clear()
                     val sampleSize = extractor.readSampleData(buffer, 0)
                     if (sampleSize < 0) break
-                    bufferInfo.set(0, sampleSize, sampleTimeUs, extractor.sampleFlags)
+                    bufferInfo.set(0, sampleSize, sampleTimeUs, codecBufferFlags(extractor.sampleFlags))
                     muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
                     extractor.advance()
                 }
@@ -223,6 +224,17 @@ class AlarmAudioStore(
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
             throw IllegalArgumentException("30초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
         }.getOrThrow()
+    }
+
+    private fun codecBufferFlags(sampleFlags: Int): Int {
+        var flags = 0
+        if (sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+            flags = flags or MediaCodec.BUFFER_FLAG_KEY_FRAME
+        }
+        if (sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME != 0) {
+            flags = flags or MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+        }
+        return flags
     }
 
     private fun readDisplayName(uri: Uri): String? =

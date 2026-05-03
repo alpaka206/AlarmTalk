@@ -15,7 +15,6 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -1912,16 +1911,16 @@ private fun AlarmEditorScreen(
             onSave(editor.toDraft())
             return
         }
-        if (authSession == null) {
-            audioMessage = "로그인 후에 사용 가능합니다"
-            return
-        }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
             if (editor.localAudioUri.isNullOrBlank()) {
                 audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
                 return
             }
             onSave(editor.toDraft())
+            return
+        }
+        if (authSession == null) {
+            audioMessage = "AI 음성 알람은 로그인 후 사용할 수 있어요"
             return
         }
         val profileId = editor.voiceProfileId
@@ -2081,20 +2080,12 @@ private fun AlarmEditorScreen(
                 PlayModeSelector(
                     selected = editor.playMode,
                     onSelect = { selectedMode ->
-                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
-                            Toast.makeText(
-                                context,
-                                "음성 알람은 로그인 후 사용할 수 있어요",
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                            editor.playMode = AlarmPlayModes.ALARM_ONLY
-                            editor.voiceSource = VoiceSources.TTS_PROFILE
-                            editor.clearTtsMeta()
-                            return@PlayModeSelector
-                        }
                         val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
                         editor.playMode = selectedMode
-                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
+                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
+                            editor.voiceSource = VoiceSources.LOCAL_AUDIO
+                            editor.clearTtsMeta()
+                        } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
                             editor.voiceSource = VoiceSources.TTS_PROFILE
                             editor.clearTtsMeta()
                         }
