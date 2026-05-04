@@ -75,7 +75,7 @@
     "jest-expo": "^55.0.16",
     "react-test-renderer": "^19.2.0",
     "typescript": "~5.9.2",
-    "wrangler": "^4.86.0"
+    "wrangler": "^4.87.0"
   },
   "private": true
 }
