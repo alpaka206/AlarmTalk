@@ -17,7 +17,7 @@ class AlarmVoiceRecorder(
     val isRecording: Boolean
         get() = recorder != null
 
-    fun start() {
+    fun start(maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS) {
         check(recorder == null) { "Recording is already in progress." }
 
         val file = audioStore.createRecordingFile()
@@ -27,7 +27,7 @@ class AlarmVoiceRecorder(
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setAudioEncodingBitRate(128_000)
             setAudioSamplingRate(44_100)
-            setMaxDuration(AlarmAudioLimits.MAX_DURATION_MILLIS.toInt())
+            setMaxDuration(maxDurationMillis.toInt())
             setOutputFile(file.absolutePath)
             prepare()
             start()
@@ -63,6 +63,8 @@ class AlarmVoiceRecorder(
         file?.delete()
         if (file != null) Log.i(TAG, "Voice recording cancelled path=${file.absolutePath}")
     }
+
+    fun maxAmplitude(): Int = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
 
     private fun release() {
         recorder?.release()

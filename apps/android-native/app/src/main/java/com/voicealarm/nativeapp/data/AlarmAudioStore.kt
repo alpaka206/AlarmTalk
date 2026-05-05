@@ -22,6 +22,11 @@ object AlarmAudioLimits {
     const val MAX_DURATION_MILLIS = 30_000L
 }
 
+object VoiceProfileAudioLimits {
+    const val MIN_DURATION_MILLIS = 30_000L
+    const val MAX_DURATION_MILLIS = 60_000L
+}
+
 data class CachedAlarmAudio(
     val localAudioUri: String,
     val rawAudioUri: String?,
@@ -62,12 +67,22 @@ class AlarmAudioStore(
         )
     }
 
-    fun cacheFromUri(sourceUri: Uri): CachedAlarmAudio {
+    fun cacheFromUri(
+        sourceUri: Uri,
+        maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
+        startMillis: Long = 0L,
+    ): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
             ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
-        val cacheKey = audioCacheKeyForSource(sourceUri.toString(), durationMillis)
+        val resolvedStartMillis = startMillis.coerceIn(0L, (durationMillis - maxDurationMillis).coerceAtLeast(0L))
+        val cacheKey = audioCacheKeyForSource(
+            sourceUri = sourceUri.toString(),
+            durationMillis = durationMillis,
+            startMillis = resolvedStartMillis,
+            maxDurationMillis = maxDurationMillis,
+        )
         findCachedFile(cacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val metadata = readMetadata(cacheKey)
@@ -80,9 +95,9 @@ class AlarmAudioStore(
                 messageId = metadata.messageId,
             )
         }
-        val target = if (durationMillis != null && durationMillis > AlarmAudioLimits.MAX_DURATION_MILLIS) {
+        val target = if (resolvedStartMillis > 0 || durationMillis > maxDurationMillis) {
             File(audioDir, "${safeCacheKey(cacheKey)}.m4a").also {
-                trimToMaxDuration(sourceUri, it)
+                trimToMaxDuration(sourceUri, it, maxDurationMillis, resolvedStartMillis)
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
@@ -94,7 +109,7 @@ class AlarmAudioStore(
         }
 
         val cachedDurationMillis = readDurationMillis(target.toUri()) ?: durationMillis
-        requireWithinLimit(cachedDurationMillis)
+        requireWithinLimit(cachedDurationMillis, maxDurationMillis)
 
         Log.i(TAG, "Cached local voice audio path=${target.absolutePath} durationMillis=$cachedDurationMillis")
         return CachedAlarmAudio(
@@ -175,13 +190,21 @@ class AlarmAudioStore(
         }
     }
 
-    private fun requireWithinLimit(durationMillis: Long?) {
-        require(durationMillis == null || durationMillis <= AlarmAudioLimits.MAX_DURATION_MILLIS) {
-            "Voice audio must be 30 seconds or shorter."
+    private fun requireWithinLimit(
+        durationMillis: Long?,
+        maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
+    ) {
+        require(durationMillis == null || durationMillis <= maxDurationMillis) {
+            "Voice audio must be ${maxDurationMillis / 1000} seconds or shorter."
         }
     }
 
-    private fun trimToMaxDuration(sourceUri: Uri, target: File) {
+    private fun trimToMaxDuration(
+        sourceUri: Uri,
+        target: File,
+        maxDurationMillis: Long,
+        startMillis: Long = 0L,
+    ) {
         runCatching {
             val extractor = MediaExtractor()
             val muxer = MediaMuxer(target.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -203,14 +226,24 @@ class AlarmAudioStore(
                 val buffer = ByteBuffer.allocate(maxInputSize)
                 val bufferInfo = MediaCodec.BufferInfo()
                 muxer.start()
+                val startUs = startMillis * 1_000
+                val endUs = startUs + maxDurationMillis * 1_000
+                if (startUs > 0) {
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                }
 
                 while (true) {
                     val sampleTimeUs = extractor.sampleTime
-                    if (sampleTimeUs < 0 || sampleTimeUs > AlarmAudioLimits.MAX_DURATION_MILLIS * 1_000) break
+                    if (sampleTimeUs < 0 || sampleTimeUs > endUs) break
                     buffer.clear()
                     val sampleSize = extractor.readSampleData(buffer, 0)
                     if (sampleSize < 0) break
-                    bufferInfo.set(0, sampleSize, sampleTimeUs, codecBufferFlags(extractor.sampleFlags))
+                    bufferInfo.set(
+                        0,
+                        sampleSize,
+                        (sampleTimeUs - startUs).coerceAtLeast(0L),
+                        codecBufferFlags(extractor.sampleFlags),
+                    )
                     muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
                     extractor.advance()
                 }
@@ -222,7 +255,7 @@ class AlarmAudioStore(
         }.onFailure { error ->
             target.delete()
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
-            throw IllegalArgumentException("30초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
+            throw IllegalArgumentException("${maxDurationMillis / 1000}초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
         }.getOrThrow()
     }
 
@@ -301,8 +334,21 @@ class AlarmAudioStore(
             serverCacheKey?.takeIf { it.isNotBlank() }
                 ?: sha256(listOf("tts", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
 
-        fun audioCacheKeyForSource(sourceUri: String, durationMillis: Long?): String =
-            sha256(listOf("source", sourceUri, durationMillis?.toString().orEmpty()).joinToString("|"))
+        fun audioCacheKeyForSource(
+            sourceUri: String,
+            durationMillis: Long?,
+            startMillis: Long = 0L,
+            maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
+        ): String =
+            sha256(
+                listOf(
+                    "source",
+                    sourceUri,
+                    durationMillis?.toString().orEmpty(),
+                    startMillis.toString(),
+                    maxDurationMillis.toString(),
+                ).joinToString("|"),
+            )
 
         fun audioCacheKeyForBytes(bytes: ByteArray): String = sha256(bytes)
 

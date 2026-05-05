@@ -26,6 +26,7 @@ import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import com.voicealarm.nativeapp.network.VoucherItem
 
 @Composable
@@ -58,8 +59,9 @@ internal fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onRefreshVoiceProfiles: () -> Unit,
     onCreateVoiceProfile: (String, CachedAlarmAudio) -> Unit,
+    onCreateVoiceProfiles: (List<Pair<String, CachedAlarmAudio>>) -> Unit,
+    onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onRenameVoiceProfile: (String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
@@ -107,22 +109,6 @@ internal fun AlarmListScreen(
                     )
                 }
                 item {
-                    HomeStatsRow(
-                        activeAlarms = alarms.count { it.enabled },
-                        voiceCount = voiceProfiles.size,
-                        connectionCount = familyGroup?.members?.size ?: 0,
-                    )
-                }
-                if (authSession != null && characterResponse != null) {
-                    item {
-                        CharacterMiniCard(
-                            characterResponse = characterResponse,
-                            pendingEvents = characterEvents.count { it.state != "synced" },
-                            onClick = { onSelectTab(NativeTab.Growth) },
-                        )
-                    }
-                }
-                item {
                     NextAlarmHeroCard(
                         nextAlarm = nextAlarm,
                         onClick = {
@@ -134,17 +120,19 @@ internal fun AlarmListScreen(
                         },
                     )
                 }
+                item {
+                    CharacterMiniCard(
+                        characterResponse = characterResponse,
+                        onClick = { onSelectTab(NativeTab.Growth) },
+                    )
+                }
                 if (message != null) {
                     item { StatusChip(message = message, onClearMessage = onClearMessage) }
                 }
                 item {
                     QuickStartGrid(
-                        onRecordVoice = onCreateAlarm,
+                        onRecordVoice = { onSelectTab(NativeTab.Voices) },
                         onAddAlarm = onCreateAlarm,
-                        onOpenVoices = {
-                            onSelectTab(NativeTab.Voices)
-                        },
-                        onOpenGrowth = { onSelectTab(NativeTab.Growth) },
                     )
                 }
                 if (authSession == null) {
@@ -179,8 +167,9 @@ internal fun AlarmListScreen(
                         VoiceProfileManagementPanel(
                             voiceProfiles = voiceProfiles,
                             voiceProfileBusy = voiceProfileBusy,
-                            onRefresh = onRefreshVoiceProfiles,
                             onCreateVoiceProfile = onCreateVoiceProfile,
+                            onCreateVoiceProfiles = onCreateVoiceProfiles,
+                            onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
                             onRenameVoiceProfile = onRenameVoiceProfile,
                             onDeleteVoiceProfile = onDeleteVoiceProfile,
                         )
