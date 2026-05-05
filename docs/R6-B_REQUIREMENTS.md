@@ -1,5 +1,7 @@
 # VoiceAlarm — 요구사항 정의서
 
+> 레거시 문서: 이 문서는 React Native/Expo 프로토타입 단계의 요구사항 기록이다. 현재 제품 구현 기준은 Android native 앱, backend API, `docs/native-rebuild/` 문서다.
+
 ## 1. 기능 요구사항 (Functional Requirements)
 
 ### FR-1: 인증

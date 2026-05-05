@@ -2,9 +2,7 @@
 
 Voice Alarm is being rebuilt as a native Android/iOS alarm app.
 
-The existing React Native/Expo app remains in `apps/mobile` as a legacy reference. Use it for UX flow, screen behavior, copy, API usage, and design-token reference. Do not extend its alarm runtime.
-
-Legacy mobile references that must survive before deleting `apps/mobile` are extracted in `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md`.
+The legacy React Native/Expo app source has been removed. Preserved UX, copy, API, and design-token references live in `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md`. Do not rebuild or extend the old React Native alarm runtime.
 
 ## Read First
 
@@ -28,8 +26,7 @@ Voice Alarm is not a push notification app. The alarm must ring from local OS sc
 Create/fill local env files only on your machine:
 
 - `packages/backend/.dev.vars`
-- `apps/mobile/.env` for the legacy Expo app if needed
-- Android native env will be added when `apps/android-native/` is created
+- Android native local configuration via ignored Gradle/local property files when needed
 - iOS native env will be added when `apps/ios-native/` is created
 
 Do not commit secrets.
@@ -40,6 +37,5 @@ Do not commit secrets.
 npm run backend
 npm run typecheck
 npm test
+cd apps/android-native && ./gradlew.bat :app:assembleDebug
 ```
-
-Android commands will be added after the native project is created.

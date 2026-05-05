@@ -1,5 +1,7 @@
 # VoiceAlarm — 프로젝트 개요
 
+> 레거시 문서: 이 문서는 React Native/Expo 프로토타입 단계의 제품 개요를 보존한 기록이다. 현재 제품 구현 기준은 Android native 앱, backend API, `docs/native-rebuild/` 문서다.
+
 ## 1. 서비스 소개
 
 **VoiceAlarm**은 소중한 사람의 목소리로 하루를 시작할 수 있는 알람 앱입니다.

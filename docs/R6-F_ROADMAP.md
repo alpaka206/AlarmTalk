@@ -1,9 +1,11 @@
 # VoiceAlarm — 로드맵
 
+> 레거시 문서: 이 문서는 React Native/Expo 프로토타입 단계의 로드맵 기록이다. 현재 제품 구현 기준은 Android native 앱, backend API, `docs/native-rebuild/` 문서다.
+
 ## 1. 완료된 작업
 
 ### Phase 0 — 프로젝트 기반 구축
-- 모노레포 구조 설정 (apps/mobile, packages/backend, packages/shared, packages/ui, packages/voice)
+- 모노레포 구조 설정 (삭제된 레거시 Expo 앱, packages/backend, packages/shared, packages/ui, packages/voice)
 - Cloudflare Workers + Hono 백엔드 기초
 - React Native (Expo) + expo-router 모바일 앱 기초
 - Turso DB 연결 + 마이그레이션 시스템

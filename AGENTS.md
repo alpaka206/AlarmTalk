@@ -13,7 +13,7 @@ Read these files before making product or architecture changes:
 - Android first: Kotlin + Jetpack Compose + native AlarmManager.
 - iOS later: SwiftUI + AlarmKit feasibility PoC first.
 - Backend reuse: keep the existing Cloudflare Workers + Hono + Turso backend as the source of API/domain reference.
-- Legacy app reference: keep `apps/mobile` available for UX, copy, API usage, and design-token reference.
+- Legacy app reference: `apps/mobile` source has been removed; use `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md` plus the native/backend code as the remaining reference.
 - Do not rebuild or extend the old React Native alarm runtime.
 
 ## Non-negotiable Alarm Rules
