@@ -109,6 +109,18 @@ internal fun AlarmListScreen(
                     )
                 }
                 item {
+                    NextAlarmHeroCard(
+                        nextAlarm = nextAlarm,
+                        onClick = {
+                            if (nextAlarm == null) {
+                                onCreateAlarm()
+                            } else {
+                                onEditAlarm(nextAlarm)
+                            }
+                        },
+                    )
+                }
+                item {
                     CharacterMiniCard(
                         characterResponse = characterResponse,
                         onClick = { onSelectTab(NativeTab.Growth) },

@@ -91,7 +91,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email:
         email = email,
         name = name,
     )
-    message = "Google 계정으로 로그인했어요"
+    message = null
 }
 
 internal fun MainViewModel.logout() {
