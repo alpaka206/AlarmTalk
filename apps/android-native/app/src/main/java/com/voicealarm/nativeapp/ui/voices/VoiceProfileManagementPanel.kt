@@ -60,6 +60,7 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import kotlinx.coroutines.Dispatchers
@@ -105,6 +106,7 @@ internal fun VoiceLoginRequiredCard() {
 @Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
@@ -474,6 +476,17 @@ internal fun VoiceProfileManagementPanel(
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
                 )
+            }
+        }
+
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            Text(
+                text = "공유 받은 음성",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            familyVoices.forEach { profile ->
+                SharedVoiceProfileRow(profile = profile)
             }
         }
     }
@@ -890,6 +903,19 @@ internal fun VoiceProfileRow(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SharedVoiceProfileRow(profile: FamilyVoiceProfile) {
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(profile.name, fontWeight = FontWeight.SemiBold)
+            MutedText(profile.ownerName?.takeIf { it.isNotBlank() } ?: "공유 음성")
         }
     }
 }

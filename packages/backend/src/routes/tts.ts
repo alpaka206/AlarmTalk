@@ -5,6 +5,7 @@ import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
   noVoiceProviderError,
@@ -12,6 +13,36 @@ import {
 } from '../lib/voice-provider';
 
 const tts = new Hono<AppEnv>();
+
+async function findUsableVoiceProfile(
+  db: ReturnType<typeof getDB>,
+  userId: string,
+  voiceProfileId: string,
+): Promise<Record<string, unknown> | null> {
+  const owned = await db.execute({
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
+    args: [voiceProfileId, userId],
+  });
+  if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
+
+  const shared = await db.execute({
+    sql: `SELECT vp.*, u.id AS owner_pk
+          FROM voice_profiles vp
+          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return null;
+
+  const row = shared.rows[0] as Record<string, unknown>;
+  const viewerPk = await resolveUserPk(db, userId);
+  const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
+  if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
+
+  const inSameGroup = await assertSameGroup(db, viewerPk, ownerPk);
+  return inSameGroup ? row : null;
+}
 
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
@@ -82,16 +113,11 @@ tts.post('/generate', async (c) => {
     }
   }
 
-  const profile = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
-    args: [body.voice_profile_id, userId],
-  });
-
-  if (profile.rows.length === 0) {
+  const vp = await findUsableVoiceProfile(db, userId, body.voice_profile_id);
+  if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  const vp = profile.rows[0]!;
   if (vp.status !== 'ready') {
     return c.json({ error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' }, 400);
   }

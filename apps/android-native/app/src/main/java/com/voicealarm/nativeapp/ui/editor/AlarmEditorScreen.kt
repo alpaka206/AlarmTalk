@@ -50,6 +50,7 @@ import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
@@ -66,6 +67,7 @@ internal fun AlarmEditorScreen(
     familyGroup: FamilyGroupCurrentResponse?,
     familyAlarmMode: Boolean,
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
@@ -462,6 +464,7 @@ internal fun AlarmEditorScreen(
                     VoiceAudioCard(
                         editor = editor,
                         voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
                         voiceProfileBusy = voiceProfileBusy,
                         audioMessage = audioMessage,
                         localInputMode = localInputMode,

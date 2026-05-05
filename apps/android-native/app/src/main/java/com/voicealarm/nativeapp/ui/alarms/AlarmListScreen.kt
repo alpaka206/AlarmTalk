@@ -168,6 +168,7 @@ internal fun AlarmListScreen(
                     item {
                         VoiceProfileManagementPanel(
                             voiceProfiles = voiceProfiles,
+                            familyVoices = familyVoices,
                             voiceProfileBusy = voiceProfileBusy,
                             subscriptionResponse = subscriptionResponse,
                             familyGroup = familyGroup,

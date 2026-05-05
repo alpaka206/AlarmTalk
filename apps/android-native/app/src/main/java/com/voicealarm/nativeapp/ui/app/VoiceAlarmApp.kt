@@ -79,6 +79,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(selectedTab, authSession?.token) {
         if (authSession == null) return@LaunchedEffect
         when (selectedTab) {
+            NativeTab.Voices -> {
+                viewModel.preloadVoiceProfiles()
+                viewModel.preloadSocial()
+            }
             NativeTab.People -> viewModel.refreshSocial()
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
@@ -265,6 +269,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 familyGroup = familyGroup,
                 familyAlarmMode = current.familyTargetMode,
                 voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,
                 onGenerateTts = viewModel::generateTtsAudio,
@@ -280,6 +285,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 familyGroup = familyGroup,
                 familyAlarmMode = false,
                 voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,
                 onGenerateTts = viewModel::generateTtsAudio,

@@ -44,12 +44,14 @@ import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfile
 
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     audioMessage: String?,
     localInputMode: VoiceCaptureMode,
@@ -115,25 +117,32 @@ internal fun VoiceAudioCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
-                LaunchedEffect(visibleVoiceSource, readyProfiles) {
+                val readyFamilyVoices = familyVoices.filter {
+                    (it.status == null || it.status == "ready") && it.isShared != false
+                }
+                val profileOptions = readyProfiles.map { it.id to it.name } +
+                    readyFamilyVoices.map { profile ->
+                        profile.id to sharedVoiceLabel(profile)
+                    }
+                LaunchedEffect(visibleVoiceSource, profileOptions) {
                     if (
                         visibleVoiceSource == VoiceSources.TTS_PROFILE &&
                         editor.voiceProfileId.isNullOrBlank() &&
-                        readyProfiles.isNotEmpty()
+                        profileOptions.isNotEmpty()
                     ) {
-                        editor.voiceProfileId = readyProfiles.first().id
+                        editor.voiceProfileId = profileOptions.first().first
                     }
                 }
                 Text("음성 프로필", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
                     MutedText("음성 프로필을 불러오는 중이에요.")
-                } else if (voiceProfiles.isEmpty()) {
-                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들면 자동으로 표시됩니다.")
-                } else if (readyProfiles.isEmpty()) {
+                } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
+                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들거나 공유받으면 자동으로 표시됩니다.")
+                } else if (profileOptions.isEmpty()) {
                     MutedText("준비 완료된 음성 프로필이 아직 없어요.")
                 } else {
                     ChipGrid(
-                        options = readyProfiles.map { it.id to it.name },
+                        options = profileOptions,
                         selected = editor.voiceProfileId ?: "",
                         onSelect = {
                             editor.voiceProfileId = it
@@ -261,5 +270,14 @@ internal fun VoiceAudioCard(
                 )
             }
         }
+    }
+}
+
+private fun sharedVoiceLabel(profile: FamilyVoiceProfile): String {
+    val owner = profile.ownerName?.takeIf { it.isNotBlank() }
+    return if (owner == null) {
+        "${profile.name} · 공유"
+    } else {
+        "${profile.name} · $owner"
     }
 }
