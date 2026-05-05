@@ -76,6 +76,8 @@ class AlarmAudioStore(
             ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
+        val trackMimeType = audioTrackMime(sourceUri)
+        val trimAsMp3 = extension == "mp3" || isMp3Mime(trackMimeType)
         val resolvedStartMillis = startMillis.coerceIn(0L, (durationMillis - maxDurationMillis).coerceAtLeast(0L))
         val cacheKey = audioCacheKeyForSource(
             sourceUri = sourceUri.toString(),
@@ -96,8 +98,15 @@ class AlarmAudioStore(
             )
         }
         val target = if (resolvedStartMillis > 0 || durationMillis > maxDurationMillis) {
-            File(audioDir, "${safeCacheKey(cacheKey)}.m4a").also {
-                trimToMaxDuration(sourceUri, it, maxDurationMillis, resolvedStartMillis)
+            val trimExtension = if (trimAsMp3) "mp3" else "m4a"
+            File(audioDir, "${safeCacheKey(cacheKey)}.$trimExtension").also {
+                trimToMaxDuration(
+                    sourceUri = sourceUri,
+                    target = it,
+                    maxDurationMillis = maxDurationMillis,
+                    startMillis = resolvedStartMillis,
+                    forceMp3 = trimAsMp3,
+                )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
@@ -204,7 +213,12 @@ class AlarmAudioStore(
         target: File,
         maxDurationMillis: Long,
         startMillis: Long = 0L,
+        forceMp3: Boolean = false,
     ) {
+        if (forceMp3 || isMp3Mime(audioTrackMime(sourceUri))) {
+            trimMp3Frames(sourceUri, target, maxDurationMillis, startMillis)
+            return
+        }
         runCatching {
             val extractor = MediaExtractor()
             val muxer = MediaMuxer(target.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -258,6 +272,74 @@ class AlarmAudioStore(
             throw IllegalArgumentException("${maxDurationMillis / 1000}초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
         }.getOrThrow()
     }
+
+    private fun trimMp3Frames(
+        sourceUri: Uri,
+        target: File,
+        maxDurationMillis: Long,
+        startMillis: Long,
+    ) {
+        runCatching {
+            val extractor = MediaExtractor()
+            try {
+                extractor.setDataSource(context, sourceUri, null)
+                val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                    extractor.getTrackFormat(index)
+                        .getString(MediaFormat.KEY_MIME)
+                        ?.startsWith("audio/") == true
+                } ?: error("No audio track found.")
+                extractor.selectTrack(trackIndex)
+                val inputFormat = extractor.getTrackFormat(trackIndex)
+                val maxInputSize = if (inputFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                    inputFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                } else {
+                    256 * 1024
+                }.coerceAtLeast(64 * 1024)
+                val buffer = ByteBuffer.allocate(maxInputSize)
+                val startUs = startMillis * 1_000
+                val endUs = startUs + maxDurationMillis * 1_000
+                if (startUs > 0) {
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                }
+
+                target.outputStream().use { output ->
+                    while (true) {
+                        val sampleTimeUs = extractor.sampleTime
+                        if (sampleTimeUs < 0 || sampleTimeUs > endUs) break
+                        buffer.clear()
+                        val sampleSize = extractor.readSampleData(buffer, 0)
+                        if (sampleSize < 0) break
+                        output.write(buffer.array(), 0, sampleSize)
+                        extractor.advance()
+                    }
+                }
+            } finally {
+                extractor.release()
+            }
+        }.onFailure { error ->
+            target.delete()
+            Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
+            throw IllegalArgumentException("MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.", error)
+        }.getOrThrow()
+    }
+
+    private fun audioTrackMime(uri: Uri): String? {
+        val extractor = MediaExtractor()
+        return runCatching {
+            extractor.setDataSource(context, uri, null)
+            (0 until extractor.trackCount).firstNotNullOfOrNull { index ->
+                extractor.getTrackFormat(index)
+                    .getString(MediaFormat.KEY_MIME)
+                    ?.takeIf { it.startsWith("audio/") }
+            }
+        }.getOrNull().also {
+            extractor.release()
+        }
+    }
+
+    private fun isMp3Mime(mimeType: String?): Boolean =
+        mimeType.equals("audio/mpeg", ignoreCase = true) ||
+            mimeType.equals("audio/mp3", ignoreCase = true)
 
     private fun codecBufferFlags(sampleFlags: Int): Int {
         var flags = 0

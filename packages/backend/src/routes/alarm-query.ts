@@ -7,16 +7,25 @@ import { normalizeAlarmRow, type AlarmRow } from './alarm-helpers';
 
 const alarmQuery = new Hono<AppEnv>();
 
+function viewerIds(c: { get: (key: 'userId' | 'userIdPK') => string }): string[] {
+  return Array.from(new Set([c.get('userIdPK') || c.get('userId'), c.get('userId')]));
+}
+
+function inPlaceholders(values: unknown[]): string {
+  return values.map(() => '?').join(', ');
+}
+
 alarmQuery.get('/tick', async (c) => {
-  const userId = c.get('userId');
+  const ids = viewerIds(c);
+  const idPlaceholders = inPlaceholders(ids);
   const db = getDB(c.env);
 
   const result = await db.execute({
     sql: `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
                  mode, voice_profile_id, speaker_id
           FROM alarms
-          WHERE (user_id = ? OR target_user_id = ?) AND is_active = 1`,
-    args: [userId, userId],
+          WHERE (user_id IN (${idPlaceholders}) OR target_user_id IN (${idPlaceholders})) AND is_active = 1`,
+    args: [...ids, ...ids],
   });
 
   const alarms: ScheduledAlarm[] = (result.rows as AlarmRow[]).map((r) => {
@@ -51,14 +60,16 @@ alarmQuery.get('/tick', async (c) => {
 
 alarmQuery.get('/', async (c) => {
   const userId = c.get('userId');
+  const ids = viewerIds(c);
+  const idPlaceholders = inPlaceholders(ids);
   const db = getDB(c.env);
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
   const isActiveParam = c.req.query('is_active');
   const voiceProfileId = c.req.query('voice_profile_id');
 
-  let whereClause = 'WHERE (a.user_id = ? OR a.target_user_id = ?)';
-  const whereArgs: (string | number)[] = [userId, userId];
+  let whereClause = `WHERE (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))`;
+  const whereArgs: (string | number)[] = [...ids, ...ids];
 
   if (isActiveParam === 'true' || isActiveParam === 'false') {
     whereClause += ' AND a.is_active = ?';
@@ -83,11 +94,12 @@ alarmQuery.get('/', async (c) => {
     }),
     db.execute({
       sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
+              m.audio_url as message_audio_url,
               creator.email as creator_email, creator.name as creator_name
             FROM alarms a
             LEFT JOIN messages m ON a.message_id = m.id
             LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
-            LEFT JOIN users creator ON creator.google_id = a.user_id
+            LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
             ${whereClause}
             ORDER BY a.time ASC
             LIMIT ? OFFSET ?`,
@@ -102,6 +114,8 @@ alarmQuery.get('/', async (c) => {
 
 alarmQuery.get('/:id', async (c) => {
   const userId = c.get('userId');
+  const ids = viewerIds(c);
+  const idPlaceholders = inPlaceholders(ids);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -111,13 +125,14 @@ alarmQuery.get('/:id', async (c) => {
 
   const result = await db.execute({
     sql: `SELECT a.*, m.text as message_text, m.category, vp.name as voice_name,
+            m.audio_url as message_audio_url,
             creator.email as creator_email, creator.name as creator_name
           FROM alarms a
           LEFT JOIN messages m ON a.message_id = m.id
           LEFT JOIN voice_profiles vp ON m.voice_profile_id = vp.id
-          LEFT JOIN users creator ON creator.google_id = a.user_id
-          WHERE a.id = ? AND (a.user_id = ? OR a.target_user_id = ?)`,
-    args: [id, userId, userId],
+          LEFT JOIN users creator ON creator.google_id = a.user_id OR creator.id = a.user_id
+          WHERE a.id = ? AND (a.user_id IN (${idPlaceholders}) OR a.target_user_id IN (${idPlaceholders}))`,
+    args: [id, ...ids, ...ids],
   });
 
   if (result.rows.length === 0) {

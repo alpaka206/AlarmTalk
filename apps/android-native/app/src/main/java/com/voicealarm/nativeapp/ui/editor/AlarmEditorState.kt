@@ -10,6 +10,7 @@ import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
+import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.TtsMessage
@@ -55,6 +56,7 @@ internal class AlarmEditorState(
     holidayOff: Boolean,
     snoozeEnabled: Boolean,
     snoozeMinutes: Int,
+    snoozeRepeatLimit: Int,
     vibrationPattern: String,
     playMode: String,
     localAudioUri: String?,
@@ -75,6 +77,7 @@ internal class AlarmEditorState(
     var holidayOff by mutableStateOf(holidayOff)
     var snoozeEnabled by mutableStateOf(snoozeEnabled)
     var snoozeMinutes by mutableIntStateOf(snoozeMinutes)
+    var snoozeRepeatLimit by mutableIntStateOf(snoozeRepeatLimit)
     var vibrationPattern by mutableStateOf(vibrationPattern)
     var playMode by mutableStateOf(playMode)
     var localAudioUri by mutableStateOf(localAudioUri)
@@ -108,6 +111,7 @@ internal class AlarmEditorState(
             holidayOff = holidayOff,
             snoozeEnabled = snoozeEnabled,
             snoozeMinutes = snoozeMinutes,
+            snoozeRepeatLimit = snoozeRepeatLimit,
             vibrationPattern = vibrationPattern,
             playMode = playMode,
             localAudioUri = if (alarmOnly) null else localAudioUri,
@@ -147,6 +151,9 @@ internal class AlarmEditorState(
         } else {
             voiceText.trim()
         }
+
+    fun localizedTtsTextForSave(): String =
+        translateAlarmTextIfNeeded(ttsTextForSave(), voiceCategory, voiceLanguage)
 
     fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
         !localAudioUri.isNullOrBlank() && (
@@ -215,6 +222,7 @@ internal class AlarmEditorState(
                 holidayOff = alarm?.holidayOff ?: false,
                 snoozeEnabled = alarm?.snoozeEnabled ?: true,
                 snoozeMinutes = alarm?.snoozeMinutes ?: 5,
+                snoozeRepeatLimit = alarm?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
                 playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
                 localAudioUri = alarm?.localAudioUri,
@@ -263,4 +271,24 @@ internal fun randomTtsPrompt(category: String, language: String): String {
         else -> ko
     }
     return pool.random()
+}
+
+private fun translateAlarmTextIfNeeded(text: String, category: String, language: String): String {
+    if (language == "ko" || text.none { it in '\uAC00'..'\uD7A3' }) return text
+    return when (language) {
+        "en" -> when {
+            text.contains("점심") -> "It is lunch time. Take a short break and recharge."
+            text.contains("약") -> "It is time to take your medicine with water."
+            text.contains("공부") || text.contains("영어") -> "It is study time. Start with one small step."
+            text.contains("자") || text.contains("잠") || text.contains("쉬") -> "It is time to wind down and get some rest."
+            text.contains("일어나") || text.contains("기상") || text.contains("아침") -> "Good morning. It is time to wake up."
+            else -> randomTtsPrompt(category, "en")
+        }
+        "ja" -> when {
+            text.contains("공부") || text.contains("영어") -> "勉強する時間です。短く始めましょう。"
+            text.contains("자") || text.contains("잠") || text.contains("쉬") -> "そろそろ休む時間です。ゆっくり眠りましょう。"
+            else -> randomTtsPrompt(category, "ja")
+        }
+        else -> text
+    }
 }

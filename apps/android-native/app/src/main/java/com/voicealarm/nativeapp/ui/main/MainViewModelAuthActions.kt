@@ -27,6 +27,7 @@ import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.RegisterRequest
@@ -39,6 +40,7 @@ import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
+import com.voicealarm.nativeapp.sync.RemoteAlarmSyncScheduler
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,6 +52,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import retrofit2.HttpException
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -59,6 +62,8 @@ internal fun MainViewModel.login(email: String, password: String) {
             api.login(LoginRequest(email = email.trim(), password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
+            RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = "${response.user.email} 계정으로 로그인했어요"
         }.onFailure { error ->
             Log.e(TAG, "Email login failed", error)
@@ -75,6 +80,8 @@ internal fun MainViewModel.register(email: String, password: String, name: Strin
             api.register(RegisterRequest(email = email.trim(), password = password, name = name.trim()))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
+            RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = "${response.user.email} 계정을 만들었어요"
         }.onFailure { error ->
             Log.e(TAG, "Email registration failed", error)
@@ -85,13 +92,33 @@ internal fun MainViewModel.register(email: String, password: String, name: Strin
 }
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email: String, name: String) {
-    authSession = authSessionStore.saveGoogleSession(
-        idToken = idToken,
-        id = id,
-        email = email,
-        name = name,
-    )
-    message = "Google 계정으로 로그인했어요"
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.loginGoogle(GoogleLoginRequest(idToken = idToken))
+        }.onSuccess { response ->
+            authSession = authSessionStore.saveGoogleSession(response)
+            RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
+            RemoteAlarmSyncScheduler.runOnce(getApplication())
+            message = null
+        }.onFailure { error ->
+            if ((error as? HttpException)?.code() == 404) {
+                authSession = authSessionStore.saveLegacyGoogleSession(
+                    idToken = idToken,
+                    id = id,
+                    email = email,
+                    name = name,
+                )
+                RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
+                RemoteAlarmSyncScheduler.runOnce(getApplication())
+                message = null
+            } else {
+                Log.e(TAG, "Google token exchange failed", error)
+                message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
+            }
+        }
+        authBusy = false
+    }
 }
 
 internal fun MainViewModel.logout() {
@@ -109,9 +136,11 @@ internal fun MainViewModel.syncNow() {
     viewModelScope.launch {
         syncBusy = true
         runCatching {
-            repository.syncWithBackend(api, session.token)
-        }.onSuccess { result ->
-            message = "동기화 완료: 생성 ${result.created}개, 수정 ${result.updated}개, 실패 ${result.failed}개"
+            val push = repository.syncWithBackend(api, session.token)
+            val pull = repository.pullReceivedAlarms(api, session.token)
+            push to pull
+        }.onSuccess { (push, pull) ->
+            message = "동기화 완료: 생성 ${push.created}개, 수정 ${push.updated}개, 수신 ${pull.imported + pull.updated}개, 실패 ${push.failed + pull.failed}개"
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
             message = userFacingError(error, "동기화에 실패했어요")

@@ -1,6 +1,8 @@
 package com.voicealarm.nativeapp.network
 
 import android.content.Context
+import java.util.Base64
+import org.json.JSONObject
 
 data class AuthSession(
     val token: String,
@@ -14,9 +16,14 @@ class AuthSessionStore(context: Context) {
     fun read(): AuthSession? {
         val token = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: return null
         val userId = prefs.getString(KEY_USER_ID, null)?.takeIf { it.isNotBlank() } ?: return null
+        val provider = prefs.getString(KEY_PROVIDER, PROVIDER_APP) ?: PROVIDER_APP
+        if (provider == PROVIDER_GOOGLE && !isAppIssuedJwt(token)) {
+            clear()
+            return null
+        }
         return AuthSession(
             token = token,
-            provider = prefs.getString(KEY_PROVIDER, PROVIDER_APP) ?: PROVIDER_APP,
+            provider = provider,
             user = AuthUser(
                 id = userId,
                 email = prefs.getString(KEY_EMAIL, "") ?: "",
@@ -33,7 +40,14 @@ class AuthSessionStore(context: Context) {
             user = response.user,
         )
 
-    fun saveGoogleSession(
+    fun saveGoogleSession(response: AuthTokenResponse): AuthSession =
+        save(
+            token = response.token,
+            provider = PROVIDER_GOOGLE,
+            user = response.user,
+        )
+
+    fun saveLegacyGoogleSession(
         idToken: String,
         id: String,
         email: String,
@@ -66,9 +80,20 @@ class AuthSessionStore(context: Context) {
         return AuthSession(token = token, provider = provider, user = user)
     }
 
+    private fun isAppIssuedJwt(token: String): Boolean =
+        runCatching {
+            val payload = token.split('.').getOrNull(1)?.let { part ->
+                val padding = (4 - part.length % 4) % 4
+                part + "=".repeat(padding)
+            } ?: return@runCatching false
+            val decoded = String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
+            JSONObject(decoded).optString("iss") == APP_JWT_ISSUER
+        }.getOrDefault(false)
+
     companion object {
         const val PROVIDER_APP = "app"
         const val PROVIDER_GOOGLE = "google"
+        private const val APP_JWT_ISSUER = "voice-alarm"
 
         private const val PREFS_NAME = "voice_alarm_auth"
         private const val KEY_TOKEN = "token"

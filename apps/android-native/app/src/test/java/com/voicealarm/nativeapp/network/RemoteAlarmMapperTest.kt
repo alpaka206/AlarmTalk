@@ -82,6 +82,8 @@ class RemoteAlarmMapperTest {
             holidayOff = false,
             snoozeEnabled = true,
             snoozeMinutes = 5,
+            snoozeRepeatLimit = 3,
+            snoozeCount = 0,
             vibrationPattern = VibrationPatterns.DEFAULT,
             playMode = playMode,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,

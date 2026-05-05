@@ -66,17 +66,19 @@ internal fun MainViewModel.clearMessage() {
 
 internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
-    if (session.provider != AuthSessionStore.PROVIDER_APP) return
     viewModelScope.launch {
         runCatching {
             api.me(VoiceAlarmApiClient.bearer(session.token)).user
         }.onSuccess { user ->
-            authSession = authSessionStore.saveAppSession(
-                AuthTokenResponse(
-                    token = session.token,
-                    user = user,
-                ),
+            val response = AuthTokenResponse(
+                token = session.token,
+                user = user,
             )
+            authSession = if (session.provider == AuthSessionStore.PROVIDER_GOOGLE) {
+                authSessionStore.saveGoogleSession(response)
+            } else {
+                authSessionStore.saveAppSession(response)
+            }
         }.onFailure { error ->
             Log.w(TAG, "Auth refresh failed", error)
         }

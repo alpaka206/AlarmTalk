@@ -31,8 +31,18 @@ data class RemoteAlarm(
     @SerializedName("wake_mode") val wakeMode: String? = null,
     @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
     @SerializedName("speaker_id") val speakerId: String? = null,
+    @SerializedName("message_id") val messageId: String? = null,
+    @SerializedName("message_text") val messageText: String? = null,
+    val category: String? = null,
     @SerializedName("raw_audio_url") val rawAudioUrl: String? = null,
+    @SerializedName("message_audio_url") val messageAudioUrl: String? = null,
     @SerializedName("raw_audio_duration_ms") val rawAudioDurationMs: Long? = null,
+    @SerializedName("target_user_id") val targetUserId: String? = null,
+    @SerializedName("sender_user_id") val senderUserId: String? = null,
+    @SerializedName("sender_name") val senderName: String? = null,
+    @SerializedName("sender_email") val senderEmail: String? = null,
+    @SerializedName("is_family_alarm") val isFamilyAlarm: Boolean = false,
+    @SerializedName("is_received_family_alarm") val isReceivedFamilyAlarm: Boolean = false,
 )
 
 data class RemoteAlarmWriteRequest(
@@ -47,6 +57,7 @@ data class RemoteAlarmWriteRequest(
     @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
     @SerializedName("raw_audio_url") val rawAudioUrl: String? = null,
     @SerializedName("raw_audio_duration_ms") val rawAudioDurationMs: Long? = null,
+    @SerializedName("target_user_id") val targetUserId: String? = null,
 )
 
 interface RemoteAlarmApi {

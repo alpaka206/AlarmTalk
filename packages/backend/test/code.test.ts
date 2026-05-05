@@ -98,7 +98,9 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('이미 사용된 코드 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'used', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      { id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'used', expires_at: '2099-12-31' },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(409);
@@ -107,7 +109,15 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('만료된 코드 (status=expired) 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'expired', expires_at: '2020-01-01' }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'expired',
+        expires_at: '2020-01-01',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(409);
@@ -116,7 +126,15 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('만료 날짜 지남 → expired 업데이트 후 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2020-01-01' }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2020-01-01',
+      },
+    ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
@@ -128,7 +146,15 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('본인 발급 코드 400 SELF_ISSUED', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk1', status: 'issued', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk1',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(400);
@@ -137,7 +163,15 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('연결된 플랜 없으면 404 PLAN_NOT_FOUND', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
@@ -147,8 +181,26 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('정상 이용권 등록 성공', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
-    mockDB.pushResult([{ id: 'p1', key: 'plus_monthly', name: 'Plus Monthly', plan_type: 'personal', period_days: 30, max_members: 1, price_krw: 4900 }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: 'p1',
+        key: 'plus_monthly',
+        name: 'Plus Monthly',
+        plan_type: 'personal',
+        period_days: 30,
+        max_members: 1,
+        price_krw: 4900,
+      },
+    ]);
     mockDB.pushResult([], 1); // INSERT subscription
     mockDB.pushResult([], 1); // UPDATE voucher_codes
     mockDB.pushResult([], 1); // UPDATE users plan
@@ -172,8 +224,26 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('알 수 없는 plan_type → user plan "free"로 업데이트', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
-    mockDB.pushResult([{ id: 'p1', key: 'trial_7', name: 'Trial', plan_type: 'trial', period_days: 7, max_members: 1, price_krw: 0 }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: 'p1',
+        key: 'trial_7',
+        name: 'Trial',
+        plan_type: 'trial',
+        period_days: 7,
+        max_members: 1,
+        price_krw: 0,
+      },
+    ]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -186,8 +256,26 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('period_days 누락 시 기본값 30일 적용', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
-    mockDB.pushResult([{ id: 'p1', key: 'custom', name: 'Custom', plan_type: 'personal', period_days: null, max_members: 1, price_krw: 0 }]);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: 'p1',
+        key: 'custom',
+        name: 'Custom',
+        plan_type: 'personal',
+        period_days: null,
+        max_members: 1,
+        price_krw: 0,
+      },
+    ]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -199,22 +287,85 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
 
   it('family 플랜 타입 → user plan "family"로 업데이트', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'issued', expires_at: '2099-12-31' }]);
-    mockDB.pushResult([{ id: 'p1', key: 'family_yearly', name: 'Family Yearly', plan_type: 'family', period_days: 365, max_members: 6, price_krw: 49000 }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: 'p1',
+        key: 'family_yearly',
+        name: 'Family Yearly',
+        plan_type: 'family',
+        period_days: 365,
+        max_members: 6,
+        price_krw: 49000,
+      },
+    ]);
+    mockDB.pushResult([], 1); // INSERT plan_groups
+    mockDB.pushResult([], 1); // INSERT plan_group_members
+    mockDB.pushResult([], 1); // INSERT subscription
+    mockDB.pushResult([], 1); // UPDATE voucher_codes
+    mockDB.pushResult([], 1); // UPDATE users plan
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
     const body = await res.json();
     expect(body.plan.plan_type).toBe('family');
+    expect(body.subscription.plan_group_id).toBeTruthy();
 
-    const updateUserArgs = mockDB.calls[5].args;
+    const updateUserArgs = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'))!.args;
     expect(updateUserArgs[0]).toBe('family');
+  });
+
+  it('구매자의 커플/가족 이용권이면 구매자 그룹에 멤버로 연결한다', async () => {
+    setupUserLookup();
+    mockDB.pushResult([
+      {
+        id: 'v1',
+        plan_id: 'p1',
+        issuer_user_id: 'pk2',
+        issuer_subscription_id: 'sub-owner',
+        status: 'issued',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: 'p1',
+        key: 'couple',
+        name: 'Couple',
+        plan_type: 'family',
+        period_days: 30,
+        max_members: 2,
+        price_krw: 7900,
+      },
+    ]);
+    mockDB.pushResult([{ id: 'g1', max_members: 2 }]); // issuer subscription group
+    mockDB.pushResult([]); // existing member
+    mockDB.pushResult([{ c: 1 }]); // member count
+    mockDB.pushResult([], 1); // INSERT plan_group_members
+    mockDB.pushResult([], 1); // INSERT subscription
+    mockDB.pushResult([], 1); // UPDATE voucher_codes
+    mockDB.pushResult([], 1); // UPDATE users plan
+
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subscription.plan_group_id).toBe('g1');
+    const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
+    expect(insertMember?.args[1]).toBe('g1');
+    expect(insertMember?.args[2]).toBe('pk1');
   });
 });
 
-describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => {
+describe('POST /code/register — 가족 초대권 코드', () => {
   function setupUserLookup() {
     mockDB.pushResult([{ id: 'pk1' }]);
   }
@@ -230,7 +381,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('사용 완료된 초대 코드 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'used', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'used',
+        expires_at: '2099-12-31',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(409);
@@ -239,7 +398,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('취소된 초대 코드 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'revoked', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'revoked',
+        expires_at: '2099-12-31',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(409);
@@ -248,7 +415,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('만료 날짜 지남 → expired 업데이트 후 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2020-01-01' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2020-01-01',
+      },
+    ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
@@ -258,7 +433,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('본인 발급 초대 400 SELF_ISSUED', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk1', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk1',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(400);
@@ -267,7 +450,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('이미 그룹 멤버이면 409 ALREADY_MEMBER', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([{ id: 'm1' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
@@ -277,7 +468,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('그룹 미존재 시 404', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     mockDB.pushResult([]);
     const app = buildApp();
@@ -288,7 +487,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('정원 초과 시 409 GROUP_FULL', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     mockDB.pushResult([{ max_members: 2 }]);
     mockDB.pushResult([{ c: 2 }]);
@@ -300,7 +507,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('상태가 expired인 초대 코드 409', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'expired', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'expired',
+        expires_at: '2099-12-31',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(409);
@@ -309,7 +524,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('max_members null 시 기본값 6 적용 — 5명이면 가입 허용', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     mockDB.pushResult([{ max_members: null }]);
     mockDB.pushResult([{ c: 5 }]);
@@ -323,7 +546,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('max_members null + 6명이면 정원 초과', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     mockDB.pushResult([{ max_members: null }]);
     mockDB.pushResult([{ c: 6 }]);
@@ -335,7 +566,15 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
 
   it('정상 가족 초대 수락 성공', async () => {
     setupUserLookup();
-    mockDB.pushResult([{ id: 'i1', plan_group_id: 'g1', inviter_user_id: 'pk2', status: 'pending', expires_at: '2099-12-31' }]);
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
     mockDB.pushResult([]);
     mockDB.pushResult([{ max_members: 6 }]);
     mockDB.pushResult([{ c: 2 }]);
@@ -354,5 +593,27 @@ describe('POST /code/register — 가족 초대 코드 (6자리 숫자)', () => 
     expect(insertSql).toContain('INSERT INTO plan_group_members');
     const updateSql = mockDB.calls[6].sql;
     expect(updateSql).toContain("SET status = 'used'");
+  });
+
+  it('긴 태그형 초대권 코드를 정규화해서 수락한다', async () => {
+    setupUserLookup();
+    mockDB.pushResult([
+      {
+        id: 'i1',
+        plan_group_id: 'g1',
+        inviter_user_id: 'pk2',
+        status: 'pending',
+        expires_at: '2099-12-31',
+      },
+    ]);
+    mockDB.pushResult([]);
+    mockDB.pushResult([{ max_members: 6 }]);
+    mockDB.pushResult([{ c: 2 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'invabcd1234efgh' }));
+    expect(res.status).toBe(200);
+    expect(mockDB.calls[1].args[0]).toBe('INV-ABCD-1234-EFGH');
   });
 });

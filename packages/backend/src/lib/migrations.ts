@@ -292,7 +292,7 @@ export const migrations: Migration[] = [
     id: 9,
     name: 'plan-group-invites',
     statements: [
-      // 가족 플랜 초대 코드 — 6자리 숫자 문자열, 10분 만료, 일회용.
+      // 가족 플랜 초대권 코드 — INV-XXXX-XXXX-XXXX 형식, 10분 만료, 일회용.
       // status 전이: pending → used | revoked | expired.
       `CREATE TABLE IF NOT EXISTS plan_group_invites (
         id TEXT PRIMARY KEY,
@@ -475,9 +475,7 @@ export const migrations: Migration[] = [
     // Cleanup orphaned `alarms_new` left behind by a half-applied earlier
     // attempt at the table-recreation migration. No-op on fresh DBs.
     name: 'alarm-raw-audio-cleanup',
-    statements: [
-      'DROP TABLE IF EXISTS alarms_new',
-    ],
+    statements: ['DROP TABLE IF EXISTS alarms_new'],
   },
   {
     id: 21,
@@ -611,6 +609,22 @@ export const migrations: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_user ON generated_audio_assets(user_id, created_at DESC)',
       'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_voice ON generated_audio_assets(voice_profile_id)',
       'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_message ON generated_audio_assets(message_id)',
+    ],
+  },
+  {
+    id: 25,
+    name: 'voice-profile-sharing',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0`,
+      'CREATE INDEX IF NOT EXISTS idx_voice_profiles_family_shared ON voice_profiles(user_id, status, is_shared)',
+    ],
+  },
+  {
+    id: 26,
+    name: 'couple-plan-seed',
+    statements: [
+      `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
+        VALUES ('70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 7900, 1)`,
     ],
   },
 ];

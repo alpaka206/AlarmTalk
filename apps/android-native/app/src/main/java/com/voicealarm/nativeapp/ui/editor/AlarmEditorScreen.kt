@@ -3,6 +3,7 @@ package com.voicealarm.nativeapp
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -16,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -40,11 +43,15 @@ import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyGroupMember
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
@@ -58,7 +65,10 @@ internal fun AlarmEditorScreen(
     contentPadding: PaddingValues,
     alarm: AlarmEntity?,
     authSession: AuthSession?,
+    familyGroup: FamilyGroupCurrentResponse?,
+    familyAlarmMode: Boolean,
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
@@ -73,23 +83,116 @@ internal fun AlarmEditorScreen(
     var audioMessage by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    var localInputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
+    var recordingElapsedMillis by remember { mutableStateOf(0L) }
+    var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
+    var cropStartMillis by remember { mutableStateOf(0L) }
+    var cropEndMillis by remember { mutableStateOf(AlarmAudioLimits.MAX_DURATION_MILLIS) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
+        familyAlarmRecipients(familyGroup, authSession)
+    }
+    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
+        mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    }
+
+    fun selectedFamilyRecipient(): FamilyGroupMember? =
+        familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
-        val seconds = audio.durationMillis?.let { " (${it / 1000}s)" } ?: ""
-        audioMessage = "음성 오디오가 준비됐어요$seconds"
+        audioMessage = null
     }
 
-    fun cacheSelectedAudio(uri: Uri) {
+    fun prepareSelectedAudio(uri: Uri) {
         scope.launch {
             runCatching {
-                withContext(Dispatchers.IO) { audioStore.cacheFromUri(uri) }
-            }.onSuccess(::applyCachedAudio)
+                withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
+                    ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+            }.onSuccess { durationMillis ->
+                selectedFileUri = uri
+                selectedFileDurationMillis = durationMillis
+                cropStartMillis = 0L
+                cropEndMillis = durationMillis.coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
+                editor.clearAudio()
+                audioMessage = null
+            }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache selected audio", error)
                     audioMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요")
                 }
         }
+    }
+
+    suspend fun cacheSelectedCrop(): CachedAlarmAudio {
+        val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요")
+        val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
+        return withContext(Dispatchers.IO) {
+            audioStore.cacheFromUri(
+                sourceUri = uri,
+                maxDurationMillis = cropDurationMillis,
+                startMillis = cropStartMillis,
+            )
+        }
+    }
+
+    fun playSelectedCrop() {
+        scope.launch {
+            runCatching {
+                cacheSelectedCrop()
+            }.onSuccess { audio ->
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))?.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to play cropped alarm audio", error)
+                audioMessage = userFacingError(error, "선택한 구간을 재생하지 못했어요")
+            }
+        }
+    }
+
+    fun playCachedAudio() {
+        val audioUri = editor.localAudioUri ?: return
+        runCatching {
+            mediaPlayer?.release()
+            val player = MediaPlayer.create(context, Uri.parse(audioUri))
+                ?: throw IllegalStateException("음성을 재생할 수 없어요")
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                }
+                start()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to play cached alarm audio", error)
+            audioMessage = userFacingError(error, "음성을 재생하지 못했어요")
+        }
+    }
+
+    fun submitDraft(draft: AlarmDraft) {
+        if (!familyAlarmMode) {
+            onSave(draft)
+            return
+        }
+        val recipient = selectedFamilyRecipient()
+        if (recipient == null) {
+            audioMessage = "알람을 받을 사람을 선택해 주세요"
+            return
+        }
+        onSave(
+            draft.copy(
+                targetUserId = recipient.userId,
+                targetUserName = familyMemberLabel(recipient),
+            ),
+        )
     }
 
     fun stopRecording() {
@@ -98,6 +201,9 @@ internal fun AlarmEditorScreen(
                 withContext(Dispatchers.IO) { recorder.stop() }
             }.onSuccess { audio ->
                 isRecording = false
+                recordingElapsedMillis = audio.durationMillis ?: recordingElapsedMillis
+                selectedFileUri = null
+                selectedFileDurationMillis = null
                 applyCachedAudio(audio)
             }.onFailure { error ->
                 isRecording = false
@@ -109,8 +215,10 @@ internal fun AlarmEditorScreen(
 
     fun startRecording() {
         runCatching {
-            recorder.start()
+            recorder.start(maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS)
             isRecording = true
+            recordingElapsedMillis = 0L
+            recordingLevels = List(18) { 0.08f }
             audioMessage = "녹음 중..."
         }.onFailure { error ->
             Log.e(TAG, "Failed to start recording", error)
@@ -120,17 +228,45 @@ internal fun AlarmEditorScreen(
 
     fun saveEditor() {
         if (isSaving) return
+        if (familyAlarmMode) {
+            val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                hour = editor.hour,
+                minute = editor.minute,
+                repeatDaysMask = editor.repeatDaysMask,
+                holidayOff = editor.holidayOff,
+            )
+            if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
+                audioMessage = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                return
+            }
+        }
         if (editor.playMode == AlarmPlayModes.ALARM_ONLY) {
             editor.clearAudio()
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
+            if (selectedFileUri != null) {
+                scope.launch {
+                    isSaving = true
+                    runCatching {
+                        cacheSelectedCrop()
+                    }.onSuccess { audio ->
+                        applyCachedAudio(audio)
+                        submitDraft(editor.toDraft())
+                    }.onFailure { error ->
+                        Log.e(TAG, "Failed to cache cropped local alarm audio", error)
+                        audioMessage = userFacingError(error, "선택한 구간을 저장하지 못했어요")
+                    }
+                    isSaving = false
+                }
+                return
+            }
             if (editor.localAudioUri.isNullOrBlank()) {
                 audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
                 return
             }
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         if (authSession == null) {
@@ -143,13 +279,13 @@ internal fun AlarmEditorScreen(
             audioMessage = "사용할 음성 프로필을 선택해 주세요"
             return
         }
-        val text = editor.ttsTextForSave()
+        val text = editor.localizedTtsTextForSave()
         if (text.isBlank()) {
             audioMessage = "읽어줄 문구를 입력하거나 랜덤 문구를 켜 주세요"
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
@@ -167,7 +303,7 @@ internal fun AlarmEditorScreen(
                 rawAudioUri = cached.rawAudioUri,
             )
             audioMessage = "기존 음성 캐시를 사용했어요"
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
 
@@ -208,7 +344,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = rawAudioUri,
                 )
                 audioMessage = "생성한 음성을 로컬에 저장했어요"
-                onSave(editor.toDraft())
+                submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요")
@@ -218,7 +354,7 @@ internal fun AlarmEditorScreen(
     }
 
     val pickAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) cacheSelectedAudio(uri)
+        if (uri != null) prepareSelectedAudio(uri)
     }
     val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -230,14 +366,25 @@ internal fun AlarmEditorScreen(
 
     LaunchedEffect(isRecording) {
         if (isRecording) {
-            delay(AlarmAudioLimits.MAX_DURATION_MILLIS)
-            if (isRecording) stopRecording()
+            val startedAt = System.currentTimeMillis()
+            while (isRecording) {
+                recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
+                    .coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
+                val level = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0.06f, 1f)
+                recordingLevels = recordingLevels.drop(1) + level
+                if (recordingElapsedMillis >= AlarmAudioLimits.MAX_DURATION_MILLIS) {
+                    stopRecording()
+                    break
+                }
+                delay(250)
+            }
         }
     }
 
     DisposableEffect(Unit) {
         onDispose {
             if (recorder.isRecording) recorder.cancel()
+            mediaPlayer?.release()
         }
     }
 
@@ -271,6 +418,18 @@ internal fun AlarmEditorScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        }
+
+        if (familyAlarmMode) {
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    FamilyAlarmTargetCard(
+                        recipients = familyRecipients,
+                        selectedRecipientId = selectedFamilyRecipientId,
+                        onSelectRecipient = { selectedFamilyRecipientId = it },
+                    )
+                }
             }
         }
 
@@ -318,9 +477,32 @@ internal fun AlarmEditorScreen(
                     VoiceAudioCard(
                         editor = editor,
                         voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
                         voiceProfileBusy = voiceProfileBusy,
                         audioMessage = audioMessage,
+                        localInputMode = localInputMode,
                         isRecording = isRecording,
+                        recordingElapsedMillis = recordingElapsedMillis,
+                        recordingLevels = recordingLevels,
+                        selectedFileDurationMillis = selectedFileDurationMillis,
+                        cropStartMillis = cropStartMillis,
+                        cropEndMillis = cropEndMillis,
+                        onLocalInputModeChange = { mode ->
+                            if (!isRecording && mode != localInputMode) {
+                                mediaPlayer?.release()
+                                mediaPlayer = null
+                                if (mode == VoiceCaptureMode.File) {
+                                    editor.clearAudio()
+                                } else {
+                                    selectedFileUri = null
+                                    selectedFileDurationMillis = null
+                                    cropStartMillis = 0L
+                                    cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
+                                }
+                                audioMessage = null
+                                localInputMode = mode
+                            }
+                        },
                         onPick = { pickAudioLauncher.launch("audio/*") },
                         onRecord = {
                             if (isRecording) {
@@ -333,8 +515,17 @@ internal fun AlarmEditorScreen(
                                 recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             }
                         },
+                        onCropChange = { start, end ->
+                            cropStartMillis = start
+                            cropEndMillis = end
+                            editor.clearAudio()
+                        },
+                        onPreviewCrop = { playSelectedCrop() },
+                        onPreviewAudio = { playCachedAudio() },
                         onClear = {
                             editor.clearAudio()
+                            selectedFileUri = null
+                            selectedFileDurationMillis = null
                             audioMessage = "음성 오디오를 지웠어요"
                         },
                     )
@@ -347,9 +538,11 @@ internal fun AlarmEditorScreen(
                 AlarmSettingsCard(
                     snoozeEnabled = editor.snoozeEnabled,
                     snoozeMinutes = editor.snoozeMinutes,
+                    snoozeRepeatLimit = editor.snoozeRepeatLimit,
                     vibrationPattern = editor.vibrationPattern,
                     onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                     onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                    onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
                     onVibrationEnabledChange = {
                         editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                     },
@@ -380,3 +573,40 @@ internal fun EditorSectionTitle(title: String) {
         color = MaterialTheme.colorScheme.onBackground,
     )
 }
+
+@Composable
+internal fun FamilyAlarmTargetCard(
+    recipients: List<FamilyGroupMember>,
+    selectedRecipientId: String?,
+    onSelectRecipient: (String) -> Unit,
+) {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("받는 사람", fontWeight = FontWeight.SemiBold)
+            if (recipients.isEmpty()) {
+                MutedText("연결된 상대가 없어요. 코드 등록에서 먼저 연결해 주세요.")
+            } else {
+                ChipGrid(
+                    options = recipients.map { it.userId to familyMemberLabel(it) },
+                    selected = selectedRecipientId.orEmpty(),
+                    onSelect = onSelectRecipient,
+                )
+                MutedText("선택한 상대에게 알람을 설정해요.")
+            }
+        }
+    }
+}
+
+private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+
+internal fun familyMemberLabel(member: FamilyGroupMember): String =
+    member.name?.takeIf { it.isNotBlank() }
+        ?: member.email?.takeIf { it.isNotBlank() }
+        ?: "멤버"

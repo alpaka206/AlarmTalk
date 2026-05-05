@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,6 +41,7 @@ internal fun VoiceAlarmBottomBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .height(76.dp)
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -65,6 +68,14 @@ internal fun VoiceAlarmBottomBar(
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Alarm,
                 label = "알람",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Messages,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Message,
+                label = "메시지",
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )

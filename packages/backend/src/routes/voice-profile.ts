@@ -148,7 +148,15 @@ voiceProfile.get('/', async (c) => {
   ]);
 
   const total = Number(countRes.rows[0]!.total);
-  return c.json({ profiles: result.rows, total, limit, offset });
+  return c.json({
+    profiles: result.rows.map((row) => ({
+      ...row,
+      is_shared: Boolean(Number(row.is_shared ?? 0)),
+    })),
+    total,
+    limit,
+    offset,
+  });
 });
 
 voiceProfile.get('/family', async (c) => {
@@ -190,15 +198,20 @@ voiceProfile.get('/family', async (c) => {
 
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
-    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, u.name as owner_name
+    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared, u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
-          WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready'
+          WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready' AND COALESCE(vp.is_shared, 0) = 1
           ORDER BY vp.created_at DESC`,
     args: memberIds,
   });
 
-  return c.json({ profiles: voicesRes.rows });
+  return c.json({
+    profiles: voicesRes.rows.map((row) => ({
+      ...row,
+      is_shared: Boolean(Number(row.is_shared ?? 0)),
+    })),
+  });
 });
 
 voiceProfile.get('/:id', async (c) => {
@@ -219,7 +232,8 @@ voiceProfile.get('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  return c.json({ profile: result.rows[0] });
+  const row = result.rows[0]!;
+  return c.json({ profile: { ...row, is_shared: Boolean(Number(row.is_shared ?? 0)) } });
 });
 
 voiceProfile.patch('/:id', async (c) => {
@@ -231,15 +245,22 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
-  let body: { name?: unknown };
+  let body: { name?: unknown; is_shared?: unknown; isShared?: unknown };
   try {
     body = await c.req.json();
   } catch {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
 
+  const hasName = body.name !== undefined;
   const name = typeof body.name === 'string' ? body.name.trim() : '';
-  if (name.length === 0 || name.length > 50) {
+  const sharedValue = body.is_shared ?? body.isShared;
+  const isSharedUpdate = typeof sharedValue === 'boolean' ? sharedValue : undefined;
+  const hasShared = isSharedUpdate !== undefined;
+  if (!hasName && !hasShared) {
+    return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
+  }
+  if (hasName && (name.length === 0 || name.length > 50)) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
 
@@ -251,12 +272,31 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  const updates: string[] = [];
+  const args: (string | number)[] = [];
+  if (hasName) {
+    updates.push('name = ?');
+    args.push(name);
+  }
+  if (hasShared) {
+    updates.push('is_shared = ?');
+    args.push(isSharedUpdate ? 1 : 0);
+  }
+  updates.push("updated_at = datetime('now')");
+  args.push(id);
+
   await db.execute({
-    sql: "UPDATE voice_profiles SET name = ?, updated_at = datetime('now') WHERE id = ?",
-    args: [name, id],
+    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ?`,
+    args,
   });
 
-  return c.json({ profile: { id, name } });
+  return c.json({
+    profile: {
+      id,
+      ...(hasName ? { name } : {}),
+      ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
+    },
+  });
 });
 
 voiceProfile.post('/clone', async (c) => {
@@ -282,6 +322,7 @@ voiceProfile.post('/clone', async (c) => {
     const formData = await c.req.formData();
     const audioFile = getFormFile(formData, 'audio');
     const name = formData.get('name') as string | null;
+    const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
@@ -294,9 +335,9 @@ voiceProfile.post('/clone', async (c) => {
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status)
-            VALUES (?, ?, ?, 'processing')`,
-      args: [profileId, userId, name],
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared)
+            VALUES (?, ?, ?, 'processing', ?)`,
+      args: [profileId, userId, name, isShared ? 1 : 0],
     });
 
     const attempts = createEnrollmentAttempts({
@@ -343,6 +384,7 @@ voiceProfile.post('/clone', async (c) => {
           voice_id: voiceId,
           provider,
           status: 'ready',
+          is_shared: isShared,
         },
       },
       201,

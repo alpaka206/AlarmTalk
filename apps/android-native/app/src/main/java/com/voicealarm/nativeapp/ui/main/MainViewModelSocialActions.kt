@@ -53,13 +53,28 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.refreshSocial() {
+    refreshSocialData(showMessage = true)
+}
+
+internal fun MainViewModel.preloadSocial() {
+    if (authSession == null || socialBusy) return
+    refreshSocialData(showMessage = false)
+}
+
+private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
     val authorization = bearerOrMessage("커플/가족 정보를 불러오려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         socialBusy = true
         runCatching {
             val group = api.getFamilyGroup(authorization)
             val invites = api.listFamilyInvites(authorization).invites
-            val sharedVoices = api.listFamilyVoiceProfiles(authorization).profiles
+            val sharedVoices = runCatching {
+                api.listFamilyVoiceProfiles(authorization).profiles
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to refresh family voice profiles", error)
+            }.getOrElse {
+                familyVoices
+            }
             SocialSnapshot(
                 familyGroup = group,
                 familyInvites = invites,
@@ -69,10 +84,10 @@ internal fun MainViewModel.refreshSocial() {
             familyGroup = snapshot.familyGroup
             familyInvites = snapshot.familyInvites
             familyVoices = snapshot.familyVoices
-            message = "커플/가족 정보를 불러왔어요"
+            if (showMessage) message = "커플/가족 정보를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to refresh social data", error)
-            message = userFacingError(error, "커플/가족 정보를 불러오지 못했어요")
+            if (showMessage) message = userFacingError(error, "커플/가족 정보를 불러오지 못했어요")
         }
         socialBusy = false
     }

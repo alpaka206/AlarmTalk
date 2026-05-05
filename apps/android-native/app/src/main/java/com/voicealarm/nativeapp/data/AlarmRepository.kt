@@ -11,9 +11,15 @@ class AlarmRepository(
     private val alarmDao: AlarmDao,
     private val characterEventDao: CharacterEventDao,
     private val alarmScheduler: AlarmScheduler,
+    private val alarmAudioStore: AlarmAudioStore,
 ) {
     private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
+    private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
+        alarmDao = alarmDao,
+        alarmScheduler = alarmScheduler,
+        alarmAudioStore = alarmAudioStore,
+    )
     private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
@@ -42,6 +48,8 @@ class AlarmRepository(
             holidayOff = false,
             snoozeEnabled = true,
             snoozeMinutes = 5,
+            snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
+            snoozeCount = 0,
             vibrationPattern = VibrationPatterns.DEFAULT,
             playMode = AlarmPlayModes.ALARM_ONLY,
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
@@ -90,6 +98,8 @@ class AlarmRepository(
             holidayOff = draft.holidayOff,
             snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
+            snoozeRepeatLimit = draft.snoozeRepeatLimit,
+            snoozeCount = 0,
             vibrationPattern = draft.vibrationPattern,
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
@@ -140,6 +150,8 @@ class AlarmRepository(
             holidayOff = draft.holidayOff,
             snoozeEnabled = draft.snoozeEnabled,
             snoozeMinutes = draft.snoozeMinutes,
+            snoozeRepeatLimit = draft.snoozeRepeatLimit,
+            snoozeCount = 0,
             vibrationPattern = draft.vibrationPattern,
             playMode = draft.playMode,
             defaultAlarmSoundId = draft.defaultAlarmSoundId,
@@ -181,6 +193,7 @@ class AlarmRepository(
                     nowMillis = now,
                 ),
                 enabled = true,
+                snoozeCount = 0,
                 state = AlarmStates.SCHEDULED,
                 syncState = current.nextLocalSyncState(),
                 updatedAtMillis = now,
@@ -273,6 +286,7 @@ class AlarmRepository(
             val next = current.copy(
                 fireAtMillis = nextFireAt,
                 enabled = true,
+                snoozeCount = 0,
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
             )
@@ -305,11 +319,19 @@ class AlarmRepository(
             Log.i(TAG, "Snooze ignored because it is disabled id=$alarmId")
             return null
         }
+        if (
+            current.snoozeRepeatLimit != SnoozeRepeatLimits.FOREVER &&
+            current.snoozeCount >= current.snoozeRepeatLimit
+        ) {
+            Log.i(TAG, "Snooze ignored because repeat limit reached id=$alarmId")
+            return null
+        }
 
         val now = System.currentTimeMillis()
         val next = current.copy(
             fireAtMillis = now + current.snoozeMinutes * 60_000L,
             enabled = true,
+            snoozeCount = current.snoozeCount + 1,
             state = AlarmStates.SNOOZED,
             updatedAtMillis = now,
         )
@@ -374,6 +396,9 @@ class AlarmRepository(
     suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
         alarmSyncService.syncWithBackend(api, token)
 
+    suspend fun pullReceivedAlarms(api: VoiceAlarmApi, token: String): RemoteAlarmPullResult =
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
+
     suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
         characterEventSyncService.sync(api, token)
 
@@ -382,6 +407,7 @@ class AlarmRepository(
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
         require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
         require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
+        require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }

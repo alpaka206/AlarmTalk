@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { Env } from '../src/types';
 import { createMockDB, jsonReq } from './helpers';
@@ -31,6 +31,12 @@ function buildApp() {
 
 beforeEach(() => {
   mockDB.reset();
+});
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 describe('POST /auth/register', () => {
@@ -205,6 +211,123 @@ describe('POST /auth/login', () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_OAUTH_ONLY');
+  });
+});
+
+describe('POST /auth/google', () => {
+  it('Google ID 토큰을 검증하고 앱 JWT를 발급한다', async () => {
+    const googlePayload = {
+      sub: 'google-user-1',
+      email: 'user@gmail.com',
+      name: 'Google User',
+      picture: 'https://lh3.googleusercontent.com/photo.jpg',
+      iss: 'accounts.google.com',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', {
+        id_token: 'google-id-token',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
+    expect(body.user).toMatchObject({
+      id: 'google-user-1',
+      email: 'user@gmail.com',
+      name: 'Google User',
+      plan: 'free',
+    });
+    expect(mockDB.calls[1]?.args.slice(0, 3)).toEqual([
+      'google-user-1',
+      'google-user-1',
+      'user@gmail.com',
+    ]);
+  });
+
+  it('같은 이메일의 기존 계정은 Google ID를 연결하고 기존 플랜을 유지한다', async () => {
+    const googlePayload = {
+      sub: 'google-user-2',
+      email: 'linked@gmail.com',
+      name: 'Linked User',
+      iss: 'accounts.google.com',
+      aud: ENV.GOOGLE_CLIENT_ID,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => googlePayload,
+    }) as unknown as typeof fetch;
+    mockDB.pushResult([
+      {
+        id: 'existing-user-id',
+        google_id: null,
+        email: 'linked@gmail.com',
+        name: 'Old Name',
+        plan: 'family',
+      },
+    ]);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', {
+        id_token: 'google-id-token',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.user).toMatchObject({
+      id: 'existing-user-id',
+      email: 'linked@gmail.com',
+      name: 'Linked User',
+      plan: 'family',
+    });
+    expect(mockDB.calls[1]?.args).toEqual([
+      'google-user-2',
+      'linked@gmail.com',
+      'Linked User',
+      null,
+      'existing-user-id',
+    ]);
+  });
+
+  it('Google 검증 실패 시 401을 반환한다', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_token' }),
+    }) as unknown as typeof fetch;
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/google', {
+        id_token: 'bad-google-id-token',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_GOOGLE_FAILED');
   });
 });
 

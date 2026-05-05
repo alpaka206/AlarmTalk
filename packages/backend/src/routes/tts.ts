@@ -5,6 +5,7 @@ import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { computeTtsCacheKey, generatedTtsObjectKey } from '../lib/audio-cache';
+import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
   noVoiceProviderError,
@@ -13,8 +14,41 @@ import {
 
 const tts = new Hono<AppEnv>();
 
+async function findUsableVoiceProfile(
+  db: ReturnType<typeof getDB>,
+  userId: string,
+  userPk: string,
+  voiceProfileId: string,
+): Promise<Record<string, unknown> | null> {
+  const owned = await db.execute({
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?)',
+    args: [voiceProfileId, userPk, userId],
+  });
+  if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
+
+  const shared = await db.execute({
+    sql: `SELECT vp.*, u.id AS owner_pk
+          FROM voice_profiles vp
+          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return null;
+
+  const row = shared.rows[0] as Record<string, unknown>;
+  const viewerPk = userPk || await resolveUserPk(db, userId);
+  const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
+  if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
+
+  const inSameGroup = await assertSameGroup(db, viewerPk, ownerPk);
+  return inSameGroup ? row : null;
+}
+
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -59,8 +93,8 @@ tts.post('/generate', async (c) => {
 
   let dailyLimitExceeded = false;
   const user = await db.execute({
-    sql: 'SELECT * FROM users WHERE google_id = ?',
-    args: [userId],
+    sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    args: ownerIds,
   });
 
   if (user.rows.length > 0) {
@@ -70,8 +104,8 @@ tts.post('/generate', async (c) => {
 
     if (u.daily_tts_reset_at !== today) {
       await db.execute({
-        sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE google_id = ?`,
-        args: [today, userId],
+        sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE id = ? OR google_id = ?`,
+        args: [today, ...ownerIds],
       });
     } else {
       const count = Number(u.daily_tts_count);
@@ -82,16 +116,11 @@ tts.post('/generate', async (c) => {
     }
   }
 
-  const profile = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
-    args: [body.voice_profile_id, userId],
-  });
-
-  if (profile.rows.length === 0) {
+  const vp = await findUsableVoiceProfile(db, userId, userPk, body.voice_profile_id);
+  if (!vp) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
-  const vp = profile.rows[0]!;
   if (vp.status !== 'ready') {
     return c.json({ error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' }, 400);
   }
@@ -125,7 +154,7 @@ tts.post('/generate', async (c) => {
     }));
 
     for (const { cacheKey } of preparedAttempts) {
-      const cached = await findCachedGeneratedAudio(c, userId, cacheKey);
+      const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey);
       if (cached) {
         return c.json(
           {
@@ -166,10 +195,10 @@ tts.post('/generate', async (c) => {
         let audioUrl: string | null = null;
         if (c.env.VOICE_BUCKET) {
           const storage = new R2VoiceStorage(c.env.VOICE_BUCKET);
-          audioObjectKey = generatedTtsObjectKey(userId, cacheKey, generated.outputFormat);
+          audioObjectKey = generatedTtsObjectKey(userPk, cacheKey, generated.outputFormat);
           await storage.storeAtKey(audioObjectKey, {
             bytes,
-            userId,
+            userId: userPk,
             mimeType: generated.mimeType,
             originalName: `tts_${cacheKey}.${generated.outputFormat}`,
           });
@@ -180,7 +209,7 @@ tts.post('/generate', async (c) => {
         await db.execute({
           sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, audio_url)
                 VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [messageId, userId, body.voice_profile_id, body.text, body.category ?? 'custom', audioUrl],
+          args: [messageId, userPk, body.voice_profile_id, body.text, body.category ?? 'custom', audioUrl],
         });
 
         if (audioUrl) {
@@ -192,7 +221,7 @@ tts.post('/generate', async (c) => {
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(),
-              userId,
+              userPk,
               body.voice_profile_id,
               messageId,
               generated.provider,
@@ -212,13 +241,13 @@ tts.post('/generate', async (c) => {
         }
 
         await db.execute({
-          sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1 WHERE google_id = ?`,
-          args: [userId],
+          sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1 WHERE id = ? OR google_id = ?`,
+          args: ownerIds,
         });
 
         await db.execute({
           sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
-          args: [crypto.randomUUID(), userId, messageId],
+          args: [crypto.randomUUID(), userPk, messageId],
         });
 
         return c.json(
@@ -259,14 +288,16 @@ tts.post('/generate', async (c) => {
 
 tts.get('/messages', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
   const category = c.req.query('category');
   const voiceProfileId = c.req.query('voice_profile_id');
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
 
-  let whereClause = 'WHERE m.user_id = ?';
-  const filterArgs: (string | number)[] = [userId];
+  let whereClause = 'WHERE m.user_id IN (?, ?)';
+  const filterArgs: (string | number)[] = [...ownerIds];
 
   if (category) {
     whereClause += ' AND m.category = ?';
@@ -303,6 +334,8 @@ tts.get('/messages', async (c) => {
 
 tts.get('/messages/:id/audio', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -313,8 +346,16 @@ tts.get('/messages/:id/audio', async (c) => {
   const result = await db.execute({
     sql: `SELECT id, user_id, voice_profile_id, text, audio_url, category
           FROM messages
-          WHERE id = ? AND user_id = ?`,
-    args: [id, userId],
+          WHERE id = ?
+            AND (
+              user_id IN (?, ?)
+              OR EXISTS (
+                SELECT 1 FROM alarms a
+                WHERE a.message_id = messages.id
+                  AND a.target_user_id IN (?, ?)
+              )
+            )`,
+    args: [id, ...ownerIds, ...ownerIds],
   });
 
   if (result.rows.length === 0) {
@@ -351,6 +392,8 @@ tts.get('/messages/:id/audio', async (c) => {
 
 tts.delete('/messages/:id', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -374,18 +417,18 @@ tts.delete('/messages/:id', async (c) => {
   }
 
   await db.execute({
-    sql: 'DELETE FROM message_library WHERE message_id = ? AND user_id = ?',
-    args: [id, userId],
+    sql: 'DELETE FROM message_library WHERE message_id = ? AND user_id IN (?, ?)',
+    args: [id, ...ownerIds],
   });
 
   await db.execute({
-    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id = ?',
-    args: [id, userId],
+    sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
+    args: [id, ...ownerIds],
   });
 
   const result = await db.execute({
-    sql: 'DELETE FROM messages WHERE id = ? AND user_id = ?',
-    args: [id, userId],
+    sql: 'DELETE FROM messages WHERE id = ? AND user_id IN (?, ?)',
+    args: [id, ...ownerIds],
   });
 
   if (result.rowsAffected === 0) {
@@ -410,7 +453,7 @@ function uint8ToBase64(bytes: Uint8Array): string {
 
 async function findCachedGeneratedAudio(
   c: Context<AppEnv>,
-  userId: string,
+  userIds: [string, string],
   cacheKey: string,
 ): Promise<{
   messageId: string;
@@ -427,9 +470,9 @@ async function findCachedGeneratedAudio(
                  ga.audio_format, ga.mime_type
           FROM generated_audio_assets ga
           JOIN messages m ON m.id = ga.message_id
-          WHERE ga.user_id = ? AND ga.request_hash = ?
+          WHERE ga.user_id IN (?, ?) AND ga.request_hash = ?
           LIMIT 1`,
-    args: [userId, cacheKey],
+    args: [...userIds, cacheKey],
   });
 
   if (result.rows.length === 0) return null;
@@ -476,6 +519,11 @@ async function loadAudioBytes(
     if (!audioRes.ok) return null;
     bytes = new Uint8Array(await audioRes.arrayBuffer());
     format = audioFormatFromMime(audioRes.headers.get('content-type')) ?? format;
+  } else if (c.env.VOICE_BUCKET) {
+    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(audioUrl);
+    if (!stored) return null;
+    bytes = stored.bytes;
+    format = audioFormatFromMime(stored.meta.mimeType) ?? format;
   } else {
     return null;
   }

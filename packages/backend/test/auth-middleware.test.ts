@@ -358,7 +358,7 @@ describe('authMiddleware — Apple token', () => {
 });
 
 describe('authMiddleware — 토큰 발급자 분기', () => {
-  it('알 수 없는 issuer는 Google 경로로 처리', async () => {
+  it('알 수 없는 issuer는 거부한다', async () => {
     const payload = {
       sub: 'user-unknown',
       iss: 'https://unknown-issuer.example.com',
@@ -374,8 +374,10 @@ describe('authMiddleware — 토큰 발급자 분기', () => {
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(200);
-    expect(globalThis.fetch).toHaveBeenCalled();
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_INVALID_ISSUER');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(mockVerifyAppJwt).not.toHaveBeenCalled();
   });
 

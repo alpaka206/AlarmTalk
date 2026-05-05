@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { resolveUserPk } from '../lib/family-helpers';
+import { PlanGroupCapacityError, repairFamilyPlanGroupForUser } from '../lib/plan-groups';
 
 const familyGroup = new Hono<AppEnv>();
 
@@ -12,7 +13,7 @@ familyGroup.get('/groups/current', async (c) => {
   const userPk = await resolveUserPk(db, userId);
   if (!userPk) return c.json({ group: null, members: [], role: null });
 
-  const groupRes = await db.execute({
+  let groupRes = await db.execute({
     sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                  m.role AS my_role
           FROM plan_group_members m
@@ -22,6 +23,25 @@ familyGroup.get('/groups/current', async (c) => {
           LIMIT 1`,
     args: [userPk],
   });
+  if (groupRes.rows.length === 0) {
+    try {
+      const repairedGroupId = await repairFamilyPlanGroupForUser(db, userPk);
+      if (repairedGroupId) {
+        groupRes = await db.execute({
+          sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
+                       m.role AS my_role
+                FROM plan_group_members m
+                JOIN plan_groups pg ON pg.id = m.plan_group_id
+                WHERE m.user_id = ?
+                ORDER BY m.joined_at DESC
+                LIMIT 1`,
+          args: [userPk],
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof PlanGroupCapacityError)) throw error;
+    }
+  }
   if (groupRes.rows.length === 0) {
     return c.json({ group: null, members: [], role: null });
   }

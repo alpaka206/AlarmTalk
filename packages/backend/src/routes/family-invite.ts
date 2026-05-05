@@ -4,6 +4,7 @@ import { getDB } from '../lib/db';
 import {
   generateInviteCode,
   isValidInviteCodeFormat,
+  normalizeInviteCode,
   computeInviteExpiresAt,
   buildInviteDeepLink,
   buildInviteWebUrl,
@@ -131,7 +132,7 @@ familyInvite.post('/invites/:code/accept', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
-  const code = c.req.param('code').trim();
+  const code = normalizeInviteCode(c.req.param('code'));
   if (!isValidInviteCodeFormat(code)) {
     return c.json({ error: '잘못된 초대 코드 형식입니다', error_code: 'INVALID_CODE_FORMAT' }, 400);
   }
@@ -232,7 +233,7 @@ familyInvite.post('/invites/:code/revoke', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
-  const code = c.req.param('code').trim();
+  const code = normalizeInviteCode(c.req.param('code'));
   if (!isValidInviteCodeFormat(code)) {
     return c.json({ error: '잘못된 초대 코드 형식입니다', error_code: 'INVALID_CODE_FORMAT' }, 400);
   }

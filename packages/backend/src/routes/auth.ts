@@ -5,7 +5,12 @@ import { logRouteError } from '../lib/logger';
 import { typedRow } from '../lib/db-types';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
-import { RegisterRequestSchema, LoginRequestSchema } from '@voice-alarm/shared';
+import {
+  RegisterRequestSchema,
+  LoginRequestSchema,
+  GoogleLoginRequestSchema,
+} from '@voice-alarm/shared';
+import { verifyGoogleIdToken } from '../lib/oauth';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -131,6 +136,93 @@ auth.post('/login', async (c) => {
   }
 });
 
+auth.post('/google', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = GoogleLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
+    const googleId = google.sub;
+    const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();
+    const name = google.name ?? '';
+
+    const existing = await db.execute({
+      sql: `SELECT id, google_id, email, name, plan
+            FROM users
+            WHERE google_id = ? OR email = ?
+            LIMIT 1`,
+      args: [googleId, email],
+    });
+
+    let userId: string;
+    let plan: 'free' | 'plus' | 'family';
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<{
+        id: string;
+        google_id: string | null;
+        email: string;
+        name: string | null;
+        plan: 'free' | 'plus' | 'family' | null;
+      }>(existing.rows[0]!);
+      userId = row.id;
+      plan = row.plan ?? 'free';
+
+      await db.execute({
+        sql: `UPDATE users
+              SET google_id = ?, email = ?, name = ?, picture = ?, updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [googleId, email, name || row.name || null, google.picture || null, userId],
+      });
+    } else {
+      userId = googleId;
+      plan = 'free';
+      await db.execute({
+        sql: `INSERT INTO users (id, google_id, email, name, picture)
+              VALUES (?, ?, ?, ?, ?)`,
+        args: [userId, googleId, email, name || null, google.picture || null],
+      });
+    }
+
+    const token = await signAppJwt(
+      { sub: googleId, email, name: name || undefined },
+      c.env.JWT_SECRET,
+    );
+
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email,
+        name,
+        plan,
+      },
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const status =
+      detail.includes('Google token') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('expired') ||
+      detail.includes('Token')
+        ? 401
+        : 500;
+    return c.json(jsonError('AUTH_GOOGLE_FAILED', detail), status);
+  }
+});
+
 auth.get('/me', async (c) => {
   const authHeader = c.req.header('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
@@ -141,8 +233,8 @@ auth.get('/me', async (c) => {
     const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan FROM users WHERE id = ?`,
-      args: [payload.sub],
+      sql: `SELECT id, email, name, plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      args: [payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
