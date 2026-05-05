@@ -87,9 +87,9 @@ internal fun FamilyConnectionPanel(
                         inviteCode = value
                             .uppercase()
                             .filter { it.isLetterOrDigit() || it == '-' }
-                            .take(10)
+                            .take(18)
                     },
-                    placeholder = { Text("INV-123456") },
+                    placeholder = { Text("INV-XXXX-XXXX-XXXX") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )

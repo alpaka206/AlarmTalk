@@ -40,13 +40,11 @@ describe('POST /family/invites', () => {
     const body = await res.json();
     expect(body.invite.plan_group_id).toBe('group-1');
     expect(body.invite.status).toBe('pending');
-    expect(body.invite.code).toMatch(/^INV-[0-9]{6}$/);
+    expect(body.invite.code).toMatch(/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     expect(body.invite.deep_link).toBe(`voicealarm://invite/${body.invite.code}`);
     expect(body.invite.web_url).toContain(body.invite.code);
 
-    const insertInvite = mockDB.calls.find((c) =>
-      c.sql.includes('INSERT INTO plan_group_invites'),
-    );
+    const insertInvite = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_invites'));
     expect(insertInvite).toBeDefined();
     expect(insertInvite?.args[1]).toBe('group-1');
     expect(insertInvite?.args[2]).toBe('user-owner');
@@ -57,9 +55,7 @@ describe('POST /family/invites', () => {
     mockDB.pushResult([{ id: 'group-1', owner_user_id: 'user-other', max_members: 6 }]);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: 'group-1' }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: 'group-1' }));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toContain('소유자');
@@ -71,9 +67,7 @@ describe('POST /family/invites', () => {
     mockDB.pushResult([{ member_count: 1, pending_count: 1 }]);
 
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: 'group-1' }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: 'group-1' }));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toContain('정원');
@@ -154,9 +148,7 @@ describe('POST /family/invites/:code/accept', () => {
     mockDB.pushResult([], 1); // UPDATE invite
 
     const app = buildApp('google-member');
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${VALID_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${VALID_CODE}/accept`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -165,14 +157,12 @@ describe('POST /family/invites/:code/accept', () => {
     expect(body.membership.role).toBe('member');
     expect(body.invite.status).toBe('used');
 
-    const insertMember = mockDB.calls.find((c) =>
-      c.sql.includes('INSERT INTO plan_group_members'),
-    );
+    const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
     expect(insertMember?.args[1]).toBe('group-1');
     expect(insertMember?.args[2]).toBe('user-member');
 
-    const updInvite = mockDB.calls.find((c) =>
-      c.sql.includes('UPDATE plan_group_invites') && c.sql.includes("status = 'used'"),
+    const updInvite = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE plan_group_invites') && c.sql.includes("status = 'used'"),
     );
     expect(updInvite?.args[0]).toBe('user-member');
   });
@@ -420,15 +410,15 @@ describe('POST /family/groups/:groupId/transfer-ownership', () => {
     expect(updates[1].sql).toContain("role = 'owner'");
     expect(updates[1].args[1]).toBe('user-target');
 
-    const groupUpd = mockDB.calls.find((c) => c.sql.includes('UPDATE plan_groups SET owner_user_id'));
+    const groupUpd = mockDB.calls.find((c) =>
+      c.sql.includes('UPDATE plan_groups SET owner_user_id'),
+    );
     expect(groupUpd?.args[0]).toBe('user-target');
   });
 
   it('target_user_id 누락 → 400', async () => {
     const app = buildApp('google-owner');
-    const res = await app.request(
-      jsonReq('POST', '/family/groups/group-1/transfer-ownership', {}),
-    );
+    const res = await app.request(jsonReq('POST', '/family/groups/group-1/transfer-ownership', {}));
     expect(res.status).toBe(400);
   });
 
@@ -532,9 +522,7 @@ describe('DELETE /family/groups/:groupId/members/:userId', () => {
 describe('POST /family/invites/:code/revoke', () => {
   it('발급자 + pending → 200, status=revoked', async () => {
     mockDB.pushResult([{ id: 'user-owner' }]);
-    mockDB.pushResult([
-      { id: 'inv-1', inviter_user_id: 'user-owner', status: 'pending' },
-    ]);
+    mockDB.pushResult([{ id: 'inv-1', inviter_user_id: 'user-owner', status: 'pending' }]);
     mockDB.pushResult([], 1);
 
     const app = buildApp('google-owner');
@@ -546,9 +534,7 @@ describe('POST /family/invites/:code/revoke', () => {
 
   it('발급자가 아니면 → 403', async () => {
     mockDB.pushResult([{ id: 'user-other' }]);
-    mockDB.pushResult([
-      { id: 'inv-1', inviter_user_id: 'user-owner', status: 'pending' },
-    ]);
+    mockDB.pushResult([{ id: 'inv-1', inviter_user_id: 'user-owner', status: 'pending' }]);
 
     const app = buildApp('google-other');
     const res = await app.request(jsonReq('POST', `/family/invites/${VALID_CODE}/revoke`));
@@ -557,9 +543,7 @@ describe('POST /family/invites/:code/revoke', () => {
 
   it('pending 이 아닌 상태 (used 등) → 409', async () => {
     mockDB.pushResult([{ id: 'user-owner' }]);
-    mockDB.pushResult([
-      { id: 'inv-1', inviter_user_id: 'user-owner', status: 'used' },
-    ]);
+    mockDB.pushResult([{ id: 'inv-1', inviter_user_id: 'user-owner', status: 'used' }]);
 
     const app = buildApp('google-owner');
     const res = await app.request(jsonReq('POST', `/family/invites/${VALID_CODE}/revoke`));
@@ -577,13 +561,15 @@ describe('POST /family/alarms (text mode)', () => {
     };
   }
 
-  function queueHappyPath(opts: {
-    senderPk?: string;
-    recipientPk?: string;
-    recipientGoogleId?: string;
-    allowFamily?: number;
-    voiceProfileId?: string | null;
-  } = {}) {
+  function queueHappyPath(
+    opts: {
+      senderPk?: string;
+      recipientPk?: string;
+      recipientGoogleId?: string;
+      allowFamily?: number;
+      voiceProfileId?: string | null;
+    } = {},
+  ) {
     const senderPk = opts.senderPk ?? 'user-sender';
     const recipientPk = opts.recipientPk ?? 'user-recipient';
     const recipientGoogleId = opts.recipientGoogleId ?? 'google-recipient';
@@ -606,7 +592,9 @@ describe('POST /family/alarms (text mode)', () => {
   it('정상 — 수신자 가장 최근 voice_profile 자동 선택', async () => {
     queueHappyPath();
     const app = buildApp('google-sender');
-    const res = await app.request(jsonReq('POST', '/family/alarms', validBody({ repeat_days: [1, 3, 5] })));
+    const res = await app.request(
+      jsonReq('POST', '/family/alarms', validBody({ repeat_days: [1, 3, 5] })),
+    );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.alarm.voice_profile_id).toBe('vp-recipient-1');
@@ -698,11 +686,7 @@ describe('POST /family/alarms (text mode)', () => {
   it('wake_at 포맷 오류 → 400', async () => {
     const app = buildApp('google-sender');
     const res = await app.request(
-      jsonReq(
-        'POST',
-        '/family/alarms',
-        validBody({ wake_at: '7:30 AM' }),
-      ),
+      jsonReq('POST', '/family/alarms', validBody({ wake_at: '7:30 AM' })),
     );
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -738,9 +722,7 @@ describe('POST /family/alarms (text mode)', () => {
   it('자기 자신에게 보내면 → 400', async () => {
     mockDB.pushResult([{ id: 'user-recipient' }]); // sender pk == recipient pk
     const app = buildApp('google-recipient');
-    const res = await app.request(
-      jsonReq('POST', '/family/alarms', validBody()),
-    );
+    const res = await app.request(jsonReq('POST', '/family/alarms', validBody()));
     expect(res.status).toBe(400);
   });
 });
@@ -755,13 +737,15 @@ describe('POST /family/alarms/voice', () => {
     };
   }
 
-  function queueVoiceHappyPath(opts: {
-    allowFamily?: number;
-    dub?: boolean;
-    noVoiceProfile?: boolean;
-    uploadOwner?: string;
-    uploadMissing?: boolean;
-  } = {}) {
+  function queueVoiceHappyPath(
+    opts: {
+      allowFamily?: number;
+      dub?: boolean;
+      noVoiceProfile?: boolean;
+      uploadOwner?: string;
+      uploadMissing?: boolean;
+    } = {},
+  ) {
     mockDB.pushResult([{ id: 'user-sender' }]); // sender pk
     mockDB.pushResult([{ plan_group_id: 'group-1' }]); // sender groups
     mockDB.pushResult([{ plan_group_id: 'group-1' }]); // recipient groups
@@ -796,7 +780,9 @@ describe('POST /family/alarms/voice', () => {
   it('정상 — 더빙 없음, audio_url 에 object_key 채움', async () => {
     queueVoiceHappyPath();
     const app = buildApp('google-sender');
-    const res = await app.request(jsonReq('POST', '/family/alarms/voice', voiceBody({ repeat_days: [0, 6] })));
+    const res = await app.request(
+      jsonReq('POST', '/family/alarms/voice', voiceBody({ repeat_days: [0, 6] })),
+    );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.alarm.mode).toBe('sound-only');

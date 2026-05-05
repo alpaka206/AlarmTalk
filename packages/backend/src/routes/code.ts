@@ -20,9 +20,7 @@ codeRoutes.post('/register', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
-  const body = await c.req
-    .json<{ code?: unknown }>()
-    .catch(() => ({ code: undefined }));
+  const body = await c.req.json<{ code?: unknown }>().catch(() => ({ code: undefined }));
 
   const raw = typeof body.code === 'string' ? body.code.trim() : '';
   if (!raw) {
@@ -74,7 +72,10 @@ codeRoutes.post('/register', async (c) => {
     }
 
     if (String(voucher.issuer_user_id) === userPk) {
-      return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
+      return c.json(
+        { error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' },
+        400,
+      );
     }
 
     const planRes = await db.execute({
@@ -159,7 +160,7 @@ codeRoutes.post('/register', async (c) => {
     });
   }
 
-  // ── Family invite code: INV-123456 (legacy 123456 accepted) ──
+  // ── Family invite code: INV-XXXX-XXXX-XXXX (legacy INV-123456/123456 accepted) ──
   const inviteCode = normalizeInviteCode(raw);
   if (isValidInviteCodeFormat(inviteCode)) {
     const inviteRes = await db.execute({
@@ -168,7 +169,10 @@ codeRoutes.post('/register', async (c) => {
       args: [inviteCode],
     });
     if (inviteRes.rows.length === 0) {
-      return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
+      return c.json(
+        { error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' },
+        404,
+      );
     }
     const invite = inviteRes.rows[0]!;
     const inviteId = String(invite.id);
@@ -196,7 +200,10 @@ codeRoutes.post('/register', async (c) => {
     }
 
     if (String(invite.inviter_user_id) === userPk) {
-      return c.json({ error: '본인이 발급한 초대는 수락할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
+      return c.json(
+        { error: '본인이 발급한 초대는 수락할 수 없습니다', error_code: 'SELF_ISSUED' },
+        400,
+      );
     }
 
     const memberRes = await db.execute({

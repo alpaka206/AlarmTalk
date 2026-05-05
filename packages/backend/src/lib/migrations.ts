@@ -292,7 +292,7 @@ export const migrations: Migration[] = [
     id: 9,
     name: 'plan-group-invites',
     statements: [
-      // 가족 플랜 초대 코드 — 6자리 숫자 문자열, 10분 만료, 일회용.
+      // 가족 플랜 초대권 코드 — INV-XXXX-XXXX-XXXX 형식, 10분 만료, 일회용.
       // status 전이: pending → used | revoked | expired.
       `CREATE TABLE IF NOT EXISTS plan_group_invites (
         id TEXT PRIMARY KEY,
@@ -475,9 +475,7 @@ export const migrations: Migration[] = [
     // Cleanup orphaned `alarms_new` left behind by a half-applied earlier
     // attempt at the table-recreation migration. No-op on fresh DBs.
     name: 'alarm-raw-audio-cleanup',
-    statements: [
-      'DROP TABLE IF EXISTS alarms_new',
-    ],
+    statements: ['DROP TABLE IF EXISTS alarms_new'],
   },
   {
     id: 21,
