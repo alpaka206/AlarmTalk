@@ -1,5 +1,5 @@
 import type { Alarm } from '../../types';
-import { get, post, patch, del, request } from './core';
+import { get, post, patch, del } from './core';
 
 // ===== Alarm API =====
 
@@ -80,14 +80,4 @@ export async function uploadAlarmSource(audioFile: {
 
 export async function deleteAlarm(id: string) {
   await del(`/alarm/${id}`);
-}
-
-// ===== Push Token API =====
-
-export async function registerPushToken(token: string, platform: 'ios' | 'android' | 'web') {
-  return post<{ success: boolean }>('/push/token', { token, platform });
-}
-
-export async function unregisterPushToken(token: string) {
-  return request<{ success: boolean }>({ method: 'DELETE', path: '/push/token', body: { token } });
 }

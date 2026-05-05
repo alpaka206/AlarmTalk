@@ -10,7 +10,10 @@ export function createHomeStyles(colors: ThemeColors) {
     },
     content: {
       padding: Spacing.lg,
-      paddingBottom: 120,
+      // Tab bar reaches ~96–110pt with the safe-area bottom inset on
+      // gesture-nav phones; 120 left only a sliver of clearance and the
+      // last action card got clipped. 160 gives comfortable breathing room.
+      paddingBottom: 160,
     },
     header: {
       marginBottom: Spacing.xl,
@@ -41,6 +44,10 @@ export function createHomeStyles(colors: ThemeColors) {
       fontSize: FontSize.hero,
       fontFamily: FontFamily.bold,
       color: colors.text,
+      // Korean glyphs (특히 ㅎ/ㅗ/ㅛ) have tall ascenders/descenders.
+      // Without an explicit lineHeight RN clips them when the Text sits
+      // in a row container with `alignItems: center` next to an icon.
+      lineHeight: FontSize.hero * 1.4,
       marginBottom: Spacing.xs,
     },
     subtitle: {

@@ -28,7 +28,8 @@ import {
 } from '../../src/services/api';
 import type { FamilyVoiceProfile } from '../../src/services/api';
 import { useAppStore } from '../../src/stores/useAppStore';
-import { syncAlarmNotifications } from '../../src/services/notifications';
+import { syncNotifeeAlarms } from '../../src/services/notifeeAlarms';
+import { setMonitoredAlarms } from '../../src/services/alarmRinger';
 import type { AlarmMode, VibrationPattern, WakeMode, Message, VoiceProfile, AlarmPlayMode } from '../../src/types';
 import { playModeToBackend, backendToPlayMode } from '../../src/types';
 import { getApiErrorMessage } from '../../src/lib/apiErrors';
@@ -130,7 +131,8 @@ export default function EditAlarmScreen() {
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ['alarms'] });
       const fresh = await getAlarms();
-      syncAlarmNotifications(fresh);
+      setMonitoredAlarms(fresh);
+      void syncNotifeeAlarms(fresh, t);
       Alert.alert(t('alarmEdit.successTitle'), t('alarmEdit.successDesc'), [
         { text: t('common.confirm'), onPress: () => router.back() },
       ]);
@@ -309,7 +311,6 @@ export default function EditAlarmScreen() {
               : m === 'voice_only'
                 ? 'alarmCreate.modeVoiceOnly'
                 : 'alarmCreate.modeAlarmVoice';
-          const icon = m === 'alarm_only' ? '🔔' : m === 'voice_only' ? '🗣️' : '🔔🗣️';
           const selected = playMode === m;
           return (
             <TouchableOpacity
@@ -321,7 +322,7 @@ export default function EditAlarmScreen() {
               accessibilityLabel={t(labelKey)}
             >
               <Text style={[formStyles.modeText, selected && formStyles.modeTextActive]}>
-                {icon} {t(labelKey)}
+                {t(labelKey)}
               </Text>
             </TouchableOpacity>
           );
@@ -404,35 +405,39 @@ export default function EditAlarmScreen() {
         </>
       )}
 
-      {/* 원본 음성 (선택사항) */}
-      <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmSource.section')}</Text>
-      <Text style={localStyles.sourceHint}>{t('alarmSource.sectionHint')}</Text>
-      {rawAudio ? (
-        <View style={localStyles.sourceCurrent}>
-          <Text style={localStyles.sourceCurrentLabel}>
-            {t('alarmSource.currentLabel')} · {rawAudio.fileName} ({(rawAudio.durationMs / 1000).toFixed(1)}s)
-          </Text>
-          <TouchableOpacity onPress={() => setRawAudio(null)} accessibilityRole="button">
-            <Text style={localStyles.sourceRemove}>{t('alarmSource.remove')}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={localStyles.sourceRow}>
-          <TouchableOpacity
-            style={localStyles.sourceCard}
-            onPress={() => router.push('/alarm/source-record')}
-            accessibilityRole="button"
-          >
-            <Text style={localStyles.sourceCardText}>{t('alarmSource.recordCard')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={localStyles.sourceCard}
-            onPress={() => router.push('/alarm/source-upload')}
-            accessibilityRole="button"
-          >
-            <Text style={localStyles.sourceCardText}>{t('alarmSource.uploadCard')}</Text>
-          </TouchableOpacity>
-        </View>
+      {/* 원본 음성 (선택사항) — 음성을 사용하는 모드일 때만 */}
+      {requiresVoice && (
+        <>
+          <Text style={formStyles.sectionTitle} accessibilityRole="header">{t('alarmSource.section')}</Text>
+          <Text style={localStyles.sourceHint}>{t('alarmSource.sectionHint')}</Text>
+          {rawAudio ? (
+            <View style={localStyles.sourceCurrent}>
+              <Text style={localStyles.sourceCurrentLabel}>
+                {t('alarmSource.currentLabel')} · {rawAudio.fileName} ({(rawAudio.durationMs / 1000).toFixed(1)}s)
+              </Text>
+              <TouchableOpacity onPress={() => setRawAudio(null)} accessibilityRole="button">
+                <Text style={localStyles.sourceRemove}>{t('alarmSource.remove')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={localStyles.sourceRow}>
+              <TouchableOpacity
+                style={localStyles.sourceCard}
+                onPress={() => router.push('/alarm/source-record')}
+                accessibilityRole="button"
+              >
+                <Text style={localStyles.sourceCardText}>{t('alarmSource.recordCard')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={localStyles.sourceCard}
+                onPress={() => router.push('/alarm/source-upload')}
+                accessibilityRole="button"
+              >
+                <Text style={localStyles.sourceCardText}>{t('alarmSource.uploadCard')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
 
       {/* 다시 울림 / 진동 — sub-screen */}

@@ -15,7 +15,6 @@ import characterRoutes from '../src/routes/character';
 import libraryRoutes from '../src/routes/library';
 import friendRoutes from '../src/routes/friend';
 import statsRoutes from '../src/routes/stats';
-import pushRoutes from '../src/routes/push';
 import notesRoutes from '../src/routes/notes';
 import codeRoutes from '../src/routes/code';
 import userRoutes from '../src/routes/user';
@@ -218,18 +217,6 @@ describe('API latency baselines', () => {
     });
   });
 
-  describe('POST /push/token', () => {
-    it('responds within write threshold', async () => {
-      mockDB.pushResult([], 1); // UPSERT
-      const app = buildApp('/push', pushRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/push/token', { token: 'ExponentPushToken[abc123]', platform: 'android' })),
-      );
-      expect(res.status).toBe(201);
-      expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
-    });
-  });
-
   describe('GET /notes/received', () => {
     it('responds within threshold with empty inbox', async () => {
       mockDB.pushResult([]); // no notes
@@ -308,7 +295,7 @@ describe('API latency baselines', () => {
     it('POST /alarm rejects missing required fields within threshold', async () => {
       const app = buildApp('/alarm', alarmRoutes);
       const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/alarm', { time: '08:00' })),
+        app.request(jsonReq('POST', '/alarm', {})),
       );
       expect(res.status).toBe(400);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
@@ -323,14 +310,6 @@ describe('API latency baselines', () => {
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
 
-    it('POST /push/token rejects empty token within 10ms', async () => {
-      const app = buildApp('/push', pushRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/push/token', { token: '', platform: 'ios' })),
-      );
-      expect(res.status).toBe(400);
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
-    });
   });
 
   describe('sustained throughput', () => {

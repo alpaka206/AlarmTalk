@@ -94,15 +94,28 @@ export async function request<T>(config: RequestConfig): Promise<T> {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
-        // eslint-disable-next-line no-console
-        console.log(
-          `[API ${res.status}] ${config.method} ${config.path}`,
-          'hasToken=', !!token,
-          'tokenLen=', token?.length ?? 0,
-          'body=', JSON.stringify(errData),
-        );
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `[API ${res.status}] ${config.method} ${config.path}`,
+            'hasToken=', !!token,
+            'tokenLen=', token?.length ?? 0,
+            'body=', JSON.stringify(errData),
+          );
+        }
         if (res.status === 401) {
           await AsyncStorage.removeItem('auth_token');
+          await AsyncStorage.removeItem('auth_provider');
+          await AsyncStorage.removeItem('user_id');
+          // Also clear in-memory auth so screens stop refetching with a stale
+          // token and the navigation tree falls back to the login screen.
+          // Dynamic import keeps this file free of a hard dep on the store.
+          try {
+            const { useAppStore } = await import('../../stores/useAppStore');
+            useAppStore.getState().clearAuth?.();
+          } catch {
+            // best-effort — store missing should never happen at runtime
+          }
         }
         throw new ApiError(res.status, errData);
       }

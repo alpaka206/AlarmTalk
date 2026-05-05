@@ -5,9 +5,121 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
+import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 2;
+
+/**
+ * Dev/cleanup helper: delete every voice profile (and its dependent
+ * messages + alarms) belonging to the calling user. Useful for wiping
+ * failed clones that piled up during testing. R2 objects are left for
+ * the periodic cleanup cron — only DB rows go away here.
+ */
+voiceProfile.delete('/_dev/clear-mine', async (c) => {
+  const subId = c.get('userId') as string;
+  const pkId = (c.get('userIdPK') as string | undefined) ?? subId;
+  const db = getDB(c.env);
+  const ids = Array.from(new Set([subId, pkId].filter(Boolean)));
+  const ph = ids.map(() => '?').join(',');
+  const counts: Record<string, number> = {};
+  const tryDel = async (label: string, sql: string, args: (string | number)[] = []) => {
+    try {
+      const r = await db.execute({ sql, args });
+      counts[label] = r.rowsAffected ?? 0;
+    } catch (err) {
+      // Best-effort cleanup. Tables may not exist in every environment
+      // (e.g. characters added via later migration). Log and continue.
+      // eslint-disable-next-line no-console
+      console.log('[clear-mine skip]', label, err instanceof Error ? err.message : String(err));
+      counts[label] = -1;
+    }
+  };
+
+  // 1) Tables that reference messages or voice_profiles (delete first).
+  await tryDel(
+    'gifts',
+    `DELETE FROM gifts WHERE sender_id IN (${ph}) OR recipient_id IN (${ph})
+     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
+    [...ids, ...ids, ...ids],
+  );
+  await tryDel(
+    'message_library',
+    `DELETE FROM message_library WHERE user_id IN (${ph})
+     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))`,
+    [...ids, ...ids],
+  );
+  await tryDel(
+    'generated_audio_assets',
+    `DELETE FROM generated_audio_assets WHERE user_id IN (${ph})
+     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids, ...ids],
+  );
+  await tryDel(
+    'dub_jobs',
+    `DELETE FROM dub_jobs WHERE user_id IN (${ph})`,
+    ids,
+  );
+  await tryDel(
+    'notes',
+    `DELETE FROM notes WHERE sender_id IN (${ph}) OR receiver_id IN (${ph})`,
+    [...ids, ...ids],
+  );
+  await tryDel(
+    'alarms',
+    `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
+     OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids, ...ids, ...ids],
+  );
+
+  // 2) Now safe to drop messages + voice_profiles.
+  await tryDel(
+    'messages',
+    `DELETE FROM messages WHERE user_id IN (${ph})
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids],
+  );
+  await tryDel(
+    'voice_profiles',
+    `DELETE FROM voice_profiles WHERE user_id IN (${ph})`,
+    ids,
+  );
+
+  // 3) Per-user satellite tables.
+  await tryDel('characters', `DELETE FROM characters WHERE user_id IN (${ph})`, ids);
+  await tryDel('character_xp_logs', `DELETE FROM character_xp_logs WHERE user_id IN (${ph})`, ids);
+  await tryDel(
+    'character_streak_stats',
+    `DELETE FROM character_streak_stats WHERE user_id IN (${ph})`,
+    ids,
+  );
+  await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
+  await tryDel(
+    'friendships',
+    `DELETE FROM friendships WHERE user_a IN (${ph}) OR user_b IN (${ph})`,
+    [...ids, ...ids],
+  );
+  await tryDel(
+    'voice_speakers',
+    `DELETE FROM voice_speakers WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id IN (${ph}))`,
+    ids,
+  );
+  await tryDel('voice_uploads', `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, ids);
+
+  // 4) Finally the users row(s).
+  await tryDel(
+    'users',
+    `DELETE FROM users WHERE google_id = ? OR id IN (${ph})`,
+    [subId, ...ids],
+  );
+
+  return c.json({
+    deleted: counts,
+    note: '다음 요청 시 auth middleware가 users 행을 새로 만듭니다 (id=google_id).',
+  });
+});
 
 voiceProfile.get('/', async (c) => {
   const userId = c.get('userId');
@@ -44,10 +156,12 @@ voiceProfile.get('/family', async (c) => {
   const db = getDB(c.env);
 
   const memberRes = await db.execute({
-    sql: `SELECT fm2.user_id
-          FROM family_members fm1
-          JOIN family_members fm2 ON fm1.group_id = fm2.group_id
-          WHERE fm1.user_id = ? AND fm2.user_id != ?`,
+    sql: `SELECT DISTINCT fm2.user_id AS member_user_id, u.google_id AS member_google_id
+          FROM users me
+          JOIN plan_group_members fm1 ON fm1.user_id = me.id
+          JOIN plan_group_members fm2 ON fm1.plan_group_id = fm2.plan_group_id
+          LEFT JOIN users u ON u.id = fm2.user_id
+          WHERE me.google_id = ? AND fm2.user_id != me.id AND fm2.user_id != ?`,
     args: [userId, userId],
   });
 
@@ -55,12 +169,30 @@ voiceProfile.get('/family', async (c) => {
     return c.json({ profiles: [] });
   }
 
-  const memberIds = memberRes.rows.map((r) => typedRow<{ user_id: string }>(r).user_id);
+  const memberIds = Array.from(
+    new Set(
+      memberRes.rows.flatMap((r) => {
+        const row = typedRow<{
+          member_user_id?: string;
+          member_google_id?: string | null;
+          user_id?: string;
+        }>(r);
+        return [
+          row.member_user_id ?? row.user_id,
+          row.member_google_id,
+        ].filter((value): value is string => Boolean(value));
+      }),
+    ),
+  );
+  if (memberIds.length === 0) {
+    return c.json({ profiles: [] });
+  }
+
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, u.name as owner_name
           FROM voice_profiles vp
-          LEFT JOIN users u ON vp.user_id = u.google_id
+          LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
           WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready'
           ORDER BY vp.created_at DESC`,
     args: memberIds,
@@ -167,15 +299,41 @@ voiceProfile.post('/clone', async (c) => {
       args: [profileId, userId, name],
     });
 
-    const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-    const result = await client.createInstantClone(audioBuffer, name);
-    const voiceId = result.voice_id;
-
-    await db.execute({
-      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-            WHERE id = ?`,
-      args: [voiceId, profileId],
+    const attempts = createEnrollmentAttempts({
+      env: c.env,
+      audioData: audioBuffer,
+      name,
     });
+    let lastError: unknown = new Error('No voice provider is configured.');
+    let provider = '';
+    let voiceId = '';
+    for (const attempt of attempts) {
+      try {
+        const result = await attempt.enroll();
+        provider = result.provider;
+        voiceId = result.providerVoiceId;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (err instanceof UnsupportedVoiceProviderError) continue;
+        if (attempt !== attempts[attempts.length - 1]) continue;
+      }
+    }
+    if (!voiceId) throw lastError;
+
+    if (provider === 'perso') {
+      await db.execute({
+        sql: `UPDATE voice_profiles SET perso_voice_id = ?, status = 'ready', updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [voiceId, profileId],
+      });
+    } else {
+      await db.execute({
+        sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [voiceId, profileId],
+      });
+    }
 
     return c.json(
       {
@@ -183,6 +341,7 @@ voiceProfile.post('/clone', async (c) => {
           id: profileId,
           name,
           voice_id: voiceId,
+          provider,
           status: 'ready',
         },
       },
@@ -294,6 +453,10 @@ voiceProfile.delete('/:id', async (c) => {
     });
     await db.execute({
       sql: 'DELETE FROM message_library WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
+      args: [id],
+    });
+    await db.execute({
+      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
       args: [id],
     });
     await db.execute({

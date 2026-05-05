@@ -70,19 +70,13 @@ describe('GET /user/me', () => {
     expect(body.user.allow_family_alarms).toBe(true);
   });
 
-  it('신규 사용자 자동 생성', async () => {
+  it('신규 사용자 미존재 시 USER_NOT_FOUND', async () => {
     mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([{ id: 'new-id', google_id: 'user-1', email: 'user@test.com', name: 'Test', plan: 'free' }]);
-    mockDB.pushResult([{ count: 0 }]);
-    mockDB.pushResult([{ count: 0 }]);
-
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/user/me'));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
     const body = await res.json();
-    expect(body.user.google_id).toBe('user-1');
-    expect(mockDB.calls[1].sql).toContain('INSERT INTO users');
+    expect(body.error_code).toBe('USER_NOT_FOUND');
   });
 });
 

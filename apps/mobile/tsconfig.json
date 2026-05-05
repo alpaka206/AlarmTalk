@@ -5,6 +5,10 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
+    "types": [
+      "jest",
+      "node"
+    ],
     "paths": {
       "@/*": [
         "./src/*"

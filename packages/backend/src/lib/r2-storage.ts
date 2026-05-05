@@ -1,5 +1,7 @@
 import type { VoiceStorage, StoreInput, StoredObject } from '@voice-alarm/voice';
 
+type StoreAtKeyInput = Omit<StoreInput, 'bytes'> & { bytes: Uint8Array<ArrayBufferLike> };
+
 export class R2VoiceStorage implements VoiceStorage {
   readonly name = 'r2';
   private bucket: R2Bucket;
@@ -12,6 +14,10 @@ export class R2VoiceStorage implements VoiceStorage {
   async store(input: StoreInput): Promise<StoredObject> {
     this.counter += 1;
     const objectKey = `voices/${input.userId}/${Date.now()}_${this.counter}`;
+    return this.storeAtKey(objectKey, input);
+  }
+
+  async storeAtKey(objectKey: string, input: StoreAtKeyInput): Promise<StoredObject> {
     const meta: StoredObject = {
       objectKey,
       userId: input.userId,
