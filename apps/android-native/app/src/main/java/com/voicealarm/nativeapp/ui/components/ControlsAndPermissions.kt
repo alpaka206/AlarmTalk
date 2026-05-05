@@ -260,9 +260,13 @@ internal fun AlarmRow(
                 }
                 Text(
                     text = listOf(
-                        repeatLabel(alarm.repeatDaysMask),
+                        alarm.repeatDaysMask.takeIf { it != 0 }?.let(::repeatLabel),
                         if (alarm.holidayOff) "공휴일 끔" else null,
-                        if (alarm.snoozeEnabled) "다시 울림 ${alarm.snoozeMinutes}분" else "다시 울림 꺼짐",
+                        snoozeListLabel(
+                            enabled = alarm.snoozeEnabled,
+                            minutes = alarm.snoozeMinutes,
+                            repeatLimit = alarm.snoozeRepeatLimit,
+                        ),
                         vibrationLabel(alarm.vibrationPattern),
                         playModeLabel(alarm.playMode),
                     ).filterNotNull().joinToString(" · "),

@@ -13,6 +13,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
+import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
@@ -99,6 +100,20 @@ internal fun repeatLabel(mask: Int): String {
     val days = listOf("일", "월", "화", "수", "목", "금", "토")
     return days.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.joinToString(", ")
 }
+
+internal fun snoozeRepeatLabel(limit: Int): String = when (limit) {
+    SnoozeRepeatLimits.THREE -> "3회"
+    SnoozeRepeatLimits.FIVE -> "5회"
+    SnoozeRepeatLimits.FOREVER -> "계속 반복"
+    else -> "${limit}회"
+}
+
+internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): String =
+    if (enabled) {
+        "다시 울림 ${minutes}분 · ${snoozeRepeatLabel(repeatLimit)}"
+    } else {
+        "다시 울림 꺼짐"
+    }
 
 internal fun vibrationLabel(pattern: String): String = when (pattern) {
     VibrationPatterns.STRONG -> "강한 진동"

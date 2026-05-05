@@ -70,13 +70,6 @@ internal fun ChipGrid(
 
 private val SnoozeIntervals = listOf(3, 5, 10, 15, 30)
 
-private fun snoozeRepeatLabel(limit: Int): String = when (limit) {
-    SnoozeRepeatLimits.THREE -> "3회"
-    SnoozeRepeatLimits.FIVE -> "5회"
-    SnoozeRepeatLimits.FOREVER -> "계속 반복"
-    else -> "${limit}회"
-}
-
 private fun nextSnoozeInterval(current: Int): Int =
     SnoozeIntervals.firstOrNull { it > current } ?: SnoozeIntervals.last()
 
