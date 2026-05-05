@@ -27,6 +27,7 @@ import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.RegisterRequest
@@ -50,6 +51,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import retrofit2.HttpException
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -85,13 +87,29 @@ internal fun MainViewModel.register(email: String, password: String, name: Strin
 }
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email: String, name: String) {
-    authSession = authSessionStore.saveGoogleSession(
-        idToken = idToken,
-        id = id,
-        email = email,
-        name = name,
-    )
-    message = null
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.loginGoogle(GoogleLoginRequest(idToken = idToken))
+        }.onSuccess { response ->
+            authSession = authSessionStore.saveGoogleSession(response)
+            message = null
+        }.onFailure { error ->
+            if ((error as? HttpException)?.code() == 404) {
+                authSession = authSessionStore.saveLegacyGoogleSession(
+                    idToken = idToken,
+                    id = id,
+                    email = email,
+                    name = name,
+                )
+                message = null
+            } else {
+                Log.e(TAG, "Google token exchange failed", error)
+                message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
+            }
+        }
+        authBusy = false
+    }
 }
 
 internal fun MainViewModel.logout() {

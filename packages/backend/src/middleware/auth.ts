@@ -1,6 +1,7 @@
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types';
 import { verifyAppJwt, APP_JWT_ISSUER } from '../lib/jwt';
+import { decodeJwtPayload, verifyGoogleIdToken } from '../lib/oauth';
 
 interface TokenPayload {
   sub: string;
@@ -51,8 +52,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       };
     } else if (payload.iss === 'https://appleid.apple.com') {
       verified = await verifyAppleToken(token);
+    } else if (payload.iss === 'accounts.google.com' || payload.iss === 'https://accounts.google.com') {
+      verified = await verifyGoogleIdToken(token, c.env.GOOGLE_CLIENT_ID);
     } else {
-      verified = await verifyGoogleToken(token, c.env.GOOGLE_CLIENT_ID);
+      throw new Error('Invalid token issuer');
     }
 
     // Legacy convention: most routes still query `WHERE google_id = ?`, so
@@ -114,29 +117,6 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     console.log('[AUTH 401]', code, '|', message, '| GOOGLE_CLIENT_ID set:', !!c.env.GOOGLE_CLIENT_ID);
     return c.json({ error: message, error_code: code }, 401);
   }
-}
-
-function decodeJwtPayload(token: string): TokenPayload {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new Error('Invalid token format');
-  const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
-  return JSON.parse(atob(b64));
-}
-
-async function verifyGoogleToken(idToken: string, expectedClientId: string): Promise<TokenPayload> {
-  const res = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`);
-  if (!res.ok) throw new Error('Google token verification failed');
-
-  const payload = (await res.json()) as TokenPayload;
-
-  if (expectedClientId && payload.aud !== expectedClientId) {
-    throw new Error('Token audience mismatch');
-  }
-  if (Number(payload.exp) < Date.now() / 1000) {
-    throw new Error('Token expired');
-  }
-
-  return payload;
 }
 
 async function verifyAppleToken(idToken: string): Promise<TokenPayload> {
