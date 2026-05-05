@@ -115,6 +115,71 @@ describe('GET /family/groups/current', () => {
     expect(data.role).toBeNull();
   });
 
+  it('repairs family voucher subscription without membership and returns the linked group', async () => {
+    pushResolveUserPk(MEMBER_PK);
+    mockDB.pushResult([]); // initial current group lookup
+    mockDB.pushResult([
+      {
+        subscription_id: 'sub-member',
+        plan_id: PLAN_ID,
+        plan_type: 'family',
+        max_members: 2,
+        issuer_subscription_id: 'sub-owner',
+        issuer_user_id: OWNER_PK,
+      },
+    ]);
+    mockDB.pushResult([{ id: GROUP_ID, max_members: 2 }]); // issuer subscription group
+    mockDB.pushResult([]); // existing member lookup
+    mockDB.pushResult([{ c: 1 }]); // member count
+    mockDB.pushResult([], 1); // INSERT plan_group_members
+    mockDB.pushResult([], 1); // UPDATE subscription.plan_group_id
+    mockDB.pushResult([
+      {
+        id: GROUP_ID,
+        owner_user_id: OWNER_PK,
+        plan_id: PLAN_ID,
+        max_members: 2,
+        created_at: '2026-01-01T00:00:00Z',
+        my_role: 'member',
+      },
+    ]);
+    mockDB.pushResult([
+      {
+        id: MEMBER_ROW_ID,
+        user_id: OWNER_PK,
+        role: 'owner',
+        joined_at: '2026-01-01T00:00:00Z',
+        email: 'owner@test.com',
+        name: 'Owner',
+        picture: null,
+        allow_family_alarms: 1,
+      },
+      {
+        id: MEMBER_ROW_ID_2,
+        user_id: MEMBER_PK,
+        role: 'member',
+        joined_at: '2026-01-02T00:00:00Z',
+        email: 'member@test.com',
+        name: 'Member',
+        picture: null,
+        allow_family_alarms: 0,
+      },
+    ]);
+
+    const res = await app.request('/family/groups/current');
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.group.id).toBe(GROUP_ID);
+    expect(data.role).toBe('member');
+    expect(data.members).toHaveLength(2);
+
+    const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
+    expect(insertMember?.args[1]).toBe(GROUP_ID);
+    expect(insertMember?.args[2]).toBe(MEMBER_PK);
+    const updateSubscription = mockDB.calls.find((c) => c.sql.includes('UPDATE subscriptions SET plan_group_id'));
+    expect(updateSubscription?.args).toEqual([GROUP_ID, 'sub-member']);
+  });
+
   it('maps null email/name/picture to null', async () => {
     pushResolveUserPk(OWNER_PK);
     mockDB.pushResult([

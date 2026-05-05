@@ -40,7 +40,7 @@ describe('POST /family/invites', () => {
     const body = await res.json();
     expect(body.invite.plan_group_id).toBe('group-1');
     expect(body.invite.status).toBe('pending');
-    expect(body.invite.code).toMatch(/^[0-9]{6}$/);
+    expect(body.invite.code).toMatch(/^INV-[0-9]{6}$/);
     expect(body.invite.deep_link).toBe(`voicealarm://invite/${body.invite.code}`);
     expect(body.invite.web_url).toContain(body.invite.code);
 

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
@@ -40,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
@@ -78,17 +76,21 @@ internal fun FamilyConnectionPanel(
             )
             MutedText("초대 코드 및 이용권을 등록하세요.")
 
-            Text("초대 코드 등록", fontWeight = FontWeight.SemiBold)
+            Text("초대권 코드 등록", fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = inviteCode,
-                    onValueChange = { inviteCode = it.filter(Char::isDigit).take(6) },
-                    placeholder = { Text("123456") },
+                    onValueChange = { value ->
+                        inviteCode = value
+                            .uppercase()
+                            .filter { it.isLetterOrDigit() || it == '-' }
+                            .take(10)
+                    },
+                    placeholder = { Text("INV-123456") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f),
                 )
                 Button(
@@ -199,13 +201,7 @@ internal fun VoiceMessagePanel(
 
             Text("받는 사람", fontWeight = FontWeight.SemiBold)
             if (recipients.isEmpty()) {
-                MutedText("같은 커플/가족 그룹에 보낼 사람이 없어요.")
-                OutlinedButton(
-                    onClick = onOpenFamily,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("초대 코드 관리")
-                }
+                MutedText("연결된 상대가 아직 없어요. 코드 등록에서 초대권을 공유하거나 등록하면 여기에 표시돼요.")
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

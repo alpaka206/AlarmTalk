@@ -51,7 +51,7 @@ describe('POST /family/invites', () => {
     expect(body.invite).toBeDefined();
     expect(body.invite.plan_group_id).toBe(GROUP_ID);
     expect(body.invite.status).toBe('pending');
-    expect(body.invite.code).toBeDefined();
+    expect(body.invite.code).toMatch(/^INV-[0-9]{6}$/);
     expect(body.invite.deep_link).toContain('voicealarm://invite/');
     expect(body.invite.web_url).toContain('/invite/');
   });
