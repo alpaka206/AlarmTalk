@@ -64,6 +64,7 @@ internal fun VoiceAudioCard(
     onRecord: () -> Unit,
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
+    onPreviewAudio: () -> Unit,
     onClear: () -> Unit,
 ) {
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -224,8 +225,16 @@ internal fun VoiceAudioCard(
                     )
                 }
                 if (editor.localAudioUri != null) {
-                    OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
-                        Text("음성 지우기")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(onClick = onPreviewAudio, modifier = Modifier.weight(1f)) {
+                            Text("들어보기")
+                        }
+                        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
+                            Text("지우기")
+                        }
                     }
                 }
                 if (

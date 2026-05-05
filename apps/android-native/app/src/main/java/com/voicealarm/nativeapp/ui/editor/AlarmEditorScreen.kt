@@ -85,8 +85,7 @@ internal fun AlarmEditorScreen(
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
-        val seconds = audio.durationMillis?.let { " (${it / 1000}s)" } ?: ""
-        audioMessage = "음성 오디오가 준비됐어요$seconds"
+        audioMessage = null
     }
 
     fun prepareSelectedAudio(uri: Uri) {
@@ -138,6 +137,25 @@ internal fun AlarmEditorScreen(
                 Log.e(TAG, "Failed to play cropped alarm audio", error)
                 audioMessage = userFacingError(error, "선택한 구간을 재생하지 못했어요")
             }
+        }
+    }
+
+    fun playCachedAudio() {
+        val audioUri = editor.localAudioUri ?: return
+        runCatching {
+            mediaPlayer?.release()
+            val player = MediaPlayer.create(context, Uri.parse(audioUri))
+                ?: throw IllegalStateException("음성을 재생할 수 없어요")
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                }
+                start()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to play cached alarm audio", error)
+            audioMessage = userFacingError(error, "음성을 재생하지 못했어요")
         }
     }
 
@@ -408,8 +426,21 @@ internal fun AlarmEditorScreen(
                         selectedFileDurationMillis = selectedFileDurationMillis,
                         cropStartMillis = cropStartMillis,
                         cropEndMillis = cropEndMillis,
-                        onLocalInputModeChange = {
-                            if (!isRecording) localInputMode = it
+                        onLocalInputModeChange = { mode ->
+                            if (!isRecording && mode != localInputMode) {
+                                mediaPlayer?.release()
+                                mediaPlayer = null
+                                if (mode == VoiceCaptureMode.File) {
+                                    editor.clearAudio()
+                                } else {
+                                    selectedFileUri = null
+                                    selectedFileDurationMillis = null
+                                    cropStartMillis = 0L
+                                    cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
+                                }
+                                audioMessage = null
+                                localInputMode = mode
+                            }
                         },
                         onPick = { pickAudioLauncher.launch("audio/*") },
                         onRecord = {
@@ -429,6 +460,7 @@ internal fun AlarmEditorScreen(
                             editor.clearAudio()
                         },
                         onPreviewCrop = { playSelectedCrop() },
+                        onPreviewAudio = { playCachedAudio() },
                         onClear = {
                             editor.clearAudio()
                             selectedFileUri = null

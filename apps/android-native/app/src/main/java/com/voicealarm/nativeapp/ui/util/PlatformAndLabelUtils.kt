@@ -164,7 +164,7 @@ internal fun planTypeLabel(type: String?): String = when (type) {
 }
 
 internal fun voucherStatusLabel(status: String?): String = when (status) {
-    "active" -> "사용 가능"
+    "active", "issued" -> "사용 가능"
     "pending" -> "대기 중"
     "redeemed", "used" -> "사용됨"
     "expired" -> "만료됨"

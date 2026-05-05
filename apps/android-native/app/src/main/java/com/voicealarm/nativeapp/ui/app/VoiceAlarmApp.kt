@@ -11,7 +11,10 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -54,6 +57,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
+    var planGateMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) viewModel.preloadVoiceProfiles()
@@ -126,7 +130,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             authSession != null &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
-            viewModel.message = "커플/가족 플랜만 사용할 수 있어요"
+            planGateMessage = "메시지는 커플/가족 플랜에서 사용할 수 있어요. 초대 코드나 이용권을 등록하거나 플랜을 구매해 주세요."
             return
         }
         tabBackStack = tabBackStack + selectedTab
@@ -149,6 +153,34 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         enabled = screen !is AlarmScreen.List || tabBackStack.isNotEmpty(),
         onBack = ::goBackInApp,
     )
+
+    planGateMessage?.let { gateMessage ->
+        AlertDialog(
+            onDismissRequest = { planGateMessage = null },
+            title = { Text("플랜 안내") },
+            text = { Text(gateMessage) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        planGateMessage = null
+                        navigateToTab(NativeTab.Billing)
+                    },
+                ) {
+                    Text("구독 보기")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        planGateMessage = null
+                        navigateToTab(NativeTab.People)
+                    },
+                ) {
+                    Text("코드 등록")
+                }
+            },
+        )
+    }
 
     Scaffold(
         bottomBar = {

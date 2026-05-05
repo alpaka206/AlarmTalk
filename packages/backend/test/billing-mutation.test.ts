@@ -119,6 +119,25 @@ describe('POST /billing/checkout (billingMutation)', () => {
     expect(mockDB.calls[4]!.sql).toContain('INSERT INTO voucher_codes');
   });
 
+  it('gift checkout 은 구독을 바꾸지 않고 voucher 만 발급', async () => {
+    mockDB.pushResult([PLAN_PLUS]);
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/billing/checkout', { plan_key: 'plus_personal', gift: true }),
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.subscription).toBeNull();
+    expect(body.plan.key).toBe('plus_personal');
+    expect(body.voucher.code).toMatch(/^VA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(mockDB.calls).toHaveLength(3);
+    expect(mockDB.calls[2]!.sql).toContain('INSERT INTO voucher_codes');
+    expect(mockDB.calls[2]!.args[5]).toBeNull();
+  });
+
   it('family checkout DB 쿼리 순서: plan → user → plan_groups → plan_group_members → subscription → users.plan → voucher', async () => {
     mockDB.pushResult([PLAN_FAMILY]);
     mockDB.pushResult([{ id: 'user-pk-1' }]);

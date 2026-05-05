@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 internal enum class VoiceCaptureMode {
@@ -263,12 +264,32 @@ internal fun AudioCropRangeSelector(
         RangeSlider(
             value = safeStart.toFloat()..safeEnd.toFloat(),
             onValueChange = { range ->
-                val nextStart = range.start.roundToLong().coerceIn(0L, safeDuration)
-                val maxEndByStart = (nextStart + maxDurationMillis).coerceAtMost(safeDuration)
-                val minEndByStart = (nextStart + minDurationMillis).coerceAtMost(safeDuration)
-                val nextEnd = range.endInclusive.roundToLong()
-                    .coerceIn(minEndByStart, maxEndByStart)
-                    .coerceAtLeast(nextStart)
+                val rawStart = range.start.roundToLong().coerceIn(0L, safeDuration)
+                val rawEnd = range.endInclusive.roundToLong().coerceIn(0L, safeDuration)
+                val movingEnd = abs(rawEnd - safeEnd) >= abs(rawStart - safeStart)
+                var nextStart = rawStart.coerceAtMost(rawEnd)
+                var nextEnd = rawEnd.coerceAtLeast(nextStart)
+                val selected = nextEnd - nextStart
+                if (selected > maxDurationMillis) {
+                    if (movingEnd) {
+                        nextStart = (nextEnd - maxDurationMillis).coerceAtLeast(0L)
+                    } else {
+                        nextEnd = (nextStart + maxDurationMillis).coerceAtMost(safeDuration)
+                    }
+                }
+                if (nextEnd - nextStart < minDurationMillis) {
+                    if (movingEnd) {
+                        nextStart = (nextEnd - minDurationMillis).coerceAtLeast(0L)
+                        if (nextEnd - nextStart < minDurationMillis) {
+                            nextEnd = (nextStart + minDurationMillis).coerceAtMost(safeDuration)
+                        }
+                    } else {
+                        nextEnd = (nextStart + minDurationMillis).coerceAtMost(safeDuration)
+                        if (nextEnd - nextStart < minDurationMillis) {
+                            nextStart = (nextEnd - minDurationMillis).coerceAtLeast(0L)
+                        }
+                    }
+                }
                 onCropChange(nextStart, nextEnd)
             },
             valueRange = 0f..safeDuration.toFloat(),

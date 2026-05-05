@@ -152,7 +152,7 @@ internal fun ProfileMenu(
                 onClick = { expanded = false },
             )
             HorizontalDivider()
-            ProfileMenuItem("커플/가족 연결") {
+            ProfileMenuItem("코드 등록") {
                 expanded = false
                 onSelectTab(NativeTab.People)
             }

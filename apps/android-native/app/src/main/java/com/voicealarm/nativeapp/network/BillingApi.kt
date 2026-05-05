@@ -37,6 +37,7 @@ data class VoucherListResponse(
 data class VoucherItem(
     val id: String,
     val code: String,
+    @SerializedName("plan_key") val planKey: String? = null,
     @SerializedName("plan_name") val planName: String,
     @SerializedName("plan_type") val planType: String,
     val status: String,
@@ -45,12 +46,13 @@ data class VoucherItem(
 
 data class CheckoutRequest(
     @SerializedName("plan_key") val planKey: String,
+    val gift: Boolean = false,
 )
 
 data class CheckoutResponse(
     val success: Boolean,
     @SerializedName("checkout_stub") val checkoutStub: Boolean = false,
-    val subscription: BillingSubscription,
+    val subscription: BillingSubscription?,
     val plan: BillingPlan,
     val voucher: CheckoutVoucher? = null,
 )

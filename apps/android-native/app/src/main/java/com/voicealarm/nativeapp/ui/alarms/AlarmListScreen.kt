@@ -74,7 +74,7 @@ internal fun AlarmListScreen(
     onRefreshNotes: () -> Unit,
     onSendNote: (String, String) -> Unit,
     onMarkNoteRead: (String) -> Unit,
-    onCheckoutPlan: (String) -> Unit,
+    onCheckoutPlan: (String, Boolean) -> Unit,
     onCreateAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
@@ -106,18 +106,6 @@ internal fun AlarmListScreen(
                         onSelectTab = onSelectTab,
                         onSyncNow = onSyncNow,
                         onLogout = onLogout,
-                    )
-                }
-                item {
-                    NextAlarmHeroCard(
-                        nextAlarm = nextAlarm,
-                        onClick = {
-                            if (nextAlarm == null) {
-                                onCreateAlarm()
-                            } else {
-                                onEditAlarm(nextAlarm)
-                            }
-                        },
                     )
                 }
                 item {

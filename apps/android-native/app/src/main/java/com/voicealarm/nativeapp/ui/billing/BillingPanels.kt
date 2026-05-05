@@ -1,5 +1,6 @@
 package com.voicealarm.nativeapp
 
+import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,11 +13,9 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -45,10 +45,11 @@ internal fun SubscriptionPanel(
     vouchers: List<VoucherItem>,
     onRefresh: () -> Unit,
     onRegisterCode: (String) -> Unit,
-    onCheckoutPlan: (String) -> Unit,
+    onCheckoutPlan: (String, Boolean) -> Unit,
 ) {
-    var checkoutTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
+    var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
     val currentPlan = subscriptionResponse?.plan
+    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val options = remember {
         listOf(
@@ -82,6 +83,15 @@ internal fun SubscriptionPanel(
             ),
         )
     }
+    fun shareVoucher(voucher: VoucherItem) {
+        val shareText = "Voice Alarm ${voucher.planName} 이용권 코드: ${voucher.code}"
+        clipboard.setText(AnnotatedString(voucher.code))
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
+    }
 
     OutlinedCard {
         Column(
@@ -100,46 +110,45 @@ internal fun SubscriptionPanel(
                 } else {
                     currentPlan?.key == option.key
                 }
+                val voucherForPlan = vouchers.firstOrNull { voucher ->
+                    voucher.status in listOf("issued", "active", "pending") &&
+                        (voucher.planKey == option.key || voucher.planName.contains(option.name))
+                }
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
                     busy = billingBusy,
-                    onPurchase = { checkoutTarget = option },
-                    onGift = { checkoutTarget = option },
+                    voucher = voucherForPlan,
+                    onPurchase = { checkoutTarget = CheckoutSelection(option = option, gift = false) },
+                    onGift = { checkoutTarget = CheckoutSelection(option = option, gift = true) },
+                    onShareVoucher = { voucher -> shareVoucher(voucher) },
                 )
-            }
-
-            if (vouchers.isNotEmpty()) {
-                HorizontalDivider()
-                Text("초대 코드", fontWeight = FontWeight.SemiBold)
-                vouchers.take(6).forEach { voucher ->
-                    CompactActionRow(
-                        title = voucher.code,
-                        subtitle = "${voucher.planName} · ${voucherStatusLabel(voucher.status)}",
-                        actionLabel = "복사하기",
-                        enabled = true,
-                        onAction = { clipboard.setText(AnnotatedString(voucher.code)) },
-                    )
-                }
             }
         }
     }
 
-    checkoutTarget?.let { target ->
+    checkoutTarget?.let { selection ->
+        val target = selection.option
         AlertDialog(
             onDismissRequest = { checkoutTarget = null },
-            title = { Text("${target.name} 플랜 구매") },
+            title = { Text(if (selection.gift) "${target.name} 플랜 선물하기" else "${target.name} 플랜 구매") },
             text = {
-                Text("구매를 진행할까요? 구매 후 초대 코드를 복사할 수 있어요.")
+                Text(
+                    if (selection.gift) {
+                        "내 구독을 변경하지 않고 다른 사람이 등록할 수 있는 이용권 코드를 만들어요."
+                    } else {
+                        "구매를 진행할까요? 구매 후 공유하기로 코드를 보낼 수 있어요."
+                    },
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         checkoutTarget = null
-                        onCheckoutPlan(target.key)
+                        onCheckoutPlan(target.key, selection.gift)
                     },
                 ) {
-                    Text("구매")
+                    Text(if (selection.gift) "결제" else "구매")
                 }
             },
             dismissButton = {
@@ -156,8 +165,10 @@ internal fun SubscriptionPlanCard(
     option: SubscriptionPlanOption,
     isCurrent: Boolean,
     busy: Boolean,
+    voucher: VoucherItem?,
     onPurchase: () -> Unit,
     onGift: () -> Unit,
+    onShareVoucher: (VoucherItem) -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -201,6 +212,40 @@ internal fun SubscriptionPlanCard(
             }
             if (option.key != "free") {
                 if (option.key == "plus_personal") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = onPurchase,
+                                enabled = !busy && !isCurrent,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("구매")
+                            }
+                            OutlinedButton(
+                                onClick = onGift,
+                                enabled = !busy,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("선물하기")
+                            }
+                        }
+                        if (voucher != null) {
+                            OutlinedButton(
+                                onClick = { onShareVoucher(voucher) },
+                                enabled = !busy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("공유하기")
+                            }
+                        }
+                    }
+                } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -213,29 +258,27 @@ internal fun SubscriptionPlanCard(
                         ) {
                             Text("구매")
                         }
-                        OutlinedButton(
-                            onClick = onGift,
-                            enabled = !busy,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(14.dp),
-                        ) {
-                            Text("선물하기")
+                        if (voucher != null) {
+                            OutlinedButton(
+                                onClick = { onShareVoucher(voucher) },
+                                enabled = !busy,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("공유하기")
+                            }
                         }
-                    }
-                } else {
-                    Button(
-                        onClick = onPurchase,
-                        enabled = !busy && !isCurrent,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text("구매")
                     }
                 }
             }
         }
     }
 }
+
+private data class CheckoutSelection(
+    val option: SubscriptionPlanOption,
+    val gift: Boolean,
+)
 
 @Composable
 internal fun CharacterBillingPanel(

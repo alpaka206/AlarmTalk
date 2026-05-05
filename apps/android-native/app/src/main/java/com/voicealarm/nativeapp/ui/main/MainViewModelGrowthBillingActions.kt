@@ -181,22 +181,25 @@ internal fun MainViewModel.markNoteRead(noteId: String) {
     }
 }
 
-internal fun MainViewModel.checkoutPlan(planKey: String) {
+internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) {
     val authorization = bearerOrMessage("구독을 변경하려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey))
+            api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey, gift = gift))
         }.onSuccess { response ->
-            subscriptionResponse = BillingSubscriptionResponse(
-                subscription = response.subscription,
-                plan = response.plan,
-            )
+            response.subscription?.let { subscription ->
+                subscriptionResponse = BillingSubscriptionResponse(
+                    subscription = subscription,
+                    plan = response.plan,
+                )
+            }
             response.voucher?.let { voucher ->
                 vouchers = listOf(
                     VoucherItem(
                         id = voucher.id,
                         code = voucher.code,
+                        planKey = response.plan.key,
                         planName = response.plan.name,
                         planType = response.plan.planType,
                         status = "issued",
@@ -204,12 +207,16 @@ internal fun MainViewModel.checkoutPlan(planKey: String) {
                     ),
                 ) + vouchers
             }
-            message = "${response.plan.name} 플랜을 적용했어요"
+            message = if (gift) {
+                "${response.plan.name} 이용권을 만들었어요"
+            } else {
+                "${response.plan.name} 플랜을 적용했어요"
+            }
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to checkout plan key=$planKey", error)
-            message = userFacingError(error, "구독 변경에 실패했어요")
+            Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
+            message = userFacingError(error, "구매에 실패했어요")
         }
         billingBusy = false
     }
