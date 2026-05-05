@@ -281,7 +281,7 @@ internal fun AlarmListScreen(
                 item {
                     ScreenHeader(
                         title = "캐릭터",
-                        subtitle = "알람을 끄고 다시 울릴 때마다 캐릭터가 자라요.",
+                        subtitle = "알람을 제대로 끄면 캐릭터가 성장해요!",
                     )
                 }
                 if (authSession == null) {

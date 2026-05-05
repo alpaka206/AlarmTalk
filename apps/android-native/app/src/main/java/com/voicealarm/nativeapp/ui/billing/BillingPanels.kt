@@ -13,6 +13,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -328,60 +329,66 @@ internal fun CharacterBillingPanel(
     onSyncEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
 ) {
-    val pendingEvents = characterEvents.count { it.state != "synced" }
-
     OutlinedCard {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PanelHeader(
-                title = "성장",
-                actionLabel = if (characterBusy || billingBusy) "불러오는 중" else "새로고침",
-                enabled = !characterBusy && !billingBusy,
-                onAction = onRefresh,
+            Text(
+                text = "성장",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
 
             if (characterResponse == null) {
                 MutedText("캐릭터 정보를 아직 불러오지 않았어요.")
             } else {
                 val character = characterResponse.character
-                Text(
-                    text = "${stageEmoji(character.stage)} ${character.name}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                MutedText(
-                    "레벨 ${character.level} - ${stageLabel(character.stage)} - XP ${character.xp} - 애정도 ${character.affection}",
-                )
+                val progress = characterResponse.progress
+                val progressRatio = progress.progressRatio.toFloat().coerceIn(0f, 1f)
+                val levelSpan = progress.levelSpan.coerceAtLeast(1)
+                val xpIntoLevel = progress.xpIntoLevel.coerceIn(0, levelSpan)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stageEmoji(character.stage),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                    Text(
+                        text = "LV.${character.level}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "XP",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "$xpIntoLevel/$levelSpan",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { progressRatio },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    MutedText("누적 XP ${character.xp}")
+                }
                 MutedText(
                     "연속 ${characterResponse.streak.current}일 - 최장 ${characterResponse.streak.longest}일",
                 )
-                MutedText(
-                    "진행도 ${characterResponse.progress.xpIntoLevel}/${characterResponse.progress.levelSpan}",
-                )
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
-                    onClick = onSyncEvents,
-                    enabled = pendingEvents > 0 && !characterBusy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("XP 동기화")
-                }
-                OutlinedButton(
-                    onClick = onRefresh,
-                    enabled = !characterBusy && !billingBusy,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text("대기 ${pendingEvents}개")
-                }
-            }
-            MutedText("구독은 홈 오른쪽 위 프로필 메뉴에서 관리해요.")
         }
     }
 }
