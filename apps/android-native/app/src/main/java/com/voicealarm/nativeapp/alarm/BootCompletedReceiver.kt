@@ -8,6 +8,7 @@ import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmContract.ACTION_DEBUG_RESTORE_ALARMS
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.sync.RemoteAlarmSyncScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,8 @@ class BootCompletedReceiver : BroadcastReceiver() {
         if (!isRestoreAction) return
 
         Log.i(TAG, "Restore receiver invoked action=$action")
+        RemoteAlarmSyncScheduler.ensurePeriodic(context)
+        RemoteAlarmSyncScheduler.runOnce(context)
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching {

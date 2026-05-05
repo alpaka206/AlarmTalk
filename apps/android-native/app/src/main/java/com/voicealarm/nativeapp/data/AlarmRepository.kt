@@ -11,9 +11,15 @@ class AlarmRepository(
     private val alarmDao: AlarmDao,
     private val characterEventDao: CharacterEventDao,
     private val alarmScheduler: AlarmScheduler,
+    private val alarmAudioStore: AlarmAudioStore,
 ) {
     private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
+    private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
+        alarmDao = alarmDao,
+        alarmScheduler = alarmScheduler,
+        alarmAudioStore = alarmAudioStore,
+    )
     private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
@@ -389,6 +395,9 @@ class AlarmRepository(
 
     suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
         alarmSyncService.syncWithBackend(api, token)
+
+    suspend fun pullReceivedAlarms(api: VoiceAlarmApi, token: String): RemoteAlarmPullResult =
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
 
     suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
         characterEventSyncService.sync(api, token)

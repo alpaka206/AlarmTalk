@@ -16,6 +16,8 @@ const alarmMutation = new Hono<AppEnv>();
 
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
 
   const body = await c.req.json<{
@@ -113,8 +115,8 @@ alarmMutation.post('/', async (c) => {
   let resolvedMessageId: string | null = body.message_id ?? null;
   if (!resolvedMessageId && body.raw_audio_url) {
     const firstVoice = await db.execute({
-      sql: 'SELECT id FROM voice_profiles WHERE user_id = ? LIMIT 1',
-      args: [userId],
+      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) LIMIT 1',
+      args: ownerIds,
     });
     if (firstVoice.rows.length === 0) {
       return c.json(
@@ -131,7 +133,7 @@ alarmMutation.post('/', async (c) => {
             VALUES (?, ?, ?, '', ?, 'raw')`,
       args: [
         placeholderMsgId,
-        userId,
+        userPk,
         firstVoice.rows[0]!.id as string,
         body.raw_audio_url,
       ],
@@ -139,8 +141,8 @@ alarmMutation.post('/', async (c) => {
     resolvedMessageId = placeholderMsgId;
   } else if (resolvedMessageId) {
     const msg = await db.execute({
-      sql: 'SELECT id FROM messages WHERE id = ? AND user_id = ?',
-      args: [resolvedMessageId, userId],
+      sql: 'SELECT id FROM messages WHERE id = ? AND user_id IN (?, ?)',
+      args: [resolvedMessageId, ...ownerIds],
     });
     if (msg.rows.length === 0) {
       return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);

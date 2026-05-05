@@ -43,6 +43,7 @@ import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
@@ -227,6 +228,18 @@ internal fun AlarmEditorScreen(
 
     fun saveEditor() {
         if (isSaving) return
+        if (familyAlarmMode) {
+            val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+                hour = editor.hour,
+                minute = editor.minute,
+                repeatDaysMask = editor.repeatDaysMask,
+                holidayOff = editor.holidayOff,
+            )
+            if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
+                audioMessage = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                return
+            }
+        }
         if (editor.playMode == AlarmPlayModes.ALARM_ONLY) {
             editor.clearAudio()
             submitDraft(editor.toDraft())
@@ -590,6 +603,8 @@ internal fun FamilyAlarmTargetCard(
         }
     }
 }
+
+private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 
 internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }

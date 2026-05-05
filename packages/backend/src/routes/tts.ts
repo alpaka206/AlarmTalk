@@ -346,8 +346,16 @@ tts.get('/messages/:id/audio', async (c) => {
   const result = await db.execute({
     sql: `SELECT id, user_id, voice_profile_id, text, audio_url, category
           FROM messages
-          WHERE id = ? AND user_id IN (?, ?)`,
-    args: [id, ...ownerIds],
+          WHERE id = ?
+            AND (
+              user_id IN (?, ?)
+              OR EXISTS (
+                SELECT 1 FROM alarms a
+                WHERE a.message_id = messages.id
+                  AND a.target_user_id IN (?, ?)
+              )
+            )`,
+    args: [id, ...ownerIds, ...ownerIds],
   });
 
   if (result.rows.length === 0) {
@@ -511,6 +519,11 @@ async function loadAudioBytes(
     if (!audioRes.ok) return null;
     bytes = new Uint8Array(await audioRes.arrayBuffer());
     format = audioFormatFromMime(audioRes.headers.get('content-type')) ?? format;
+  } else if (c.env.VOICE_BUCKET) {
+    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(audioUrl);
+    if (!stored) return null;
+    bytes = stored.bytes;
+    format = audioFormatFromMime(stored.meta.mimeType) ?? format;
   } else {
     return null;
   }

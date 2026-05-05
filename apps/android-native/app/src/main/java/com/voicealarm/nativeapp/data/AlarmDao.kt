@@ -14,6 +14,9 @@ interface AlarmDao {
     @Query("SELECT * FROM alarms WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): AlarmEntity?
 
+    @Query("SELECT * FROM alarms WHERE remoteAlarmId = :remoteAlarmId LIMIT 1")
+    suspend fun getByRemoteAlarmId(remoteAlarmId: String): AlarmEntity?
+
     @Query(
         """
         SELECT * FROM alarms
