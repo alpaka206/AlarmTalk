@@ -48,6 +48,7 @@ internal fun SubscriptionPanel(
     onCheckoutPlan: (String, Boolean) -> Unit,
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
+    var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
     val currentPlan = subscriptionResponse?.plan
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -92,6 +93,13 @@ internal fun SubscriptionPanel(
         }
         context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
     }
+    fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
+        if (vouchersForPlan.size == 1) {
+            shareVoucher(vouchersForPlan.first())
+        } else if (vouchersForPlan.isNotEmpty()) {
+            shareTarget = vouchersForPlan
+        }
+    }
 
     OutlinedCard {
         Column(
@@ -110,7 +118,7 @@ internal fun SubscriptionPanel(
                 } else {
                     currentPlan?.key == option.key
                 }
-                val voucherForPlan = vouchers.firstOrNull { voucher ->
+                val vouchersForPlan = vouchers.filter { voucher ->
                     voucher.status in listOf("issued", "active", "pending") &&
                         (voucher.planKey == option.key || voucher.planName.contains(option.name))
                 }
@@ -118,10 +126,10 @@ internal fun SubscriptionPanel(
                     option = option,
                     isCurrent = isCurrent,
                     busy = billingBusy,
-                    voucher = voucherForPlan,
+                    vouchers = vouchersForPlan,
                     onPurchase = { checkoutTarget = CheckoutSelection(option = option, gift = false) },
                     onGift = { checkoutTarget = CheckoutSelection(option = option, gift = true) },
-                    onShareVoucher = { voucher -> shareVoucher(voucher) },
+                    onShareVouchers = { selectedVouchers -> openVoucherShare(selectedVouchers) },
                 )
             }
         }
@@ -158,6 +166,34 @@ internal fun SubscriptionPanel(
             },
         )
     }
+
+    if (shareTarget.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { shareTarget = emptyList() },
+            title = { Text("공유할 코드 선택") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    shareTarget.forEach { voucher ->
+                        CompactActionRow(
+                            title = voucher.code,
+                            subtitle = "${voucher.planName} · ${voucherStatusLabel(voucher.status)}",
+                            actionLabel = "공유",
+                            enabled = true,
+                            onAction = {
+                                shareTarget = emptyList()
+                                shareVoucher(voucher)
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { shareTarget = emptyList() }) {
+                    Text("닫기")
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -165,10 +201,10 @@ internal fun SubscriptionPlanCard(
     option: SubscriptionPlanOption,
     isCurrent: Boolean,
     busy: Boolean,
-    voucher: VoucherItem?,
+    vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
     onGift: () -> Unit,
-    onShareVoucher: (VoucherItem) -> Unit,
+    onShareVouchers: (List<VoucherItem>) -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -234,9 +270,9 @@ internal fun SubscriptionPlanCard(
                                 Text("선물하기")
                             }
                         }
-                        if (voucher != null) {
+                        if (vouchers.isNotEmpty()) {
                             OutlinedButton(
-                                onClick = { onShareVoucher(voucher) },
+                                onClick = { onShareVouchers(vouchers) },
                                 enabled = !busy,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
@@ -258,9 +294,9 @@ internal fun SubscriptionPlanCard(
                         ) {
                             Text("구매")
                         }
-                        if (voucher != null) {
+                        if (vouchers.isNotEmpty()) {
                             OutlinedButton(
-                                onClick = { onShareVoucher(voucher) },
+                                onClick = { onShareVouchers(vouchers) },
                                 enabled = !busy,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(14.dp),

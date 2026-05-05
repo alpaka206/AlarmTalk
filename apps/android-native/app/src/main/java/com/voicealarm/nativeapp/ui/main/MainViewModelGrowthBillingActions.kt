@@ -188,7 +188,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
         runCatching {
             api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey, gift = gift))
         }.onSuccess { response ->
-            response.subscription?.let { subscription ->
+            if (!gift) response.subscription?.let { subscription ->
                 subscriptionResponse = BillingSubscriptionResponse(
                     subscription = subscription,
                     plan = response.plan,
@@ -212,8 +212,10 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             } else {
                 "${response.plan.name} 플랜을 적용했어요"
             }
-            refreshAppSession()
-            refreshSocial()
+            if (!gift) {
+                refreshAppSession()
+                refreshSocial()
+            }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
             message = userFacingError(error, "구매에 실패했어요")

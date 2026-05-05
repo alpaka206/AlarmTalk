@@ -108,11 +108,11 @@ internal fun snoozeRepeatLabel(limit: Int): String = when (limit) {
     else -> "${limit}회"
 }
 
-internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): String =
+internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): String? =
     if (enabled) {
-        "다시 울림 ${minutes}분 · ${snoozeRepeatLabel(repeatLimit)}"
+        "${minutes}분 · ${snoozeRepeatLabel(repeatLimit)}"
     } else {
-        "다시 울림 꺼짐"
+        null
     }
 
 internal fun vibrationLabel(pattern: String): String = when (pattern) {
