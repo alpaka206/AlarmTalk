@@ -58,6 +58,9 @@ import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
+import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import kotlinx.coroutines.Dispatchers
@@ -65,25 +68,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class VoiceProfileInputMode {
-    Record,
-    File,
-}
-
-private fun recordingTimeLabel(millis: Long): String {
-    val totalSeconds = (millis / 1000).coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS / 1000)
-    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
-
-private fun voiceProfilePlaceholder(existingCount: Int): String = "음성 ${existingCount + 1}"
-
-private fun compactTimeLabel(millis: Long): String {
-    val totalSeconds = (millis / 1000).coerceAtLeast(0L)
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
+private fun voiceProfilePlaceholder(existingCount: Int): String = "음성${existingCount + 1}"
 
 private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
-    compactTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
+    audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
 
 private fun voiceProfileDurationError(durationMillis: Long?): String? = when {
     durationMillis == null -> "오디오 길이를 확인할 수 없어요"
@@ -118,11 +106,15 @@ internal fun VoiceLoginRequiredCard() {
 @Composable
 internal fun VoiceProfileManagementPanel(
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
-    onCreateVoiceProfile: (String, CachedAlarmAudio) -> Unit,
-    onCreateVoiceProfiles: (List<Pair<String, CachedAlarmAudio>>) -> Unit,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    familyGroup: FamilyGroupCurrentResponse?,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean) -> Unit,
+    onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onRenameVoiceProfile: (String, String) -> Unit,
+    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -131,15 +123,17 @@ internal fun VoiceProfileManagementPanel(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
+    var shareVoice by remember { mutableStateOf(false) }
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
-    var inputMode by remember { mutableStateOf(VoiceProfileInputMode.Record) }
+    var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
     var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
     var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
     var cropStartMillis by remember { mutableStateOf(0L) }
+    var cropEndMillis by remember { mutableStateOf(VoiceProfileAudioLimits.MAX_DURATION_MILLIS) }
     var speakerCount by remember { mutableStateOf(1) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
     var selectedSpeakerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -152,6 +146,7 @@ internal fun VoiceProfileManagementPanel(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
     val remainingProfileSlots = (MAX_VOICE_PROFILES - voiceProfiles.size).coerceAtLeast(0)
+    val canShareVoice = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
 
     fun applySelectedAudio(audio: CachedAlarmAudio) {
         selectedAudio = audio
@@ -168,6 +163,7 @@ internal fun VoiceProfileManagementPanel(
                 selectedFileUri = uri
                 selectedFileDurationMillis = durationMillis
                 cropStartMillis = 0L
+                cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 detectedSpeakers = emptyList()
                 selectedSpeakerIds = emptySet()
                 removedSpeakerIds = emptySet()
@@ -222,12 +218,14 @@ internal fun VoiceProfileManagementPanel(
         selectedFileUri = null
         selectedFileDurationMillis = null
         cropStartMillis = 0L
+        cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
         speakerCount = 1
         detectedSpeakers = emptyList()
         selectedSpeakerIds = emptySet()
         removedSpeakerIds = emptySet()
         separatingBusy = false
         profileName = ""
+        shareVoice = false
         selectedAudio = null
         mediaPlayer?.release()
         mediaPlayer = null
@@ -263,6 +261,10 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    LaunchedEffect(canShareVoice) {
+        if (!canShareVoice) shareVoice = false
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             if (recorder.isRecording) recorder.cancel()
@@ -272,10 +274,11 @@ internal fun VoiceProfileManagementPanel(
 
     suspend fun croppedFileAudio(): CachedAlarmAudio {
         val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요")
+        val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {
             audioStore.cacheFromUri(
                 sourceUri = uri,
-                maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                maxDurationMillis = cropDurationMillis,
                 startMillis = cropStartMillis,
             )
         }
@@ -337,11 +340,31 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    fun playFileCropPreview() {
+        scope.launch {
+            runCatching {
+                croppedFileAudio()
+            }.onSuccess { audio ->
+                mediaPlayer?.release()
+                mediaPlayer = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))?.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to play cropped voice preview", error)
+                localMessage = userFacingError(error, "선택한 구간을 재생하지 못했어요")
+            }
+        }
+    }
+
     fun submitCreateProfile(name: String) {
-        if (inputMode == VoiceProfileInputMode.Record) {
+        if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: return
             if (voiceProfileDurationError(audio.durationMillis) != null) return
-            onCreateVoiceProfile(name, audio)
+            onCreateVoiceProfile(name, audio, shareVoice)
             closeCreateDialog()
             return
         }
@@ -349,10 +372,20 @@ internal fun VoiceProfileManagementPanel(
         val uri = selectedFileUri ?: return
         val durationMillis = selectedFileDurationMillis ?: return
         if (voiceProfileFileDurationError(durationMillis) != null) return
+        val selectedDurationMillis = cropEndMillis - cropStartMillis
+        val selectedDurationError = voiceProfileDurationError(selectedDurationMillis)
+        if (selectedDurationError != null) {
+            localMessage = selectedDurationError
+            return
+        }
         if (speakerCount > 1) {
             val selectedSpeakers = detectedSpeakers.filter { it.id in selectedSpeakerIds }
             if (selectedSpeakers.isEmpty()) {
                 localMessage = "등록할 화자를 선택해 주세요"
+                return
+            }
+            if (selectedSpeakers.any { (it.endMs - it.startMs) < VoiceProfileAudioLimits.MIN_DURATION_MILLIS }) {
+                localMessage = "프로필로 만들 화자 음성은 30초 이상이어야 해요"
                 return
             }
             scope.launch {
@@ -371,7 +404,7 @@ internal fun VoiceProfileManagementPanel(
                         } else {
                             "$name ${index + 1}"
                         }
-                        resolvedName to audio
+                        Triple(resolvedName, audio, shareVoice)
                     }
                 }.onSuccess { drafts ->
                     onCreateVoiceProfiles(drafts)
@@ -388,12 +421,15 @@ internal fun VoiceProfileManagementPanel(
                 withContext(Dispatchers.IO) {
                     audioStore.cacheFromUri(
                         sourceUri = uri,
-                        maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                        maxDurationMillis = selectedDurationMillis.coerceIn(
+                            VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                            VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                        ),
                         startMillis = cropStartMillis,
                     )
                 }
             }.onSuccess { audio ->
-                onCreateVoiceProfile(name, audio)
+                onCreateVoiceProfile(name, audio, shareVoice)
                 closeCreateDialog()
             }.onFailure { error ->
                 Log.e(TAG, "Failed to prepare cropped voice profile audio", error)
@@ -432,25 +468,39 @@ internal fun VoiceProfileManagementPanel(
                 VoiceProfileRow(
                     profile = profile,
                     enabled = !voiceProfileBusy,
+                    canShareVoice = canShareVoice,
                     onRename = {
                         renameTarget = profile
                         renameName = profile.name
                     },
+                    onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
                 )
+            }
+        }
+
+        if (canShareVoice && familyVoices.isNotEmpty()) {
+            Text(
+                text = "공유 받은 음성",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            familyVoices.forEach { profile ->
+                SharedVoiceProfileRow(profile = profile)
             }
         }
     }
 
     if (showCreateForm && !isLimitReached) {
         val audio = selectedAudio
-        val durationError = if (inputMode == VoiceProfileInputMode.Record) {
+        val durationError = if (inputMode == VoiceCaptureMode.Record) {
             voiceProfileDurationError(audio?.durationMillis)
         } else {
             voiceProfileFileDurationError(selectedFileDurationMillis)
+                ?: voiceProfileDurationError(cropEndMillis - cropStartMillis)
         }
         val resolvedProfileName = profileName.trim().ifBlank { voiceProfilePlaceholder(voiceProfiles.size) }
-        val canRegister = if (inputMode == VoiceProfileInputMode.Record) {
+        val canRegister = if (inputMode == VoiceCaptureMode.Record) {
             audio != null && durationError == null
         } else if (speakerCount > 1) {
             selectedSpeakerIds.isNotEmpty() && selectedSpeakerIds.size <= remainingProfileSlots
@@ -475,112 +525,70 @@ internal fun VoiceProfileManagementPanel(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        VoiceInputModeButton(
-                            label = "녹음",
-                            selected = inputMode == VoiceProfileInputMode.Record,
-                            onClick = {
-                                if (!isRecording) inputMode = VoiceProfileInputMode.Record
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                        VoiceInputModeButton(
-                            label = "파일 선택",
-                            selected = inputMode == VoiceProfileInputMode.File,
-                            onClick = {
-                                if (!isRecording) inputMode = VoiceProfileInputMode.File
-                            },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-
-                    if (inputMode == VoiceProfileInputMode.Record) {
-                        Column(
+                    if (canShareVoice) {
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Button(
-                                onClick = {
-                                    if (isRecording) {
-                                        stopRecording()
-                                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                        PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        startRecording()
-                                    } else {
-                                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                },
-                                enabled = !voiceProfileBusy,
-                                modifier = Modifier.size(92.dp),
-                                shape = CircleShape,
-                                contentPadding = ButtonDefaults.ContentPadding,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isRecording) {
-                                        MaterialTheme.colorScheme.error
-                                    } else {
-                                        MaterialTheme.colorScheme.primary
-                                    },
-                                ),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Mic,
-                                    contentDescription = if (isRecording) "녹음 종료" else "녹음",
-                                    modifier = Modifier.size(34.dp),
-                                )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("음성 공유", fontWeight = FontWeight.SemiBold)
+                                MutedText("가족/커플 플랜에서만 공유돼요. 기본은 공유 안 함이에요.")
                             }
-                            Text(
-                                text = "${recordingTimeLabel(recordingElapsedMillis)} / 01:00",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (isRecording) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            RecordingLevelBars(
-                                levels = recordingLevels,
-                                active = isRecording,
+                            VoiceAlarmSwitch(
+                                checked = shareVoice,
+                                onCheckedChange = { shareVoice = it },
                             )
                         }
+                    }
+                    VoiceCaptureModeSelector(
+                        selected = inputMode,
+                        enabled = !isRecording,
+                        onSelect = { inputMode = it },
+                    )
+
+                    if (inputMode == VoiceCaptureMode.Record) {
+                        VoiceRecordControls(
+                            isRecording = isRecording,
+                            elapsedMillis = recordingElapsedMillis,
+                            maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                            levels = recordingLevels,
+                            enabled = !voiceProfileBusy,
+                            notice = "30초 이상 1분 이하로 녹음해 주세요.",
+                            onRecordClick = {
+                                if (isRecording) {
+                                    stopRecording()
+                                } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                    PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    startRecording()
+                                } else {
+                                    recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                        )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(
-                                onClick = { pickAudioLauncher.launch("audio/*") },
+                            VoiceFileControls(
+                                durationMillis = selectedFileDurationMillis,
+                                cropStartMillis = cropStartMillis,
+                                cropEndMillis = cropEndMillis,
+                                minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                                maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                 enabled = !voiceProfileBusy && !isRecording,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                            ) {
-                                Text("파일 선택")
-                            }
-                            selectedFileDurationMillis?.let { durationMillis ->
-                                val maxStartMillis = (durationMillis - VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
-                                    .coerceAtLeast(0L)
-                                val cropEndMillis = (cropStartMillis + VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
-                                    .coerceAtMost(durationMillis)
-                                Text(
-                                    text = "${compactTimeLabel(cropStartMillis)} - ${compactTimeLabel(cropEndMillis)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                if (maxStartMillis > 0) {
-                                    Slider(
-                                        value = cropStartMillis.toFloat(),
-                                        onValueChange = { value ->
-                                            val nextStartMillis = value.toLong()
-                                            if (nextStartMillis != cropStartMillis) {
-                                                cropStartMillis = nextStartMillis
-                                                resetSpeakers()
-                                            }
-                                        },
-                                        valueRange = 0f..maxStartMillis.toFloat(),
-                                    )
-                                }
+                                uploadLabel = "파일 업로드",
+                                notice = "30초 이상 1분 이하 구간을 선택해 주세요.",
+                                onPickFile = { pickAudioLauncher.launch("audio/*") },
+                                onCropChange = { start, end ->
+                                    if (start != cropStartMillis || end != cropEndMillis) {
+                                        cropStartMillis = start
+                                        cropEndMillis = end
+                                        resetSpeakers()
+                                    }
+                                },
+                                onPreviewCrop = { playFileCropPreview() },
+                            )
+                            selectedFileDurationMillis?.let {
                                 SpeakerCountSelector(
                                     selected = speakerCount,
                                     onSelect = {
@@ -636,26 +644,6 @@ internal fun VoiceProfileManagementPanel(
                         }
                     }
 
-                    if (isRecording) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(999.dp)),
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth(
-                                        (
-                                            recordingElapsedMillis.toFloat() /
-                                                VoiceProfileAudioLimits.MAX_DURATION_MILLIS.toFloat()
-                                            ).coerceIn(0f, 1f),
-                                    )
-                                    .height(6.dp)
-                                    .background(MaterialTheme.colorScheme.error, RoundedCornerShape(999.dp)),
-                            )
-                        }
-                    }
                     if (localMessage != null) {
                         MutedText(localMessage.orEmpty())
                     }
@@ -867,7 +855,9 @@ private fun SpeakerCandidateRow(
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
     enabled: Boolean,
+    canShareVoice: Boolean,
     onRename: () -> Unit,
+    onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     OutlinedCard {
@@ -896,6 +886,36 @@ internal fun VoiceProfileRow(
                     }
                 }
             }
+            if (canShareVoice) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("공유", fontWeight = FontWeight.SemiBold)
+                        MutedText(if (profile.isShared == true) "가족/커플에게 공유 중" else "나만 사용")
+                    }
+                    VoiceAlarmSwitch(
+                        checked = profile.isShared == true,
+                        onCheckedChange = onShareChange,
+                        enabled = enabled,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SharedVoiceProfileRow(profile: FamilyVoiceProfile) {
+    OutlinedCard {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(profile.name, fontWeight = FontWeight.SemiBold)
+            MutedText(profile.ownerName?.takeIf { it.isNotBlank() } ?: "공유 음성")
         }
     }
 }

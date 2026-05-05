@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        package: [packages/backend, packages/shared, packages/ui, packages/voice, apps/mobile]
+        package: [packages/backend, packages/shared, packages/ui, packages/voice]
     steps:
       - uses: actions/checkout@v6
 
@@ -41,11 +41,6 @@ jobs:
 
       - name: Install root dependencies
         run: npm ci || npm install
-
-      - name: Install mobile dependencies
-        if: matrix.package == 'apps/mobile'
-        working-directory: apps/mobile
-        run: npm install
 
       - name: Typecheck
         working-directory: ${{ matrix.package }}
@@ -64,8 +59,6 @@ jobs:
             command: npm test
           - package: packages/voice
             command: npm test
-          - package: apps/mobile
-            command: npm test
     steps:
       - uses: actions/checkout@v6
 
@@ -77,11 +70,6 @@ jobs:
 
       - name: Install root dependencies
         run: npm ci || npm install
-
-      - name: Install package dependencies
-        if: matrix.package == 'apps/mobile'
-        working-directory: apps/mobile
-        run: npm install
 
       - name: Test
         working-directory: ${{ matrix.package }}

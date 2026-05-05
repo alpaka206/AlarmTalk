@@ -2,7 +2,11 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { isValidVoucherCodeFormat, hashVoucherCode } from '../lib/vouchers';
-import { isValidInviteCodeFormat } from '../lib/invites';
+import { isValidInviteCodeFormat, normalizeInviteCode } from '../lib/invites';
+import {
+  PlanGroupCapacityError,
+  resolveFamilyPlanGroupForRedeemedVoucher,
+} from '../lib/plan-groups';
 
 const codeRoutes = new Hono<AppEnv>();
 
@@ -16,9 +20,7 @@ codeRoutes.post('/register', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
-  const body = await c.req
-    .json<{ code?: unknown }>()
-    .catch(() => ({ code: undefined }));
+  const body = await c.req.json<{ code?: unknown }>().catch(() => ({ code: undefined }));
 
   const raw = typeof body.code === 'string' ? body.code.trim() : '';
   if (!raw) {
@@ -40,7 +42,7 @@ codeRoutes.post('/register', async (c) => {
   if (isValidVoucherCodeFormat(upper)) {
     const codeHash = await hashVoucherCode(upper);
     const voucherRes = await db.execute({
-      sql: `SELECT id, plan_id, issuer_user_id, status, expires_at
+      sql: `SELECT id, plan_id, issuer_user_id, issuer_subscription_id, status, expires_at
             FROM voucher_codes WHERE code_hash = ?`,
       args: [codeHash],
     });
@@ -70,7 +72,10 @@ codeRoutes.post('/register', async (c) => {
     }
 
     if (String(voucher.issuer_user_id) === userPk) {
-      return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
+      return c.json(
+        { error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' },
+        400,
+      );
     }
 
     const planRes = await db.execute({
@@ -84,14 +89,42 @@ codeRoutes.post('/register', async (c) => {
     const plan = planRes.rows[0]!;
     const planType = String(plan.plan_type);
     const periodDays = Number(plan.period_days) || 30;
+    const maxMembers = Number(plan.max_members) || 1;
     const startsAt = now;
     const newExpiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
 
+    let planGroupId: string | null;
+    try {
+      planGroupId = await resolveFamilyPlanGroupForRedeemedVoucher(db, {
+        userPk,
+        planId,
+        planType,
+        maxMembers,
+        issuerSubscriptionId: (voucher.issuer_subscription_id as string | null) ?? null,
+        issuerUserId: String(voucher.issuer_user_id),
+      });
+    } catch (error) {
+      if (error instanceof PlanGroupCapacityError) {
+        return c.json(
+          { error: `정원 초과 (최대 ${error.maxMembers}명)`, error_code: 'GROUP_FULL' },
+          409,
+        );
+      }
+      throw error;
+    }
+
     const subscriptionId = crypto.randomUUID();
     await db.execute({
-      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
-            VALUES (?, ?, ?, 'active', ?, ?)`,
-      args: [subscriptionId, userPk, planId, startsAt.toISOString(), newExpiresAt.toISOString()],
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+      args: [
+        subscriptionId,
+        userPk,
+        planId,
+        planGroupId,
+        startsAt.toISOString(),
+        newExpiresAt.toISOString(),
+      ],
     });
 
     await db.execute({
@@ -113,6 +146,7 @@ codeRoutes.post('/register', async (c) => {
       subscription: {
         id: subscriptionId,
         plan_id: planId,
+        plan_group_id: planGroupId,
         status: 'active',
         starts_at: startsAt.toISOString(),
         expires_at: newExpiresAt.toISOString(),
@@ -126,15 +160,19 @@ codeRoutes.post('/register', async (c) => {
     });
   }
 
-  // ── Family invite code: 6 digits ──
-  if (isValidInviteCodeFormat(raw)) {
+  // ── Family invite code: INV-XXXX-XXXX-XXXX (legacy INV-123456/123456 accepted) ──
+  const inviteCode = normalizeInviteCode(raw);
+  if (isValidInviteCodeFormat(inviteCode)) {
     const inviteRes = await db.execute({
       sql: `SELECT id, plan_group_id, inviter_user_id, status, expires_at
             FROM plan_group_invites WHERE code = ?`,
-      args: [raw],
+      args: [inviteCode],
     });
     if (inviteRes.rows.length === 0) {
-      return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
+      return c.json(
+        { error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' },
+        404,
+      );
     }
     const invite = inviteRes.rows[0]!;
     const inviteId = String(invite.id);
@@ -162,7 +200,10 @@ codeRoutes.post('/register', async (c) => {
     }
 
     if (String(invite.inviter_user_id) === userPk) {
-      return c.json({ error: '본인이 발급한 초대는 수락할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
+      return c.json(
+        { error: '본인이 발급한 초대는 수락할 수 없습니다', error_code: 'SELF_ISSUED' },
+        400,
+      );
     }
 
     const memberRes = await db.execute({

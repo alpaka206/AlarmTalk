@@ -58,11 +58,13 @@ internal fun VoiceAlarmSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
@@ -260,9 +262,13 @@ internal fun AlarmRow(
                 }
                 Text(
                     text = listOf(
-                        repeatLabel(alarm.repeatDaysMask),
+                        alarm.repeatDaysMask.takeIf { it != 0 }?.let(::repeatLabel),
                         if (alarm.holidayOff) "공휴일 끔" else null,
-                        if (alarm.snoozeEnabled) "다시 울림 ${alarm.snoozeMinutes}분" else "다시 울림 꺼짐",
+                        snoozeListLabel(
+                            enabled = alarm.snoozeEnabled,
+                            minutes = alarm.snoozeMinutes,
+                            repeatLimit = alarm.snoozeRepeatLimit,
+                        ),
                         vibrationLabel(alarm.vibrationPattern),
                         playModeLabel(alarm.playMode),
                     ).filterNotNull().joinToString(" · "),

@@ -52,17 +52,16 @@ internal fun AlarmListScreen(
     vouchers: List<VoucherItem>,
     noteBusy: Boolean,
     receivedNotes: List<ReceivedNote>,
-    message: String?,
-    onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio) -> Unit,
-    onCreateVoiceProfiles: (List<Pair<String, CachedAlarmAudio>>) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean) -> Unit,
+    onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onRenameVoiceProfile: (String, String) -> Unit,
+    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onCreateFamilyInvite: () -> Unit,
@@ -74,8 +73,9 @@ internal fun AlarmListScreen(
     onRefreshNotes: () -> Unit,
     onSendNote: (String, String) -> Unit,
     onMarkNoteRead: (String) -> Unit,
-    onCheckoutPlan: (String) -> Unit,
+    onCheckoutPlan: (String, Boolean) -> Unit,
     onCreateAlarm: () -> Unit,
+    onCreateFamilyAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
@@ -89,6 +89,9 @@ internal fun AlarmListScreen(
     val nextAlarm = remember(alarms) {
         alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
     }
+    val canCreateFamilyAlarm = authSession != null &&
+        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
+        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
 
     LazyColumn(
         modifier = Modifier
@@ -126,13 +129,12 @@ internal fun AlarmListScreen(
                         onClick = { onSelectTab(NativeTab.Growth) },
                     )
                 }
-                if (message != null) {
-                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
-                }
                 item {
                     QuickStartGrid(
                         onRecordVoice = { onSelectTab(NativeTab.Voices) },
                         onAddAlarm = onCreateAlarm,
+                        canCreateFamilyAlarm = canCreateFamilyAlarm,
+                        onAddFamilyAlarm = onCreateFamilyAlarm,
                     )
                 }
                 if (authSession == null) {
@@ -166,11 +168,15 @@ internal fun AlarmListScreen(
                     item {
                         VoiceProfileManagementPanel(
                             voiceProfiles = voiceProfiles,
+                            familyVoices = familyVoices,
                             voiceProfileBusy = voiceProfileBusy,
+                            subscriptionResponse = subscriptionResponse,
+                            familyGroup = familyGroup,
                             onCreateVoiceProfile = onCreateVoiceProfile,
                             onCreateVoiceProfiles = onCreateVoiceProfiles,
                             onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
                             onRenameVoiceProfile = onRenameVoiceProfile,
+                            onShareVoiceProfile = onShareVoiceProfile,
                             onDeleteVoiceProfile = onDeleteVoiceProfile,
                         )
                     }
@@ -181,9 +187,6 @@ internal fun AlarmListScreen(
                 item { AlarmsHeader(onCreateAlarm = onCreateAlarm) }
                 if (nextAlarm != null) {
                     item { CountdownBanner(nextAlarm = nextAlarm) }
-                }
-                if (message != null) {
-                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
                 }
                 if (sortedAlarms.isEmpty()) {
                     item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
@@ -202,8 +205,8 @@ internal fun AlarmListScreen(
             NativeTab.People -> {
                 item {
                     ScreenHeader(
-                        title = "커플/가족 연결",
-                        subtitle = "초대 코드로 연결하고, 공유 허용된 음성만 알람에 사용할 수 있어요.",
+                        title = "코드 등록",
+                        subtitle = "초대 코드 및 이용권을 등록하세요.",
                     )
                 }
                 if (authSession == null) {
@@ -233,6 +236,7 @@ internal fun AlarmListScreen(
                             onCreateFamilyInvite = onCreateFamilyInvite,
                             onAcceptFamilyInvite = onAcceptFamilyInvite,
                             onRevokeFamilyInvite = onRevokeFamilyInvite,
+                            onRegisterCode = onRegisterCode,
                             onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         )
                     }
@@ -243,7 +247,7 @@ internal fun AlarmListScreen(
                 item {
                     ScreenHeader(
                         title = "음성 메시지",
-                        subtitle = "커플/가족 플랜에서 연결된 사람에게 메시지를 보내고 받은 메시지를 확인해요.",
+                        subtitle = "소중한 사람들에게 응원의 메시지를 보내봐요.",
                     )
                 }
                 if (authSession == null) {
@@ -286,7 +290,7 @@ internal fun AlarmListScreen(
                 item {
                     ScreenHeader(
                         title = "캐릭터",
-                        subtitle = "알람을 끄고 다시 울릴 때마다 캐릭터가 자라요.",
+                        subtitle = "알람을 제대로 끄면 캐릭터가 성장해요!",
                     )
                 }
                 if (authSession == null) {
@@ -324,8 +328,8 @@ internal fun AlarmListScreen(
             NativeTab.Billing -> {
                 item {
                     ScreenHeader(
-                        title = "구독/이용권",
-                        subtitle = "플랜을 확인하고 이용권 코드를 등록해요.",
+                        title = "구독",
+                        subtitle = "플랜을 확인하고 구매해요.",
                     )
                 }
                 if (authSession == null) {

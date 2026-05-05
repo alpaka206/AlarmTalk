@@ -24,13 +24,14 @@ object RemoteAlarmMapper {
             voiceProfileId = alarm.voiceProfileId.takeIf { alarm.voiceSource != VoiceSources.LOCAL_AUDIO },
             rawAudioUrl = rawAudioUrl,
             rawAudioDurationMs = null,
+            targetUserId = null,
         )
     }
 
     fun repeatMaskToDays(mask: Int): List<Int> =
         (0..6).filter { day -> mask and (1 shl day) != 0 }
 
-    private fun isRemoteAudioUrl(value: String): Boolean =
+    fun isRemoteAudioUrl(value: String): Boolean =
         value.startsWith("https://", ignoreCase = true) ||
             value.startsWith("http://", ignoreCase = true) ||
             value.startsWith("r2://", ignoreCase = true)

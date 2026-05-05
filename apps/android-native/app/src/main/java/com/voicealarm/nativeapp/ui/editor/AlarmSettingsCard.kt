@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.VoiceProfile
@@ -67,13 +68,23 @@ internal fun ChipGrid(
     }
 }
 
+private val SnoozeIntervals = listOf(3, 5, 10, 15, 30)
+
+private fun nextSnoozeInterval(current: Int): Int =
+    SnoozeIntervals.firstOrNull { it > current } ?: SnoozeIntervals.last()
+
+private fun previousSnoozeInterval(current: Int): Int =
+    SnoozeIntervals.lastOrNull { it < current } ?: SnoozeIntervals.first()
+
 @Composable
 internal fun AlarmSettingsCard(
     snoozeEnabled: Boolean,
     snoozeMinutes: Int,
+    snoozeRepeatLimit: Int,
     vibrationPattern: String,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
+    onSnoozeRepeatLimitChange: (Int) -> Unit,
     onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
 ) {
@@ -96,7 +107,7 @@ internal fun AlarmSettingsCard(
                 ) {
                     Column(modifier = Modifier.padding(vertical = 4.dp)) {
                         Text("다시 울림", fontWeight = FontWeight.SemiBold)
-                        MutedText(if (snoozeEnabled) "${snoozeMinutes}분" else "꺼짐")
+                        MutedText(if (snoozeEnabled) "${snoozeMinutes}분 · ${snoozeRepeatLabel(snoozeRepeatLimit)}" else "꺼짐")
                     }
                 }
                 VoiceAlarmSwitch(
@@ -153,8 +164,22 @@ internal fun AlarmSettingsCard(
                     StepperField(
                         label = "간격",
                         valueLabel = "${snoozeMinutes}분",
-                        onDecrease = { onSnoozeMinutesChange((snoozeMinutes - 1).coerceAtLeast(1)) },
-                        onIncrease = { onSnoozeMinutesChange((snoozeMinutes + 1).coerceAtMost(30)) },
+                        onDecrease = {
+                            onSnoozeMinutesChange(previousSnoozeInterval(snoozeMinutes))
+                        },
+                        onIncrease = {
+                            onSnoozeMinutesChange(nextSnoozeInterval(snoozeMinutes))
+                        },
+                    )
+                    Text("반복", fontWeight = FontWeight.SemiBold)
+                    OptionChips(
+                        options = listOf(
+                            SnoozeRepeatLimits.THREE.toString() to "3회",
+                            SnoozeRepeatLimits.FIVE.toString() to "5회",
+                            SnoozeRepeatLimits.FOREVER.toString() to "계속 반복",
+                        ),
+                        selected = snoozeRepeatLimit.toString(),
+                        onSelect = { onSnoozeRepeatLimitChange(it.toInt()) },
                     )
                 }
             },

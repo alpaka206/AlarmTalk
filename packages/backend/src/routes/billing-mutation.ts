@@ -10,10 +10,11 @@ billingMutation.post('/checkout', async (c) => {
   const db = getDB(c.env);
 
   const body = await c.req
-    .json<{ plan_key?: unknown }>()
-    .catch(() => ({ plan_key: undefined }));
+    .json<{ plan_key?: unknown; gift?: unknown }>()
+    .catch((): { plan_key?: unknown; gift?: unknown } => ({ plan_key: undefined, gift: undefined }));
 
   const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
+  const gift = body.gift === true;
   if (!planKey) {
     return c.json({ error: 'plan_key 는 필수입니다', error_code: 'PLAN_KEY_REQUIRED' }, 400);
   }
@@ -40,14 +41,14 @@ billingMutation.post('/checkout', async (c) => {
     return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
-  const subscriptionId = crypto.randomUUID();
   const periodDays = Number(plan.period_days) || 30;
   const startsAt = new Date();
   const expiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
   const maxMembers = Number(plan.max_members) || 1;
 
   let planGroupId: string | null = null;
-  if (planType === 'family') {
+  const subscriptionId = gift ? null : crypto.randomUUID();
+  if (!gift && planType === 'family') {
     planGroupId = crypto.randomUUID();
     await db.execute({
       sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
@@ -61,24 +62,26 @@ billingMutation.post('/checkout', async (c) => {
     });
   }
 
-  await db.execute({
-    sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-          VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-    args: [
-      subscriptionId,
-      userPk,
-      String(plan.id),
-      planGroupId,
-      startsAt.toISOString(),
-      expiresAt.toISOString(),
-    ],
-  });
+  if (!gift && subscriptionId) {
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+      args: [
+        subscriptionId,
+        userPk,
+        String(plan.id),
+        planGroupId,
+        startsAt.toISOString(),
+        expiresAt.toISOString(),
+      ],
+    });
 
-  const mirroredPlan = planTypeToUserPlan(planType);
-  await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-    args: [mirroredPlan, userPk],
-  });
+    const mirroredPlan = planTypeToUserPlan(planType);
+    await db.execute({
+      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+      args: [mirroredPlan, userPk],
+    });
+  }
 
   const voucherId = crypto.randomUUID();
   const { code: voucherCode, hash: voucherHash } = await generateVoucherCode();
@@ -101,15 +104,17 @@ billingMutation.post('/checkout', async (c) => {
   return c.json({
     success: true,
     checkout_stub: true,
-    subscription: {
-      id: subscriptionId,
-      user_id: userPk,
-      plan_id: String(plan.id),
-      plan_group_id: planGroupId,
-      status: 'active',
-      starts_at: startsAt.toISOString(),
-      expires_at: expiresAt.toISOString(),
-    },
+    subscription: subscriptionId
+      ? {
+          id: subscriptionId,
+          user_id: userPk,
+          plan_id: String(plan.id),
+          plan_group_id: planGroupId,
+          status: 'active',
+          starts_at: startsAt.toISOString(),
+          expires_at: expiresAt.toISOString(),
+        }
+      : null,
     plan: {
       id: String(plan.id),
       key: String(plan.key),

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.alarm.RingingService
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -58,7 +59,13 @@ class RingingActivity : ComponentActivity() {
             LaunchedEffect(currentAlarmId) {
                 snoozeEnabled = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(applicationContext).getAlarm(id)?.snoozeEnabled
+                        AlarmAppContainer.repository(applicationContext).getAlarm(id)?.let { alarm ->
+                            alarm.snoozeEnabled &&
+                                (
+                                    alarm.snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER ||
+                                        alarm.snoozeCount < alarm.snoozeRepeatLimit
+                                    )
+                        }
                     }
                 } ?: true
             }

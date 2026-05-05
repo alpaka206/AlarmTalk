@@ -14,13 +14,13 @@ The product is not a notification/reminder app. It must behave like a real alarm
 - It plays the selected local alarm sound, TTS voice, original recording, or alarm + voice sequence.
 - It supports snooze, dismiss, vibration, and repeat days.
 
-Use the existing repository only as a reference and backend source. Do not try to repair the React Native alarm runtime.
+Use the existing repository only as a reference and backend source. The React Native/Expo source has been removed; do not try to repair or rebuild that alarm runtime.
 
 ## Current Source Context
 
 Repository branch: `develop_loop`
 
-Legacy stack from the existing project:
+Legacy stack from the removed prototype, preserved only as product context:
 
 - Mobile: React Native, Expo SDK 54, expo-router
 - Backend: Cloudflare Workers, Hono, Turso/libSQL
@@ -39,8 +39,8 @@ Useful assets to reuse:
 - Turso/libSQL schema and API contracts
 - perso.ai / TTS backend integration
 - voice profile, message, alarm, invite, character domain ideas
-- design tokens, colors, typography, UX references
-- existing tests as behavioral references
+- design tokens, colors, typography, and UX references preserved in `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md`
+- backend/native tests as behavioral references
 
 Do not rely on these existing runtime pieces:
 

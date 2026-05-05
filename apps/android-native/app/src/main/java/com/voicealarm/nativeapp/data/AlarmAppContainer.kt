@@ -13,6 +13,7 @@ object AlarmAppContainer {
                 alarmDao = AlarmDatabase.getInstance(context).alarmDao(),
                 characterEventDao = AlarmDatabase.getInstance(context).characterEventDao(),
                 alarmScheduler = AlarmScheduler(context.applicationContext),
+                alarmAudioStore = AlarmAudioStore(context.applicationContext),
             ).also { repository = it }
         }
 }

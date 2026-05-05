@@ -14,6 +14,8 @@ data class AlarmEntity(
     val holidayOff: Boolean,
     val snoozeEnabled: Boolean,
     val snoozeMinutes: Int,
+    val snoozeRepeatLimit: Int,
+    val snoozeCount: Int,
     val vibrationPattern: String,
     val playMode: String,
     val defaultAlarmSoundId: String,
@@ -67,6 +69,14 @@ object AlarmPlayModes {
     val all = listOf(ALARM_ONLY, VOICE_ONLY, ALARM_VOICE)
 }
 
+object SnoozeRepeatLimits {
+    const val THREE = 3
+    const val FIVE = 5
+    const val FOREVER = 0
+
+    val all = listOf(THREE, FIVE, FOREVER)
+}
+
 object VoiceSources {
     const val LOCAL_AUDIO = "local_audio"
     const val TTS_PROFILE = "tts_profile"
@@ -83,10 +93,13 @@ data class AlarmDraft(
     val label: String,
     val hour: Int,
     val minute: Int,
+    val targetUserId: String? = null,
+    val targetUserName: String? = null,
     val repeatDaysMask: Int,
     val holidayOff: Boolean = false,
     val snoozeEnabled: Boolean = true,
     val snoozeMinutes: Int,
+    val snoozeRepeatLimit: Int = SnoozeRepeatLimits.THREE,
     val vibrationPattern: String,
     val playMode: String,
     val defaultAlarmSoundId: String = DefaultAlarmSounds.BUNDLED_DEFAULT,

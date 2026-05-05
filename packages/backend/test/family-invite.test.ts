@@ -51,7 +51,7 @@ describe('POST /family/invites', () => {
     expect(body.invite).toBeDefined();
     expect(body.invite.plan_group_id).toBe(GROUP_ID);
     expect(body.invite.status).toBe('pending');
-    expect(body.invite.code).toBeDefined();
+    expect(body.invite.code).toMatch(/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     expect(body.invite.deep_link).toContain('voicealarm://invite/');
     expect(body.invite.web_url).toContain('/invite/');
   });
@@ -62,9 +62,7 @@ describe('POST /family/invites', () => {
     mockDB.pushResult([{ member_count: 1, pending_count: 0 }]);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.invite.plan_group_id).toBe(GROUP_ID);
@@ -105,9 +103,7 @@ describe('POST /family/invites', () => {
     pushResolveUserPk(MEMBER_PK);
     mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: 6 }]);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error_code).toBe('OWNER_ONLY');
@@ -118,9 +114,7 @@ describe('POST /family/invites', () => {
     mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: 4 }]);
     mockDB.pushResult([{ member_count: 3, pending_count: 1 }]);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('GROUP_FULL');
@@ -244,9 +238,7 @@ describe('POST /family/invites/:code/accept', () => {
     mockDB.pushResult([], 1); // INSERT member
     mockDB.pushResult([], 1); // UPDATE invite
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -256,9 +248,7 @@ describe('POST /family/invites/:code/accept', () => {
   });
 
   it('returns 400 for invalid code format', async () => {
-    const res = await app.request(
-      jsonReq('POST', '/family/invites/abc/accept'),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites/abc/accept'));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_CODE_FORMAT');
@@ -267,9 +257,7 @@ describe('POST /family/invites/:code/accept', () => {
   it('returns 404 when user not found', async () => {
     pushResolveUserPk(null);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('USER_NOT_FOUND');
@@ -279,9 +267,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushResolveUserPk(MEMBER_PK);
     mockDB.pushResult([]); // no invite
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('INVITE_NOT_FOUND');
@@ -291,9 +277,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushResolveUserPk(MEMBER_PK);
     pushValidInvite({ status: 'used' });
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('CODE_ALREADY_USED');
@@ -303,9 +287,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushResolveUserPk(MEMBER_PK);
     pushValidInvite({ status: 'revoked' });
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('CODE_REVOKED');
@@ -315,9 +297,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushResolveUserPk(MEMBER_PK);
     pushValidInvite({ status: 'expired' });
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('CODE_EXPIRED');
@@ -329,9 +309,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushValidInvite({ expires_at: past });
     mockDB.pushResult([], 1); // UPDATE to expired
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('CODE_EXPIRED');
@@ -341,9 +319,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushResolveUserPk(OWNER_PK);
     pushValidInvite({ inviter_user_id: OWNER_PK });
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('SELF_ACCEPT');
@@ -354,9 +330,7 @@ describe('POST /family/invites/:code/accept', () => {
     pushValidInvite();
     mockDB.pushResult([{ id: 'existing-membership' }]); // already member
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('ALREADY_MEMBER');
@@ -368,9 +342,7 @@ describe('POST /family/invites/:code/accept', () => {
     mockDB.pushResult([]); // not already member
     mockDB.pushResult([]); // group not found
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('GROUP_NOT_FOUND');
@@ -383,9 +355,7 @@ describe('POST /family/invites/:code/accept', () => {
     mockDB.pushResult([{ max_members: 4 }]);
     mockDB.pushResult([{ c: 4 }]); // already at max
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('GROUP_FULL');
@@ -402,9 +372,7 @@ describe('POST /family/invites/:code/revoke', () => {
     mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'pending' }]);
     mockDB.pushResult([], 1); // UPDATE
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -412,9 +380,7 @@ describe('POST /family/invites/:code/revoke', () => {
   });
 
   it('returns 400 for invalid code format', async () => {
-    const res = await app.request(
-      jsonReq('POST', '/family/invites/bad!/revoke'),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites/bad!/revoke'));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_CODE_FORMAT');
@@ -423,9 +389,7 @@ describe('POST /family/invites/:code/revoke', () => {
   it('returns 404 when user not found', async () => {
     pushResolveUserPk(null);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('USER_NOT_FOUND');
@@ -435,9 +399,7 @@ describe('POST /family/invites/:code/revoke', () => {
     pushResolveUserPk(OWNER_PK);
     mockDB.pushResult([]); // no invite
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('INVITE_NOT_FOUND');
@@ -447,9 +409,7 @@ describe('POST /family/invites/:code/revoke', () => {
     pushResolveUserPk(OTHER_PK);
     mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'pending' }]);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error_code).toBe('NOT_INVITER');
@@ -459,9 +419,7 @@ describe('POST /family/invites/:code/revoke', () => {
     pushResolveUserPk(OWNER_PK);
     mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'used' }]);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('NOT_PENDING');
@@ -471,9 +429,7 @@ describe('POST /family/invites/:code/revoke', () => {
     pushResolveUserPk(OWNER_PK);
     mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'expired' }]);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/revoke`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('NOT_PENDING');
@@ -484,9 +440,7 @@ describe('POST /family/invites/:code/revoke', () => {
     mockDB.pushResult([{ id: INVITE_ID, inviter_user_id: OWNER_PK, status: 'pending' }]);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/ ${INVITE_CODE} /revoke`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/ ${INVITE_CODE} /revoke`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -505,9 +459,7 @@ describe('POST /family/invites — edge cases', () => {
     mockDB.pushResult([{ member_count: 1, pending_count: 0 }]);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: 99999 }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: 99999 }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.invite.plan_group_id).toBe(GROUP_ID);
@@ -520,9 +472,7 @@ describe('POST /family/invites — edge cases', () => {
     mockDB.pushResult([{ member_count: 0, pending_count: 0 }]);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: '   ' }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: '   ' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.invite.plan_group_id).toBe(GROUP_ID);
@@ -534,9 +484,7 @@ describe('POST /family/invites — edge cases', () => {
     mockDB.pushResult([{ member_count: 5, pending_count: 0 }]);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.invite).toBeDefined();
@@ -547,9 +495,7 @@ describe('POST /family/invites — edge cases', () => {
     mockDB.pushResult([{ id: GROUP_ID, owner_user_id: OWNER_PK, max_members: null }]);
     mockDB.pushResult([{ member_count: 4, pending_count: 2 }]);
 
-    const res = await app.request(
-      jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }),
-    );
+    const res = await app.request(jsonReq('POST', '/family/invites', { plan_group_id: GROUP_ID }));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('GROUP_FULL');
@@ -590,9 +536,7 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     mockDB.pushResult([], 1); // INSERT member
     mockDB.pushResult([], 1); // UPDATE invite
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -616,9 +560,7 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -640,9 +582,7 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     mockDB.pushResult([{ max_members: null }]);
     mockDB.pushResult([{ c: 6 }]); // at default max
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('GROUP_FULL');
@@ -666,9 +606,7 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/ ${INVITE_CODE} /accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/ ${INVITE_CODE} /accept`));
     expect(res.status).toBe(200);
   });
 
@@ -690,9 +628,7 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.membership.plan_group_id).toBe(GROUP_ID);
@@ -700,16 +636,12 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     expect(body.membership.role).toBe('member');
     expect(body.invite.id).toBe(INVITE_ID);
 
-    const insertCall = mockDB.calls.find(
-      (c) => c.sql.includes('INSERT INTO plan_group_members'),
-    );
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
     expect(insertCall).toBeDefined();
     expect(insertCall!.args).toContain(GROUP_ID);
     expect(insertCall!.args).toContain(MEMBER_PK);
 
-    const updateCall = mockDB.calls.find(
-      (c) => c.sql.includes('UPDATE plan_group_invites'),
-    );
+    const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE plan_group_invites'));
     expect(updateCall).toBeDefined();
     expect(updateCall!.args).toContain(MEMBER_PK);
     expect(updateCall!.args).toContain(INVITE_ID);
@@ -729,14 +661,10 @@ describe('POST /family/invites/:code/accept — edge cases', () => {
     ]);
     mockDB.pushResult([], 1); // UPDATE to expired
 
-    const res = await app.request(
-      jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`),
-    );
+    const res = await app.request(jsonReq('POST', `/family/invites/${INVITE_CODE}/accept`));
     expect(res.status).toBe(409);
 
-    const updateCall = mockDB.calls.find(
-      (c) => c.sql.includes("SET status = 'expired'"),
-    );
+    const updateCall = mockDB.calls.find((c) => c.sql.includes("SET status = 'expired'"));
     expect(updateCall).toBeDefined();
     expect(updateCall!.args).toContain(INVITE_ID);
   });

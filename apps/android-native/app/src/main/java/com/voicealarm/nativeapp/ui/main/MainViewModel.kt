@@ -39,6 +39,7 @@ import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
+import com.voicealarm.nativeapp.sync.RemoteAlarmSyncScheduler
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -120,6 +121,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     init {
+        RemoteAlarmSyncScheduler.ensurePeriodic(application)
+        if (authSession != null) {
+            RemoteAlarmSyncScheduler.runOnce(application)
+        }
         viewModelScope.launch {
             runCatching {
                 repository.reschedulePendingAlarms()

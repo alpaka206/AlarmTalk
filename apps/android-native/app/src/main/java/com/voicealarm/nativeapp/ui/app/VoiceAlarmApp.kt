@@ -11,7 +11,12 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -54,14 +59,30 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
+    var planGateMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        val currentMessage = message ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(currentMessage)
+        viewModel.clearMessage()
+    }
 
     LaunchedEffect(authSession?.token) {
-        if (authSession != null) viewModel.preloadVoiceProfiles()
+        if (authSession != null) {
+            viewModel.preloadVoiceProfiles()
+            viewModel.preloadSocial()
+            viewModel.preloadCharacterAndBilling()
+        }
     }
 
     LaunchedEffect(selectedTab, authSession?.token) {
         if (authSession == null) return@LaunchedEffect
         when (selectedTab) {
+            NativeTab.Voices -> {
+                viewModel.preloadVoiceProfiles()
+                viewModel.preloadSocial()
+            }
             NativeTab.People -> viewModel.refreshSocial()
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
@@ -121,6 +142,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     fun navigateToTab(tab: NativeTab) {
         if (selectedTab == tab) return
+        if (
+            tab == NativeTab.Messages &&
+            authSession != null &&
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+        ) {
+            planGateMessage = "메시지는 커플/가족 플랜에서 사용할 수 있어요. 초대 코드나 이용권을 등록하거나 플랜을 구매해 주세요."
+            return
+        }
         tabBackStack = tabBackStack + selectedTab
         selectedTab = tab
     }
@@ -142,7 +171,36 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         onBack = ::goBackInApp,
     )
 
+    planGateMessage?.let { gateMessage ->
+        AlertDialog(
+            onDismissRequest = { planGateMessage = null },
+            title = { Text("플랜 안내") },
+            text = { Text(gateMessage) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        planGateMessage = null
+                        navigateToTab(NativeTab.Billing)
+                    },
+                ) {
+                    Text("구독 보기")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        planGateMessage = null
+                        navigateToTab(NativeTab.People)
+                    },
+                ) {
+                    Text("코드 등록")
+                }
+            },
+        )
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             if (screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
@@ -175,8 +233,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 vouchers = vouchers,
                 noteBusy = noteBusy,
                 receivedNotes = receivedNotes,
-                message = message,
-                onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
                 onRegister = viewModel::register,
                 onGoogleSignIn = ::launchGoogleSignIn,
@@ -186,6 +242,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                 onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
                 onRenameVoiceProfile = viewModel::renameVoiceProfile,
+                onShareVoiceProfile = viewModel::setVoiceProfileShared,
                 onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                 onRefreshSocial = viewModel::refreshSocial,
                 onCreateFamilyInvite = viewModel::createFamilyInvite,
@@ -198,17 +255,21 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSendNote = viewModel::sendNote,
                 onMarkNoteRead = viewModel::markNoteRead,
                 onCheckoutPlan = viewModel::checkoutPlan,
-                onCreateAlarm = { screen = AlarmScreen.Create },
+                onCreateAlarm = { screen = AlarmScreen.Create() },
+                onCreateFamilyAlarm = { screen = AlarmScreen.Create(familyTargetMode = true) },
                 onToggleEnabled = viewModel::setAlarmEnabled,
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
                 onDeleteAlarm = viewModel::deleteAlarm,
             )
 
-            AlarmScreen.Create -> AlarmEditorScreen(
+            is AlarmScreen.Create -> AlarmEditorScreen(
                 contentPadding = padding,
                 alarm = null,
                 authSession = authSession,
+                familyGroup = familyGroup,
+                familyAlarmMode = current.familyTargetMode,
                 voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,
                 onGenerateTts = viewModel::generateTtsAudio,
@@ -221,7 +282,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 contentPadding = padding,
                 alarm = current.alarm,
                 authSession = authSession,
+                familyGroup = familyGroup,
+                familyAlarmMode = false,
                 voiceProfiles = voiceProfiles,
+                familyVoices = familyVoices,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,
                 onGenerateTts = viewModel::generateTtsAudio,

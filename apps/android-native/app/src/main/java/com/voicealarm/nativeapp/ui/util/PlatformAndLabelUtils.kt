@@ -13,9 +13,12 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
+import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyGroupMember
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -100,6 +103,20 @@ internal fun repeatLabel(mask: Int): String {
     return days.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.joinToString(", ")
 }
 
+internal fun snoozeRepeatLabel(limit: Int): String = when (limit) {
+    SnoozeRepeatLimits.THREE -> "3회"
+    SnoozeRepeatLimits.FIVE -> "5회"
+    SnoozeRepeatLimits.FOREVER -> "계속 반복"
+    else -> "${limit}회"
+}
+
+internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): String? =
+    if (enabled) {
+        "${minutes}분 · ${snoozeRepeatLabel(repeatLimit)}"
+    } else {
+        null
+    }
+
 internal fun vibrationLabel(pattern: String): String = when (pattern) {
     VibrationPatterns.STRONG -> "강한 진동"
     VibrationPatterns.NONE -> "진동 꺼짐"
@@ -133,6 +150,17 @@ internal fun hasCoupleOrFamilyAccess(
         plan?.planType == "couple"
 }
 
+internal fun familyAlarmRecipients(
+    familyGroup: FamilyGroupCurrentResponse?,
+    authSession: AuthSession?,
+): List<FamilyGroupMember> {
+    val currentUserId = authSession?.user?.id
+    val currentEmail = authSession?.user?.email
+    return familyGroup?.members.orEmpty().filterNot { member ->
+        member.userId == currentUserId || member.email == currentEmail
+    }
+}
+
 internal fun roleLabel(role: String?): String = when (role) {
     "owner" -> "소유자"
     "admin" -> "관리자"
@@ -164,7 +192,7 @@ internal fun planTypeLabel(type: String?): String = when (type) {
 }
 
 internal fun voucherStatusLabel(status: String?): String = when (status) {
-    "active" -> "사용 가능"
+    "active", "issued" -> "사용 가능"
     "pending" -> "대기 중"
     "redeemed", "used" -> "사용됨"
     "expired" -> "만료됨"

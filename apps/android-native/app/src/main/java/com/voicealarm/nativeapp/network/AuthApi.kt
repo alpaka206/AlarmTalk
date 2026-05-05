@@ -1,5 +1,6 @@
 package com.voicealarm.nativeapp.network
 
+import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
@@ -32,12 +33,19 @@ data class RegisterRequest(
     val name: String,
 )
 
+data class GoogleLoginRequest(
+    @SerializedName("id_token") val idToken: String,
+)
+
 interface AuthApi {
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthTokenResponse
 
     @POST("auth/login")
     suspend fun login(@Body request: LoginRequest): AuthTokenResponse
+
+    @POST("auth/google")
+    suspend fun loginGoogle(@Body request: GoogleLoginRequest): AuthTokenResponse
 
     @GET("auth/me")
     suspend fun me(@Header("Authorization") authorization: String): AuthMeResponse

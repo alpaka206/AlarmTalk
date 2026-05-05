@@ -44,17 +44,29 @@ import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
+import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfile
 
 @Composable
 internal fun VoiceAudioCard(
     editor: AlarmEditorState,
     voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     audioMessage: String?,
+    localInputMode: VoiceCaptureMode,
     isRecording: Boolean,
+    recordingElapsedMillis: Long,
+    recordingLevels: List<Float>,
+    selectedFileDurationMillis: Long?,
+    cropStartMillis: Long,
+    cropEndMillis: Long,
+    onLocalInputModeChange: (VoiceCaptureMode) -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
+    onCropChange: (Long, Long) -> Unit,
+    onPreviewCrop: () -> Unit,
+    onPreviewAudio: () -> Unit,
     onClear: () -> Unit,
 ) {
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -105,25 +117,32 @@ internal fun VoiceAudioCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
-                LaunchedEffect(visibleVoiceSource, readyProfiles) {
+                val readyFamilyVoices = familyVoices.filter {
+                    (it.status == null || it.status == "ready") && it.isShared != false
+                }
+                val profileOptions = readyProfiles.map { it.id to it.name } +
+                    readyFamilyVoices.map { profile ->
+                        profile.id to sharedVoiceLabel(profile)
+                    }
+                LaunchedEffect(visibleVoiceSource, profileOptions) {
                     if (
                         visibleVoiceSource == VoiceSources.TTS_PROFILE &&
                         editor.voiceProfileId.isNullOrBlank() &&
-                        readyProfiles.isNotEmpty()
+                        profileOptions.isNotEmpty()
                     ) {
-                        editor.voiceProfileId = readyProfiles.first().id
+                        editor.voiceProfileId = profileOptions.first().first
                     }
                 }
                 Text("음성 프로필", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
                     MutedText("음성 프로필을 불러오는 중이에요.")
-                } else if (voiceProfiles.isEmpty()) {
-                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들면 자동으로 표시됩니다.")
-                } else if (readyProfiles.isEmpty()) {
+                } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
+                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들거나 공유받으면 자동으로 표시됩니다.")
+                } else if (profileOptions.isEmpty()) {
                     MutedText("준비 완료된 음성 프로필이 아직 없어요.")
                 } else {
                     ChipGrid(
-                        options = readyProfiles.map { it.id to it.name },
+                        options = profileOptions,
                         selected = editor.voiceProfileId ?: "",
                         onSelect = {
                             editor.voiceProfileId = it
@@ -161,16 +180,18 @@ internal fun VoiceAudioCard(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text("카테고리", fontWeight = FontWeight.SemiBold)
-                ChipGrid(
-                    options = TtsCategories,
-                    selected = editor.voiceCategory,
-                    onSelect = {
-                        editor.voiceCategory = it
-                        editor.clearTtsMeta()
-                        if (editor.voiceRandomPrompt) editor.voiceText = ""
-                    },
-                )
+                if (editor.voiceRandomPrompt) {
+                    Text("카테고리", fontWeight = FontWeight.SemiBold)
+                    ChipGrid(
+                        options = TtsCategories,
+                        selected = editor.voiceCategory,
+                        onSelect = {
+                            editor.voiceCategory = it
+                            editor.clearTtsMeta()
+                            editor.voiceText = ""
+                        },
+                    )
+                }
                 Text("언어", fontWeight = FontWeight.SemiBold)
                 ChipGrid(
                     options = TtsLanguages,
@@ -181,42 +202,61 @@ internal fun VoiceAudioCard(
                         if (editor.voiceRandomPrompt) editor.voiceText = ""
                     },
                 )
-                if (editor.localAudioUri != null) {
-                    MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
-                }
             } else {
-                Text(
-                    text = editor.localAudioUri?.let(::audioFileLabel) ?: "선택된 음성 오디오가 없어요",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                VoiceCaptureModeSelector(
+                    selected = localInputMode,
+                    enabled = !isRecording,
+                    onSelect = onLocalInputModeChange,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onPick,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("파일 선택")
-                    }
-                    Button(
-                        onClick = onRecord,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (isRecording) "녹음 종료" else "녹음")
-                    }
+                if (localInputMode == VoiceCaptureMode.Record) {
+                    VoiceRecordControls(
+                        isRecording = isRecording,
+                        elapsedMillis = recordingElapsedMillis,
+                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                        levels = recordingLevels,
+                        enabled = true,
+                        notice = "녹음은 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 저장돼요.",
+                        onRecordClick = onRecord,
+                    )
+                } else {
+                    VoiceFileControls(
+                        durationMillis = selectedFileDurationMillis,
+                        cropStartMillis = cropStartMillis,
+                        cropEndMillis = cropEndMillis,
+                        minDurationMillis = 1_000L,
+                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                        enabled = !isRecording,
+                        uploadLabel = "파일 업로드",
+                        notice = "원하는 시작과 끝을 고르세요. 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 알람에 저장돼요.",
+                        onPickFile = onPick,
+                        onCropChange = onCropChange,
+                        onPreviewCrop = onPreviewCrop,
+                    )
                 }
                 if (editor.localAudioUri != null) {
-                    OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
-                        Text("음성 지우기")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(onClick = onPreviewAudio, modifier = Modifier.weight(1f)) {
+                            Text("들어보기")
+                        }
+                        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
+                            Text("지우기")
+                        }
                     }
                 }
-                Text(
-                    text = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 사용할 수 있고, 긴 파일은 30초로 자릅니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (
+                    editor.localAudioUri == null &&
+                    selectedFileDurationMillis == null &&
+                    !isRecording
+                ) {
+                    Text(
+                        text = "녹음하거나 파일을 업로드해 주세요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (audioMessage != null) {
                 Text(
@@ -230,5 +270,14 @@ internal fun VoiceAudioCard(
                 )
             }
         }
+    }
+}
+
+private fun sharedVoiceLabel(profile: FamilyVoiceProfile): String {
+    val owner = profile.ownerName?.takeIf { it.isNotBlank() }
+    return if (owner == null) {
+        "${profile.name} · 공유"
+    } else {
+        "${profile.name} · $owner"
     }
 }

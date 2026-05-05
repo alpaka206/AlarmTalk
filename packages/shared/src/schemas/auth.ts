@@ -18,6 +18,11 @@ export const LoginRequestSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
+export const GoogleLoginRequestSchema = z.object({
+  id_token: z.string().min(1),
+});
+export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
+
 export const AuthResponseSchema = z.object({
   token: z.string().min(1),
   user: z.object({
