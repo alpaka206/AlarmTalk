@@ -10,7 +10,7 @@ Claude and other coding agents must read `AGENTS.md` first, then:
 
 Important:
 
-- Keep `apps/mobile` as a legacy reference for UX, flows, copy, API usage, and design tokens.
+- `apps/mobile` source has been removed; use `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md` plus native/backend code for legacy UX, copy, API usage, and design-token references.
 - Do not continue the old React Native/Expo alarm runtime.
 - Implement the new Android app under `apps/android-native/`.
 - Android is implemented first with Kotlin, Jetpack Compose, and native AlarmManager.

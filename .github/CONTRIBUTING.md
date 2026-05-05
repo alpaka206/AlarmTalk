@@ -9,6 +9,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 - Node.js 18+
 - npm 9+
 - Git
+- JDK/Android SDK for native Android work
 
 ### Setup
 
@@ -30,8 +31,8 @@ npm test
 # Backend (Cloudflare Workers)
 cd packages/backend && npm run dev
 
-# Mobile (Expo)
-cd apps/mobile && npx expo start
+# Android native build
+cd apps/android-native && ./gradlew.bat :app:assembleDebug
 ```
 
 ## How to Contribute
@@ -69,7 +70,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 feat(backend): add voice profile API
-fix(mobile): resolve alarm notification crash
+fix(android): resolve alarm scheduling crash
 docs(docs): update API documentation
 test(web): add dashboard component tests
 ```

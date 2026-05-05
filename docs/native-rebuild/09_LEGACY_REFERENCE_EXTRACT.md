@@ -1,6 +1,6 @@
 # Legacy Mobile Reference Extract
 
-이 문서는 `apps/mobile` React Native/Expo 앱을 나중에 삭제하기 전에 보존해야 할 제품/도메인 정보를 추출한 공용 참조 문서다.
+이 문서는 삭제된 `apps/mobile` React Native/Expo 앱에서 보존해야 했던 제품/도메인 정보를 추출한 공용 참조 문서다.
 
 레거시 앱의 알람 런타임은 사용하지 않는다. 특히 `alarmRinger.ts`, `notifeeAlarms.ts`, Expo notification 기반 알람, server cron/push 기반 알람 아이디어는 네이티브 제품으로 이식하지 않는다. 아래 내용은 UX, 문구, API 계약, 디자인 토큰, 도메인 개념만 보존한다.
 
@@ -9,7 +9,7 @@
 - Android/iOS 네이티브 알람은 OS-native scheduler와 로컬 DB/로컬 오디오만으로 울린다.
 - 서버, R2, ElevenLabs, Perso는 알람 전에 오디오를 만들고 내려받는 경로에만 있다.
 - 알람 울림 시점에는 네트워크 fetch, push, cron, legacy React Native runtime이 없다.
-- `apps/mobile`은 삭제 전까지 참고용이다. 기능의 정답은 네이티브 구현과 backend API 계약이다.
+- `apps/mobile` 소스는 제거되었다. 기능의 정답은 네이티브 구현과 backend API 계약이다.
 
 ## 삭제해도 되는 레거시 런타임
 
@@ -352,24 +352,13 @@
 - `is_family_alarm`
 - `is_received_family_alarm`
 
-## 삭제 준비 체크리스트
+## 삭제 기록
 
-`apps/mobile` 삭제 전 아래가 모두 끝나야 한다.
+2026-05-06, GitHub issue #232 기준으로 `apps/mobile` 소스 제거를 진행했다.
 
-- [ ] Android native에서 알람 CRUD, 로컬 캐싱, 실제 울림, 잠금화면 전체화면이 실기기 검증됨.
-- [ ] Android native에서 음성 프로필, TTS, 로컬 녹음/파일, 공유 음성이 동작함.
-- [ ] Android native에서 초대 코드, 가족/연인 연결, 코드 등록, 캐릭터, 플랜 화면이 대체됨.
-- [ ] iOS AlarmKit PoC 결과가 문서화됨.
-- [ ] `apps/mobile/src/i18n/ko.json`의 필요한 문구가 native string resource 또는 공용 copy 문서로 이전됨.
-- [ ] `packages/ui/src/tokens.ts`의 토큰이 Android/iOS 디자인 토큰으로 이전됨.
-- [ ] `apps/mobile/src/services/api/*`의 필요한 API 계약이 backend API 문서 또는 native client에 반영됨.
-- [ ] `apps/mobile/test/*`에서 유효한 행동 테스트가 backend/native 테스트로 이전됨.
-- [ ] `apps/mobile/.env`, build artifact, node_modules 등 로컬 파일이 git에 포함되지 않음.
+- Android native 앱이 알람 CRUD, 로컬 캐싱, 실제 울림, 음성 입력, 공유 음성, 상대방 알람 수신 동기화의 기준 구현이 되었다.
+- backend API와 native client가 인증, 음성, 메시지, 초대 코드, 가족/커플 연결, 구독/이용권 흐름의 기준 계약이 되었다.
+- 이 문서는 삭제된 레거시 앱의 UX, copy, API, 디자인 토큰, 도메인 개념을 확인할 때만 사용한다.
+- iOS AlarmKit PoC는 여전히 별도 future work다. 삭제된 Expo 앱은 iOS native 알람 가능성을 검증하는 근거로 사용하지 않는다.
 
-## 삭제 시 순서
-
-1. 이 문서와 native 구현을 기준으로 빠진 copy/API/토큰이 없는지 확인한다.
-2. `apps/mobile`을 별도 PR에서 제거한다.
-3. root README와 workspace/package script에서 `apps/mobile` 참조를 제거한다.
-4. CI/Jest/Metro/Expo 관련 설정이 남아 있으면 제거한다.
-5. 삭제 PR에서는 Android/iOS native와 backend 테스트만 검증한다.
+삭제 PR에서는 root script, TypeScript config, ESLint, CI, Dependabot, README/agent 문서에서 `apps/mobile` 활성 참조를 제거하고 Android native/backend/package 테스트만 검증한다.

@@ -6,20 +6,18 @@
     "packages/*"
   ],
   "scripts": {
-    "app": "cd apps/mobile && npx expo start",
     "backend": "cd packages/backend && npm run dev",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx}\" \"packages/**/*.{ts,tsx,css}\"",
-    "typecheck": "npm run typecheck --workspaces --if-present && cd apps/mobile && npx tsc --noEmit",
-    "test": "npm test --workspaces --if-present && cd apps/mobile && npm test"
+    "format": "prettier --write \"packages/**/*.{ts,tsx,css}\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,tsx,css}\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",
     "typescript-eslint": "^8.59.2"

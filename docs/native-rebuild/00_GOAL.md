@@ -35,7 +35,7 @@ Non-negotiable behavior:
 - iOS is implemented later with SwiftUI, but an AlarmKit feasibility PoC must happen early.
 - Do not assume iOS can exactly copy Android until AlarmKit behavior is documented.
 
-Legacy stack to preserve as reference:
+Historical legacy stack captured in the reference extract:
 
 - Mobile reference: React Native, Expo SDK 54, expo-router
 - Backend: Cloudflare Workers, Hono, Turso/libSQL
@@ -48,4 +48,4 @@ Legacy stack to preserve as reference:
 - Font: Pretendard
 - Tests: Vitest, Jest, Maestro
 
-Use `apps/mobile` and `packages/ui` only as references for UX, copy, API behavior, and design tokens. Do not continue the old React Native alarm runtime.
+Use `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md`, `packages/ui`, native code, and backend contracts as references for UX, copy, API behavior, and design tokens. The old `apps/mobile` source has been removed and must not be rebuilt as an alarm runtime.
