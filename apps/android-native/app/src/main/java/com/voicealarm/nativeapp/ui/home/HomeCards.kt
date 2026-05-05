@@ -15,9 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.network.AuthSession
@@ -46,11 +45,15 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 
 @Composable
 internal fun CharacterMiniCard(
-    characterResponse: CharacterResponse,
-    pendingEvents: Int,
+    characterResponse: CharacterResponse?,
     onClick: () -> Unit,
 ) {
-    val character = characterResponse.character
+    val character = characterResponse?.character
+    val stage = character?.stage ?: "seed"
+    val level = character?.level ?: 1
+    val streak = characterResponse?.streak?.current ?: 0
+    val xpIntoLevel = characterResponse?.progress?.xpIntoLevel ?: 0
+    val levelSpan = characterResponse?.progress?.levelSpan ?: 100
     Card(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
@@ -65,20 +68,26 @@ internal fun CharacterMiniCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = stageEmoji(character.stage),
+                text = stageEmoji(stage),
                 style = MaterialTheme.typography.headlineMedium,
             )
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = character.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "레벨 ${character.level} - ${stageLabel(character.stage)} - 연속 ${characterResponse.streak.current}일",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "LV.$level",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "연속 ${streak}일",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .padding(top = 6.dp)
@@ -90,8 +99,8 @@ internal fun CharacterMiniCard(
                         modifier = Modifier
                             .fillMaxWidth(
                                 fraction = (
-                                    characterResponse.progress.xpIntoLevel.toFloat() /
-                                        characterResponse.progress.levelSpan.toFloat().coerceAtLeast(1f)
+                                    xpIntoLevel.toFloat() /
+                                        levelSpan.toFloat().coerceAtLeast(1f)
                                     ).coerceIn(0f, 1f),
                             )
                             .height(6.dp)
@@ -100,7 +109,7 @@ internal fun CharacterMiniCard(
                 }
             }
             Text(
-                text = if (pendingEvents > 0) "동기화 ${pendingEvents}개" else ">",
+                text = ">",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -142,17 +151,26 @@ internal fun NextAlarmHeroCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Alarm,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
-                    modifier = Modifier.size(18.dp),
-                )
+                if (nextAlarm != null) {
+                    Icon(
+                        imageVector = Icons.Outlined.Alarm,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
                 Text(
+                    modifier = Modifier.weight(1f),
                     text = nextAlarm?.let { "${it.label} - ${playModeLabel(it.playMode)}" }
                         ?: "아직 설정된 알람이 없어요. 눌러서 만들어보세요.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = if (nextAlarm == null) {
+                        MaterialTheme.typography.bodySmall
+                    } else {
+                        MaterialTheme.typography.bodyMedium
+                    },
                     color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.86f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -163,8 +181,6 @@ internal fun NextAlarmHeroCard(
 internal fun QuickStartGrid(
     onRecordVoice: () -> Unit,
     onAddAlarm: () -> Unit,
-    onOpenVoices: () -> Unit,
-    onOpenGrowth: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -183,20 +199,6 @@ internal fun QuickStartGrid(
                 label = "알람 추가",
                 icon = Icons.Outlined.Alarm,
                 onClick = onAddAlarm,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HomeActionCard(
-                label = "음성 관리",
-                icon = Icons.Outlined.Message,
-                onClick = onOpenVoices,
-                modifier = Modifier.weight(1f),
-            )
-            HomeActionCard(
-                label = "캐릭터",
-                icon = Icons.Outlined.People,
-                onClick = onOpenGrowth,
                 modifier = Modifier.weight(1f),
             )
         }
