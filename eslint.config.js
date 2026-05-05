@@ -9,6 +9,7 @@ export default tseslint.config(
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      'apps/android-native/**/build/**',
       '**/.expo/**',
       '**/.wrangler/**',
       '.ralph/**',

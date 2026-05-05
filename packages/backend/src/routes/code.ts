@@ -93,7 +93,7 @@ codeRoutes.post('/register', async (c) => {
     const startsAt = now;
     const newExpiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
 
-    let planGroupId: string | null = null;
+    let planGroupId: string | null;
     try {
       planGroupId = await resolveFamilyPlanGroupForRedeemedVoucher(db, {
         userPk,
