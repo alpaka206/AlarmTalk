@@ -28,6 +28,7 @@ import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyInvite
+import com.voicealarm.nativeapp.network.FamilyVoiceAlarmRequest
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
@@ -84,21 +85,32 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         message = "상대방 알람은 커플/가족 플랜에서 사용할 수 있어요"
         return
     }
-    if (
-        draft.playMode != AlarmPlayModes.ALARM_ONLY &&
-        draft.ttsMessageId == null &&
-        draft.rawAudioUri?.let(RemoteAlarmMapper::isRemoteAudioUrl) != true
-    ) {
-        message = "상대방 알람은 알람만 또는 음성 프로필로 만든 음성만 보낼 수 있어요"
-        return
-    }
-
     runCatching {
         withContext(Dispatchers.IO) {
-            api.createAlarm(
-                authorization = VoiceAlarmApiClient.bearer(session.token),
-                request = draft.toRemoteAlarmWriteRequest(),
-            ).alarm
+            if (draft.shouldUploadLocalVoiceForFamilyAlarm()) {
+                val localAudio = draft.toCachedLocalAudio()
+                val upload = api.uploadVoiceAudio(
+                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    audio = voiceUploadPart(localAudio),
+                    durationMs = (localAudio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
+                    originalName = localAudio.displayName.toRequestBody("text/plain".toMediaType()),
+                ).upload
+                api.createFamilyVoiceAlarm(
+                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    request = FamilyVoiceAlarmRequest(
+                        recipientUserId = requireNotNull(draft.targetUserId),
+                        wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
+                        voiceUploadId = upload.id,
+                        label = draft.label.ifBlank { "가족이 보낸 음성" },
+                        repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
+                    ),
+                ).alarm
+            } else {
+                api.createAlarm(
+                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    request = draft.toRemoteAlarmWriteRequest(),
+                ).alarm
+            }
         }
     }.onSuccess {
         val target = draft.targetUserName?.takeIf { it.isNotBlank() } ?: "상대방"
@@ -109,6 +121,21 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         message = userFacingError(error, "상대방 알람 설정에 실패했어요")
     }
 }
+
+private fun AlarmDraft.shouldUploadLocalVoiceForFamilyAlarm(): Boolean =
+    playMode != AlarmPlayModes.ALARM_ONLY &&
+        voiceSource == VoiceSources.LOCAL_AUDIO &&
+        !localAudioUri.isNullOrBlank() &&
+        rawAudioUri?.let(RemoteAlarmMapper::isRemoteAudioUrl) != true
+
+private fun AlarmDraft.toCachedLocalAudio(): CachedAlarmAudio =
+    CachedAlarmAudio(
+        localAudioUri = requireNotNull(localAudioUri),
+        rawAudioUri = rawAudioUri,
+        displayName = localAudioUri?.let(::audioFileLabel) ?: "family_alarm_voice",
+        durationMillis = null,
+        cacheKey = audioCacheKey,
+    )
 
 private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
     val rawAudioUrl = rawAudioUri?.takeIf(RemoteAlarmMapper::isRemoteAudioUrl)

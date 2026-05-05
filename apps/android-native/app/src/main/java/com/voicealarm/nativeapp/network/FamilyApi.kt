@@ -50,6 +50,25 @@ data class FamilyInvite(
     @SerializedName("web_url") val webUrl: String? = null,
 )
 
+data class FamilyVoiceAlarmRequest(
+    @SerializedName("recipient_user_id") val recipientUserId: String,
+    @SerializedName("wake_at") val wakeAt: String,
+    @SerializedName("voice_upload_id") val voiceUploadId: String,
+    val label: String? = null,
+    @SerializedName("repeat_days") val repeatDays: List<Int> = emptyList(),
+)
+
+data class FamilyVoiceAlarmResponse(
+    val alarm: FamilyVoiceAlarm,
+)
+
+data class FamilyVoiceAlarm(
+    val id: String,
+    @SerializedName("recipient_user_id") val recipientUserId: String? = null,
+    @SerializedName("wake_at") val wakeAt: String? = null,
+    val mode: String? = null,
+)
+
 interface FamilyApi {
     @GET("family/groups/current")
     suspend fun getFamilyGroup(@Header("Authorization") authorization: String): FamilyGroupCurrentResponse
@@ -76,4 +95,10 @@ interface FamilyApi {
         @Path("code") code: String,
         @Body request: Map<String, String> = emptyMap(),
     )
+
+    @POST("family/alarms/voice")
+    suspend fun createFamilyVoiceAlarm(
+        @Header("Authorization") authorization: String,
+        @Body request: FamilyVoiceAlarmRequest,
+    ): FamilyVoiceAlarmResponse
 }
