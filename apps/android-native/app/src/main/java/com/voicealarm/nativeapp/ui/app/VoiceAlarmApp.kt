@@ -13,6 +13,8 @@ import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +60,13 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
     var planGateMessage by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        val currentMessage = message ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(currentMessage)
+        viewModel.clearMessage()
+    }
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) viewModel.preloadVoiceProfiles()
@@ -183,6 +192,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             if (screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
@@ -215,8 +225,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 vouchers = vouchers,
                 noteBusy = noteBusy,
                 receivedNotes = receivedNotes,
-                message = message,
-                onClearMessage = viewModel::clearMessage,
                 onLogin = viewModel::login,
                 onRegister = viewModel::register,
                 onGoogleSignIn = ::launchGoogleSignIn,

@@ -13,12 +13,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.People
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -43,24 +41,6 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.CharacterResponse
-
-@Composable
-internal fun StatusChip(
-    message: String,
-    onClearMessage: () -> Unit,
-) {
-    AssistChip(
-        onClick = onClearMessage,
-        label = { Text(message) },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-        },
-    )
-}
 
 @Composable
 internal fun HomeHeader(

@@ -52,8 +52,6 @@ internal fun AlarmListScreen(
     vouchers: List<VoucherItem>,
     noteBusy: Boolean,
     receivedNotes: List<ReceivedNote>,
-    message: String?,
-    onClearMessage: () -> Unit,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
@@ -126,9 +124,6 @@ internal fun AlarmListScreen(
                         onClick = { onSelectTab(NativeTab.Growth) },
                     )
                 }
-                if (message != null) {
-                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
-                }
                 item {
                     QuickStartGrid(
                         onRecordVoice = { onSelectTab(NativeTab.Voices) },
@@ -183,9 +178,6 @@ internal fun AlarmListScreen(
                 item { AlarmsHeader(onCreateAlarm = onCreateAlarm) }
                 if (nextAlarm != null) {
                     item { CountdownBanner(nextAlarm = nextAlarm) }
-                }
-                if (message != null) {
-                    item { StatusChip(message = message, onClearMessage = onClearMessage) }
                 }
                 if (sortedAlarms.isEmpty()) {
                     item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
