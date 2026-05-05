@@ -53,6 +53,15 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.refreshCharacterAndBilling() {
+    refreshCharacterAndBillingData(showMessage = true)
+}
+
+internal fun MainViewModel.preloadCharacterAndBilling() {
+    if (authSession == null || characterBusy || billingBusy) return
+    refreshCharacterAndBillingData(showMessage = false)
+}
+
+private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
     val authorization = bearerOrMessage("성장 정보를 불러오려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         characterBusy = true
@@ -67,10 +76,10 @@ internal fun MainViewModel.refreshCharacterAndBilling() {
             characterResponse = snapshot.character
             subscriptionResponse = snapshot.subscription
             vouchers = snapshot.vouchers
-            message = "캐릭터와 플랜 정보를 불러왔어요"
+            if (showMessage) message = "캐릭터와 플랜 정보를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to load character or billing", error)
-            message = userFacingError(error, "성장 정보를 불러오지 못했어요")
+            if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
         }
         characterBusy = false
         billingBusy = false

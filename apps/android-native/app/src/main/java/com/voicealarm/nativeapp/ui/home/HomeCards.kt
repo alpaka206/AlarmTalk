@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -181,6 +182,8 @@ internal fun NextAlarmHeroCard(
 internal fun QuickStartGrid(
     onRecordVoice: () -> Unit,
     onAddAlarm: () -> Unit,
+    canCreateFamilyAlarm: Boolean,
+    onAddFamilyAlarm: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -200,6 +203,14 @@ internal fun QuickStartGrid(
                 icon = Icons.Outlined.Alarm,
                 onClick = onAddAlarm,
                 modifier = Modifier.weight(1f),
+            )
+        }
+        if (canCreateFamilyAlarm) {
+            HomeActionCard(
+                label = "상대방 알람 맞춰주기",
+                icon = Icons.Outlined.People,
+                onClick = onAddFamilyAlarm,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

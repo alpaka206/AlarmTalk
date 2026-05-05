@@ -33,7 +33,7 @@ internal data class SubscriptionPlanOption(
 
 internal sealed interface AlarmScreen {
     data object List : AlarmScreen
-    data object Create : AlarmScreen
+    data class Create(val familyTargetMode: Boolean = false) : AlarmScreen
     data class Edit(val alarm: AlarmEntity) : AlarmScreen
 }
 

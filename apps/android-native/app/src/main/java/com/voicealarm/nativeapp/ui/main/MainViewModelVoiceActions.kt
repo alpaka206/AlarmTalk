@@ -175,12 +175,52 @@ internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
             }
         }.onSuccess { profile ->
             voiceProfiles = voiceProfiles.map {
-                if (it.id == profile.id) it.copy(name = profile.name) else it
+                if (it.id == profile.id) it.copy(name = profile.name, isShared = profile.isShared ?: it.isShared) else it
             }
             message = "음성 프로필 이름을 바꿨어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
             message = userFacingError(error, "음성 프로필 이름 변경에 실패했어요")
+        }
+        voiceProfileBusy = false
+    }
+}
+
+internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
+    val session = authSession
+    if (session == null) {
+        message = "음성 프로필을 공유하려면 먼저 로그인해 주세요"
+        return
+    }
+    if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
+        message = "음성 공유는 커플/가족 플랜에서 사용할 수 있어요"
+        return
+    }
+
+    viewModelScope.launch {
+        if (voiceProfileBusy) return@launch
+        voiceProfileBusy = true
+        runCatching {
+            withContext(Dispatchers.IO) {
+                api.updateVoiceProfile(
+                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    id = profileId,
+                    request = VoiceProfileUpdateRequest(isShared = shared),
+                ).profile
+            }
+        }.onSuccess { profile ->
+            voiceProfiles = voiceProfiles.map {
+                if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
+            }
+            runCatching {
+                api.listFamilyVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
+            }.onSuccess { profiles ->
+                familyVoices = profiles
+            }
+            message = if (shared) "음성 프로필을 공유했어요" else "음성 프로필 공유를 껐어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update voice profile sharing id=$profileId shared=$shared", error)
+            message = userFacingError(error, "음성 프로필 공유 설정에 실패했어요")
         }
         voiceProfileBusy = false
     }

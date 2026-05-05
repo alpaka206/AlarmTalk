@@ -69,7 +69,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     LaunchedEffect(authSession?.token) {
-        if (authSession != null) viewModel.preloadVoiceProfiles()
+        if (authSession != null) {
+            viewModel.preloadVoiceProfiles()
+            viewModel.preloadSocial()
+            viewModel.preloadCharacterAndBilling()
+        }
     }
 
     LaunchedEffect(selectedTab, authSession?.token) {
@@ -234,6 +238,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                 onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
                 onRenameVoiceProfile = viewModel::renameVoiceProfile,
+                onShareVoiceProfile = viewModel::setVoiceProfileShared,
                 onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                 onRefreshSocial = viewModel::refreshSocial,
                 onCreateFamilyInvite = viewModel::createFamilyInvite,
@@ -246,16 +251,19 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSendNote = viewModel::sendNote,
                 onMarkNoteRead = viewModel::markNoteRead,
                 onCheckoutPlan = viewModel::checkoutPlan,
-                onCreateAlarm = { screen = AlarmScreen.Create },
+                onCreateAlarm = { screen = AlarmScreen.Create() },
+                onCreateFamilyAlarm = { screen = AlarmScreen.Create(familyTargetMode = true) },
                 onToggleEnabled = viewModel::setAlarmEnabled,
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
                 onDeleteAlarm = viewModel::deleteAlarm,
             )
 
-            AlarmScreen.Create -> AlarmEditorScreen(
+            is AlarmScreen.Create -> AlarmEditorScreen(
                 contentPadding = padding,
                 alarm = null,
                 authSession = authSession,
+                familyGroup = familyGroup,
+                familyAlarmMode = current.familyTargetMode,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,
@@ -269,6 +277,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 contentPadding = padding,
                 alarm = current.alarm,
                 authSession = authSession,
+                familyGroup = familyGroup,
+                familyAlarmMode = false,
                 voiceProfiles = voiceProfiles,
                 voiceProfileBusy = voiceProfileBusy,
                 onCancel = ::goBackInApp,

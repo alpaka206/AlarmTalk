@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { UUID_RE } from '../lib/validate';
+import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   validateAlarmFields,
   normalizeAlarmRow,
@@ -44,19 +45,51 @@ alarmMutation.post('/', async (c) => {
   const fieldError = validateAlarmFields(body);
   if (fieldError) return c.json(fieldError, 400);
 
-  if (body.target_user_id && body.target_user_id !== userId) {
-    const friendship = await db.execute({
-      sql: `SELECT id FROM friendships
-            WHERE ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
-              AND status = 'accepted'`,
-      args: [userId, body.target_user_id, body.target_user_id, userId],
-    });
-    if (friendship.rows.length === 0) {
-      return c.json({ error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_FRIENDS' }, 403);
+  let targetUserIdForAlarm: string | null = null;
+  if (body.target_user_id) {
+    const rawTargetUserId = body.target_user_id.trim();
+    if (!rawTargetUserId) {
+      return c.json({ error: 'Invalid target_user_id', error_code: 'INVALID_TARGET_USER' }, 400);
+    }
+    if (rawTargetUserId !== userId) {
+      const friendship = await db.execute({
+        sql: `SELECT id FROM friendships
+              WHERE ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+                AND status = 'accepted'`,
+        args: [userId, rawTargetUserId, rawTargetUserId, userId],
+      });
+
+      if (friendship.rows.length > 0) {
+        targetUserIdForAlarm = rawTargetUserId;
+      } else {
+        const targetRes = await db.execute({
+          sql: `SELECT id, google_id, allow_family_alarms FROM users
+                WHERE google_id = ? OR id = ?
+                LIMIT 1`,
+          args: [rawTargetUserId, rawTargetUserId],
+        });
+        if (targetRes.rows.length === 0) {
+          return c.json({ error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_FRIENDS' }, 403);
+        }
+
+        const target = targetRes.rows[0]!;
+        const targetPk = String(target.id);
+        const targetGoogleId = String(target.google_id);
+        const senderPk = await resolveUserPk(db, userId);
+        const allowed = targetGoogleId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
+
+        if (!allowed) {
+          return c.json(
+            { error: '친구 또는 같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_CONNECTED' },
+            403,
+          );
+        }
+        targetUserIdForAlarm = targetGoogleId;
+      }
     }
   }
 
-  const alarmOwner = body.target_user_id || userId;
+  const alarmOwner = targetUserIdForAlarm || userId;
 
   const user = await db.execute({
     sql: 'SELECT plan FROM users WHERE google_id = ?',
@@ -127,7 +160,7 @@ alarmMutation.post('/', async (c) => {
     args: [
       alarmId,
       userId,
-      body.target_user_id ?? null,
+      targetUserIdForAlarm,
       resolvedMessageId,
       body.time,
       JSON.stringify(body.repeat_days ?? []),
@@ -147,6 +180,7 @@ alarmMutation.post('/', async (c) => {
       alarm: {
         id: alarmId,
         ...body,
+        target_user_id: targetUserIdForAlarm,
         mode,
         vibration_pattern: vibPattern,
         voice_profile_id: body.voice_profile_id ?? null,

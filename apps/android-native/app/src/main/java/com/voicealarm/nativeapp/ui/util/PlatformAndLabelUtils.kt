@@ -15,8 +15,10 @@ import com.voicealarm.nativeapp.data.AlarmSyncStates
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyGroupMember
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -146,6 +148,17 @@ internal fun hasCoupleOrFamilyAccess(
         plan?.key == "couple" ||
         plan?.planType == "family" ||
         plan?.planType == "couple"
+}
+
+internal fun familyAlarmRecipients(
+    familyGroup: FamilyGroupCurrentResponse?,
+    authSession: AuthSession?,
+): List<FamilyGroupMember> {
+    val currentUserId = authSession?.user?.id
+    val currentEmail = authSession?.user?.email
+    return familyGroup?.members.orEmpty().filterNot { member ->
+        member.userId == currentUserId || member.email == currentEmail
+    }
 }
 
 internal fun roleLabel(role: String?): String = when (role) {

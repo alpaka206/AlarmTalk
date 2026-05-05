@@ -61,6 +61,7 @@ internal fun AlarmListScreen(
     onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onRenameVoiceProfile: (String, String) -> Unit,
+    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onCreateFamilyInvite: () -> Unit,
@@ -74,6 +75,7 @@ internal fun AlarmListScreen(
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCreateAlarm: () -> Unit,
+    onCreateFamilyAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
@@ -87,6 +89,9 @@ internal fun AlarmListScreen(
     val nextAlarm = remember(alarms) {
         alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
     }
+    val canCreateFamilyAlarm = authSession != null &&
+        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
+        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
 
     LazyColumn(
         modifier = Modifier
@@ -128,6 +133,8 @@ internal fun AlarmListScreen(
                     QuickStartGrid(
                         onRecordVoice = { onSelectTab(NativeTab.Voices) },
                         onAddAlarm = onCreateAlarm,
+                        canCreateFamilyAlarm = canCreateFamilyAlarm,
+                        onAddFamilyAlarm = onCreateFamilyAlarm,
                     )
                 }
                 if (authSession == null) {
@@ -168,6 +175,7 @@ internal fun AlarmListScreen(
                             onCreateVoiceProfiles = onCreateVoiceProfiles,
                             onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
                             onRenameVoiceProfile = onRenameVoiceProfile,
+                            onShareVoiceProfile = onShareVoiceProfile,
                             onDeleteVoiceProfile = onDeleteVoiceProfile,
                         )
                     }

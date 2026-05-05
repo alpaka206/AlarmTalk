@@ -93,6 +93,8 @@ data class AlarmDraft(
     val label: String,
     val hour: Int,
     val minute: Int,
+    val targetUserId: String? = null,
+    val targetUserName: String? = null,
     val repeatDaysMask: Int,
     val holidayOff: Boolean = false,
     val snoozeEnabled: Boolean = true,

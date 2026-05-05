@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -46,6 +48,8 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyGroupMember
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
@@ -59,6 +63,8 @@ internal fun AlarmEditorScreen(
     contentPadding: PaddingValues,
     alarm: AlarmEntity?,
     authSession: AuthSession?,
+    familyGroup: FamilyGroupCurrentResponse?,
+    familyAlarmMode: Boolean,
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
@@ -82,6 +88,15 @@ internal fun AlarmEditorScreen(
     var cropStartMillis by remember { mutableStateOf(0L) }
     var cropEndMillis by remember { mutableStateOf(AlarmAudioLimits.MAX_DURATION_MILLIS) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
+        familyAlarmRecipients(familyGroup, authSession)
+    }
+    var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
+        mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    }
+
+    fun selectedFamilyRecipient(): FamilyGroupMember? =
+        familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
@@ -159,6 +174,24 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    fun submitDraft(draft: AlarmDraft) {
+        if (!familyAlarmMode) {
+            onSave(draft)
+            return
+        }
+        val recipient = selectedFamilyRecipient()
+        if (recipient == null) {
+            audioMessage = "알람을 받을 사람을 선택해 주세요"
+            return
+        }
+        onSave(
+            draft.copy(
+                targetUserId = recipient.userId,
+                targetUserName = familyMemberLabel(recipient),
+            ),
+        )
+    }
+
     fun stopRecording() {
         scope.launch {
             runCatching {
@@ -194,7 +227,7 @@ internal fun AlarmEditorScreen(
         if (isSaving) return
         if (editor.playMode == AlarmPlayModes.ALARM_ONLY) {
             editor.clearAudio()
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         if (editor.voiceSource == VoiceSources.LOCAL_AUDIO) {
@@ -205,7 +238,7 @@ internal fun AlarmEditorScreen(
                         cacheSelectedCrop()
                     }.onSuccess { audio ->
                         applyCachedAudio(audio)
-                        onSave(editor.toDraft())
+                        submitDraft(editor.toDraft())
                     }.onFailure { error ->
                         Log.e(TAG, "Failed to cache cropped local alarm audio", error)
                         audioMessage = userFacingError(error, "선택한 구간을 저장하지 못했어요")
@@ -218,7 +251,7 @@ internal fun AlarmEditorScreen(
                 audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
                 return
             }
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         if (authSession == null) {
@@ -237,7 +270,7 @@ internal fun AlarmEditorScreen(
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
         val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
@@ -255,7 +288,7 @@ internal fun AlarmEditorScreen(
                 rawAudioUri = cached.rawAudioUri,
             )
             audioMessage = "기존 음성 캐시를 사용했어요"
-            onSave(editor.toDraft())
+            submitDraft(editor.toDraft())
             return
         }
 
@@ -296,7 +329,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = rawAudioUri,
                 )
                 audioMessage = "생성한 음성을 로컬에 저장했어요"
-                onSave(editor.toDraft())
+                submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요")
@@ -370,6 +403,18 @@ internal fun AlarmEditorScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+        }
+
+        if (familyAlarmMode) {
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    FamilyAlarmTargetCard(
+                        recipients = familyRecipients,
+                        selectedRecipientId = selectedFamilyRecipientId,
+                        onSelectRecipient = { selectedFamilyRecipientId = it },
+                    )
+                }
             }
         }
 
@@ -512,3 +557,38 @@ internal fun EditorSectionTitle(title: String) {
         color = MaterialTheme.colorScheme.onBackground,
     )
 }
+
+@Composable
+internal fun FamilyAlarmTargetCard(
+    recipients: List<FamilyGroupMember>,
+    selectedRecipientId: String?,
+    onSelectRecipient: (String) -> Unit,
+) {
+    Card(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("받는 사람", fontWeight = FontWeight.SemiBold)
+            if (recipients.isEmpty()) {
+                MutedText("연결된 상대가 없어요. 코드 등록에서 먼저 연결해 주세요.")
+            } else {
+                ChipGrid(
+                    options = recipients.map { it.userId to familyMemberLabel(it) },
+                    selected = selectedRecipientId.orEmpty(),
+                    onSelect = onSelectRecipient,
+                )
+                MutedText("선택한 상대에게 알람을 설정해요.")
+            }
+        }
+    }
+}
+
+internal fun familyMemberLabel(member: FamilyGroupMember): String =
+    member.name?.takeIf { it.isNotBlank() }
+        ?: member.email?.takeIf { it.isNotBlank() }
+        ?: "멤버"

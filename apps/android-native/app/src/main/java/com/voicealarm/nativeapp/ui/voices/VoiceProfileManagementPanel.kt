@@ -112,6 +112,7 @@ internal fun VoiceProfileManagementPanel(
     onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onRenameVoiceProfile: (String, String) -> Unit,
+    onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
 ) {
     val context = LocalContext.current
@@ -465,10 +466,12 @@ internal fun VoiceProfileManagementPanel(
                 VoiceProfileRow(
                     profile = profile,
                     enabled = !voiceProfileBusy,
+                    canShareVoice = canShareVoice,
                     onRename = {
                         renameTarget = profile
                         renameName = profile.name
                     },
+                    onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
                 )
             }
@@ -839,7 +842,9 @@ private fun SpeakerCandidateRow(
 internal fun VoiceProfileRow(
     profile: VoiceProfile,
     enabled: Boolean,
+    canShareVoice: Boolean,
     onRename: () -> Unit,
+    onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     OutlinedCard {
@@ -866,6 +871,23 @@ internal fun VoiceProfileRow(
                     IconButton(onClick = onDelete, enabled = enabled) {
                         Icon(Icons.Outlined.Delete, contentDescription = "삭제")
                     }
+                }
+            }
+            if (canShareVoice) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("공유", fontWeight = FontWeight.SemiBold)
+                        MutedText(if (profile.isShared == true) "가족/커플에게 공유 중" else "나만 사용")
+                    }
+                    VoiceAlarmSwitch(
+                        checked = profile.isShared == true,
+                        onCheckedChange = onShareChange,
+                        enabled = enabled,
+                    )
                 }
             }
         }

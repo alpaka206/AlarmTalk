@@ -58,11 +58,13 @@ internal fun VoiceAlarmSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        enabled = enabled,
         modifier = modifier,
         colors = SwitchDefaults.colors(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
