@@ -38,6 +38,7 @@ import com.voicealarm.nativeapp.network.TtsMessageAudioResponse
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
+import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import com.voicealarm.nativeapp.network.VoucherItem
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
@@ -84,17 +85,21 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
 }
 
 internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAudio) {
+    createVoiceProfiles(listOf(name to audio))
+}
+
+internal fun MainViewModel.createVoiceProfiles(items: List<Pair<String, CachedAlarmAudio>>) {
     val session = authSession
     if (session == null) {
         message = "음성 프로필을 만들려면 먼저 로그인해 주세요"
         return
     }
-    val trimmedName = name.trim()
-    if (trimmedName.isBlank()) {
+    val drafts = items.map { (name, audio) -> name.trim() to audio }
+    if (drafts.isEmpty() || drafts.any { it.first.isBlank() }) {
         message = "음성 프로필 이름을 입력해 주세요"
         return
     }
-    if (voiceProfiles.size >= MAX_VOICE_PROFILES) {
+    if (voiceProfiles.size + drafts.size > MAX_VOICE_PROFILES) {
         message = "음성 프로필은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
         return
     }
@@ -104,20 +109,43 @@ internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAu
         voiceProfileBusy = true
         runCatching {
             withContext(Dispatchers.IO) {
-                api.createVoiceClone(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
-                    audio = voiceUploadPart(audio),
-                    name = trimmedName.toRequestBody("text/plain".toMediaType()),
-                ).profile
+                drafts.map { (name, audio) ->
+                    api.createVoiceClone(
+                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        audio = voiceUploadPart(audio),
+                        name = name.toRequestBody("text/plain".toMediaType()),
+                    ).profile
+                }
             }
-        }.onSuccess { profile ->
-            voiceProfiles = listOf(profile) + voiceProfiles.filterNot { it.id == profile.id }
-            message = "음성 프로필 '${profile.name}'을 만들었어요"
+        }.onSuccess { profiles ->
+            val newIds = profiles.map { it.id }.toSet()
+            voiceProfiles = profiles + voiceProfiles.filterNot { it.id in newIds }
+            message = if (profiles.size == 1) {
+                "음성 프로필 '${profiles.first().name}'을 만들었어요"
+            } else {
+                "음성 프로필 ${profiles.size}개를 만들었어요"
+            }
         }.onFailure { error ->
             Log.e(TAG, "Failed to create voice profile", error)
             message = userFacingError(error, "음성 프로필 생성에 실패했어요")
         }
         voiceProfileBusy = false
+    }
+}
+
+internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
+    val session = authSession ?: throw IllegalStateException("화자 분리를 하려면 먼저 로그인해 주세요")
+    return withContext(Dispatchers.IO) {
+        val upload = api.uploadVoiceAudio(
+            authorization = VoiceAlarmApiClient.bearer(session.token),
+            audio = voiceUploadPart(audio),
+            durationMs = (audio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
+            originalName = audio.displayName.toRequestBody("text/plain".toMediaType()),
+        ).upload
+        api.separateVoiceUpload(
+            authorization = VoiceAlarmApiClient.bearer(session.token),
+            uploadId = upload.id,
+        ).speakers
     }
 }
 

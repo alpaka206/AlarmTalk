@@ -22,6 +22,34 @@ data class VoiceProfileResponse(
     val profile: VoiceProfile,
 )
 
+data class VoiceUploadResponse(
+    val upload: VoiceUpload,
+)
+
+data class VoiceUpload(
+    val id: String,
+    val objectKey: String? = null,
+    val mimeType: String? = null,
+    val sizeBytes: Long? = null,
+    val durationMs: Long? = null,
+    val originalName: String? = null,
+    val createdAt: String? = null,
+)
+
+data class VoiceSpeakerListResponse(
+    val speakers: List<VoiceSpeakerSegment>,
+    val provider: String? = null,
+)
+
+data class VoiceSpeakerSegment(
+    val id: String,
+    @SerializedName(value = "uploadId", alternate = ["upload_id"]) val uploadId: String? = null,
+    val label: String,
+    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long,
+    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long,
+    val confidence: Double? = null,
+)
+
 data class VoiceProfileUpdateRequest(
     val name: String,
 )
@@ -57,6 +85,21 @@ interface VoiceProfileApi {
         @Part audio: MultipartBody.Part,
         @Part("name") name: RequestBody,
     ): VoiceProfileResponse
+
+    @Multipart
+    @POST("voice/upload")
+    suspend fun uploadVoiceAudio(
+        @Header("Authorization") authorization: String,
+        @Part audio: MultipartBody.Part,
+        @Part("durationMs") durationMs: RequestBody,
+        @Part("originalName") originalName: RequestBody,
+    ): VoiceUploadResponse
+
+    @POST("voice/uploads/{uploadId}/separate")
+    suspend fun separateVoiceUpload(
+        @Header("Authorization") authorization: String,
+        @Path("uploadId") uploadId: String,
+    ): VoiceSpeakerListResponse
 
     @PATCH("voice/{id}")
     suspend fun updateVoiceProfile(
