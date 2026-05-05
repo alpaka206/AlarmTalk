@@ -59,7 +59,13 @@ internal fun MainViewModel.refreshSocial() {
         runCatching {
             val group = api.getFamilyGroup(authorization)
             val invites = api.listFamilyInvites(authorization).invites
-            val sharedVoices = api.listFamilyVoiceProfiles(authorization).profiles
+            val sharedVoices = runCatching {
+                api.listFamilyVoiceProfiles(authorization).profiles
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to refresh family voice profiles", error)
+            }.getOrElse {
+                familyVoices
+            }
             SocialSnapshot(
                 familyGroup = group,
                 familyInvites = invites,
