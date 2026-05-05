@@ -52,9 +52,18 @@ internal fun VoiceAudioCard(
     voiceProfiles: List<VoiceProfile>,
     voiceProfileBusy: Boolean,
     audioMessage: String?,
+    localInputMode: VoiceCaptureMode,
     isRecording: Boolean,
+    recordingElapsedMillis: Long,
+    recordingLevels: List<Float>,
+    selectedFileDurationMillis: Long?,
+    cropStartMillis: Long,
+    cropEndMillis: Long,
+    onLocalInputModeChange: (VoiceCaptureMode) -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
+    onCropChange: (Long, Long) -> Unit,
+    onPreviewCrop: () -> Unit,
     onClear: () -> Unit,
 ) {
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
@@ -161,16 +170,18 @@ internal fun VoiceAudioCard(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Text("카테고리", fontWeight = FontWeight.SemiBold)
-                ChipGrid(
-                    options = TtsCategories,
-                    selected = editor.voiceCategory,
-                    onSelect = {
-                        editor.voiceCategory = it
-                        editor.clearTtsMeta()
-                        if (editor.voiceRandomPrompt) editor.voiceText = ""
-                    },
-                )
+                if (editor.voiceRandomPrompt) {
+                    Text("카테고리", fontWeight = FontWeight.SemiBold)
+                    ChipGrid(
+                        options = TtsCategories,
+                        selected = editor.voiceCategory,
+                        onSelect = {
+                            editor.voiceCategory = it
+                            editor.clearTtsMeta()
+                            editor.voiceText = ""
+                        },
+                    )
+                }
                 Text("언어", fontWeight = FontWeight.SemiBold)
                 ChipGrid(
                     options = TtsLanguages,
@@ -181,42 +192,53 @@ internal fun VoiceAudioCard(
                         if (editor.voiceRandomPrompt) editor.voiceText = ""
                     },
                 )
-                if (editor.localAudioUri != null) {
-                    MutedText("저장된 음성: ${audioFileLabel(editor.localAudioUri ?: "")}")
-                }
             } else {
-                Text(
-                    text = editor.localAudioUri?.let(::audioFileLabel) ?: "선택된 음성 오디오가 없어요",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                VoiceCaptureModeSelector(
+                    selected = localInputMode,
+                    enabled = !isRecording,
+                    onSelect = onLocalInputModeChange,
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(
-                        onClick = onPick,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text("파일 선택")
-                    }
-                    Button(
-                        onClick = onRecord,
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Text(if (isRecording) "녹음 종료" else "녹음")
-                    }
+                if (localInputMode == VoiceCaptureMode.Record) {
+                    VoiceRecordControls(
+                        isRecording = isRecording,
+                        elapsedMillis = recordingElapsedMillis,
+                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                        levels = recordingLevels,
+                        enabled = true,
+                        notice = "녹음은 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 저장돼요.",
+                        onRecordClick = onRecord,
+                    )
+                } else {
+                    VoiceFileControls(
+                        durationMillis = selectedFileDurationMillis,
+                        cropStartMillis = cropStartMillis,
+                        cropEndMillis = cropEndMillis,
+                        minDurationMillis = 1_000L,
+                        maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
+                        enabled = !isRecording,
+                        uploadLabel = "파일 업로드",
+                        notice = "원하는 시작과 끝을 고르세요. 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 알람에 저장돼요.",
+                        onPickFile = onPick,
+                        onCropChange = onCropChange,
+                        onPreviewCrop = onPreviewCrop,
+                    )
                 }
                 if (editor.localAudioUri != null) {
                     OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) {
                         Text("음성 지우기")
                     }
                 }
-                Text(
-                    text = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 사용할 수 있고, 긴 파일은 30초로 자릅니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (
+                    editor.localAudioUri == null &&
+                    selectedFileDurationMillis == null &&
+                    !isRecording
+                ) {
+                    Text(
+                        text = "녹음하거나 파일을 업로드해 주세요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (audioMessage != null) {
                 Text(

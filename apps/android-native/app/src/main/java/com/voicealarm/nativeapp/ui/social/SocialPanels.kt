@@ -1,5 +1,7 @@
 package com.voicealarm.nativeapp
 
+import android.media.MediaPlayer
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,12 +12,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -24,6 +30,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -31,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -52,37 +60,23 @@ internal fun FamilyConnectionPanel(
     onCreateFamilyInvite: () -> Unit,
     onAcceptFamilyInvite: (String) -> Unit,
     onRevokeFamilyInvite: (String) -> Unit,
+    onRegisterCode: (String) -> Unit,
     onOpenBilling: () -> Unit,
 ) {
     var inviteCode by remember { mutableStateOf("") }
-    val group = familyGroup
-    val isGroupReady = group?.group != null
-    val plan = subscriptionResponse?.plan
+    var voucherCode by remember { mutableStateOf("") }
 
     OutlinedCard {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PanelHeader(
-                title = "커플/가족",
-                actionLabel = if (socialBusy) "불러오는 중" else "새로고침",
-                enabled = !socialBusy,
-                onAction = onRefreshSocial,
+            Text(
+                text = "코드 등록",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
-
-            Text("현재 플랜", fontWeight = FontWeight.SemiBold)
-            if (plan == null) {
-                MutedText("무료 플랜 또는 활성 구독이 없어요.")
-            } else {
-                MutedText("${plan.name} - ${planTypeLabel(plan.planType)} - 최대 ${plan.maxMembers}명")
-            }
-            OutlinedButton(
-                onClick = onOpenBilling,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("구독/이용권 관리")
-            }
+            MutedText("초대 코드 및 이용권을 등록하세요.")
 
             Text("초대 코드 등록", fontWeight = FontWeight.SemiBold)
             Row(
@@ -91,8 +85,8 @@ internal fun FamilyConnectionPanel(
             ) {
                 OutlinedTextField(
                     value = inviteCode,
-                    onValueChange = { inviteCode = it },
-                    label = { Text("초대 코드") },
+                    onValueChange = { inviteCode = it.filter(Char::isDigit).take(6) },
+                    placeholder = { Text("123456") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f),
@@ -108,44 +102,28 @@ internal fun FamilyConnectionPanel(
                 }
             }
 
-            Text("연결된 멤버", fontWeight = FontWeight.SemiBold)
-            if (!isGroupReady) {
-                MutedText("아직 연결된 커플/가족 그룹이 없어요. 초대 코드를 등록하거나 구독 후 코드를 발급하세요.")
-            } else {
-                MutedText("${roleLabel(group.role)} - ${group.members.size}/${group.group.maxMembers}명")
-                group.members.forEach { member ->
-                    MutedText("${member.name ?: member.email ?: member.userId} (${roleLabel(member.role)})")
-                }
-            }
-
-            OutlinedButton(
-                onClick = onCreateFamilyInvite,
-                enabled = !socialBusy,
+            Text("이용권 등록", fontWeight = FontWeight.SemiBold)
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("초대 코드 만들기")
-            }
-
-            familyInvites.take(3).forEach { invite ->
-                CompactActionRow(
-                    title = invite.code,
-                    subtitle = "${inviteStatusLabel(invite.status)} - 만료 ${invite.expiresAt ?: "알 수 없음"}",
-                    actionLabel = "취소",
-                    enabled = invite.status == "pending" && !socialBusy,
-                    onAction = { onRevokeFamilyInvite(invite.code) },
+                OutlinedTextField(
+                    value = voucherCode,
+                    onValueChange = { voucherCode = it.uppercase().take(18) },
+                    placeholder = { Text("VA-XXXX-XXXX-XXXX") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
                 )
-            }
-
-            Text("공유 음성", fontWeight = FontWeight.SemiBold)
-            if (familyVoices.isEmpty()) {
-                MutedText("공유된 음성이 아직 없어요.")
-            } else {
-                familyVoices.forEach { voice ->
-                    MutedText("${voice.name} - ${voice.ownerName ?: "가족"} (${voiceStatusLabel(voice.status)})")
+                Button(
+                    onClick = {
+                        onRegisterCode(voucherCode)
+                        voucherCode = ""
+                    },
+                    enabled = voucherCode.isNotBlank() && !socialBusy,
+                ) {
+                    Text("등록")
                 }
             }
-
-            MutedText("커플/가족 연결 안에서 허용된 음성만 공유됩니다.")
         }
     }
 }
@@ -163,6 +141,7 @@ internal fun VoiceMessagePanel(
     onOpenFamily: () -> Unit,
     onOpenBilling: () -> Unit,
 ) {
+    val context = LocalContext.current
     val isAvailable = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
     val recipients = remember(familyGroup, authSession.user.id, authSession.user.email) {
         familyGroup?.members.orEmpty().filterNot { member ->
@@ -171,18 +150,33 @@ internal fun VoiceMessagePanel(
     }
     var selectedRecipientId by remember(recipients) { mutableStateOf(recipients.firstOrNull()?.userId) }
     var text by remember { mutableStateOf("") }
+    var notePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    fun playNoteAudio(url: String?) {
+        val audioUrl = url?.takeIf { it.startsWith("http") || it.startsWith("file:") || it.startsWith("content:") }
+            ?: return
+        notePlayer?.release()
+        notePlayer = MediaPlayer.create(context, Uri.parse(audioUrl))?.apply {
+            setOnCompletionListener {
+                it.release()
+                if (notePlayer === it) notePlayer = null
+            }
+            start()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            notePlayer?.release()
+        }
+    }
 
     OutlinedCard {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PanelHeader(
-                title = "메시지",
-                actionLabel = if (noteBusy) "불러오는 중" else "새로고침",
-                enabled = !noteBusy,
-                onAction = onRefresh,
-            )
+            Text("소중한 사람들에게 응원의 메시지를 보내봐요.")
 
             if (!isAvailable) {
                 MutedText("음성 메시지는 커플/가족 플랜에서만 사용할 수 있어요.")
@@ -262,16 +256,31 @@ internal fun VoiceMessagePanel(
             ) {
                 Text("메시지 보내기")
             }
-            MutedText("보낸 메시지는 상대의 메시지함에 표시돼요. 음성 파일이 첨부된 메시지는 목록에서 확인할 수 있어요.")
+            MutedText("보낸 메시지는 상대의 메시지함에 표시돼요.")
 
             HorizontalDivider()
 
-            Text("받은 메시지", fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("음성 메시지", fontWeight = FontWeight.SemiBold)
+                IconButton(onClick = onRefresh, enabled = !noteBusy) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = "새로고침")
+                }
+            }
             if (receivedNotes.isEmpty()) {
                 MutedText("아직 받은 메시지가 없어요.")
             } else {
                 receivedNotes.take(8).forEach { note ->
-                    NoteRow(note = note, onClick = { onMarkNoteRead(note.id) })
+                    NoteRow(
+                        note = note,
+                        onClick = {
+                            playNoteAudio(note.audioUrl)
+                            onMarkNoteRead(note.id)
+                        },
+                    )
                 }
             }
         }

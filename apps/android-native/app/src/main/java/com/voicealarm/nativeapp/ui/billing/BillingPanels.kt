@@ -29,6 +29,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.CharacterEventEntity
@@ -45,9 +47,9 @@ internal fun SubscriptionPanel(
     onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String) -> Unit,
 ) {
-    var code by remember { mutableStateOf("") }
     var checkoutTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     val currentPlan = subscriptionResponse?.plan
+    val clipboard = LocalClipboardManager.current
     val options = remember {
         listOf(
             SubscriptionPlanOption(
@@ -65,10 +67,17 @@ internal fun SubscriptionPanel(
                 features = listOf("AI 음성 프로필 2개", "TTS 알람", "캐릭터/스트릭"),
             ),
             SubscriptionPlanOption(
+                key = "couple",
+                name = "커플",
+                price = "월 7,900원",
+                description = "두 사람이 음성과 메시지를 공유",
+                features = listOf("초대 코드", "공유 음성", "메시지", "최대 2명"),
+            ),
+            SubscriptionPlanOption(
                 key = "family",
-                name = "커플/가족",
+                name = "가족",
                 price = "월 9,900원",
-                description = "연결된 사람과 음성을 공유",
+                description = "가족과 음성, 메시지를 공유",
                 features = listOf("초대 코드", "공유 음성", "메시지", "최대 6명"),
             ),
         )
@@ -79,19 +88,11 @@ internal fun SubscriptionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            PanelHeader(
-                title = "구독",
-                actionLabel = if (billingBusy) "불러오는 중" else "새로고침",
-                enabled = !billingBusy,
-                onAction = onRefresh,
+            Text(
+                text = "구독",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             )
-
-            Text("현재 플랜", fontWeight = FontWeight.SemiBold)
-            if (currentPlan == null) {
-                MutedText("무료 플랜 또는 활성 구독 없음")
-            } else {
-                MutedText("${currentPlan.name} - ${planTypeLabel(currentPlan.planType)} - 최대 ${currentPlan.maxMembers}명")
-            }
 
             options.forEach { option ->
                 val isCurrent = if (option.key == "free") {
@@ -103,41 +104,22 @@ internal fun SubscriptionPanel(
                     option = option,
                     isCurrent = isCurrent,
                     busy = billingBusy,
-                    onCheckout = { checkoutTarget = option },
+                    onPurchase = { checkoutTarget = option },
+                    onGift = { checkoutTarget = option },
                 )
             }
 
-            HorizontalDivider()
-
-            Text("이용권 코드 등록", fontWeight = FontWeight.SemiBold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it.uppercase().take(18) },
-                    label = { Text("VA-XXXX-XXXX-XXXX") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = {
-                        onRegisterCode(code)
-                        code = ""
-                    },
-                    enabled = code.isNotBlank() && !billingBusy,
-                ) {
-                    Text("등록")
-                }
-            }
-
-            Text("발급된 이용권", fontWeight = FontWeight.SemiBold)
-            if (vouchers.isEmpty()) {
-                MutedText("발급된 이용권이 없어요.")
-            } else {
+            if (vouchers.isNotEmpty()) {
+                HorizontalDivider()
+                Text("초대 코드", fontWeight = FontWeight.SemiBold)
                 vouchers.take(6).forEach { voucher ->
-                    MutedText("${voucher.code} - ${voucher.planName} - ${voucherStatusLabel(voucher.status)}")
+                    CompactActionRow(
+                        title = voucher.code,
+                        subtitle = "${voucher.planName} · ${voucherStatusLabel(voucher.status)}",
+                        actionLabel = "복사하기",
+                        enabled = true,
+                        onAction = { clipboard.setText(AnnotatedString(voucher.code)) },
+                    )
                 }
             }
         }
@@ -146,9 +128,9 @@ internal fun SubscriptionPanel(
     checkoutTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { checkoutTarget = null },
-            title = { Text("${target.name} 플랜 변경") },
+            title = { Text("${target.name} 플랜 구매") },
             text = {
-                Text("선택한 플랜으로 변경할까요? 적용 후 선물용 이용권 코드가 발급됩니다.")
+                Text("구매를 진행할까요? 구매 후 초대 코드를 복사할 수 있어요.")
             },
             confirmButton = {
                 TextButton(
@@ -157,7 +139,7 @@ internal fun SubscriptionPanel(
                         onCheckoutPlan(target.key)
                     },
                 ) {
-                    Text("적용")
+                    Text("구매")
                 }
             },
             dismissButton = {
@@ -174,7 +156,8 @@ internal fun SubscriptionPlanCard(
     option: SubscriptionPlanOption,
     isCurrent: Boolean,
     busy: Boolean,
-    onCheckout: () -> Unit,
+    onPurchase: () -> Unit,
+    onGift: () -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -216,14 +199,38 @@ internal fun SubscriptionPlanCard(
             option.features.forEach { feature ->
                 MutedText("• $feature")
             }
-            if (!isCurrent && option.key != "free") {
-                Button(
-                    onClick = onCheckout,
-                    enabled = !busy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Text("${option.name} 적용")
+            if (option.key != "free") {
+                if (option.key == "plus_personal") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = onPurchase,
+                            enabled = !busy && !isCurrent,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text("구매")
+                        }
+                        OutlinedButton(
+                            onClick = onGift,
+                            enabled = !busy,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text("선물하기")
+                        }
+                    }
+                } else {
+                    Button(
+                        onClick = onPurchase,
+                        enabled = !busy && !isCurrent,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text("구매")
+                    }
                 }
             }
         }
@@ -295,7 +302,7 @@ internal fun CharacterBillingPanel(
                     Text("대기 ${pendingEvents}개")
                 }
             }
-            MutedText("구독과 이용권 코드는 홈 오른쪽 위 프로필 메뉴의 구독/이용권에서 관리해요.")
+            MutedText("구독은 홈 오른쪽 위 프로필 메뉴에서 관리해요.")
         }
     }
 }

@@ -121,6 +121,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     fun navigateToTab(tab: NativeTab) {
         if (selectedTab == tab) return
+        if (
+            tab == NativeTab.Messages &&
+            authSession != null &&
+            !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+        ) {
+            viewModel.message = "커플/가족 플랜만 사용할 수 있어요"
+            return
+        }
         tabBackStack = tabBackStack + selectedTab
         selectedTab = tab
     }

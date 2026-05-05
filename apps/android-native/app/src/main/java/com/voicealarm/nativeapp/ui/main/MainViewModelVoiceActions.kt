@@ -84,17 +84,17 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     }
 }
 
-internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAudio) {
-    createVoiceProfiles(listOf(name to audio))
+internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAudio, shared: Boolean) {
+    createVoiceProfiles(listOf(Triple(name, audio, shared)))
 }
 
-internal fun MainViewModel.createVoiceProfiles(items: List<Pair<String, CachedAlarmAudio>>) {
+internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, CachedAlarmAudio, Boolean>>) {
     val session = authSession
     if (session == null) {
         message = "음성 프로필을 만들려면 먼저 로그인해 주세요"
         return
     }
-    val drafts = items.map { (name, audio) -> name.trim() to audio }
+    val drafts = items.map { (name, audio, shared) -> Triple(name.trim(), audio, shared) }
     if (drafts.isEmpty() || drafts.any { it.first.isBlank() }) {
         message = "음성 프로필 이름을 입력해 주세요"
         return
@@ -109,11 +109,12 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Pair<String, CachedAl
         voiceProfileBusy = true
         runCatching {
             withContext(Dispatchers.IO) {
-                drafts.map { (name, audio) ->
+                drafts.map { (name, audio, shared) ->
                     api.createVoiceClone(
                         authorization = VoiceAlarmApiClient.bearer(session.token),
                         audio = voiceUploadPart(audio),
                         name = name.toRequestBody("text/plain".toMediaType()),
+                        isShared = shared.toString().toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }

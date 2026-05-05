@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,14 @@ internal fun VoiceAlarmBottomBar(
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Alarm,
                 label = "알람",
+                onSelectTab = onSelectTab,
+                modifier = Modifier.weight(1f),
+            )
+            VoiceAlarmTabItem(
+                tab = NativeTab.Messages,
+                selectedTab = selectedTab,
+                icon = Icons.Outlined.Message,
+                label = "메시지",
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )

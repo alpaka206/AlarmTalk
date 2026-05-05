@@ -164,7 +164,7 @@ internal fun ProfileMenu(
                 expanded = false
                 onSelectTab(NativeTab.Growth)
             }
-            ProfileMenuItem("구독/이용권") {
+            ProfileMenuItem("구독") {
                 expanded = false
                 onSelectTab(NativeTab.Billing)
             }

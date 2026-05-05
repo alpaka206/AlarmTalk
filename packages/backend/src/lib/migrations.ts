@@ -613,6 +613,22 @@ export const migrations: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_generated_audio_assets_message ON generated_audio_assets(message_id)',
     ],
   },
+  {
+    id: 25,
+    name: 'voice-profile-sharing',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_shared INTEGER NOT NULL DEFAULT 0`,
+      'CREATE INDEX IF NOT EXISTS idx_voice_profiles_family_shared ON voice_profiles(user_id, status, is_shared)',
+    ],
+  },
+  {
+    id: 26,
+    name: 'couple-plan-seed',
+    statements: [
+      `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
+        VALUES ('70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 7900, 1)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
