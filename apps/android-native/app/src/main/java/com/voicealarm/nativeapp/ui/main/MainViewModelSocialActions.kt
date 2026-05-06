@@ -84,7 +84,6 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
             familyGroup = snapshot.familyGroup
             familyInvites = snapshot.familyInvites
             familyVoices = snapshot.familyVoices
-            if (showMessage) message = "커플/가족 정보를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to refresh social data", error)
             if (showMessage) message = userFacingError(error, "커플/가족 정보를 불러오지 못했어요")

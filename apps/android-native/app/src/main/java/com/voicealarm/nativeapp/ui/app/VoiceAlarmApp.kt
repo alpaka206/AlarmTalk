@@ -6,13 +6,25 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -23,7 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
@@ -200,7 +217,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(hostState = snackbarHostState) { data ->
+                PrettySnackbar(message = data.visuals.message)
+            }
+        },
         bottomBar = {
             if (screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
@@ -292,6 +313,57 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSave = { draft ->
                     viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
                 },
+            )
+        }
+    }
+}
+
+private enum class MessageSeverity { Success, Error, Info }
+
+private fun messageSeverity(text: String): MessageSeverity = when {
+    "실패" in text || "못했어요" in text || "오류" in text -> MessageSeverity.Error
+    "했어요" in text || "었어요" in text || "완료" in text -> MessageSeverity.Success
+    else -> MessageSeverity.Info
+}
+
+@Composable
+private fun PrettySnackbar(message: String) {
+    val severity = messageSeverity(message)
+    val scheme = MaterialTheme.colorScheme
+    val containerColor = when (severity) {
+        MessageSeverity.Error -> scheme.error
+        MessageSeverity.Success -> scheme.secondary
+        MessageSeverity.Info -> scheme.primaryContainer
+    }
+    val contentColor = when (severity) {
+        MessageSeverity.Error -> scheme.onError
+        MessageSeverity.Success -> scheme.onSecondary
+        MessageSeverity.Info -> scheme.onPrimaryContainer
+    }
+    val iconVector = when (severity) {
+        MessageSeverity.Error -> Icons.Outlined.ErrorOutline
+        MessageSeverity.Success -> Icons.Outlined.CheckCircle
+        MessageSeverity.Info -> Icons.Outlined.Info
+    }
+    Snackbar(
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .shadow(elevation = 12.dp, shape = RoundedCornerShape(20.dp), clip = false),
+        shape = RoundedCornerShape(20.dp),
+        containerColor = containerColor,
+        contentColor = contentColor,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = iconVector,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                text = message,
+                fontWeight = FontWeight.Medium,
             )
         }
     }
