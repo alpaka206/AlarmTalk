@@ -3,6 +3,8 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { resolveUserPk } from '../lib/family-helpers';
 import { PlanGroupCapacityError, repairFamilyPlanGroupForUser } from '../lib/plan-groups';
+import { leavePlanGroupMember } from '../lib/billing-cancel';
+import { withWriteTransaction } from '../lib/transactions';
 
 const familyGroup = new Hono<AppEnv>();
 
@@ -104,10 +106,13 @@ familyGroup.post('/groups/:groupId/leave', async (c) => {
     );
   }
 
-  await db.execute({
-    sql: `DELETE FROM plan_group_members WHERE id = ?`,
-    args: [String(memberRes.rows[0]!.id)],
-  });
+  await withWriteTransaction(db, (tx) =>
+    leavePlanGroupMember(tx, {
+      userPk,
+      planGroupId: groupId,
+      membershipId: String(memberRes.rows[0]!.id),
+    }),
+  );
 
   return c.json({ success: true, left_group_id: groupId });
 });
@@ -153,20 +158,22 @@ familyGroup.post('/groups/:groupId/transfer-ownership', async (c) => {
     return c.json({ error: '대상이 해당 그룹의 멤버가 아닙니다', error_code: 'TARGET_NOT_MEMBER' }, 400);
   }
 
-  await db.execute({
-    sql: `UPDATE plan_group_members SET role = 'member'
-          WHERE plan_group_id = ? AND user_id = ?`,
-    args: [groupId, userPk],
-  });
-  await db.execute({
-    sql: `UPDATE plan_group_members SET role = 'owner'
-          WHERE plan_group_id = ? AND user_id = ?`,
-    args: [groupId, targetUserId],
-  });
-  await db.execute({
-    sql: `UPDATE plan_groups SET owner_user_id = ?, updated_at = datetime('now')
-          WHERE id = ?`,
-    args: [targetUserId, groupId],
+  await withWriteTransaction(db, async (tx) => {
+    await tx.execute({
+      sql: `UPDATE plan_group_members SET role = 'member'
+            WHERE plan_group_id = ? AND user_id = ?`,
+      args: [groupId, userPk],
+    });
+    await tx.execute({
+      sql: `UPDATE plan_group_members SET role = 'owner'
+            WHERE plan_group_id = ? AND user_id = ?`,
+      args: [groupId, targetUserId],
+    });
+    await tx.execute({
+      sql: `UPDATE plan_groups SET owner_user_id = ?, updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [targetUserId, groupId],
+    });
   });
 
   return c.json({
@@ -214,10 +221,13 @@ familyGroup.delete('/groups/:groupId/members/:userId', async (c) => {
     return c.json({ error: 'owner 는 제거할 수 없습니다', error_code: 'CANNOT_REMOVE_OWNER' }, 400);
   }
 
-  await db.execute({
-    sql: `DELETE FROM plan_group_members WHERE id = ?`,
-    args: [String(targetRes.rows[0]!.id)],
-  });
+  await withWriteTransaction(db, (tx) =>
+    leavePlanGroupMember(tx, {
+      userPk: targetUserId,
+      planGroupId: groupId,
+      membershipId: String(targetRes.rows[0]!.id),
+    }),
+  );
 
   return c.json({ success: true, removed_user_id: targetUserId });
 });

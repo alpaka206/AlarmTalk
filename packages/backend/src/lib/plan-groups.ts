@@ -1,6 +1,6 @@
-import { getDB } from './db';
+import type { DbExecutor } from './transactions';
 
-type DB = ReturnType<typeof getDB>;
+type DB = DbExecutor;
 
 export class PlanGroupCapacityError extends Error {
   constructor(readonly maxMembers: number) {
@@ -109,15 +109,16 @@ export async function repairFamilyPlanGroupForUser(
                  v.issuer_subscription_id, v.issuer_user_id
           FROM subscriptions s
           JOIN plans p ON p.id = s.plan_id
+          LEFT JOIN voucher_redemptions vr
+            ON vr.user_id = s.user_id
           LEFT JOIN voucher_codes v
-            ON v.redeemed_by_user_id = s.user_id
+            ON v.id = vr.voucher_id
            AND v.plan_id = s.plan_id
-           AND v.status = 'used'
           WHERE s.user_id = ?
             AND s.status = 'active'
             AND p.plan_type = 'family'
             AND (s.plan_group_id IS NULL OR s.plan_group_id = '')
-          ORDER BY COALESCE(v.used_at, s.starts_at) DESC
+          ORDER BY COALESCE(vr.redeemed_at, v.used_at, s.starts_at) DESC
           LIMIT 1`,
     args: [userPk],
   });
