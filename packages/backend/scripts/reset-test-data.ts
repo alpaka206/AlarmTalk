@@ -85,6 +85,26 @@ async function clearDatabase(url: string, authToken: string): Promise<void> {
       console.warn(`  ✗ ${t}: ${(err as Error).message}`);
     }
   }
+
+  // 시드 데이터 재주입 — _migrations ledger 는 보존하므로 직접 다시 채워둔다.
+  await reseedPlans(client);
+}
+
+async function reseedPlans(client: ReturnType<typeof createClient>): Promise<void> {
+  const seeds: Array<[string, string, string, string, number, number, number, number]> = [
+    ['70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 1, 0, 1],
+    ['70000000-0000-4000-8000-000000000002', 'plus_personal', '플러스 개인', 'personal', 30, 1, 4900, 1],
+    ['70000000-0000-4000-8000-000000000003', 'family', '가족', 'family', 30, 6, 9900, 1],
+    ['70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 7900, 1],
+  ];
+  for (const args of seeds) {
+    await client.execute({
+      sql: `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args,
+    });
+  }
+  console.log(`  ↻ reseeded plans (${seeds.length} rows)`);
 }
 
 async function clearR2Bucket(bucket: string, env: Record<string, string>): Promise<void> {
