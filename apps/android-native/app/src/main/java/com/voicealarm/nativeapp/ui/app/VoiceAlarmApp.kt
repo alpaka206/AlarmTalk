@@ -6,8 +6,10 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -77,6 +79,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
     var planGateMessage by remember { mutableStateOf<String?>(null) }
+    val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(message) {
@@ -98,10 +101,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(selectedTab, authSession?.token) {
         if (authSession == null) return@LaunchedEffect
         when (selectedTab) {
+            NativeTab.Home -> {
+                viewModel.refreshCharacterAndBilling()
+                viewModel.refreshSocial()
+            }
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
                 viewModel.preloadSocial()
             }
+            NativeTab.Alarms -> viewModel.syncNow()
             NativeTab.People -> viewModel.refreshSocial()
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
@@ -109,7 +117,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
             NativeTab.Growth,
             NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
-            else -> Unit
         }
     }
 
@@ -190,6 +197,23 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         onBack = ::goBackInApp,
     )
 
+    if (viewModel.nicknameEditDialogOpen) {
+        NicknameEditDialog(
+            initial = authSession?.user?.name.orEmpty(),
+            busy = authBusy,
+            onDismiss = viewModel::dismissEditNickname,
+            onConfirm = viewModel::updateNickname,
+        )
+    }
+
+    if (viewModel.deleteAccountConfirmOpen) {
+        DeleteAccountConfirmDialog(
+            busy = authBusy,
+            onDismiss = viewModel::dismissDeleteAccount,
+            onConfirm = viewModel::deleteAccount,
+        )
+    }
+
     planGateMessage?.let { gateMessage ->
         AlertDialog(
             onDismissRequest = { planGateMessage = null },
@@ -233,6 +257,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
     ) { padding ->
+      Box(modifier = Modifier.fillMaxSize()) {
         when (val current = screen) {
             AlarmScreen.List -> AlarmListScreen(
                 contentPadding = padding,
@@ -316,7 +341,35 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                     viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
                 },
             )
+
+            AlarmScreen.Settings -> SettingsScreen(
+                contentPadding = padding,
+                authSession = authSession,
+                themeMode = themeMode,
+                onBack = ::goBackInApp,
+                onChangeTheme = viewModel::setThemeMode,
+                onEditNickname = viewModel::requestEditNickname,
+                onLogout = viewModel::logout,
+                onDeleteAccount = viewModel::requestDeleteAccount,
+            )
         }
+        if (screen is AlarmScreen.List) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        top = padding.calculateTopPadding() + 8.dp,
+                        end = 8.dp,
+                    ),
+            ) {
+                ProfileMenu(
+                    authSession = authSession,
+                    onSelectTab = ::navigateToTab,
+                    onOpenSettings = { screen = AlarmScreen.Settings },
+                )
+            }
+        }
+      }
     }
 }
 

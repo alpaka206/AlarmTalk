@@ -102,15 +102,7 @@ internal fun AlarmListScreen(
     ) {
         when (selectedTab) {
             NativeTab.Home -> {
-                item {
-                    HomeHeader(
-                        authSession = authSession,
-                        syncBusy = syncBusy,
-                        onSelectTab = onSelectTab,
-                        onSyncNow = onSyncNow,
-                        onLogout = onLogout,
-                    )
-                }
+                item { HomeHeader() }
                 item {
                     NextAlarmHeroCard(
                         nextAlarm = nextAlarm,
@@ -327,10 +319,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(
-                        title = "구독",
-                        subtitle = "플랜을 확인하고 구매해요.",
-                    )
+                    ScreenHeader(title = "구독")
                 }
                 if (authSession == null) {
                     item {

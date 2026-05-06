@@ -10,8 +10,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 
 @Composable
-internal fun VoiceAlarmTheme(content: @Composable () -> Unit) {
-    val colorScheme = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+internal fun VoiceAlarmTheme(
+    themeMode: ThemeMode = ThemeMode.System,
+    content: @Composable () -> Unit,
+) {
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        ThemeMode.System -> systemDark
+        ThemeMode.Dark -> true
+        ThemeMode.Light -> false
+    }
+    val colorScheme = if (isDark) {
         androidx.compose.material3.darkColorScheme(
             primary = Color(0xFFF0C25C),
             onPrimary = Color(0xFF1F1B14),
