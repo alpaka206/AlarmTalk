@@ -9,6 +9,7 @@ import retrofit2.http.POST
 data class BillingSubscriptionResponse(
     val subscription: BillingSubscription?,
     val plan: BillingPlan?,
+    @SerializedName("next_plan") val nextPlan: BillingPlanSummary? = null,
 )
 
 data class BillingSubscription(
@@ -18,6 +19,9 @@ data class BillingSubscription(
     val status: String,
     @SerializedName("starts_at") val startsAt: String,
     @SerializedName("expires_at") val expiresAt: String,
+    @SerializedName("cancel_at_period_end") val cancelAtPeriodEnd: Boolean = false,
+    @SerializedName("canceled_at") val canceledAt: String? = null,
+    @SerializedName("next_plan_id") val nextPlanId: String? = null,
 )
 
 data class BillingPlan(
@@ -28,6 +32,13 @@ data class BillingPlan(
     @SerializedName("period_days") val periodDays: Int,
     @SerializedName("max_members") val maxMembers: Int,
     @SerializedName("price_krw") val priceKrw: Int,
+)
+
+data class BillingPlanSummary(
+    val id: String,
+    val key: String,
+    val name: String,
+    @SerializedName("plan_type") val planType: String,
 )
 
 data class VoucherListResponse(
@@ -43,6 +54,8 @@ data class VoucherItem(
     val status: String,
     @SerializedName("issued_at") val issuedAt: String? = null,
     @SerializedName("expires_at") val expiresAt: String,
+    @SerializedName("max_uses") val maxUses: Int = 1,
+    @SerializedName("use_count") val useCount: Int = 0,
 )
 
 data class CheckoutRequest(
@@ -62,6 +75,32 @@ data class CheckoutVoucher(
     val id: String,
     val code: String,
     @SerializedName("expires_at") val expiresAt: String,
+    @SerializedName("max_uses") val maxUses: Int = 1,
+    @SerializedName("use_count") val useCount: Int = 0,
+)
+
+data class CancelSubscriptionRequest(
+    val mode: String, // "immediate" | "at_period_end"
+)
+
+data class CancelSubscriptionResponse(
+    val success: Boolean,
+    val mode: String,
+    @SerializedName("subscription_id") val subscriptionId: String? = null,
+)
+
+data class ChangePlanRequest(
+    @SerializedName("plan_key") val planKey: String,
+    val mode: String, // "immediate" | "at_period_end"
+)
+
+data class ChangePlanResponse(
+    val success: Boolean,
+    val mode: String,
+    @SerializedName("subscription_id") val subscriptionId: String? = null,
+    @SerializedName("requires_checkout") val requiresCheckout: Boolean = false,
+    @SerializedName("plan_key") val planKey: String? = null,
+    @SerializedName("next_plan_key") val nextPlanKey: String? = null,
 )
 
 interface BillingApi {
@@ -76,4 +115,16 @@ interface BillingApi {
         @Header("Authorization") authorization: String,
         @Body request: CheckoutRequest,
     ): CheckoutResponse
+
+    @POST("billing/cancel")
+    suspend fun cancelSubscription(
+        @Header("Authorization") authorization: String,
+        @Body request: CancelSubscriptionRequest,
+    ): CancelSubscriptionResponse
+
+    @POST("billing/change-plan")
+    suspend fun changePlan(
+        @Header("Authorization") authorization: String,
+        @Body request: ChangePlanRequest,
+    ): ChangePlanResponse
 }

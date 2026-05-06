@@ -1,5 +1,14 @@
-// 이용권 코드 생성/해시 — 포맷 'VA-XXXX-XXXX-XXXX' (X = A-Z0-9 혼합, 12자)
+// 결제 시 발급되는 공유/선물 코드.
+//   - 'invite' 종류: 가족/커플 합류용 (포맷 'INV-XXXX-XXXX-XXXX')
+//   - 'gift'   종류: 개인 플랜 선물용  (포맷 'GIFT-XXXX-XXXX-XXXX')
 // 시각적 혼동 방지를 위해 0/O/1/I/L 은 제외.
+
+export type VoucherKind = 'invite' | 'gift';
+
+const VOUCHER_PREFIX: Record<VoucherKind, string> = {
+  invite: 'INV',
+  gift: 'GIFT',
+};
 
 const VOUCHER_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const GROUP_SIZE = 4;
@@ -20,11 +29,11 @@ function randomGroup(): string {
   return out;
 }
 
-/** 'VA-XXXX-XXXX-XXXX' 형태 평문 코드 생성 */
-export function generateVoucherCodePlain(): string {
+/** 종류별 평문 코드 생성 */
+export function generateVoucherCodePlain(kind: VoucherKind = 'invite'): string {
   const groups: string[] = [];
   for (let i = 0; i < GROUP_COUNT; i++) groups.push(randomGroup());
-  return `VA-${groups.join('-')}`;
+  return `${VOUCHER_PREFIX[kind]}-${groups.join('-')}`;
 }
 
 export async function hashVoucherCode(code: string): Promise<string> {
@@ -36,13 +45,13 @@ export async function hashVoucherCode(code: string): Promise<string> {
 }
 
 /** 평문+해시 페어 생성 — 등록 시 lookup 에 hash 사용, 발급자 UI 는 평문 */
-export async function generateVoucherCode(): Promise<GeneratedVoucher> {
-  const code = generateVoucherCodePlain();
+export async function generateVoucherCode(kind: VoucherKind = 'invite'): Promise<GeneratedVoucher> {
+  const code = generateVoucherCodePlain(kind);
   const hash = await hashVoucherCode(code);
   return { code, hash };
 }
 
-const VOUCHER_CODE_RE = /^VA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+const VOUCHER_CODE_RE = /^(INV|GIFT)-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 export function isValidVoucherCodeFormat(raw: string): boolean {
   return VOUCHER_CODE_RE.test(raw);

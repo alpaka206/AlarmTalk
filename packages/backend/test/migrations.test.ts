@@ -187,19 +187,19 @@ describe('migrations', () => {
     expect(all).toContain('WHERE client_nonce IS NOT NULL');
   });
 
-  it('마이그레이션 #6 에서 기본 플랜 3종(free / plus_personal / family) 을 시드한다', () => {
+  it('마이그레이션 #6 에서 기본 플랜 3종(free / personal / family) 을 시드한다', () => {
     const m = migrations.find((x) => x.id === 6);
     expect(m).toBeDefined();
     const inserts = m!.statements.filter((s) => s.trim().startsWith('INSERT'));
     expect(inserts.length).toBe(3);
     const all = inserts.join('\n');
     expect(all).toContain("'free'");
-    expect(all).toContain("'plus_personal'");
+    expect(all).toContain("'personal'");
     expect(all).toContain("'family'");
     // 가족 플랜은 max_members=6, 30일 주기, 9900원
     expect(all).toMatch(/'family',[^\n]*'family',\s*30,\s*6,\s*9900/);
-    // 개인 플랜은 4900원, 1인, 30일 주기
-    expect(all).toMatch(/'plus_personal',[^\n]*'personal',\s*30,\s*1,\s*4900/);
+    // 개인 플랜은 4900원, 1인, 30일 주기 — key/plan_type 모두 'personal'
+    expect(all).toMatch(/'personal',\s*'개인',\s*'personal',\s*30,\s*1,\s*4900/);
     // INSERT OR IGNORE 로 재실행 안전성 확보
     for (const stmt of inserts) {
       expect(stmt).toContain('INSERT OR IGNORE');

@@ -69,14 +69,7 @@ internal fun FamilyConnectionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "코드 등록",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            MutedText("초대 코드 및 이용권을 등록하세요.")
-
-            Text("초대권 코드 등록", fontWeight = FontWeight.SemiBold)
+            Text("초대 코드 등록(가족/커플)", fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -104,15 +97,15 @@ internal fun FamilyConnectionPanel(
                 }
             }
 
-            Text("이용권 등록", fontWeight = FontWeight.SemiBold)
+            Text("선물받은 코드 등록", fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
                     value = voucherCode,
-                    onValueChange = { voucherCode = it.uppercase().take(18) },
-                    placeholder = { Text("VA-XXXX-XXXX-XXXX") },
+                    onValueChange = { voucherCode = it.uppercase().take(20) },
+                    placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )

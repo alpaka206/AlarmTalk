@@ -230,7 +230,7 @@ export const migrations: Migration[] = [
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
         VALUES ('70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 1, 0, 1)`,
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
-        VALUES ('70000000-0000-4000-8000-000000000002', 'plus_personal', '플러스 개인', 'personal', 30, 1, 4900, 1)`,
+        VALUES ('70000000-0000-4000-8000-000000000002', 'personal', '개인', 'personal', 30, 1, 4900, 1)`,
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
         VALUES ('70000000-0000-4000-8000-000000000003', 'family', '가족', 'family', 30, 6, 9900, 1)`,
     ],
@@ -625,6 +625,41 @@ export const migrations: Migration[] = [
     statements: [
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
         VALUES ('70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 7900, 1)`,
+    ],
+  },
+  {
+    // 구독 해지/플랜 변경 예약용 필드.
+    // - cancel_at_period_end: 결제일까지 사용 후 자동 해지 플래그
+    // - canceled_at: 즉시 해지된 경우 시각
+    // - next_plan_id: 결제일 이후 자동 적용될 플랜 (변경 예약)
+    id: 27,
+    name: 'subscription-cancel-fields',
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE subscriptions ADD COLUMN canceled_at TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN next_plan_id TEXT REFERENCES plans(id)`,
+    ],
+  },
+  {
+    // 초대 코드 N명 사용 (가족: 코드 1장으로 5명 합류).
+    // - voucher_codes.max_uses: 코드별 최대 사용 가능 인원
+    // - voucher_redemptions: 어느 사용자가 언제 사용했는지의 다대일 기록.
+    //   (voucher_codes.redeemed_by_user_id/used_at 은 호환성 위해 유지하되 첫 사용자 기록용으로 약화)
+    id: 28,
+    name: 'voucher-multi-use',
+    statements: [
+      `ALTER TABLE voucher_codes ADD COLUMN max_uses INTEGER NOT NULL DEFAULT 1`,
+      `CREATE TABLE IF NOT EXISTS voucher_redemptions (
+        id TEXT PRIMARY KEY,
+        voucher_id TEXT NOT NULL REFERENCES voucher_codes(id),
+        user_id TEXT NOT NULL REFERENCES users(id),
+        redeemed_at TEXT DEFAULT (datetime('now')),
+        UNIQUE (voucher_id, user_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voucher_redemptions_voucher
+        ON voucher_redemptions(voucher_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_voucher_redemptions_user
+        ON voucher_redemptions(user_id)`,
     ],
   },
 ];

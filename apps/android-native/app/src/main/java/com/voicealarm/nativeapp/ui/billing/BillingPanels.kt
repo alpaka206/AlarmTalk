@@ -50,10 +50,18 @@ internal fun SubscriptionPanel(
     onRefresh: () -> Unit,
     onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    onCancelSubscription: (Boolean) -> Unit,
+    onChangePlan: (String, Boolean) -> Unit,
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
+    var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
+    var showCancelDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
+    val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
+    val nextPlan = subscriptionResponse?.nextPlan
+    val hasActive = subscription != null && currentPlan != null
+    val cancelScheduled = subscription?.cancelAtPeriodEnd == true
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val options = remember {
@@ -66,7 +74,7 @@ internal fun SubscriptionPanel(
                 features = listOf("일반 알람만 사용 가능", "캐릭터"),
             ),
             SubscriptionPlanOption(
-                key = "plus_personal",
+                key = "personal",
                 name = "개인",
                 price = "월 4,900원",
                 description = "AI 음성 알람과 캐릭터",
@@ -89,13 +97,12 @@ internal fun SubscriptionPanel(
         )
     }
     fun shareVoucher(voucher: VoucherItem) {
-        val shareText = "Voice Alarm ${voucher.planName} 이용권 코드: ${voucher.code}"
         clipboard.setText(AnnotatedString(voucher.code))
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, shareText)
+            putExtra(Intent.EXTRA_TEXT, voucher.code)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
+        context.startActivity(Intent.createChooser(sendIntent, "코드 공유"))
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
         if (vouchersForPlan.size == 1) {
@@ -110,6 +117,15 @@ internal fun SubscriptionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (hasActive && cancelScheduled) {
+                MutedText(
+                    if (nextPlan != null) {
+                        "다음 결제일에 ‘${nextPlan.name}’ 플랜으로 변경됩니다."
+                    } else {
+                        "다음 결제일까지 사용 후 자동 해지됩니다."
+                    },
+                )
+            }
             options.forEach { option ->
                 val isCurrent = if (option.key == "free") {
                     currentPlan == null
@@ -123,14 +139,50 @@ internal fun SubscriptionPanel(
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
+                    hasActiveSubscription = hasActive,
                     busy = billingBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { checkoutTarget = CheckoutSelection(option = option, gift = false) },
                     onGift = { checkoutTarget = CheckoutSelection(option = option, gift = true) },
+                    onChange = { changeTarget = option },
                     onShareVouchers = { selectedVouchers -> openVoucherShare(selectedVouchers) },
                 )
             }
+            if (hasActive) {
+                OutlinedButton(
+                    onClick = { showCancelDialog = true },
+                    enabled = !billingBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text(
+                        text = "해지하기",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
+    }
+
+    if (showCancelDialog) {
+        CancelSubscriptionDialog(
+            onDismiss = { showCancelDialog = false },
+            onConfirm = { atPeriodEnd ->
+                showCancelDialog = false
+                onCancelSubscription(atPeriodEnd)
+            },
+        )
+    }
+
+    changeTarget?.let { option ->
+        ChangePlanDialog(
+            target = option,
+            onDismiss = { changeTarget = null },
+            onConfirm = { atPeriodEnd ->
+                changeTarget = null
+                onChangePlan(option.key, atPeriodEnd)
+            },
+        )
     }
 
     checkoutTarget?.let { selection ->
@@ -204,10 +256,12 @@ internal fun SubscriptionPanel(
 internal fun SubscriptionPlanCard(
     option: SubscriptionPlanOption,
     isCurrent: Boolean,
+    hasActiveSubscription: Boolean,
     busy: Boolean,
     vouchers: List<VoucherItem>,
     onPurchase: () -> Unit,
     onGift: () -> Unit,
+    onChange: () -> Unit,
     onShareVouchers: (List<VoucherItem>) -> Unit,
 ) {
     Card(
@@ -254,69 +308,103 @@ internal fun SubscriptionPlanCard(
             option.features.forEach { feature ->
                 MutedText("• $feature")
             }
-            if (option.key != "free") {
-                if (option.key == "plus_personal") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Button(
-                                onClick = onPurchase,
-                                enabled = !busy && !isCurrent,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Text("구매")
-                            }
-                            OutlinedButton(
-                                onClick = onGift,
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Text("선물하기")
-                            }
-                        }
-                        if (vouchers.isNotEmpty()) {
-                            OutlinedButton(
-                                onClick = { onShareVouchers(vouchers) },
-                                enabled = !busy,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Text("공유하기")
-                            }
-                        }
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            if (option.key != "free" && !isCurrent) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(
+                        onClick = if (hasActiveSubscription) onChange else onPurchase,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
                     ) {
-                        Button(
-                            onClick = onPurchase,
-                            enabled = !busy && !isCurrent,
+                        Text(if (hasActiveSubscription) "변경" else "구매")
+                    }
+                    if (option.key == "personal" && !hasActiveSubscription) {
+                        OutlinedButton(
+                            onClick = onGift,
+                            enabled = !busy,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
                         ) {
-                            Text("구매")
-                        }
-                        if (vouchers.isNotEmpty()) {
-                            OutlinedButton(
-                                onClick = { onShareVouchers(vouchers) },
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Text("공유하기")
-                            }
+                            Text("선물하기")
                         }
                     }
                 }
             }
+            if (vouchers.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = { onShareVouchers(vouchers) },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("공유하기")
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun CancelSubscriptionDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (atPeriodEnd: Boolean) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("구독 해지") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MutedText("해지 시점을 선택해 주세요. 음성 프로필은 보존되며, 다시 결제하면 그대로 사용할 수 있어요.")
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = { onConfirm(true) }) {
+                    Text("다음 결제일까지 사용하고 해지")
+                }
+                TextButton(onClick = { onConfirm(false) }) {
+                    Text(
+                        text = "지금 해지하기",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("닫기") }
+        },
+    )
+}
+
+@Composable
+private fun ChangePlanDialog(
+    target: SubscriptionPlanOption,
+    onDismiss: () -> Unit,
+    onConfirm: (atPeriodEnd: Boolean) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${target.name} 플랜으로 변경") },
+        text = {
+            MutedText("변경 시점을 선택해 주세요. 즉시 변경하면 기존 구독은 바로 해지되고 새 결제가 진행돼요.")
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = { onConfirm(true) }) {
+                    Text("다음 결제일에 변경")
+                }
+                TextButton(onClick = { onConfirm(false) }) {
+                    Text("지금 바로 변경")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("닫기") }
+        },
+    )
 }
 
 private data class CheckoutSelection(
