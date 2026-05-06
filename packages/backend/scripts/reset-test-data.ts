@@ -118,9 +118,10 @@ async function clearR2Bucket(bucket: string, env: Record<string, string>): Promi
 
   // 폴백: 자동화 불가. wrangler v4 에는 r2 object list 가 없어 일괄 삭제 CLI 가 부재.
   console.log('  R2 자동 정리를 건너뜁니다 — 다음 중 하나로 직접 비워 주세요:');
-  console.log('    1) Cloudflare 대시보드 → R2 → ' + bucket + ' 에서 일괄 삭제');
+  console.log('    1) Cloudflare 대시보드 → R2 → 대상 버킷에서 일괄 삭제');
   console.log('    2) .dev.vars 에 CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN');
   console.log('       (R2 Read+Write) 추가 후 본 스크립트 재실행');
+  void bucket; // bucket 이름은 환경변수에서 오므로 평문 로그 회피.
 }
 
 async function clearR2BucketViaApi(bucket: string, accountId: string, apiToken: string): Promise<void> {
@@ -166,8 +167,8 @@ async function main(): Promise<void> {
   const bucket = env.R2_BUCKET ?? 'voice-alarm-voices';
 
   console.log('Reset target:');
-  console.log(`  DB     : ${tursoUrl}`);
-  console.log(`  R2     : ${bucket}`);
+  console.log('  DB     : (configured via TURSO_DATABASE_URL)');
+  console.log('  R2     : (configured via R2_BUCKET, default voice-alarm-voices)');
   console.log('');
 
   if (!(await confirm('This will WIPE all user data. Continue?'))) {
