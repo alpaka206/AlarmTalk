@@ -106,9 +106,10 @@ billingMutation.post('/checkout', async (c) => {
     });
   }
 
-  // 단일 voucher 발급 — 한 코드를 가족 멤버 N명에게 공유 (각자 1회씩 redeem).
+  // 단일 voucher 발급 — 가족/커플은 INV-, 개인 선물은 GIFT- prefix.
+  const voucherKind = gift ? 'gift' : 'invite';
   const voucherId = crypto.randomUUID();
-  const { code: voucherCode, hash: voucherHash } = await generateVoucherCode();
+  const { code: voucherCode, hash: voucherHash } = await generateVoucherCode(voucherKind);
   const maxUses = gift ? 1 : plannedMaxUses(planType, maxMembers);
   await db.execute({
     sql: `INSERT INTO voucher_codes
