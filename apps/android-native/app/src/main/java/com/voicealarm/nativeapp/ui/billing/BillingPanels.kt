@@ -74,7 +74,7 @@ internal fun SubscriptionPanel(
                 features = listOf("일반 알람만 사용 가능", "캐릭터"),
             ),
             SubscriptionPlanOption(
-                key = "plus_personal",
+                key = "personal",
                 name = "개인",
                 price = "월 4,900원",
                 description = "AI 음성 알람과 캐릭터",
@@ -321,7 +321,7 @@ internal fun SubscriptionPlanCard(
                     ) {
                         Text(if (hasActiveSubscription) "변경" else "구매")
                     }
-                    if (option.key == "plus_personal" && !hasActiveSubscription) {
+                    if (option.key == "personal" && !hasActiveSubscription) {
                         OutlinedButton(
                             onClick = onGift,
                             enabled = !busy,

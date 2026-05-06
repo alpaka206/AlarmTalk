@@ -230,7 +230,7 @@ export const migrations: Migration[] = [
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
         VALUES ('70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 1, 0, 1)`,
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
-        VALUES ('70000000-0000-4000-8000-000000000002', 'plus_personal', '개인', 'personal', 30, 1, 4900, 1)`,
+        VALUES ('70000000-0000-4000-8000-000000000002', 'personal', '개인', 'personal', 30, 1, 4900, 1)`,
       `INSERT OR IGNORE INTO plans (id, key, name, plan_type, period_days, max_members, price_krw, is_active)
         VALUES ('70000000-0000-4000-8000-000000000003', 'family', '가족', 'family', 30, 6, 9900, 1)`,
     ],
