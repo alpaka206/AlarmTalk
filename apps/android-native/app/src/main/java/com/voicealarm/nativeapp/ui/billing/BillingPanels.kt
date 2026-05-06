@@ -97,13 +97,12 @@ internal fun SubscriptionPanel(
         )
     }
     fun shareVoucher(voucher: VoucherItem) {
-        val shareText = "Voice Alarm ${voucher.planName} 이용권 코드: ${voucher.code}"
         clipboard.setText(AnnotatedString(voucher.code))
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, shareText)
+            putExtra(Intent.EXTRA_TEXT, voucher.code)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
+        context.startActivity(Intent.createChooser(sendIntent, "코드 공유"))
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
         if (vouchersForPlan.size == 1) {
