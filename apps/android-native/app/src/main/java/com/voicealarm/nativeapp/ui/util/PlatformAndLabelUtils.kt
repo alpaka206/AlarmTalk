@@ -84,6 +84,16 @@ internal fun formatFireTime(millis: Long): String {
         .format(formatter)
 }
 
+internal fun formatVoucherIssuedAt(isoString: String?): String? {
+    if (isoString.isNullOrBlank()) return null
+    val formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
+    return runCatching {
+        Instant.parse(isoString)
+            .atZone(ZoneId.systemDefault())
+            .format(formatter)
+    }.getOrNull()
+}
+
 internal fun audioFileLabel(localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
         ?.substringAfterLast('/')

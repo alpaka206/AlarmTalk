@@ -120,6 +120,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var message by mutableStateOf<String?>(null)
         internal set
 
+    private val themePrefs = application.getSharedPreferences("voice_alarm_theme", android.content.Context.MODE_PRIVATE)
+    var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
+        internal set
+
+    var nicknameEditDialogOpen by mutableStateOf(false)
+        internal set
+
+    var deleteAccountConfirmOpen by mutableStateOf(false)
+        internal set
+
+    fun setThemeMode(mode: ThemeMode) {
+        themeMode = mode
+        themePrefs.edit().putString("mode", mode.name).apply()
+    }
+
+    fun requestEditNickname() {
+        if (authSession == null) {
+            message = "로그인 후 사용할 수 있어요"
+            return
+        }
+        nicknameEditDialogOpen = true
+    }
+
+    fun dismissEditNickname() {
+        nicknameEditDialogOpen = false
+    }
+
+    fun requestDeleteAccount() {
+        if (authSession == null) {
+            message = "로그인 후 사용할 수 있어요"
+            return
+        }
+        deleteAccountConfirmOpen = true
+    }
+
+    fun dismissDeleteAccount() {
+        deleteAccountConfirmOpen = false
+    }
+
     init {
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
         if (authSession != null) {
@@ -137,4 +176,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshAppSession()
     }
 
+}
+
+private fun loadInitialThemeMode(prefs: android.content.SharedPreferences): ThemeMode {
+    val raw = prefs.getString("mode", ThemeMode.System.name) ?: return ThemeMode.System
+    return runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.System)
 }

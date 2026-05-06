@@ -127,6 +127,59 @@ internal fun MainViewModel.logout() {
     message = "로그아웃했어요"
 }
 
+internal fun MainViewModel.updateNickname(name: String) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val trimmed = name.trim()
+    if (trimmed.isEmpty() || trimmed.length > 30) {
+        message = "닉네임은 1~30자여야 해요"
+        return
+    }
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.updateProfile(authorization, com.voicealarm.nativeapp.network.UpdateProfileRequest(name = trimmed))
+        }.onSuccess {
+            val updated = session.copy(user = session.user.copy(name = trimmed))
+            authSession = authSessionStore.save(updated)
+            dismissEditNickname()
+            message = "닉네임을 변경했어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update nickname", error)
+            message = userFacingError(error, "닉네임 변경에 실패했어요")
+        }
+        authBusy = false
+    }
+}
+
+internal fun MainViewModel.deleteAccount() {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.deleteAccount(authorization)
+        }.onSuccess {
+            authSessionStore.clear()
+            authSession = null
+            dismissDeleteAccount()
+            message = "회원 탈퇴가 완료되었어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to delete account", error)
+            message = userFacingError(error, "회원 탈퇴에 실패했어요")
+        }
+        authBusy = false
+    }
+}
+
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {

@@ -2,8 +2,10 @@ package com.voicealarm.nativeapp.network
 
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 
 data class AuthUser(
@@ -37,6 +39,19 @@ data class GoogleLoginRequest(
     @SerializedName("id_token") val idToken: String,
 )
 
+data class UpdateProfileRequest(
+    val name: String? = null,
+)
+
+data class UpdateProfileResponse(
+    val success: Boolean,
+    val name: String? = null,
+)
+
+data class DeleteAccountResponse(
+    val success: Boolean,
+)
+
 interface AuthApi {
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthTokenResponse
@@ -49,4 +64,13 @@ interface AuthApi {
 
     @GET("auth/me")
     suspend fun me(@Header("Authorization") authorization: String): AuthMeResponse
+
+    @PATCH("user/me")
+    suspend fun updateProfile(
+        @Header("Authorization") authorization: String,
+        @Body request: UpdateProfileRequest,
+    ): UpdateProfileResponse
+
+    @DELETE("user/me")
+    suspend fun deleteAccount(@Header("Authorization") authorization: String): DeleteAccountResponse
 }

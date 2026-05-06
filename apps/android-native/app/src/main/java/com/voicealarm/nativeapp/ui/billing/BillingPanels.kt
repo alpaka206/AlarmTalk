@@ -61,30 +61,30 @@ internal fun SubscriptionPanel(
             SubscriptionPlanOption(
                 key = "free",
                 name = "무료",
-                price = "무료",
-                description = "일반 알람",
-                features = listOf("로컬 일반 알람", "스누즈", "반복 요일"),
+                price = "",
+                description = "",
+                features = listOf("일반 알람만 사용 가능", "캐릭터"),
             ),
             SubscriptionPlanOption(
                 key = "plus_personal",
                 name = "개인",
                 price = "월 4,900원",
                 description = "AI 음성 알람과 캐릭터",
-                features = listOf("AI 음성 프로필 2개", "TTS 알람", "캐릭터/스트릭"),
+                features = listOf("AI 음성 프로필 2개", "TTS 알람"),
             ),
             SubscriptionPlanOption(
                 key = "couple",
                 name = "커플",
                 price = "월 7,900원",
-                description = "두 사람이 음성과 메시지를 공유",
-                features = listOf("초대 코드", "공유 음성", "메시지", "최대 2명"),
+                description = "두 사람이 음성, 메시지 공유",
+                features = listOf("음성 공유 가능", "메시지 전송 가능", "최대 2명"),
             ),
             SubscriptionPlanOption(
                 key = "family",
                 name = "가족",
                 price = "월 9,900원",
-                description = "가족과 음성, 메시지를 공유",
-                features = listOf("초대 코드", "공유 음성", "메시지", "최대 6명"),
+                description = "가족이 음성, 메시지 공유",
+                features = listOf("음성 공유 가능", "메시지 전송 가능", "최대 6명"),
             ),
         )
     }
@@ -110,12 +110,6 @@ internal fun SubscriptionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "구독",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-
             options.forEach { option ->
                 val isCurrent = if (option.key == "free") {
                     currentPlan == null
@@ -178,9 +172,15 @@ internal fun SubscriptionPanel(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     shareTarget.forEach { voucher ->
+                        val issuedAtLabel = formatVoucherIssuedAt(voucher.issuedAt)
+                        val subtitle = if (issuedAtLabel != null) {
+                            "미등록 · 결제일 $issuedAtLabel"
+                        } else {
+                            "미등록"
+                        }
                         CompactActionRow(
                             title = voucher.code,
-                            subtitle = "${voucher.planName} · ${voucherStatusLabel(voucher.status)}",
+                            subtitle = subtitle,
                             actionLabel = "공유",
                             enabled = true,
                             onAction = {
@@ -235,18 +235,22 @@ internal fun SubscriptionPlanCard(
             ) {
                 Column {
                     Text(option.name, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        option.price,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    if (option.price.isNotBlank()) {
+                        Text(
+                            option.price,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
                 if (isCurrent) {
                     AssistChip(onClick = {}, label = { Text("현재") })
                 }
             }
-            MutedText(option.description)
+            if (option.description.isNotBlank()) {
+                MutedText(option.description)
+            }
             option.features.forEach { feature ->
                 MutedText("• $feature")
             }
