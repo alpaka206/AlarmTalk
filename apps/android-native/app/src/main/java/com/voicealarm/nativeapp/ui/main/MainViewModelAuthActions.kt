@@ -120,10 +120,22 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email:
     }
 }
 
-internal fun MainViewModel.logout() {
-    authSessionStore.clear()
-    authSession = null
-    message = "로그아웃했어요"
+internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
+    val shouldSignOutGoogle = authSession?.provider == AuthSessionStore.PROVIDER_GOOGLE
+    viewModelScope.launch {
+        authBusy = true
+        if (shouldSignOutGoogle) {
+            runCatching {
+                signOutGoogle()
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to sign out Google account", error)
+            }
+        }
+        authSessionStore.clear()
+        authSession = null
+        message = "로그아웃했어요"
+        authBusy = false
+    }
 }
 
 internal fun MainViewModel.updateNickname(name: String) {
@@ -155,27 +167,40 @@ internal fun MainViewModel.updateNickname(name: String) {
     }
 }
 
-internal fun MainViewModel.deleteAccount() {
+internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
     val session = authSession
     if (session == null) {
         message = "로그인 후 사용할 수 있어요"
         return
     }
     val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
-        runCatching {
+        try {
             api.deleteAccount(authorization)
-        }.onSuccess {
+            val revokeError = if (shouldRevokeGoogle) {
+                runCatching { revokeGoogleAccess() }.exceptionOrNull()
+            } else {
+                null
+            }
+            if (revokeError != null) {
+                Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
+            }
             authSessionStore.clear()
             authSession = null
             dismissDeleteAccount()
-            message = "회원 탈퇴가 완료되었어요"
-        }.onFailure { error ->
+            message = if (revokeError == null) {
+                "회원 탈퇴가 완료되었어요"
+            } else {
+                "회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요"
+            }
+        } catch (error: Throwable) {
             Log.e(TAG, "Failed to delete account", error)
             message = userFacingError(error, "회원 탈퇴에 실패했어요")
+        } finally {
+            authBusy = false
         }
-        authBusy = false
     }
 }
 
