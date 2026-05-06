@@ -57,7 +57,7 @@ describe('POST /code/register — 공통', () => {
   it('사용자 조회 실패 시 404 USER_NOT_FOUND', async () => {
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
@@ -82,7 +82,7 @@ describe('POST /code/register — 공통', () => {
   });
 });
 
-describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
+describe('POST /code/register — 이용권 코드 (INV-XXXX-XXXX-XXXX)', () => {
   function setupUserLookup() {
     mockDB.pushResult([{ id: 'pk1' }]);
   }
@@ -91,7 +91,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     setupUserLookup();
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
   });
@@ -102,7 +102,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
       { id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'used', expires_at: '2099-12-31' },
     ]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('CODE_ALREADY_USED');
   });
@@ -119,7 +119,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
       },
     ]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('CODE_EXPIRED');
   });
@@ -137,7 +137,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('CODE_EXPIRED');
     const updateSql = mockDB.calls[2].sql;
@@ -156,7 +156,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
       },
     ]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('SELF_ISSUED');
   });
@@ -174,7 +174,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     ]);
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('PLAN_NOT_FOUND');
   });
@@ -205,7 +205,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     mockDB.pushResult([], 1); // UPDATE voucher_codes
     mockDB.pushResult([], 1); // UPDATE users plan
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
@@ -248,7 +248,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     expect(res.status).toBe(200);
     const updateUserArgs = mockDB.calls[5].args;
     expect(updateUserArgs[0]).toBe('free');
@@ -280,7 +280,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     const body = await res.json();
     expect(body.plan.period_days).toBe(30);
   });
@@ -313,7 +313,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     mockDB.pushResult([], 1); // UPDATE voucher_codes
     mockDB.pushResult([], 1); // UPDATE users plan
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
     const body = await res.json();
     expect(body.plan.plan_type).toBe('family');
     expect(body.subscription.plan_group_id).toBeTruthy();
@@ -354,7 +354,7 @@ describe('POST /code/register — 이용권 코드 (VA-XXXX-XXXX-XXXX)', () => {
     mockDB.pushResult([], 1); // UPDATE users plan
 
     const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'VA-AAAA-BBBB-CCCC' }));
+    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
 
     expect(res.status).toBe(200);
     const body = await res.json();
