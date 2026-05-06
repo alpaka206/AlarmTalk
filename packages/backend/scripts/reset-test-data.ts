@@ -14,7 +14,6 @@
  */
 
 import { createClient } from '@libsql/client';
-import { execSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -88,37 +87,53 @@ async function clearDatabase(url: string, authToken: string): Promise<void> {
   }
 }
 
-function clearR2Bucket(bucket: string): void {
-  const which = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['wrangler']);
-  if (which.status !== 0) {
-    console.log(`  (wrangler not found on PATH — skip R2; run \`npx wrangler r2 ...\` manually)`);
+async function clearR2Bucket(bucket: string, env: Record<string, string>): Promise<void> {
+  // 우선 cloudflare REST API 시도 (한 번에 일괄 삭제 가능).
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = env.CLOUDFLARE_API_TOKEN;
+  if (accountId && apiToken) {
+    await clearR2BucketViaApi(bucket, accountId, apiToken);
     return;
   }
-  let listJson: string;
-  try {
-    listJson = execSync(
-      `wrangler r2 object list ${bucket} --remote --output json`,
-      { stdio: ['ignore', 'pipe', 'inherit'] },
-    ).toString();
-  } catch {
-    console.log(`  (wrangler list failed — skip R2)`);
-    return;
-  }
-  const parsed = JSON.parse(listJson) as { result?: Array<{ key: string }>; objects?: Array<{ key: string }> };
-  const objects = parsed.result ?? parsed.objects ?? [];
-  if (objects.length === 0) {
-    console.log('  (R2 bucket is already empty)');
-    return;
-  }
-  console.log(`  → ${objects.length} object(s) to delete`);
-  for (const o of objects) {
-    try {
-      execSync(`wrangler r2 object delete ${bucket}/${o.key} --remote`, { stdio: 'pipe' });
-      console.log(`  ✓ ${o.key}`);
-    } catch (err) {
-      console.warn(`  ✗ ${o.key}: ${(err as Error).message}`);
+
+  // 폴백: 자동화 불가. wrangler v4 에는 r2 object list 가 없어 일괄 삭제 CLI 가 부재.
+  console.log('  R2 자동 정리를 건너뜁니다 — 다음 중 하나로 직접 비워 주세요:');
+  console.log('    1) Cloudflare 대시보드 → R2 → ' + bucket + ' 에서 일괄 삭제');
+  console.log('    2) .dev.vars 에 CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN');
+  console.log('       (R2 Read+Write) 추가 후 본 스크립트 재실행');
+}
+
+async function clearR2BucketViaApi(bucket: string, accountId: string, apiToken: string): Promise<void> {
+  const base = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucket}/objects`;
+  let cursor: string | undefined;
+  let total = 0;
+  do {
+    const url = cursor ? `${base}?cursor=${encodeURIComponent(cursor)}` : base;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${apiToken}` } });
+    if (!res.ok) {
+      console.warn(`  ✗ list failed: ${res.status} ${await res.text()}`);
+      return;
     }
-  }
+    const json = (await res.json()) as {
+      result?: Array<{ key: string }>;
+      result_info?: { cursor?: string };
+    };
+    const objects = json.result ?? [];
+    for (const o of objects) {
+      const delRes = await fetch(`${base}/${encodeURIComponent(o.key)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${apiToken}` },
+      });
+      if (delRes.ok) {
+        console.log(`  ✓ ${o.key}`);
+        total += 1;
+      } else {
+        console.warn(`  ✗ ${o.key}: ${delRes.status}`);
+      }
+    }
+    cursor = json.result_info?.cursor && json.result_info.cursor.length > 0 ? json.result_info.cursor : undefined;
+  } while (cursor);
+  if (total === 0) console.log('  (R2 bucket is already empty)');
 }
 
 async function main(): Promise<void> {
@@ -144,7 +159,7 @@ async function main(): Promise<void> {
   await clearDatabase(tursoUrl, tursoToken);
 
   console.log('\n[2/2] Clearing R2 bucket...');
-  clearR2Bucket(bucket);
+  await clearR2Bucket(bucket, env);
 
   console.log('\nDone.');
 }
