@@ -241,22 +241,23 @@ async function redeemVoucherCodeInTransaction(
 
   await cancelActiveSubscriptionsForUser(db, params.userPk, startsAt);
 
-  let planGroupId: string | null = null;
-  try {
-    planGroupId = await resolveFamilyPlanGroupForRedeemedVoucher(db, {
-      userPk: params.userPk,
-      planId,
-      planType,
-      maxMembers,
-      issuerSubscriptionId,
-      issuerUserId,
-    });
-  } catch (error) {
-    if (error instanceof PlanGroupCapacityError) {
-      throw new VoucherRedemptionError(409, 'GROUP_FULL', `Group is full: max ${error.maxMembers}`);
+  const planGroupId = await (async () => {
+    try {
+      return await resolveFamilyPlanGroupForRedeemedVoucher(db, {
+        userPk: params.userPk,
+        planId,
+        planType,
+        maxMembers,
+        issuerSubscriptionId,
+        issuerUserId,
+      });
+    } catch (error) {
+      if (error instanceof PlanGroupCapacityError) {
+        throw new VoucherRedemptionError(409, 'GROUP_FULL', `Group is full: max ${error.maxMembers}`);
+      }
+      throw error;
     }
-    throw error;
-  }
+  })();
 
   const subscriptionId = crypto.randomUUID();
   const newExpiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
