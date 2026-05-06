@@ -75,7 +75,6 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
             api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
         }.onSuccess { profiles ->
             voiceProfiles = profiles
-            if (showMessage) message = "음성 프로필 ${profiles.size}개를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to load voice profiles", error)
             if (showMessage) message = userFacingError(error, "음성 프로필을 불러오지 못했어요")
@@ -273,7 +272,6 @@ internal fun MainViewModel.loadTtsMessages() {
             api.listTtsMessages(VoiceAlarmApiClient.bearer(session.token)).messages
         }.onSuccess { messages ->
             ttsMessages = messages
-            message = "저장된 음성 ${messages.size}개를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to load saved TTS messages", error)
             message = userFacingError(error, "저장된 음성을 불러오지 못했어요")

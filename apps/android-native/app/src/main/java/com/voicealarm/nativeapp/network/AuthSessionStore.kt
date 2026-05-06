@@ -68,6 +68,9 @@ class AuthSessionStore(context: Context) {
         prefs.edit().clear().apply()
     }
 
+    fun save(session: AuthSession): AuthSession =
+        save(token = session.token, provider = session.provider, user = session.user)
+
     private fun save(token: String, provider: String, user: AuthUser): AuthSession {
         prefs.edit()
             .putString(KEY_TOKEN, token)

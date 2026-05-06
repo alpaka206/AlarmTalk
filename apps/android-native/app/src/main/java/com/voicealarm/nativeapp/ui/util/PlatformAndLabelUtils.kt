@@ -1,6 +1,8 @@
 package com.voicealarm.nativeapp
 
+import android.app.AlarmManager
 import android.app.Application
+import android.app.NotificationManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -26,6 +28,18 @@ import java.time.format.DateTimeFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
+
+internal fun Context.canScheduleExactAlarms(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+    val am = getSystemService(AlarmManager::class.java) ?: return false
+    return am.canScheduleExactAlarms()
+}
+
+internal fun Context.canUseFullScreenIntent(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+    val nm = getSystemService(NotificationManager::class.java) ?: return false
+    return nm.canUseFullScreenIntent()
+}
 
 internal fun Context.openExactAlarmSettings() {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
@@ -68,6 +82,16 @@ internal fun formatFireTime(millis: Long): String {
     return Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
         .format(formatter)
+}
+
+internal fun formatVoucherIssuedAt(isoString: String?): String? {
+    if (isoString.isNullOrBlank()) return null
+    val formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
+    return runCatching {
+        Instant.parse(isoString)
+            .atZone(ZoneId.systemDefault())
+            .format(formatter)
+    }.getOrNull()
 }
 
 internal fun audioFileLabel(localAudioUri: String): String =

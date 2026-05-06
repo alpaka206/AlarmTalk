@@ -45,20 +45,20 @@ describe('GET /billing/vouchers (billingQuery)', () => {
   it('voucher JOIN plans — plan_key, plan_name, plan_type 포함', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([{
-      id: 'v1', code: 'VA-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
+      id: 'v1', code: 'INV-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
       issuer_subscription_id: 'sub-1', redeemed_by_user_id: null,
       status: 'issued', issued_at: '2026-04-21T00:00:00.000Z',
       used_at: null, expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'plus_personal', plan_name: '플러스 개인', plan_type: 'personal',
+      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
     }]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
     const body = await res.json();
     expect(body.vouchers[0]).toMatchObject({
       id: 'v1',
-      code: 'VA-AAAA-BBBB-CCCC',
-      plan_key: 'plus_personal',
-      plan_name: '플러스 개인',
+      code: 'INV-AAAA-BBBB-CCCC',
+      plan_key: 'personal',
+      plan_name: '개인',
       plan_type: 'personal',
       subscription_id: 'sub-1',
       redeemed_by_user_id: null,
@@ -90,11 +90,11 @@ describe('GET /billing/vouchers (billingQuery)', () => {
   it('used 상태 voucher 의 redeemed_by_user_id, used_at 정상 매핑', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([{
-      id: 'v1', code: 'VA-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
+      id: 'v1', code: 'INV-AAAA-BBBB-CCCC', plan_id: PLAN_PLUS_ID,
       issuer_subscription_id: 'sub-1', redeemed_by_user_id: 'user-pk-2',
       status: 'used', issued_at: '2026-04-21T00:00:00.000Z',
       used_at: '2026-04-22T10:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'plus_personal', plan_name: '플러스 개인', plan_type: 'personal',
+      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
     }]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
@@ -107,8 +107,8 @@ describe('GET /billing/vouchers (billingQuery)', () => {
   it('여러 voucher 반환 시 순서 유지 (DB 결과 순서대로)', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]);
     mockDB.pushResult([
-      { id: 'v1', code: 'VA-AAAA-1111-1111', plan_id: PLAN_PLUS_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-22T00:00:00.000Z', used_at: null, expires_at: '2026-05-22T00:00:00.000Z', plan_key: 'plus_personal', plan_name: '플러스', plan_type: 'personal' },
-      { id: 'v2', code: 'VA-BBBB-2222-2222', plan_id: PLAN_FAMILY_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-21T00:00:00.000Z', used_at: null, expires_at: '2026-05-21T00:00:00.000Z', plan_key: 'family', plan_name: '가족', plan_type: 'family' },
+      { id: 'v1', code: 'INV-AAAA-2222-2222', plan_id: PLAN_PLUS_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-22T00:00:00.000Z', used_at: null, expires_at: '2026-05-22T00:00:00.000Z', plan_key: 'personal', plan_name: '플러스', plan_type: 'personal' },
+      { id: 'v2', code: 'INV-BBBB-2222-2222', plan_id: PLAN_FAMILY_ID, issuer_subscription_id: null, redeemed_by_user_id: null, status: 'issued', issued_at: '2026-04-21T00:00:00.000Z', used_at: null, expires_at: '2026-05-21T00:00:00.000Z', plan_key: 'family', plan_name: '가족', plan_type: 'family' },
     ]);
 
     const res = await buildApp().request(jsonReq('GET', '/billing/vouchers'));
@@ -168,7 +168,7 @@ describe('GET /billing/subscription (billingQuery)', () => {
       sub_id: 'sub-1', user_id: 'user-pk-1', plan_id: PLAN_PLUS_ID,
       plan_group_id: null, status: 'active',
       starts_at: '2026-04-21T00:00:00.000Z', expires_at: '2026-05-21T00:00:00.000Z',
-      plan_key: 'plus_personal', plan_name: '플러스 개인', plan_type: 'personal',
+      plan_key: 'personal', plan_name: '개인', plan_type: 'personal',
       period_days: 30, max_members: 1, price_krw: 4900,
     }]);
 

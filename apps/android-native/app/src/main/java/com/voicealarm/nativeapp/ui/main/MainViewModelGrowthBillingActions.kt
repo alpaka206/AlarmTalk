@@ -21,6 +21,8 @@ import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.CancelSubscriptionRequest
+import com.voicealarm.nativeapp.network.ChangePlanRequest
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
@@ -76,7 +78,6 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
             characterResponse = snapshot.character
             subscriptionResponse = snapshot.subscription
             vouchers = snapshot.vouchers
-            if (showMessage) message = "캐릭터와 플랜 정보를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to load character or billing", error)
             if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
@@ -133,7 +134,6 @@ internal fun MainViewModel.refreshNotes() {
             api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
         }.onSuccess { notes ->
             receivedNotes = notes
-            message = "받은 메시지 ${notes.size}개를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to refresh notes", error)
             message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
@@ -213,6 +213,8 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
                         planType = response.plan.planType,
                         status = "issued",
                         expiresAt = voucher.expiresAt,
+                        maxUses = voucher.maxUses,
+                        useCount = voucher.useCount,
                     ),
                 ) + vouchers
             }
@@ -228,6 +230,59 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
             message = userFacingError(error, "구매에 실패했어요")
+        }
+        billingBusy = false
+    }
+}
+
+internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
+    val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
+    val mode = if (atPeriodEnd) "at_period_end" else "immediate"
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
+        }.onSuccess {
+            message = if (atPeriodEnd) {
+                "다음 결제일까지 사용 후 자동 해지되도록 예약했어요"
+            } else {
+                "구독을 해지했어요"
+            }
+            refreshCharacterAndBilling()
+            refreshAppSession()
+            refreshSocial()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to cancel subscription mode=$mode", error)
+            message = userFacingError(error, "해지에 실패했어요")
+        }
+        billingBusy = false
+    }
+}
+
+internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
+    val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
+    val mode = if (atPeriodEnd) "at_period_end" else "immediate"
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.changePlan(authorization, ChangePlanRequest(planKey = planKey, mode = mode))
+        }.onSuccess { response ->
+            if (response.requiresCheckout && response.planKey != null) {
+                // 즉시 변경: 기존 해지된 상태이므로 곧바로 새 결제 진행.
+                billingBusy = false
+                checkoutPlan(response.planKey)
+                return@onSuccess
+            }
+            message = if (atPeriodEnd) {
+                "다음 결제일에 플랜을 변경하도록 예약했어요"
+            } else {
+                "플랜을 변경했어요"
+            }
+            refreshCharacterAndBilling()
+            refreshAppSession()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
+            message = userFacingError(error, "플랜 변경에 실패했어요")
         }
         billingBusy = false
     }

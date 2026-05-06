@@ -127,6 +127,59 @@ internal fun MainViewModel.logout() {
     message = "로그아웃했어요"
 }
 
+internal fun MainViewModel.updateNickname(name: String) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val trimmed = name.trim()
+    if (trimmed.isEmpty() || trimmed.length > 30) {
+        message = "닉네임은 1~30자여야 해요"
+        return
+    }
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.updateProfile(authorization, com.voicealarm.nativeapp.network.UpdateProfileRequest(name = trimmed))
+        }.onSuccess {
+            val updated = session.copy(user = session.user.copy(name = trimmed))
+            authSession = authSessionStore.save(updated)
+            dismissEditNickname()
+            message = "닉네임을 변경했어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update nickname", error)
+            message = userFacingError(error, "닉네임 변경에 실패했어요")
+        }
+        authBusy = false
+    }
+}
+
+internal fun MainViewModel.deleteAccount() {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.deleteAccount(authorization)
+        }.onSuccess {
+            authSessionStore.clear()
+            authSession = null
+            dismissDeleteAccount()
+            message = "회원 탈퇴가 완료되었어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to delete account", error)
+            message = userFacingError(error, "회원 탈퇴에 실패했어요")
+        }
+        authBusy = false
+    }
+}
+
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {
@@ -137,7 +190,7 @@ internal fun MainViewModel.syncNow() {
         syncBusy = true
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token)
+            val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
             push to pull
         }.onSuccess { (push, pull) ->
             message = "동기화 완료: 생성 ${push.created}개, 수정 ${push.updated}개, 수신 ${pull.imported + pull.updated}개, 실패 ${push.failed + pull.failed}개"

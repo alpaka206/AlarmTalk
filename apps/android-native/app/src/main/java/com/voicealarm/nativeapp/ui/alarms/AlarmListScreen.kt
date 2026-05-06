@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
@@ -74,11 +75,14 @@ internal fun AlarmListScreen(
     onSendNote: (String, String) -> Unit,
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    onCancelSubscription: (Boolean) -> Unit,
+    onChangePlan: (String, Boolean) -> Unit,
     onCreateAlarm: () -> Unit,
     onCreateFamilyAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
+    onRequestPermissionGate: (PermissionTarget) -> Unit,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -92,6 +96,9 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
+    val context = LocalContext.current
+    val voiceLocked = !context.hasRecordAudioPermission()
+    val alarmLocked = !context.hasAlarmPermissions()
 
     LazyColumn(
         modifier = Modifier
@@ -102,15 +109,7 @@ internal fun AlarmListScreen(
     ) {
         when (selectedTab) {
             NativeTab.Home -> {
-                item {
-                    HomeHeader(
-                        authSession = authSession,
-                        syncBusy = syncBusy,
-                        onSelectTab = onSelectTab,
-                        onSyncNow = onSyncNow,
-                        onLogout = onLogout,
-                    )
-                }
+                item { HomeHeader() }
                 item {
                     NextAlarmHeroCard(
                         nextAlarm = nextAlarm,
@@ -131,27 +130,16 @@ internal fun AlarmListScreen(
                 }
                 item {
                     QuickStartGrid(
-                        onRecordVoice = { onSelectTab(NativeTab.Voices) },
+                        onRecordVoice = {
+                            if (voiceLocked) onRequestPermissionGate(PermissionTarget.RecordAudio)
+                            else onSelectTab(NativeTab.Voices)
+                        },
                         onAddAlarm = onCreateAlarm,
                         canCreateFamilyAlarm = canCreateFamilyAlarm,
                         onAddFamilyAlarm = onCreateFamilyAlarm,
+                        voiceLocked = voiceLocked,
+                        alarmLocked = alarmLocked,
                     )
-                }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
                 }
             }
 
@@ -162,24 +150,20 @@ internal fun AlarmListScreen(
                         subtitle = "내 목소리를 AI 음성 프로필로 만들고 관리해요.",
                     )
                 }
-                if (authSession == null) {
-                    item { VoiceLoginRequiredCard() }
-                } else {
-                    item {
-                        VoiceProfileManagementPanel(
-                            voiceProfiles = voiceProfiles,
-                            familyVoices = familyVoices,
-                            voiceProfileBusy = voiceProfileBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            familyGroup = familyGroup,
-                            onCreateVoiceProfile = onCreateVoiceProfile,
-                            onCreateVoiceProfiles = onCreateVoiceProfiles,
-                            onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
-                            onRenameVoiceProfile = onRenameVoiceProfile,
-                            onShareVoiceProfile = onShareVoiceProfile,
-                            onDeleteVoiceProfile = onDeleteVoiceProfile,
-                        )
-                    }
+                item {
+                    VoiceProfileManagementPanel(
+                        voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
+                        voiceProfileBusy = voiceProfileBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        familyGroup = familyGroup,
+                        onCreateVoiceProfile = onCreateVoiceProfile,
+                        onCreateVoiceProfiles = onCreateVoiceProfiles,
+                        onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
+                        onRenameVoiceProfile = onRenameVoiceProfile,
+                        onShareVoiceProfile = onShareVoiceProfile,
+                        onDeleteVoiceProfile = onDeleteVoiceProfile,
+                    )
                 }
             }
 
@@ -209,37 +193,20 @@ internal fun AlarmListScreen(
                         subtitle = "초대 코드 및 이용권을 등록하세요.",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        FamilyConnectionPanel(
-                            socialBusy = socialBusy,
-                            familyGroup = familyGroup,
-                            familyInvites = familyInvites,
-                            familyVoices = familyVoices,
-                            subscriptionResponse = subscriptionResponse,
-                            onRefreshSocial = onRefreshSocial,
-                            onCreateFamilyInvite = onCreateFamilyInvite,
-                            onAcceptFamilyInvite = onAcceptFamilyInvite,
-                            onRevokeFamilyInvite = onRevokeFamilyInvite,
-                            onRegisterCode = onRegisterCode,
-                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        )
-                    }
+                item {
+                    FamilyConnectionPanel(
+                        socialBusy = socialBusy,
+                        familyGroup = familyGroup,
+                        familyInvites = familyInvites,
+                        familyVoices = familyVoices,
+                        subscriptionResponse = subscriptionResponse,
+                        onRefreshSocial = onRefreshSocial,
+                        onCreateFamilyInvite = onCreateFamilyInvite,
+                        onAcceptFamilyInvite = onAcceptFamilyInvite,
+                        onRevokeFamilyInvite = onRevokeFamilyInvite,
+                        onRegisterCode = onRegisterCode,
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                    )
                 }
             }
 
@@ -250,39 +217,22 @@ internal fun AlarmListScreen(
                         subtitle = "소중한 사람들에게 응원의 메시지를 보내봐요.",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        VoiceMessagePanel(
-                            authSession = authSession,
-                            noteBusy = noteBusy,
-                            familyGroup = familyGroup,
-                            subscriptionResponse = subscriptionResponse,
-                            receivedNotes = receivedNotes,
-                            onRefresh = {
-                                onRefreshSocial()
-                                onRefreshNotes()
-                            },
-                            onSendNote = onSendNote,
-                            onMarkNoteRead = onMarkNoteRead,
-                            onOpenFamily = { onSelectTab(NativeTab.People) },
-                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        )
-                    }
+                if (authSession != null) item {
+                    VoiceMessagePanel(
+                        authSession = authSession,
+                        noteBusy = noteBusy,
+                        familyGroup = familyGroup,
+                        subscriptionResponse = subscriptionResponse,
+                        receivedNotes = receivedNotes,
+                        onRefresh = {
+                            onRefreshSocial()
+                            onRefreshNotes()
+                        },
+                        onSendNote = onSendNote,
+                        onMarkNoteRead = onMarkNoteRead,
+                        onOpenFamily = { onSelectTab(NativeTab.People) },
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                    )
                 }
             }
 
@@ -293,71 +243,36 @@ internal fun AlarmListScreen(
                         subtitle = "알람을 제대로 끄면 캐릭터가 성장해요!",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        CharacterBillingPanel(
-                            characterEvents = characterEvents,
-                            characterBusy = characterBusy,
-                            characterResponse = characterResponse,
-                            billingBusy = billingBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            vouchers = vouchers,
-                            onRefresh = onRefreshCharacterBilling,
-                            onSyncEvents = onSyncCharacterEvents,
-                            onRegisterCode = onRegisterCode,
-                        )
-                    }
+                item {
+                    CharacterBillingPanel(
+                        characterEvents = characterEvents,
+                        characterBusy = characterBusy,
+                        characterResponse = characterResponse,
+                        billingBusy = billingBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        vouchers = vouchers,
+                        onRefresh = onRefreshCharacterBilling,
+                        onSyncEvents = onSyncCharacterEvents,
+                        onRegisterCode = onRegisterCode,
+                    )
                 }
             }
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(
-                        title = "구독",
-                        subtitle = "플랜을 확인하고 구매해요.",
-                    )
+                    ScreenHeader(title = "구독")
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        SubscriptionPanel(
-                            billingBusy = billingBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            vouchers = vouchers,
-                            onRefresh = onRefreshCharacterBilling,
-                            onRegisterCode = onRegisterCode,
-                            onCheckoutPlan = onCheckoutPlan,
-                        )
-                    }
+                item {
+                    SubscriptionPanel(
+                        billingBusy = billingBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        vouchers = vouchers,
+                        onRefresh = onRefreshCharacterBilling,
+                        onRegisterCode = onRegisterCode,
+                        onCheckoutPlan = onCheckoutPlan,
+                        onCancelSubscription = onCancelSubscription,
+                        onChangePlan = onChangePlan,
+                    )
                 }
             }
         }

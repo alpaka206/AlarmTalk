@@ -7,11 +7,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "reset:test-data": "node --experimental-strip-types scripts/reset-test-data.ts"
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260504.1",
+    "@cloudflare/workers-types": "^4.20260505.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5",
@@ -22,7 +23,7 @@
     "@voice-alarm/shared": "*",
     "@voice-alarm/voice": "*",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.16",
+    "hono": "^4.12.17",
     "toucan-js": "^4.1.1"
   }
 }

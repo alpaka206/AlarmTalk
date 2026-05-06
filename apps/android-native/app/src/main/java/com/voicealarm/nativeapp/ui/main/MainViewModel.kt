@@ -120,6 +120,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var message by mutableStateOf<String?>(null)
         internal set
 
+    private val themePrefs = application.getSharedPreferences("voice_alarm_theme", android.content.Context.MODE_PRIVATE)
+    var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
+        internal set
+
+    var nicknameEditDialogOpen by mutableStateOf(false)
+        internal set
+
+    var deleteAccountConfirmOpen by mutableStateOf(false)
+        internal set
+
+    private val onboardingPrefs = application.getSharedPreferences("voice_alarm_onboarding", android.content.Context.MODE_PRIVATE)
+    var showOnboarding by mutableStateOf(false)
+        internal set
+
+    var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
+        internal set
+
+    fun requestPermissionGate(target: PermissionTarget) {
+        permissionGateRequest = target
+    }
+
+    fun dismissPermissionGate() {
+        permissionGateRequest = null
+    }
+
+    fun checkOnboardingFor(userId: String) {
+        if (userId.isBlank()) return
+        val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
+        showOnboarding = userId !in seen
+    }
+
+    fun completeOnboarding() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        if (userId != null) {
+            val seen = onboardingPrefs.getStringSet("seen_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+            seen += userId
+            onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
+        }
+        showOnboarding = false
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        themeMode = mode
+        themePrefs.edit().putString("mode", mode.name).apply()
+    }
+
+    fun requestEditNickname() {
+        if (authSession == null) {
+            message = "로그인 후 사용할 수 있어요"
+            return
+        }
+        nicknameEditDialogOpen = true
+    }
+
+    fun dismissEditNickname() {
+        nicknameEditDialogOpen = false
+    }
+
+    fun requestDeleteAccount() {
+        if (authSession == null) {
+            message = "로그인 후 사용할 수 있어요"
+            return
+        }
+        deleteAccountConfirmOpen = true
+    }
+
+    fun dismissDeleteAccount() {
+        deleteAccountConfirmOpen = false
+    }
+
     init {
         RemoteAlarmSyncScheduler.ensurePeriodic(application)
         if (authSession != null) {
@@ -137,4 +207,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         refreshAppSession()
     }
 
+}
+
+private fun loadInitialThemeMode(prefs: android.content.SharedPreferences): ThemeMode {
+    val raw = prefs.getString("mode", ThemeMode.System.name) ?: return ThemeMode.System
+    return runCatching { ThemeMode.valueOf(raw) }.getOrDefault(ThemeMode.System)
 }
