@@ -73,7 +73,7 @@ user.patch('/me', async (c) => {
     .catch(() => ({}));
 
   const updates: string[] = [];
-  const args: unknown[] = [];
+  const args: (string | number)[] = [];
   let resolvedName: string | null = null;
 
   if ('name' in body && body.name !== undefined) {
