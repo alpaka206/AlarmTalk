@@ -93,6 +93,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
+            viewModel.checkOnboardingFor(authSession.user.id)
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
@@ -256,7 +257,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
         bottomBar = {
-            if (authSession != null && screen is AlarmScreen.List) {
+            if (authSession != null && !viewModel.showOnboarding && screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     onSelectTab = ::navigateToTab,
@@ -287,6 +288,13 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                   onGoogleSignIn = ::launchGoogleSignIn,
               )
           }
+          return@Scaffold
+      }
+      if (viewModel.showOnboarding) {
+          OnboardingScreen(
+              contentPadding = padding,
+              onComplete = viewModel::completeOnboarding,
+          )
           return@Scaffold
       }
       Box(modifier = Modifier.fillMaxSize()) {

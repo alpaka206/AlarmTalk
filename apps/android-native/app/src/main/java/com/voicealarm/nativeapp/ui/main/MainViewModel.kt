@@ -130,6 +130,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var deleteAccountConfirmOpen by mutableStateOf(false)
         internal set
 
+    private val onboardingPrefs = application.getSharedPreferences("voice_alarm_onboarding", android.content.Context.MODE_PRIVATE)
+    var showOnboarding by mutableStateOf(false)
+        internal set
+
+    fun checkOnboardingFor(userId: String) {
+        if (userId.isBlank()) return
+        val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
+        showOnboarding = userId !in seen
+    }
+
+    fun completeOnboarding() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        if (userId != null) {
+            val seen = onboardingPrefs.getStringSet("seen_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+            seen += userId
+            onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
+        }
+        showOnboarding = false
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         themeMode = mode
         themePrefs.edit().putString("mode", mode.name).apply()
