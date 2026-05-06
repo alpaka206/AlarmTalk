@@ -79,6 +79,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     var selectedTab by remember { mutableStateOf(NativeTab.Home) }
     var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
     var planGateMessage by remember { mutableStateOf<String?>(null) }
+    var authRoute by remember { mutableStateOf<AuthRoute>(AuthRoute.Landing) }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -192,10 +193,16 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    BackHandler(
-        enabled = screen !is AlarmScreen.List || tabBackStack.isNotEmpty(),
-        onBack = ::goBackInApp,
-    )
+    if (authSession == null) {
+        BackHandler(enabled = authRoute !is AuthRoute.Landing) {
+            authRoute = AuthRoute.Landing
+        }
+    } else {
+        BackHandler(
+            enabled = screen !is AlarmScreen.List || tabBackStack.isNotEmpty(),
+            onBack = ::goBackInApp,
+        )
+    }
 
     if (viewModel.nicknameEditDialogOpen) {
         NicknameEditDialog(
@@ -249,7 +256,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
         bottomBar = {
-            if (screen is AlarmScreen.List) {
+            if (authSession != null && screen is AlarmScreen.List) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     onSelectTab = ::navigateToTab,
@@ -257,6 +264,31 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
     ) { padding ->
+      if (authSession == null) {
+          when (val route = authRoute) {
+              AuthRoute.Landing -> LandingScreen(
+                  contentPadding = padding,
+                  busy = authBusy,
+                  onGoToLogin = { authRoute = AuthRoute.Auth(AuthMode.Login) },
+                  onGoToRegister = { authRoute = AuthRoute.Auth(AuthMode.Register) },
+                  onGoogleSignIn = ::launchGoogleSignIn,
+              )
+              is AuthRoute.Auth -> AuthScreen(
+                  contentPadding = padding,
+                  mode = route.mode,
+                  busy = authBusy,
+                  onBack = { authRoute = AuthRoute.Landing },
+                  onLogin = viewModel::login,
+                  onRegister = viewModel::register,
+                  onSwitchMode = {
+                      val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
+                      authRoute = AuthRoute.Auth(nextMode)
+                  },
+                  onGoogleSignIn = ::launchGoogleSignIn,
+              )
+          }
+          return@Scaffold
+      }
       Box(modifier = Modifier.fillMaxSize()) {
         when (val current = screen) {
             AlarmScreen.List -> AlarmListScreen(
@@ -371,6 +403,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
       }
     }
+}
+
+private sealed interface AuthRoute {
+    data object Landing : AuthRoute
+    data class Auth(val mode: AuthMode) : AuthRoute
 }
 
 private enum class MessageSeverity { Success, Error, Info }

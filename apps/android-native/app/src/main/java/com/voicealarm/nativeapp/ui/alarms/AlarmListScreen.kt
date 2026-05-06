@@ -129,22 +129,6 @@ internal fun AlarmListScreen(
                         onAddFamilyAlarm = onCreateFamilyAlarm,
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                }
             }
 
             NativeTab.Voices -> {
@@ -154,24 +138,20 @@ internal fun AlarmListScreen(
                         subtitle = "내 목소리를 AI 음성 프로필로 만들고 관리해요.",
                     )
                 }
-                if (authSession == null) {
-                    item { VoiceLoginRequiredCard() }
-                } else {
-                    item {
-                        VoiceProfileManagementPanel(
-                            voiceProfiles = voiceProfiles,
-                            familyVoices = familyVoices,
-                            voiceProfileBusy = voiceProfileBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            familyGroup = familyGroup,
-                            onCreateVoiceProfile = onCreateVoiceProfile,
-                            onCreateVoiceProfiles = onCreateVoiceProfiles,
-                            onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
-                            onRenameVoiceProfile = onRenameVoiceProfile,
-                            onShareVoiceProfile = onShareVoiceProfile,
-                            onDeleteVoiceProfile = onDeleteVoiceProfile,
-                        )
-                    }
+                item {
+                    VoiceProfileManagementPanel(
+                        voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
+                        voiceProfileBusy = voiceProfileBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        familyGroup = familyGroup,
+                        onCreateVoiceProfile = onCreateVoiceProfile,
+                        onCreateVoiceProfiles = onCreateVoiceProfiles,
+                        onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
+                        onRenameVoiceProfile = onRenameVoiceProfile,
+                        onShareVoiceProfile = onShareVoiceProfile,
+                        onDeleteVoiceProfile = onDeleteVoiceProfile,
+                    )
                 }
             }
 
@@ -201,37 +181,20 @@ internal fun AlarmListScreen(
                         subtitle = "초대 코드 및 이용권을 등록하세요.",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        FamilyConnectionPanel(
-                            socialBusy = socialBusy,
-                            familyGroup = familyGroup,
-                            familyInvites = familyInvites,
-                            familyVoices = familyVoices,
-                            subscriptionResponse = subscriptionResponse,
-                            onRefreshSocial = onRefreshSocial,
-                            onCreateFamilyInvite = onCreateFamilyInvite,
-                            onAcceptFamilyInvite = onAcceptFamilyInvite,
-                            onRevokeFamilyInvite = onRevokeFamilyInvite,
-                            onRegisterCode = onRegisterCode,
-                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        )
-                    }
+                item {
+                    FamilyConnectionPanel(
+                        socialBusy = socialBusy,
+                        familyGroup = familyGroup,
+                        familyInvites = familyInvites,
+                        familyVoices = familyVoices,
+                        subscriptionResponse = subscriptionResponse,
+                        onRefreshSocial = onRefreshSocial,
+                        onCreateFamilyInvite = onCreateFamilyInvite,
+                        onAcceptFamilyInvite = onAcceptFamilyInvite,
+                        onRevokeFamilyInvite = onRevokeFamilyInvite,
+                        onRegisterCode = onRegisterCode,
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                    )
                 }
             }
 
@@ -242,39 +205,22 @@ internal fun AlarmListScreen(
                         subtitle = "소중한 사람들에게 응원의 메시지를 보내봐요.",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        VoiceMessagePanel(
-                            authSession = authSession,
-                            noteBusy = noteBusy,
-                            familyGroup = familyGroup,
-                            subscriptionResponse = subscriptionResponse,
-                            receivedNotes = receivedNotes,
-                            onRefresh = {
-                                onRefreshSocial()
-                                onRefreshNotes()
-                            },
-                            onSendNote = onSendNote,
-                            onMarkNoteRead = onMarkNoteRead,
-                            onOpenFamily = { onSelectTab(NativeTab.People) },
-                            onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                        )
-                    }
+                if (authSession != null) item {
+                    VoiceMessagePanel(
+                        authSession = authSession,
+                        noteBusy = noteBusy,
+                        familyGroup = familyGroup,
+                        subscriptionResponse = subscriptionResponse,
+                        receivedNotes = receivedNotes,
+                        onRefresh = {
+                            onRefreshSocial()
+                            onRefreshNotes()
+                        },
+                        onSendNote = onSendNote,
+                        onMarkNoteRead = onMarkNoteRead,
+                        onOpenFamily = { onSelectTab(NativeTab.People) },
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                    )
                 }
             }
 
@@ -285,35 +231,18 @@ internal fun AlarmListScreen(
                         subtitle = "알람을 제대로 끄면 캐릭터가 성장해요!",
                     )
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        CharacterBillingPanel(
-                            characterEvents = characterEvents,
-                            characterBusy = characterBusy,
-                            characterResponse = characterResponse,
-                            billingBusy = billingBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            vouchers = vouchers,
-                            onRefresh = onRefreshCharacterBilling,
-                            onSyncEvents = onSyncCharacterEvents,
-                            onRegisterCode = onRegisterCode,
-                        )
-                    }
+                item {
+                    CharacterBillingPanel(
+                        characterEvents = characterEvents,
+                        characterBusy = characterBusy,
+                        characterResponse = characterResponse,
+                        billingBusy = billingBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        vouchers = vouchers,
+                        onRefresh = onRefreshCharacterBilling,
+                        onSyncEvents = onSyncCharacterEvents,
+                        onRegisterCode = onRegisterCode,
+                    )
                 }
             }
 
@@ -321,32 +250,15 @@ internal fun AlarmListScreen(
                 item {
                     ScreenHeader(title = "구독")
                 }
-                if (authSession == null) {
-                    item {
-                        AccountPanel(
-                            authSession = authSession,
-                            authBusy = authBusy,
-                            syncBusy = syncBusy,
-                            voiceProfiles = voiceProfiles,
-                            voiceProfileBusy = voiceProfileBusy,
-                            onLogin = onLogin,
-                            onRegister = onRegister,
-                            onGoogleSignIn = onGoogleSignIn,
-                            onSyncNow = onSyncNow,
-                            onLogout = onLogout,
-                        )
-                    }
-                } else {
-                    item {
-                        SubscriptionPanel(
-                            billingBusy = billingBusy,
-                            subscriptionResponse = subscriptionResponse,
-                            vouchers = vouchers,
-                            onRefresh = onRefreshCharacterBilling,
-                            onRegisterCode = onRegisterCode,
-                            onCheckoutPlan = onCheckoutPlan,
-                        )
-                    }
+                item {
+                    SubscriptionPanel(
+                        billingBusy = billingBusy,
+                        subscriptionResponse = subscriptionResponse,
+                        vouchers = vouchers,
+                        onRefresh = onRefreshCharacterBilling,
+                        onRegisterCode = onRegisterCode,
+                        onCheckoutPlan = onCheckoutPlan,
+                    )
                 }
             }
         }
