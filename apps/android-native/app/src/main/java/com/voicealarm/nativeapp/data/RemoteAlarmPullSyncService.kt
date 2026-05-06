@@ -22,10 +22,24 @@ internal class RemoteAlarmPullSyncService(
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
 ) {
-    suspend fun pullReceivedAlarms(api: VoiceAlarmApi, token: String): RemoteAlarmPullResult {
+    suspend fun pullReceivedAlarms(
+        api: VoiceAlarmApi,
+        token: String,
+        myUserId: String,
+    ): RemoteAlarmPullResult {
         val authorization = VoiceAlarmApiClient.bearer(token)
+        // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
+        // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
+        // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
+        // 일반 /api/alarm 경로(target_user_id 포함)로 보낸 알람이 누락됐다.
         val remoteAlarms = api.listAlarms(authorization).alarms
-            .filter { it.isReceivedFamilyAlarm }
+            .filter { remote ->
+                val sender = remote.senderUserId
+                val target = remote.targetUserId
+                !target.isNullOrBlank() &&
+                    !sender.isNullOrBlank() &&
+                    sender != myUserId
+            }
 
         var imported = 0
         var updated = 0
@@ -48,10 +62,15 @@ internal class RemoteAlarmPullSyncService(
                 if (existing != null) {
                     alarmScheduler.cancel(existing.id)
                 }
-                if (local.enabled) {
-                    alarmScheduler.schedule(local)
-                }
+                // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
+                // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                 alarmDao.upsert(local)
+                if (local.enabled) {
+                    runCatching { alarmScheduler.schedule(local) }
+                        .onFailure { error ->
+                            Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
+                        }
+                }
                 if (existing == null) imported += 1 else updated += 1
             }.onFailure { error ->
                 failed += 1

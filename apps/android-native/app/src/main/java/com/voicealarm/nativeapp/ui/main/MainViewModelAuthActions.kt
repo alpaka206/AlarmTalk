@@ -137,7 +137,7 @@ internal fun MainViewModel.syncNow() {
         syncBusy = true
         runCatching {
             val push = repository.syncWithBackend(api, session.token)
-            val pull = repository.pullReceivedAlarms(api, session.token)
+            val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
             push to pull
         }.onSuccess { (push, pull) ->
             message = "동기화 완료: 생성 ${push.created}개, 수정 ${push.updated}개, 수신 ${pull.imported + pull.updated}개, 실패 ${push.failed + pull.failed}개"

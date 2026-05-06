@@ -396,8 +396,12 @@ class AlarmRepository(
     suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
         alarmSyncService.syncWithBackend(api, token)
 
-    suspend fun pullReceivedAlarms(api: VoiceAlarmApi, token: String): RemoteAlarmPullResult =
-        remoteAlarmPullSyncService.pullReceivedAlarms(api, token)
+    suspend fun pullReceivedAlarms(
+        api: VoiceAlarmApi,
+        token: String,
+        myUserId: String,
+    ): RemoteAlarmPullResult =
+        remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
 
     suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
         characterEventSyncService.sync(api, token)
