@@ -93,7 +93,7 @@ async function clearDatabase(url: string, authToken: string): Promise<void> {
 async function reseedPlans(client: ReturnType<typeof createClient>): Promise<void> {
   const seeds: Array<[string, string, string, string, number, number, number, number]> = [
     ['70000000-0000-4000-8000-000000000001', 'free', '무료', 'free', 36500, 1, 0, 1],
-    ['70000000-0000-4000-8000-000000000002', 'plus_personal', '플러스 개인', 'personal', 30, 1, 4900, 1],
+    ['70000000-0000-4000-8000-000000000002', 'plus_personal', '개인', 'personal', 30, 1, 4900, 1],
     ['70000000-0000-4000-8000-000000000003', 'family', '가족', 'family', 30, 6, 9900, 1],
     ['70000000-0000-4000-8000-000000000004', 'couple', '커플', 'family', 30, 2, 7900, 1],
   ];
