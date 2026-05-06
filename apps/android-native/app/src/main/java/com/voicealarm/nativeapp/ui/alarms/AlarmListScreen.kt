@@ -75,6 +75,8 @@ internal fun AlarmListScreen(
     onSendNote: (String, String) -> Unit,
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    onCancelSubscription: (Boolean) -> Unit,
+    onChangePlan: (String, Boolean) -> Unit,
     onCreateAlarm: () -> Unit,
     onCreateFamilyAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
@@ -268,6 +270,8 @@ internal fun AlarmListScreen(
                         onRefresh = onRefreshCharacterBilling,
                         onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
+                        onCancelSubscription = onCancelSubscription,
+                        onChangePlan = onChangePlan,
                     )
                 }
             }

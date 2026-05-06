@@ -354,6 +354,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSendNote = viewModel::sendNote,
                 onMarkNoteRead = viewModel::markNoteRead,
                 onCheckoutPlan = viewModel::checkoutPlan,
+                onCancelSubscription = viewModel::cancelSubscription,
+                onChangePlan = viewModel::changePlan,
                 onCreateAlarm = {
                     if (!context.hasAlarmPermissions()) {
                         viewModel.requestPermissionGate(PermissionTarget.Alarm)
