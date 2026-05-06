@@ -31,25 +31,6 @@ data class FamilyGroupMember(
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
 )
 
-data class FamilyInviteListResponse(
-    val invites: List<FamilyInvite>,
-)
-
-data class FamilyInviteResponse(
-    val invite: FamilyInvite,
-)
-
-data class FamilyInvite(
-    val id: String,
-    @SerializedName("plan_group_id") val planGroupId: String,
-    val code: String,
-    val status: String,
-    @SerializedName("created_at") val createdAt: String? = null,
-    @SerializedName("expires_at") val expiresAt: String? = null,
-    @SerializedName("deep_link") val deepLink: String? = null,
-    @SerializedName("web_url") val webUrl: String? = null,
-)
-
 data class FamilyVoiceAlarmRequest(
     @SerializedName("recipient_user_id") val recipientUserId: String,
     @SerializedName("wake_at") val wakeAt: String,
@@ -69,32 +50,21 @@ data class FamilyVoiceAlarm(
     val mode: String? = null,
 )
 
+data class LeaveFamilyGroupResponse(
+    val success: Boolean,
+    @SerializedName("left_group_id") val leftGroupId: String,
+)
+
 interface FamilyApi {
     @GET("family/groups/current")
     suspend fun getFamilyGroup(@Header("Authorization") authorization: String): FamilyGroupCurrentResponse
 
-    @POST("family/invites")
-    suspend fun createFamilyInvite(
+    @POST("family/groups/{groupId}/leave")
+    suspend fun leaveFamilyGroup(
         @Header("Authorization") authorization: String,
+        @Path("groupId") groupId: String,
         @Body request: Map<String, String> = emptyMap(),
-    ): FamilyInviteResponse
-
-    @GET("family/invites")
-    suspend fun listFamilyInvites(@Header("Authorization") authorization: String): FamilyInviteListResponse
-
-    @POST("family/invites/{code}/accept")
-    suspend fun acceptFamilyInvite(
-        @Header("Authorization") authorization: String,
-        @Path("code") code: String,
-        @Body request: Map<String, String> = emptyMap(),
-    )
-
-    @POST("family/invites/{code}/revoke")
-    suspend fun revokeFamilyInvite(
-        @Header("Authorization") authorization: String,
-        @Path("code") code: String,
-        @Body request: Map<String, String> = emptyMap(),
-    )
+    ): LeaveFamilyGroupResponse
 
     @POST("family/alarms/voice")
     suspend fun createFamilyVoiceAlarm(
