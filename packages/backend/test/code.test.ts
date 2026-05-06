@@ -19,6 +19,10 @@ vi.mock('../src/lib/vouchers', async (importOriginal) => {
 
 import codeRoutes from '../src/routes/code';
 
+const GIFT_CODE = 'GIFT-AAAA-BBBB-CCCC';
+const INV_CODE = 'INV-AAAA-BBBB-CCCC';
+const FUTURE = '2099-12-31T00:00:00.000Z';
+
 function buildApp(userId = 'user-1') {
   const app = new Hono<AppEnv>();
   app.use('*', fakeAuthMiddleware(userId));
@@ -26,594 +30,281 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function pushUser(pk = 'pk1') {
+  mockDB.pushResult([{ id: pk }]);
+}
+
+function pushVoucher(overrides: Record<string, string | number | null> = {}) {
+  mockDB.pushResult([
+    {
+      id: 'v1',
+      plan_id: 'p1',
+      issuer_user_id: 'issuer-pk',
+      issuer_subscription_id: null,
+      status: 'issued',
+      expires_at: FUTURE,
+      max_uses: 1,
+      use_count: 0,
+      ...overrides,
+    },
+  ]);
+}
+
+function pushPersonalPlan(overrides: Record<string, string | number | null> = {}) {
+  mockDB.pushResult([
+    {
+      id: 'p1',
+      key: 'personal',
+      name: 'Personal',
+      plan_type: 'personal',
+      period_days: 30,
+      max_members: 1,
+      price_krw: 4900,
+      ...overrides,
+    },
+  ]);
+}
+
+function pushFamilyPlan(overrides: Record<string, string | number | null> = {}) {
+  mockDB.pushResult([
+    {
+      id: 'p1',
+      key: 'family',
+      name: 'Family',
+      plan_type: 'family',
+      period_days: 30,
+      max_members: 6,
+      price_krw: 9900,
+      ...overrides,
+    },
+  ]);
+}
+
 beforeEach(() => {
   mockDB.reset();
 });
 
-describe('POST /code/register — 공통', () => {
-  it('코드 누락 시 400 CODE_REQUIRED', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', {}));
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error_code).toBe('CODE_REQUIRED');
-  });
-
-  it('빈 문자열 코드 시 400', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '   ' }));
+describe('POST /code/register common validation', () => {
+  it('returns CODE_REQUIRED when code is missing', async () => {
+    const res = await buildApp().request(jsonReq('POST', '/code/register', {}));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('CODE_REQUIRED');
   });
 
-  it('인식 불가 형식 시 400 INVALID_FORMAT', async () => {
-    mockDB.pushResult([{ id: 'pk1' }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'ABCDEF' }));
+  it('returns CODE_REQUIRED when code is blank', async () => {
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: '   ' }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_FORMAT');
+    expect((await res.json()).error_code).toBe('CODE_REQUIRED');
   });
 
-  it('사용자 조회 실패 시 404 USER_NOT_FOUND', async () => {
+  it('returns CODE_REQUIRED when code is not a string', async () => {
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: 12345 }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('CODE_REQUIRED');
+  });
+
+  it('returns USER_NOT_FOUND when authenticated user row is missing', async () => {
     mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
-  it('code가 숫자 등 비문자열이면 400 CODE_REQUIRED', async () => {
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 12345 }));
+  it('rejects legacy numeric invite codes because code registration is voucher_codes only', async () => {
+    pushUser();
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('CODE_REQUIRED');
-  });
-
-  it('JSON 파싱 실패 시 CODE_REQUIRED 400', async () => {
-    const app = buildApp();
-    const res = await app.request(
-      new Request('http://localhost/code/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'bad json',
-      }),
-    );
-    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_FORMAT');
   });
 });
 
-describe('POST /code/register — 이용권 코드 (INV-XXXX-XXXX-XXXX)', () => {
-  function setupUserLookup() {
-    mockDB.pushResult([{ id: 'pk1' }]);
-  }
-
-  it('존재하지 않는 코드 404', async () => {
-    setupUserLookup();
+describe('POST /code/register voucher redemption', () => {
+  it('returns CODE_NOT_FOUND when voucher code hash is missing', async () => {
+    pushUser();
     mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
+    expect(mockDB.calls[1]!.args[0]).toBe(`hash:${GIFT_CODE}`);
   });
 
-  it('이미 사용된 코드 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      { id: 'v1', plan_id: 'p1', issuer_user_id: 'pk2', status: 'used', expires_at: '2099-12-31' },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+  it('returns CODE_ALREADY_USED when voucher has no remaining uses', async () => {
+    pushUser();
+    pushVoucher({ status: 'used' });
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('CODE_ALREADY_USED');
   });
 
-  it('만료된 코드 (status=expired) 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'expired',
-        expires_at: '2020-01-01',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('CODE_EXPIRED');
-  });
-
-  it('만료 날짜 지남 → expired 업데이트 후 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2020-01-01',
-      },
-    ]);
+  it('expires stale issued voucher before returning CODE_EXPIRED', async () => {
+    pushUser();
+    pushVoucher({ expires_at: '2020-01-01T00:00:00.000Z' });
     mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
     expect(res.status).toBe(409);
     expect((await res.json()).error_code).toBe('CODE_EXPIRED');
-    const updateSql = mockDB.calls[2].sql;
-    expect(updateSql).toContain("SET status = 'expired'");
+    expect(mockDB.calls[2]!.sql).toContain("SET status = 'expired'");
   });
 
-  it('본인 발급 코드 400 SELF_ISSUED', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk1',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+  it('rejects self-issued voucher codes', async () => {
+    pushUser('pk1');
+    pushVoucher({ issuer_user_id: 'pk1' });
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('SELF_ISSUED');
   });
 
-  it('연결된 플랜 없으면 404 PLAN_NOT_FOUND', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('PLAN_NOT_FOUND');
+  it('rejects duplicate redemption by the same user', async () => {
+    pushUser('pk1');
+    pushVoucher();
+    mockDB.pushResult([{ id: 'redemption-1' }]);
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('CODE_ALREADY_REDEEMED_BY_YOU');
   });
 
-  it('정상 이용권 등록 성공', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([
-      {
-        id: 'p1',
-        key: 'plus_monthly',
-        name: 'Plus Monthly',
-        plan_type: 'personal',
-        period_days: 30,
-        max_members: 1,
-        price_krw: 4900,
-      },
-    ]);
-    mockDB.pushResult([], 1); // INSERT subscription
-    mockDB.pushResult([], 1); // UPDATE voucher_codes
-    mockDB.pushResult([], 1); // UPDATE users plan
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+  it('redeems GIFT personal code and creates a personal subscription', async () => {
+    pushUser('pk1');
+    pushVoucher();
+    mockDB.pushResult([]); // duplicate redemption lookup
+    pushPersonalPlan();
+    mockDB.pushResult([], 1); // claim voucher use
+    mockDB.pushResult([]); // existing active subscription
+    mockDB.pushResult([], 1); // insert subscription
+    mockDB.pushResult([], 1); // update voucher_codes
+    mockDB.pushResult([], 1); // update users.plan
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.type).toBe('voucher');
-    expect(body.subscription.status).toBe('active');
-    expect(body.plan.key).toBe('plus_monthly');
+    expect(body.subscription.plan_group_id).toBeNull();
     expect(body.plan.plan_type).toBe('personal');
+    expect(body.voucher.status).toBe('used');
 
-    const insertSql = mockDB.calls[3].sql;
-    expect(insertSql).toContain('INSERT INTO subscriptions');
-    const updateVoucher = mockDB.calls[4].sql;
-    expect(updateVoucher).toContain("SET status = 'used'");
-    const updateUser = mockDB.calls[5].sql;
-    expect(updateUser).toContain('UPDATE users SET plan');
+    const insertSub = mockDB.calls.find((c) => c.sql.includes('INSERT INTO subscriptions'));
+    expect(insertSub?.args[1]).toBe('pk1');
+    expect(insertSub?.args[3]).toBeNull();
+    const updateUser = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
+    expect(updateUser?.args[0]).toBe('plus');
   });
 
-  it('알 수 없는 plan_type → user plan "free"로 업데이트', async () => {
-    setupUserLookup();
+  it('cancels the user existing active subscription before applying a redeemed code', async () => {
+    pushUser('pk1');
+    pushVoucher();
+    mockDB.pushResult([]);
+    pushPersonalPlan();
+    mockDB.pushResult([], 1); // claim voucher use
     mockDB.pushResult([
       {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([
-      {
-        id: 'p1',
-        key: 'trial_7',
-        name: 'Trial',
-        plan_type: 'trial',
-        period_days: 7,
-        max_members: 1,
-        price_krw: 0,
-      },
-    ]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
-    expect(res.status).toBe(200);
-    const updateUserArgs = mockDB.calls[5].args;
-    expect(updateUserArgs[0]).toBe('free');
-  });
-
-  it('period_days 누락 시 기본값 30일 적용', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([
-      {
-        id: 'p1',
-        key: 'custom',
-        name: 'Custom',
+        sub_id: 'old-sub',
+        user_id: 'pk1',
+        plan_id: 'old-plan',
+        plan_group_id: null,
         plan_type: 'personal',
-        period_days: null,
-        max_members: 1,
-        price_krw: 0,
       },
     ]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
-    const body = await res.json();
-    expect(body.plan.period_days).toBe(30);
+    mockDB.pushResult([], 1); // cancel old subscription
+    mockDB.pushResult([], 1); // downgrade users.plan
+    mockDB.pushResult([], 1); // disable shared voices
+    mockDB.pushResult([], 1); // expire old vouchers
+    mockDB.pushResult([], 1); // insert new subscription
+    mockDB.pushResult([], 1); // update voucher
+    mockDB.pushResult([], 1); // update users.plan
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
+    expect(res.status).toBe(200);
+    const cancelCall = mockDB.calls.find((c) =>
+      c.sql.includes('UPDATE subscriptions') && c.sql.includes("status = 'cancelled'"),
+    );
+    expect(cancelCall?.args[2]).toBe('old-sub');
   });
 
-  it('family 플랜 타입 → user plan "family"로 업데이트', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([
-      {
-        id: 'p1',
-        key: 'family_yearly',
-        name: 'Family Yearly',
-        plan_type: 'family',
-        period_days: 365,
-        max_members: 6,
-        price_krw: 49000,
-      },
-    ]);
-    mockDB.pushResult([], 1); // INSERT plan_groups
-    mockDB.pushResult([], 1); // INSERT plan_group_members
-    mockDB.pushResult([], 1); // INSERT subscription
-    mockDB.pushResult([], 1); // UPDATE voucher_codes
-    mockDB.pushResult([], 1); // UPDATE users plan
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
-    const body = await res.json();
-    expect(body.plan.plan_type).toBe('family');
-    expect(body.subscription.plan_group_id).toBeTruthy();
+  it('redeems INV family code into the issuer group and keeps the code issued until capacity is used', async () => {
+    pushUser('member-pk');
+    pushVoucher({
+      issuer_subscription_id: 'owner-sub',
+      max_uses: 5,
+      use_count: 1,
+    });
+    mockDB.pushResult([]);
+    pushFamilyPlan();
+    mockDB.pushResult([{ max_members: 6, member_count: 2 }]); // capacity precheck
+    mockDB.pushResult([], 1); // claim voucher use
+    mockDB.pushResult([]); // existing active subscription
+    mockDB.pushResult([{ id: 'group-1', max_members: 6 }]); // issuer group
+    mockDB.pushResult([]); // existing group member
+    mockDB.pushResult([{ c: 2 }]); // group count
+    mockDB.pushResult([], 1); // insert group member
+    mockDB.pushResult([], 1); // insert subscription
+    mockDB.pushResult([], 1); // update voucher
+    mockDB.pushResult([], 1); // update users.plan
 
-    const updateUserArgs = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'))!.args;
-    expect(updateUserArgs[0]).toBe('family');
-  });
-
-  it('구매자의 커플/가족 이용권이면 구매자 그룹에 멤버로 연결한다', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'v1',
-        plan_id: 'p1',
-        issuer_user_id: 'pk2',
-        issuer_subscription_id: 'sub-owner',
-        status: 'issued',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([
-      {
-        id: 'p1',
-        key: 'couple',
-        name: 'Couple',
-        plan_type: 'family',
-        period_days: 30,
-        max_members: 2,
-        price_krw: 7900,
-      },
-    ]);
-    mockDB.pushResult([{ id: 'g1', max_members: 2 }]); // issuer subscription group
-    mockDB.pushResult([]); // existing member
-    mockDB.pushResult([{ c: 1 }]); // member count
-    mockDB.pushResult([], 1); // INSERT plan_group_members
-    mockDB.pushResult([], 1); // INSERT subscription
-    mockDB.pushResult([], 1); // UPDATE voucher_codes
-    mockDB.pushResult([], 1); // UPDATE users plan
-
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'INV-AAAA-BBBB-CCCC' }));
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: INV_CODE }));
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.subscription.plan_group_id).toBe('g1');
+    expect(body.subscription.plan_group_id).toBe('group-1');
+    expect(body.voucher).toMatchObject({ max_uses: 5, use_count: 2, status: 'issued' });
+
     const insertMember = mockDB.calls.find((c) => c.sql.includes('INSERT INTO plan_group_members'));
-    expect(insertMember?.args[1]).toBe('g1');
-    expect(insertMember?.args[2]).toBe('pk1');
+    expect(insertMember?.args[1]).toBe('group-1');
+    expect(insertMember?.args[2]).toBe('member-pk');
   });
-});
 
-describe('POST /code/register — 가족 초대권 코드', () => {
-  function setupUserLookup() {
-    mockDB.pushResult([{ id: 'pk1' }]);
-  }
-
-  it('존재하지 않는 초대 코드 404', async () => {
-    setupUserLookup();
+  it('rejects full family group before claiming the INV code', async () => {
+    pushUser('member-pk');
+    pushVoucher({
+      issuer_subscription_id: 'owner-sub',
+      max_uses: 5,
+      use_count: 4,
+    });
     mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
-  });
+    pushFamilyPlan();
+    mockDB.pushResult([{ max_members: 6, member_count: 6 }]);
 
-  it('사용 완료된 초대 코드 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'used',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: INV_CODE }));
+
     expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('CODE_ALREADY_USED');
+    expect((await res.json()).error_code).toBe('GROUP_FULL');
+    const claimCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO voucher_redemptions'));
+    expect(claimCall).toBeUndefined();
   });
 
-  it('취소된 초대 코드 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'revoked',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('CODE_REVOKED');
-  });
+  it('rejects INV code when it is attached to a personal plan', async () => {
+    pushUser();
+    pushVoucher();
+    mockDB.pushResult([]);
+    pushPersonalPlan();
 
-  it('만료 날짜 지남 → expired 업데이트 후 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2020-01-01',
-      },
-    ]);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('CODE_EXPIRED');
-  });
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: INV_CODE }));
 
-  it('본인 발급 초대 400 SELF_ISSUED', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk1',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('SELF_ISSUED');
+    expect((await res.json()).error_code).toBe('INVALID_INVITE_PLAN');
   });
 
-  it('이미 그룹 멤버이면 409 ALREADY_MEMBER', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([{ id: 'm1' }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('ALREADY_MEMBER');
-  });
-
-  it('그룹 미존재 시 404', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
+  it('rejects GIFT code when it is attached to a family plan', async () => {
+    pushUser();
+    pushVoucher();
     mockDB.pushResult([]);
-    mockDB.pushResult([]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(404);
-    expect((await res.json()).error_code).toBe('GROUP_NOT_FOUND');
-  });
+    pushFamilyPlan();
 
-  it('정원 초과 시 409 GROUP_FULL', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ max_members: 2 }]);
-    mockDB.pushResult([{ c: 2 }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('GROUP_FULL');
-  });
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
 
-  it('상태가 expired인 초대 코드 409', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'expired',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('CODE_EXPIRED');
-  });
-
-  it('max_members null 시 기본값 6 적용 — 5명이면 가입 허용', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ max_members: null }]);
-    mockDB.pushResult([{ c: 5 }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(200);
-    expect((await res.json()).success).toBe(true);
-  });
-
-  it('max_members null + 6명이면 정원 초과', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ max_members: null }]);
-    mockDB.pushResult([{ c: 6 }]);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('GROUP_FULL');
-  });
-
-  it('정상 가족 초대 수락 성공', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ max_members: 6 }]);
-    mockDB.pushResult([{ c: 2 }]);
-    mockDB.pushResult([], 1); // INSERT plan_group_members
-    mockDB.pushResult([], 1); // UPDATE plan_group_invites
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.type).toBe('invite');
-    expect(body.membership.plan_group_id).toBe('g1');
-    expect(body.membership.role).toBe('member');
-
-    const insertSql = mockDB.calls[5].sql;
-    expect(insertSql).toContain('INSERT INTO plan_group_members');
-    const updateSql = mockDB.calls[6].sql;
-    expect(updateSql).toContain("SET status = 'used'");
-  });
-
-  it('긴 태그형 초대권 코드를 정규화해서 수락한다', async () => {
-    setupUserLookup();
-    mockDB.pushResult([
-      {
-        id: 'i1',
-        plan_group_id: 'g1',
-        inviter_user_id: 'pk2',
-        status: 'pending',
-        expires_at: '2099-12-31',
-      },
-    ]);
-    mockDB.pushResult([]);
-    mockDB.pushResult([{ max_members: 6 }]);
-    mockDB.pushResult([{ c: 2 }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    const app = buildApp();
-    const res = await app.request(jsonReq('POST', '/code/register', { code: 'invabcd1234efgh' }));
-    expect(res.status).toBe(200);
-    expect(mockDB.calls[1].args[0]).toBe('INV-ABCD-1234-EFGH');
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_GIFT_PLAN');
   });
 });

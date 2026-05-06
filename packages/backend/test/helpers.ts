@@ -15,6 +15,11 @@ export type ExecuteCall = { sql: string; args: (string | number | null)[] };
 export function createMockDB() {
   const calls: ExecuteCall[] = [];
   const results: MockExecuteResult[] = [];
+  const transactions = {
+    commits: 0,
+    rollbacks: 0,
+    closes: 0,
+  };
 
   function pushResult(rows: MockRow[] = [], rowsAffected = 0) {
     results.push({ rows, rowsAffected });
@@ -23,6 +28,9 @@ export function createMockDB() {
   function reset() {
     calls.length = 0;
     results.length = 0;
+    transactions.commits = 0;
+    transactions.rollbacks = 0;
+    transactions.closes = 0;
   }
 
   function clearResults() {
@@ -35,9 +43,32 @@ export function createMockDB() {
       return results.shift() ?? { rows: [], rowsAffected: 0 };
     },
     batch: async () => {},
+    transaction: async () => {
+      const tx = {
+        closed: false,
+        execute: async (query: { sql: string; args: (string | number | null)[] }) => {
+          return client.execute(query);
+        },
+        batch: async () => {},
+        executeMultiple: async () => {},
+        commit: async () => {
+          transactions.commits++;
+          tx.closed = true;
+        },
+        rollback: async () => {
+          transactions.rollbacks++;
+          tx.closed = true;
+        },
+        close: () => {
+          transactions.closes++;
+          tx.closed = true;
+        },
+      };
+      return tx;
+    },
   };
 
-  return { client, calls, pushResult, reset, clearResults };
+  return { client, calls, pushResult, reset, clearResults, transactions };
 }
 
 export function fakeAuthMiddleware(userId = 'user-1', email = 'user@test.com') {
