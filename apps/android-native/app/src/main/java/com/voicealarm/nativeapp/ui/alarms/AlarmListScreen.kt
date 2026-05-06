@@ -67,6 +67,7 @@ internal fun AlarmListScreen(
     onRefreshCharacterBilling: () -> Unit,
     onSyncCharacterEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
+    onEnsureFamilyShareCode: () -> Unit,
     onRefreshNotes: () -> Unit,
     onSendNote: (String, String) -> Unit,
     onMarkNoteRead: (String) -> Unit,
@@ -192,9 +193,13 @@ internal fun AlarmListScreen(
                 item {
                     FamilyConnectionPanel(
                         socialBusy = socialBusy,
+                        billingBusy = billingBusy,
                         familyGroup = familyGroup,
+                        subscriptionResponse = subscriptionResponse,
+                        vouchers = vouchers,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRegisterCode = onRegisterCode,
+                        onEnsureFamilyShareCode = onEnsureFamilyShareCode,
                     )
                 }
             }

@@ -134,7 +134,12 @@ internal fun SubscriptionPanel(
                 }
                 val vouchersForPlan = vouchers.filter { voucher ->
                     voucher.status in listOf("issued", "active", "pending") &&
-                        (voucher.planKey == option.key || voucher.planName.contains(option.name))
+                        voucher.useCount < voucher.maxUses &&
+                        (
+                            voucher.planKey == option.key ||
+                                voucher.planType == option.key ||
+                                voucher.planName.contains(option.name)
+                            )
                 }
                 SubscriptionPlanCard(
                     option = option,

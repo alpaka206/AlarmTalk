@@ -235,6 +235,25 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
     }
 }
 
+internal fun MainViewModel.ensureFamilyShareCode() {
+    val authorization = bearerOrMessage("공유 코드를 만들려면 먼저 로그인해 주세요") ?: return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.ensureFamilyShareCode(authorization).voucher
+        }.onSuccess { voucher ->
+            vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
+            message = "가족 공유 코드를 준비했어요"
+            refreshSocial()
+            refreshCharacterAndBilling()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to ensure family share code", error)
+            message = userFacingError(error, "가족 공유 코드를 불러오지 못했어요")
+        }
+        billingBusy = false
+    }
+}
+
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
@@ -280,6 +299,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             }
             refreshCharacterAndBilling()
             refreshAppSession()
+            refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
             message = userFacingError(error, "플랜 변경에 실패했어요")
