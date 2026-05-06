@@ -76,7 +76,6 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
             characterResponse = snapshot.character
             subscriptionResponse = snapshot.subscription
             vouchers = snapshot.vouchers
-            if (showMessage) message = "캐릭터와 플랜 정보를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to load character or billing", error)
             if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
@@ -133,7 +132,6 @@ internal fun MainViewModel.refreshNotes() {
             api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
         }.onSuccess { notes ->
             receivedNotes = notes
-            message = "받은 메시지 ${notes.size}개를 불러왔어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to refresh notes", error)
             message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
