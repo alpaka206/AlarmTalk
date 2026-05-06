@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.AssistChip
@@ -184,6 +185,8 @@ internal fun QuickStartGrid(
     onAddAlarm: () -> Unit,
     canCreateFamilyAlarm: Boolean,
     onAddFamilyAlarm: () -> Unit,
+    voiceLocked: Boolean = false,
+    alarmLocked: Boolean = false,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -196,12 +199,14 @@ internal fun QuickStartGrid(
                 label = "음성 녹음",
                 icon = Icons.Outlined.Mic,
                 onClick = onRecordVoice,
+                locked = voiceLocked,
                 modifier = Modifier.weight(1f),
             )
             HomeActionCard(
                 label = "알람 추가",
                 icon = Icons.Outlined.Alarm,
                 onClick = onAddAlarm,
+                locked = alarmLocked,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -210,6 +215,7 @@ internal fun QuickStartGrid(
                 label = "상대방 알람 맞춰주기",
                 icon = Icons.Outlined.People,
                 onClick = onAddFamilyAlarm,
+                locked = alarmLocked,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -222,6 +228,7 @@ internal fun HomeActionCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    locked: Boolean = false,
 ) {
     Card(
         onClick = onClick,
@@ -230,25 +237,40 @@ internal fun HomeActionCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 20.dp, horizontal = 14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(30.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 20.dp, horizontal = 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (locked) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.size(30.dp),
+                )
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (locked) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            if (locked) {
+                Icon(
+                    imageVector = Icons.Outlined.Lock,
+                    contentDescription = "권한 필요",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp)
+                        .size(16.dp),
+                )
+            }
         }
     }
 }

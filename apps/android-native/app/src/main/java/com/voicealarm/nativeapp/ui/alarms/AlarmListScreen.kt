@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
@@ -79,6 +80,7 @@ internal fun AlarmListScreen(
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
+    onRequestPermissionGate: (PermissionTarget) -> Unit,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -92,6 +94,9 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
+    val context = LocalContext.current
+    val voiceLocked = !context.hasRecordAudioPermission()
+    val alarmLocked = !context.hasAlarmPermissions()
 
     LazyColumn(
         modifier = Modifier
@@ -123,10 +128,15 @@ internal fun AlarmListScreen(
                 }
                 item {
                     QuickStartGrid(
-                        onRecordVoice = { onSelectTab(NativeTab.Voices) },
+                        onRecordVoice = {
+                            if (voiceLocked) onRequestPermissionGate(PermissionTarget.RecordAudio)
+                            else onSelectTab(NativeTab.Voices)
+                        },
                         onAddAlarm = onCreateAlarm,
                         canCreateFamilyAlarm = canCreateFamilyAlarm,
                         onAddFamilyAlarm = onCreateFamilyAlarm,
+                        voiceLocked = voiceLocked,
+                        alarmLocked = alarmLocked,
                     )
                 }
             }
