@@ -85,6 +85,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         viewModel.clearMessage()
     }
 
+    LoginPermissionGate(authSession = authSession)
+
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
             viewModel.preloadVoiceProfiles()
