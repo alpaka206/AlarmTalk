@@ -1,5 +1,6 @@
 package com.voicealarm.nativeapp
 
+import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -37,30 +38,100 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
+import com.voicealarm.nativeapp.network.VoucherItem
 
 @Composable
 internal fun FamilyConnectionPanel(
     socialBusy: Boolean,
+    billingBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
+    subscriptionResponse: BillingSubscriptionResponse?,
+    vouchers: List<VoucherItem>,
     onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
+    onEnsureFamilyShareCode: () -> Unit,
 ) {
     var inviteCode by remember { mutableStateOf("") }
     var voucherCode by remember { mutableStateOf("") }
     val currentGroup = familyGroup?.group
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val familyShareCodes = remember(vouchers) {
+        vouchers.filter { voucher ->
+            voucher.code.startsWith("INV-") &&
+                voucher.planType == "family" &&
+                voucher.status in listOf("issued", "active", "pending") &&
+                voucher.useCount < voucher.maxUses
+        }
+    }
+    val canManageShareCode = currentGroup != null &&
+        familyGroup?.role == "owner" &&
+        subscriptionResponse?.plan?.planType == "family"
+
+    fun shareCode(code: String) {
+        clipboard.setText(AnnotatedString(code))
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, code)
+        }
+        context.startActivity(Intent.createChooser(sendIntent, "코드 공유"))
+    }
 
     OutlinedCard {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (canManageShareCode) {
+                Text("내 가족 공유 코드", fontWeight = FontWeight.SemiBold)
+                val shareVoucher = familyShareCodes.firstOrNull()
+                if (shareVoucher == null) {
+                    MutedText("공유 코드가 아직 없어요. 가족 구성원을 초대할 INV 코드를 만들어 주세요.")
+                    OutlinedButton(
+                        onClick = onEnsureFamilyShareCode,
+                        enabled = !billingBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text("공유 코드 만들기")
+                    }
+                } else {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(
+                                text = shareVoucher.code,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            MutedText("${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용")
+                            Button(
+                                onClick = { shareCode(shareVoucher.code) },
+                                enabled = !billingBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Text("공유하기")
+                            }
+                        }
+                    }
+                }
+            }
+
             if (currentGroup != null && familyGroup.role == "member") {
                 OutlinedButton(
                     onClick = { onLeaveFamilyGroup(currentGroup.id) },

@@ -49,6 +49,33 @@ interface CreatedSubscriptionArtifacts {
   voucher: IssuedVoucherCode | null;
 }
 
+interface ShareableVoucherCode {
+  id: string;
+  code: string;
+  plan_id: string;
+  plan_key: string;
+  plan_name: string;
+  plan_type: string;
+  subscription_id: string;
+  status: 'issued';
+  issued_at: string;
+  expires_at: string;
+  max_uses: number;
+  use_count: number;
+}
+
+type FamilyShareCodeResult =
+  | { voucher: ShareableVoucherCode }
+  | {
+      error: {
+        status: 404;
+        body: {
+          error: string;
+          error_code: string;
+        };
+      };
+    };
+
 function normalizeBillablePlan(row: Record<string, unknown>): BillablePlan {
   return {
     id: String(row.id),
@@ -267,6 +294,123 @@ billingMutation.post('/redeem', async (c) => {
     }
     throw error;
   }
+});
+
+billingMutation.post('/vouchers/family-share', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const db = getDB(c.env);
+  const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
+    const subscriptionRes = await tx.execute({
+      sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
+                   p.key AS plan_key, p.name AS plan_name, p.plan_type,
+                   p.period_days, p.max_members, p.price_krw
+            FROM subscriptions s
+            JOIN plans p ON p.id = s.plan_id
+            JOIN plan_groups pg ON pg.id = s.plan_group_id
+            WHERE s.user_id = ?
+              AND pg.owner_user_id = ?
+              AND s.status = 'active'
+              AND s.expires_at > datetime('now')
+              AND p.plan_type = 'family'
+            ORDER BY s.starts_at DESC
+            LIMIT 1`,
+      args: [userPk, userPk],
+    });
+
+    if (subscriptionRes.rows.length === 0) {
+      return {
+        error: {
+          status: 404,
+          body: {
+            error: 'Active family plan ownership is required',
+            error_code: 'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
+          },
+        },
+      };
+    }
+
+    const subscription = subscriptionRes.rows[0]!;
+    const subscriptionId = String(subscription.subscription_id);
+    const planId = String(subscription.plan_id);
+    const planKey = String(subscription.plan_key);
+    const planName = String(subscription.plan_name);
+    const planType = String(subscription.plan_type);
+    const maxMembers = Number(subscription.max_members) || 6;
+    const maxUses = plannedMaxUses(planType, maxMembers);
+
+    const existingRes = await tx.execute({
+      sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
+                   (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
+            FROM voucher_codes v
+            WHERE v.issuer_user_id = ?
+              AND v.issuer_subscription_id = ?
+              AND v.status = 'issued'
+              AND v.expires_at > datetime('now')
+            ORDER BY v.issued_at DESC`,
+      args: [userPk, subscriptionId],
+    });
+
+    const existing = existingRes.rows.find((row) => {
+      const useCount = Number(row.use_count ?? 0);
+      const rowMaxUses = Number(row.max_uses ?? 1);
+      return useCount < rowMaxUses;
+    });
+
+    if (existing) {
+      const voucher: ShareableVoucherCode = {
+        id: String(existing.id),
+        code: String(existing.code),
+        plan_id: planId,
+        plan_key: planKey,
+        plan_name: planName,
+        plan_type: planType,
+        subscription_id: subscriptionId,
+        status: 'issued',
+        issued_at: String(existing.issued_at),
+        expires_at: String(existing.expires_at),
+        max_uses: Number(existing.max_uses ?? maxUses),
+        use_count: Number(existing.use_count ?? 0),
+      };
+      return { voucher };
+    }
+
+    const issuedAt = new Date().toISOString();
+    const issued = await issueVoucherCode(tx, {
+      kind: 'invite',
+      planId,
+      issuerUserId: userPk,
+      issuerSubscriptionId: subscriptionId,
+      issuedAt,
+      expiresAt: String(subscription.expires_at),
+      maxUses,
+    });
+
+    const voucher: ShareableVoucherCode = {
+      id: issued.id,
+      code: issued.code,
+      plan_id: planId,
+      plan_key: planKey,
+      plan_name: planName,
+      plan_type: planType,
+      subscription_id: subscriptionId,
+      status: 'issued',
+      issued_at: issuedAt,
+      expires_at: issued.expires_at,
+      max_uses: issued.max_uses,
+      use_count: issued.use_count,
+    };
+    return { voucher };
+  });
+
+  if ('error' in result) {
+    return c.json(result.error.body, result.error.status);
+  }
+
+  return c.json({ success: true, voucher: result.voucher });
 });
 
 billingMutation.post('/cancel', async (c) => {

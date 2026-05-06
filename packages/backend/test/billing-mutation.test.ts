@@ -682,3 +682,81 @@ describe.skip('POST /billing/redeem (billingMutation)', () => {
     expect((await res.json()).error_code).toBe('CODE_REQUIRED');
   });
 });
+
+describe('POST /billing/vouchers/family-share (billingMutation)', () => {
+  const FUTURE = '2027-12-31T00:00:00.000Z';
+
+  function pushOwnerFamilySubscription() {
+    mockDB.pushResult([{
+      subscription_id: 'sub-family-1',
+      plan_id: PLAN_FAMILY.id,
+      expires_at: FUTURE,
+      plan_key: PLAN_FAMILY.key,
+      plan_name: PLAN_FAMILY.name,
+      plan_type: PLAN_FAMILY.plan_type,
+      period_days: PLAN_FAMILY.period_days,
+      max_members: PLAN_FAMILY.max_members,
+      price_krw: PLAN_FAMILY.price_krw,
+    }]);
+  }
+
+  it('기존에 사용 가능한 가족 공유 코드가 있으면 새로 만들지 않고 그대로 반환', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    pushOwnerFamilySubscription();
+    mockDB.pushResult([{
+      id: 'voucher-1',
+      code: 'INV-AAAA-BBBB-CCCC',
+      status: 'issued',
+      issued_at: '2026-05-01T00:00:00.000Z',
+      expires_at: FUTURE,
+      max_uses: 5,
+      use_count: 2,
+    }]);
+
+    const res = await buildApp().request(jsonReq('POST', '/billing/vouchers/family-share'));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.voucher).toMatchObject({
+      id: 'voucher-1',
+      code: 'INV-AAAA-BBBB-CCCC',
+      plan_key: 'family',
+      plan_type: 'family',
+      max_uses: 5,
+      use_count: 2,
+    });
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT OR IGNORE INTO voucher_codes'))).toBe(false);
+  });
+
+  it('가족 플랜 소유자인데 공유 코드가 없으면 INV 코드 하나를 발급한다', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    pushOwnerFamilySubscription();
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+
+    const res = await buildApp().request(jsonReq('POST', '/billing/vouchers/family-share'));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.voucher.code).toMatch(/^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(body.voucher.subscription_id).toBe('sub-family-1');
+    expect(body.voucher.max_uses).toBe(5);
+
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT OR IGNORE INTO voucher_codes'));
+    expect(insertCall).toBeDefined();
+    expect(insertCall?.args[3]).toBe(PLAN_FAMILY.id);
+    expect(insertCall?.args[4]).toBe('user-pk-1');
+    expect(insertCall?.args[5]).toBe('sub-family-1');
+    expect(insertCall?.args[8]).toBe(5);
+  });
+
+  it('가족 플랜 소유자가 아니면 404를 반환한다', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([]);
+
+    const res = await buildApp().request(jsonReq('POST', '/billing/vouchers/family-share'));
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION');
+  });
+});

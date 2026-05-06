@@ -79,6 +79,11 @@ data class CheckoutVoucher(
     @SerializedName("use_count") val useCount: Int = 0,
 )
 
+data class EnsureFamilyShareCodeResponse(
+    val success: Boolean,
+    val voucher: VoucherItem,
+)
+
 data class CancelSubscriptionRequest(
     val mode: String, // "immediate" | "at_period_end"
 )
@@ -115,6 +120,11 @@ interface BillingApi {
         @Header("Authorization") authorization: String,
         @Body request: CheckoutRequest,
     ): CheckoutResponse
+
+    @POST("billing/vouchers/family-share")
+    suspend fun ensureFamilyShareCode(
+        @Header("Authorization") authorization: String,
+    ): EnsureFamilyShareCodeResponse
 
     @POST("billing/cancel")
     suspend fun cancelSubscription(

@@ -133,7 +133,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 viewModel.preloadSocial()
             }
             NativeTab.Alarms -> viewModel.syncNow()
-            NativeTab.People -> viewModel.refreshSocial()
+            NativeTab.People -> {
+                viewModel.refreshSocial()
+                viewModel.refreshCharacterAndBilling()
+            }
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
                 viewModel.refreshNotes()
@@ -375,6 +378,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
                           onSyncCharacterEvents = viewModel::syncCharacterEvents,
                           onRegisterCode = viewModel::registerCode,
+                          onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                           onRefreshNotes = viewModel::refreshNotes,
                           onSendNote = viewModel::sendNote,
                           onMarkNoteRead = viewModel::markNoteRead,
