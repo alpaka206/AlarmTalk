@@ -134,6 +134,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var showOnboarding by mutableStateOf(false)
         internal set
 
+    var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
+        internal set
+
+    fun requestPermissionGate(target: PermissionTarget) {
+        permissionGateRequest = target
+    }
+
+    fun dismissPermissionGate() {
+        permissionGateRequest = null
+    }
+
     fun checkOnboardingFor(userId: String) {
         if (userId.isBlank()) return
         val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()

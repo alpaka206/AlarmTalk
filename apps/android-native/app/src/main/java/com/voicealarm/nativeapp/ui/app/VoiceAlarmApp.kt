@@ -222,6 +222,17 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         )
     }
 
+    viewModel.permissionGateRequest?.let { target ->
+        PermissionGateDialog(
+            target = target,
+            onDismiss = viewModel::dismissPermissionGate,
+            onOpenSettings = {
+                context.openPermissionSettingsFor(target)
+                viewModel.dismissPermissionGate()
+            },
+        )
+    }
+
     planGateMessage?.let { gateMessage ->
         AlertDialog(
             onDismissRequest = { planGateMessage = null },
@@ -343,11 +354,30 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 onSendNote = viewModel::sendNote,
                 onMarkNoteRead = viewModel::markNoteRead,
                 onCheckoutPlan = viewModel::checkoutPlan,
-                onCreateAlarm = { screen = AlarmScreen.Create() },
-                onCreateFamilyAlarm = { screen = AlarmScreen.Create(familyTargetMode = true) },
-                onToggleEnabled = viewModel::setAlarmEnabled,
+                onCreateAlarm = {
+                    if (!context.hasAlarmPermissions()) {
+                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                    } else {
+                        screen = AlarmScreen.Create()
+                    }
+                },
+                onCreateFamilyAlarm = {
+                    if (!context.hasAlarmPermissions()) {
+                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                    } else {
+                        screen = AlarmScreen.Create(familyTargetMode = true)
+                    }
+                },
+                onToggleEnabled = { id, enabled ->
+                    if (enabled && !context.hasAlarmPermissions()) {
+                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                    } else {
+                        viewModel.setAlarmEnabled(id, enabled)
+                    }
+                },
                 onEditAlarm = { screen = AlarmScreen.Edit(it) },
                 onDeleteAlarm = viewModel::deleteAlarm,
+                onRequestPermissionGate = viewModel::requestPermissionGate,
             )
 
             is AlarmScreen.Create -> AlarmEditorScreen(
