@@ -14,7 +14,8 @@ billingQuery.get('/vouchers', async (c) => {
 
   const result = await db.execute({
     sql: `SELECT v.id, v.code, v.plan_id, v.issuer_subscription_id, v.redeemed_by_user_id,
-                 v.status, v.issued_at, v.used_at, v.expires_at,
+                 v.status, v.issued_at, v.used_at, v.expires_at, v.max_uses,
+                 (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count,
                  p.key AS plan_key, p.name AS plan_name, p.plan_type
           FROM voucher_codes v
           JOIN plans p ON p.id = v.plan_id
@@ -37,6 +38,8 @@ billingQuery.get('/vouchers', async (c) => {
       issued_at: String(r.issued_at),
       used_at: (r.used_at as string | null) ?? null,
       expires_at: String(r.expires_at),
+      max_uses: Number(r.max_uses ?? 1),
+      use_count: Number(r.use_count ?? 0),
     })),
   });
 });
@@ -48,11 +51,14 @@ billingQuery.get('/subscription', async (c) => {
   const result = await db.execute({
     sql: `SELECT s.id AS sub_id, s.user_id, s.plan_id, s.plan_group_id,
                  s.status, s.starts_at, s.expires_at,
+                 s.cancel_at_period_end, s.canceled_at, s.next_plan_id,
                  p.key AS plan_key, p.name AS plan_name, p.plan_type,
-                 p.period_days, p.max_members, p.price_krw
+                 p.period_days, p.max_members, p.price_krw,
+                 np.key AS next_plan_key, np.name AS next_plan_name, np.plan_type AS next_plan_type
           FROM subscriptions s
           JOIN users u ON u.id = s.user_id
           JOIN plans p ON p.id = s.plan_id
+          LEFT JOIN plans np ON np.id = s.next_plan_id
           WHERE u.google_id = ?
             AND s.status = 'active'
             AND s.expires_at > datetime('now')
@@ -62,10 +68,11 @@ billingQuery.get('/subscription', async (c) => {
   });
 
   if (result.rows.length === 0) {
-    return c.json({ subscription: null, plan: null });
+    return c.json({ subscription: null, plan: null, next_plan: null });
   }
 
   const r = result.rows[0]!;
+  const nextPlanId = (r.next_plan_id as string | null) ?? null;
   return c.json({
     subscription: {
       id: String(r.sub_id),
@@ -75,6 +82,9 @@ billingQuery.get('/subscription', async (c) => {
       status: String(r.status),
       starts_at: String(r.starts_at),
       expires_at: String(r.expires_at),
+      cancel_at_period_end: Number(r.cancel_at_period_end ?? 0) === 1,
+      canceled_at: (r.canceled_at as string | null) ?? null,
+      next_plan_id: nextPlanId,
     },
     plan: {
       id: String(r.plan_id),
@@ -85,6 +95,14 @@ billingQuery.get('/subscription', async (c) => {
       max_members: Number(r.max_members),
       price_krw: Number(r.price_krw),
     },
+    next_plan: nextPlanId
+      ? {
+          id: nextPlanId,
+          key: String(r.next_plan_key),
+          name: String(r.next_plan_name),
+          plan_type: String(r.next_plan_type),
+        }
+      : null,
   });
 });
 

@@ -2,9 +2,25 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { generateVoucherCode, hashVoucherCode, isValidVoucherCodeFormat } from '../lib/vouchers';
+import {
+  cancelSubscriptionImmediate,
+  findActiveSubscriptionByUserPk,
+  scheduleCancelAtPeriodEnd,
+  schedulePlanChangeAtPeriodEnd,
+} from '../lib/billing-cancel';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, resolveUserPk } from './billing-helpers';
 
 const billingMutation = new Hono<AppEnv>();
+
+// 결제 시 발급되는 단일 voucher 의 최대 사용 인원.
+//   family : (max_members - 1) — 결제자 1 + 가족 5
+//   couple : 1 — 결제자 1 + 가족 1
+//   personal: 1 — 선물용 1회
+function plannedMaxUses(planType: string, maxMembers: number): number {
+  if (planType === 'family') return Math.max(1, maxMembers - 1);
+  if (planType === 'personal') return 1;
+  return Math.max(1, maxMembers - 1);
+}
 
 billingMutation.post('/checkout', async (c) => {
   const db = getDB(c.env);
@@ -41,6 +57,12 @@ billingMutation.post('/checkout', async (c) => {
     return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
+  // 기존 활성 구독은 새 결제 직전에 즉시 정리. 가족 owner 면 멤버까지 같이 정리됨.
+  const existingActive = await findActiveSubscriptionByUserPk(db, userPk);
+  if (existingActive) {
+    await cancelSubscriptionImmediate(db, existingActive);
+  }
+
   const periodDays = Number(plan.period_days) || 30;
   const startsAt = new Date();
   const expiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
@@ -48,6 +70,7 @@ billingMutation.post('/checkout', async (c) => {
 
   let planGroupId: string | null = null;
   const subscriptionId = gift ? null : crypto.randomUUID();
+  // family/couple 둘 다 plan_type='family' (max_members 만 다름) → group 생성.
   if (!gift && planType === 'family') {
     planGroupId = crypto.randomUUID();
     await db.execute({
@@ -83,12 +106,15 @@ billingMutation.post('/checkout', async (c) => {
     });
   }
 
+  // 단일 voucher 발급 — 한 코드를 가족 멤버 N명에게 공유 (각자 1회씩 redeem).
   const voucherId = crypto.randomUUID();
   const { code: voucherCode, hash: voucherHash } = await generateVoucherCode();
+  const maxUses = gift ? 1 : plannedMaxUses(planType, maxMembers);
   await db.execute({
     sql: `INSERT INTO voucher_codes
-          (id, code, code_hash, plan_id, issuer_user_id, issuer_subscription_id, status, issued_at, expires_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, ?)`,
+          (id, code, code_hash, plan_id, issuer_user_id, issuer_subscription_id,
+           status, issued_at, expires_at, max_uses)
+          VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?)`,
     args: [
       voucherId,
       voucherCode,
@@ -98,6 +124,7 @@ billingMutation.post('/checkout', async (c) => {
       subscriptionId,
       startsAt.toISOString(),
       expiresAt.toISOString(),
+      maxUses,
     ],
   });
 
@@ -134,6 +161,8 @@ billingMutation.post('/checkout', async (c) => {
     voucher: {
       id: voucherId,
       code: voucherCode,
+      max_uses: maxUses,
+      use_count: 0,
       expires_at: expiresAt.toISOString(),
     },
   });
@@ -161,8 +190,9 @@ billingMutation.post('/redeem', async (c) => {
 
   const codeHash = await hashVoucherCode(raw);
   const voucherRes = await db.execute({
-    sql: `SELECT id, code_hash, plan_id, issuer_user_id, status, expires_at
-          FROM voucher_codes WHERE code_hash = ?`,
+    sql: `SELECT v.id, v.plan_id, v.issuer_user_id, v.status, v.expires_at, v.max_uses,
+                 (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
+          FROM voucher_codes v WHERE v.code_hash = ?`,
     args: [codeHash],
   });
   if (voucherRes.rows.length === 0) {
@@ -173,12 +203,14 @@ billingMutation.post('/redeem', async (c) => {
   const voucherId = String(voucher.id);
   const planId = String(voucher.plan_id);
   const issuerUserId = String(voucher.issuer_user_id);
+  const maxUses = Number(voucher.max_uses) || 1;
+  const useCount = Number(voucher.use_count) || 0;
 
-  if (status === 'used') {
-    return c.json({ error: '이미 사용된 코드입니다', error_code: 'CODE_ALREADY_USED' }, 409);
-  }
   if (status === 'expired') {
     return c.json({ error: '만료된 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
+  }
+  if (status === 'used' || useCount >= maxUses) {
+    return c.json({ error: '사용 가능한 인원이 모두 찼습니다', error_code: 'CODE_ALREADY_USED' }, 409);
   }
 
   const now = new Date();
@@ -195,6 +227,15 @@ billingMutation.post('/redeem', async (c) => {
     return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
   }
 
+  // 같은 사용자가 같은 코드를 두 번 사용하지 못하도록 차단 (UNIQUE 제약과 이중 방어).
+  const dupRes = await db.execute({
+    sql: `SELECT id FROM voucher_redemptions WHERE voucher_id = ? AND user_id = ?`,
+    args: [voucherId, userPk],
+  });
+  if (dupRes.rows.length > 0) {
+    return c.json({ error: '이미 사용한 코드입니다', error_code: 'CODE_ALREADY_REDEEMED_BY_YOU' }, 409);
+  }
+
   const planRes = await db.execute({
     sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw
           FROM plans WHERE id = ?`,
@@ -209,6 +250,37 @@ billingMutation.post('/redeem', async (c) => {
   const startsAt = now;
   const newExpiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
 
+  // 받는 사용자에게 기존 활성 구독이 있다면 즉시 정리.
+  const existingActive = await findActiveSubscriptionByUserPk(db, userPk);
+  if (existingActive) {
+    await cancelSubscriptionImmediate(db, existingActive);
+  }
+
+  // redemption 기록 + status 갱신.
+  await db.execute({
+    sql: `INSERT INTO voucher_redemptions (id, voucher_id, user_id, redeemed_at)
+          VALUES (?, ?, ?, ?)`,
+    args: [crypto.randomUUID(), voucherId, userPk, startsAt.toISOString()],
+  });
+  const newUseCount = useCount + 1;
+  if (newUseCount >= maxUses) {
+    await db.execute({
+      sql: `UPDATE voucher_codes
+            SET status = 'used', used_at = ?, redeemed_by_user_id = COALESCE(redeemed_by_user_id, ?)
+            WHERE id = ?`,
+      args: [startsAt.toISOString(), userPk, voucherId],
+    });
+  } else {
+    // 첫 사용자 정보를 호환성 컬럼에 기록만 (status 는 issued 유지).
+    await db.execute({
+      sql: `UPDATE voucher_codes
+            SET redeemed_by_user_id = COALESCE(redeemed_by_user_id, ?),
+                used_at = COALESCE(used_at, ?)
+            WHERE id = ?`,
+      args: [userPk, startsAt.toISOString(), voucherId],
+    });
+  }
+
   const subscriptionId = crypto.randomUUID();
   await db.execute({
     sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
@@ -220,13 +292,6 @@ billingMutation.post('/redeem', async (c) => {
       startsAt.toISOString(),
       newExpiresAt.toISOString(),
     ],
-  });
-
-  await db.execute({
-    sql: `UPDATE voucher_codes
-          SET status = 'used', redeemed_by_user_id = ?, used_at = ?
-          WHERE id = ? AND status = 'issued'`,
-    args: [userPk, startsAt.toISOString(), voucherId],
   });
 
   const mirroredPlan = planTypeToUserPlan(planType);
@@ -256,8 +321,98 @@ billingMutation.post('/redeem', async (c) => {
     },
     voucher: {
       id: voucherId,
-      status: 'used',
+      max_uses: maxUses,
+      use_count: newUseCount,
+      status: newUseCount >= maxUses ? 'used' : 'issued',
     },
+  });
+});
+
+billingMutation.post('/cancel', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const body = await c.req
+    .json<{ mode?: unknown }>()
+    .catch((): { mode?: unknown } => ({ mode: undefined }));
+  const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
+
+  const db = getDB(c.env);
+  const active = await findActiveSubscriptionByUserPk(db, userPk);
+  if (!active) {
+    return c.json({ error: '활성 구독이 없습니다', error_code: 'NO_ACTIVE_SUBSCRIPTION' }, 404);
+  }
+
+  if (mode === 'at_period_end') {
+    await scheduleCancelAtPeriodEnd(db, active.subscriptionId);
+    return c.json({ success: true, mode, subscription_id: active.subscriptionId });
+  }
+
+  await cancelSubscriptionImmediate(db, active);
+  return c.json({ success: true, mode, subscription_id: active.subscriptionId });
+});
+
+billingMutation.post('/change-plan', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const body = await c.req
+    .json<{ plan_key?: unknown; mode?: unknown }>()
+    .catch((): { plan_key?: unknown; mode?: unknown } => ({ plan_key: undefined, mode: undefined }));
+
+  const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
+  const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
+  if (!planKey) {
+    return c.json({ error: 'plan_key 는 필수입니다', error_code: 'PLAN_KEY_REQUIRED' }, 400);
+  }
+
+  const db = getDB(c.env);
+  const planRes = await db.execute({
+    sql: `SELECT id, key, plan_type, is_active FROM plans WHERE key = ?`,
+    args: [planKey],
+  });
+  if (planRes.rows.length === 0) {
+    return c.json({ error: '존재하지 않는 플랜입니다', error_code: 'PLAN_NOT_FOUND' }, 400);
+  }
+  const plan = planRes.rows[0]!;
+  if (Number(plan.is_active) !== 1) {
+    return c.json({ error: '비활성화된 플랜입니다', error_code: 'PLAN_INACTIVE' }, 400);
+  }
+  const planType = String(plan.plan_type);
+  if (!PAID_PLAN_TYPES.has(planType)) {
+    return c.json({ error: 'free 는 변경 대상이 아닙니다', error_code: 'FREE_NOT_BILLABLE' }, 400);
+  }
+
+  const active = await findActiveSubscriptionByUserPk(db, userPk);
+  if (!active) {
+    return c.json({ error: '활성 구독이 없습니다', error_code: 'NO_ACTIVE_SUBSCRIPTION' }, 404);
+  }
+
+  if (active.planId === String(plan.id)) {
+    return c.json({ error: '이미 해당 플랜을 사용 중입니다', error_code: 'SAME_PLAN' }, 400);
+  }
+
+  if (mode === 'at_period_end') {
+    await schedulePlanChangeAtPeriodEnd(db, active.subscriptionId, String(plan.id));
+    return c.json({
+      success: true,
+      mode,
+      subscription_id: active.subscriptionId,
+      next_plan_key: planKey,
+    });
+  }
+
+  // immediate: 기존 즉시 해지 → 클라이언트가 곧바로 /billing/checkout 호출하도록 신호.
+  await cancelSubscriptionImmediate(db, active);
+  return c.json({
+    success: true,
+    mode,
+    requires_checkout: true,
+    plan_key: planKey,
   });
 });
 

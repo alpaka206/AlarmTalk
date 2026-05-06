@@ -152,6 +152,14 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
   const db = getDB(env);
   const now = new Date(event.scheduledTime);
 
+  // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
+  try {
+    const { processSubscriptionExpiry } = await import('./lib/billing-cancel');
+    await processSubscriptionExpiry(db, now);
+  } catch (err) {
+    logStructured('error', { at: 'scheduled.subscription_expiry', error: String(err) });
+  }
+
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
             mode, voice_profile_id, speaker_id
