@@ -41,6 +41,7 @@ data class VoucherItem(
     @SerializedName("plan_name") val planName: String,
     @SerializedName("plan_type") val planType: String,
     val status: String,
+    @SerializedName("issued_at") val issuedAt: String? = null,
     @SerializedName("expires_at") val expiresAt: String,
 )
 
