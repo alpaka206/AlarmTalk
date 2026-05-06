@@ -7,6 +7,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -106,6 +107,13 @@ internal fun AlarmEditorScreen(
         audioMessage = null
     }
 
+    // 가족(상대방) 알람 등록 흐름의 핵심 안내는 카드 안 텍스트만으론 놓치기 쉬워
+    // 토스트로도 함께 띄운다. 알람만/음성만/둘다 모드 전부 동일.
+    fun showFamilyAlarmToast(message: String) {
+        if (!familyAlarmMode) return
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
     fun prepareSelectedAudio(uri: Uri) {
         scope.launch {
             runCatching {
@@ -187,6 +195,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "알람을 받을 사람을 선택해 주세요"
             return
         }
+        showFamilyAlarmToast("상대방 알람을 등록했어요")
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -236,7 +245,9 @@ internal fun AlarmEditorScreen(
                 holidayOff = editor.holidayOff,
             )
             if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
-                audioMessage = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                val message = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                audioMessage = message
+                showFamilyAlarmToast(message)
                 return
             }
         }
@@ -310,6 +321,7 @@ internal fun AlarmEditorScreen(
         scope.launch {
             isSaving = true
             audioMessage = "음성을 생성해서 저장하는 중..."
+            showFamilyAlarmToast("음성을 생성하는 중...")
             runCatching {
                 val response = onGenerateTts(
                     TtsGenerateRequest(
