@@ -18,7 +18,7 @@ class RemoteAlarmSyncWorker(
         return runCatching {
             val api = VoiceAlarmApiClient.create()
             val result = AlarmAppContainer.repository(applicationContext)
-                .pullReceivedAlarms(api, session.token)
+                .pullReceivedAlarms(api, session.token, session.user.id)
             Log.i(
                 TAG,
                 "Remote alarm worker complete total=${result.total} imported=${result.imported} updated=${result.updated} failed=${result.failed}",
