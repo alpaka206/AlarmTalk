@@ -7,13 +7,11 @@ import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.VoucherItem
 
 internal data class SocialSnapshot(
     val familyGroup: FamilyGroupCurrentResponse,
-    val familyInvites: List<FamilyInvite>,
     val familyVoices: List<FamilyVoiceProfile>,
 )
 

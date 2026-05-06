@@ -43,32 +43,35 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
-import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.ReceivedNote
 
 @Composable
 internal fun FamilyConnectionPanel(
     socialBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
-    familyInvites: List<FamilyInvite>,
-    familyVoices: List<FamilyVoiceProfile>,
-    subscriptionResponse: BillingSubscriptionResponse?,
-    onRefreshSocial: () -> Unit,
-    onCreateFamilyInvite: () -> Unit,
-    onAcceptFamilyInvite: (String) -> Unit,
-    onRevokeFamilyInvite: (String) -> Unit,
+    onLeaveFamilyGroup: (String) -> Unit,
     onRegisterCode: (String) -> Unit,
-    onOpenBilling: () -> Unit,
 ) {
     var inviteCode by remember { mutableStateOf("") }
     var voucherCode by remember { mutableStateOf("") }
+    val currentGroup = familyGroup?.group
 
     OutlinedCard {
         Column(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (currentGroup != null && familyGroup.role == "member") {
+                OutlinedButton(
+                    onClick = { onLeaveFamilyGroup(currentGroup.id) },
+                    enabled = !socialBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("Leave shared plan")
+                }
+            }
+
             Text("초대 코드 등록(가족/커플)", fontWeight = FontWeight.SemiBold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -88,7 +91,7 @@ internal fun FamilyConnectionPanel(
                 )
                 Button(
                     onClick = {
-                        onAcceptFamilyInvite(inviteCode)
+                        onRegisterCode(inviteCode)
                         inviteCode = ""
                     },
                     enabled = inviteCode.isNotBlank() && !socialBusy,
@@ -104,7 +107,12 @@ internal fun FamilyConnectionPanel(
             ) {
                 OutlinedTextField(
                     value = voucherCode,
-                    onValueChange = { voucherCode = it.uppercase().take(20) },
+                    onValueChange = { value ->
+                        voucherCode = value
+                            .uppercase()
+                            .filter { it.isLetterOrDigit() || it == '-' }
+                            .take(19)
+                    },
                     placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),

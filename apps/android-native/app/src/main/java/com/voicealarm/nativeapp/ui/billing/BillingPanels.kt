@@ -321,7 +321,7 @@ internal fun SubscriptionPlanCard(
                     ) {
                         Text(if (hasActiveSubscription) "변경" else "구매")
                     }
-                    if (option.key == "personal" && !hasActiveSubscription) {
+                    if (option.key == "personal") {
                         OutlinedButton(
                             onClick = onGift,
                             enabled = !busy,
@@ -331,6 +331,16 @@ internal fun SubscriptionPlanCard(
                             Text("선물하기")
                         }
                     }
+                }
+            }
+            if (option.key == "personal" && isCurrent) {
+                OutlinedButton(
+                    onClick = onGift,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("?좊Ъ?섍린")
                 }
             }
             if (vouchers.isNotEmpty()) {

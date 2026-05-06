@@ -23,7 +23,6 @@ import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.VoiceProfile
@@ -43,7 +42,6 @@ internal fun AlarmListScreen(
     voiceProfileBusy: Boolean,
     socialBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
-    familyInvites: List<FamilyInvite>,
     familyVoices: List<FamilyVoiceProfile>,
     characterEvents: List<CharacterEventEntity>,
     characterBusy: Boolean,
@@ -65,9 +63,7 @@ internal fun AlarmListScreen(
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
-    onCreateFamilyInvite: () -> Unit,
-    onAcceptFamilyInvite: (String) -> Unit,
-    onRevokeFamilyInvite: (String) -> Unit,
+    onLeaveFamilyGroup: (String) -> Unit,
     onRefreshCharacterBilling: () -> Unit,
     onSyncCharacterEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
@@ -197,15 +193,8 @@ internal fun AlarmListScreen(
                     FamilyConnectionPanel(
                         socialBusy = socialBusy,
                         familyGroup = familyGroup,
-                        familyInvites = familyInvites,
-                        familyVoices = familyVoices,
-                        subscriptionResponse = subscriptionResponse,
-                        onRefreshSocial = onRefreshSocial,
-                        onCreateFamilyInvite = onCreateFamilyInvite,
-                        onAcceptFamilyInvite = onAcceptFamilyInvite,
-                        onRevokeFamilyInvite = onRevokeFamilyInvite,
+                        onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRegisterCode = onRegisterCode,
-                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
                     )
                 }
             }

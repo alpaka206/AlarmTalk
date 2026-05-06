@@ -27,7 +27,6 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
@@ -118,6 +117,7 @@ internal fun MainViewModel.registerCode(code: String) {
             message = "코드를 등록했어요${response.type?.let { ": ${codeTypeLabel(it)}" } ?: ""}"
             refreshSocial()
             refreshCharacterAndBilling()
+            refreshAppSession()
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
             message = userFacingError(error, "코드 등록에 실패했어요")
