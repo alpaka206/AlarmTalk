@@ -105,7 +105,7 @@ internal fun FamilyConnectionPanel(
                 OutlinedTextField(
                     value = voucherCode,
                     onValueChange = { voucherCode = it.uppercase().take(18) },
-                    placeholder = { Text("VA-XXXX-XXXX-XXXX") },
+                    placeholder = { Text("INV-XXXX-XXXX-XXXX") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )

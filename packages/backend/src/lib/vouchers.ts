@@ -1,4 +1,4 @@
-// 이용권 코드 생성/해시 — 포맷 'VA-XXXX-XXXX-XXXX' (X = A-Z0-9 혼합, 12자)
+// 가족/커플 공유 코드(=구 voucher) 생성/해시 — 포맷 'INV-XXXX-XXXX-XXXX' (X = A-Z0-9 혼합, 12자)
 // 시각적 혼동 방지를 위해 0/O/1/I/L 은 제외.
 
 const VOUCHER_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -20,11 +20,11 @@ function randomGroup(): string {
   return out;
 }
 
-/** 'VA-XXXX-XXXX-XXXX' 형태 평문 코드 생성 */
+/** 'INV-XXXX-XXXX-XXXX' 형태 평문 코드 생성 */
 export function generateVoucherCodePlain(): string {
   const groups: string[] = [];
   for (let i = 0; i < GROUP_COUNT; i++) groups.push(randomGroup());
-  return `VA-${groups.join('-')}`;
+  return `INV-${groups.join('-')}`;
 }
 
 export async function hashVoucherCode(code: string): Promise<string> {
@@ -42,7 +42,7 @@ export async function generateVoucherCode(): Promise<GeneratedVoucher> {
   return { code, hash };
 }
 
-const VOUCHER_CODE_RE = /^VA-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+const VOUCHER_CODE_RE = /^INV-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 
 export function isValidVoucherCodeFormat(raw: string): boolean {
   return VOUCHER_CODE_RE.test(raw);
