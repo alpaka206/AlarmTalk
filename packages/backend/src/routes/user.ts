@@ -69,27 +69,56 @@ user.patch('/me', async (c) => {
   const db = getDB(c.env);
 
   const body = await c.req
-    .json<{ allow_family_alarms?: unknown }>()
-    .catch(() => ({ allow_family_alarms: undefined }));
+    .json<{ allow_family_alarms?: unknown; name?: unknown }>()
+    .catch(() => ({}));
 
-  if (!('allow_family_alarms' in body) || body.allow_family_alarms === undefined) {
+  const updates: string[] = [];
+  const args: unknown[] = [];
+  let resolvedName: string | null = null;
+
+  if ('name' in body && body.name !== undefined) {
+    if (typeof body.name !== 'string') {
+      return c.json({ error: 'name 은 문자열이어야 합니다', error_code: 'INVALID_NAME' }, 400);
+    }
+    const trimmed = body.name.trim();
+    if (trimmed.length === 0 || trimmed.length > 30) {
+      return c.json({ error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' }, 400);
+    }
+    updates.push('name = ?');
+    args.push(trimmed);
+    resolvedName = trimmed;
+  }
+
+  let resolvedFlag: 0 | 1 | null = null;
+  if ('allow_family_alarms' in body && body.allow_family_alarms !== undefined) {
+    const flag = toBoolFlag(body.allow_family_alarms);
+    if (flag === null) {
+      return c.json({ error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' }, 400);
+    }
+    updates.push('allow_family_alarms = ?');
+    args.push(flag);
+    resolvedFlag = flag;
+  }
+
+  if (updates.length === 0) {
     return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
-  const flag = toBoolFlag(body.allow_family_alarms);
-  if (flag === null) {
-    return c.json({ error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' }, 400);
-  }
 
+  args.push(userId);
   const result = await db.execute({
-    sql: `UPDATE users SET allow_family_alarms = ?, updated_at = datetime('now')
+    sql: `UPDATE users SET ${updates.join(', ')}, updated_at = datetime('now')
           WHERE google_id = ?`,
-    args: [flag, userId],
+    args,
   });
   if (result.rowsAffected === 0) {
     return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
-  return c.json({ success: true, allow_family_alarms: flag === 1 });
+  return c.json({
+    success: true,
+    name: resolvedName,
+    allow_family_alarms: resolvedFlag === null ? null : resolvedFlag === 1,
+  });
 });
 
 user.patch('/plan', async (c) => {
