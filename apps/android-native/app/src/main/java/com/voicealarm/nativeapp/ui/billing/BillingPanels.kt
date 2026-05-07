@@ -40,28 +40,34 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.CharacterEventEntity
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
+import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.VoucherItem
 
 @Composable
 internal fun SubscriptionPanel(
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
+    familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
     onRefresh: () -> Unit,
     onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
+    onLeaveFamilyGroup: (String) -> Unit,
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
     val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
     val nextPlan = subscriptionResponse?.nextPlan
     val hasActive = subscription != null && currentPlan != null
     val cancelScheduled = subscription?.cancelAtPeriodEnd == true
+    val isSharedMember = familyGroup?.role == "member" && familyGroup.group != null
+    val sharedGroupId = familyGroup?.group?.id
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val options = remember {
@@ -135,11 +141,7 @@ internal fun SubscriptionPanel(
                 val vouchersForPlan = vouchers.filter { voucher ->
                     voucher.status in listOf("issued", "active", "pending") &&
                         voucher.useCount < voucher.maxUses &&
-                        (
-                            voucher.planKey == option.key ||
-                                voucher.planType == option.key ||
-                                voucher.planName.contains(option.name)
-                            )
+                        voucher.planKey == option.key
                 }
                 SubscriptionPlanCard(
                     option = option,
@@ -155,13 +157,15 @@ internal fun SubscriptionPanel(
             }
             if (hasActive) {
                 OutlinedButton(
-                    onClick = { showCancelDialog = true },
+                    onClick = {
+                        if (isSharedMember) showLeaveDialog = true else showCancelDialog = true
+                    },
                     enabled = !billingBusy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
                     Text(
-                        text = "해지하기",
+                        text = if (isSharedMember) "플랜에서 나가기" else "해지하기",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -175,6 +179,34 @@ internal fun SubscriptionPanel(
             onConfirm = { atPeriodEnd ->
                 showCancelDialog = false
                 onCancelSubscription(atPeriodEnd)
+            },
+        )
+    }
+
+    if (showLeaveDialog && sharedGroupId != null) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text("플랜에서 나가기") },
+            text = {
+                MutedText("정말 플랜에서 나가시겠어요? 다시 들어오려면 새 초대 코드가 필요해요.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLeaveDialog = false
+                        onLeaveFamilyGroup(sharedGroupId)
+                    },
+                ) {
+                    Text(
+                        text = "나가기",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text("취소")
+                }
             },
         )
     }

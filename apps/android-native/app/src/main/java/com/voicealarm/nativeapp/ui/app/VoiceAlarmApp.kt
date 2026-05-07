@@ -475,8 +475,22 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )
               }
+              composable(AppRoute.MemberManagement) {
+                  MemberManagementScreen(
+                      contentPadding = padding,
+                      familyGroup = familyGroup,
+                      subscriptionResponse = subscriptionResponse,
+                      currentUserId = authSession?.user?.id,
+                      socialBusy = socialBusy,
+                      onBack = ::goBackInApp,
+                      onRemoveFamilyMember = viewModel::removeFamilyMember,
+                  )
+              }
           }
           if (currentTab != null) {
+              val isPlanOwner = familyGroup?.role == "owner" &&
+                  familyGroup.group != null &&
+                  subscriptionResponse?.plan?.planType == "family"
               Box(
                   modifier = Modifier
                       .align(Alignment.TopEnd)
@@ -487,8 +501,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
               ) {
                   ProfileMenu(
                       authSession = authSession,
+                      isPlanOwner = isPlanOwner,
                       onSelectTab = ::navigateToTab,
                       onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
                   )
               }
           }
@@ -510,6 +526,7 @@ private fun buildGoogleSignInOptions(requestIdToken: Boolean = false): GoogleSig
 
 private object AppRoute {
     const val Settings = "settings"
+    const val MemberManagement = "members"
     const val FamilyTargetModeArg = "familyTargetMode"
     const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
     const val AlarmIdArg = "alarmId"

@@ -2,6 +2,7 @@ package com.voicealarm.nativeapp.network
 
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
@@ -55,6 +56,11 @@ data class LeaveFamilyGroupResponse(
     @SerializedName("left_group_id") val leftGroupId: String,
 )
 
+data class RemoveFamilyMemberResponse(
+    val success: Boolean,
+    @SerializedName("removed_user_id") val removedUserId: String? = null,
+)
+
 interface FamilyApi {
     @GET("family/groups/current")
     suspend fun getFamilyGroup(@Header("Authorization") authorization: String): FamilyGroupCurrentResponse
@@ -65,6 +71,13 @@ interface FamilyApi {
         @Path("groupId") groupId: String,
         @Body request: Map<String, String> = emptyMap(),
     ): LeaveFamilyGroupResponse
+
+    @DELETE("family/groups/{groupId}/members/{userId}")
+    suspend fun removeFamilyMember(
+        @Header("Authorization") authorization: String,
+        @Path("groupId") groupId: String,
+        @Path("userId") userId: String,
+    ): RemoveFamilyMemberResponse
 
     @POST("family/alarms/voice")
     suspend fun createFamilyVoiceAlarm(

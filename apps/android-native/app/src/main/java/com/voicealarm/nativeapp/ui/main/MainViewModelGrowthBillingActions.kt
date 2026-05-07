@@ -237,18 +237,23 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
 
 internal fun MainViewModel.ensureFamilyShareCode() {
     val authorization = bearerOrMessage("공유 코드를 만들려면 먼저 로그인해 주세요") ?: return
+    val planLabel = when (subscriptionResponse?.plan?.key) {
+        "couple" -> "커플"
+        "family" -> "가족"
+        else -> "공유"
+    }
     viewModelScope.launch {
         billingBusy = true
         runCatching {
             api.ensureFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
-            message = "가족 공유 코드를 준비했어요"
+            message = "$planLabel 공유 코드를 준비했어요"
             refreshSocial()
             refreshCharacterAndBilling()
         }.onFailure { error ->
             Log.e(TAG, "Failed to ensure family share code", error)
-            message = userFacingError(error, "가족 공유 코드를 불러오지 못했어요")
+            message = userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요")
         }
         billingBusy = false
     }

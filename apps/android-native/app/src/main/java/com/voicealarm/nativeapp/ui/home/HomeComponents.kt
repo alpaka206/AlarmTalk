@@ -85,8 +85,10 @@ internal fun HomeHeader() {
 @Composable
 internal fun ProfileMenu(
     authSession: AuthSession?,
+    isPlanOwner: Boolean,
     onSelectTab: (NativeTab) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenMemberManagement: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -131,6 +133,12 @@ internal fun ProfileMenu(
             ProfileMenuItem("구독") {
                 expanded = false
                 onSelectTab(NativeTab.Billing)
+            }
+            if (isPlanOwner) {
+                ProfileMenuItem("멤버 관리") {
+                    expanded = false
+                    onOpenMemberManagement()
+                }
             }
             HorizontalDivider()
             ProfileMenuItem("설정") {

@@ -260,12 +260,14 @@ internal fun AlarmListScreen(
                     SubscriptionPanel(
                         billingBusy = billingBusy,
                         subscriptionResponse = subscriptionResponse,
+                        familyGroup = familyGroup,
                         vouchers = vouchers,
                         onRefresh = onRefreshCharacterBilling,
                         onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,
+                        onLeaveFamilyGroup = onLeaveFamilyGroup,
                     )
                 }
             }
