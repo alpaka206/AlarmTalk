@@ -79,8 +79,7 @@ internal fun FamilyConnectionPanel(
             voucher.code.startsWith("INV-") &&
                 voucher.planType == "family" &&
                 (activePlanKey == null || voucher.planKey == activePlanKey) &&
-                voucher.status in listOf("issued", "active", "pending") &&
-                voucher.useCount < voucher.maxUses
+                voucher.status !in listOf("expired", "revoked", "cancelled")
         }
     }
     val canManageShareCode = currentGroup != null &&
@@ -107,70 +106,36 @@ internal fun FamilyConnectionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (canManageShareCode) {
-                Text("내 $sharedPlanLabel 공유 코드", fontWeight = FontWeight.SemiBold)
-                val shareVoucher = familyShareCodes.firstOrNull()
-                if (shareVoucher == null) {
-                    MutedText("공유 코드가 아직 없어요. $sharedPlanLabel 구성원을 초대할 INV 코드를 만들어 주세요.")
-                    OutlinedButton(
-                        onClick = onEnsureFamilyShareCode,
-                        enabled = !billingBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text("공유 코드 만들기")
-                    }
-                } else {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = shareVoucher.code,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            MutedText("${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용")
-                            Button(
-                                onClick = { shareCode(shareVoucher.code) },
-                                enabled = !billingBusy,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Text("공유하기")
-                            }
-                        }
-                    }
-                }
-            }
+            val isSharedMember = currentGroup != null && familyGroup?.role == "member"
 
-            if (currentGroup != null && familyGroup.role == "member") {
-                OutlinedButton(
-                    onClick = { showLeaveDialog = true },
-                    enabled = !socialBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Text(
-                        text = "플랜에서 나가기",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+            if (canManageShareCode) {
+                MutedText("공유 코드와 멤버 관리는 프로필 메뉴의 '멤버/공유 코드 관리'에서 가능합니다.")
+                return@Column
             }
 
             if (hasActivePlan && !showCodeInputs) {
                 MutedText("$activePlanName 플랜 사용중이라 등록은 플랜이 종료된 다음에 가능합니다.")
-                OutlinedButton(
-                    onClick = { showCodeInputs = true },
-                    enabled = !socialBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Text("다른 코드 등록하기")
+                if (isSharedMember) {
+                    OutlinedButton(
+                        onClick = { showLeaveDialog = true },
+                        enabled = !socialBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text(
+                            text = "플랜에서 나가고 다른 코드 등록하기",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { showCodeInputs = true },
+                        enabled = !socialBusy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text("다른 코드 등록하기")
+                    }
                 }
             } else {
                 if (hasActivePlan) {
@@ -232,19 +197,20 @@ internal fun FamilyConnectionPanel(
     if (showLeaveDialog && currentGroup != null) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("플랜에서 나가기") },
+            title = { Text("플랜에서 나가고 다른 코드 등록") },
             text = {
-                MutedText("정말 플랜에서 나가시겠어요? 다시 들어오려면 새 초대 코드가 필요해요.")
+                MutedText("현재 플랜에서 나가고 새 코드를 등록할 수 있는 화면으로 이동할까요? 이 작업은 되돌릴 수 없어요.")
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showLeaveDialog = false
+                        showCodeInputs = true
                         onLeaveFamilyGroup(currentGroup.id)
                     },
                 ) {
                     Text(
-                        text = "나가기",
+                        text = "나가고 등록하기",
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
