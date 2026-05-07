@@ -217,7 +217,10 @@ internal fun MainViewModel.syncNow() {
             val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
             push to pull
         }.onSuccess { (push, pull) ->
-            message = "동기화 완료: 생성 ${push.created}개, 수정 ${push.updated}개, 수신 ${pull.imported + pull.updated}개, 실패 ${push.failed + pull.failed}개"
+            val failed = push.failed + pull.failed
+            if (failed > 0) {
+                message = "동기화 일부 실패: 실패 ${failed}개"
+            }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
             message = userFacingError(error, "동기화에 실패했어요")
