@@ -1,10 +1,12 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -20,12 +22,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -93,47 +96,48 @@ internal fun VoiceAlarmTabItem(
     modifier: Modifier = Modifier,
 ) {
     val selected = selectedTab == tab
-    TextButton(
-        onClick = { onSelectTab(tab) },
-        modifier = modifier,
-        contentPadding = PaddingValues(vertical = 6.dp),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    } else {
-                        Color.Transparent
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                )
-                .padding(vertical = 6.dp),
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(22.dp),
+    val interactionSource = remember { MutableInteractionSource() }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(
+                enabled = !selected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = { onSelectTab(tab) },
             )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
+            .background(
                 color = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    MaterialTheme.colorScheme.surfaceVariant
                 } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    Color.Transparent
                 },
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                shape = RoundedCornerShape(14.dp),
             )
-        }
+            .padding(vertical = 6.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            modifier = Modifier.size(22.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        )
     }
 }

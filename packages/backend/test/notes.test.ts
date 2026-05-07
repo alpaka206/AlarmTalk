@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -20,6 +20,10 @@ function buildApp(userId = 'user-1') {
 
 beforeEach(() => {
   mockDB.reset();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('POST /notes — 쪽지 전송', () => {
@@ -166,6 +170,36 @@ describe('POST /notes — 쪽지 전송', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.note.text).toBe('hello');
+  });
+
+  it('stores optional audio_url for voice notes', async () => {
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ id: 'pk2' }]);
+    mockDB.pushResult([{ plan_group_id: 'g1' }]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/notes', {
+      receiver_id: 'pk2',
+      text: 'voice note',
+      audio_url: 'r2://generated-tts/pk1/note.mp3',
+    }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.note.audio_url).toBe('r2://generated-tts/pk1/note.mp3');
+    expect(mockDB.calls[3].sql).toContain('audio_url');
+    expect(mockDB.calls[3].args).toContain('r2://generated-tts/pk1/note.mp3');
+  });
+
+  it('rejects unsupported audio_url schemes', async () => {
+    mockDB.pushResult([{ id: 'pk1' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/notes', {
+      receiver_id: 'pk2',
+      text: 'voice note',
+      audio_url: 'ftp://example.com/audio.mp3',
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_AUDIO_URL');
   });
 });
 
@@ -497,6 +531,45 @@ describe('GET /notes/sent — 페이지네이션', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.limit).toBe(1);
+  });
+});
+
+describe('GET /notes/:id/audio', () => {
+  it('returns note audio as base64', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      new Uint8Array([65, 66]).buffer,
+      { headers: { 'content-type': 'audio/mpeg' } },
+    )));
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: 'https://cdn.example.com/audio.mp3',
+    }]);
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/notes/n1/audio'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.note_id).toBe('n1');
+    expect(body.audio_base64).toBe('QUI=');
+    expect(body.audio_format).toBe('mp3');
+  });
+
+  it('forbids users outside the note sender and receiver', async () => {
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk3',
+      text: 'hello',
+      audio_url: 'https://cdn.example.com/audio.mp3',
+    }]);
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/notes/n1/audio'));
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FORBIDDEN');
   });
 });
 

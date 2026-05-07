@@ -63,6 +63,8 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1); // INSERT subscription
     mockDB.pushResult([], 1); // UPDATE users.plan
     mockDB.pushResult([], 1); // INSERT voucher_code
+    mockDB.pushResult([], 1); // INSERT voucher_code
+    mockDB.pushResult([], 1); // INSERT voucher_code retry guard
 
     const app = buildApp();
     const res = await app.request(
@@ -76,23 +78,22 @@ describe('POST /billing/checkout', () => {
     expect(body.subscription.user_id).toBe('user-pk-1');
     expect(body.plan.key).toBe('personal');
     expect(body.plan.price_krw).toBe(4900);
-    expect(body.voucher.code).toMatch(/^(INV|GIFT)-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/);
-    expect(body.voucher.expires_at).toBe(body.subscription.expires_at);
+    expect(body.voucher).toBeNull();
 
     const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
     expect(updateCall?.args[0]).toBe('plus');
     expect(updateCall?.args[1]).toBe('user-pk-1');
 
-    const insertVoucher = mockDB.calls.find((c) => c.sql.includes('INSERT INTO voucher_codes'));
-    expect(insertVoucher).toBeDefined();
-    expect(insertVoucher?.args[1]).toBe(body.voucher.code);
-    // code_hash 는 SHA-256 hex
-    expect(String(insertVoucher?.args[2])).toMatch(/^[0-9a-f]{64}$/);
+    const insertVoucher = mockDB.calls.find((c) => c.sql.includes('voucher_codes'));
+    expect(insertVoucher).toBeUndefined();
   });
 
   it('family → 200, users.plan=family, voucher 는 family plan_id 로 발급', async () => {
     mockDB.pushResult([PLAN_FAMILY]);
     mockDB.pushResult([{ id: 'user-pk-1' }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
@@ -106,7 +107,7 @@ describe('POST /billing/checkout', () => {
     expect(body.plan.plan_type).toBe('family');
     const updateCall = mockDB.calls.find((c) => c.sql.includes('UPDATE users SET plan'));
     expect(updateCall?.args[0]).toBe('family');
-    const insertVoucher = mockDB.calls.find((c) => c.sql.includes('INSERT INTO voucher_codes'));
+    const insertVoucher = mockDB.calls.find((c) => c.sql.includes('voucher_codes'));
     expect(insertVoucher?.args[3]).toBe(PLAN_FAMILY.id);
   });
 
@@ -117,6 +118,7 @@ describe('POST /billing/checkout', () => {
     mockDB.pushResult([], 1); // INSERT plan_group_members
     mockDB.pushResult([], 1); // INSERT subscription
     mockDB.pushResult([], 1); // UPDATE users.plan
+    mockDB.pushResult([], 1); // INSERT voucher_code
     mockDB.pushResult([], 1); // INSERT voucher_code
 
     const app = buildApp();
@@ -202,7 +204,7 @@ describe('POST /billing/checkout', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain('존재하지 않는');
+    expect(body.error_code).toBe('PLAN_NOT_FOUND');
   });
 
   it('free plan_key → 400 (결제 대상 아님)', async () => {
@@ -213,7 +215,7 @@ describe('POST /billing/checkout', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain('free');
+    expect(body.error_code).toBe('FREE_NOT_BILLABLE');
   });
 
   it('plan_key 미지정 → 400', async () => {
@@ -232,7 +234,7 @@ describe('POST /billing/checkout', () => {
     );
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toContain('비활성');
+    expect(body.error_code).toBe('PLAN_INACTIVE');
   });
 
   it('사용자 행 없음 → 404', async () => {

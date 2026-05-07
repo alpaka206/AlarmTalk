@@ -31,6 +31,7 @@ data class ReceivedNote(
 data class SendNoteRequest(
     @SerializedName("receiver_id") val receiverId: String,
     val text: String,
+    @SerializedName("audio_url") val audioUrl: String? = null,
 )
 
 data class SendNoteResponse(
@@ -42,6 +43,14 @@ data class MarkNoteReadResponse(
     val success: Boolean,
     @SerializedName("already_read") val alreadyRead: Boolean? = null,
     @SerializedName("read_at") val readAt: String? = null,
+)
+
+data class NoteAudioResponse(
+    @SerializedName("note_id") val noteId: String,
+    @SerializedName("audio_base64") val audioBase64: String,
+    @SerializedName("audio_format") val audioFormat: String,
+    @SerializedName("audio_url") val audioUrl: String? = null,
+    val text: String = "",
 )
 
 interface NotesApi {
@@ -57,6 +66,12 @@ interface NotesApi {
         @Header("Authorization") authorization: String,
         @Body request: SendNoteRequest,
     ): SendNoteResponse
+
+    @GET("notes/{id}/audio")
+    suspend fun getNoteAudio(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+    ): NoteAudioResponse
 
     @PATCH("notes/{id}/read")
     suspend fun markNoteRead(

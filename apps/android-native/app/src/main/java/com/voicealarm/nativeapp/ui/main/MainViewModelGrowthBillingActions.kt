@@ -27,9 +27,9 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.LoginRequest
+import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.RegisterRequest
 import com.voicealarm.nativeapp.network.SendNoteRequest
@@ -115,9 +115,11 @@ internal fun MainViewModel.registerCode(code: String) {
         runCatching {
             api.registerCode(authorization, CodeRegisterRequest(code.trim()))
         }.onSuccess { response ->
-            message = "코드를 등록했어요${response.type?.let { ": ${codeTypeLabel(it)}" } ?: ""}"
+            message = "코드를 등록했어요"
             refreshSocial()
             refreshCharacterAndBilling()
+            refreshAppSession()
+            navigateHomeTick++
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
             message = userFacingError(error, "코드 등록에 실패했어요")
@@ -168,6 +170,68 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
             message = userFacingError(error, "메시지 전송에 실패했어요")
         }
         noteBusy = false
+    }
+}
+
+internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
+    val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val trimmedText = text.trim()
+    if (receiverId.isBlank()) {
+        message = "받는 사람을 선택해 주세요"
+        return
+    }
+    if (trimmedText.isBlank()) {
+        message = "메시지를 입력해 주세요"
+        return
+    }
+    if (trimmedText.length > 200) {
+        message = "목소리 메시지는 200자까지 보낼 수 있어요"
+        return
+    }
+    if (voiceProfileId.isBlank()) {
+        message = "목소리를 선택해 주세요"
+        return
+    }
+    viewModelScope.launch {
+        noteBusy = true
+        runCatching {
+            val tts = withContext(Dispatchers.IO) {
+                api.generateTts(
+                    authorization = authorization,
+                    request = TtsGenerateRequest(
+                        voiceProfileId = voiceProfileId,
+                        text = trimmedText,
+                        category = "custom",
+                        language = "ko",
+                    ),
+                )
+            }
+            val audioUrl = tts.audioUrl ?: tts.audioObjectKey?.let { "r2://$it" }
+                ?: error("Generated TTS audio was not stored.")
+            api.sendNote(
+                authorization = authorization,
+                request = SendNoteRequest(
+                    receiverId = receiverId,
+                    text = trimmedText,
+                    audioUrl = audioUrl,
+                ),
+            )
+        }.onSuccess {
+            message = "목소리 메시지를 보냈어요"
+            refreshNotes()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to send TTS note", error)
+            message = userFacingError(error, "목소리 메시지 전송에 실패했어요")
+        }
+        noteBusy = false
+    }
+}
+
+internal suspend fun MainViewModel.downloadNoteAudio(noteId: String): NoteAudioResponse {
+    val authorization = bearerOrMessage("음성 메시지를 재생하려면 먼저 로그인해 주세요")
+        ?: throw IllegalStateException("Login is required to play note audio.")
+    return withContext(Dispatchers.IO) {
+        api.getNoteAudio(authorization, noteId)
     }
 }
 
@@ -226,10 +290,35 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
+                navigateHomeTick++
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
             message = userFacingError(error, "구매에 실패했어요")
+        }
+        billingBusy = false
+    }
+}
+
+internal fun MainViewModel.ensureFamilyShareCode() {
+    val authorization = bearerOrMessage("공유 코드를 만들려면 먼저 로그인해 주세요") ?: return
+    val planLabel = when (subscriptionResponse?.plan?.key) {
+        "couple" -> "커플"
+        "family" -> "가족"
+        else -> "공유"
+    }
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.ensureFamilyShareCode(authorization).voucher
+        }.onSuccess { voucher ->
+            vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
+            message = "$planLabel 공유 코드를 준비했어요"
+            refreshSocial()
+            refreshCharacterAndBilling()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to ensure family share code", error)
+            message = userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요")
         }
         billingBusy = false
     }
@@ -280,6 +369,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             }
             refreshCharacterAndBilling()
             refreshAppSession()
+            refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
             message = userFacingError(error, "플랜 변경에 실패했어요")

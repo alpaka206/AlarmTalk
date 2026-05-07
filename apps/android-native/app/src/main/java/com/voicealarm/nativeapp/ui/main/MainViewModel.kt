@@ -25,7 +25,6 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
@@ -90,9 +89,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(null)
         internal set
 
-    var familyInvites by mutableStateOf<List<FamilyInvite>>(emptyList())
-        internal set
-
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
         internal set
 
@@ -135,6 +131,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
+        internal set
+
+    var navigateHomeTick by mutableStateOf(0)
         internal set
 
     fun requestPermissionGate(target: PermissionTarget) {

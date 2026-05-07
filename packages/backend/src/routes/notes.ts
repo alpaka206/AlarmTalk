@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 
 const notes = new Hono<AppEnv>();
+const MAX_NOTE_AUDIO_URL_LENGTH = 2048;
 
 async function resolveUserPk(
   db: ReturnType<typeof getDB>,
@@ -23,16 +25,21 @@ notes.post('/', async (c) => {
   if (!senderPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
   const body = await c.req
-    .json<{ receiver_id?: unknown; text?: unknown }>()
-    .catch(() => ({ receiver_id: undefined, text: undefined }));
+    .json<{ receiver_id?: unknown; text?: unknown; audio_url?: unknown }>()
+    .catch(() => ({ receiver_id: undefined, text: undefined, audio_url: undefined }));
 
   const receiverId = typeof body.receiver_id === 'string' ? body.receiver_id.trim() : '';
   const text = typeof body.text === 'string' ? body.text.trim() : '';
+  const audioUrl = typeof body.audio_url === 'string' ? body.audio_url.trim() : null;
 
   if (!receiverId) return c.json({ error: 'receiver_id 는 필수입니다', error_code: 'RECEIVER_REQUIRED' }, 400);
   if (!text) return c.json({ error: 'text 는 필수입니다', error_code: 'TEXT_REQUIRED' }, 400);
   if (text.length > 500) return c.json({ error: 'text 는 최대 500자입니다', error_code: 'TEXT_TOO_LONG' }, 400);
   if (receiverId === senderPk) return c.json({ error: '자기 자신에게는 보낼 수 없습니다', error_code: 'SELF_NOTE' }, 400);
+
+  if (audioUrl && !isValidAudioUrl(audioUrl)) {
+    return c.json({ error: 'audio_url must be r2://, http://, or https://', error_code: 'INVALID_AUDIO_URL' }, 400);
+  }
 
   const receiverRes = await db.execute({
     sql: 'SELECT id FROM users WHERE id = ?',
@@ -57,9 +64,9 @@ notes.post('/', async (c) => {
 
   const noteId = crypto.randomUUID();
   await db.execute({
-    sql: `INSERT INTO notes (id, sender_id, receiver_id, text)
-          VALUES (?, ?, ?, ?)`,
-    args: [noteId, senderPk, receiverId, text],
+    sql: `INSERT INTO notes (id, sender_id, receiver_id, text, audio_url)
+          VALUES (?, ?, ?, ?, ?)`,
+    args: [noteId, senderPk, receiverId, text, audioUrl || null],
   });
 
   return c.json({
@@ -69,7 +76,7 @@ notes.post('/', async (c) => {
       sender_id: senderPk,
       receiver_id: receiverId,
       text,
-      audio_url: null,
+      audio_url: audioUrl || null,
       read_at: null,
       created_at: new Date().toISOString(),
     },
@@ -169,6 +176,48 @@ notes.get('/sent', async (c) => {
   });
 });
 
+notes.get('/:id/audio', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const noteId = c.req.param('id');
+
+  const userPk = await resolveUserPk(db, userId);
+  if (!userPk) return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+
+  const noteRes = await db.execute({
+    sql: 'SELECT id, sender_id, receiver_id, text, audio_url FROM notes WHERE id = ?',
+    args: [noteId],
+  });
+  if (noteRes.rows.length === 0) {
+    return c.json({ error: 'Note not found', error_code: 'NOTE_NOT_FOUND' }, 404);
+  }
+
+  const note = noteRes.rows[0]!;
+  const senderId = String(note.sender_id);
+  const receiverId = String(note.receiver_id);
+  if (senderId !== userPk && receiverId !== userPk) {
+    return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
+  }
+
+  const audioUrl = (note.audio_url as string | null) ?? null;
+  if (!audioUrl) {
+    return c.json({ error: 'Note has no stored audio', error_code: 'NOTE_AUDIO_MISSING' }, 404);
+  }
+
+  const loaded = await loadAudioBytes(c, audioUrl);
+  if (!loaded) {
+    return c.json({ error: 'Stored note audio not found', error_code: 'NOTE_AUDIO_NOT_FOUND' }, 404);
+  }
+
+  return c.json({
+    note_id: String(note.id),
+    audio_base64: uint8ToBase64(loaded.bytes),
+    audio_format: loaded.format,
+    audio_url: audioUrl,
+    text: String(note.text ?? ''),
+  });
+});
+
 notes.patch('/:id/read', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -199,5 +248,14 @@ notes.patch('/:id/read', async (c) => {
 
   return c.json({ success: true, read_at: now });
 });
+
+function isValidAudioUrl(audioUrl: string): boolean {
+  return audioUrl.length <= MAX_NOTE_AUDIO_URL_LENGTH &&
+    (
+      audioUrl.startsWith('r2://') ||
+      audioUrl.startsWith('http://') ||
+      audioUrl.startsWith('https://')
+    );
+}
 
 export default notes;

@@ -25,7 +25,6 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
@@ -121,10 +120,22 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email:
     }
 }
 
-internal fun MainViewModel.logout() {
-    authSessionStore.clear()
-    authSession = null
-    message = "로그아웃했어요"
+internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
+    val shouldSignOutGoogle = authSession?.provider == AuthSessionStore.PROVIDER_GOOGLE
+    viewModelScope.launch {
+        authBusy = true
+        if (shouldSignOutGoogle) {
+            runCatching {
+                signOutGoogle()
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to sign out Google account", error)
+            }
+        }
+        authSessionStore.clear()
+        authSession = null
+        message = "로그아웃했어요"
+        authBusy = false
+    }
 }
 
 internal fun MainViewModel.updateNickname(name: String) {
@@ -156,27 +167,40 @@ internal fun MainViewModel.updateNickname(name: String) {
     }
 }
 
-internal fun MainViewModel.deleteAccount() {
+internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
     val session = authSession
     if (session == null) {
         message = "로그인 후 사용할 수 있어요"
         return
     }
     val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
-        runCatching {
+        try {
             api.deleteAccount(authorization)
-        }.onSuccess {
+            val revokeError = if (shouldRevokeGoogle) {
+                runCatching { revokeGoogleAccess() }.exceptionOrNull()
+            } else {
+                null
+            }
+            if (revokeError != null) {
+                Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
+            }
             authSessionStore.clear()
             authSession = null
             dismissDeleteAccount()
-            message = "회원 탈퇴가 완료되었어요"
-        }.onFailure { error ->
+            message = if (revokeError == null) {
+                "회원 탈퇴가 완료되었어요"
+            } else {
+                "회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요"
+            }
+        } catch (error: Throwable) {
             Log.e(TAG, "Failed to delete account", error)
             message = userFacingError(error, "회원 탈퇴에 실패했어요")
+        } finally {
+            authBusy = false
         }
-        authBusy = false
     }
 }
 
@@ -193,11 +217,24 @@ internal fun MainViewModel.syncNow() {
             val pull = repository.pullReceivedAlarms(api, session.token, session.user.id)
             push to pull
         }.onSuccess { (push, pull) ->
-            message = "동기화 완료: 생성 ${push.created}개, 수정 ${push.updated}개, 수신 ${pull.imported + pull.updated}개, 실패 ${push.failed + pull.failed}개"
+            val failed = push.failed + pull.failed
+            if (failed > 0) {
+                message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
+            }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
-            message = userFacingError(error, "동기화에 실패했어요")
+            message = userFacingError(error, "알람 정보를 불러오거나 서버에 저장하지 못했어요")
         }
         syncBusy = false
     }
+}
+
+private fun alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
+    pushFailed > 0 && pullFailed > 0 ->
+        "알람 변경사항 일부를 서버에 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+    pushFailed > 0 ->
+        "알람 변경사항 일부를 서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+    pullFailed > 0 ->
+        "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
+    else -> "알람 동기화에 실패했어요."
 }

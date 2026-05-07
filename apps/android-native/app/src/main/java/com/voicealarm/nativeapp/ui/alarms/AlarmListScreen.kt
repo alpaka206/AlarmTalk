@@ -23,8 +23,8 @@ import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
-import com.voicealarm.nativeapp.network.FamilyInvite
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
@@ -43,7 +43,6 @@ internal fun AlarmListScreen(
     voiceProfileBusy: Boolean,
     socialBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
-    familyInvites: List<FamilyInvite>,
     familyVoices: List<FamilyVoiceProfile>,
     characterEvents: List<CharacterEventEntity>,
     characterBusy: Boolean,
@@ -65,14 +64,15 @@ internal fun AlarmListScreen(
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
-    onCreateFamilyInvite: () -> Unit,
-    onAcceptFamilyInvite: (String) -> Unit,
-    onRevokeFamilyInvite: (String) -> Unit,
+    onLeaveFamilyGroup: (String) -> Unit,
     onRefreshCharacterBilling: () -> Unit,
     onSyncCharacterEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
+    onEnsureFamilyShareCode: () -> Unit,
     onRefreshNotes: () -> Unit,
     onSendNote: (String, String) -> Unit,
+    onSendTtsNote: (String, String, String) -> Unit,
+    onDownloadNoteAudio: suspend (String) -> NoteAudioResponse,
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -196,16 +196,13 @@ internal fun AlarmListScreen(
                 item {
                     FamilyConnectionPanel(
                         socialBusy = socialBusy,
+                        billingBusy = billingBusy,
                         familyGroup = familyGroup,
-                        familyInvites = familyInvites,
-                        familyVoices = familyVoices,
                         subscriptionResponse = subscriptionResponse,
-                        onRefreshSocial = onRefreshSocial,
-                        onCreateFamilyInvite = onCreateFamilyInvite,
-                        onAcceptFamilyInvite = onAcceptFamilyInvite,
-                        onRevokeFamilyInvite = onRevokeFamilyInvite,
+                        vouchers = vouchers,
+                        onLeaveFamilyGroup = onLeaveFamilyGroup,
                         onRegisterCode = onRegisterCode,
-                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                        onEnsureFamilyShareCode = onEnsureFamilyShareCode,
                     )
                 }
             }
@@ -223,12 +220,17 @@ internal fun AlarmListScreen(
                         noteBusy = noteBusy,
                         familyGroup = familyGroup,
                         subscriptionResponse = subscriptionResponse,
+                        voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
+                        voiceProfileBusy = voiceProfileBusy,
                         receivedNotes = receivedNotes,
                         onRefresh = {
                             onRefreshSocial()
                             onRefreshNotes()
                         },
                         onSendNote = onSendNote,
+                        onSendTtsNote = onSendTtsNote,
+                        onDownloadNoteAudio = onDownloadNoteAudio,
                         onMarkNoteRead = onMarkNoteRead,
                         onOpenFamily = { onSelectTab(NativeTab.People) },
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
@@ -266,12 +268,14 @@ internal fun AlarmListScreen(
                     SubscriptionPanel(
                         billingBusy = billingBusy,
                         subscriptionResponse = subscriptionResponse,
+                        familyGroup = familyGroup,
                         vouchers = vouchers,
                         onRefresh = onRefreshCharacterBilling,
                         onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,
+                        onLeaveFamilyGroup = onLeaveFamilyGroup,
                     )
                 }
             }

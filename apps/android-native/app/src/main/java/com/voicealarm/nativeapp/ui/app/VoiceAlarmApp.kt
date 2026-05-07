@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -45,13 +46,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import kotlinx.coroutines.launch
+import com.google.android.gms.tasks.Task
+import java.util.concurrent.CancellationException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Composable
 internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
@@ -65,7 +77,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val voiceProfileBusy = viewModel.voiceProfileBusy
     val socialBusy = viewModel.socialBusy
     val familyGroup = viewModel.familyGroup
-    val familyInvites = viewModel.familyInvites
     val familyVoices = viewModel.familyVoices
     val characterEvents by viewModel.characterEvents.collectAsStateWithLifecycle()
     val characterBusy = viewModel.characterBusy
@@ -75,13 +86,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val vouchers = viewModel.vouchers
     val noteBusy = viewModel.noteBusy
     val receivedNotes = viewModel.receivedNotes
-    var screen by remember { mutableStateOf<AlarmScreen>(AlarmScreen.List) }
-    var selectedTab by remember { mutableStateOf(NativeTab.Home) }
-    var tabBackStack by remember { mutableStateOf<List<NativeTab>>(emptyList()) }
+    val navController = rememberNavController()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
+    val selectedTab = currentTab ?: NativeTab.Home
     var planGateMessage by remember { mutableStateOf<String?>(null) }
     var authRoute by remember { mutableStateOf<AuthRoute>(AuthRoute.Landing) }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
+    val sessionRouteKey = authSession?.user?.id
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -89,7 +102,21 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         viewModel.clearMessage()
     }
 
+    LaunchedEffect(viewModel.navigateHomeTick) {
+        if (viewModel.navigateHomeTick > 0) {
+            navController.navigateHomeClearingStack()
+        }
+    }
+
     LoginPermissionGate(authSession = authSession)
+
+    LaunchedEffect(sessionRouteKey) {
+        if (sessionRouteKey != null) {
+            navController.navigateHomeClearingStack()
+        }
+        planGateMessage = null
+        authRoute = AuthRoute.Landing
+    }
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
@@ -100,9 +127,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    LaunchedEffect(selectedTab, authSession?.token) {
+    LaunchedEffect(currentTab, authSession?.token) {
         if (authSession == null) return@LaunchedEffect
-        when (selectedTab) {
+        when (currentTab) {
             NativeTab.Home -> {
                 viewModel.refreshCharacterAndBilling()
                 viewModel.refreshSocial()
@@ -112,13 +139,17 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 viewModel.preloadSocial()
             }
             NativeTab.Alarms -> viewModel.syncNow()
-            NativeTab.People -> viewModel.refreshSocial()
+            NativeTab.People -> {
+                viewModel.refreshSocial()
+                viewModel.refreshCharacterAndBilling()
+            }
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
                 viewModel.refreshNotes()
             }
             NativeTab.Growth,
             NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
+            null -> Unit
         }
     }
 
@@ -161,11 +192,20 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.showGoogleSetupRequired()
             return
         }
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(clientId)
-            .requestEmail()
-            .build()
+        val options = buildGoogleSignInOptions(requestIdToken = true)
         googleSignInLauncher.launch(GoogleSignIn.getClient(context, options).signInIntent)
+    }
+
+    fun logout() {
+        viewModel.logout {
+            signOutGoogleAccount(context)
+        }
+    }
+
+    fun deleteAccount() {
+        viewModel.deleteAccount {
+            revokeGoogleAccountAccess(context)
+        }
     }
 
     fun navigateToTab(tab: NativeTab) {
@@ -178,20 +218,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             planGateMessage = "메시지는 커플/가족 플랜에서 사용할 수 있어요. 초대 코드나 이용권을 등록하거나 플랜을 구매해 주세요."
             return
         }
-        tabBackStack = tabBackStack + selectedTab
-        selectedTab = tab
+        navController.navigateTopLevelTab(tab)
     }
 
     fun goBackInApp() {
-        if (screen !is AlarmScreen.List) {
-            screen = AlarmScreen.List
-            return
-        }
-        val previousTab = tabBackStack.lastOrNull()
-        if (previousTab != null) {
-            tabBackStack = tabBackStack.dropLast(1)
-            selectedTab = previousTab
-        }
+        navController.popBackStackOrHome()
     }
 
     if (authSession == null) {
@@ -200,8 +231,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
     } else {
         BackHandler(
-            enabled = screen !is AlarmScreen.List || tabBackStack.isNotEmpty(),
-            onBack = ::goBackInApp,
+            enabled = currentTab != null && currentTab != NativeTab.Home,
+            onBack = { navController.navigateTopLevelTab(NativeTab.Home) },
         )
     }
 
@@ -218,7 +249,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         DeleteAccountConfirmDialog(
             busy = authBusy,
             onDismiss = viewModel::dismissDeleteAccount,
-            onConfirm = viewModel::deleteAccount,
+            onConfirm = ::deleteAccount,
         )
     }
 
@@ -262,13 +293,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     Scaffold(
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState) { data ->
-                PrettySnackbar(message = data.visuals.message)
-            }
-        },
         bottomBar = {
-            if (authSession != null && !viewModel.showOnboarding && screen is AlarmScreen.List) {
+            if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     onSelectTab = ::navigateToTab,
@@ -309,139 +335,285 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
           return@Scaffold
       }
       Box(modifier = Modifier.fillMaxSize()) {
-        when (val current = screen) {
-            AlarmScreen.List -> AlarmListScreen(
-                contentPadding = padding,
-                selectedTab = selectedTab,
-                onSelectTab = ::navigateToTab,
-                alarms = alarms,
-                authSession = authSession,
-                authBusy = authBusy,
-                syncBusy = syncBusy,
-                voiceProfiles = voiceProfiles,
-                voiceProfileBusy = voiceProfileBusy,
-                socialBusy = socialBusy,
-                familyGroup = familyGroup,
-                familyInvites = familyInvites,
-                familyVoices = familyVoices,
-                characterEvents = characterEvents,
-                characterBusy = characterBusy,
-                characterResponse = characterResponse,
-                billingBusy = billingBusy,
-                subscriptionResponse = subscriptionResponse,
-                vouchers = vouchers,
-                noteBusy = noteBusy,
-                receivedNotes = receivedNotes,
-                onLogin = viewModel::login,
-                onRegister = viewModel::register,
-                onGoogleSignIn = ::launchGoogleSignIn,
-                onSyncNow = viewModel::syncNow,
-                onLogout = viewModel::logout,
-                onCreateVoiceProfile = viewModel::createVoiceProfile,
-                onCreateVoiceProfiles = viewModel::createVoiceProfiles,
-                onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
-                onRenameVoiceProfile = viewModel::renameVoiceProfile,
-                onShareVoiceProfile = viewModel::setVoiceProfileShared,
-                onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
-                onRefreshSocial = viewModel::refreshSocial,
-                onCreateFamilyInvite = viewModel::createFamilyInvite,
-                onAcceptFamilyInvite = viewModel::acceptFamilyInvite,
-                onRevokeFamilyInvite = viewModel::revokeFamilyInvite,
-                onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
-                onSyncCharacterEvents = viewModel::syncCharacterEvents,
-                onRegisterCode = viewModel::registerCode,
-                onRefreshNotes = viewModel::refreshNotes,
-                onSendNote = viewModel::sendNote,
-                onMarkNoteRead = viewModel::markNoteRead,
-                onCheckoutPlan = viewModel::checkoutPlan,
-                onCancelSubscription = viewModel::cancelSubscription,
-                onChangePlan = viewModel::changePlan,
-                onCreateAlarm = {
-                    if (!context.hasAlarmPermissions()) {
-                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
-                    } else {
-                        screen = AlarmScreen.Create()
-                    }
-                },
-                onCreateFamilyAlarm = {
-                    if (!context.hasAlarmPermissions()) {
-                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
-                    } else {
-                        screen = AlarmScreen.Create(familyTargetMode = true)
-                    }
-                },
-                onToggleEnabled = { id, enabled ->
-                    if (enabled && !context.hasAlarmPermissions()) {
-                        viewModel.requestPermissionGate(PermissionTarget.Alarm)
-                    } else {
-                        viewModel.setAlarmEnabled(id, enabled)
-                    }
-                },
-                onEditAlarm = { screen = AlarmScreen.Edit(it) },
-                onDeleteAlarm = viewModel::deleteAlarm,
-                onRequestPermissionGate = viewModel::requestPermissionGate,
-            )
+          NavHost(
+              navController = navController,
+              startDestination = NativeTab.Home.route,
+              modifier = Modifier.fillMaxSize(),
+          ) {
+              NativeTab.values().forEach { tab ->
+                  composable(tab.route) {
+                      AlarmListScreen(
+                          contentPadding = padding,
+                          selectedTab = tab,
+                          onSelectTab = ::navigateToTab,
+                          alarms = alarms,
+                          authSession = authSession,
+                          authBusy = authBusy,
+                          syncBusy = syncBusy,
+                          voiceProfiles = voiceProfiles,
+                          voiceProfileBusy = voiceProfileBusy,
+                          socialBusy = socialBusy,
+                          familyGroup = familyGroup,
+                          familyVoices = familyVoices,
+                          characterEvents = characterEvents,
+                          characterBusy = characterBusy,
+                          characterResponse = characterResponse,
+                          billingBusy = billingBusy,
+                          subscriptionResponse = subscriptionResponse,
+                          vouchers = vouchers,
+                          noteBusy = noteBusy,
+                          receivedNotes = receivedNotes,
+                          onLogin = viewModel::login,
+                          onRegister = viewModel::register,
+                          onGoogleSignIn = ::launchGoogleSignIn,
+                          onSyncNow = viewModel::syncNow,
+                          onLogout = ::logout,
+                          onCreateVoiceProfile = viewModel::createVoiceProfile,
+                          onCreateVoiceProfiles = viewModel::createVoiceProfiles,
+                          onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
+                          onRenameVoiceProfile = viewModel::renameVoiceProfile,
+                          onShareVoiceProfile = viewModel::setVoiceProfileShared,
+                          onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
+                          onRefreshSocial = viewModel::refreshSocial,
+                          onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
+                          onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
+                          onSyncCharacterEvents = viewModel::syncCharacterEvents,
+                          onRegisterCode = viewModel::registerCode,
+                          onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
+                          onRefreshNotes = viewModel::refreshNotes,
+                          onSendNote = viewModel::sendNote,
+                          onSendTtsNote = viewModel::sendTtsNote,
+                          onDownloadNoteAudio = viewModel::downloadNoteAudio,
+                          onMarkNoteRead = viewModel::markNoteRead,
+                          onCheckoutPlan = viewModel::checkoutPlan,
+                          onCancelSubscription = viewModel::cancelSubscription,
+                          onChangePlan = viewModel::changePlan,
+                          onCreateAlarm = {
+                              if (!context.hasAlarmPermissions()) {
+                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              } else {
+                                  navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
+                              }
+                          },
+                          onCreateFamilyAlarm = {
+                              if (!context.hasAlarmPermissions()) {
+                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              } else {
+                                  navController.navigate(AppRoute.alarmCreate(familyTargetMode = true))
+                              }
+                          },
+                          onToggleEnabled = { id, enabled ->
+                              if (enabled && !context.hasAlarmPermissions()) {
+                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              } else {
+                                  viewModel.setAlarmEnabled(id, enabled)
+                              }
+                          },
+                          onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
+                          onDeleteAlarm = viewModel::deleteAlarm,
+                          onRequestPermissionGate = viewModel::requestPermissionGate,
+                      )
+                  }
+              }
+              composable(
+                  route = AppRoute.AlarmCreate,
+                  arguments = listOf(navArgument(AppRoute.FamilyTargetModeArg) { type = NavType.BoolType }),
+              ) { entry ->
+                  val familyTargetMode = entry.arguments?.getBoolean(AppRoute.FamilyTargetModeArg) ?: false
+                  AlarmEditorScreen(
+                      contentPadding = padding,
+                      alarm = null,
+                      authSession = authSession,
+                      familyGroup = familyGroup,
+                      familyAlarmMode = familyTargetMode,
+                      voiceProfiles = voiceProfiles,
+                      familyVoices = familyVoices,
+                      voiceProfileBusy = voiceProfileBusy,
+                      onCancel = ::goBackInApp,
+                      onGenerateTts = viewModel::generateTtsAudio,
+                      onSave = { draft ->
+                          viewModel.createAlarm(draft) { navController.popBackStackOrHome() }
+                      },
+                  )
+              }
+              composable(
+                  route = AppRoute.AlarmEdit,
+                  arguments = listOf(navArgument(AppRoute.AlarmIdArg) { type = NavType.StringType }),
+              ) { entry ->
+                  val alarmId = entry.arguments?.getString(AppRoute.AlarmIdArg)
+                  val currentAlarm = alarms.firstOrNull { it.id == alarmId }
+                  if (currentAlarm == null) {
+                      LaunchedEffect(alarmId) {
+                          navController.popBackStackOrHome()
+                      }
+                  } else {
+                      AlarmEditorScreen(
+                          contentPadding = padding,
+                          alarm = currentAlarm,
+                          authSession = authSession,
+                          familyGroup = familyGroup,
+                          familyAlarmMode = false,
+                          voiceProfiles = voiceProfiles,
+                          familyVoices = familyVoices,
+                          voiceProfileBusy = voiceProfileBusy,
+                          onCancel = ::goBackInApp,
+                          onGenerateTts = viewModel::generateTtsAudio,
+                          onSave = { draft ->
+                              viewModel.updateAlarm(currentAlarm.id, draft) {
+                                  navController.popBackStackOrHome()
+                              }
+                          },
+                      )
+                  }
+              }
+              composable(AppRoute.Settings) {
+                  SettingsScreen(
+                      contentPadding = padding,
+                      authSession = authSession,
+                      themeMode = themeMode,
+                      onBack = ::goBackInApp,
+                      onChangeTheme = viewModel::setThemeMode,
+                      onEditNickname = viewModel::requestEditNickname,
+                      onLogout = ::logout,
+                      onDeleteAccount = viewModel::requestDeleteAccount,
+                  )
+              }
+              composable(AppRoute.MemberManagement) {
+                  MemberManagementScreen(
+                      contentPadding = padding,
+                      familyGroup = familyGroup,
+                      subscriptionResponse = subscriptionResponse,
+                      vouchers = vouchers,
+                      currentUserId = authSession?.user?.id,
+                      socialBusy = socialBusy,
+                      billingBusy = billingBusy,
+                      onBack = ::goBackInApp,
+                      onRemoveFamilyMember = viewModel::removeFamilyMember,
+                      onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
+                  )
+              }
+          }
+          if (currentTab != null) {
+              val isPlanOwner = familyGroup?.role == "owner" &&
+                  familyGroup.group != null &&
+                  subscriptionResponse?.plan?.planType == "family"
+              Box(
+                  modifier = Modifier
+                      .align(Alignment.TopEnd)
+                      .padding(
+                          top = padding.calculateTopPadding() + 24.dp,
+                          end = 24.dp,
+                      ),
+              ) {
+                  ProfileMenu(
+                      isPlanOwner = isPlanOwner,
+                      onSelectTab = ::navigateToTab,
+                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                  )
+              }
+          }
+          SnackbarHost(
+              hostState = snackbarHostState,
+              modifier = Modifier
+                  .align(Alignment.TopCenter)
+                  .padding(top = padding.calculateTopPadding() + 8.dp),
+          ) { data ->
+              PrettySnackbar(message = data.visuals.message)
+          }
+      }
+    }
+}
 
-            is AlarmScreen.Create -> AlarmEditorScreen(
-                contentPadding = padding,
-                alarm = null,
-                authSession = authSession,
-                familyGroup = familyGroup,
-                familyAlarmMode = current.familyTargetMode,
-                voiceProfiles = voiceProfiles,
-                familyVoices = familyVoices,
-                voiceProfileBusy = voiceProfileBusy,
-                onCancel = ::goBackInApp,
-                onGenerateTts = viewModel::generateTtsAudio,
-                onSave = { draft ->
-                    viewModel.createAlarm(draft) { screen = AlarmScreen.List }
-                },
-            )
-
-            is AlarmScreen.Edit -> AlarmEditorScreen(
-                contentPadding = padding,
-                alarm = current.alarm,
-                authSession = authSession,
-                familyGroup = familyGroup,
-                familyAlarmMode = false,
-                voiceProfiles = voiceProfiles,
-                familyVoices = familyVoices,
-                voiceProfileBusy = voiceProfileBusy,
-                onCancel = ::goBackInApp,
-                onGenerateTts = viewModel::generateTtsAudio,
-                onSave = { draft ->
-                    viewModel.updateAlarm(current.alarm.id, draft) { screen = AlarmScreen.List }
-                },
-            )
-
-            AlarmScreen.Settings -> SettingsScreen(
-                contentPadding = padding,
-                authSession = authSession,
-                themeMode = themeMode,
-                onBack = ::goBackInApp,
-                onChangeTheme = viewModel::setThemeMode,
-                onEditNickname = viewModel::requestEditNickname,
-                onLogout = viewModel::logout,
-                onDeleteAccount = viewModel::requestDeleteAccount,
-            )
+private fun buildGoogleSignInOptions(requestIdToken: Boolean = false): GoogleSignInOptions {
+    val builder = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+        .requestEmail()
+    if (requestIdToken) {
+        val clientId = BuildConfig.VOICE_ALARM_GOOGLE_WEB_CLIENT_ID
+        if (clientId.isNotBlank()) {
+            builder.requestIdToken(clientId)
         }
-        if (screen is AlarmScreen.List) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(
-                        top = padding.calculateTopPadding() + 8.dp,
-                        end = 8.dp,
-                    ),
-            ) {
-                ProfileMenu(
-                    authSession = authSession,
-                    onSelectTab = ::navigateToTab,
-                    onOpenSettings = { screen = AlarmScreen.Settings },
+    }
+    return builder.build()
+}
+
+private object AppRoute {
+    const val Settings = "settings"
+    const val MemberManagement = "members"
+    const val FamilyTargetModeArg = "familyTargetMode"
+    const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
+    const val AlarmIdArg = "alarmId"
+    const val AlarmEdit = "alarm/edit/{$AlarmIdArg}"
+
+    fun alarmCreate(familyTargetMode: Boolean): String = "alarm/create/$familyTargetMode"
+    fun alarmEdit(alarmId: String): String = "alarm/edit/${Uri.encode(alarmId)}"
+}
+
+private val NativeTab.route: String
+    get() = when (this) {
+        NativeTab.Home -> "home"
+        NativeTab.Voices -> "voices"
+        NativeTab.Alarms -> "alarms"
+        NativeTab.People -> "people"
+        NativeTab.Messages -> "messages"
+        NativeTab.Growth -> "growth"
+        NativeTab.Billing -> "billing"
+    }
+
+private fun String?.toNativeTab(): NativeTab? =
+    NativeTab.values().firstOrNull { it.route == this }
+
+private fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
+    navigate(tab.route) {
+        popUpTo(NativeTab.Home.route) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+private fun NavHostController.navigateHomeClearingStack() {
+    navigate(NativeTab.Home.route) {
+        popUpTo(NativeTab.Home.route)
+        launchSingleTop = true
+    }
+}
+
+private fun NavHostController.popBackStackOrHome() {
+    if (!popBackStack()) {
+        navigateHomeClearingStack()
+    }
+}
+
+private suspend fun signOutGoogleAccount(context: Context) {
+    GoogleSignIn
+        .getClient(context.applicationContext, buildGoogleSignInOptions())
+        .signOut()
+        .awaitCompletion()
+}
+
+private suspend fun revokeGoogleAccountAccess(context: Context) {
+    GoogleSignIn
+        .getClient(context.applicationContext, buildGoogleSignInOptions())
+        .revokeAccess()
+        .awaitCompletion()
+}
+
+private suspend fun Task<Void>.awaitCompletion() {
+    suspendCancellableCoroutine { continuation ->
+        addOnCompleteListener { task ->
+            if (!continuation.isActive) return@addOnCompleteListener
+            when {
+                task.isCanceled -> continuation.resumeWithException(
+                    CancellationException("Google task was cancelled"),
+                )
+                task.isSuccessful -> continuation.resume(Unit)
+                else -> continuation.resumeWithException(
+                    task.exception ?: IllegalStateException("Google task failed"),
                 )
             }
         }
-      }
     }
 }
 

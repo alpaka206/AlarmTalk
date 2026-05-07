@@ -1,25 +1,185 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { generateVoucherCode, hashVoucherCode, isValidVoucherCodeFormat } from '../lib/vouchers';
 import {
+  cancelActiveSubscriptionsForUser,
   cancelSubscriptionImmediate,
-  findActiveSubscriptionByUserPk,
+  findActiveSubscriptionsByUserPk,
   scheduleCancelAtPeriodEnd,
   schedulePlanChangeAtPeriodEnd,
 } from '../lib/billing-cancel';
+import { issueVoucherCode, type IssuedVoucherCode } from '../lib/voucher-issue';
+import type { DbExecutor } from '../lib/transactions';
+import { withWriteTransaction } from '../lib/transactions';
+import { redeemVoucherCode, VoucherRedemptionError } from '../lib/voucher-redemption';
 import { PAID_PLAN_TYPES, planTypeToUserPlan, resolveUserPk } from './billing-helpers';
 
 const billingMutation = new Hono<AppEnv>();
 
-// 결제 시 발급되는 단일 voucher 의 최대 사용 인원.
-//   family : (max_members - 1) — 결제자 1 + 가족 5
-//   couple : 1 — 결제자 1 + 가족 1
-//   personal: 1 — 선물용 1회
 function plannedMaxUses(planType: string, maxMembers: number): number {
   if (planType === 'family') return Math.max(1, maxMembers - 1);
-  if (planType === 'personal') return 1;
-  return Math.max(1, maxMembers - 1);
+  return 1;
+}
+
+interface BillablePlan {
+  id: string;
+  key: string;
+  name: string;
+  plan_type: string;
+  period_days: number;
+  max_members: number;
+  price_krw: number;
+}
+
+interface CreatedSubscriptionArtifacts {
+  subscription: {
+    id: string;
+    user_id: string;
+    plan_id: string;
+    plan_group_id: string | null;
+    status: 'active';
+    starts_at: string;
+    expires_at: string;
+  };
+  plan_group: {
+    id: string;
+    owner_user_id: string;
+    max_members: number;
+  } | null;
+  voucher: IssuedVoucherCode | null;
+}
+
+interface ShareableVoucherCode {
+  id: string;
+  code: string;
+  plan_id: string;
+  plan_key: string;
+  plan_name: string;
+  plan_type: string;
+  subscription_id: string;
+  status: 'issued';
+  issued_at: string;
+  expires_at: string;
+  max_uses: number;
+  use_count: number;
+}
+
+type FamilyShareCodeResult =
+  | { voucher: ShareableVoucherCode }
+  | {
+      error: {
+        status: 404;
+        body: {
+          error: string;
+          error_code: string;
+        };
+      };
+    };
+
+function normalizeBillablePlan(row: Record<string, unknown>): BillablePlan {
+  return {
+    id: String(row.id),
+    key: String(row.key),
+    name: String(row.name),
+    plan_type: String(row.plan_type),
+    period_days: Number(row.period_days) || 30,
+    max_members: Number(row.max_members) || 1,
+    price_krw: Number(row.price_krw) || 0,
+  };
+}
+
+function planResponse(plan: BillablePlan) {
+  return {
+    id: plan.id,
+    key: plan.key,
+    name: plan.name,
+    plan_type: plan.plan_type,
+    period_days: plan.period_days,
+    max_members: plan.max_members,
+    price_krw: plan.price_krw,
+  };
+}
+
+async function createPaidSubscriptionArtifacts(
+  db: DbExecutor,
+  params: {
+    userPk: string;
+    plan: BillablePlan;
+    startsAt: Date;
+  },
+): Promise<CreatedSubscriptionArtifacts> {
+  const startsAtIso = params.startsAt.toISOString();
+  const expiresAt = new Date(
+    params.startsAt.getTime() + params.plan.period_days * 24 * 60 * 60 * 1000,
+  );
+  const expiresAtIso = expiresAt.toISOString();
+  const subscriptionId = crypto.randomUUID();
+  let planGroupId: string | null = null;
+
+  if (params.plan.plan_type === 'family') {
+    planGroupId = crypto.randomUUID();
+    await db.execute({
+      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
+            VALUES (?, ?, ?, ?)`,
+      args: [planGroupId, params.userPk, params.plan.id, params.plan.max_members],
+    });
+    await db.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            VALUES (?, ?, ?, 'owner')`,
+      args: [crypto.randomUUID(), planGroupId, params.userPk],
+    });
+  }
+
+  await db.execute({
+    sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
+          VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+    args: [
+      subscriptionId,
+      params.userPk,
+      params.plan.id,
+      planGroupId,
+      startsAtIso,
+      expiresAtIso,
+    ],
+  });
+
+  await db.execute({
+    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
+    args: [planTypeToUserPlan(params.plan.plan_type), params.userPk],
+  });
+
+  const voucher =
+    params.plan.plan_type === 'family'
+      ? await issueVoucherCode(db, {
+          kind: 'invite',
+          planId: params.plan.id,
+          issuerUserId: params.userPk,
+          issuerSubscriptionId: subscriptionId,
+          issuedAt: startsAtIso,
+          expiresAt: expiresAtIso,
+          maxUses: plannedMaxUses(params.plan.plan_type, params.plan.max_members),
+        })
+      : null;
+
+  return {
+    subscription: {
+      id: subscriptionId,
+      user_id: params.userPk,
+      plan_id: params.plan.id,
+      plan_group_id: planGroupId,
+      status: 'active',
+      starts_at: startsAtIso,
+      expires_at: expiresAtIso,
+    },
+    plan_group: planGroupId
+      ? {
+          id: planGroupId,
+          owner_user_id: params.userPk,
+          max_members: params.plan.max_members,
+        }
+      : null,
+    voucher,
+  };
 }
 
 billingMutation.post('/checkout', async (c) => {
@@ -27,12 +187,15 @@ billingMutation.post('/checkout', async (c) => {
 
   const body = await c.req
     .json<{ plan_key?: unknown; gift?: unknown }>()
-    .catch((): { plan_key?: unknown; gift?: unknown } => ({ plan_key: undefined, gift: undefined }));
+    .catch((): { plan_key?: unknown; gift?: unknown } => ({
+      plan_key: undefined,
+      gift: undefined,
+    }));
 
   const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
   const gift = body.gift === true;
   if (!planKey) {
-    return c.json({ error: 'plan_key 는 필수입니다', error_code: 'PLAN_KEY_REQUIRED' }, 400);
+    return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
   }
 
   const planRes = await db.execute({
@@ -41,298 +204,219 @@ billingMutation.post('/checkout', async (c) => {
     args: [planKey],
   });
   if (planRes.rows.length === 0) {
-    return c.json({ error: '존재하지 않는 플랜입니다', error_code: 'PLAN_NOT_FOUND' }, 400);
+    return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
   const plan = planRes.rows[0]!;
   if (Number(plan.is_active) !== 1) {
-    return c.json({ error: '비활성화된 플랜입니다', error_code: 'PLAN_INACTIVE' }, 400);
+    return c.json({ error: 'Plan is inactive', error_code: 'PLAN_INACTIVE' }, 400);
   }
+
   const planType = String(plan.plan_type);
   if (!PAID_PLAN_TYPES.has(planType)) {
-    return c.json({ error: 'free 는 기본 플랜이라 결제 대상이 아닙니다', error_code: 'FREE_NOT_BILLABLE' }, 400);
+    return c.json({ error: 'Free plan is not billable', error_code: 'FREE_NOT_BILLABLE' }, 400);
+  }
+  if (gift && planType !== 'personal') {
+    return c.json(
+      { error: 'Gift checkout is only available for personal plans', error_code: 'GIFT_PERSONAL_ONLY' },
+      400,
+    );
   }
 
   const userPk = await resolveUserPk(c);
   if (!userPk) {
-    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
-  // 기존 활성 구독은 새 결제 직전에 즉시 정리. 가족 owner 면 멤버까지 같이 정리됨.
-  const existingActive = await findActiveSubscriptionByUserPk(db, userPk);
-  if (existingActive) {
-    await cancelSubscriptionImmediate(db, existingActive);
-  }
+  const billablePlan = normalizeBillablePlan(plan);
+  const checkoutResult = await withWriteTransaction(db, async (tx) => {
+    const startsAt = new Date();
+    const expiresAt = new Date(
+      startsAt.getTime() + billablePlan.period_days * 24 * 60 * 60 * 1000,
+    );
 
-  const periodDays = Number(plan.period_days) || 30;
-  const startsAt = new Date();
-  const expiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
-  const maxMembers = Number(plan.max_members) || 1;
+    if (gift) {
+      return {
+        subscription: null,
+        plan_group: null,
+        voucher: await issueVoucherCode(tx, {
+          kind: 'gift',
+          planId: billablePlan.id,
+          issuerUserId: userPk,
+          issuerSubscriptionId: null,
+          issuedAt: startsAt.toISOString(),
+          expiresAt: expiresAt.toISOString(),
+          maxUses: 1,
+        }),
+      };
+    }
 
-  let planGroupId: string | null = null;
-  const subscriptionId = gift ? null : crypto.randomUUID();
-  // family/couple 둘 다 plan_type='family' (max_members 만 다름) → group 생성.
-  if (!gift && planType === 'family') {
-    planGroupId = crypto.randomUUID();
-    await db.execute({
-      sql: `INSERT INTO plan_groups (id, owner_user_id, plan_id, max_members)
-            VALUES (?, ?, ?, ?)`,
-      args: [planGroupId, userPk, String(plan.id), maxMembers],
-    });
-    await db.execute({
-      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-            VALUES (?, ?, ?, 'owner')`,
-      args: [crypto.randomUUID(), planGroupId, userPk],
-    });
-  }
+    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt);
 
-  if (!gift && subscriptionId) {
-    await db.execute({
-      sql: `INSERT INTO subscriptions (id, user_id, plan_id, plan_group_id, status, starts_at, expires_at)
-            VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-      args: [
-        subscriptionId,
-        userPk,
-        String(plan.id),
-        planGroupId,
-        startsAt.toISOString(),
-        expiresAt.toISOString(),
-      ],
-    });
-
-    const mirroredPlan = planTypeToUserPlan(planType);
-    await db.execute({
-      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-      args: [mirroredPlan, userPk],
-    });
-  }
-
-  // 단일 voucher 발급 — 가족/커플은 INV-, 개인 선물은 GIFT- prefix.
-  const voucherKind = gift ? 'gift' : 'invite';
-  const voucherId = crypto.randomUUID();
-  const { code: voucherCode, hash: voucherHash } = await generateVoucherCode(voucherKind);
-  const maxUses = gift ? 1 : plannedMaxUses(planType, maxMembers);
-  await db.execute({
-    sql: `INSERT INTO voucher_codes
-          (id, code, code_hash, plan_id, issuer_user_id, issuer_subscription_id,
-           status, issued_at, expires_at, max_uses)
-          VALUES (?, ?, ?, ?, ?, ?, 'issued', ?, ?, ?)`,
-    args: [
-      voucherId,
-      voucherCode,
-      voucherHash,
-      String(plan.id),
+    return createPaidSubscriptionArtifacts(tx, {
       userPk,
-      subscriptionId,
-      startsAt.toISOString(),
-      expiresAt.toISOString(),
-      maxUses,
-    ],
+      plan: billablePlan,
+      startsAt,
+    });
   });
 
   return c.json({
     success: true,
     checkout_stub: true,
-    subscription: subscriptionId
-      ? {
-          id: subscriptionId,
-          user_id: userPk,
-          plan_id: String(plan.id),
-          plan_group_id: planGroupId,
-          status: 'active',
-          starts_at: startsAt.toISOString(),
-          expires_at: expiresAt.toISOString(),
-        }
-      : null,
-    plan: {
-      id: String(plan.id),
-      key: String(plan.key),
-      name: String(plan.name),
-      plan_type: planType,
-      period_days: periodDays,
-      max_members: maxMembers,
-      price_krw: Number(plan.price_krw),
-    },
-    plan_group: planGroupId
-      ? {
-          id: planGroupId,
-          owner_user_id: userPk,
-          max_members: maxMembers,
-        }
-      : null,
-    voucher: {
-      id: voucherId,
-      code: voucherCode,
-      max_uses: maxUses,
-      use_count: 0,
-      expires_at: expiresAt.toISOString(),
-    },
+    subscription: checkoutResult.subscription,
+    plan: planResponse(billablePlan),
+    plan_group: checkoutResult.plan_group,
+    voucher: checkoutResult.voucher,
   });
 });
 
 billingMutation.post('/redeem', async (c) => {
   const db = getDB(c.env);
 
-  const body = await c.req
-    .json<{ code?: unknown }>()
-    .catch(() => ({ code: undefined }));
-
-  const raw = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
+  const body = await c.req.json<{ code?: unknown }>().catch(() => ({ code: undefined }));
+  const raw = typeof body.code === 'string' ? body.code.trim() : '';
   if (!raw) {
-    return c.json({ error: 'code 는 필수입니다', error_code: 'CODE_REQUIRED' }, 400);
-  }
-  if (!isValidVoucherCodeFormat(raw)) {
-    return c.json({ error: '잘못된 코드 형식입니다', error_code: 'INVALID_FORMAT' }, 400);
+    return c.json({ error: 'code is required', error_code: 'CODE_REQUIRED' }, 400);
   }
 
   const userPk = await resolveUserPk(c);
   if (!userPk) {
-    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
-  const codeHash = await hashVoucherCode(raw);
-  const voucherRes = await db.execute({
-    sql: `SELECT v.id, v.plan_id, v.issuer_user_id, v.status, v.expires_at, v.max_uses,
-                 (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
-          FROM voucher_codes v WHERE v.code_hash = ?`,
-    args: [codeHash],
-  });
-  if (voucherRes.rows.length === 0) {
-    return c.json({ error: '해당 코드를 찾을 수 없습니다', error_code: 'CODE_NOT_FOUND' }, 404);
+  try {
+    return c.json(await redeemVoucherCode(db, { userPk, rawCode: raw }));
+  } catch (error) {
+    if (error instanceof VoucherRedemptionError) {
+      return c.json(
+        { error: error.message, error_code: error.errorCode },
+        error.status as 400 | 404 | 409,
+      );
+    }
+    throw error;
   }
-  const voucher = voucherRes.rows[0]!;
-  const status = String(voucher.status);
-  const voucherId = String(voucher.id);
-  const planId = String(voucher.plan_id);
-  const issuerUserId = String(voucher.issuer_user_id);
-  const maxUses = Number(voucher.max_uses) || 1;
-  const useCount = Number(voucher.use_count) || 0;
+});
 
-  if (status === 'expired') {
-    return c.json({ error: '만료된 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
-  }
-  if (status === 'used' || useCount >= maxUses) {
-    return c.json({ error: '사용 가능한 인원이 모두 찼습니다', error_code: 'CODE_ALREADY_USED' }, 409);
+billingMutation.post('/vouchers/family-share', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
-  const now = new Date();
-  const expiresAt = new Date(String(voucher.expires_at));
-  if (Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime()) {
-    await db.execute({
-      sql: `UPDATE voucher_codes SET status = 'expired' WHERE id = ?`,
-      args: [voucherId],
+  const db = getDB(c.env);
+  const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
+    const subscriptionRes = await tx.execute({
+      sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
+                   p.key AS plan_key, p.name AS plan_name, p.plan_type,
+                   p.period_days, p.max_members, p.price_krw
+            FROM subscriptions s
+            JOIN plans p ON p.id = s.plan_id
+            JOIN plan_groups pg ON pg.id = s.plan_group_id
+            WHERE s.user_id = ?
+              AND pg.owner_user_id = ?
+              AND s.status = 'active'
+              AND s.expires_at > datetime('now')
+              AND p.plan_type = 'family'
+            ORDER BY s.starts_at DESC
+            LIMIT 1`,
+      args: [userPk, userPk],
     });
-    return c.json({ error: '만료된 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
-  }
 
-  if (issuerUserId === userPk) {
-    return c.json({ error: '본인이 발급한 코드는 등록할 수 없습니다', error_code: 'SELF_ISSUED' }, 400);
-  }
+    if (subscriptionRes.rows.length === 0) {
+      return {
+        error: {
+          status: 404,
+          body: {
+            error: 'Active family plan ownership is required',
+            error_code: 'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
+          },
+        },
+      };
+    }
 
-  // 같은 사용자가 같은 코드를 두 번 사용하지 못하도록 차단 (UNIQUE 제약과 이중 방어).
-  const dupRes = await db.execute({
-    sql: `SELECT id FROM voucher_redemptions WHERE voucher_id = ? AND user_id = ?`,
-    args: [voucherId, userPk],
-  });
-  if (dupRes.rows.length > 0) {
-    return c.json({ error: '이미 사용한 코드입니다', error_code: 'CODE_ALREADY_REDEEMED_BY_YOU' }, 409);
-  }
+    const subscription = subscriptionRes.rows[0]!;
+    const subscriptionId = String(subscription.subscription_id);
+    const planId = String(subscription.plan_id);
+    const planKey = String(subscription.plan_key);
+    const planName = String(subscription.plan_name);
+    const planType = String(subscription.plan_type);
+    const maxMembers = Number(subscription.max_members) || 6;
+    const maxUses = plannedMaxUses(planType, maxMembers);
 
-  const planRes = await db.execute({
-    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw
-          FROM plans WHERE id = ?`,
-    args: [planId],
-  });
-  if (planRes.rows.length === 0) {
-    return c.json({ error: '연결된 플랜을 찾을 수 없습니다', error_code: 'PLAN_NOT_FOUND' }, 404);
-  }
-  const plan = planRes.rows[0]!;
-  const planType = String(plan.plan_type);
-  const periodDays = Number(plan.period_days) || 30;
-  const startsAt = now;
-  const newExpiresAt = new Date(startsAt.getTime() + periodDays * 24 * 60 * 60 * 1000);
-
-  // 받는 사용자에게 기존 활성 구독이 있다면 즉시 정리.
-  const existingActive = await findActiveSubscriptionByUserPk(db, userPk);
-  if (existingActive) {
-    await cancelSubscriptionImmediate(db, existingActive);
-  }
-
-  // redemption 기록 + status 갱신.
-  await db.execute({
-    sql: `INSERT INTO voucher_redemptions (id, voucher_id, user_id, redeemed_at)
-          VALUES (?, ?, ?, ?)`,
-    args: [crypto.randomUUID(), voucherId, userPk, startsAt.toISOString()],
-  });
-  const newUseCount = useCount + 1;
-  if (newUseCount >= maxUses) {
-    await db.execute({
-      sql: `UPDATE voucher_codes
-            SET status = 'used', used_at = ?, redeemed_by_user_id = COALESCE(redeemed_by_user_id, ?)
-            WHERE id = ?`,
-      args: [startsAt.toISOString(), userPk, voucherId],
+    const existingRes = await tx.execute({
+      sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
+                   (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
+            FROM voucher_codes v
+            WHERE v.issuer_user_id = ?
+              AND v.issuer_subscription_id = ?
+              AND v.status = 'issued'
+              AND v.expires_at > datetime('now')
+            ORDER BY v.issued_at DESC`,
+      args: [userPk, subscriptionId],
     });
-  } else {
-    // 첫 사용자 정보를 호환성 컬럼에 기록만 (status 는 issued 유지).
-    await db.execute({
-      sql: `UPDATE voucher_codes
-            SET redeemed_by_user_id = COALESCE(redeemed_by_user_id, ?),
-                used_at = COALESCE(used_at, ?)
-            WHERE id = ?`,
-      args: [userPk, startsAt.toISOString(), voucherId],
-    });
-  }
 
-  const subscriptionId = crypto.randomUUID();
-  await db.execute({
-    sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
-          VALUES (?, ?, ?, 'active', ?, ?)`,
-    args: [
-      subscriptionId,
-      userPk,
+    const existing = existingRes.rows.find((row) => {
+      const useCount = Number(row.use_count ?? 0);
+      const rowMaxUses = Number(row.max_uses ?? 1);
+      return useCount < rowMaxUses;
+    });
+
+    if (existing) {
+      const voucher: ShareableVoucherCode = {
+        id: String(existing.id),
+        code: String(existing.code),
+        plan_id: planId,
+        plan_key: planKey,
+        plan_name: planName,
+        plan_type: planType,
+        subscription_id: subscriptionId,
+        status: 'issued',
+        issued_at: String(existing.issued_at),
+        expires_at: String(existing.expires_at),
+        max_uses: Number(existing.max_uses ?? maxUses),
+        use_count: Number(existing.use_count ?? 0),
+      };
+      return { voucher };
+    }
+
+    const issuedAt = new Date().toISOString();
+    const issued = await issueVoucherCode(tx, {
+      kind: 'invite',
       planId,
-      startsAt.toISOString(),
-      newExpiresAt.toISOString(),
-    ],
-  });
+      issuerUserId: userPk,
+      issuerSubscriptionId: subscriptionId,
+      issuedAt,
+      expiresAt: String(subscription.expires_at),
+      maxUses,
+    });
 
-  const mirroredPlan = planTypeToUserPlan(planType);
-  await db.execute({
-    sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
-    args: [mirroredPlan, userPk],
-  });
-
-  return c.json({
-    success: true,
-    subscription: {
-      id: subscriptionId,
-      user_id: userPk,
+    const voucher: ShareableVoucherCode = {
+      id: issued.id,
+      code: issued.code,
       plan_id: planId,
-      status: 'active',
-      starts_at: startsAt.toISOString(),
-      expires_at: newExpiresAt.toISOString(),
-    },
-    plan: {
-      id: planId,
-      key: String(plan.key),
-      name: String(plan.name),
+      plan_key: planKey,
+      plan_name: planName,
       plan_type: planType,
-      period_days: periodDays,
-      max_members: Number(plan.max_members),
-      price_krw: Number(plan.price_krw),
-    },
-    voucher: {
-      id: voucherId,
-      max_uses: maxUses,
-      use_count: newUseCount,
-      status: newUseCount >= maxUses ? 'used' : 'issued',
-    },
+      subscription_id: subscriptionId,
+      status: 'issued',
+      issued_at: issuedAt,
+      expires_at: issued.expires_at,
+      max_uses: issued.max_uses,
+      use_count: issued.use_count,
+    };
+    return { voucher };
   });
+
+  if ('error' in result) {
+    return c.json(result.error.body, result.error.status);
+  }
+
+  return c.json({ success: true, voucher: result.voucher });
 });
 
 billingMutation.post('/cancel', async (c) => {
   const userPk = await resolveUserPk(c);
   if (!userPk) {
-    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
   const body = await c.req
@@ -341,64 +425,86 @@ billingMutation.post('/cancel', async (c) => {
   const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
 
   const db = getDB(c.env);
-  const active = await findActiveSubscriptionByUserPk(db, userPk);
+  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
+  const active = activeSubscriptions[0] ?? null;
   if (!active) {
-    return c.json({ error: '활성 구독이 없습니다', error_code: 'NO_ACTIVE_SUBSCRIPTION' }, 404);
+    return c.json(
+      { error: 'No active subscription', error_code: 'NO_ACTIVE_SUBSCRIPTION' },
+      404,
+    );
   }
 
   if (mode === 'at_period_end') {
-    await scheduleCancelAtPeriodEnd(db, active.subscriptionId);
+    await withWriteTransaction(db, async (tx) => {
+      for (const subscription of activeSubscriptions) {
+        await scheduleCancelAtPeriodEnd(tx, subscription.subscriptionId);
+      }
+    });
     return c.json({ success: true, mode, subscription_id: active.subscriptionId });
   }
 
-  await cancelSubscriptionImmediate(db, active);
+  await withWriteTransaction(db, (tx) =>
+    cancelActiveSubscriptionsForUser(tx, userPk),
+  );
   return c.json({ success: true, mode, subscription_id: active.subscriptionId });
 });
 
 billingMutation.post('/change-plan', async (c) => {
   const userPk = await resolveUserPk(c);
   if (!userPk) {
-    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
   }
 
   const body = await c.req
     .json<{ plan_key?: unknown; mode?: unknown }>()
-    .catch((): { plan_key?: unknown; mode?: unknown } => ({ plan_key: undefined, mode: undefined }));
+    .catch((): { plan_key?: unknown; mode?: unknown } => ({
+      plan_key: undefined,
+      mode: undefined,
+    }));
 
   const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
   const mode = body.mode === 'at_period_end' ? 'at_period_end' : 'immediate';
   if (!planKey) {
-    return c.json({ error: 'plan_key 는 필수입니다', error_code: 'PLAN_KEY_REQUIRED' }, 400);
+    return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
   }
 
   const db = getDB(c.env);
   const planRes = await db.execute({
-    sql: `SELECT id, key, plan_type, is_active FROM plans WHERE key = ?`,
+    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw, is_active
+          FROM plans WHERE key = ?`,
     args: [planKey],
   });
   if (planRes.rows.length === 0) {
-    return c.json({ error: '존재하지 않는 플랜입니다', error_code: 'PLAN_NOT_FOUND' }, 400);
+    return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
   }
   const plan = planRes.rows[0]!;
   if (Number(plan.is_active) !== 1) {
-    return c.json({ error: '비활성화된 플랜입니다', error_code: 'PLAN_INACTIVE' }, 400);
+    return c.json({ error: 'Plan is inactive', error_code: 'PLAN_INACTIVE' }, 400);
   }
   const planType = String(plan.plan_type);
   if (!PAID_PLAN_TYPES.has(planType)) {
-    return c.json({ error: 'free 는 변경 대상이 아닙니다', error_code: 'FREE_NOT_BILLABLE' }, 400);
+    return c.json({ error: 'Free plan is not billable', error_code: 'FREE_NOT_BILLABLE' }, 400);
   }
 
-  const active = await findActiveSubscriptionByUserPk(db, userPk);
+  const activeSubscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
+  const active = activeSubscriptions[0] ?? null;
   if (!active) {
-    return c.json({ error: '활성 구독이 없습니다', error_code: 'NO_ACTIVE_SUBSCRIPTION' }, 404);
+    return c.json(
+      { error: 'No active subscription', error_code: 'NO_ACTIVE_SUBSCRIPTION' },
+      404,
+    );
   }
 
-  if (active.planId === String(plan.id)) {
-    return c.json({ error: '이미 해당 플랜을 사용 중입니다', error_code: 'SAME_PLAN' }, 400);
+  if (activeSubscriptions.every((subscription) => subscription.planId === String(plan.id))) {
+    return c.json({ error: 'Already on this plan', error_code: 'SAME_PLAN' }, 400);
   }
 
   if (mode === 'at_period_end') {
-    await schedulePlanChangeAtPeriodEnd(db, active.subscriptionId, String(plan.id));
+    await withWriteTransaction(db, async (tx) => {
+      for (const subscription of activeSubscriptions) {
+        await schedulePlanChangeAtPeriodEnd(tx, subscription.subscriptionId, String(plan.id));
+      }
+    });
     return c.json({
       success: true,
       mode,
@@ -407,13 +513,40 @@ billingMutation.post('/change-plan', async (c) => {
     });
   }
 
-  // immediate: 기존 즉시 해지 → 클라이언트가 곧바로 /billing/checkout 호출하도록 신호.
-  await cancelSubscriptionImmediate(db, active);
+  const billablePlan = normalizeBillablePlan(plan);
+  const changeResult = await withWriteTransaction(db, async (tx) => {
+    const startsAt = new Date();
+    const freshActive = await findActiveSubscriptionsByUserPk(tx, userPk);
+    if (freshActive.length === 0) {
+      throw new Error('No active subscription during immediate plan change');
+    }
+    if (freshActive.every((subscription) => subscription.planId === billablePlan.id)) {
+      return { subscription_id: freshActive[0]!.subscriptionId, plan_group: null, voucher: null };
+    }
+
+    for (const subscription of freshActive) {
+      await cancelSubscriptionImmediate(tx, subscription, startsAt);
+    }
+    const created = await createPaidSubscriptionArtifacts(tx, {
+      userPk,
+      plan: billablePlan,
+      startsAt,
+    });
+    return {
+      subscription_id: created.subscription.id,
+      plan_group: created.plan_group,
+      voucher: created.voucher,
+    };
+  });
+
   return c.json({
     success: true,
     mode,
-    requires_checkout: true,
-    plan_key: planKey,
+    requires_checkout: false,
+    subscription_id: changeResult.subscription_id,
+    plan_key: billablePlan.key,
+    plan_group: changeResult.plan_group,
+    voucher: changeResult.voucher,
   });
 });
 

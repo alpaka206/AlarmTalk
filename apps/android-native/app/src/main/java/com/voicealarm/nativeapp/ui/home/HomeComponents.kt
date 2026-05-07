@@ -1,6 +1,8 @@
 package com.voicealarm.nativeapp
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,45 +86,43 @@ internal fun HomeHeader() {
 
 @Composable
 internal fun ProfileMenu(
-    authSession: AuthSession?,
+    isPlanOwner: Boolean,
     onSelectTab: (NativeTab) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenMemberManagement: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { expanded = true }) {
-            Icon(
-                imageVector = Icons.Outlined.Person,
-                contentDescription = "프로필",
-                tint = MaterialTheme.colorScheme.onSurface,
-            )
+        Surface(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable { expanded = true },
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surface),
+            shadowElevation = 4.dp,
+        ) {
+            Box(
+                modifier = Modifier.size(40.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Person,
+                    contentDescription = "프로필",
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            DropdownMenuItem(
-                text = {
-                    Column {
-                        Text(
-                            text = authSession?.user?.name?.takeIf { it.isNotBlank() }
-                                ?: authSession?.user?.email
-                                ?: "로그인이 필요해요",
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = authSession?.user?.email ?: "홈에서 로그인하면 모든 기능을 사용할 수 있어요.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-                onClick = { expanded = false },
-            )
-            HorizontalDivider()
-            ProfileMenuItem("코드 등록") {
-                expanded = false
-                onSelectTab(NativeTab.People)
+            if (!isPlanOwner) {
+                ProfileMenuItem("코드 등록") {
+                    expanded = false
+                    onSelectTab(NativeTab.People)
+                }
             }
             ProfileMenuItem("캐릭터") {
                 expanded = false
@@ -131,6 +131,12 @@ internal fun ProfileMenu(
             ProfileMenuItem("구독") {
                 expanded = false
                 onSelectTab(NativeTab.Billing)
+            }
+            if (isPlanOwner) {
+                ProfileMenuItem("멤버/공유 코드 관리") {
+                    expanded = false
+                    onOpenMemberManagement()
+                }
             }
             HorizontalDivider()
             ProfileMenuItem("설정") {
@@ -151,6 +157,7 @@ internal fun ProfileMenuItem(
         onClick = onClick,
     )
 }
+
 
 enum class ThemeMode { System, Light, Dark }
 

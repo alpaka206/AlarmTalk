@@ -288,30 +288,32 @@ describe('GET /user/search', () => {
 
 describe('DELETE /user/me', () => {
   it('모든 관련 데이터 삭제 후 성공', async () => {
-    for (let i = 0; i < 7; i++) mockDB.pushResult([], 1);
+    mockDB.pushResult([{ id: 'pk-1' }]);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', '/user/me'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
     const sqls = mockDB.calls.map((c) => c.sql);
-    expect(sqls[0]).toContain('DELETE FROM alarms');
-    expect(sqls[1]).toContain('DELETE FROM message_library');
-    expect(sqls[2]).toContain('DELETE FROM messages');
-    expect(sqls[3]).toContain('DELETE FROM voice_profiles');
-    expect(sqls[4]).toContain('DELETE FROM friendships');
-    expect(sqls[5]).toContain('DELETE FROM gifts');
-    expect(sqls[6]).toContain('DELETE FROM users');
+    const indexOf = (pattern: string) => sqls.findIndex((sql) => sql.includes(pattern));
+    expect(indexOf('SELECT id FROM users')).toBe(0);
+    expect(indexOf('DELETE FROM voucher_redemptions')).toBeLessThan(indexOf('DELETE FROM voucher_codes'));
+    expect(indexOf('DELETE FROM voucher_codes')).toBeLessThan(indexOf('DELETE FROM subscriptions'));
+    expect(indexOf('DELETE FROM plan_group_invites')).toBeLessThan(indexOf('DELETE FROM plan_groups'));
+    expect(indexOf('DELETE FROM gifts')).toBeLessThan(indexOf('DELETE FROM messages'));
+    expect(indexOf('DELETE FROM message_library')).toBeLessThan(indexOf('DELETE FROM messages'));
+    expect(indexOf('DELETE FROM messages')).toBeLessThan(indexOf('DELETE FROM voice_profiles'));
+    expect(indexOf('DELETE FROM users')).toBeGreaterThan(indexOf('DELETE FROM voice_profiles'));
   });
 
   it('friendships/gifts는 양방향 삭제 (OR 조건)', async () => {
-    for (let i = 0; i < 7; i++) mockDB.pushResult([], 0);
+    mockDB.pushResult([{ id: 'pk-1' }]);
     const app = buildApp();
     await app.request(jsonReq('DELETE', '/user/me'));
-    const friendshipCall = mockDB.calls[4];
-    expect(friendshipCall.args).toEqual(['user-1', 'user-1']);
-    const giftCall = mockDB.calls[5];
-    expect(giftCall.args).toEqual(['user-1', 'user-1']);
+    const friendshipCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM friendships'));
+    expect(friendshipCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1']);
+    const giftCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM gifts'));
+    expect(giftCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1', 'pk-1', 'user-1']);
   });
 
   it('DB 에러 → 500 DELETE_ACCOUNT_FAILED', async () => {
