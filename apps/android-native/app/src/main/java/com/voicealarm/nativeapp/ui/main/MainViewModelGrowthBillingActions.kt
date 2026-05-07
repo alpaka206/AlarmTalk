@@ -29,6 +29,7 @@ import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.LoginRequest
+import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.RegisterRequest
 import com.voicealarm.nativeapp.network.SendNoteRequest
@@ -169,6 +170,68 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
             message = userFacingError(error, "메시지 전송에 실패했어요")
         }
         noteBusy = false
+    }
+}
+
+internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
+    val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val trimmedText = text.trim()
+    if (receiverId.isBlank()) {
+        message = "받는 사람을 선택해 주세요"
+        return
+    }
+    if (trimmedText.isBlank()) {
+        message = "메시지를 입력해 주세요"
+        return
+    }
+    if (trimmedText.length > 200) {
+        message = "목소리 메시지는 200자까지 보낼 수 있어요"
+        return
+    }
+    if (voiceProfileId.isBlank()) {
+        message = "목소리를 선택해 주세요"
+        return
+    }
+    viewModelScope.launch {
+        noteBusy = true
+        runCatching {
+            val tts = withContext(Dispatchers.IO) {
+                api.generateTts(
+                    authorization = authorization,
+                    request = TtsGenerateRequest(
+                        voiceProfileId = voiceProfileId,
+                        text = trimmedText,
+                        category = "custom",
+                        language = "ko",
+                    ),
+                )
+            }
+            val audioUrl = tts.audioUrl ?: tts.audioObjectKey?.let { "r2://$it" }
+                ?: error("Generated TTS audio was not stored.")
+            api.sendNote(
+                authorization = authorization,
+                request = SendNoteRequest(
+                    receiverId = receiverId,
+                    text = trimmedText,
+                    audioUrl = audioUrl,
+                ),
+            )
+        }.onSuccess {
+            message = "목소리 메시지를 보냈어요"
+            refreshNotes()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to send TTS note", error)
+            message = userFacingError(error, "목소리 메시지 전송에 실패했어요")
+        }
+        noteBusy = false
+    }
+}
+
+internal suspend fun MainViewModel.downloadNoteAudio(noteId: String): NoteAudioResponse {
+    val authorization = bearerOrMessage("음성 메시지를 재생하려면 먼저 로그인해 주세요")
+        ?: throw IllegalStateException("Login is required to play note audio.")
+    return withContext(Dispatchers.IO) {
+        api.getNoteAudio(authorization, noteId)
     }
 }
 

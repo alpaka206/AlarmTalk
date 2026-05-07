@@ -219,12 +219,22 @@ internal fun MainViewModel.syncNow() {
         }.onSuccess { (push, pull) ->
             val failed = push.failed + pull.failed
             if (failed > 0) {
-                message = "동기화 일부 실패: 실패 ${failed}개"
+                message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
             }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
-            message = userFacingError(error, "동기화에 실패했어요")
+            message = userFacingError(error, "알람 정보를 불러오거나 서버에 저장하지 못했어요")
         }
         syncBusy = false
     }
+}
+
+private fun alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
+    pushFailed > 0 && pullFailed > 0 ->
+        "알람 변경사항 일부를 서버에 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+    pushFailed > 0 ->
+        "알람 변경사항 일부를 서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+    pullFailed > 0 ->
+        "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
+    else -> "알람 동기화에 실패했어요."
 }

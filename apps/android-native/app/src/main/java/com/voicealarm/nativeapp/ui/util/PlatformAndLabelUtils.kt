@@ -237,7 +237,7 @@ internal fun alarmStateLabel(state: String?): String = when (state) {
     "snoozed" -> "다시 울림"
     "dismissed" -> "종료됨"
     "missed" -> "놓침"
-    "failed" -> "실패"
+    "failed" -> "알람을 다시 예약하지 못했습니다"
     else -> state ?: "로컬"
 }
 
@@ -257,7 +257,7 @@ internal fun stageLabel(stage: String): String = when (stage) {
 
 internal fun syncStateLabel(state: String): String = when (state) {
     AlarmSyncStates.SYNCED -> "동기화됨"
-    AlarmSyncStates.DIRTY -> "변경됨"
-    AlarmSyncStates.FAILED -> "동기화 실패"
-    else -> "로컬만"
+    AlarmSyncStates.DIRTY -> "서버 저장 대기"
+    AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다"
+    else -> "기기에만 저장됨"
 }
