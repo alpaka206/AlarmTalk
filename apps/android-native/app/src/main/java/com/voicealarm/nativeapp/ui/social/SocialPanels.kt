@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -28,6 +29,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyGroupMember
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.VoucherItem
 
@@ -65,10 +68,17 @@ internal fun FamilyConnectionPanel(
     val currentGroup = familyGroup?.group
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
-    val familyShareCodes = remember(vouchers) {
+    val activePlanKey = subscriptionResponse?.plan?.key
+    val sharedPlanLabel = when (activePlanKey) {
+        "couple" -> "커플"
+        "family" -> "가족"
+        else -> "공유"
+    }
+    val familyShareCodes = remember(vouchers, activePlanKey) {
         vouchers.filter { voucher ->
             voucher.code.startsWith("INV-") &&
                 voucher.planType == "family" &&
+                (activePlanKey == null || voucher.planKey == activePlanKey) &&
                 voucher.status in listOf("issued", "active", "pending") &&
                 voucher.useCount < voucher.maxUses
         }
@@ -76,6 +86,12 @@ internal fun FamilyConnectionPanel(
     val canManageShareCode = currentGroup != null &&
         familyGroup?.role == "owner" &&
         subscriptionResponse?.plan?.planType == "family"
+
+    val activePlanName = subscriptionResponse?.plan?.takeIf { subscriptionResponse.subscription != null }?.name
+    val hasActivePlan = activePlanName != null
+    var showCodeInputs by remember(hasActivePlan) { mutableStateOf(!hasActivePlan) }
+    var pendingRegisterCode by remember { mutableStateOf<String?>(null) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
 
     fun shareCode(code: String) {
         clipboard.setText(AnnotatedString(code))
@@ -92,10 +108,10 @@ internal fun FamilyConnectionPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (canManageShareCode) {
-                Text("내 가족 공유 코드", fontWeight = FontWeight.SemiBold)
+                Text("내 $sharedPlanLabel 공유 코드", fontWeight = FontWeight.SemiBold)
                 val shareVoucher = familyShareCodes.firstOrNull()
                 if (shareVoucher == null) {
-                    MutedText("공유 코드가 아직 없어요. 가족 구성원을 초대할 INV 코드를 만들어 주세요.")
+                    MutedText("공유 코드가 아직 없어요. $sharedPlanLabel 구성원을 초대할 INV 코드를 만들어 주세요.")
                     OutlinedButton(
                         onClick = onEnsureFamilyShareCode,
                         enabled = !billingBusy,
@@ -134,72 +150,146 @@ internal fun FamilyConnectionPanel(
 
             if (currentGroup != null && familyGroup.role == "member") {
                 OutlinedButton(
-                    onClick = { onLeaveFamilyGroup(currentGroup.id) },
+                    onClick = { showLeaveDialog = true },
                     enabled = !socialBusy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
-                    Text("Leave shared plan")
+                    Text(
+                        text = "플랜에서 나가기",
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             }
 
-            Text("초대 코드 등록(가족/커플)", fontWeight = FontWeight.SemiBold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = inviteCode,
-                    onValueChange = { value ->
-                        inviteCode = value
-                            .uppercase()
-                            .filter { it.isLetterOrDigit() || it == '-' }
-                            .take(18)
-                    },
-                    placeholder = { Text("INV-XXXX-XXXX-XXXX") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = {
-                        onRegisterCode(inviteCode)
-                        inviteCode = ""
-                    },
-                    enabled = inviteCode.isNotBlank() && !socialBusy,
+            if (hasActivePlan && !showCodeInputs) {
+                MutedText("$activePlanName 플랜 사용중이라 등록은 플랜이 종료된 다음에 가능합니다.")
+                OutlinedButton(
+                    onClick = { showCodeInputs = true },
+                    enabled = !socialBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
                 ) {
-                    Text("참여")
+                    Text("다른 코드 등록하기")
                 }
-            }
-
-            Text("선물받은 코드 등록", fontWeight = FontWeight.SemiBold)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedTextField(
-                    value = voucherCode,
-                    onValueChange = { value ->
-                        voucherCode = value
-                            .uppercase()
-                            .filter { it.isLetterOrDigit() || it == '-' }
-                            .take(19)
-                    },
-                    placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(
-                    onClick = {
-                        onRegisterCode(voucherCode)
-                        voucherCode = ""
-                    },
-                    enabled = voucherCode.isNotBlank() && !socialBusy,
+            } else {
+                if (hasActivePlan) {
+                    MutedText("유효한 코드를 등록하면 현재 $activePlanName 플랜은 해지돼요.")
+                }
+                Text("초대 코드 등록(가족/커플)", fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("등록")
+                    OutlinedTextField(
+                        value = inviteCode,
+                        onValueChange = { value ->
+                            inviteCode = value
+                                .uppercase()
+                                .filter { it.isLetterOrDigit() || it == '-' }
+                                .take(18)
+                        },
+                        placeholder = { Text("INV-XXXX-XXXX-XXXX") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = { pendingRegisterCode = inviteCode },
+                        enabled = inviteCode.isNotBlank() && !socialBusy,
+                    ) {
+                        Text("참여")
+                    }
+                }
+
+                Text("선물받은 코드 등록", fontWeight = FontWeight.SemiBold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = voucherCode,
+                        onValueChange = { value ->
+                            voucherCode = value
+                                .uppercase()
+                                .filter { it.isLetterOrDigit() || it == '-' }
+                                .take(19)
+                        },
+                        placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(
+                        onClick = { pendingRegisterCode = voucherCode },
+                        enabled = voucherCode.isNotBlank() && !socialBusy,
+                    ) {
+                        Text("등록")
+                    }
                 }
             }
         }
     }
+
+    if (showLeaveDialog && currentGroup != null) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text("플랜에서 나가기") },
+            text = {
+                MutedText("정말 플랜에서 나가시겠어요? 다시 들어오려면 새 초대 코드가 필요해요.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showLeaveDialog = false
+                        onLeaveFamilyGroup(currentGroup.id)
+                    },
+                ) {
+                    Text(
+                        text = "나가기",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLeaveDialog = false }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+
+    pendingRegisterCode?.let { code ->
+        AlertDialog(
+            onDismissRequest = { pendingRegisterCode = null },
+            title = { Text("코드 등록") },
+            text = {
+                MutedText(
+                    if (hasActivePlan) {
+                        "유효한 코드면 현재 $activePlanName 플랜은 해지되고 새 플랜으로 전환돼요. 등록하시겠어요?"
+                    } else {
+                        "이 코드를 등록할까요?"
+                    },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRegisterCode(code)
+                        inviteCode = ""
+                        voucherCode = ""
+                        pendingRegisterCode = null
+                    },
+                ) {
+                    Text("등록")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRegisterCode = null }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+
 }
 
 @Composable

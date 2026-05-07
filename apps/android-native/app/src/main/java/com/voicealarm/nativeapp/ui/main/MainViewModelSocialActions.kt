@@ -45,19 +45,37 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 }
 
 internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
-    val authorization = bearerOrMessage("Login is required to leave the shared plan.") ?: return
+    val authorization = bearerOrMessage("플랜에서 나가려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         socialBusy = true
         runCatching {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
-            message = "Shared plan left. Your plan is now free."
+            message = "플랜에서 나갔어요. 무료 플랜으로 전환됐어요."
             refreshSocial()
             refreshCharacterAndBilling()
             refreshAppSession()
         }.onFailure { error ->
             Log.e(TAG, "Failed to leave family group id=$groupId", error)
-            message = userFacingError(error, "Failed to leave the shared plan")
+            message = userFacingError(error, "플랜에서 나가지 못했어요")
+        }
+        socialBusy = false
+    }
+}
+
+internal fun MainViewModel.removeFamilyMember(groupId: String, userId: String) {
+    val authorization = bearerOrMessage("멤버를 내보내려면 먼저 로그인해 주세요") ?: return
+    viewModelScope.launch {
+        socialBusy = true
+        runCatching {
+            api.removeFamilyMember(authorization, groupId, userId)
+        }.onSuccess {
+            message = "멤버를 내보냈어요"
+            refreshSocial()
+            refreshCharacterAndBilling()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to remove family member group=$groupId user=$userId", error)
+            message = userFacingError(error, "멤버를 내보내지 못했어요")
         }
         socialBusy = false
     }

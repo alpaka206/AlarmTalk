@@ -59,6 +59,41 @@ async function expireUnusedVouchersFor(db: DbExecutor, subscriptionId: string): 
   });
 }
 
+async function releaseInviteUseForMember(
+  db: DbExecutor,
+  userPk: string,
+  planGroupId: string,
+): Promise<void> {
+  const redemptionRes = await db.execute({
+    sql: `SELECT vr.id AS redemption_id, vr.voucher_id
+          FROM voucher_redemptions vr
+          JOIN voucher_codes v ON v.id = vr.voucher_id
+          JOIN subscriptions s ON s.id = v.issuer_subscription_id
+          WHERE vr.user_id = ? AND s.plan_group_id = ?`,
+    args: [userPk, planGroupId],
+  });
+
+  for (const row of redemptionRes.rows) {
+    const redemptionId = String(row.redemption_id);
+    const voucherId = String(row.voucher_id);
+
+    await db.execute({
+      sql: `DELETE FROM voucher_redemptions WHERE id = ?`,
+      args: [redemptionId],
+    });
+
+    await db.execute({
+      sql: `UPDATE voucher_codes
+            SET status = 'issued',
+                used_at = NULL
+            WHERE id = ?
+              AND status = 'used'
+              AND (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = ?) < COALESCE(max_uses, 1)`,
+      args: [voucherId, voucherId],
+    });
+  }
+}
+
 function plannedMaxUses(planType: string, maxMembers: number): number {
   if (planType === 'family') return Math.max(1, maxMembers - 1);
   return 1;
@@ -104,6 +139,7 @@ export async function cancelSubscriptionImmediate(
       sql: `DELETE FROM plan_group_members WHERE plan_group_id = ? AND user_id = ?`,
       args: [subscription.planGroupId, subscription.userPk],
     });
+    await releaseInviteUseForMember(db, subscription.userPk, subscription.planGroupId);
     return;
   }
 
@@ -172,6 +208,8 @@ export async function leavePlanGroupMember(
     sql: `DELETE FROM plan_group_members WHERE id = ?`,
     args: [params.membershipId],
   });
+
+  await releaseInviteUseForMember(db, params.userPk, params.planGroupId);
 }
 
 export async function scheduleCancelAtPeriodEnd(
