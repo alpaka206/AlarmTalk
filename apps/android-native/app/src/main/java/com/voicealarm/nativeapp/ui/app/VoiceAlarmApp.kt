@@ -102,6 +102,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         viewModel.clearMessage()
     }
 
+    LaunchedEffect(viewModel.navigateHomeTick) {
+        if (viewModel.navigateHomeTick > 0) {
+            navController.navigateHomeClearingStack()
+        }
+    }
+
     LoginPermissionGate(authSession = authSession)
 
     LaunchedEffect(sessionRouteKey) {
@@ -287,11 +293,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     Scaffold(
-        snackbarHost = {
-            SnackbarHost(hostState = snackbarHostState) { data ->
-                PrettySnackbar(message = data.visuals.message)
-            }
-        },
         bottomBar = {
             if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
@@ -480,10 +481,13 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       familyGroup = familyGroup,
                       subscriptionResponse = subscriptionResponse,
+                      vouchers = vouchers,
                       currentUserId = authSession?.user?.id,
                       socialBusy = socialBusy,
+                      billingBusy = billingBusy,
                       onBack = ::goBackInApp,
                       onRemoveFamilyMember = viewModel::removeFamilyMember,
+                      onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                   )
               }
           }
@@ -495,18 +499,25 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                   modifier = Modifier
                       .align(Alignment.TopEnd)
                       .padding(
-                          top = padding.calculateTopPadding() + 8.dp,
-                          end = 8.dp,
+                          top = padding.calculateTopPadding() + 24.dp,
+                          end = 24.dp,
                       ),
               ) {
                   ProfileMenu(
-                      authSession = authSession,
                       isPlanOwner = isPlanOwner,
                       onSelectTab = ::navigateToTab,
                       onOpenSettings = { navController.navigate(AppRoute.Settings) },
                       onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
                   )
               }
+          }
+          SnackbarHost(
+              hostState = snackbarHostState,
+              modifier = Modifier
+                  .align(Alignment.TopCenter)
+                  .padding(top = padding.calculateTopPadding() + 8.dp),
+          ) { data ->
+              PrettySnackbar(message = data.visuals.message)
           }
       }
     }

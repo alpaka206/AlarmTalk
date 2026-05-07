@@ -114,10 +114,11 @@ internal fun MainViewModel.registerCode(code: String) {
         runCatching {
             api.registerCode(authorization, CodeRegisterRequest(code.trim()))
         }.onSuccess { response ->
-            message = "코드를 등록했어요${response.type?.let { ": ${codeTypeLabel(it)}" } ?: ""}"
+            message = "코드를 등록했어요"
             refreshSocial()
             refreshCharacterAndBilling()
             refreshAppSession()
+            navigateHomeTick++
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
             message = userFacingError(error, "코드 등록에 실패했어요")
@@ -226,6 +227,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
+                navigateHomeTick++
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
