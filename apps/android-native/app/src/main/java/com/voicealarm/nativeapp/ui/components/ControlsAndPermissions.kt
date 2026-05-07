@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -51,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import com.voicealarm.nativeapp.data.AlarmEntity
+import com.voicealarm.nativeapp.data.AlarmStates
+import com.voicealarm.nativeapp.data.AlarmSyncStates
 import kotlin.math.roundToInt
 
 @Composable
@@ -173,6 +176,7 @@ internal fun AlarmRow(
     val deleteWidthPx = with(LocalDensity.current) { deleteWidth.toPx() }
     var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
     var dragOffsetPx by remember(alarm.id) { mutableStateOf(0f) }
+    val warningText = alarmRowWarningText(alarm)
     val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
     val currentOffsetPx = if (dragOffsetPx != 0f) dragOffsetPx else settledOffsetPx
     val dragState = rememberDraggableState { delta ->
@@ -275,9 +279,40 @@ internal fun AlarmRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (warningText != null) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.ErrorOutline,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                text = warningText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
+    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했습니다. 시간을 확인한 뒤 다시 저장해 주세요."
+    alarm.syncState == AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다. 이 기기의 알람은 그대로 울려요."
+    else -> null
 }
 
 @Composable

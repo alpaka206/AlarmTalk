@@ -24,6 +24,7 @@ import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
@@ -70,6 +71,8 @@ internal fun AlarmListScreen(
     onEnsureFamilyShareCode: () -> Unit,
     onRefreshNotes: () -> Unit,
     onSendNote: (String, String) -> Unit,
+    onSendTtsNote: (String, String, String) -> Unit,
+    onDownloadNoteAudio: suspend (String) -> NoteAudioResponse,
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -217,12 +220,17 @@ internal fun AlarmListScreen(
                         noteBusy = noteBusy,
                         familyGroup = familyGroup,
                         subscriptionResponse = subscriptionResponse,
+                        voiceProfiles = voiceProfiles,
+                        familyVoices = familyVoices,
+                        voiceProfileBusy = voiceProfileBusy,
                         receivedNotes = receivedNotes,
                         onRefresh = {
                             onRefreshSocial()
                             onRefreshNotes()
                         },
                         onSendNote = onSendNote,
+                        onSendTtsNote = onSendTtsNote,
+                        onDownloadNoteAudio = onDownloadNoteAudio,
                         onMarkNoteRead = onMarkNoteRead,
                         onOpenFamily = { onSelectTab(NativeTab.People) },
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
