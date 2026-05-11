@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -104,6 +105,17 @@ internal fun VoiceAlarmTabItem(
 ) {
     val selected = selectedTab == tab
     val interactionSource = remember { MutableInteractionSource() }
+    val isDarkScheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val selectedBackgroundColor = if (isDarkScheme) {
+        MaterialTheme.colorScheme.surfaceVariant
+    } else {
+        MaterialTheme.colorScheme.primaryContainer
+    }
+    val selectedContentColor = if (isDarkScheme) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
@@ -118,7 +130,7 @@ internal fun VoiceAlarmTabItem(
             )
             .background(
                 color = if (selected) {
-                    MaterialTheme.colorScheme.surfaceVariant
+                    selectedBackgroundColor
                 } else {
                     Color.Transparent
                 },
@@ -129,7 +141,10 @@ internal fun VoiceAlarmTabItem(
         BadgedBox(
             badge = {
                 if (badgeCount > 0) {
-                    Badge {
+                    Badge(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ) {
                         Text(text = badgeLabel(badgeCount))
                     }
                 }
@@ -139,7 +154,7 @@ internal fun VoiceAlarmTabItem(
                 imageVector = icon,
                 contentDescription = label,
                 tint = if (selected) {
-                    MaterialTheme.colorScheme.primary
+                    selectedContentColor
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -150,7 +165,7 @@ internal fun VoiceAlarmTabItem(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) {
-                MaterialTheme.colorScheme.primary
+                selectedContentColor
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },

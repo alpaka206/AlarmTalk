@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -305,7 +308,7 @@ internal fun SubscriptionPlanCard(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isCurrent) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.58f)
             } else {
                 MaterialTheme.colorScheme.surface
             },
@@ -336,7 +339,14 @@ internal fun SubscriptionPlanCard(
                     }
                 }
                 if (isCurrent) {
-                    AssistChip(onClick = {}, label = { Text("현재") })
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("현재") },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = MaterialTheme.colorScheme.secondary,
+                            labelColor = MaterialTheme.colorScheme.onSecondary,
+                        ),
+                    )
                 }
             }
             if (option.description.isNotBlank()) {
@@ -494,10 +504,21 @@ internal fun CharacterBillingPanel(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = stageEmoji(character.stage),
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(42.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = stageEmoji(character.stage),
+                                style = MaterialTheme.typography.titleLarge,
+                            )
+                        }
+                    }
                     Text(
                         text = "LV.${character.level}",
                         style = MaterialTheme.typography.titleMedium,
@@ -552,7 +573,7 @@ internal fun CharacterXpBar(
                 .fillMaxWidth(progress.coerceIn(0f, 1f))
                 .height(8.dp)
                 .clip(shape)
-                .background(MaterialTheme.colorScheme.primary),
+                .background(MaterialTheme.colorScheme.tertiary),
         )
     }
 }

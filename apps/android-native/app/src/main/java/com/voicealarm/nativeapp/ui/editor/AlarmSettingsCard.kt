@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -53,7 +54,13 @@ internal fun ChipGrid(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
+    selectedContainerColor: Color? = null,
+    selectedLabelColor: Color? = null,
 ) {
+    val chipColors = FilterChipDefaults.filterChipColors(
+        selectedContainerColor = selectedContainerColor ?: MaterialTheme.colorScheme.primaryContainer,
+        selectedLabelColor = selectedLabelColor ?: MaterialTheme.colorScheme.onPrimaryContainer,
+    )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.chunked(3).forEach { rowOptions ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -61,6 +68,7 @@ internal fun ChipGrid(
                     FilterChip(
                         selected = selected == value,
                         onClick = { onSelect(value) },
+                        colors = chipColors,
                         label = { Text(label) },
                     )
                 }

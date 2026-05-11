@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -267,7 +268,7 @@ private fun MemberRow(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isMe) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
             } else {
                 MaterialTheme.colorScheme.surface
             },
@@ -306,6 +307,10 @@ private fun MemberRow(
                     onClick = {},
                     enabled = false,
                     label = { Text(chipLabel) },
+                    colors = AssistChipDefaults.assistChipColors(
+                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
                 )
             }
             if (showRemove) {

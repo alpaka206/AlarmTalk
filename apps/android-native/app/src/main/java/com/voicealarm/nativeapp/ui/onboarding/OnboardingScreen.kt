@@ -88,6 +88,14 @@ internal fun OnboardingScreen(
                 .weight(1f),
         ) { pageIndex ->
             val page = OnboardingPages[pageIndex]
+            val iconContainerColor = when (pageIndex) {
+                2 -> MaterialTheme.colorScheme.tertiaryContainer
+                else -> MaterialTheme.colorScheme.secondaryContainer
+            }
+            val iconContentColor = when (pageIndex) {
+                2 -> MaterialTheme.colorScheme.onTertiaryContainer
+                else -> MaterialTheme.colorScheme.onSecondaryContainer
+            }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -95,12 +103,20 @@ internal fun OnboardingScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Icon(
-                    imageVector = page.icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(96.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+                Surface(
+                    modifier = Modifier.size(112.dp),
+                    shape = CircleShape,
+                    color = iconContainerColor,
+                    contentColor = iconContentColor,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = page.icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(28.dp))
                 Text(
                     text = page.title,
