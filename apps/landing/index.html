@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Alarm Mate | 목소리로 울리는 진짜 알람</title>
+  <meta name="description" content="Voice Alarm Mate는 가족과 연인의 목소리로 울리는 Android 네이티브 알람 앱입니다. 공유 음성, 상대방 알람 설정, 로컬 오디오 캐싱으로 실제 알람처럼 동작합니다.">
+  <meta property="og:title" content="Voice Alarm Mate">
+  <meta property="og:description" content="가족과 연인의 목소리로 울리는 진짜 알람 앱">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111111'/%3E%3Cpath fill='%23fbfaf7' d='M19 18a3 3 0 1 1 4.24-4.24l2.12 2.12A15.8 15.8 0 0 1 32 14c2.35 0 4.58.51 6.58 1.43l2.18-2.17A3 3 0 1 1 45 17.5l-1.7 1.7A15.94 15.94 0 0 1 48 30c0 8.84-7.16 16-16 16s-16-7.16-16-16c0-4.16 1.59-7.95 4.2-10.8L19 18Zm13 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm1.5 5v6.15l4.25 2.45-1.5 2.6-5.75-3.32V26h3Z'/%3E%3C/svg%3E">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.min.css">
+  <script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#111111',
+            paper: '#fbfaf7',
+            cloud: '#f2efe9',
+            coral: '#e97155',
+            moss: '#7b8f73',
+            night: '#24231f'
+          },
+          fontFamily: {
+            sans: ['Pretendard', 'system-ui', 'sans-serif']
+          },
+          boxShadow: {
+            soft: '0 24px 80px rgba(17, 17, 17, 0.16)',
+            insetLine: 'inset 0 1px 0 rgba(255,255,255,0.5)'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      letter-spacing: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Pretendard', system-ui, sans-serif;
+      background: #fbfaf7;
+      color: #111111;
+      word-break: keep-all;
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      pointer-events: none;
+      opacity: .055;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.7'/%3E%3C/svg%3E");
+    }
+
+    .reveal {
+      opacity: 0;
+      transform: translateY(22px);
+      transition: opacity .7s ease, transform .7s ease;
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .hero-bg {
+      background:
+        linear-gradient(90deg, rgba(17,17,17,.86) 0%, rgba(17,17,17,.64) 46%, rgba(17,17,17,.18) 100%),
+        url('https://picsum.photos/seed/voice-alarm-morning-room/1800/1200') center/cover;
+    }
+
+    .tap-target {
+      min-height: 48px;
+    }
+
+    .magnetic {
+      transition: transform .35s cubic-bezier(.16, 1, .3, 1), background-color .35s ease, color .35s ease;
+    }
+
+    .magnetic:hover {
+      transform: translateY(-2px) scale(1.01);
+    }
+
+    .magnetic:active {
+      transform: translateY(0) scale(.98);
+    }
+
+    .phone-shell {
+      border-radius: 30px;
+      background: #151513;
+      padding: 10px;
+      box-shadow: 0 24px 80px rgba(0,0,0,.28);
+    }
+
+    .phone-screen {
+      border-radius: 24px;
+      background: linear-gradient(180deg, #fdf8f0, #ece7de);
+      min-height: 520px;
+      overflow: hidden;
+    }
+
+    .small-card {
+      border-radius: 8px;
+    }
+
+    .wave span {
+      display: inline-block;
+      width: 4px;
+      margin: 0 2px;
+      border-radius: 999px;
+      background: #e97155;
+      animation: wave 1.2s ease-in-out infinite;
+      transform-origin: center;
+    }
+
+    .wave span:nth-child(2) { animation-delay: .08s; }
+    .wave span:nth-child(3) { animation-delay: .16s; }
+    .wave span:nth-child(4) { animation-delay: .24s; }
+    .wave span:nth-child(5) { animation-delay: .32s; }
+    .wave span:nth-child(6) { animation-delay: .4s; }
+
+    @keyframes wave {
+      0%, 100% { height: 10px; opacity: .55; }
+      50% { height: 38px; opacity: 1; }
+    }
+
+    @media (max-width: 640px) {
+      .phone-screen {
+        min-height: 430px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+
+  <nav class="fixed left-0 right-0 top-4 z-40 px-4">
+    <div class="mx-auto flex max-w-6xl items-center justify-between rounded-[8px] border border-white/30 bg-paper/80 px-4 py-3 shadow-soft backdrop-blur-xl">
+      <a href="#top" class="flex items-center gap-2 font-semibold text-ink" aria-label="Voice Alarm Mate 홈">
+        <span class="grid h-8 w-8 place-items-center rounded-[8px] bg-ink text-paper">
+          <iconify-icon icon="solar:alarm-bold" aria-hidden="true"></iconify-icon>
+        </span>
+        <span>Voice Alarm Mate</span>
+      </a>
+      <div class="hidden items-center gap-6 text-sm text-ink/70 md:flex">
+        <a class="hover:text-ink" href="#features">기능</a>
+        <a class="hover:text-ink" href="#flow">사용 방식</a>
+        <a class="hover:text-ink" href="#plans">요금</a>
+      </div>
+      <a href="#waitlist" class="magnetic tap-target inline-flex items-center justify-center rounded-[8px] bg-ink px-4 text-sm font-semibold text-paper">
+        출시 알림
+      </a>
+    </div>
+  </nav>
+
+  <header id="top" class="hero-bg relative overflow-hidden pt-28 text-paper">
+    <div class="mx-auto grid min-h-[88dvh] max-w-7xl grid-cols-1 items-center gap-10 px-4 pb-16 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
+      <div class="max-w-3xl">
+        <p class="mb-5 inline-flex items-center gap-2 rounded-[8px] border border-white/20 bg-white/10 px-3 py-2 text-sm text-paper/90 backdrop-blur">
+          <iconify-icon icon="solar:verified-check-bold" aria-hidden="true"></iconify-icon>
+          Android 네이티브 알람으로 먼저 출시 준비 중
+        </p>
+        <h1 class="text-4xl font-bold leading-snug sm:text-5xl lg:text-6xl">
+          Voice Alarm Mate
+        </h1>
+        <p class="mt-5 max-w-2xl text-xl font-medium leading-relaxed text-paper/92 sm:text-2xl">
+          가족과 연인의 목소리로 울리는 진짜 알람 앱.
+        </p>
+        <p class="mt-4 max-w-2xl text-base leading-relaxed text-paper/75 sm:text-lg">
+          누군가가 보내준 음성 메시지, 공유한 목소리, 직접 만든 알람을 예약 시간에 로컬 오디오로 울립니다. 알림처럼 지나가는 서비스가 아니라 아침을 실제로 깨우는 알람입니다.
+        </p>
+        <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+          <a href="#waitlist" class="magnetic tap-target inline-flex items-center justify-center rounded-[8px] bg-coral px-7 py-3 text-base font-bold text-white">
+            출시 알림 받기
+            <iconify-icon class="ml-2" icon="solar:arrow-right-linear" aria-hidden="true"></iconify-icon>
+          </a>
+          <a href="#flow" class="magnetic tap-target inline-flex items-center justify-center rounded-[8px] border border-white/30 bg-white/10 px-7 py-3 text-base font-semibold text-paper backdrop-blur">
+            알람 흐름 보기
+          </a>
+        </div>
+        <div class="mt-8 grid max-w-2xl grid-cols-3 gap-3 text-sm text-paper/80">
+          <div class="small-card border border-white/14 bg-white/10 p-3 backdrop-blur">
+            <strong class="block text-lg text-paper">로컬</strong>
+            알람 시간 오디오 캐싱
+          </div>
+          <div class="small-card border border-white/14 bg-white/10 p-3 backdrop-blur">
+            <strong class="block text-lg text-paper">공유</strong>
+            가족·커플 음성 알람
+          </div>
+          <div class="small-card border border-white/14 bg-white/10 p-3 backdrop-blur">
+            <strong class="block text-lg text-paper">권한</strong>
+            상대 알람 허용 설정
+          </div>
+        </div>
+      </div>
+
+      <div class="relative mx-auto w-full max-w-[420px] lg:mr-8">
+        <div class="absolute -left-40 top-20 hidden w-40 rotate-[-6deg] rounded-[8px] border border-white/20 bg-white/12 p-4 text-paper shadow-soft backdrop-blur md:block">
+          <p class="text-xs text-paper/70">Diana 음성 메시지</p>
+          <p class="mt-2 text-sm font-semibold">일어나. 오늘 약속 8시야.</p>
+          <div class="wave mt-4 flex h-10 items-center" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span><span></span>
+          </div>
+        </div>
+        <div class="phone-shell">
+          <div class="phone-screen p-5 text-ink">
+            <div class="flex items-center justify-between text-sm">
+              <span class="font-semibold">06:00</span>
+              <span class="rounded-[8px] bg-ink px-2 py-1 text-xs text-paper">알람 켜짐</span>
+            </div>
+            <div class="mt-10">
+              <p class="text-sm text-ink/50">내일 아침</p>
+              <p class="text-7xl font-bold leading-tight">06:30</p>
+            </div>
+            <div class="mt-7 rounded-[8px] bg-white p-4 shadow-insetLine">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm text-ink/50">울릴 음성</p>
+                  <p class="font-semibold">Diana · 음성 메시지</p>
+                </div>
+                <button class="grid h-11 w-11 place-items-center rounded-[8px] bg-coral text-white" aria-label="음성 미리듣기">
+                  <iconify-icon icon="solar:play-bold" aria-hidden="true"></iconify-icon>
+                </button>
+              </div>
+              <div class="wave mt-5 flex h-12 items-center" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="mt-4 rounded-[8px] bg-night p-4 text-paper">
+              <p class="text-xs text-paper/60">상대방 알람 설정</p>
+              <div class="mt-3 flex items-center justify-between gap-4">
+                <span class="font-semibold">허용됨</span>
+                <span class="rounded-[8px] bg-moss px-3 py-1 text-sm text-white">월-금 09:00 제외</span>
+              </div>
+            </div>
+            <div class="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div class="small-card bg-cloud p-4">
+                <iconify-icon class="text-xl text-coral" icon="solar:shield-check-bold" aria-hidden="true"></iconify-icon>
+                <p class="mt-2 font-semibold">오프라인 울림</p>
+              </div>
+              <div class="small-card bg-cloud p-4">
+                <iconify-icon class="text-xl text-coral" icon="solar:users-group-rounded-bold" aria-hidden="true"></iconify-icon>
+                <p class="mt-2 font-semibold">공유 음성</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="border-y border-ink/10 bg-paper py-5">
+      <div class="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 text-sm sm:px-6 md:grid-cols-4 lg:px-8">
+        <div class="flex items-center gap-2">
+          <iconify-icon class="text-xl text-coral" icon="solar:alarm-play-bold" aria-hidden="true"></iconify-icon>
+          예약 시간에 울리는 알람
+        </div>
+        <div class="flex items-center gap-2">
+          <iconify-icon class="text-xl text-coral" icon="solar:database-bold" aria-hidden="true"></iconify-icon>
+          로컬 오디오 캐싱
+        </div>
+        <div class="flex items-center gap-2">
+          <iconify-icon class="text-xl text-coral" icon="solar:soundwave-bold" aria-hidden="true"></iconify-icon>
+          공유 음성·TTS 메시지
+        </div>
+        <div class="flex items-center gap-2">
+          <iconify-icon class="text-xl text-coral" icon="solar:lock-keyhole-bold" aria-hidden="true"></iconify-icon>
+          상대 알람 권한 제어
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="bg-paper py-20">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="reveal max-w-3xl">
+          <p class="text-sm font-bold text-coral">왜 다른 알람과 다른가</p>
+          <h2 class="mt-3 text-3xl font-bold leading-snug sm:text-4xl">알림이 아니라, 실제로 울리는 알람이어야 합니다.</h2>
+          <p class="mt-4 text-base leading-relaxed text-ink/65 sm:text-lg">목소리 알람은 귀엽게 보이는 기능이 아니라 신뢰성이 먼저입니다. 예약된 시간에는 네트워크가 느려도, 서버가 늦어도, 로컬에 준비된 오디오로 울려야 합니다.</p>
+        </div>
+        <div class="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-6">
+          <article class="reveal small-card border border-ink/10 bg-night p-6 text-paper shadow-soft lg:col-span-3 lg:row-span-2">
+            <iconify-icon class="text-3xl text-coral" icon="solar:alarm-bold" aria-hidden="true"></iconify-icon>
+            <h3 class="mt-6 text-2xl font-bold">Android 네이티브 알람</h3>
+            <p class="mt-3 text-paper/70">핵심 알람은 푸시 알림이나 서버 크론에 기대지 않습니다. 기기 안의 알람 상태와 오디오 파일로 울리는 구조를 기준으로 설계했습니다.</p>
+            <div class="mt-8 rounded-[8px] bg-white/8 p-4">
+              <p class="text-sm text-paper/60">알람 실행 기준</p>
+              <p class="mt-1 text-lg font-semibold">AlarmManager · Full-screen ringing · Local audio</p>
+            </div>
+          </article>
+          <article class="reveal small-card border border-ink/10 bg-white p-6 lg:col-span-3">
+            <iconify-icon class="text-3xl text-coral" icon="solar:user-speak-bold" aria-hidden="true"></iconify-icon>
+            <h3 class="mt-5 text-xl font-bold">내 목소리, 상대의 목소리</h3>
+            <p class="mt-2 text-ink/65">직접 녹음하거나 업로드한 음성으로 프로필을 만들고, 공유 플랜에서는 허용한 사람에게만 음성을 공유합니다.</p>
+          </article>
+          <article class="reveal small-card border border-ink/10 bg-cloud p-6 lg:col-span-2">
+            <iconify-icon class="text-3xl text-coral" icon="solar:calendar-add-bold" aria-hidden="true"></iconify-icon>
+            <h3 class="mt-5 text-xl font-bold">상대방 알람 설정</h3>
+            <p class="mt-2 text-ink/65">상대가 내 알람을 맞출 수 있는지, 불가능한 시간대는 언제인지 직접 정합니다.</p>
+          </article>
+          <article class="reveal small-card border border-ink/10 bg-white p-6 lg:col-span-2">
+            <iconify-icon class="text-3xl text-coral" icon="solar:translation-bold" aria-hidden="true"></iconify-icon>
+            <h3 class="mt-5 text-xl font-bold">번역 음성 메시지</h3>
+            <p class="mt-2 text-ink/65">필요할 때만 번역을 켜고 한국어, 영어, 일본어로 들을 수 있는 메시지를 준비합니다.</p>
+          </article>
+          <article class="reveal small-card border border-ink/10 bg-white p-6 lg:col-span-2">
+            <iconify-icon class="text-3xl text-coral" icon="solar:cup-star-bold" aria-hidden="true"></iconify-icon>
+            <h3 class="mt-5 text-xl font-bold">일어나면 쌓이는 성장</h3>
+            <p class="mt-2 text-ink/65">알람을 끄고 하루를 시작하면 캐릭터 경험치와 스트릭이 쌓입니다.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="flow" class="bg-cloud py-20">
+      <div class="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 sm:px-6 lg:grid-cols-[.85fr_1.15fr] lg:px-8">
+        <div class="reveal">
+          <p class="text-sm font-bold text-coral">사용 방식</p>
+          <h2 class="mt-3 text-3xl font-bold leading-snug sm:text-4xl">알람을 함께 만들고, 아침에는 기기에서 바로 울립니다.</h2>
+          <p class="mt-4 text-ink/65">공유와 동기화는 서버가 돕고, 울리는 순간은 로컬이 책임집니다. 보이스 알람에서 가장 중요한 선을 분명히 나눴습니다.</p>
+        </div>
+        <div class="grid gap-4">
+          <div class="reveal small-card grid gap-4 border border-ink/10 bg-paper p-5 sm:grid-cols-[64px_1fr]">
+            <div class="grid h-14 w-14 place-items-center rounded-[8px] bg-coral text-xl font-bold text-white">1</div>
+            <div>
+              <h3 class="text-xl font-bold">가족·커플 코드를 연결합니다.</h3>
+              <p class="mt-2 text-ink/65">공유 플랜이나 초대 코드로 연결하고, 음성 공유와 상대 알람 허용 여부를 선택합니다.</p>
+            </div>
+          </div>
+          <div class="reveal small-card grid gap-4 border border-ink/10 bg-paper p-5 sm:grid-cols-[64px_1fr]">
+            <div class="grid h-14 w-14 place-items-center rounded-[8px] bg-coral text-xl font-bold text-white">2</div>
+            <div>
+              <h3 class="text-xl font-bold">음성 메시지를 만들거나 선택합니다.</h3>
+              <p class="mt-2 text-ink/65">직접 녹음, 파일 업로드, TTS 메시지, 공유 받은 음성 중에서 알람에 맞는 소리를 고릅니다.</p>
+            </div>
+          </div>
+          <div class="reveal small-card grid gap-4 border border-ink/10 bg-paper p-5 sm:grid-cols-[64px_1fr]">
+            <div class="grid h-14 w-14 place-items-center rounded-[8px] bg-coral text-xl font-bold text-white">3</div>
+            <div>
+              <h3 class="text-xl font-bold">예약 시점에 오디오를 준비합니다.</h3>
+              <p class="mt-2 text-ink/65">알람이 울릴 때 서버에서 새로 받지 않도록, 필요한 음성 파일을 미리 로컬에 준비합니다.</p>
+            </div>
+          </div>
+          <div class="reveal small-card grid gap-4 border border-ink/10 bg-night p-5 text-paper sm:grid-cols-[64px_1fr]">
+            <div class="grid h-14 w-14 place-items-center rounded-[8px] bg-paper text-xl font-bold text-ink">4</div>
+            <div>
+              <h3 class="text-xl font-bold">예약 시간에 실제 알람으로 울립니다.</h3>
+              <p class="mt-2 text-paper/70">화면이 꺼져 있어도, 앱이 백그라운드에 있어도 알람 화면과 소리로 깨우는 것을 목표로 합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-paper py-20">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_.8fr]">
+          <div class="reveal overflow-hidden rounded-[8px] bg-night text-paper shadow-soft">
+            <div class="grid min-h-[420px] grid-cols-1 lg:grid-cols-2">
+              <div class="p-8 sm:p-10">
+                <p class="text-sm font-bold text-coral">가족과 커플을 위한 장면</p>
+                <h2 class="mt-3 text-3xl font-bold leading-snug sm:text-4xl">아침에 듣고 싶은 사람의 목소리로 시작하세요.</h2>
+                <p class="mt-4 text-paper/70">부모님이 보내준 한마디, 연인이 남긴 짧은 메시지, 내 목소리로 만든 다짐까지. 알람음이 아니라 관계가 담긴 소리로 아침을 엽니다.</p>
+              </div>
+              <img class="h-full min-h-[320px] w-full object-cover" src="https://picsum.photos/seed/family-morning-voice-alarm/900/900" alt="아침 햇살이 들어오는 방에서 휴대폰 알람을 확인하는 장면" loading="lazy" decoding="async">
+            </div>
+          </div>
+          <div class="reveal grid gap-4">
+            <div class="small-card border border-ink/10 bg-cloud p-6">
+              <h3 class="text-xl font-bold">혼자 쓰는 개인 플랜</h3>
+              <p class="mt-2 text-ink/65">내 음성 프로필 1개와 메시지 알람으로 먼저 시작합니다.</p>
+            </div>
+            <div class="small-card border border-ink/10 bg-white p-6">
+              <h3 class="text-xl font-bold">둘이 쓰는 커플 플랜</h3>
+              <p class="mt-2 text-ink/65">상대방이 내 알람을 맞추는 권한과 불가능 시간대를 세밀하게 정합니다.</p>
+            </div>
+            <div class="small-card border border-ink/10 bg-white p-6">
+              <h3 class="text-xl font-bold">가족 공유</h3>
+              <p class="mt-2 text-ink/65">가족 구성원이 공유한 음성으로 알람을 만들고, 필요한 사람에게만 허용합니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="plans" class="bg-ink py-20 text-paper">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="reveal max-w-3xl">
+          <p class="text-sm font-bold text-coral">출시 예정 요금제</p>
+          <h2 class="mt-3 text-3xl font-bold leading-snug sm:text-4xl">결제 연결 전에도 플랜 구조가 보이도록 설계했습니다.</h2>
+          <p class="mt-4 text-paper/65">실제 가격과 제공량은 결제 연동 단계에서 조정될 수 있습니다. 랜딩에서는 사용자가 어떤 방식으로 쓸 수 있는지 먼저 보여줍니다.</p>
+        </div>
+        <div class="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <article class="reveal small-card border border-white/12 bg-white/6 p-6">
+            <p class="text-sm text-paper/60">Free</p>
+            <h3 class="mt-2 text-2xl font-bold">개인 체험</h3>
+            <p class="mt-3 text-paper/65">기본 알람과 제한된 음성 메시지로 제품 흐름을 먼저 확인합니다.</p>
+          </article>
+          <article class="reveal small-card border border-coral bg-coral p-6 text-white shadow-soft">
+            <p class="text-sm text-white/75">Personal</p>
+            <h3 class="mt-2 text-2xl font-bold">내 목소리 알람</h3>
+            <p class="mt-3 text-white/80">음성 프로필과 TTS 메시지를 본격적으로 사용합니다.</p>
+          </article>
+          <article class="reveal small-card border border-white/12 bg-white/6 p-6">
+            <p class="text-sm text-paper/60">Couple · Family</p>
+            <h3 class="mt-2 text-2xl font-bold">공유 음성 알람</h3>
+            <p class="mt-3 text-paper/65">초대 코드, 음성 공유, 상대 알람 설정 권한을 함께 사용합니다.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="waitlist" class="bg-paper py-20">
+      <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+        <div class="reveal small-card border border-ink/10 bg-cloud p-8 shadow-soft sm:p-10">
+          <div class="grid gap-8 lg:grid-cols-[1fr_.9fr] lg:items-center">
+            <div>
+              <p class="text-sm font-bold text-coral">베타 출시 알림</p>
+              <h2 class="mt-3 text-3xl font-bold leading-snug sm:text-4xl">Android 베타가 준비되면 먼저 알려드릴게요.</h2>
+              <p class="mt-4 text-ink/65">정확 알람, 음성 캐싱, 공유 음성 알람이 실기기에서 안정화되는 순서대로 초대합니다.</p>
+            </div>
+            <form id="waitlistForm" class="grid gap-3" novalidate>
+              <label class="sr-only" for="email">이메일</label>
+              <input id="email" name="email" type="email" required placeholder="email@example.com" class="tap-target w-full rounded-[8px] border border-ink/15 bg-white px-4 text-base outline-none focus:border-coral">
+              <button class="magnetic tap-target rounded-[8px] bg-ink px-6 font-bold text-paper" type="submit">출시 알림 받기</button>
+              <p id="formMessage" class="min-h-6 text-sm text-ink/65" role="status"></p>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-ink/10 bg-paper py-10">
+    <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 text-sm text-ink/60 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+      <div>
+        <p class="font-semibold text-ink">Voice Alarm Mate</p>
+        <p class="mt-1">목소리로 울리는 진짜 알람 앱</p>
+      </div>
+      <div class="flex gap-4">
+        <a class="hover:text-ink" href="#features">기능</a>
+        <a class="hover:text-ink" href="#flow">사용 방식</a>
+        <a class="hover:text-ink" href="#waitlist">출시 알림</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.14 });
+
+    document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+
+    const form = document.querySelector('#waitlistForm');
+    const message = document.querySelector('#formMessage');
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const formData = new FormData(form);
+      const email = String(formData.get('email') || '').trim().toLowerCase();
+      const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+      if (!valid) {
+        message.textContent = '이메일 형식을 확인해 주세요.';
+        return;
+      }
+
+      const saved = JSON.parse(localStorage.getItem('voiceAlarmMateWaitlist') || '[]');
+      if (!saved.includes(email)) saved.push(email);
+      localStorage.setItem('voiceAlarmMateWaitlist', JSON.stringify(saved));
+      form.reset();
+      message.textContent = '등록됐습니다. 실제 배포 전에는 대기자 API에 연결하세요.';
+    });
+  </script>
+</body>
+</html>
