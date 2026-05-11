@@ -112,7 +112,7 @@ internal class RemoteAlarmPullSyncService(
         val time = parseTime(remote.time) ?: return null
         val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
         val now = System.currentTimeMillis()
-        val enabled = remote.isActive != false
+        val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
 
         val cachedAudio = remote.messageId
             ?.takeIf { it.isNotBlank() }
@@ -193,4 +193,13 @@ internal class RemoteAlarmPullSyncService(
 
     private fun repeatDaysToMask(days: List<Int>): Int =
         days.filter { it in 0..6 }.fold(0) { mask, day -> mask or (1 shl day) }
+}
+
+internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {
+    val remoteEnabled = remoteIsActive != false
+    return if (existing?.origin == AlarmOrigins.RECEIVED_REMOTE) {
+        existing.enabled && remoteEnabled
+    } else {
+        remoteEnabled
+    }
 }

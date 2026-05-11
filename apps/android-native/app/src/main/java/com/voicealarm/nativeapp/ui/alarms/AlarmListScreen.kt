@@ -87,8 +87,9 @@ internal fun AlarmListScreen(
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
-            compareByDescending<AlarmEntity> { it.enabled }
-                .thenBy { it.fireAtMillis },
+            compareBy<AlarmEntity> { it.hour }
+                .thenBy { it.minute }
+                .thenBy { it.createdAtMillis },
         )
     }
     val nextAlarm = remember(alarms) {
