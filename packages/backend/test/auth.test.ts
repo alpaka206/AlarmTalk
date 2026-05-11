@@ -11,6 +11,7 @@ vi.mock('../src/lib/db', () => ({
 
 import authRoutes from '../src/routes/auth';
 import { hashPassword } from '../src/lib/password';
+import { hashEmailVerificationCode } from '../src/lib/email-verification';
 
 const ENV: Env = {
   PERSO_API_KEY: 'x',
@@ -39,18 +40,112 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
-describe('POST /auth/register', () => {
-  it('신규 가입 성공 → 201 + 토큰 반환', async () => {
+const EMAIL_CODE = '123456';
+
+async function pushValidEmailVerification(email: string) {
+  mockDB.pushResult([
+    {
+      id: 'email-code-1',
+      code_hash: await hashEmailVerificationCode(email, EMAIL_CODE, ENV.PASSWORD_PEPPER),
+      attempts: 0,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    },
+  ]);
+}
+
+function registerBody(email: string, password = 'superSecret1', name = '김규원') {
+  return {
+    email,
+    password,
+    name,
+    email_verification_code: EMAIL_CODE,
+  };
+}
+
+describe('POST /auth/email-code', () => {
+  it('신규 이메일에 6자리 인증 코드를 발급한다', async () => {
     mockDB.pushResult([]);
     mockDB.pushResult([], 1);
 
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/auth/register', {
+      jsonReq('POST', '/auth/email-code', { email: 'KIM@Test.COM' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toMatch(/^\d{6}$/);
+    expect(mockDB.calls[1]?.args[1]).toBe('kim@test.com');
+  });
+
+  it('이미 가입된 이메일에는 인증 코드를 보내지 않는다', async () => {
+    mockDB.pushResult([{ id: 'u-1' }]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'kim@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+  });
+});
+
+describe('POST /auth/email-code/verify', () => {
+  it('올바른 6자리 코드를 확인한다', async () => {
+    await pushValidEmailVerification('kim@test.com');
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code/verify', {
         email: 'kim@test.com',
-        password: 'superSecret1',
-        name: '김규원',
+        code: EMAIL_CODE,
       }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('틀린 코드는 attempts를 증가시키고 400을 반환한다', async () => {
+    await pushValidEmailVerification('kim@test.com');
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code/verify', {
+        email: 'kim@test.com',
+        code: '000000',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+    expect(mockDB.calls[1]?.sql).toContain('attempts = attempts + 1');
+  });
+});
+
+describe('POST /auth/register', () => {
+  it('신규 가입 성공 → 201 + 토큰 반환', async () => {
+    mockDB.pushResult([]);
+    await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/register', registerBody('kim@test.com')),
       undefined,
       ENV,
     );
@@ -66,11 +161,7 @@ describe('POST /auth/register', () => {
 
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'kim@test.com',
-        password: 'superSecret1',
-        name: '김규원',
-      }),
+      jsonReq('POST', '/auth/register', registerBody('kim@test.com')),
       undefined,
       ENV,
     );
@@ -86,6 +177,7 @@ describe('POST /auth/register', () => {
         email: 'kim@test.com',
         password: 'short',
         name: '김규원',
+        email_verification_code: EMAIL_CODE,
       }),
       undefined,
       ENV,
@@ -102,6 +194,7 @@ describe('POST /auth/register', () => {
         email: 'not-email',
         password: 'superSecret1',
         name: '김규원',
+        email_verification_code: EMAIL_CODE,
       }),
       undefined,
       ENV,
@@ -340,15 +433,13 @@ describe('GET /auth/me', () => {
 
   it('가입 후 받은 토큰으로 /auth/me 호출 성공', async () => {
     mockDB.pushResult([]);
+    await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
     const app = buildApp();
     const regRes = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'kim@test.com',
-        password: 'superSecret1',
-        name: '김규원',
-      }),
+      jsonReq('POST', '/auth/register', registerBody('kim@test.com')),
       undefined,
       ENV,
     );
@@ -397,15 +488,13 @@ describe('GET /auth/me', () => {
 
   it('삭제된 사용자 토큰 → 404 AUTH_USER_NOT_FOUND', async () => {
     mockDB.pushResult([]);
+    await pushValidEmailVerification('ghost@test.com');
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
     const app = buildApp();
     const regRes = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'ghost@test.com',
-        password: 'superSecret1',
-        name: 'Ghost',
-      }),
+      jsonReq('POST', '/auth/register', registerBody('ghost@test.com', 'superSecret1', 'Ghost')),
       undefined,
       ENV,
     );
@@ -428,15 +517,17 @@ describe('GET /auth/me', () => {
 
   it('/me 응답의 null name/plan → 기본값 매핑', async () => {
     mockDB.pushResult([]);
+    await pushValidEmailVerification('null-test@test.com');
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
     const app = buildApp();
     const regRes = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'null-test@test.com',
-        password: 'superSecret1',
-        name: 'NullTest',
-      }),
+      jsonReq(
+        'POST',
+        '/auth/register',
+        registerBody('null-test@test.com', 'superSecret1', 'NullTest'),
+      ),
       undefined,
       ENV,
     );
@@ -462,15 +553,13 @@ describe('GET /auth/me', () => {
 describe('POST /auth/register — 엣지 케이스', () => {
   it('이메일 대소문자 정규화 (KIM@Test.COM → kim@test.com)', async () => {
     mockDB.pushResult([]);
+    await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'KIM@Test.COM',
-        password: 'superSecret1',
-        name: '김규원',
-      }),
+      jsonReq('POST', '/auth/register', registerBody('KIM@Test.COM')),
       undefined,
       ENV,
     );
@@ -478,7 +567,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     const body = await res.json();
     expect(body.user.email).toBe('kim@test.com');
 
-    const insertCall = mockDB.calls[1];
+    const insertCall = mockDB.calls[2];
     expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
@@ -504,6 +593,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
         email: '',
         password: 'superSecret1',
         name: 'Test',
+        email_verification_code: EMAIL_CODE,
       }),
       undefined,
       ENV,
@@ -513,12 +603,13 @@ describe('POST /auth/register — 엣지 케이스', () => {
 
   it('DB INSERT 실패 → 500 AUTH_REGISTER_FAILED', async () => {
     mockDB.pushResult([]);
+    await pushValidEmailVerification('fail@test.com');
 
     const originalExecute = mockDB.client.execute;
     let callCount = 0;
     mockDB.client.execute = async (query: { sql: string; args: (string | number | null)[] }) => {
       callCount++;
-      if (callCount === 2) {
+      if (callCount === 3) {
         throw new Error('DB connection lost');
       }
       return originalExecute(query);
@@ -526,11 +617,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
 
     const app = buildApp();
     const res = await app.request(
-      jsonReq('POST', '/auth/register', {
-        email: 'fail@test.com',
-        password: 'superSecret1',
-        name: 'Fail',
-      }),
+      jsonReq('POST', '/auth/register', registerBody('fail@test.com', 'superSecret1', 'Fail')),
       undefined,
       ENV,
     );

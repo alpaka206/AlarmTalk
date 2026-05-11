@@ -681,6 +681,26 @@ export const migrations: Migration[] = [
       `ALTER TABLE users ADD COLUMN family_alarm_quiet_windows TEXT NOT NULL DEFAULT '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
     ],
   },
+  {
+    id: 31,
+    name: 'email-verification-codes',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        purpose TEXT NOT NULL DEFAULT 'register',
+        code_hash TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_email_verification_email_purpose
+        ON email_verification_codes(email, purpose, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_email_verification_expires
+        ON email_verification_codes(expires_at)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

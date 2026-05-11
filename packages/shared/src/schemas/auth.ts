@@ -5,9 +5,25 @@ export const PasswordSchema = z
   .min(8, '비밀번호는 최소 8자 이상이어야 합니다')
   .max(128, '비밀번호는 최대 128자까지 허용됩니다');
 
+export const EmailVerificationCodeSchema = z
+  .string()
+  .regex(/^\d{6}$/, '인증 코드는 6자리 숫자여야 합니다');
+
+export const EmailVerificationRequestSchema = z.object({
+  email: z.string().email(),
+});
+export type EmailVerificationRequest = z.infer<typeof EmailVerificationRequestSchema>;
+
+export const EmailVerificationConfirmRequestSchema = z.object({
+  email: z.string().email(),
+  code: EmailVerificationCodeSchema,
+});
+export type EmailVerificationConfirmRequest = z.infer<typeof EmailVerificationConfirmRequestSchema>;
+
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   password: PasswordSchema,
+  email_verification_code: EmailVerificationCodeSchema,
   name: z.string().min(1).max(64),
 });
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;

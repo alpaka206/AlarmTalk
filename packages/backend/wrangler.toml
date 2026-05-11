@@ -20,3 +20,6 @@ crons = ["*/5 * * * *"]
 # FIREBASE_PROJECT_ID = ""
 # JWT_SECRET = ""          # 자체 발급 JWT HS256 서명 시크릿 (최소 32자 권장)
 # PASSWORD_PEPPER = ""     # bcrypt 해싱 전에 비밀번호에 덧붙일 서버측 페퍼
+# RESEND_API_KEY = ""      # 회원가입 이메일 인증 코드 발송용
+# AUTH_EMAIL_FROM = ""     # 예: Voice Alarm <no-reply@your-domain.com>
+# AUTH_EMAIL_REPLY_TO = ""

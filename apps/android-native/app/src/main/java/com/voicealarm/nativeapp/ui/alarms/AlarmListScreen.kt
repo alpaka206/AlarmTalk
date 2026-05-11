@@ -53,7 +53,7 @@ internal fun AlarmListScreen(
     noteBusy: Boolean,
     receivedNotes: List<ReceivedNote>,
     onLogin: (String, String) -> Unit,
-    onRegister: (String, String, String) -> Unit,
+    onRegister: (String, String, String, String) -> Unit,
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,

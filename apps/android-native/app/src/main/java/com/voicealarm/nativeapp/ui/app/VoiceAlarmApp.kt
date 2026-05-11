@@ -336,9 +336,13 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                   contentPadding = padding,
                   mode = route.mode,
                   busy = authBusy,
+                  emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
+                  emailVerified = viewModel.registerEmailVerified,
                   onBack = { authRoute = AuthRoute.Landing },
                   onLogin = viewModel::login,
                   onRegister = viewModel::register,
+                  onRequestEmailVerification = viewModel::requestEmailVerification,
+                  onConfirmEmailVerification = viewModel::confirmEmailVerification,
                   onSwitchMode = {
                       val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
                       authRoute = AuthRoute.Auth(nextMode)
