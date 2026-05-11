@@ -1,7 +1,11 @@
 package com.voicealarm.nativeapp
 
 import com.google.gson.Gson
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupMember
+import java.time.LocalDateTime
+import java.time.ZoneId
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -31,4 +35,77 @@ class AlarmEditorScreenTest {
 
         assertTrue(label.contains("09:00-18:30"))
     }
+
+    @Test
+    fun familyAlarmTimeUnavailableWhenSelectedTimeIsInsideRecipientQuietWindow() {
+        val member = member(
+            windows = listOf(FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")),
+        )
+
+        assertTrue(
+            isFamilyAlarmTimeUnavailable(
+                member = member,
+                hour = 10,
+                minute = 0,
+                repeatDaysMask = 1 shl 1,
+            ),
+        )
+    }
+
+    @Test
+    fun familyAlarmTimeAvailableWhenSelectedTimeIsOutsideRecipientQuietWindow() {
+        val member = member(
+            windows = listOf(FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")),
+        )
+
+        assertFalse(
+            isFamilyAlarmTimeUnavailable(
+                member = member,
+                hour = 6,
+                minute = 0,
+                repeatDaysMask = 1 shl 1,
+            ),
+        )
+    }
+
+    @Test
+    fun familyAlarmLeadRequiresAtLeastThirtyMinutes() {
+        val nowMillis = LocalDateTime.of(2026, 5, 11, 6, 0)
+            .atZone(ZoneId.systemDefault())
+            .toInstant()
+            .toEpochMilli()
+
+        assertTrue(
+            isFamilyAlarmLeadTooSoon(
+                hour = 6,
+                minute = 20,
+                repeatDaysMask = 0,
+                holidayOff = false,
+                nowMillis = nowMillis,
+            ),
+        )
+        assertFalse(
+            isFamilyAlarmLeadTooSoon(
+                hour = 6,
+                minute = 30,
+                repeatDaysMask = 0,
+                holidayOff = false,
+                nowMillis = nowMillis,
+            ),
+        )
+    }
+
+    private fun member(
+        windows: List<FamilyAlarmQuietWindow>? = listOf(FamilyAlarmQuietWindow()),
+    ): FamilyGroupMember =
+        FamilyGroupMember(
+            id = "member-id",
+            userId = "recipient-id",
+            role = "member",
+            joinedAt = "2026-05-11T00:00:00.000Z",
+            email = "recipient@example.com",
+            name = "Recipient",
+            allowFamilyAlarms = true,
+            familyAlarmQuietWindows = windows,
+        )
 }

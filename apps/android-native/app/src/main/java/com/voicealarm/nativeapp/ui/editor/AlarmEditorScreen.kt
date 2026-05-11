@@ -17,16 +17,22 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -36,6 +42,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +67,9 @@ import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
+import java.time.Instant
+import java.time.LocalTime
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -257,6 +267,11 @@ internal fun AlarmEditorScreen(
     fun saveEditor() {
         if (isSaving) return
         if (familyAlarmMode) {
+            val recipient = selectedFamilyRecipient()
+            if (recipient == null) {
+                audioMessage = "알람을 받을 사람을 선택해 주세요."
+                return
+            }
             val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                 hour = editor.hour,
                 minute = editor.minute,
@@ -265,6 +280,12 @@ internal fun AlarmEditorScreen(
             )
             if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
                 val message = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                audioMessage = message
+                showFamilyAlarmToast(message)
+                return
+            }
+            if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
+                val message = "상대가 받지 않도록 설정한 시간이에요."
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -459,6 +480,10 @@ internal fun AlarmEditorScreen(
                     FamilyAlarmTargetCard(
                         recipients = familyRecipients,
                         selectedRecipientId = selectedFamilyRecipientId,
+                        hour = editor.hour,
+                        minute = editor.minute,
+                        repeatDaysMask = editor.repeatDaysMask,
+                        holidayOff = editor.holidayOff,
                         onSelectRecipient = { selectedFamilyRecipientId = it },
                     )
                 }
@@ -631,8 +656,46 @@ internal fun EditorSectionTitle(title: String) {
 internal fun FamilyAlarmTargetCard(
     recipients: List<FamilyGroupMember>,
     selectedRecipientId: String?,
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    holidayOff: Boolean,
     onSelectRecipient: (String) -> Unit,
 ) {
+    var recipientDialogOpen by remember { mutableStateOf(false) }
+    val selectedRecipient = recipients.firstOrNull { it.userId == selectedRecipientId }
+        ?: recipients.firstOrNull()
+    val leadTooSoon = isFamilyAlarmLeadTooSoon(hour, minute, repeatDaysMask, holidayOff)
+    val quietUnavailable = selectedRecipient?.let {
+        isFamilyAlarmTimeUnavailable(it, hour, minute, repeatDaysMask)
+    } ?: false
+
+    if (recipientDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { recipientDialogOpen = false },
+            title = { Text("받는 사람 선택") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    recipients.forEach { recipient ->
+                        RecipientPickerRow(
+                            recipient = recipient,
+                            selected = recipient.userId == selectedRecipient?.userId,
+                            onClick = {
+                                onSelectRecipient(recipient.userId)
+                                recipientDialogOpen = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { recipientDialogOpen = false }) {
+                    Text("닫기")
+                }
+            },
+        )
+    }
+
     Card(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -640,26 +703,175 @@ internal fun FamilyAlarmTargetCard(
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("받는 사람", fontWeight = FontWeight.SemiBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("받는 사람", fontWeight = FontWeight.SemiBold)
+                if (recipients.size > 1) {
+                    TextButton(onClick = { recipientDialogOpen = true }) {
+                        Text("변경")
+                    }
+                }
+            }
             if (recipients.isEmpty()) {
                 MutedText("상대가 알람 설정을 허용하면 여기에 표시돼요.")
             } else {
-                ChipGrid(
-                    options = recipients.map { it.userId to familyMemberLabel(it) },
-                    selected = selectedRecipientId.orEmpty(),
-                    onSelect = onSelectRecipient,
-                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                RecipientSummaryRow(
+                    recipient = requireNotNull(selectedRecipient),
+                    clickable = recipients.size > 1,
+                    onClick = { recipientDialogOpen = true },
                 )
-                MutedText("30분 뒤부터 설정할 수 있어요.")
-                recipients.firstOrNull { it.userId == selectedRecipientId }?.let { recipient ->
-                    MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+
+                FamilyAlarmTargetStatus(
+                    leadTooSoon = leadTooSoon,
+                    quietUnavailable = quietUnavailable,
+                    quietLabel = familyAlarmQuietScheduleLabel(selectedRecipient),
+                )
+
+                if (recipients.size == 1) {
+                    MutedText("수신자는 한 명이라 바로 이 사람에게 설정돼요.")
                 }
             }
         }
     }
+}
+
+@Composable
+private fun RecipientSummaryRow(
+    recipient: FamilyGroupMember,
+    clickable: Boolean,
+    onClick: () -> Unit,
+) {
+    val content: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = familyMemberLabel(recipient),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                recipient.email?.takeIf { it.isNotBlank() }?.let { email ->
+                    MutedText(email)
+                }
+            }
+            if (clickable) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = ">",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+
+    if (clickable) {
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        ) {
+            content()
+        }
+    } else {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun RecipientPickerRow(
+    recipient: FamilyGroupMember,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(familyMemberLabel(recipient), fontWeight = FontWeight.SemiBold)
+                MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+            }
+            if (selected) {
+                Text(
+                    text = "선택됨",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FamilyAlarmTargetStatus(
+    leadTooSoon: Boolean,
+    quietUnavailable: Boolean,
+    quietLabel: String,
+) {
+    val blocked = leadTooSoon || quietUnavailable
+    val statusText = when {
+        leadTooSoon -> "30분 뒤부터 설정할 수 있어요."
+        quietUnavailable -> "이 시간은 상대가 받지 않도록 설정한 시간이에요."
+        else -> "설정 가능"
+    }
+    Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+        color = if (blocked) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        contentColor = if (blocked) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        },
+    ) {
+        Text(
+            text = statusText,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+    MutedText("설정 불가: $quietLabel")
 }
 
 private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
@@ -675,12 +887,49 @@ internal fun familyMemberLabel(member: FamilyGroupMember): String =
         ?: "멤버"
 
 internal fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+    val windows = familyAlarmQuietWindows(member)
+    return windows.joinToString(" · ") { window ->
+        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+    }
+}
+
+internal fun isFamilyAlarmLeadTooSoon(
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    holidayOff: Boolean,
+    nowMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+        hour = hour,
+        minute = minute,
+        repeatDaysMask = repeatDaysMask,
+        holidayOff = holidayOff,
+        nowMillis = nowMillis,
+    )
+    return fireAtMillis - nowMillis < FAMILY_ALARM_MIN_LEAD_MILLIS
+}
+
+internal fun isFamilyAlarmTimeUnavailable(
+    member: FamilyGroupMember,
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    nowMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val dayIndices = familyAlarmTargetDayIndices(hour, minute, repeatDaysMask, nowMillis)
+    return familyAlarmQuietWindows(member).any { window ->
+        dayIndices.any { dayIndex -> window.blocks(dayIndex, hour, minute) }
+    }
+}
+
+private fun familyAlarmQuietWindows(member: FamilyGroupMember): List<FamilyAlarmQuietWindow> {
     val fallback = FamilyAlarmQuietWindow(
         days = safeQuietDays(runCatching { member.familyAlarmQuietDays }.getOrNull()),
         start = safeQuietTime(runCatching { member.familyAlarmQuietStart }.getOrNull(), "09:00"),
         end = safeQuietTime(runCatching { member.familyAlarmQuietEnd }.getOrNull(), "18:30"),
     )
-    val windows = runCatching { member.familyAlarmQuietWindows }.getOrNull()
+    return runCatching { member.familyAlarmQuietWindows }.getOrNull()
         ?.mapNotNull { window ->
             val start = safeQuietTime(runCatching { window.start }.getOrNull(), "")
             val end = safeQuietTime(runCatching { window.end }.getOrNull(), "")
@@ -696,10 +945,42 @@ internal fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
         }
         ?.takeIf { it.isNotEmpty() }
         ?: listOf(fallback)
-    return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+}
+
+private fun familyAlarmTargetDayIndices(
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    nowMillis: Long,
+): List<Int> {
+    if (repeatDaysMask != 0) {
+        return (0..6).filter { dayIndex -> repeatDaysMask and (1 shl dayIndex) != 0 }
+    }
+    val nextFireDate = Instant.ofEpochMilli(
+        AlarmTimeCalculator.nextFireAtMillis(
+            hour = hour,
+            minute = minute,
+            repeatDaysMask = 0,
+            nowMillis = nowMillis,
+        ),
+    ).atZone(ZoneId.systemDefault()).toLocalDate()
+    return listOf(nextFireDate.dayOfWeek.value % 7)
+}
+
+private fun FamilyAlarmQuietWindow.blocks(dayIndex: Int, hour: Int, minute: Int): Boolean {
+    if (dayIndex !in safeQuietDays(days)) return false
+    val startTime = parseQuietTime(start) ?: return false
+    val endTime = parseQuietTime(end) ?: return false
+    val target = LocalTime.of(hour, minute)
+    return if (startTime <= endTime) {
+        !target.isBefore(startTime) && target.isBefore(endTime)
+    } else {
+        !target.isBefore(startTime) || target.isBefore(endTime)
     }
 }
+
+private fun parseQuietTime(value: String): LocalTime? =
+    runCatching { LocalTime.parse(value) }.getOrNull()
 
 private fun safeQuietDays(days: List<Int>?): List<Int> =
     days
