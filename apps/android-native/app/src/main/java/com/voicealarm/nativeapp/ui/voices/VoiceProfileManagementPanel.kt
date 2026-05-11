@@ -733,6 +733,10 @@ private fun VoiceInputModeButton(
             onClick = onClick,
             modifier = modifier,
             shape = RoundedCornerShape(999.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
         ) {
             Text(label)
         }

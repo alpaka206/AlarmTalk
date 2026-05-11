@@ -143,6 +143,8 @@ internal fun VoiceAudioCard(
                             editor.voiceProfileId = it
                             editor.clearTtsMeta()
                         },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
                 Row(
@@ -186,6 +188,8 @@ internal fun VoiceAudioCard(
                             editor.clearTtsMeta()
                             editor.voiceText = ""
                         },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
                 Row(
@@ -217,6 +221,8 @@ internal fun VoiceAudioCard(
                             editor.clearTtsMeta()
                             if (editor.voiceRandomPrompt) editor.voiceText = ""
                         },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             } else {

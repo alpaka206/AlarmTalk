@@ -649,6 +649,8 @@ internal fun FamilyAlarmTargetCard(
                     options = recipients.map { it.userId to familyMemberLabel(it) },
                     selected = selectedRecipientId.orEmpty(),
                     onSelect = onSelectRecipient,
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 MutedText("30분 뒤부터 설정할 수 있어요.")
                 recipients.firstOrNull { it.userId == selectedRecipientId }?.let { recipient ->

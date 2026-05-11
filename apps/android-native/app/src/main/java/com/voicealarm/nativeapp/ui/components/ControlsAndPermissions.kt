@@ -63,7 +63,6 @@ internal fun VoiceAlarmSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -73,7 +72,7 @@ internal fun VoiceAlarmSwitch(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
             checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = if (isDark) Color(0xFFCBD5E1) else Color.White,
+            uncheckedThumbColor = MaterialTheme.colorScheme.surface,
             uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
             uncheckedBorderColor = MaterialTheme.colorScheme.outline,
         ),
@@ -184,14 +183,16 @@ internal fun AlarmRow(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.matchParentSize(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            DeleteRevealButton(
-                modifier = Modifier.width(deleteWidth),
-                onDelete = onDeleteAlarm,
-            )
+        if (deleteRevealed || currentOffsetPx < -0.5f) {
+            Row(
+                modifier = Modifier.matchParentSize(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                DeleteRevealButton(
+                    modifier = Modifier.width(deleteWidth),
+                    onDelete = onDeleteAlarm,
+                )
+            }
         }
 
         Card(
@@ -311,13 +312,13 @@ internal fun DeleteRevealButton(
             Icon(
                 imageVector = Icons.Outlined.Delete,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = MaterialTheme.colorScheme.onError,
             )
             Text(
                 text = "삭제",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = MaterialTheme.colorScheme.onError,
             )
         }
     }

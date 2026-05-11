@@ -81,9 +81,9 @@ internal fun ProfileMenu(
                 .size(40.dp)
                 .clickable { expanded = true },
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surface),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             shadowElevation = 4.dp,
         ) {
             Box(

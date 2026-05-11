@@ -22,11 +22,13 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -484,6 +486,10 @@ internal fun VoiceMessagePanel(
                             FilterChip(
                                 selected = selected,
                                 onClick = { selectedRecipientId = member.userId },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                ),
                                 label = {
                                     Text(
                                         text = member.name ?: member.email ?: "멤버",
@@ -498,11 +504,19 @@ internal fun VoiceMessagePanel(
                         FilterChip(
                             selected = sendMode == VoiceMessageSendMode.Text,
                             onClick = { sendMode = VoiceMessageSendMode.Text },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
                             label = { Text("텍스트") },
                         )
                         FilterChip(
                             selected = sendMode == VoiceMessageSendMode.Tts,
                             onClick = { sendMode = VoiceMessageSendMode.Tts },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
                             label = { Text("음성 메시지") },
                         )
                     }
@@ -515,6 +529,8 @@ internal fun VoiceMessagePanel(
                                 options = voiceOptions,
                                 selected = selectedVoiceProfileId.orEmpty(),
                                 onSelect = { selectedVoiceProfileId = it },
+                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                     }
@@ -582,7 +598,7 @@ internal fun NoteRow(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (unread) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f)
             } else {
                 MaterialTheme.colorScheme.surface
             },
@@ -610,6 +626,10 @@ internal fun NoteRow(
                         AssistChip(
                             onClick = onMarkRead,
                             label = { Text("새") },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.secondary,
+                                labelColor = MaterialTheme.colorScheme.onSecondary,
+                            ),
                         )
                     }
             }
@@ -637,7 +657,7 @@ internal fun NoteRow(
                             .size(48.dp)
                             .background(
                                 color = if (isPlaying) {
-                                    MaterialTheme.colorScheme.primary
+                                    MaterialTheme.colorScheme.secondary
                                 } else {
                                     MaterialTheme.colorScheme.secondaryContainer
                                 },
@@ -655,7 +675,7 @@ internal fun NoteRow(
                                 imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
                                 contentDescription = if (isPlaying) "정지" else "재생",
                                 tint = if (isPlaying) {
-                                    MaterialTheme.colorScheme.onPrimary
+                                    MaterialTheme.colorScheme.onSecondary
                                 } else {
                                     MaterialTheme.colorScheme.onSecondaryContainer
                                 },

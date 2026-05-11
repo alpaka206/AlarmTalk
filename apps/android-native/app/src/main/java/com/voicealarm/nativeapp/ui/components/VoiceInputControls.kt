@@ -85,6 +85,10 @@ internal fun VoiceInputModeButton(
             enabled = enabled,
             modifier = modifier,
             shape = RoundedCornerShape(999.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondary,
+                contentColor = MaterialTheme.colorScheme.onSecondary,
+            ),
         ) {
             Text(label)
         }
@@ -126,7 +130,7 @@ internal fun VoiceRecordControls(
                 containerColor = if (isRecording) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    MaterialTheme.colorScheme.primary
+                    MaterialTheme.colorScheme.secondary
                 },
             ),
         ) {
@@ -252,7 +256,7 @@ internal fun AudioCropRangeSelector(
                         .height((12 + level * 34).dp)
                         .background(
                             if (selected) {
-                                MaterialTheme.colorScheme.primary
+                                MaterialTheme.colorScheme.secondary
                             } else {
                                 MaterialTheme.colorScheme.outline
                             },
@@ -341,7 +345,7 @@ private fun RecordingProgressBar(
                 .fillMaxWidth(progress)
                 .height(6.dp)
                 .background(
-                    if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                     RoundedCornerShape(999.dp),
                 ),
         )

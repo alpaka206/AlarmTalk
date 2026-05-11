@@ -674,13 +674,13 @@ private fun PrettySnackbar(message: String) {
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
         MessageSeverity.Error -> scheme.error
-        MessageSeverity.Success -> scheme.secondary
-        MessageSeverity.Info -> scheme.primaryContainer
+        MessageSeverity.Success -> scheme.tertiary
+        MessageSeverity.Info -> scheme.secondaryContainer
     }
     val contentColor = when (severity) {
         MessageSeverity.Error -> scheme.onError
-        MessageSeverity.Success -> scheme.onSecondary
-        MessageSeverity.Info -> scheme.onPrimaryContainer
+        MessageSeverity.Success -> scheme.onTertiary
+        MessageSeverity.Info -> scheme.onSecondaryContainer
     }
     val iconVector = when (severity) {
         MessageSeverity.Error -> Icons.Outlined.ErrorOutline
