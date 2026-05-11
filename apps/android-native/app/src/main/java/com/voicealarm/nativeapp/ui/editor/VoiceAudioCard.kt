@@ -132,7 +132,7 @@ internal fun VoiceAudioCard(
                 if (voiceProfileBusy) {
                     MutedText("음성 프로필을 불러오는 중이에요.")
                 } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
-                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들거나 공유받으면 자동으로 표시됩니다.")
+                    MutedText("사용 가능한 음성이 없어요.")
                 } else if (profileOptions.isEmpty()) {
                     MutedText("준비 완료된 음성 프로필이 아직 없어요.")
                 } else {
@@ -152,7 +152,7 @@ internal fun VoiceAudioCard(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
-                        MutedText("카테고리에 맞는 문구를 자동으로 넣어요")
+                        MutedText("문구를 추천해요")
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,
@@ -195,7 +195,7 @@ internal fun VoiceAudioCard(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("번역", fontWeight = FontWeight.SemiBold)
-                        MutedText(if (editor.voiceTranslationEnabled) "선택한 언어로 음성을 만들어요" else "입력한 문구 그대로 만들어요")
+                        MutedText(if (editor.voiceTranslationEnabled) "번역 후 생성" else "원문으로 생성")
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceTranslationEnabled,
@@ -232,7 +232,7 @@ internal fun VoiceAudioCard(
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         levels = recordingLevels,
                         enabled = true,
-                        notice = "녹음은 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 저장돼요.",
+                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
                         onRecordClick = onRecord,
                     )
                 } else {
@@ -244,7 +244,7 @@ internal fun VoiceAudioCard(
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         enabled = !isRecording,
                         uploadLabel = "파일 업로드",
-                        notice = "원하는 시작과 끝을 고르세요. 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 알람에 저장돼요.",
+                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
                         onPickFile = onPick,
                         onCropChange = onCropChange,
                         onPreviewCrop = onPreviewCrop,
@@ -269,7 +269,7 @@ internal fun VoiceAudioCard(
                     !isRecording
                 ) {
                     Text(
-                        text = "녹음하거나 파일을 업로드해 주세요.",
+                        text = "녹음 또는 파일 업로드",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

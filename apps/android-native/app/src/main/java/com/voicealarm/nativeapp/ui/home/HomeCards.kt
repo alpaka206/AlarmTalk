@@ -127,9 +127,9 @@ internal fun NextAlarmHeroCard(
 ) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             modifier = Modifier
@@ -164,7 +164,7 @@ internal fun NextAlarmHeroCard(
                 Text(
                     modifier = Modifier.weight(1f),
                     text = nextAlarm?.let { "${it.label} - ${playModeLabel(it.playMode)}" }
-                        ?: "아직 설정된 알람이 없어요. 눌러서 만들어보세요.",
+                        ?: "첫 알람 만들기",
                     style = if (nextAlarm == null) {
                         MaterialTheme.typography.bodySmall
                     } else {
@@ -190,8 +190,8 @@ internal fun QuickStartGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "빠른 시작",
-            style = MaterialTheme.typography.titleLarge,
+            text = "바로 실행",
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -212,7 +212,7 @@ internal fun QuickStartGrid(
         }
         if (canCreateFamilyAlarm) {
             HomeActionCard(
-                label = "상대방 알람 맞춰주기",
+                label = "상대 알람",
                 icon = Icons.Outlined.People,
                 onClick = onAddFamilyAlarm,
                 locked = alarmLocked,
@@ -233,7 +233,7 @@ internal fun HomeActionCard(
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
@@ -241,7 +241,7 @@ internal fun HomeActionCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 20.dp, horizontal = 14.dp),
+                    .padding(vertical = 16.dp, horizontal = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {

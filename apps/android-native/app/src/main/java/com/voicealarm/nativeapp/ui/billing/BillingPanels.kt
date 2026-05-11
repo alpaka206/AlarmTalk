@@ -77,28 +77,28 @@ internal fun SubscriptionPanel(
                 name = "무료",
                 price = "",
                 description = "",
-                features = listOf("일반 알람만 사용 가능", "캐릭터"),
+                features = listOf("일반 알람", "캐릭터"),
             ),
             SubscriptionPlanOption(
                 key = "personal",
                 name = "개인",
                 price = "월 4,900원",
-                description = "AI 음성 알람과 캐릭터",
-                features = listOf("AI 음성 프로필 1개", "음성 메시지 알람"),
+                description = "",
+                features = listOf("음성 프로필", "음성 메시지"),
             ),
             SubscriptionPlanOption(
                 key = "couple",
                 name = "커플",
                 price = "월 7,900원",
-                description = "두 사람이 음성, 메시지 공유",
-                features = listOf("음성 공유 가능", "메시지 전송 가능", "최대 2명"),
+                description = "",
+                features = listOf("음성 공유", "메시지", "2명"),
             ),
             SubscriptionPlanOption(
                 key = "family",
                 name = "가족",
                 price = "월 9,900원",
-                description = "가족이 음성, 메시지 공유",
-                features = listOf("음성 공유 가능", "메시지 전송 가능", "최대 6명"),
+                description = "",
+                features = listOf("음성 공유", "메시지", "6명"),
             ),
         )
     }
@@ -232,7 +232,7 @@ internal fun SubscriptionPanel(
                     if (selection.gift) {
                         "내 구독을 변경하지 않고 다른 사람이 등록할 수 있는 이용권 코드를 만들어요."
                     } else {
-                        "구매를 진행할까요? 구매 후 공유하기로 코드를 보낼 수 있어요."
+                        "구매를 진행할까요?"
                     },
                 )
             },
@@ -377,7 +377,7 @@ internal fun SubscriptionPlanCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                 ) {
-                    Text("?좊Ъ?섍린")
+                    Text("선물하기")
                 }
             }
             if (vouchers.isNotEmpty()) {

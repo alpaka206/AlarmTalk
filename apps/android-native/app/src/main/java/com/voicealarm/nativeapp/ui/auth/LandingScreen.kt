@@ -54,7 +54,7 @@ internal fun LandingScreen(
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "소중한 사람의 목소리로 깨어나세요",
+            text = "목소리로 울리는 알람",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

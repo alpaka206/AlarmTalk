@@ -54,6 +54,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.data.AlarmOrigins
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -98,6 +99,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val isPlanOwner = familyGroup?.role == "owner" &&
         familyGroup.group != null &&
         subscriptionResponse?.plan?.planType == "family"
+    val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
+        alarms.count { alarm ->
+            alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
+        }
+    }
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -117,8 +124,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         if (sessionRouteKey != null) {
             navController.navigateHomeClearingStack()
         }
+        viewModel.loadReceivedAlarmBadgeState()
         planGateMessage = null
         authRoute = AuthRoute.Landing
+    }
+
+    LaunchedEffect(sessionRouteKey, alarms) {
+        if (sessionRouteKey != null) {
+            viewModel.ensureReceivedAlarmBadgeBaseline(alarms)
+        }
     }
 
     LaunchedEffect(authSession?.token) {
@@ -154,6 +168,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             NativeTab.Growth,
             NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
             null -> Unit
+        }
+    }
+
+    LaunchedEffect(currentTab, alarms, authSession?.user?.id) {
+        if (currentTab == NativeTab.Alarms && authSession != null) {
+            viewModel.markReceivedAlarmsSeen(alarms)
         }
     }
 
@@ -301,6 +321,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
+                    unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
                     unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
                     onSelectTab = ::navigateToTab,
                 )

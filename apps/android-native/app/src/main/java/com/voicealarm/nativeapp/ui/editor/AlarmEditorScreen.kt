@@ -292,14 +292,14 @@ internal fun AlarmEditorScreen(
                 return
             }
             if (editor.localAudioUri.isNullOrBlank()) {
-                audioMessage = "음성 오디오를 녹음하거나 파일로 선택해 주세요"
+                audioMessage = "녹음하거나 파일을 선택해 주세요"
                 return
             }
             submitDraft(editor.toDraft())
             return
         }
         if (authSession == null) {
-            audioMessage = "AI 음성 알람은 로그인 후 사용할 수 있어요"
+            audioMessage = "음성 메시지는 로그인 후 사용할 수 있어요"
             return
         }
         val profileId = editor.voiceProfileId
@@ -310,7 +310,7 @@ internal fun AlarmEditorScreen(
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank()) {
-            audioMessage = "읽어줄 문구를 입력하거나 랜덤 문구를 켜 주세요"
+            audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요"
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
