@@ -8,11 +8,23 @@ import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 
+data class FamilyAlarmQuietWindow(
+    val days: List<Int> = listOf(1, 2, 3, 4, 5),
+    val start: String = "09:00",
+    val end: String = "18:30",
+)
+
 data class AuthUser(
     val id: String,
     val email: String,
     val name: String = "",
     val plan: String = "free",
+    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
+    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
+    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
+    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
+    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow> =
+        listOf(FamilyAlarmQuietWindow()),
 )
 
 data class AuthTokenResponse(
@@ -41,11 +53,21 @@ data class GoogleLoginRequest(
 
 data class UpdateProfileRequest(
     val name: String? = null,
+    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean? = null,
+    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int>? = null,
+    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
+    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
+    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
 )
 
 data class UpdateProfileResponse(
     val success: Boolean,
     val name: String? = null,
+    @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean? = null,
+    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int>? = null,
+    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
+    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
+    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
 )
 
 data class DeleteAccountResponse(

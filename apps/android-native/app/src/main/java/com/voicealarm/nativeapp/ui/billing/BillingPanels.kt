@@ -84,7 +84,7 @@ internal fun SubscriptionPanel(
                 name = "개인",
                 price = "월 4,900원",
                 description = "AI 음성 알람과 캐릭터",
-                features = listOf("AI 음성 프로필 2개", "TTS 알람"),
+                features = listOf("AI 음성 프로필 1개", "음성 메시지 알람"),
             ),
             SubscriptionPlanOption(
                 key = "couple",

@@ -3,6 +3,8 @@ package com.voicealarm.nativeapp
 import android.util.Log
 import androidx.lifecycle.viewModelScope
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 internal fun MainViewModel.refreshSocial() {
@@ -15,32 +17,40 @@ internal fun MainViewModel.preloadSocial() {
 }
 
 private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
+    if (socialBusy) return
     val authorization = bearerOrMessage("Login is required to load shared plan data.") ?: return
+    socialBusy = true
     viewModelScope.launch {
-        socialBusy = true
-        runCatching {
-            val group = api.getFamilyGroup(authorization)
-            val sharedVoices = runCatching {
-                api.listFamilyVoiceProfiles(authorization).profiles
+        try {
+            runCatching {
+                coroutineScope {
+                    val group = async { api.getFamilyGroup(authorization) }
+                    val sharedVoices = async {
+                        runCatching {
+                            api.listFamilyVoiceProfiles(authorization).profiles
+                        }.onFailure { error ->
+                            Log.w(TAG, "Failed to refresh family voice profiles", error)
+                        }.getOrElse {
+                            familyVoices
+                        }
+                    }
+                    SocialSnapshot(
+                        familyGroup = group.await(),
+                        familyVoices = sharedVoices.await(),
+                    )
+                }
+            }.onSuccess { snapshot ->
+                familyGroup = snapshot.familyGroup
+                familyVoices = snapshot.familyVoices
             }.onFailure { error ->
-                Log.w(TAG, "Failed to refresh family voice profiles", error)
-            }.getOrElse {
-                familyVoices
+                Log.e(TAG, "Failed to refresh social data", error)
+                if (showMessage) {
+                    message = userFacingError(error, "Failed to load shared plan data")
+                }
             }
-            SocialSnapshot(
-                familyGroup = group,
-                familyVoices = sharedVoices,
-            )
-        }.onSuccess { snapshot ->
-            familyGroup = snapshot.familyGroup
-            familyVoices = snapshot.familyVoices
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to refresh social data", error)
-            if (showMessage) {
-                message = userFacingError(error, "Failed to load shared plan data")
-            }
+        } finally {
+            socialBusy = false
         }
-        socialBusy = false
     }
 }
 

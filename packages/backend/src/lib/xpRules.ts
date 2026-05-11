@@ -11,7 +11,7 @@ export type XpEvent =
 export const DAILY_XP_CAP = 200;
 
 const XP_TABLE: Record<XpEvent, number> = {
-  alarm_completed: 30,
+  alarm_completed: 10,
   alarm_snoozed: 5,
   alarm_dismissed: 0,
   family_alarm_received: 10,

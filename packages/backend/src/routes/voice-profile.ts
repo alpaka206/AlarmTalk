@@ -8,7 +8,7 @@ import { logRouteError } from '../lib/logger';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 
 const voiceProfile = new Hono<AppEnv>();
-const MAX_VOICE_PROFILES = 2;
+const MAX_VOICE_PROFILES = 1;
 
 /**
  * Dev/cleanup helper: delete every voice profile (and its dependent

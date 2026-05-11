@@ -38,4 +38,4 @@ internal enum class NativeTab {
     Billing,
 }
 
-internal const val MAX_VOICE_PROFILES = 2
+internal const val MAX_VOICE_PROFILES = 1

@@ -280,21 +280,21 @@ describe('GET /:id/stats — 통계 (voice-profile)', () => {
 /*  POST /vp/clone — 음성 클론                                         */
 /* ------------------------------------------------------------------ */
 describe('POST /clone — 음성 클론 (voice-profile)', () => {
-  it('프로필 2개 이상이면 403 VOICE_LIMIT_REACHED', async () => {
-    mockDB.pushResult([{ count: 2 }]);
+  it('프로필 1개 이상이면 403 VOICE_LIMIT_REACHED', async () => {
+    mockDB.pushResult([{ count: 1 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_LIMIT_REACHED');
-    expect(body.error).toContain('2');
+    expect(body.error).toContain('1');
   });
 
-  it('프로필 정확히 1개이면 통과', async () => {
-    mockDB.pushResult([{ count: 1 }]);
+  it('프로필이 없으면 통과', async () => {
+    mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-1' });
-    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '두번째'));
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '첫번째'));
     expect(res.status).toBe(201);
   });
 

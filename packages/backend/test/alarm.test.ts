@@ -235,6 +235,15 @@ describe('POST /alarm — 알람 생성', () => {
   });
 
   it('target_user_id 있고 친구이면 201', async () => {
+    // target user allows family alarms
+    mockDB.pushResult([{
+      id: 'user-2-pk',
+      google_id: 'user-2',
+      allow_family_alarms: 1,
+      family_alarm_quiet_days: '[1,2,3,4,5]',
+      family_alarm_quiet_start: '09:00',
+      family_alarm_quiet_end: '18:30',
+    }]);
     mockDB.pushResult([{ id: ID.friendship }]); // friendship exists
     mockDB.pushResult([{ plan: 'plus' }]); // target user plan
     mockDB.pushResult([{ id: ID.message }]); // message exists

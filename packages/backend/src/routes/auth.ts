@@ -11,6 +11,7 @@ import {
   GoogleLoginRequestSchema,
 } from '@voice-alarm/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
+import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -62,7 +63,17 @@ auth.post('/register', async (c) => {
     return c.json(
       {
         token,
-        user: { id, email: normalizedEmail, name, plan: 'free' as const },
+        user: {
+          id,
+          email: normalizedEmail,
+          name,
+          plan: 'free' as const,
+          allow_family_alarms: false,
+          family_alarm_quiet_days: [1, 2, 3, 4, 5],
+          family_alarm_quiet_start: '09:00',
+          family_alarm_quiet_end: '18:30',
+          family_alarm_quiet_windows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+        },
       },
       201,
     );
@@ -91,7 +102,11 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, password_hash, name, plan FROM users WHERE email = ?`,
+      sql: `SELECT id, email, password_hash, name, plan,
+                   allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users WHERE email = ?`,
       args: [normalizedEmail],
     });
 
@@ -121,6 +136,9 @@ auth.post('/login', async (c) => {
       c.env.JWT_SECRET,
     );
 
+    const familyAlarmSettings = familyAlarmSettingsFromRow(
+      row as unknown as Record<string, unknown>,
+    );
     return c.json({
       token,
       user: {
@@ -128,6 +146,11 @@ auth.post('/login', async (c) => {
         email: row.email,
         name: row.name ?? '',
         plan: row.plan ?? 'free',
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
       },
     });
   } catch (err) {
@@ -158,7 +181,10 @@ auth.post('/google', async (c) => {
     const name = google.name ?? '';
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, email, name, plan
+      sql: `SELECT id, google_id, email, name, plan,
+                   allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
             FROM users
             WHERE google_id = ? OR email = ?
             LIMIT 1`,
@@ -169,13 +195,15 @@ auth.post('/google', async (c) => {
     let plan: 'free' | 'plus' | 'family';
 
     if (existing.rows.length > 0) {
-      const row = typedRow<{
-        id: string;
-        google_id: string | null;
-        email: string;
-        name: string | null;
-        plan: 'free' | 'plus' | 'family' | null;
-      }>(existing.rows[0]!);
+      const row = typedRow<
+        {
+          id: string;
+          google_id: string | null;
+          email: string;
+          name: string | null;
+          plan: 'free' | 'plus' | 'family' | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
       userId = row.id;
       plan = row.plan ?? 'free';
 
@@ -200,6 +228,24 @@ auth.post('/google', async (c) => {
       c.env.JWT_SECRET,
     );
 
+    const fresh = await db.execute({
+      sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      args: [userId, googleId],
+    });
+    const familyAlarmSettings =
+      fresh.rows.length > 0
+        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : {
+            allowFamilyAlarms: false,
+            quietDays: [1, 2, 3, 4, 5],
+            quietStart: '09:00',
+            quietEnd: '18:30',
+            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          };
+
     return c.json({
       token,
       user: {
@@ -207,6 +253,11 @@ auth.post('/google', async (c) => {
         email,
         name,
         plan,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
       },
     });
   } catch (err) {
@@ -233,24 +284,36 @@ auth.get('/me', async (c) => {
     const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
     const db = getDB(c.env);
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
+      sql: `SELECT id, email, name, plan,
+                   allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
     }
-    const row = typedRow<{
-      id: string;
-      email: string;
-      name: string | null;
-      plan: 'free' | 'plus' | 'family' | null;
-    }>(result.rows[0]!);
+    const row = typedRow<
+      {
+        id: string;
+        email: string;
+        name: string | null;
+        plan: 'free' | 'plus' | 'family' | null;
+      } & Record<string, unknown>
+    >(result.rows[0]!);
+    const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     return c.json({
       user: {
         id: row.id,
         email: row.email,
         name: row.name ?? '',
         plan: row.plan ?? 'free',
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
       },
     });
   } catch (err) {

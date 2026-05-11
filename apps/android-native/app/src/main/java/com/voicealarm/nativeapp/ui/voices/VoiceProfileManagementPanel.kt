@@ -445,7 +445,7 @@ internal fun VoiceProfileManagementPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "프로필 목록 (${voiceProfiles.size}/${MAX_VOICE_PROFILES})",
+                text = "프로필 목록",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -455,10 +455,6 @@ internal fun VoiceProfileManagementPanel(
             ) {
                 Text("추가")
             }
-        }
-
-        if (isLimitReached) {
-            MutedText("음성 프로필은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요.")
         }
 
         if (voiceProfiles.isEmpty()) {
@@ -910,12 +906,32 @@ internal fun VoiceProfileRow(
 @Composable
 private fun SharedVoiceProfileRow(profile: FamilyVoiceProfile) {
     OutlinedCard {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(profile.name, fontWeight = FontWeight.SemiBold)
-            MutedText(profile.ownerName?.takeIf { it.isNotBlank() } ?: "공유 음성")
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                MutedText(profile.ownerName?.takeIf { it.isNotBlank() }?.let { "$it 님의 음성" } ?: "공유받은 음성")
+            }
         }
     }
 }

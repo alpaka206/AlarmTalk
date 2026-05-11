@@ -662,6 +662,25 @@ export const migrations: Migration[] = [
         ON voucher_redemptions(user_id)`,
     ],
   },
+  {
+    // 상대방이 내 알람을 설정할 수 있는 시간대 제한.
+    // 기본은 월-금 09:00-18:30 설정 불가. allow_family_alarms 가 꺼져 있으면 전체 차단.
+    id: 29,
+    name: 'family-alarm-quiet-time',
+    statements: [
+      `ALTER TABLE users ADD COLUMN family_alarm_quiet_days TEXT NOT NULL DEFAULT '[1,2,3,4,5]'`,
+      `ALTER TABLE users ADD COLUMN family_alarm_quiet_start TEXT NOT NULL DEFAULT '09:00'`,
+      `ALTER TABLE users ADD COLUMN family_alarm_quiet_end TEXT NOT NULL DEFAULT '18:30'`,
+    ],
+  },
+  {
+    // 여러 개의 설정 불가 시간 규칙. 기존 단일 필드는 첫 번째 규칙으로 유지한다.
+    id: 30,
+    name: 'family-alarm-quiet-windows',
+    statements: [
+      `ALTER TABLE users ADD COLUMN family_alarm_quiet_windows TEXT NOT NULL DEFAULT '[{"days":[1,2,3,4,5],"start":"09:00","end":"18:30"}]'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

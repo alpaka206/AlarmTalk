@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+﻿import { describe, it, expect } from 'vitest';
 import {
   DAILY_XP_CAP,
   applyDailyXpCap,
@@ -9,8 +9,8 @@ import {
 } from '../src/lib/xpRules';
 
 describe('computeXpForEvent', () => {
-  it('alarm_completed=30, alarm_snoozed=5, alarm_dismissed=0', () => {
-    expect(computeXpForEvent('alarm_completed')).toBe(30);
+  it('alarm_completed=10, alarm_snoozed=5, alarm_dismissed=0', () => {
+    expect(computeXpForEvent('alarm_completed')).toBe(10);
     expect(computeXpForEvent('alarm_snoozed')).toBe(5);
     expect(computeXpForEvent('alarm_dismissed')).toBe(0);
   });
@@ -20,7 +20,6 @@ describe('computeXpForEvent', () => {
     expect(computeXpForEvent('friend_invited')).toBe(50);
   });
 });
-
 describe('computeAffectionForEvent', () => {
   it('alarm_completed=2, family_alarm_received=3, friend_invited=5', () => {
     expect(computeAffectionForEvent('alarm_completed')).toBe(2);
@@ -66,8 +65,8 @@ describe('applyDailyXpCap', () => {
   });
 
   it('캡 초과 → 남은 몫만 지급 + capped=true', () => {
-    expect(applyDailyXpCap(30, 190)).toEqual({
-      grantedXp: 10,
+    expect(applyDailyXpCap(10, 195)).toEqual({
+      grantedXp: 5,
       capped: true,
       remainingCap: 0,
     });
@@ -116,17 +115,17 @@ describe('applyDailyXpCap', () => {
 });
 
 describe('computeGrant', () => {
-  it('여유 내 alarm_completed → xp 30 + 애정도 2', () => {
+  it('여유 내 alarm_completed → xp 10 + 애정도 2', () => {
     const r = computeGrant('alarm_completed', 0);
     expect(r.event).toBe('alarm_completed');
-    expect(r.xp.grantedXp).toBe(30);
+    expect(r.xp.grantedXp).toBe(10);
     expect(r.xp.capped).toBe(false);
     expect(r.affection).toBe(2);
   });
 
   it('캡 초과되어 일부만 지급돼도 애정도는 온전히 유지', () => {
-    const r = computeGrant('alarm_completed', 190);
-    expect(r.xp.grantedXp).toBe(10);
+    const r = computeGrant('alarm_completed', 195);
+    expect(r.xp.grantedXp).toBe(5);
     expect(r.xp.capped).toBe(true);
     expect(r.affection).toBe(2);
   });

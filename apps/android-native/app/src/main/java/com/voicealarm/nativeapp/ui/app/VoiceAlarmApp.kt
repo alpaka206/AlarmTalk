@@ -95,6 +95,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionRouteKey = authSession?.user?.id
+    val isPlanOwner = familyGroup?.role == "owner" &&
+        familyGroup.group != null &&
+        subscriptionResponse?.plan?.planType == "family"
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -124,6 +127,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
+            viewModel.preloadNotes()
         }
     }
 
@@ -297,6 +301,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
+                    unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
                     onSelectTab = ::navigateToTab,
                 )
             }
@@ -412,6 +417,18 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestPermissionGate = viewModel::requestPermissionGate,
+                          profileMenu = if (tab == NativeTab.Alarms) {
+                              {
+                                  ProfileMenu(
+                                      isPlanOwner = isPlanOwner,
+                                      onSelectTab = ::navigateToTab,
+                                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                                  )
+                              }
+                          } else {
+                              null
+                          },
                       )
                   }
               }
@@ -474,6 +491,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
                       onEditNickname = viewModel::requestEditNickname,
+                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )
@@ -494,23 +512,22 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
               }
           }
           if (currentTab != null) {
-              val isPlanOwner = familyGroup?.role == "owner" &&
-                  familyGroup.group != null &&
-                  subscriptionResponse?.plan?.planType == "family"
-              Box(
-                  modifier = Modifier
-                      .align(Alignment.TopEnd)
-                      .padding(
-                          top = padding.calculateTopPadding() + 24.dp,
-                          end = 24.dp,
-                      ),
-              ) {
-                  ProfileMenu(
-                      isPlanOwner = isPlanOwner,
-                      onSelectTab = ::navigateToTab,
-                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
-                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
-                  )
+              if (currentTab != NativeTab.Alarms) {
+                  Box(
+                      modifier = Modifier
+                          .align(Alignment.TopEnd)
+                          .padding(
+                              top = padding.calculateTopPadding() + 24.dp,
+                              end = 24.dp,
+                          ),
+                  ) {
+                      ProfileMenu(
+                          isPlanOwner = isPlanOwner,
+                          onSelectTab = ::navigateToTab,
+                          onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                          onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                      )
+                  }
               }
           }
           SnackbarHost(

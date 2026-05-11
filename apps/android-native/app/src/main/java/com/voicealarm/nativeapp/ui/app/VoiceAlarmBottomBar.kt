@@ -13,11 +13,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -35,6 +37,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun VoiceAlarmBottomBar(
     selectedTab: NativeTab,
+    unreadMessageCount: Int,
     onSelectTab: (NativeTab) -> Unit,
 ) {
     Surface(
@@ -77,8 +80,9 @@ internal fun VoiceAlarmBottomBar(
             VoiceAlarmTabItem(
                 tab = NativeTab.Messages,
                 selectedTab = selectedTab,
-                icon = Icons.Outlined.Message,
+                icon = Icons.AutoMirrored.Outlined.Message,
                 label = "메시지",
+                badgeCount = unreadMessageCount,
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -92,6 +96,7 @@ internal fun VoiceAlarmTabItem(
     selectedTab: NativeTab,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
+    badgeCount: Int = 0,
     onSelectTab: (NativeTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -119,16 +124,26 @@ internal fun VoiceAlarmTabItem(
             )
             .padding(vertical = 6.dp),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+        BadgedBox(
+            badge = {
+                if (badgeCount > 0) {
+                    Badge {
+                        Text(text = badgeLabel(badgeCount))
+                    }
+                }
             },
-            modifier = Modifier.size(22.dp),
-        )
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                modifier = Modifier.size(22.dp),
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -141,3 +156,5 @@ internal fun VoiceAlarmTabItem(
         )
     }
 }
+
+private fun badgeLabel(count: Int): String = if (count > 99) "99+" else count.toString()

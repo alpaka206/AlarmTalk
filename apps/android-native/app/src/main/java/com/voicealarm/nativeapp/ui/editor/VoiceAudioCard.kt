@@ -111,11 +111,6 @@ internal fun VoiceAudioCard(
             )
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                Text(
-                    text = "서버에서 음성을 만들고, 알람 전에 기기에 저장합니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
                 val readyFamilyVoices = familyVoices.filter {
                     (it.status == null || it.status == "ready") && it.isShared != false
@@ -157,7 +152,7 @@ internal fun VoiceAudioCard(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
-                        MutedText("카테고리와 언어에 맞는 문구를 자동으로 넣어요")
+                        MutedText("카테고리에 맞는 문구를 자동으로 넣어요")
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,
@@ -175,7 +170,8 @@ internal fun VoiceAudioCard(
                             editor.voiceText = it.take(200)
                             editor.clearTtsMeta()
                         },
-                        label = { Text("읽어줄 문구") },
+                        label = { Text("음성 메시지") },
+                        placeholder = { Text("알람에서 들을 음성 메시지") },
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -192,16 +188,37 @@ internal fun VoiceAudioCard(
                         },
                     )
                 }
-                Text("언어", fontWeight = FontWeight.SemiBold)
-                ChipGrid(
-                    options = TtsLanguages,
-                    selected = editor.voiceLanguage,
-                    onSelect = {
-                        editor.voiceLanguage = it
-                        editor.clearTtsMeta()
-                        if (editor.voiceRandomPrompt) editor.voiceText = ""
-                    },
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("번역", fontWeight = FontWeight.SemiBold)
+                        MutedText(if (editor.voiceTranslationEnabled) "선택한 언어로 음성을 만들어요" else "입력한 문구 그대로 만들어요")
+                    }
+                    VoiceAlarmSwitch(
+                        checked = editor.voiceTranslationEnabled,
+                        onCheckedChange = {
+                            editor.voiceTranslationEnabled = it
+                            if (!it) editor.voiceLanguage = "ko"
+                            else if (editor.voiceLanguage == "ko") editor.voiceLanguage = "en"
+                            editor.clearTtsMeta()
+                            if (editor.voiceRandomPrompt) editor.voiceText = ""
+                        },
+                    )
+                }
+                if (editor.voiceTranslationEnabled) {
+                    ChipGrid(
+                        options = TtsLanguages,
+                        selected = editor.voiceLanguage,
+                        onSelect = {
+                            editor.voiceLanguage = it
+                            editor.clearTtsMeta()
+                            if (editor.voiceRandomPrompt) editor.voiceText = ""
+                        },
+                    )
+                }
             } else {
                 VoiceCaptureModeSelector(
                     selected = localInputMode,

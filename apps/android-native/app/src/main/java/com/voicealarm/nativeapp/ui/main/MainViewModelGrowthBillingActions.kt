@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.alarm.SocialNotificationTracker
 import com.voicealarm.nativeapp.data.AlarmAppContainer
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
@@ -43,6 +44,8 @@ import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -64,26 +67,35 @@ internal fun MainViewModel.preloadCharacterAndBilling() {
 }
 
 private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
+    if (characterBusy || billingBusy) return
     val authorization = bearerOrMessage("성장 정보를 불러오려면 먼저 로그인해 주세요") ?: return
+    characterBusy = true
+    billingBusy = true
     viewModelScope.launch {
-        characterBusy = true
-        billingBusy = true
-        runCatching {
-            CharacterBillingSnapshot(
-                character = api.getCharacter(authorization),
-                subscription = api.getSubscription(authorization),
-                vouchers = api.listVouchers(authorization).vouchers,
-            )
-        }.onSuccess { snapshot ->
-            characterResponse = snapshot.character
-            subscriptionResponse = snapshot.subscription
-            vouchers = snapshot.vouchers
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to load character or billing", error)
-            if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
+        try {
+            runCatching {
+                coroutineScope {
+                    val character = async { api.getCharacter(authorization) }
+                    val subscription = async { api.getSubscription(authorization) }
+                    val vouchers = async { api.listVouchers(authorization).vouchers }
+                    CharacterBillingSnapshot(
+                        character = character.await(),
+                        subscription = subscription.await(),
+                        vouchers = vouchers.await(),
+                    )
+                }
+            }.onSuccess { snapshot ->
+                characterResponse = snapshot.character
+                subscriptionResponse = snapshot.subscription
+                vouchers = snapshot.vouchers
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load character or billing", error)
+                if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
+            }
+        } finally {
+            characterBusy = false
+            billingBusy = false
         }
-        characterBusy = false
-        billingBusy = false
     }
 }
 
@@ -129,18 +141,36 @@ internal fun MainViewModel.registerCode(code: String) {
 }
 
 internal fun MainViewModel.refreshNotes() {
+    refreshNotesData(showMessage = true)
+}
+
+internal fun MainViewModel.preloadNotes() {
+    if (authSession == null || noteBusy) return
+    refreshNotesData(showMessage = false)
+}
+
+private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
+    if (noteBusy) return
     val authorization = bearerOrMessage("음성 메시지를 불러오려면 먼저 로그인해 주세요") ?: return
+    noteBusy = true
     viewModelScope.launch {
-        noteBusy = true
-        runCatching {
-            api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
-        }.onSuccess { notes ->
-            receivedNotes = notes
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to refresh notes", error)
-            message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
+        try {
+            runCatching {
+                api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
+            }.onSuccess { notes ->
+                SocialNotificationTracker.notifyNewNotes(
+                    context = getApplication(),
+                    notes = notes,
+                    allowInitialNotify = false,
+                )
+                receivedNotes = notes
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to refresh notes", error)
+                if (showMessage) message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
+            }
+        } finally {
+            noteBusy = false
         }
-        noteBusy = false
     }
 }
 

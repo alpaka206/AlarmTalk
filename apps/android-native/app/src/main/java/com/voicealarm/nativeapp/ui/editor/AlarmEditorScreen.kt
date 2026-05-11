@@ -1,9 +1,12 @@
 package com.voicealarm.nativeapp
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -97,6 +100,21 @@ internal fun AlarmEditorScreen(
     }
     var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
         mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    }
+    val ringtonePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val pickedUri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        if (pickedUri == null) {
+            editor.alarmSoundUri = null
+            editor.alarmSoundLabel = "무음"
+            editor.alarmVolumePercent = 0
+            return@rememberLauncherForActivityResult
+        }
+        editor.alarmSoundUri = pickedUri.toString()
+        editor.alarmSoundLabel = ringtoneTitle(context, pickedUri)
+        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
     }
 
     fun selectedFamilyRecipient(): FamilyGroupMember? =
@@ -290,7 +308,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "사용할 음성 프로필을 선택해 주세요"
             return
         }
-        val text = editor.localizedTtsTextForSave()
+        val text = editor.ttsTextForSave()
         if (text.isBlank()) {
             audioMessage = "읽어줄 문구를 입력하거나 랜덤 문구를 켜 주세요"
             return
@@ -303,7 +321,7 @@ internal fun AlarmEditorScreen(
             profileId = profileId,
             text = text,
             category = editor.voiceCategory,
-            language = editor.voiceLanguage,
+            language = editor.activeVoiceLanguage(),
         )
         audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
             editor.setGeneratedTtsAudio(
@@ -328,7 +346,8 @@ internal fun AlarmEditorScreen(
                         voiceProfileId = profileId,
                         text = text,
                         category = editor.voiceCategory,
-                        language = editor.voiceLanguage,
+                        language = editor.activeVoiceLanguage(),
+                        translate = editor.voiceTranslationEnabled,
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -337,7 +356,7 @@ internal fun AlarmEditorScreen(
                     profileId = profileId,
                     text = response.text,
                     category = editor.voiceCategory,
-                    language = editor.voiceLanguage,
+                    language = editor.activeVoiceLanguage(),
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
                     audioStore.cacheGeneratedAudio(
@@ -552,6 +571,8 @@ internal fun AlarmEditorScreen(
                     snoozeMinutes = editor.snoozeMinutes,
                     snoozeRepeatLimit = editor.snoozeRepeatLimit,
                     vibrationPattern = editor.vibrationPattern,
+                    alarmVolumePercent = editor.alarmVolumePercent,
+                    alarmSoundLabel = editor.alarmSoundLabel,
                     onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                     onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                     onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -559,6 +580,25 @@ internal fun AlarmEditorScreen(
                         editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                     },
                     onVibrationSelect = { editor.vibrationPattern = it },
+                    onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                    onPickAlarmSound = {
+                        ringtonePickerLauncher.launch(
+                            Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람 소리 선택")
+                                val current = editor.alarmSoundUri?.let(Uri::parse)
+                                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                            },
+                        )
+                    },
+                    onUseDefaultAlarmSound = {
+                        editor.alarmSoundUri = null
+                        editor.alarmSoundLabel = null
+                        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
+                    },
                 )
             }
         }
@@ -603,14 +643,17 @@ internal fun FamilyAlarmTargetCard(
         ) {
             Text("받는 사람", fontWeight = FontWeight.SemiBold)
             if (recipients.isEmpty()) {
-                MutedText("연결된 상대가 없어요. 코드 등록에서 먼저 연결해 주세요.")
+                MutedText("상대가 알람 설정을 허용하면 여기에 표시돼요.")
             } else {
                 ChipGrid(
                     options = recipients.map { it.userId to familyMemberLabel(it) },
                     selected = selectedRecipientId.orEmpty(),
                     onSelect = onSelectRecipient,
                 )
-                MutedText("선택한 상대에게 알람을 설정해요.")
+                MutedText("30분 뒤부터 설정할 수 있어요.")
+                recipients.firstOrNull { it.userId == selectedRecipientId }?.let { recipient ->
+                    MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+                }
             }
         }
     }
@@ -618,7 +661,37 @@ internal fun FamilyAlarmTargetCard(
 
 private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 
+private fun ringtoneTitle(context: Context, uri: Uri): String =
+    runCatching {
+        RingtoneManager.getRingtone(context, uri)?.getTitle(context)
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람음"
+
 internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }
         ?: member.email?.takeIf { it.isNotBlank() }
         ?: "멤버"
+
+private fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+    val windows = member.familyAlarmQuietWindows.takeIf { it.isNotEmpty() }
+        ?: listOf(
+            com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow(
+                days = member.familyAlarmQuietDays,
+                start = member.familyAlarmQuietStart,
+                end = member.familyAlarmQuietEnd,
+            ),
+        )
+    return windows.joinToString(" · ") { window ->
+        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+    }
+}
+
+private fun quietDaysLabelForFamily(days: List<Int>): String {
+    val sorted = days.distinct().sorted()
+    return when (sorted) {
+        emptyList<Int>() -> "없음"
+        listOf(1, 2, 3, 4, 5) -> "월-금"
+        listOf(0, 6) -> "주말"
+        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
+        else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }
+    }
+}

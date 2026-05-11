@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,7 +31,10 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 
 @Composable
-internal fun AlarmsHeader(onCreateAlarm: () -> Unit) {
+internal fun AlarmsHeader(
+    onCreateAlarm: () -> Unit,
+    profileMenu: (@Composable () -> Unit)? = null,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -41,12 +45,24 @@ internal fun AlarmsHeader(onCreateAlarm: () -> Unit) {
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Bold,
         )
-        Button(
-            onClick = onCreateAlarm,
-            shape = RoundedCornerShape(999.dp),
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("+ 추가")
+            Button(
+                onClick = onCreateAlarm,
+                shape = RoundedCornerShape(999.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("추가")
+            }
+            profileMenu?.invoke()
         }
     }
 }

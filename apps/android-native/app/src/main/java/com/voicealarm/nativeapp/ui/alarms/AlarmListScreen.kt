@@ -83,6 +83,7 @@ internal fun AlarmListScreen(
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestPermissionGate: (PermissionTarget) -> Unit,
+    profileMenu: (@Composable () -> Unit)? = null,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -168,7 +169,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Alarms -> {
-                item { AlarmsHeader(onCreateAlarm = onCreateAlarm) }
+                item { AlarmsHeader(onCreateAlarm = onCreateAlarm, profileMenu = profileMenu) }
                 if (nextAlarm != null) {
                     item { CountdownBanner(nextAlarm = nextAlarm) }
                 }
