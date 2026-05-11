@@ -167,6 +167,58 @@ internal fun MainViewModel.updateNickname(name: String) {
     }
 }
 
+internal fun MainViewModel.updateFamilyAlarmSettings(
+    allowFamilyAlarms: Boolean,
+    quietDays: List<Int>,
+    quietStart: String,
+    quietEnd: String,
+) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val normalizedDays = quietDays.distinct().filter { it in 0..6 }.sorted()
+    if (!isValidTimeText(quietStart) || !isValidTimeText(quietEnd)) {
+        message = "시간은 HH:mm 형식으로 입력해 주세요"
+        return
+    }
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.updateProfile(
+                authorization,
+                com.voicealarm.nativeapp.network.UpdateProfileRequest(
+                    allowFamilyAlarms = allowFamilyAlarms,
+                    familyAlarmQuietDays = normalizedDays,
+                    familyAlarmQuietStart = quietStart,
+                    familyAlarmQuietEnd = quietEnd,
+                ),
+            )
+        }.onSuccess {
+            val updated = session.copy(
+                user = session.user.copy(
+                    allowFamilyAlarms = allowFamilyAlarms,
+                    familyAlarmQuietDays = normalizedDays,
+                    familyAlarmQuietStart = quietStart,
+                    familyAlarmQuietEnd = quietEnd,
+                ),
+            )
+            authSession = authSessionStore.save(updated)
+            refreshSocial()
+            message = "상대방 알람 설정을 저장했어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update family alarm settings", error)
+            message = userFacingError(error, "상대방 알람 설정을 저장하지 못했어요")
+        }
+        authBusy = false
+    }
+}
+
+private fun isValidTimeText(value: String): Boolean =
+    Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
+
 internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
     val session = authSession
     if (session == null) {

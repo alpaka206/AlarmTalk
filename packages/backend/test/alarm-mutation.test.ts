@@ -171,6 +171,15 @@ describe('POST /alarms', () => {
   });
 
   it('target_user_id 가 친구이면 생성 성공', async () => {
+    // target user allows family alarms
+    mockDB.pushResult([{
+      id: 'friend-pk-1',
+      google_id: 'friend-1',
+      allow_family_alarms: 1,
+      family_alarm_quiet_days: '[1,2,3,4,5]',
+      family_alarm_quiet_start: '09:00',
+      family_alarm_quiet_end: '18:30',
+    }]);
     // friendship check → found
     mockDB.pushResult([{ id: ID.friendship }]);
     // user plan for target

@@ -4,6 +4,11 @@ import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { cancelActiveSubscriptionsForUser } from '../lib/billing-cancel';
 import { withWriteTransaction } from '../lib/transactions';
+import {
+  familyAlarmSettingsFromRow,
+  validateQuietDays,
+  validateQuietTime,
+} from '../lib/family-alarm-settings';
 
 const user = new Hono<AppEnv>();
 
@@ -40,10 +45,14 @@ user.get('/me', async (c) => {
       }),
     ]);
 
+    const familyAlarmSettings = familyAlarmSettingsFromRow(u as Record<string, unknown>);
     return c.json({
       user: {
         ...u,
-        allow_family_alarms: Number(u.allow_family_alarms ?? 0) === 1,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
       },
       stats: {
         voice_profiles: Number(profileCount.rows[0]?.count ?? 0),
@@ -63,15 +72,21 @@ function toBoolFlag(raw: unknown): 0 | 1 | null {
 }
 
 /**
- * PATCH /user/me { allow_family_alarms }
- * 본인 프로필 토글 필드 업데이트. 현재는 allow_family_alarms 만 지원.
+ * PATCH /user/me
+ * 본인 프로필과 상대 알람 허용/불가 시간 설정을 업데이트한다.
  */
 user.patch('/me', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
 
   const body = await c.req
-    .json<{ allow_family_alarms?: unknown; name?: unknown }>()
+    .json<{
+      allow_family_alarms?: unknown;
+      family_alarm_quiet_days?: unknown;
+      family_alarm_quiet_start?: unknown;
+      family_alarm_quiet_end?: unknown;
+      name?: unknown;
+    }>()
     .catch(() => ({}));
 
   const updates: string[] = [];
@@ -102,6 +117,39 @@ user.patch('/me', async (c) => {
     resolvedFlag = flag;
   }
 
+  let resolvedQuietDays: number[] | null = null;
+  if ('family_alarm_quiet_days' in body && body.family_alarm_quiet_days !== undefined) {
+    const days = validateQuietDays(body.family_alarm_quiet_days);
+    if (days === null) {
+      return c.json({ error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다', error_code: 'INVALID_QUIET_DAYS' }, 400);
+    }
+    updates.push('family_alarm_quiet_days = ?');
+    args.push(JSON.stringify(days));
+    resolvedQuietDays = days;
+  }
+
+  let resolvedQuietStart: string | null = null;
+  if ('family_alarm_quiet_start' in body && body.family_alarm_quiet_start !== undefined) {
+    const time = validateQuietTime(body.family_alarm_quiet_start);
+    if (time === null) {
+      return c.json({ error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_QUIET_TIME' }, 400);
+    }
+    updates.push('family_alarm_quiet_start = ?');
+    args.push(time);
+    resolvedQuietStart = time;
+  }
+
+  let resolvedQuietEnd: string | null = null;
+  if ('family_alarm_quiet_end' in body && body.family_alarm_quiet_end !== undefined) {
+    const time = validateQuietTime(body.family_alarm_quiet_end);
+    if (time === null) {
+      return c.json({ error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_QUIET_TIME' }, 400);
+    }
+    updates.push('family_alarm_quiet_end = ?');
+    args.push(time);
+    resolvedQuietEnd = time;
+  }
+
   if (updates.length === 0) {
     return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
@@ -120,6 +168,9 @@ user.patch('/me', async (c) => {
     success: true,
     name: resolvedName,
     allow_family_alarms: resolvedFlag === null ? null : resolvedFlag === 1,
+    family_alarm_quiet_days: resolvedQuietDays,
+    family_alarm_quiet_start: resolvedQuietStart,
+    family_alarm_quiet_end: resolvedQuietEnd,
   });
 });
 

@@ -5,6 +5,7 @@ import { resolveUserPk } from '../lib/family-helpers';
 import { PlanGroupCapacityError, repairFamilyPlanGroupForUser } from '../lib/plan-groups';
 import { leavePlanGroupMember } from '../lib/billing-cancel';
 import { withWriteTransaction } from '../lib/transactions';
+import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 
 const familyGroup = new Hono<AppEnv>();
 
@@ -52,7 +53,8 @@ familyGroup.get('/groups/current', async (c) => {
 
   const membersRes = await db.execute({
     sql: `SELECT m.id, m.user_id, m.role, m.joined_at,
-                 u.email, u.name, u.picture, u.allow_family_alarms
+                 u.email, u.name, u.picture, u.allow_family_alarms,
+                 u.family_alarm_quiet_days, u.family_alarm_quiet_start, u.family_alarm_quiet_end
           FROM plan_group_members m
           LEFT JOIN users u ON u.id = m.user_id
           WHERE m.plan_group_id = ?
@@ -69,16 +71,22 @@ familyGroup.get('/groups/current', async (c) => {
       created_at: String(g.created_at),
     },
     role: String(g.my_role),
-    members: membersRes.rows.map((r) => ({
-      id: String(r.id),
-      user_id: String(r.user_id),
-      role: String(r.role),
-      joined_at: String(r.joined_at),
-      email: (r.email as string | null) ?? null,
-      name: (r.name as string | null) ?? null,
-      picture: (r.picture as string | null) ?? null,
-      allow_family_alarms: Number(r.allow_family_alarms ?? 0) === 1,
-    })),
+    members: membersRes.rows.map((r) => {
+      const familyAlarmSettings = familyAlarmSettingsFromRow(r as Record<string, unknown>);
+      return {
+        id: String(r.id),
+        user_id: String(r.user_id),
+        role: String(r.role),
+        joined_at: String(r.joined_at),
+        email: (r.email as string | null) ?? null,
+        name: (r.name as string | null) ?? null,
+        picture: (r.picture as string | null) ?? null,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+      };
+    }),
   });
 });
 

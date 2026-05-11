@@ -29,6 +29,10 @@ class AuthSessionStore(context: Context) {
                 email = prefs.getString(KEY_EMAIL, "") ?: "",
                 name = prefs.getString(KEY_NAME, "") ?: "",
                 plan = prefs.getString(KEY_PLAN, "free") ?: "free",
+                allowFamilyAlarms = prefs.getBoolean(KEY_ALLOW_FAMILY_ALARMS, false),
+                familyAlarmQuietDays = readQuietDays(),
+                familyAlarmQuietStart = prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
+                familyAlarmQuietEnd = prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
             ),
         )
     }
@@ -61,6 +65,10 @@ class AuthSessionStore(context: Context) {
                 email = email,
                 name = name,
                 plan = "unknown",
+                allowFamilyAlarms = false,
+                familyAlarmQuietDays = listOf(1, 2, 3, 4, 5),
+                familyAlarmQuietStart = "09:00",
+                familyAlarmQuietEnd = "18:30",
             ),
         )
 
@@ -72,16 +80,58 @@ class AuthSessionStore(context: Context) {
         save(token = session.token, provider = session.provider, user = session.user)
 
     private fun save(token: String, provider: String, user: AuthUser): AuthSession {
+        val normalizedUser = normalizeUser(user)
         prefs.edit()
             .putString(KEY_TOKEN, token)
             .putString(KEY_PROVIDER, provider)
-            .putString(KEY_USER_ID, user.id)
-            .putString(KEY_EMAIL, user.email)
-            .putString(KEY_NAME, user.name)
-            .putString(KEY_PLAN, user.plan)
+            .putString(KEY_USER_ID, normalizedUser.id)
+            .putString(KEY_EMAIL, normalizedUser.email)
+            .putString(KEY_NAME, normalizedUser.name)
+            .putString(KEY_PLAN, normalizedUser.plan)
+            .putBoolean(KEY_ALLOW_FAMILY_ALARMS, normalizedUser.allowFamilyAlarms)
+            .putString(KEY_FAMILY_ALARM_QUIET_DAYS, normalizedUser.familyAlarmQuietDays.joinToString(","))
+            .putString(KEY_FAMILY_ALARM_QUIET_START, normalizedUser.familyAlarmQuietStart)
+            .putString(KEY_FAMILY_ALARM_QUIET_END, normalizedUser.familyAlarmQuietEnd)
             .apply()
-        return AuthSession(token = token, provider = provider, user = user)
+        return AuthSession(token = token, provider = provider, user = normalizedUser)
     }
+
+    private fun readQuietDays(): List<Int> =
+        prefs.getString(KEY_FAMILY_ALARM_QUIET_DAYS, null)
+            ?.split(',')
+            ?.mapNotNull { it.toIntOrNull()?.takeIf { day -> day in 0..6 } }
+            ?.distinct()
+            ?.sorted()
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf(1, 2, 3, 4, 5)
+
+    private fun normalizeUser(user: AuthUser): AuthUser =
+        user.copy(
+            name = runCatching { user.name }.getOrNull().orEmpty(),
+            plan = runCatching { user.plan }.getOrNull()?.takeIf { it.isNotBlank() } ?: "free",
+            familyAlarmQuietDays = normalizeQuietDays(
+                runCatching { user.familyAlarmQuietDays }.getOrNull(),
+            ),
+            familyAlarmQuietStart = normalizeQuietTime(
+                runCatching { user.familyAlarmQuietStart }.getOrNull(),
+                fallback = "09:00",
+            ),
+            familyAlarmQuietEnd = normalizeQuietTime(
+                runCatching { user.familyAlarmQuietEnd }.getOrNull(),
+                fallback = "18:30",
+            ),
+        )
+
+    private fun normalizeQuietDays(days: List<Int>?): List<Int> =
+        days
+            ?.filter { it in 0..6 }
+            ?.distinct()
+            ?.sorted()
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf(1, 2, 3, 4, 5)
+
+    private fun normalizeQuietTime(value: String?, fallback: String): String =
+        value?.takeIf { TIME_RE.matches(it) } ?: fallback
 
     private fun isAppIssuedJwt(token: String): Boolean =
         runCatching {
@@ -99,11 +149,16 @@ class AuthSessionStore(context: Context) {
         private const val APP_JWT_ISSUER = "voice-alarm"
 
         private const val PREFS_NAME = "voice_alarm_auth"
+        private val TIME_RE = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
         private const val KEY_TOKEN = "token"
         private const val KEY_PROVIDER = "provider"
         private const val KEY_USER_ID = "user_id"
         private const val KEY_EMAIL = "email"
         private const val KEY_NAME = "name"
         private const val KEY_PLAN = "plan"
+        private const val KEY_ALLOW_FAMILY_ALARMS = "allow_family_alarms"
+        private const val KEY_FAMILY_ALARM_QUIET_DAYS = "family_alarm_quiet_days"
+        private const val KEY_FAMILY_ALARM_QUIET_START = "family_alarm_quiet_start"
+        private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
     }
 }

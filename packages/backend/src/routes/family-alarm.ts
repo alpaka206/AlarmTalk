@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { resolveUserPk, assertSameGroup } from '../lib/family-helpers';
+import {
+  familyAlarmSettingsFromRow,
+  isBlockedByFamilyAlarmQuietTime,
+} from '../lib/family-alarm-settings';
 
 const familyAlarm = new Hono<AppEnv>();
 
@@ -60,15 +64,22 @@ familyAlarm.post('/alarms', async (c) => {
   }
 
   const recipientRes = await db.execute({
-    sql: `SELECT id, google_id, allow_family_alarms FROM users WHERE id = ?`,
+    sql: `SELECT id, google_id, allow_family_alarms,
+                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end
+          FROM users WHERE id = ?`,
     args: [recipientPk],
   });
   if (recipientRes.rows.length === 0) {
     return c.json({ error: '수신자를 찾을 수 없습니다', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
   }
   const recipient = recipientRes.rows[0]!;
-  if (Number(recipient.allow_family_alarms ?? 0) !== 1) {
+  const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
+  if (!recipientSettings.allowFamilyAlarms) {
     return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
+  }
+  const repeatDays = normalizeRepeatDays(body.repeat_days);
+  if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
+    return c.json({ error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다', error_code: 'FAMILY_ALARM_QUIET_TIME' }, 403);
   }
 
   let voiceProfileId =
@@ -93,7 +104,6 @@ familyAlarm.post('/alarms', async (c) => {
     voiceProfileId = String(latest.rows[0]!.id);
   }
 
-  const repeatDays = normalizeRepeatDays(body.repeat_days);
   const messageId = crypto.randomUUID();
   const alarmId = crypto.randomUUID();
 
@@ -109,7 +119,7 @@ familyAlarm.post('/alarms', async (c) => {
     args: [
       alarmId,
       userId,
-      String(recipient.google_id),
+      ((recipient.google_id as string | null) ?? String(recipient.id)),
       messageId,
       wakeAt,
       JSON.stringify(repeatDays),
@@ -198,15 +208,22 @@ familyAlarm.post('/alarms/voice', async (c) => {
   }
 
   const recipientRes = await db.execute({
-    sql: `SELECT id, google_id, allow_family_alarms FROM users WHERE id = ?`,
+    sql: `SELECT id, google_id, allow_family_alarms,
+                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end
+          FROM users WHERE id = ?`,
     args: [recipientPk],
   });
   if (recipientRes.rows.length === 0) {
     return c.json({ error: '수신자를 찾을 수 없습니다', error_code: 'RECIPIENT_NOT_FOUND' }, 404);
   }
   const recipient = recipientRes.rows[0]!;
-  if (Number(recipient.allow_family_alarms ?? 0) !== 1) {
+  const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
+  if (!recipientSettings.allowFamilyAlarms) {
     return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
+  }
+  const repeatDays = normalizeRepeatDays(body.repeat_days);
+  if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
+    return c.json({ error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다', error_code: 'FAMILY_ALARM_QUIET_TIME' }, 403);
   }
 
   const uploadRes = await db.execute({
@@ -231,7 +248,6 @@ familyAlarm.post('/alarms/voice', async (c) => {
   }
   const voiceProfileId = String(latestVp.rows[0]!.id);
 
-  const repeatDays = normalizeRepeatDays(body.repeat_days);
   const messageId = crypto.randomUUID();
   const alarmId = crypto.randomUUID();
   const audioUrl = dubTarget ? null : objectKey;
@@ -248,7 +264,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
     args: [
       alarmId,
       userId,
-      String(recipient.google_id),
+      ((recipient.google_id as string | null) ?? String(recipient.id)),
       messageId,
       wakeAt,
       JSON.stringify(repeatDays),

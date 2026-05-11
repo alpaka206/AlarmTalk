@@ -180,8 +180,10 @@ internal fun familyAlarmRecipients(
 ): List<FamilyGroupMember> {
     val currentUserId = authSession?.user?.id
     val currentEmail = authSession?.user?.email
-    return familyGroup?.members.orEmpty().filterNot { member ->
-        member.userId == currentUserId || member.email == currentEmail
+    return familyGroup?.members.orEmpty().filter { member ->
+        member.userId != currentUserId &&
+            member.email != currentEmail &&
+            member.allowFamilyAlarms
     }
 }
 

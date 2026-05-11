@@ -30,6 +30,9 @@ data class FamilyGroupMember(
     val email: String? = null,
     val name: String? = null,
     @SerializedName("allow_family_alarms") val allowFamilyAlarms: Boolean = false,
+    @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
+    @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
+    @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
 )
 
 data class FamilyVoiceAlarmRequest(
