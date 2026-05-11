@@ -60,14 +60,9 @@ internal fun HomeHeader() {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             text = greeting,
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = "소중한 사람의 목소리가 기다리고 있어요",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -256,7 +251,7 @@ internal fun ScreenHeader(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
         if (!subtitle.isNullOrBlank()) {

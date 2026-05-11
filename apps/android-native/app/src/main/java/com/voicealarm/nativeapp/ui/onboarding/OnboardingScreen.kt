@@ -44,17 +44,17 @@ private val OnboardingPages = listOf(
     OnboardingPage(
         icon = Icons.Outlined.Mic,
         title = "음성으로 깨어나세요",
-        description = "내 목소리 또는 좋아하는 사람의 목소리로\n나만의 알람을 만들 수 있어요.",
+        description = "내 목소리와 공유받은 음성으로\n알람을 만들 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.Group,
         title = "가족과 함께",
-        description = "음성 프로필을 공유하고 응원 메시지를 보내며\n서로의 아침을 챙겨줄 수 있어요.",
+        description = "음성과 메시지를 공유하고\n서로의 알람을 챙길 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.AutoAwesome,
         title = "캐릭터와 함께 성장해요",
-        description = "매일 알람을 제때 끄면 캐릭터가 자라요.\n꾸준히 깨어나는 즐거움을 함께해요.",
+        description = "알람을 끄면 캐릭터가 자라요.\n하루 한 번 성장 기록이 쌓여요.",
     ),
 )
 

@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun VoiceAlarmBottomBar(
     selectedTab: NativeTab,
+    unreadAlarmCount: Int,
     unreadMessageCount: Int,
     onSelectTab: (NativeTab) -> Unit,
 ) {
@@ -74,6 +75,7 @@ internal fun VoiceAlarmBottomBar(
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Alarm,
                 label = "알람",
+                badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )

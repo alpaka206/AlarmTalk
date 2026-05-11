@@ -98,7 +98,7 @@ internal fun VoiceLoginRequiredCard() {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            MutedText("음성 프로필은 계정에 저장됩니다. 홈 탭에서 로그인한 뒤 다시 열어 주세요.")
+            MutedText("로그인 후 음성을 만들 수 있어요.")
         }
     }
 }
@@ -445,7 +445,7 @@ internal fun VoiceProfileManagementPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "프로필 목록",
+                text = "내 음성",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -458,7 +458,7 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (voiceProfiles.isEmpty()) {
-            MutedText("아직 만든 음성 프로필이 없어요.")
+            MutedText("아직 만든 음성이 없어요.")
         } else {
             voiceProfiles.forEach { profile ->
                 VoiceProfileRow(
@@ -477,7 +477,7 @@ internal fun VoiceProfileManagementPanel(
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
             Text(
-                text = "공유 받은 음성",
+                text = "공유 음성",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -529,7 +529,7 @@ internal fun VoiceProfileManagementPanel(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("음성 공유", fontWeight = FontWeight.SemiBold)
-                                MutedText("가족/커플 플랜에서만 공유돼요. 기본은 공유 안 함이에요.")
+                                MutedText(if (shareVoice) "공유 중" else "나만 사용")
                             }
                             VoiceAlarmSwitch(
                                 checked = shareVoice,
@@ -700,7 +700,7 @@ internal fun VoiceProfileManagementPanel(
             onDismissRequest = { deleteTarget = null },
             title = { Text("음성 프로필 삭제") },
             text = {
-                Text("'${profile.name}' 프로필을 삭제할까요? 연결된 메시지가 있으면 삭제가 실패할 수 있어요.")
+                Text("'${profile.name}' 음성을 삭제할까요?")
             },
             confirmButton = {
                 TextButton(
@@ -890,7 +890,7 @@ internal fun VoiceProfileRow(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("공유", fontWeight = FontWeight.SemiBold)
-                        MutedText(if (profile.isShared == true) "가족/커플에게 공유 중" else "나만 사용")
+                        MutedText(if (profile.isShared == true) "공유 중" else "나만 사용")
                     }
                     VoiceAlarmSwitch(
                         checked = profile.isShared == true,

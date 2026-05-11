@@ -42,7 +42,7 @@ internal fun AlarmsHeader(
     ) {
         Text(
             text = "알람",
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
         Row(
@@ -102,32 +102,27 @@ internal fun CountdownBanner(nextAlarm: AlarmEntity) {
 @Composable
 internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(32.dp),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Alarm,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(44.dp),
             )
             Text(
                 text = "알람이 없어요",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "소중한 사람의 목소리로 하루를 시작해보세요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
                 Text("첫 알람 만들기")

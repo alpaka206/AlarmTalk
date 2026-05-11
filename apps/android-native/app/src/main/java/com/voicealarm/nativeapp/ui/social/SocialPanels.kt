@@ -5,6 +5,7 @@ import android.media.MediaPlayer
 import android.net.Uri
 import android.util.Base64
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.Icons
@@ -123,7 +125,7 @@ internal fun FamilyConnectionPanel(
             val isSharedMember = currentGroup != null && familyGroup?.role == "member"
 
             if (canManageShareCode) {
-                MutedText("공유 코드와 멤버 관리는 프로필 메뉴의 '멤버/공유 코드 관리'에서 가능합니다.")
+                MutedText("공유 플랜을 관리 중이에요.")
                 return@Column
             }
 
@@ -153,9 +155,9 @@ internal fun FamilyConnectionPanel(
                 }
             } else {
                 if (hasActivePlan) {
-                    MutedText("유효한 코드를 등록하면 현재 $activePlanName 플랜은 해지돼요.")
+                    MutedText("등록하면 현재 $activePlanName 플랜이 변경돼요.")
                 }
-                Text("초대 코드 등록(가족/커플)", fontWeight = FontWeight.SemiBold)
+                Text("초대 코드", fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -180,7 +182,7 @@ internal fun FamilyConnectionPanel(
                     }
                 }
 
-                Text("선물받은 코드 등록", fontWeight = FontWeight.SemiBold)
+                Text("이용권 코드", fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -213,7 +215,7 @@ internal fun FamilyConnectionPanel(
             onDismissRequest = { showLeaveDialog = false },
             title = { Text("플랜에서 나가고 다른 코드 등록") },
             text = {
-                MutedText("현재 플랜에서 나가고 새 코드를 등록할 수 있는 화면으로 이동할까요? 이 작업은 되돌릴 수 없어요.")
+                MutedText("현재 플랜에서 나가고 새 코드를 등록할까요?")
             },
             confirmButton = {
                 TextButton(
@@ -393,13 +395,13 @@ internal fun VoiceMessagePanel(
         }
     }
 
-    OutlinedCard {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (!isAvailable) {
-                MutedText("음성 메시지는 커플/가족 플랜에서만 사용할 수 있어요.")
+    if (!isAvailable) {
+        OutlinedCard {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MutedText("커플/가족 플랜에서 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
@@ -414,15 +416,20 @@ internal fun VoiceMessagePanel(
                         Text("플랜 보기")
                     }
                 }
-                return@Column
             }
-
+        }
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("받은 메시지", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "받은 메시지",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = onRefresh, enabled = !noteBusy) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "새로고침")
@@ -438,15 +445,15 @@ internal fun VoiceMessagePanel(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.size(6.dp))
-                        Text("새 메시지")
+                        Text("작성")
                     }
                 }
             }
             if (recipients.isEmpty()) {
-                MutedText("연결된 상대가 아직 없어요. 코드 등록에서 먼저 연결해 주세요.")
+                MutedText("연결된 상대가 없어요.")
             }
             if (receivedNotes.isEmpty()) {
-                MutedText("아직 받은 메시지가 없어요.")
+                MutedText("받은 메시지가 없어요.")
             } else {
                 receivedNotes.take(8).forEach { note ->
                     NoteRow(
@@ -503,7 +510,7 @@ internal fun VoiceMessagePanel(
                         Text("음성", fontWeight = FontWeight.SemiBold)
                         when {
                             voiceProfileBusy -> MutedText("음성을 불러오는 중이에요.")
-                            voiceOptions.isEmpty() -> MutedText("사용 가능한 음성이 없어요. 먼저 음성 프로필을 만들거나 공유받아 주세요.")
+                            voiceOptions.isEmpty() -> MutedText("사용 가능한 음성이 없어요.")
                             else -> ChipGrid(
                                 options = voiceOptions,
                                 selected = selectedVoiceProfileId.orEmpty(),
@@ -599,12 +606,12 @@ internal fun NoteRow(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (unread) {
-                    AssistChip(
-                        onClick = onMarkRead,
-                        label = { Text("새 메시지") },
-                    )
-                }
+                    if (unread) {
+                        AssistChip(
+                            onClick = onMarkRead,
+                            label = { Text("새") },
+                        )
+                    }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -626,18 +633,33 @@ internal fun NoteRow(
                     IconButton(
                         onClick = onPlayClick,
                         enabled = !isLoading,
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = if (isPlaying) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                                shape = CircleShape,
+                            ),
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
+                                modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         } else {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
                                 contentDescription = if (isPlaying) "정지" else "재생",
-                                modifier = Modifier.size(20.dp),
+                                tint = if (isPlaying) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                                modifier = Modifier.size(24.dp),
                             )
                         }
                     }

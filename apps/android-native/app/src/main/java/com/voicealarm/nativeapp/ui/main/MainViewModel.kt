@@ -116,6 +116,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var message by mutableStateOf<String?>(null)
         internal set
 
+    private val receivedAlarmBadgeStore = ReceivedAlarmBadgeStore(application)
+    var receivedAlarmSeenAtMillis by mutableStateOf(
+        authSession?.user?.id?.let(receivedAlarmBadgeStore::readSeenAtMillis) ?: 0L,
+    )
+        internal set
+
     private val themePrefs = application.getSharedPreferences("voice_alarm_theme", android.content.Context.MODE_PRIVATE)
     var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
         internal set
@@ -158,6 +164,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
         }
         showOnboarding = false
+    }
+
+    fun loadReceivedAlarmBadgeState() {
+        val userId = authSession?.user?.id ?: run {
+            receivedAlarmSeenAtMillis = 0L
+            return
+        }
+        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.readSeenAtMillis(userId)
+    }
+
+    fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {
+        val userId = authSession?.user?.id ?: return
+        if (receivedAlarmBadgeStore.hasBaseline(userId)) {
+            receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.readSeenAtMillis(userId)
+            return
+        }
+        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.markSeen(userId, alarms)
+    }
+
+    fun markReceivedAlarmsSeen(alarms: List<AlarmEntity>) {
+        val userId = authSession?.user?.id ?: return
+        receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.markSeen(userId, alarms)
     }
 
     fun setThemeMode(mode: ThemeMode) {
