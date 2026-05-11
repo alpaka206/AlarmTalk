@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AlarmDao {
-    @Query("SELECT * FROM alarms ORDER BY enabled DESC, fireAtMillis ASC, updatedAtMillis DESC")
+    @Query("SELECT * FROM alarms ORDER BY hour ASC, minute ASC, createdAtMillis ASC")
     fun observeAlarms(): Flow<List<AlarmEntity>>
 
     @Query("SELECT * FROM alarms WHERE id = :id LIMIT 1")
@@ -26,7 +26,7 @@ interface AlarmDao {
     )
     suspend fun getEnabledAlarms(): List<AlarmEntity>
 
-    @Query("SELECT * FROM alarms ORDER BY enabled DESC, fireAtMillis ASC, updatedAtMillis DESC")
+    @Query("SELECT * FROM alarms ORDER BY hour ASC, minute ASC, createdAtMillis ASC")
     suspend fun getAllAlarms(): List<AlarmEntity>
 
     @Query(

@@ -452,5 +452,9 @@ class AlarmRepository(
     }
 
     private fun AlarmEntity.nextLocalSyncState(): String =
-        if (remoteAlarmId == null) AlarmSyncStates.LOCAL_ONLY else AlarmSyncStates.DIRTY
+        when {
+            origin == AlarmOrigins.RECEIVED_REMOTE -> AlarmSyncStates.SYNCED
+            remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
+            else -> AlarmSyncStates.DIRTY
+        }
 }
