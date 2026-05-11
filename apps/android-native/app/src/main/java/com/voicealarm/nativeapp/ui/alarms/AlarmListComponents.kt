@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -30,7 +31,10 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 
 @Composable
-internal fun AlarmsHeader(onCreateAlarm: () -> Unit) {
+internal fun AlarmsHeader(
+    onCreateAlarm: () -> Unit,
+    profileMenu: (@Composable () -> Unit)? = null,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -38,15 +42,27 @@ internal fun AlarmsHeader(onCreateAlarm: () -> Unit) {
     ) {
         Text(
             text = "알람",
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
-        Button(
-            onClick = onCreateAlarm,
-            shape = RoundedCornerShape(999.dp),
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 8.dp),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("+ 추가")
+            Button(
+                onClick = onCreateAlarm,
+                shape = RoundedCornerShape(999.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("추가")
+            }
+            profileMenu?.invoke()
         }
     }
 }
@@ -86,32 +102,27 @@ internal fun CountdownBanner(nextAlarm: AlarmEntity) {
 @Composable
 internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(32.dp),
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 imageVector = Icons.Outlined.Alarm,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(44.dp),
             )
             Text(
                 text = "알람이 없어요",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "소중한 사람의 목소리로 하루를 시작해보세요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
                 Text("첫 알람 만들기")

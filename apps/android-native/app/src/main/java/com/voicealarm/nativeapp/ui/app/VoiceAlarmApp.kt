@@ -54,6 +54,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.data.AlarmOrigins
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -95,6 +96,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionRouteKey = authSession?.user?.id
+    val isPlanOwner = familyGroup?.role == "owner" &&
+        familyGroup.group != null &&
+        subscriptionResponse?.plan?.planType == "family"
+    val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
+        alarms.count { alarm ->
+            alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
+                alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
+        }
+    }
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -114,8 +124,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         if (sessionRouteKey != null) {
             navController.navigateHomeClearingStack()
         }
+        viewModel.loadReceivedAlarmBadgeState()
         planGateMessage = null
         authRoute = AuthRoute.Landing
+    }
+
+    LaunchedEffect(sessionRouteKey, alarms) {
+        if (sessionRouteKey != null) {
+            viewModel.ensureReceivedAlarmBadgeBaseline(alarms)
+        }
     }
 
     LaunchedEffect(authSession?.token) {
@@ -124,6 +141,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
+            viewModel.preloadNotes()
         }
     }
 
@@ -150,6 +168,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             NativeTab.Growth,
             NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
             null -> Unit
+        }
+    }
+
+    LaunchedEffect(currentTab, alarms, authSession?.user?.id) {
+        if (currentTab == NativeTab.Alarms && authSession != null) {
+            viewModel.markReceivedAlarmsSeen(alarms)
         }
     }
 
@@ -297,6 +321,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
+                    unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
+                    unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
                     onSelectTab = ::navigateToTab,
                 )
             }
@@ -412,6 +438,18 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestPermissionGate = viewModel::requestPermissionGate,
+                          profileMenu = if (tab == NativeTab.Alarms) {
+                              {
+                                  ProfileMenu(
+                                      isPlanOwner = isPlanOwner,
+                                      onSelectTab = ::navigateToTab,
+                                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                                  )
+                              }
+                          } else {
+                              null
+                          },
                       )
                   }
               }
@@ -474,6 +512,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
                       onEditNickname = viewModel::requestEditNickname,
+                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )
@@ -494,23 +533,22 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
               }
           }
           if (currentTab != null) {
-              val isPlanOwner = familyGroup?.role == "owner" &&
-                  familyGroup.group != null &&
-                  subscriptionResponse?.plan?.planType == "family"
-              Box(
-                  modifier = Modifier
-                      .align(Alignment.TopEnd)
-                      .padding(
-                          top = padding.calculateTopPadding() + 24.dp,
-                          end = 24.dp,
-                      ),
-              ) {
-                  ProfileMenu(
-                      isPlanOwner = isPlanOwner,
-                      onSelectTab = ::navigateToTab,
-                      onOpenSettings = { navController.navigate(AppRoute.Settings) },
-                      onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
-                  )
+              if (currentTab != NativeTab.Alarms) {
+                  Box(
+                      modifier = Modifier
+                          .align(Alignment.TopEnd)
+                          .padding(
+                              top = padding.calculateTopPadding() + 24.dp,
+                              end = 24.dp,
+                          ),
+                  ) {
+                      ProfileMenu(
+                          isPlanOwner = isPlanOwner,
+                          onSelectTab = ::navigateToTab,
+                          onOpenSettings = { navController.navigate(AppRoute.Settings) },
+                          onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
+                      )
+                  }
               }
           }
           SnackbarHost(
@@ -636,13 +674,13 @@ private fun PrettySnackbar(message: String) {
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
         MessageSeverity.Error -> scheme.error
-        MessageSeverity.Success -> scheme.secondary
-        MessageSeverity.Info -> scheme.primaryContainer
+        MessageSeverity.Success -> scheme.tertiary
+        MessageSeverity.Info -> scheme.secondaryContainer
     }
     val contentColor = when (severity) {
         MessageSeverity.Error -> scheme.onError
-        MessageSeverity.Success -> scheme.onSecondary
-        MessageSeverity.Info -> scheme.onPrimaryContainer
+        MessageSeverity.Success -> scheme.onTertiary
+        MessageSeverity.Info -> scheme.onSecondaryContainer
     }
     val iconVector = when (severity) {
         MessageSeverity.Error -> Icons.Outlined.ErrorOutline

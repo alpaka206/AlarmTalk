@@ -3,6 +3,7 @@ package com.voicealarm.nativeapp.data
 import android.util.Base64
 import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
+import com.voicealarm.nativeapp.alarm.SocialNotificationFactory
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.RemoteAlarm
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
@@ -21,6 +22,7 @@ internal class RemoteAlarmPullSyncService(
     private val alarmDao: AlarmDao,
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
+    private val context: android.content.Context,
 ) {
     suspend fun pullReceivedAlarms(
         api: VoiceAlarmApi,
@@ -71,7 +73,17 @@ internal class RemoteAlarmPullSyncService(
                             Log.w(TAG, "Saved received alarm but failed to schedule id=${local.id}", error)
                         }
                 }
-                if (existing == null) imported += 1 else updated += 1
+                if (existing == null) {
+                    SocialNotificationFactory.notifyReceivedAlarm(
+                        context = context,
+                        alarmId = local.id,
+                        senderName = remote.senderName ?: remote.senderEmail,
+                        time = "%02d:%02d".format(local.hour, local.minute),
+                    )
+                    imported += 1
+                } else {
+                    updated += 1
+                }
             }.onFailure { error ->
                 failed += 1
                 Log.e(TAG, "Failed to pull received alarm remoteId=${remote.id}", error)
@@ -100,7 +112,7 @@ internal class RemoteAlarmPullSyncService(
         val time = parseTime(remote.time) ?: return null
         val repeatMask = repeatDaysToMask(remote.repeatDays.orEmpty())
         val now = System.currentTimeMillis()
-        val enabled = remote.isActive != false
+        val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
 
         val cachedAudio = remote.messageId
             ?.takeIf { it.isNotBlank() }
@@ -159,6 +171,10 @@ internal class RemoteAlarmPullSyncService(
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,
             syncState = AlarmSyncStates.SYNCED,
+            origin = AlarmOrigins.RECEIVED_REMOTE,
+            alarmVolumePercent = existing?.alarmVolumePercent ?: 100,
+            alarmSoundUri = existing?.alarmSoundUri,
+            alarmSoundLabel = existing?.alarmSoundLabel,
             enabled = enabled,
             state = if (enabled) AlarmStates.SCHEDULED else AlarmStates.DISABLED,
             createdAtMillis = existing?.createdAtMillis ?: now,
@@ -177,4 +193,13 @@ internal class RemoteAlarmPullSyncService(
 
     private fun repeatDaysToMask(days: List<Int>): Int =
         days.filter { it in 0..6 }.fold(0) { mask, day -> mask or (1 shl day) }
+}
+
+internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive: Boolean?): Boolean {
+    val remoteEnabled = remoteIsActive != false
+    return if (existing?.origin == AlarmOrigins.RECEIVED_REMOTE) {
+        existing.enabled && remoteEnabled
+    } else {
+        remoteEnabled
+    }
 }

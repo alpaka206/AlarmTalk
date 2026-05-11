@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, CharacterEventEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -33,6 +33,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
+                    MIGRATION_7_8,
                 ).build()
                     .also { instance = it }
             }
@@ -102,6 +103,15 @@ abstract class AlarmDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN snoozeRepeatLimit INTEGER NOT NULL DEFAULT ${SnoozeRepeatLimits.THREE}")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN snoozeCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN origin TEXT NOT NULL DEFAULT '${AlarmOrigins.LOCAL_OWNED}'")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN alarmVolumePercent INTEGER NOT NULL DEFAULT 100")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundUri TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundLabel TEXT")
             }
         }
     }

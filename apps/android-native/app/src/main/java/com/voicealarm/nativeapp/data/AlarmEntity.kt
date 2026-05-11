@@ -31,6 +31,10 @@ data class AlarmEntity(
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
     val syncState: String,
+    val origin: String,
+    val alarmVolumePercent: Int,
+    val alarmSoundUri: String?,
+    val alarmSoundLabel: String?,
     val enabled: Boolean,
     val state: String,
     val createdAtMillis: Long,
@@ -51,6 +55,13 @@ object AlarmSyncStates {
     const val SYNCED = "synced"
     const val DIRTY = "dirty"
     const val FAILED = "sync_failed"
+}
+
+object AlarmOrigins {
+    const val LOCAL_OWNED = "local_owned"
+    const val RECEIVED_REMOTE = "received_remote"
+
+    val all = listOf(LOCAL_OWNED, RECEIVED_REMOTE)
 }
 
 object VibrationPatterns {
@@ -112,4 +123,7 @@ data class AlarmDraft(
     val voiceCategory: String? = null,
     val voiceLanguage: String? = null,
     val ttsMessageId: String? = null,
+    val alarmVolumePercent: Int = 100,
+    val alarmSoundUri: String? = null,
+    val alarmSoundLabel: String? = null,
 )

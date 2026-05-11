@@ -47,6 +47,9 @@ internal fun AuthScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
+    val canSubmit = email.isNotBlank() &&
+        password.isNotBlank() &&
+        (mode == AuthMode.Login || (name.isNotBlank() && password.length >= 8))
 
     Column(
         modifier = Modifier
@@ -89,7 +92,7 @@ internal fun AuthScreen(
             onValueChange = { email = it },
             label = { Text("이메일") },
             singleLine = true,
-            enabled = !busy,
+            enabled = !busy && canSubmit,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,

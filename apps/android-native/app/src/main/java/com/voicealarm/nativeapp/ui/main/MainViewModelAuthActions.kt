@@ -25,6 +25,7 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
@@ -166,6 +167,63 @@ internal fun MainViewModel.updateNickname(name: String) {
         authBusy = false
     }
 }
+
+internal fun MainViewModel.updateFamilyAlarmSettings(
+    allowFamilyAlarms: Boolean,
+    quietWindows: List<FamilyAlarmQuietWindow>,
+) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val normalizedWindows = quietWindows
+        .map { window -> window.copy(days = window.days.distinct().filter { it in 0..6 }.sorted()) }
+        .filter { it.days.isNotEmpty() }
+        .take(8)
+    if (normalizedWindows.any { !isValidTimeText(it.start) || !isValidTimeText(it.end) }) {
+        message = "시간은 HH:mm 형식으로 입력해 주세요"
+        return
+    }
+    val firstWindow = normalizedWindows.firstOrNull()
+        ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.updateProfile(
+                authorization,
+                com.voicealarm.nativeapp.network.UpdateProfileRequest(
+                    allowFamilyAlarms = allowFamilyAlarms,
+                    familyAlarmQuietDays = firstWindow.days,
+                    familyAlarmQuietStart = firstWindow.start,
+                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietWindows = normalizedWindows,
+                ),
+            )
+        }.onSuccess {
+            val updated = session.copy(
+                user = session.user.copy(
+                    allowFamilyAlarms = allowFamilyAlarms,
+                    familyAlarmQuietDays = firstWindow.days,
+                    familyAlarmQuietStart = firstWindow.start,
+                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietWindows = normalizedWindows,
+                ),
+            )
+            authSession = authSessionStore.save(updated)
+            refreshSocial()
+            message = "상대방 알람 설정을 저장했어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update family alarm settings", error)
+            message = userFacingError(error, "상대방 알람 설정을 저장하지 못했어요")
+        }
+        authBusy = false
+    }
+}
+
+private fun isValidTimeText(value: String): Boolean =
+    Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
 
 internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
     val session = authSession

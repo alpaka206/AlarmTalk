@@ -63,7 +63,6 @@ internal fun VoiceAlarmSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -73,9 +72,9 @@ internal fun VoiceAlarmSwitch(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
             checkedTrackColor = MaterialTheme.colorScheme.primary,
             checkedBorderColor = Color.Transparent,
-            uncheckedThumbColor = if (isDark) Color(0xFFE4D8C6) else Color.White,
-            uncheckedTrackColor = if (isDark) Color(0xFF40372B) else Color(0xFFE7DDCB),
-            uncheckedBorderColor = if (isDark) Color(0xFF5A4D3B) else Color(0xFFD5C8B4),
+            uncheckedThumbColor = MaterialTheme.colorScheme.surface,
+            uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+            uncheckedBorderColor = MaterialTheme.colorScheme.outline,
         ),
     )
 }
@@ -184,14 +183,16 @@ internal fun AlarmRow(
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.matchParentSize(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            DeleteRevealButton(
-                modifier = Modifier.width(deleteWidth),
-                onDelete = onDeleteAlarm,
-            )
+        if (deleteRevealed || currentOffsetPx < -0.5f) {
+            Row(
+                modifier = Modifier.matchParentSize(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                DeleteRevealButton(
+                    modifier = Modifier.width(deleteWidth),
+                    onDelete = onDeleteAlarm,
+                )
+            }
         }
 
         Card(
@@ -233,7 +234,7 @@ internal fun AlarmRow(
                     Column {
                         Text(
                             text = "%02d:%02d".format(alarm.hour, alarm.minute),
-                            style = MaterialTheme.typography.displaySmall,
+                            style = MaterialTheme.typography.headlineLarge,
                             fontWeight = FontWeight.Normal,
                             color = if (alarm.enabled) {
                                 MaterialTheme.colorScheme.onSurface
@@ -257,28 +258,6 @@ internal fun AlarmRow(
                         onCheckedChange = onToggleEnabled,
                     )
                 }
-                if (alarm.enabled) {
-                    Text(
-                        text = "다음 ${formatFireTime(alarm.fireAtMillis)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    text = listOf(
-                        alarm.repeatDaysMask.takeIf { it != 0 }?.let(::repeatLabel),
-                        if (alarm.holidayOff) "공휴일 끔" else null,
-                        snoozeListLabel(
-                            enabled = alarm.snoozeEnabled,
-                            minutes = alarm.snoozeMinutes,
-                            repeatLimit = alarm.snoozeRepeatLimit,
-                        ),
-                        vibrationLabel(alarm.vibrationPattern),
-                        playModeLabel(alarm.playMode),
-                    ).filterNotNull().joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (warningText != null) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -333,13 +312,13 @@ internal fun DeleteRevealButton(
             Icon(
                 imageVector = Icons.Outlined.Delete,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimary,
+                tint = MaterialTheme.colorScheme.onError,
             )
             Text(
                 text = "삭제",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = MaterialTheme.colorScheme.onError,
             )
         }
     }

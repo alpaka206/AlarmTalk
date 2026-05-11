@@ -69,10 +69,19 @@ internal fun CharacterMiniCard(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stageEmoji(stage),
-                style = MaterialTheme.typography.headlineMedium,
-            )
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stageEmoji(stage),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -106,14 +115,14 @@ internal fun CharacterMiniCard(
                                     ).coerceIn(0f, 1f),
                             )
                             .height(6.dp)
-                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(999.dp)),
+                            .background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(999.dp)),
                     )
                 }
             }
             Text(
                 text = ">",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = MaterialTheme.colorScheme.tertiary,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -127,9 +136,9 @@ internal fun NextAlarmHeroCard(
 ) {
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             modifier = Modifier
@@ -137,12 +146,6 @@ internal fun NextAlarmHeroCard(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = "다음 알람",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.72f),
-                fontWeight = FontWeight.SemiBold,
-            )
             Text(
                 text = nextAlarm?.let { "%02d:%02d".format(it.hour, it.minute) } ?: "--:--",
                 style = MaterialTheme.typography.displayLarge,
@@ -164,7 +167,7 @@ internal fun NextAlarmHeroCard(
                 Text(
                     modifier = Modifier.weight(1f),
                     text = nextAlarm?.let { "${it.label} - ${playModeLabel(it.playMode)}" }
-                        ?: "아직 설정된 알람이 없어요. 눌러서 만들어보세요.",
+                        ?: "첫 알람 만들기",
                     style = if (nextAlarm == null) {
                         MaterialTheme.typography.bodySmall
                     } else {
@@ -190,14 +193,16 @@ internal fun QuickStartGrid(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "빠른 시작",
-            style = MaterialTheme.typography.titleLarge,
+            text = "바로 실행",
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HomeActionCard(
                 label = "음성 녹음",
                 icon = Icons.Outlined.Mic,
+                accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 onClick = onRecordVoice,
                 locked = voiceLocked,
                 modifier = Modifier.weight(1f),
@@ -205,6 +210,8 @@ internal fun QuickStartGrid(
             HomeActionCard(
                 label = "알람 추가",
                 icon = Icons.Outlined.Alarm,
+                accentContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                accentContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 onClick = onAddAlarm,
                 locked = alarmLocked,
                 modifier = Modifier.weight(1f),
@@ -212,8 +219,10 @@ internal fun QuickStartGrid(
         }
         if (canCreateFamilyAlarm) {
             HomeActionCard(
-                label = "상대방 알람 맞춰주기",
+                label = "상대 알람",
                 icon = Icons.Outlined.People,
+                accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 onClick = onAddFamilyAlarm,
                 locked = alarmLocked,
                 modifier = Modifier.fillMaxWidth(),
@@ -226,6 +235,8 @@ internal fun QuickStartGrid(
 internal fun HomeActionCard(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    accentContainerColor: Color,
+    accentContentColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     locked: Boolean = false,
@@ -233,7 +244,7 @@ internal fun HomeActionCard(
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
@@ -241,17 +252,32 @@ internal fun HomeActionCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 20.dp, horizontal = 14.dp),
+                    .padding(vertical = 16.dp, horizontal = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (locked) MaterialTheme.colorScheme.onSurfaceVariant
-                    else MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.size(30.dp),
-                )
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = if (locked) {
+                        MaterialTheme.colorScheme.surfaceVariant
+                    } else {
+                        accentContainerColor
+                    },
+                    contentColor = if (locked) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        accentContentColor
+                    },
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
                 Text(
                     text = label,
                     style = MaterialTheme.typography.bodyMedium,

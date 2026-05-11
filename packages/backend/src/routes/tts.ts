@@ -12,6 +12,7 @@ import {
   noVoiceProviderError,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
+import { translateTextWithVertex } from '../lib/vertex-translate';
 
 const tts = new Hono<AppEnv>();
 
@@ -38,7 +39,7 @@ async function findUsableVoiceProfile(
   if (shared.rows.length === 0) return null;
 
   const row = shared.rows[0] as Record<string, unknown>;
-  const viewerPk = userPk || await resolveUserPk(db, userId);
+  const viewerPk = userPk || (await resolveUserPk(db, userId));
   const ownerPk = typeof row.owner_pk === 'string' ? row.owner_pk : null;
   if (!viewerPk || !ownerPk || viewerPk === ownerPk) return null;
 
@@ -57,18 +58,28 @@ tts.post('/generate', async (c) => {
     text: string;
     category?: string;
     language?: string;
+    translate?: boolean;
   }>();
 
   if (!body.voice_profile_id || !body.text) {
-    return c.json({ error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' }, 400);
+    return c.json(
+      { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
+      400,
+    );
   }
 
   if (!UUID_RE.test(body.voice_profile_id)) {
-    return c.json({ error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   if (body.text.length > 200) {
-    return c.json({ error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' }, 400);
+    return c.json(
+      { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
+      400,
+    );
   }
 
   const validCategories = [
@@ -87,7 +98,10 @@ tts.post('/generate', async (c) => {
   ];
   if (body.category && !validCategories.includes(body.category)) {
     return c.json(
-      { error: `Invalid category. Must be one of: ${validCategories.join(', ')}`, error_code: 'INVALID_CATEGORY' },
+      {
+        error: `Invalid category. Must be one of: ${validCategories.join(', ')}`,
+        error_code: 'INVALID_CATEGORY',
+      },
       400,
     );
   }
@@ -123,36 +137,57 @@ tts.post('/generate', async (c) => {
   }
 
   if (vp.status !== 'ready') {
-    return c.json({ error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' }, 400);
+    return c.json(
+      { error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' },
+      400,
+    );
   }
 
   try {
+    const requestLanguage = body.language ?? 'ko';
+    const shouldTranslate = body.translate === true && requestLanguage !== 'ko';
+    const synthesisText = shouldTranslate
+      ? await translateTextWithVertex(c.env, body.text, requestLanguage, 'ko')
+      : body.text;
+
+    if (synthesisText.length > 200) {
+      return c.json(
+        { error: 'Translated text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
+        400,
+      );
+    }
+
     const attempts = createSynthesisAttempts({
       env: c.env,
       profile: {
         perso_voice_id: vp.perso_voice_id as string | null | undefined,
         elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
       },
-      text: body.text,
-      language: body.language ?? 'ko',
+      text: synthesisText,
+      language: requestLanguage,
     });
 
     if (attempts.length === 0) {
-      return c.json({ error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' }, 400);
+      return c.json(
+        { error: 'No voice ID available for this profile', error_code: 'NO_VOICE_ID' },
+        400,
+      );
     }
 
-    const preparedAttempts = await Promise.all(attempts.map(async (attempt) => {
-      const cacheKey = await computeTtsCacheKey({
-        provider: attempt.provider,
-        providerVoiceId: attempt.providerVoiceId,
-        voiceProfileId: body.voice_profile_id,
-        modelId: attempt.modelId,
-        language: body.language ?? 'ko',
-        text: body.text,
-        outputFormat: attempt.outputFormat,
-      });
-      return { attempt, cacheKey };
-    }));
+    const preparedAttempts = await Promise.all(
+      attempts.map(async (attempt) => {
+        const cacheKey = await computeTtsCacheKey({
+          provider: attempt.provider,
+          providerVoiceId: attempt.providerVoiceId,
+          voiceProfileId: body.voice_profile_id,
+          modelId: attempt.modelId,
+          language: requestLanguage,
+          text: synthesisText,
+          outputFormat: attempt.outputFormat,
+        });
+        return { attempt, cacheKey };
+      }),
+    );
 
     for (const { cacheKey } of preparedAttempts) {
       const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey);
@@ -166,7 +201,7 @@ tts.post('/generate', async (c) => {
             audio_object_key: cached.audioObjectKey,
             text: cached.text,
             voice_profile_id: body.voice_profile_id,
-            language: body.language ?? 'ko',
+            language: requestLanguage,
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
@@ -210,7 +245,14 @@ tts.post('/generate', async (c) => {
         await db.execute({
           sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, audio_url)
                 VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [messageId, userPk, body.voice_profile_id, body.text, body.category ?? 'custom', audioUrl],
+          args: [
+            messageId,
+            userPk,
+            body.voice_profile_id,
+            synthesisText,
+            body.category ?? 'custom',
+            audioUrl,
+          ],
         });
 
         if (audioUrl) {
@@ -228,9 +270,9 @@ tts.post('/generate', async (c) => {
               generated.provider,
               generated.providerVoiceId,
               generated.modelId,
-              body.language ?? 'ko',
+              requestLanguage,
               cacheKey,
-              body.text,
+              synthesisText,
               body.category ?? 'custom',
               audioUrl,
               audioObjectKey,
@@ -258,9 +300,9 @@ tts.post('/generate', async (c) => {
             audio_format: generated.outputFormat,
             audio_url: audioUrl,
             audio_object_key: audioObjectKey,
-            text: body.text,
+            text: synthesisText,
             voice_profile_id: body.voice_profile_id,
-            language: body.language ?? 'ko',
+            language: requestLanguage,
             provider: generated.provider,
             cache_key: cacheKey,
             cache_hit: false,
@@ -307,7 +349,10 @@ tts.get('/messages', async (c) => {
 
   if (voiceProfileId) {
     if (!UUID_RE.test(voiceProfileId)) {
-      return c.json({ error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+      return c.json(
+        { error: 'Invalid voice_profile_id format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+        400,
+      );
     }
     whereClause += ' AND m.voice_profile_id = ?';
     filterArgs.push(voiceProfileId);
@@ -372,12 +417,18 @@ tts.get('/messages/:id/audio', async (c) => {
   }>(result.rows[0]!);
   const audioUrl = message.audio_url;
   if (!audioUrl) {
-    return c.json({ error: 'Message has no stored audio', error_code: 'MESSAGE_AUDIO_MISSING' }, 404);
+    return c.json(
+      { error: 'Message has no stored audio', error_code: 'MESSAGE_AUDIO_MISSING' },
+      404,
+    );
   }
 
   const loaded = await loadAudioBytes(c, audioUrl);
   if (!loaded) {
-    return c.json({ error: 'Stored audio object not found', error_code: 'MESSAGE_AUDIO_NOT_FOUND' }, 404);
+    return c.json(
+      { error: 'Stored audio object not found', error_code: 'MESSAGE_AUDIO_NOT_FOUND' },
+      404,
+    );
   }
 
   return c.json({
@@ -409,12 +460,15 @@ tts.delete('/messages/:id', async (c) => {
   const alarmCount = Number(typedRow<{ cnt: number }>(alarmCheck.rows[0]!).cnt ?? 0);
 
   if (alarmCount > 0 && c.req.query('force') !== 'true') {
-    return c.json({
-      warning: true,
-      error_code: 'MESSAGE_IN_USE',
-      alarm_count: alarmCount,
-      message: `This message is used by ${alarmCount} alarm(s). Add ?force=true to delete anyway.`,
-    }, 409);
+    return c.json(
+      {
+        warning: true,
+        error_code: 'MESSAGE_IN_USE',
+        alarm_count: alarmCount,
+        message: `This message is used by ${alarmCount} alarm(s). Add ?force=true to delete anyway.`,
+      },
+      409,
+    );
   }
 
   await db.execute({

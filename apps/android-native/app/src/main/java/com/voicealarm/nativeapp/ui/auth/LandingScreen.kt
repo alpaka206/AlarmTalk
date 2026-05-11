@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -9,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -40,12 +43,20 @@ internal fun LandingScreen(
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         Spacer(modifier = Modifier.weight(1f))
-        Icon(
-            imageVector = Icons.Outlined.Alarm,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        Surface(
+            modifier = Modifier.size(96.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Outlined.Alarm,
+                    contentDescription = null,
+                    modifier = Modifier.size(54.dp),
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(20.dp))
         Text(
             text = "VoiceAlarm",
@@ -54,7 +65,7 @@ internal fun LandingScreen(
         )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
-            text = "소중한 사람의 목소리로 깨어나세요",
+            text = "목소리로 울리는 알람",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

@@ -644,8 +644,8 @@ describe('POST /voice/clone — 음성 클론', () => {
     return new Request('http://localhost/voice/clone', { method: 'POST', body: form });
   }
 
-  it('프로필 2개 이상이면 403', async () => {
-    mockDB.pushResult([{ count: 2 }]);
+  it('프로필 1개 이상이면 403', async () => {
+    mockDB.pushResult([{ count: 1 }]);
     const app = buildApp();
     const res = await reqWithEnv(app, cloneRequest(new Uint8Array([1, 2, 3]), '테스트'));
     expect(res.status).toBe(403);

@@ -111,11 +111,6 @@ internal fun VoiceAudioCard(
             )
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                Text(
-                    text = "서버에서 음성을 만들고, 알람 전에 기기에 저장합니다.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
                 val readyFamilyVoices = familyVoices.filter {
                     (it.status == null || it.status == "ready") && it.isShared != false
@@ -137,7 +132,7 @@ internal fun VoiceAudioCard(
                 if (voiceProfileBusy) {
                     MutedText("음성 프로필을 불러오는 중이에요.")
                 } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
-                    MutedText("사용 가능한 음성 프로필이 없어요. 프로필을 만들거나 공유받으면 자동으로 표시됩니다.")
+                    MutedText("사용 가능한 음성이 없어요.")
                 } else if (profileOptions.isEmpty()) {
                     MutedText("준비 완료된 음성 프로필이 아직 없어요.")
                 } else {
@@ -148,6 +143,8 @@ internal fun VoiceAudioCard(
                             editor.voiceProfileId = it
                             editor.clearTtsMeta()
                         },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
                 Row(
@@ -157,7 +154,7 @@ internal fun VoiceAudioCard(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
-                        MutedText("카테고리와 언어에 맞는 문구를 자동으로 넣어요")
+                        MutedText("문구를 추천해요")
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,
@@ -175,7 +172,8 @@ internal fun VoiceAudioCard(
                             editor.voiceText = it.take(200)
                             editor.clearTtsMeta()
                         },
-                        label = { Text("읽어줄 문구") },
+                        label = { Text("음성 메시지") },
+                        placeholder = { Text("알람에서 들을 음성 메시지") },
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -190,18 +188,43 @@ internal fun VoiceAudioCard(
                             editor.clearTtsMeta()
                             editor.voiceText = ""
                         },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
-                Text("언어", fontWeight = FontWeight.SemiBold)
-                ChipGrid(
-                    options = TtsLanguages,
-                    selected = editor.voiceLanguage,
-                    onSelect = {
-                        editor.voiceLanguage = it
-                        editor.clearTtsMeta()
-                        if (editor.voiceRandomPrompt) editor.voiceText = ""
-                    },
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("번역", fontWeight = FontWeight.SemiBold)
+                        MutedText(if (editor.voiceTranslationEnabled) "번역 후 생성" else "원문으로 생성")
+                    }
+                    VoiceAlarmSwitch(
+                        checked = editor.voiceTranslationEnabled,
+                        onCheckedChange = {
+                            editor.voiceTranslationEnabled = it
+                            if (!it) editor.voiceLanguage = "ko"
+                            else if (editor.voiceLanguage == "ko") editor.voiceLanguage = "en"
+                            editor.clearTtsMeta()
+                            if (editor.voiceRandomPrompt) editor.voiceText = ""
+                        },
+                    )
+                }
+                if (editor.voiceTranslationEnabled) {
+                    ChipGrid(
+                        options = TtsLanguages,
+                        selected = editor.voiceLanguage,
+                        onSelect = {
+                            editor.voiceLanguage = it
+                            editor.clearTtsMeta()
+                            if (editor.voiceRandomPrompt) editor.voiceText = ""
+                        },
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
             } else {
                 VoiceCaptureModeSelector(
                     selected = localInputMode,
@@ -215,7 +238,7 @@ internal fun VoiceAudioCard(
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         levels = recordingLevels,
                         enabled = true,
-                        notice = "녹음은 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 저장돼요.",
+                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
                         onRecordClick = onRecord,
                     )
                 } else {
@@ -227,7 +250,7 @@ internal fun VoiceAudioCard(
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         enabled = !isRecording,
                         uploadLabel = "파일 업로드",
-                        notice = "원하는 시작과 끝을 고르세요. 최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초까지 알람에 저장돼요.",
+                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
                         onPickFile = onPick,
                         onCropChange = onCropChange,
                         onPreviewCrop = onPreviewCrop,
@@ -252,7 +275,7 @@ internal fun VoiceAudioCard(
                     !isRecording
                 ) {
                     Text(
-                        text = "녹음하거나 파일을 업로드해 주세요.",
+                        text = "녹음 또는 파일 업로드",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

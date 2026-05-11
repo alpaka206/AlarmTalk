@@ -83,11 +83,13 @@ internal fun AlarmListScreen(
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestPermissionGate: (PermissionTarget) -> Unit,
+    profileMenu: (@Composable () -> Unit)? = null,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
-            compareByDescending<AlarmEntity> { it.enabled }
-                .thenBy { it.fireAtMillis },
+            compareBy<AlarmEntity> { it.hour }
+                .thenBy { it.minute }
+                .thenBy { it.createdAtMillis },
         )
     }
     val nextAlarm = remember(alarms) {
@@ -145,10 +147,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Voices -> {
                 item {
-                    ScreenHeader(
-                        title = "음성",
-                        subtitle = "내 목소리를 AI 음성 프로필로 만들고 관리해요.",
-                    )
+                    ScreenHeader(title = "음성")
                 }
                 item {
                     VoiceProfileManagementPanel(
@@ -168,10 +167,7 @@ internal fun AlarmListScreen(
             }
 
             NativeTab.Alarms -> {
-                item { AlarmsHeader(onCreateAlarm = onCreateAlarm) }
-                if (nextAlarm != null) {
-                    item { CountdownBanner(nextAlarm = nextAlarm) }
-                }
+                item { AlarmsHeader(onCreateAlarm = onCreateAlarm, profileMenu = profileMenu) }
                 if (sortedAlarms.isEmpty()) {
                     item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
                 } else {
@@ -188,10 +184,7 @@ internal fun AlarmListScreen(
 
             NativeTab.People -> {
                 item {
-                    ScreenHeader(
-                        title = "코드 등록",
-                        subtitle = "초대 코드 및 이용권을 등록하세요.",
-                    )
+                    ScreenHeader(title = "코드 등록")
                 }
                 item {
                     FamilyConnectionPanel(
@@ -209,10 +202,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Messages -> {
                 item {
-                    ScreenHeader(
-                        title = "음성 메시지",
-                        subtitle = "소중한 사람들에게 응원의 메시지를 보내봐요.",
-                    )
+                    ScreenHeader(title = "메시지")
                 }
                 if (authSession != null) item {
                     VoiceMessagePanel(
@@ -242,7 +232,7 @@ internal fun AlarmListScreen(
                 item {
                     ScreenHeader(
                         title = "캐릭터",
-                        subtitle = "알람을 제대로 끄면 캐릭터가 성장해요!",
+                        subtitle = "알람 종료로 성장해요",
                     )
                 }
                 item {

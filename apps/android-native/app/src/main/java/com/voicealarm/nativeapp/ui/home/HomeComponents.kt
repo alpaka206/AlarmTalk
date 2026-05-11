@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.People
@@ -60,26 +58,11 @@ internal fun HomeHeader() {
         else -> "좋은 밤이에요"
     }
     Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = if (hour in 6..20) Icons.Outlined.Home else Icons.Outlined.Alarm,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                text = greeting,
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
         Text(
-            text = "소중한 사람의 목소리가 기다리고 있어요",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = greeting,
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
         )
     }
 }
@@ -98,9 +81,9 @@ internal fun ProfileMenu(
                 .size(40.dp)
                 .clickable { expanded = true },
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.surface),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             shadowElevation = 4.dp,
         ) {
             Box(
@@ -268,7 +251,7 @@ internal fun ScreenHeader(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = title,
-            style = MaterialTheme.typography.displaySmall,
+            style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
         if (!subtitle.isNullOrBlank()) {

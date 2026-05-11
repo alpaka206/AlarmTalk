@@ -3,6 +3,7 @@ package com.voicealarm.nativeapp.ringing
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
@@ -51,6 +52,7 @@ class RingingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         configureLockScreen()
+        blockBackNavigation()
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
 
         setContent {
@@ -89,9 +91,30 @@ class RingingActivity : ComponentActivity() {
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
     }
 
+    override fun onResume() {
+        super.onResume()
+        hideSystemBars()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        hideSystemBars()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
+    }
+
+    private fun blockBackNavigation() {
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    hideSystemBars()
+                }
+            },
+        )
     }
 
     private fun configureLockScreen() {
