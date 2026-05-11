@@ -154,7 +154,8 @@ describe('POST /auth/register', () => {
     expect(body.token).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
     expect(body.user.email).toBe('kim@test.com');
     expect(body.user.plan).toBe('free');
-    expect(mockDB.calls[1]?.args[2]).toBe(body.user.id);
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
   it('중복 이메일 → 409', async () => {

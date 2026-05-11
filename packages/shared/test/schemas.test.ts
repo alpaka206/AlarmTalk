@@ -50,6 +50,7 @@ describe('RegisterRequestSchema', () => {
       email: 'kim@example.com',
       password: 's3curepass!',
       name: '김규원',
+      email_verification_code: '123456',
     });
     expect(r.email).toBe('kim@example.com');
   });
