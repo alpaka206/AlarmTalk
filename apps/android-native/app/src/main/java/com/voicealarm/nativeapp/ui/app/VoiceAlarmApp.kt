@@ -124,6 +124,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
+            viewModel.preloadNotes()
         }
     }
 
@@ -297,6 +298,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
+                    unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
                     onSelectTab = ::navigateToTab,
                 )
             }
