@@ -240,9 +240,9 @@ auth.post('/register', async (c) => {
     const today = new Date().toISOString().split('T')[0]!;
 
     await db.execute({
-      sql: `INSERT INTO users (id, email, password_hash, name, daily_tts_reset_at)
-            VALUES (?, ?, ?, ?, ?)`,
-      args: [id, normalizedEmail, passwordHash, name, today],
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name, daily_tts_reset_at)
+            VALUES (?, ?, ?, ?, ?, ?)`,
+      args: [id, normalizedEmail, id, passwordHash, name, today],
     });
 
     await consumeEmailVerificationCode(db, verification.id);
@@ -291,7 +291,7 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, email, password_hash, name, plan,
+      sql: `SELECT id, google_id, email, password_hash, name, plan,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows
@@ -305,6 +305,7 @@ auth.post('/login', async (c) => {
 
     const row = typedRow<{
       id: string;
+      google_id: string | null;
       email: string;
       password_hash: string | null;
       name: string | null;
@@ -318,6 +319,13 @@ auth.post('/login', async (c) => {
     const ok = await verifyPassword(password, row.password_hash, c.env.PASSWORD_PEPPER);
     if (!ok) {
       return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
+    }
+
+    if (!row.google_id) {
+      await db.execute({
+        sql: `UPDATE users SET google_id = ?, updated_at = datetime('now') WHERE id = ?`,
+        args: [row.id, row.id],
+      });
     }
 
     const token = await signAppJwt(

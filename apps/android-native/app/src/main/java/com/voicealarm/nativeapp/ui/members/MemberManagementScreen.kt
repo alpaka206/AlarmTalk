@@ -67,6 +67,7 @@ internal fun MemberManagementScreen(
     }
     val sortedMembers = familyGroup?.members.orEmpty()
         .sortedWith(compareByDescending<FamilyGroupMember> { it.role == "owner" }.thenBy { it.joinedAt })
+    val isCapacityFull = group != null && sortedMembers.size >= group.maxMembers
     val activePlanKey = subscriptionResponse?.plan?.key
     val shareVoucher = remember(vouchers, activePlanKey) {
         vouchers.firstOrNull { voucher ->
@@ -146,7 +147,11 @@ internal fun MemberManagementScreen(
             if (shareVoucher == null) {
                 item {
                     Text(
-                        text = "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 INV 코드를 만들어 주세요.",
+                        text = if (isCapacityFull) {
+                            "정원이 가득 차서 더 이상 공유할 수 없어요."
+                        } else {
+                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 INV 코드를 만들어 주세요."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -154,16 +159,16 @@ internal fun MemberManagementScreen(
                 item {
                     OutlinedButton(
                         onClick = onEnsureFamilyShareCode,
-                        enabled = !billingBusy,
+                        enabled = !billingBusy && !isCapacityFull,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text("공유 코드 만들기")
+                        Text(if (isCapacityFull) "공유 불가" else "공유 코드 만들기")
                     }
                 }
             } else {
                 item {
-                    val isFull = shareVoucher.useCount >= shareVoucher.maxUses
+                    val isFull = isCapacityFull || shareVoucher.useCount >= shareVoucher.maxUses
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = RoundedCornerShape(14.dp),
@@ -179,7 +184,7 @@ internal fun MemberManagementScreen(
                             )
                             Text(
                                 text = if (isFull) {
-                                    "${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용 · 정원이 가득 찼어요"
+                                    "${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용 · 정원이 가득 차서 공유할 수 없어요"
                                 } else {
                                     "${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용"
                                 },
@@ -192,7 +197,7 @@ internal fun MemberManagementScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                             ) {
-                                Text(if (isFull) "정원 가득" else "공유하기")
+                                Text(if (isFull) "공유 불가" else "공유하기")
                             }
                         }
                     }
