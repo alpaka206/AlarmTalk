@@ -92,7 +92,7 @@ internal fun AuthScreen(
             onValueChange = { email = it },
             label = { Text("이메일") },
             singleLine = true,
-            enabled = !busy && canSubmit,
+            enabled = !busy,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,
@@ -119,7 +119,7 @@ internal fun AuthScreen(
                 if (mode == AuthMode.Register) onRegister(email, password, name)
                 else onLogin(email, password)
             },
-            enabled = !busy,
+            enabled = !busy && canSubmit,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),

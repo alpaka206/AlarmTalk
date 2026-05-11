@@ -52,7 +52,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import retrofit2.HttpException
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -91,7 +90,7 @@ internal fun MainViewModel.register(email: String, password: String, name: Strin
     }
 }
 
-internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email: String, name: String) {
+internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -102,20 +101,8 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email:
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = null
         }.onFailure { error ->
-            if ((error as? HttpException)?.code() == 404) {
-                authSession = authSessionStore.saveLegacyGoogleSession(
-                    idToken = idToken,
-                    id = id,
-                    email = email,
-                    name = name,
-                )
-                RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-                RemoteAlarmSyncScheduler.runOnce(getApplication())
-                message = null
-            } else {
-                Log.e(TAG, "Google token exchange failed", error)
-                message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
-            }
+            Log.e(TAG, "Google token exchange failed", error)
+            message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
         }
         authBusy = false
     }
