@@ -53,6 +53,7 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -673,19 +674,43 @@ internal fun familyMemberLabel(member: FamilyGroupMember): String =
         ?: member.email?.takeIf { it.isNotBlank() }
         ?: "멤버"
 
-private fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
-    val windows = member.familyAlarmQuietWindows.takeIf { it.isNotEmpty() }
-        ?: listOf(
-            com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow(
-                days = member.familyAlarmQuietDays,
-                start = member.familyAlarmQuietStart,
-                end = member.familyAlarmQuietEnd,
-            ),
-        )
+internal fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+    val fallback = FamilyAlarmQuietWindow(
+        days = safeQuietDays(runCatching { member.familyAlarmQuietDays }.getOrNull()),
+        start = safeQuietTime(runCatching { member.familyAlarmQuietStart }.getOrNull(), "09:00"),
+        end = safeQuietTime(runCatching { member.familyAlarmQuietEnd }.getOrNull(), "18:30"),
+    )
+    val windows = runCatching { member.familyAlarmQuietWindows }.getOrNull()
+        ?.mapNotNull { window ->
+            val start = safeQuietTime(runCatching { window.start }.getOrNull(), "")
+            val end = safeQuietTime(runCatching { window.end }.getOrNull(), "")
+            if (start.isBlank() || end.isBlank()) {
+                null
+            } else {
+                FamilyAlarmQuietWindow(
+                    days = safeQuietDays(runCatching { window.days }.getOrNull()),
+                    start = start,
+                    end = end,
+                )
+            }
+        }
+        ?.takeIf { it.isNotEmpty() }
+        ?: listOf(fallback)
     return windows.joinToString(" · ") { window ->
         "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
     }
 }
+
+private fun safeQuietDays(days: List<Int>?): List<Int> =
+    days
+        ?.filter { it in 0..6 }
+        ?.distinct()
+        ?.sorted()
+        ?.takeIf { it.isNotEmpty() }
+        ?: listOf(1, 2, 3, 4, 5)
+
+private fun safeQuietTime(value: String?, fallback: String): String =
+    value?.takeIf { it.isNotBlank() } ?: fallback
 
 private fun quietDaysLabelForFamily(days: List<Int>): String {
     val sorted = days.distinct().sorted()
