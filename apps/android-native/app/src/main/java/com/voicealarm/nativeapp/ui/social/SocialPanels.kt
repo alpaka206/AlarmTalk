@@ -21,8 +21,6 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -622,16 +620,13 @@ internal fun NoteRow(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                    if (unread) {
-                        AssistChip(
-                            onClick = onMarkRead,
-                            label = { Text("새") },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.secondary,
-                                labelColor = MaterialTheme.colorScheme.onSecondary,
-                            ),
-                        )
-                    }
+                if (unread) {
+                    Surface(
+                        modifier = Modifier.size(9.dp),
+                        color = MaterialTheme.colorScheme.secondary,
+                        shape = CircleShape,
+                    ) {}
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
