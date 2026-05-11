@@ -606,39 +606,41 @@ internal fun NoteRow(
                     )
                 }
             }
-            Text(
-                text = note.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            val meta = buildList {
-                if (note.audioUrl != null) add("음성 파일 있음")
-                note.createdAt?.let { add(it.take(10)) }
-            }.joinToString(" · ")
-            if (meta.isNotBlank()) {
-                MutedText(meta)
-            }
-            if (note.audioUrl != null) {
-                OutlinedButton(
-                    onClick = onPlayClick,
-                    enabled = !isLoading,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
+                    Text(
+                        text = note.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    note.createdAt?.let { MutedText(it.take(10)) }
+                }
+                if (note.audioUrl != null) {
+                    IconButton(
+                        onClick = onPlayClick,
+                        enabled = !isLoading,
+                        modifier = Modifier.size(40.dp),
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                                contentDescription = if (isPlaying) "정지" else "재생",
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
                     }
-                    Spacer(Modifier.size(8.dp))
-                    Text(if (isPlaying) "정지" else "재생")
                 }
             }
         }

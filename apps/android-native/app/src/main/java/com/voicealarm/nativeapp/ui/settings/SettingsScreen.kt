@@ -1,18 +1,23 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -33,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 
 @Composable
 internal fun SettingsScreen(
@@ -42,7 +48,7 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
-    onChangeFamilyAlarmSettings: (Boolean, List<Int>, String, String) -> Unit,
+    onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -95,9 +101,7 @@ internal fun SettingsScreen(
                         onCheckedChange = {
                             onChangeFamilyAlarmSettings(
                                 it,
-                                authSession.user.familyAlarmQuietDays,
-                                authSession.user.familyAlarmQuietStart,
-                                authSession.user.familyAlarmQuietEnd,
+                                authSession.user.familyAlarmQuietWindows,
                             )
                         },
                     )
@@ -105,11 +109,7 @@ internal fun SettingsScreen(
                         HorizontalDivider()
                         SettingsRow(
                             label = "설정 불가 시간",
-                            value = quietScheduleLabel(
-                                authSession.user.familyAlarmQuietDays,
-                                authSession.user.familyAlarmQuietStart,
-                                authSession.user.familyAlarmQuietEnd,
-                            ),
+                            value = quietScheduleLabel(authSession.user.familyAlarmQuietWindows),
                             onClick = { showFamilyAlarmDialog = true },
                         )
                     }
@@ -158,13 +158,11 @@ internal fun SettingsScreen(
 
     if (showFamilyAlarmDialog && authSession != null) {
         FamilyAlarmQuietTimeDialog(
-            initialDays = authSession.user.familyAlarmQuietDays,
-            initialStart = authSession.user.familyAlarmQuietStart,
-            initialEnd = authSession.user.familyAlarmQuietEnd,
+            initialWindows = authSession.user.familyAlarmQuietWindows,
             onDismiss = { showFamilyAlarmDialog = false },
-            onConfirm = { days, start, end ->
+            onConfirm = { windows ->
                 showFamilyAlarmDialog = false
-                onChangeFamilyAlarmSettings(true, days, start, end)
+                onChangeFamilyAlarmSettings(true, windows)
             },
         )
     }
@@ -259,74 +257,141 @@ private fun SettingsToggleRow(
 
 @Composable
 private fun FamilyAlarmQuietTimeDialog(
-    initialDays: List<Int>,
-    initialStart: String,
-    initialEnd: String,
+    initialWindows: List<FamilyAlarmQuietWindow>,
     onDismiss: () -> Unit,
-    onConfirm: (List<Int>, String, String) -> Unit,
+    onConfirm: (List<FamilyAlarmQuietWindow>) -> Unit,
 ) {
-    var selectedDays by remember(initialDays) {
-        mutableStateOf(initialDays.ifEmpty { listOf(1, 2, 3, 4, 5) }.distinct().sorted())
+    var drafts by remember(initialWindows) {
+        mutableStateOf(
+            initialWindows
+                .ifEmpty { listOf(FamilyAlarmQuietWindow()) }
+                .map { it.toDraft() },
+        )
     }
-    var start by remember(initialStart) { mutableStateOf(initialStart) }
-    var end by remember(initialEnd) { mutableStateOf(initialEnd) }
-    val valid = isTimeText(start) && isTimeText(end)
+    val valid = drafts.isNotEmpty() && drafts.all { it.isValid() }
+
+    fun updateDraft(index: Int, transform: (QuietWindowDraft) -> QuietWindowDraft) {
+        drafts = drafts.mapIndexed { currentIndex, draft ->
+            if (currentIndex == index) transform(draft) else draft
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("설정 불가 시간") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
                 Text(
                     text = "선택한 시간에는 다른 사람이 내 알람을 만들 수 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("일", "월", "화", "수", "목", "금", "토")
-                        .mapIndexed { index, label -> index to label }
-                        .chunked(4)
-                        .forEach { row ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                row.forEach { (index, label) ->
-                                    FilterChip(
-                                        selected = index in selectedDays,
-                                        onClick = {
-                                            selectedDays = if (index in selectedDays) {
-                                                selectedDays - index
-                                            } else {
-                                                (selectedDays + index).distinct().sorted()
-                                            }
-                                        },
-                                        label = { Text(label) },
-                                    )
+                drafts.forEachIndexed { draftIndex, draft ->
+                    OutlinedCard {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "불가 시간 ${draftIndex + 1}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                if (drafts.size > 1) {
+                                    IconButton(
+                                        onClick = { drafts = drafts.filterIndexed { index, _ -> index != draftIndex } },
+                                    ) {
+                                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
+                                    }
                                 }
                             }
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                dayLabels()
+                                    .mapIndexed { index, label -> index to label }
+                                    .chunked(4)
+                                    .forEach { row ->
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            row.forEach { (dayIndex, label) ->
+                                                FilterChip(
+                                                    selected = dayIndex in draft.days,
+                                                    onClick = {
+                                                        updateDraft(draftIndex) {
+                                                            val days = if (dayIndex in it.days) {
+                                                                it.days - dayIndex
+                                                            } else {
+                                                                it.days + dayIndex
+                                                            }
+                                                            it.copy(days = days)
+                                                        }
+                                                    },
+                                                    label = { Text(label) },
+                                                )
+                                            }
+                                        }
+                                    }
+                            }
+                            Text("시작", style = MaterialTheme.typography.labelMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TimePartField(
+                                    value = draft.startHour,
+                                    label = "시",
+                                    isError = draft.startHour.isNotBlank() && !isHourText(draft.startHour),
+                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(startHour = value) } },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TimePartField(
+                                    value = draft.startMinute,
+                                    label = "분",
+                                    isError = draft.startMinute.isNotBlank() && !isMinuteText(draft.startMinute),
+                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(startMinute = value) } },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            Text("종료", style = MaterialTheme.typography.labelMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TimePartField(
+                                    value = draft.endHour,
+                                    label = "시",
+                                    isError = draft.endHour.isNotBlank() && !isHourText(draft.endHour),
+                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(endHour = value) } },
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TimePartField(
+                                    value = draft.endMinute,
+                                    label = "분",
+                                    isError = draft.endMinute.isNotBlank() && !isMinuteText(draft.endMinute),
+                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(endMinute = value) } },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
+                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = start,
-                        onValueChange = { start = it.filter { char -> char.isDigit() || char == ':' }.take(5) },
-                        label = { Text("시작") },
-                        singleLine = true,
-                        isError = start.isNotBlank() && !isTimeText(start),
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedTextField(
-                        value = end,
-                        onValueChange = { end = it.filter { char -> char.isDigit() || char == ':' }.take(5) },
-                        label = { Text("종료") },
-                        singleLine = true,
-                        isError = end.isNotBlank() && !isTimeText(end),
-                        modifier = Modifier.weight(1f),
-                    )
+                Button(
+                    onClick = {
+                        if (drafts.size < 8) {
+                            drafts = drafts + FamilyAlarmQuietWindow(days = listOf(1), start = "09:00", end = "18:30").toDraft()
+                        }
+                    },
+                    enabled = drafts.size < 8,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("시간 추가")
                 }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedDays, start, end) },
+                onClick = { onConfirm(drafts.map { it.toWindow() }) },
                 enabled = valid,
             ) {
                 Text("저장")
@@ -340,8 +405,76 @@ private fun FamilyAlarmQuietTimeDialog(
     )
 }
 
-private fun quietScheduleLabel(days: List<Int>, start: String, end: String): String =
-    "${quietDaysLabel(days)} $start-$end"
+@Composable
+private fun TimePartField(
+    value: String,
+    label: String,
+    isError: Boolean,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { value -> onValueChange(value.filter { it.isDigit() }.take(2)) },
+        label = { Text(label) },
+        singleLine = true,
+        isError = isError,
+        modifier = modifier,
+    )
+}
+
+private data class QuietWindowDraft(
+    val days: Set<Int>,
+    val startHour: String,
+    val startMinute: String,
+    val endHour: String,
+    val endMinute: String,
+)
+
+private fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft {
+    val startParts = splitTime(start)
+    val endParts = splitTime(end)
+    return QuietWindowDraft(
+        days = days.filter { it in 0..6 }.toSet().ifEmpty { setOf(1, 2, 3, 4, 5) },
+        startHour = startParts.first,
+        startMinute = startParts.second,
+        endHour = endParts.first,
+        endMinute = endParts.second,
+    )
+}
+
+private fun QuietWindowDraft.toWindow(): FamilyAlarmQuietWindow =
+    FamilyAlarmQuietWindow(
+        days = days.sorted(),
+        start = "${twoDigit(startHour)}:${twoDigit(startMinute)}",
+        end = "${twoDigit(endHour)}:${twoDigit(endMinute)}",
+    )
+
+private fun QuietWindowDraft.isValid(): Boolean =
+    days.isNotEmpty() &&
+        isHourText(startHour) &&
+        isMinuteText(startMinute) &&
+        isHourText(endHour) &&
+        isMinuteText(endMinute)
+
+private fun splitTime(value: String): Pair<String, String> {
+    val parts = value.split(":")
+    return (parts.getOrNull(0)?.takeIf { isHourText(it) } ?: "09") to
+        (parts.getOrNull(1)?.takeIf { isMinuteText(it) } ?: "00")
+}
+
+private fun twoDigit(value: String): String =
+    value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
+
+private fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
+    if (windows.isEmpty()) return "없음"
+    val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
+    val hidden = windows.size - 2
+    return if (hidden > 0) "$visible 외 ${hidden}개" else visible
+}
+
+private fun quietWindowLabel(window: FamilyAlarmQuietWindow): String =
+    "${quietDaysLabel(window.days)} ${window.start}-${window.end}"
 
 private fun quietDaysLabel(days: List<Int>): String {
     val sorted = days.distinct().sorted()
@@ -350,9 +483,14 @@ private fun quietDaysLabel(days: List<Int>): String {
         listOf(1, 2, 3, 4, 5) -> "월-금"
         listOf(0, 6) -> "주말"
         listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
-        else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }
+        else -> sorted.joinToString(",") { dayLabels()[it] }
     }
 }
 
-private fun isTimeText(value: String): Boolean =
-    Regex("""^([01]\d|2[0-3]):[0-5]\d$""").matches(value)
+private fun dayLabels(): List<String> = listOf("일", "월", "화", "수", "목", "금", "토")
+
+private fun isHourText(value: String): Boolean =
+    value.toIntOrNull()?.let { it in 0..23 } == true
+
+private fun isMinuteText(value: String): Boolean =
+    value.toIntOrNull()?.let { it in 0..59 } == true

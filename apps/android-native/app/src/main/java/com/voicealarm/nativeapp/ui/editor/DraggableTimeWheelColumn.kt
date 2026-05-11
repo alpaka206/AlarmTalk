@@ -1,8 +1,7 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -44,6 +43,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private val TimeWheelEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+
 @Composable
 internal fun DraggableTimeWheelColumn(
     itemHeight: androidx.compose.ui.unit.Dp,
@@ -68,9 +69,9 @@ internal fun DraggableTimeWheelColumn(
     }
 
     fun flingStepsFor(velocity: Float): Int {
-        val minFlingVelocity = itemHeightPx * 3.5f
+        val minFlingVelocity = itemHeightPx * 4.2f
         if (abs(velocity) < minFlingVelocity) return 0
-        val rawSteps = ((abs(velocity) / itemHeightPx) * 0.18f)
+        val rawSteps = ((abs(velocity) / itemHeightPx) * 0.12f)
             .roundToInt()
             .coerceAtLeast(1)
         return if (velocity < 0f) rawSteps else -rawSteps
@@ -195,10 +196,7 @@ internal suspend fun animateWheelSettle(
     if (steps == 0) {
         Animatable(startOffsetPx).animateTo(
             targetValue = 0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow,
-            ),
+            animationSpec = tween(durationMillis = 170, easing = TimeWheelEasing),
         ) {
             onOffsetChange(value)
         }
@@ -211,7 +209,7 @@ internal suspend fun animateWheelSettle(
         val targetOffset = if (direction > 0) -itemHeightPx else itemHeightPx
         Animatable(currentOffset).animateTo(
             targetValue = targetOffset,
-            animationSpec = tween(durationMillis = 118),
+            animationSpec = tween(durationMillis = 165, easing = TimeWheelEasing),
         ) {
             onOffsetChange(value)
         }

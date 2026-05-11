@@ -25,6 +25,7 @@ import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
@@ -169,20 +170,23 @@ internal fun MainViewModel.updateNickname(name: String) {
 
 internal fun MainViewModel.updateFamilyAlarmSettings(
     allowFamilyAlarms: Boolean,
-    quietDays: List<Int>,
-    quietStart: String,
-    quietEnd: String,
+    quietWindows: List<FamilyAlarmQuietWindow>,
 ) {
     val session = authSession
     if (session == null) {
         message = "로그인 후 사용할 수 있어요"
         return
     }
-    val normalizedDays = quietDays.distinct().filter { it in 0..6 }.sorted()
-    if (!isValidTimeText(quietStart) || !isValidTimeText(quietEnd)) {
+    val normalizedWindows = quietWindows
+        .map { window -> window.copy(days = window.days.distinct().filter { it in 0..6 }.sorted()) }
+        .filter { it.days.isNotEmpty() }
+        .take(8)
+    if (normalizedWindows.any { !isValidTimeText(it.start) || !isValidTimeText(it.end) }) {
         message = "시간은 HH:mm 형식으로 입력해 주세요"
         return
     }
+    val firstWindow = normalizedWindows.firstOrNull()
+        ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
     val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
@@ -191,18 +195,20 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
                 authorization,
                 com.voicealarm.nativeapp.network.UpdateProfileRequest(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = normalizedDays,
-                    familyAlarmQuietStart = quietStart,
-                    familyAlarmQuietEnd = quietEnd,
+                    familyAlarmQuietDays = firstWindow.days,
+                    familyAlarmQuietStart = firstWindow.start,
+                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
         }.onSuccess {
             val updated = session.copy(
                 user = session.user.copy(
                     allowFamilyAlarms = allowFamilyAlarms,
-                    familyAlarmQuietDays = normalizedDays,
-                    familyAlarmQuietStart = quietStart,
-                    familyAlarmQuietEnd = quietEnd,
+                    familyAlarmQuietDays = firstWindow.days,
+                    familyAlarmQuietStart = firstWindow.start,
+                    familyAlarmQuietEnd = firstWindow.end,
+                    familyAlarmQuietWindows = normalizedWindows,
                 ),
             )
             authSession = authSessionStore.save(updated)

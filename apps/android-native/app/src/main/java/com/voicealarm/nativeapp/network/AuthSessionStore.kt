@@ -2,6 +2,7 @@ package com.voicealarm.nativeapp.network
 
 import android.content.Context
 import java.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 
 data class AuthSession(
@@ -21,6 +22,8 @@ class AuthSessionStore(context: Context) {
             clear()
             return null
         }
+        val quietWindows = readQuietWindows()
+        val firstQuietWindow = quietWindows.firstOrNull()
         return AuthSession(
             token = token,
             provider = provider,
@@ -30,9 +33,12 @@ class AuthSessionStore(context: Context) {
                 name = prefs.getString(KEY_NAME, "") ?: "",
                 plan = prefs.getString(KEY_PLAN, "free") ?: "free",
                 allowFamilyAlarms = prefs.getBoolean(KEY_ALLOW_FAMILY_ALARMS, false),
-                familyAlarmQuietDays = readQuietDays(),
-                familyAlarmQuietStart = prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
-                familyAlarmQuietEnd = prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
+                familyAlarmQuietDays = firstQuietWindow?.days ?: readQuietDays(),
+                familyAlarmQuietStart = firstQuietWindow?.start
+                    ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
+                familyAlarmQuietEnd = firstQuietWindow?.end
+                    ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
+                familyAlarmQuietWindows = quietWindows,
             ),
         )
     }
@@ -69,6 +75,7 @@ class AuthSessionStore(context: Context) {
                 familyAlarmQuietDays = listOf(1, 2, 3, 4, 5),
                 familyAlarmQuietStart = "09:00",
                 familyAlarmQuietEnd = "18:30",
+                familyAlarmQuietWindows = listOf(FamilyAlarmQuietWindow()),
             ),
         )
 
@@ -81,6 +88,8 @@ class AuthSessionStore(context: Context) {
 
     private fun save(token: String, provider: String, user: AuthUser): AuthSession {
         val normalizedUser = normalizeUser(user)
+        val firstQuietWindow = normalizedUser.familyAlarmQuietWindows.firstOrNull()
+            ?: FamilyAlarmQuietWindow(days = normalizedUser.familyAlarmQuietDays)
         prefs.edit()
             .putString(KEY_TOKEN, token)
             .putString(KEY_PROVIDER, provider)
@@ -89,9 +98,10 @@ class AuthSessionStore(context: Context) {
             .putString(KEY_NAME, normalizedUser.name)
             .putString(KEY_PLAN, normalizedUser.plan)
             .putBoolean(KEY_ALLOW_FAMILY_ALARMS, normalizedUser.allowFamilyAlarms)
-            .putString(KEY_FAMILY_ALARM_QUIET_DAYS, normalizedUser.familyAlarmQuietDays.joinToString(","))
-            .putString(KEY_FAMILY_ALARM_QUIET_START, normalizedUser.familyAlarmQuietStart)
-            .putString(KEY_FAMILY_ALARM_QUIET_END, normalizedUser.familyAlarmQuietEnd)
+            .putString(KEY_FAMILY_ALARM_QUIET_DAYS, firstQuietWindow.days.joinToString(","))
+            .putString(KEY_FAMILY_ALARM_QUIET_START, firstQuietWindow.start)
+            .putString(KEY_FAMILY_ALARM_QUIET_END, firstQuietWindow.end)
+            .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
             .apply()
         return AuthSession(token = token, provider = provider, user = normalizedUser)
     }
@@ -105,22 +115,72 @@ class AuthSessionStore(context: Context) {
             ?.takeIf { it.isNotEmpty() }
             ?: listOf(1, 2, 3, 4, 5)
 
-    private fun normalizeUser(user: AuthUser): AuthUser =
-        user.copy(
-            name = runCatching { user.name }.getOrNull().orEmpty(),
-            plan = runCatching { user.plan }.getOrNull()?.takeIf { it.isNotBlank() } ?: "free",
-            familyAlarmQuietDays = normalizeQuietDays(
-                runCatching { user.familyAlarmQuietDays }.getOrNull(),
-            ),
-            familyAlarmQuietStart = normalizeQuietTime(
-                runCatching { user.familyAlarmQuietStart }.getOrNull(),
-                fallback = "09:00",
-            ),
-            familyAlarmQuietEnd = normalizeQuietTime(
-                runCatching { user.familyAlarmQuietEnd }.getOrNull(),
-                fallback = "18:30",
+    private fun readQuietWindows(): List<FamilyAlarmQuietWindow> {
+        val encoded = prefs.getString(KEY_FAMILY_ALARM_QUIET_WINDOWS, null)
+        if (!encoded.isNullOrBlank()) {
+            runCatching {
+                val array = JSONArray(encoded)
+                List(array.length()) { index ->
+                    val item = array.getJSONObject(index)
+                    FamilyAlarmQuietWindow(
+                        days = normalizeQuietDays(
+                            List(item.optJSONArray("days")?.length() ?: 0) { dayIndex ->
+                                item.optJSONArray("days")?.optInt(dayIndex) ?: -1
+                            },
+                        ),
+                        start = normalizeQuietTime(item.optString("start"), "09:00"),
+                        end = normalizeQuietTime(item.optString("end"), "18:30"),
+                    )
+                }.filter { it.days.isNotEmpty() }
+            }.getOrNull()?.let { return it }
+        }
+        return listOf(
+            FamilyAlarmQuietWindow(
+                days = readQuietDays(),
+                start = prefs.getString(KEY_FAMILY_ALARM_QUIET_START, "09:00") ?: "09:00",
+                end = prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
             ),
         )
+    }
+
+    private fun encodeQuietWindows(windows: List<FamilyAlarmQuietWindow>): String {
+        val array = JSONArray()
+        windows.forEach { window ->
+            array.put(
+                JSONObject()
+                    .put("days", JSONArray(window.days))
+                    .put("start", window.start)
+                    .put("end", window.end),
+            )
+        }
+        return array.toString()
+    }
+
+    private fun normalizeUser(user: AuthUser): AuthUser {
+        val legacyDays = normalizeQuietDays(runCatching { user.familyAlarmQuietDays }.getOrNull())
+        val legacyStart = normalizeQuietTime(
+            runCatching { user.familyAlarmQuietStart }.getOrNull(),
+            fallback = "09:00",
+        )
+        val legacyEnd = normalizeQuietTime(
+            runCatching { user.familyAlarmQuietEnd }.getOrNull(),
+            fallback = "18:30",
+        )
+        val quietWindows = normalizeQuietWindows(
+            runCatching { user.familyAlarmQuietWindows }.getOrNull(),
+            fallback = FamilyAlarmQuietWindow(legacyDays, legacyStart, legacyEnd),
+        )
+        val firstQuietWindow = quietWindows.firstOrNull()
+            ?: FamilyAlarmQuietWindow(days = legacyDays, start = legacyStart, end = legacyEnd)
+        return user.copy(
+            name = runCatching { user.name }.getOrNull().orEmpty(),
+            plan = runCatching { user.plan }.getOrNull()?.takeIf { it.isNotBlank() } ?: "free",
+            familyAlarmQuietDays = firstQuietWindow.days,
+            familyAlarmQuietStart = firstQuietWindow.start,
+            familyAlarmQuietEnd = firstQuietWindow.end,
+            familyAlarmQuietWindows = quietWindows,
+        )
+    }
 
     private fun normalizeQuietDays(days: List<Int>?): List<Int> =
         days
@@ -132,6 +192,25 @@ class AuthSessionStore(context: Context) {
 
     private fun normalizeQuietTime(value: String?, fallback: String): String =
         value?.takeIf { TIME_RE.matches(it) } ?: fallback
+
+    private fun normalizeQuietWindows(
+        windows: List<FamilyAlarmQuietWindow>?,
+        fallback: FamilyAlarmQuietWindow,
+    ): List<FamilyAlarmQuietWindow> {
+        if (windows == null) return listOf(fallback)
+        return windows
+            .mapNotNull { window ->
+                val days = normalizeQuietDays(runCatching { window.days }.getOrNull()).takeIf { it.isNotEmpty() }
+                val start = normalizeQuietTime(runCatching { window.start }.getOrNull(), "")
+                val end = normalizeQuietTime(runCatching { window.end }.getOrNull(), "")
+                if (days == null || start.isBlank() || end.isBlank()) {
+                    null
+                } else {
+                    FamilyAlarmQuietWindow(days = days, start = start, end = end)
+                }
+            }
+            .take(MAX_QUIET_WINDOWS)
+    }
 
     private fun isAppIssuedJwt(token: String): Boolean =
         runCatching {
@@ -160,5 +239,7 @@ class AuthSessionStore(context: Context) {
         private const val KEY_FAMILY_ALARM_QUIET_DAYS = "family_alarm_quiet_days"
         private const val KEY_FAMILY_ALARM_QUIET_START = "family_alarm_quiet_start"
         private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
+        private const val KEY_FAMILY_ALARM_QUIET_WINDOWS = "family_alarm_quiet_windows"
+        private const val MAX_QUIET_WINDOWS = 8
     }
 }

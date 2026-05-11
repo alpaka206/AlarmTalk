@@ -157,18 +157,10 @@ internal class AlarmEditorState(
 
     fun ttsTextForSave(): String =
         if (voiceRandomPrompt && voiceText.isBlank()) {
-            randomTtsPrompt(voiceCategory, activeVoiceLanguage())
+            randomTtsPrompt(voiceCategory, "ko")
         } else {
             voiceText.trim()
         }
-
-    fun localizedTtsTextForSave(): String =
-        translateAlarmTextIfNeeded(
-            text = ttsTextForSave(),
-            category = voiceCategory,
-            language = activeVoiceLanguage(),
-            enabled = voiceTranslationEnabled,
-        )
 
     fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
         !localAudioUri.isNullOrBlank() && (
@@ -230,7 +222,7 @@ internal class AlarmEditorState(
 
     companion object {
         fun from(alarm: AlarmEntity?): AlarmEditorState {
-            val defaultTime = java.time.LocalTime.now().plusMinutes(5)
+            val defaultTime = java.time.LocalTime.of(6, 0)
             return AlarmEditorState(
                 label = alarm?.label ?: "",
                 hour = alarm?.hour ?: defaultTime.hour,

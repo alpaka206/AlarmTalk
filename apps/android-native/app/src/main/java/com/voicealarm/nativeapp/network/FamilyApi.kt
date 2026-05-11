@@ -33,6 +33,8 @@ data class FamilyGroupMember(
     @SerializedName("family_alarm_quiet_days") val familyAlarmQuietDays: List<Int> = listOf(1, 2, 3, 4, 5),
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
     @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
+    @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow> =
+        listOf(FamilyAlarmQuietWindow()),
 )
 
 data class FamilyVoiceAlarmRequest(

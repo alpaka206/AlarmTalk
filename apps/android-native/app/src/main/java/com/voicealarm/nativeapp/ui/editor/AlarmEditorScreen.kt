@@ -308,7 +308,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "사용할 음성 프로필을 선택해 주세요"
             return
         }
-        val text = editor.localizedTtsTextForSave()
+        val text = editor.ttsTextForSave()
         if (text.isBlank()) {
             audioMessage = "읽어줄 문구를 입력하거나 랜덤 문구를 켜 주세요"
             return
@@ -347,6 +347,7 @@ internal fun AlarmEditorScreen(
                         text = text,
                         category = editor.voiceCategory,
                         language = editor.activeVoiceLanguage(),
+                        translate = editor.voiceTranslationEnabled,
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -649,7 +650,10 @@ internal fun FamilyAlarmTargetCard(
                     selected = selectedRecipientId.orEmpty(),
                     onSelect = onSelectRecipient,
                 )
-                MutedText("상대방 알람은 30분 뒤부터 설정할 수 있어요.")
+                MutedText("30분 뒤부터 설정할 수 있어요.")
+                recipients.firstOrNull { it.userId == selectedRecipientId }?.let { recipient ->
+                    MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+                }
             }
         }
     }
@@ -666,3 +670,28 @@ internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }
         ?: member.email?.takeIf { it.isNotBlank() }
         ?: "멤버"
+
+private fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+    val windows = member.familyAlarmQuietWindows.takeIf { it.isNotEmpty() }
+        ?: listOf(
+            com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow(
+                days = member.familyAlarmQuietDays,
+                start = member.familyAlarmQuietStart,
+                end = member.familyAlarmQuietEnd,
+            ),
+        )
+    return windows.joinToString(" · ") { window ->
+        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+    }
+}
+
+private fun quietDaysLabelForFamily(days: List<Int>): String {
+    val sorted = days.distinct().sorted()
+    return when (sorted) {
+        emptyList<Int>() -> "없음"
+        listOf(1, 2, 3, 4, 5) -> "월-금"
+        listOf(0, 6) -> "주말"
+        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
+        else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }
+    }
+}

@@ -12,6 +12,7 @@ data class TtsGenerateRequest(
     val text: String,
     val category: String,
     val language: String,
+    val translate: Boolean = false,
 )
 
 data class TtsGenerateResponse(

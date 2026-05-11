@@ -49,7 +49,6 @@ internal fun AlarmsHeader(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            profileMenu?.invoke()
             Button(
                 onClick = onCreateAlarm,
                 shape = RoundedCornerShape(999.dp),
@@ -63,6 +62,7 @@ internal fun AlarmsHeader(
                 Spacer(Modifier.width(6.dp))
                 Text("추가")
             }
+            profileMenu?.invoke()
         }
     }
 }
