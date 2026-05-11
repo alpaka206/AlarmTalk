@@ -4,6 +4,9 @@ export interface Env {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
+  GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
+  GOOGLE_VERTEX_LOCATION?: string;
+  GOOGLE_VERTEX_MODEL?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;
