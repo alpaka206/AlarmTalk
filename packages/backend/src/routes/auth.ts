@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Client } from '@libsql/client/web';
 import type { Env } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
@@ -9,15 +10,191 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
+  EmailVerificationRequestSchema,
+  EmailVerificationConfirmRequestSchema,
 } from '@voice-alarm/shared';
 import { verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
+import {
+  EMAIL_VERIFICATION_MAX_ATTEMPTS,
+  EMAIL_VERIFICATION_TTL_SECONDS,
+  emailVerificationExpiresAt,
+  generateEmailVerificationCode,
+  hashEmailVerificationCode,
+  normalizeAuthEmail,
+  sendEmailVerificationCode,
+  shouldExposeDebugEmailCode,
+} from '../lib/email-verification';
 
 const auth = new Hono<{ Bindings: Env }>();
+const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
 
 function jsonError(code: string, message: string) {
   return { error: message, error_code: code };
 }
+
+type EmailVerificationRow = {
+  id: string;
+  code_hash: string;
+  attempts: number | string | null;
+  expires_at: string;
+};
+
+type EmailVerificationCheck =
+  | { ok: true; id: string }
+  | { ok: false; status: 400 | 429; code: string; message: string };
+
+async function checkEmailVerificationCode(
+  db: Client,
+  env: Env,
+  email: string,
+  code: string,
+): Promise<EmailVerificationCheck> {
+  const result = await db.execute({
+    sql: `SELECT id, code_hash, attempts, expires_at
+          FROM email_verification_codes
+          WHERE email = ? AND purpose = ? AND consumed_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT 1`,
+    args: [email, EMAIL_VERIFICATION_PURPOSE_REGISTER],
+  });
+
+  if (result.rows.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'AUTH_EMAIL_CODE_INVALID',
+      message: 'Invalid email verification code',
+    };
+  }
+
+  const row = typedRow<EmailVerificationRow>(result.rows[0]!);
+  if (Date.parse(row.expires_at) <= Date.now()) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'AUTH_EMAIL_CODE_EXPIRED',
+      message: 'Email verification code expired',
+    };
+  }
+
+  const attempts = Number(row.attempts ?? 0);
+  if (attempts >= EMAIL_VERIFICATION_MAX_ATTEMPTS) {
+    return {
+      ok: false,
+      status: 429,
+      code: 'AUTH_EMAIL_CODE_ATTEMPTS_EXCEEDED',
+      message: 'Too many email verification attempts',
+    };
+  }
+
+  const expectedHash = await hashEmailVerificationCode(email, code, env.PASSWORD_PEPPER);
+  if (expectedHash !== row.code_hash) {
+    await db.execute({
+      sql: `UPDATE email_verification_codes
+            SET attempts = attempts + 1
+            WHERE id = ?`,
+      args: [row.id],
+    });
+    return {
+      ok: false,
+      status: 400,
+      code: 'AUTH_EMAIL_CODE_INVALID',
+      message: 'Invalid email verification code',
+    };
+  }
+
+  return { ok: true, id: row.id };
+}
+
+async function consumeEmailVerificationCode(db: Client, id: string): Promise<void> {
+  await db.execute({
+    sql: `UPDATE email_verification_codes
+          SET consumed_at = datetime('now')
+          WHERE id = ?`,
+    args: [id],
+  });
+}
+
+auth.post('/email-code', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = EmailVerificationRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  try {
+    const existing = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: [email],
+    });
+    if (existing.rows.length > 0) {
+      return c.json(jsonError('AUTH_EMAIL_TAKEN', 'Email is already registered'), 409);
+    }
+
+    const code = generateEmailVerificationCode();
+    const codeHash = await hashEmailVerificationCode(email, code, c.env.PASSWORD_PEPPER);
+    const id = crypto.randomUUID();
+    const expiresAt = emailVerificationExpiresAt();
+
+    await db.execute({
+      sql: `INSERT INTO email_verification_codes
+              (id, email, purpose, code_hash, expires_at)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [id, email, EMAIL_VERIFICATION_PURPOSE_REGISTER, codeHash, expiresAt],
+    });
+
+    await sendEmailVerificationCode(c.env, email, code);
+
+    return c.json({
+      success: true,
+      expires_in_seconds: EMAIL_VERIFICATION_TTL_SECONDS,
+      ...(shouldExposeDebugEmailCode(c.env) ? { debug_code: code } : {}),
+    });
+  } catch (err) {
+    logRouteError(c, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const status = detail.includes('Email delivery') ? 503 : 500;
+    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+  }
+});
+
+auth.post('/email-code/verify', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = EmailVerificationConfirmRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  try {
+    const check = await checkEmailVerificationCode(db, c.env, email, parsed.data.code);
+    if (!check.ok) {
+      return c.json(jsonError(check.code, check.message), check.status);
+    }
+    return c.json({ success: true });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json(jsonError('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+  }
+});
 
 auth.post('/register', async (c) => {
   let body: unknown;
@@ -35,8 +212,8 @@ auth.post('/register', async (c) => {
     );
   }
 
-  const { email, password, name } = parsed.data;
-  const normalizedEmail = email.toLowerCase().trim();
+  const { email, password, name, email_verification_code } = parsed.data;
+  const normalizedEmail = normalizeAuthEmail(email);
   const db = getDB(c.env);
 
   try {
@@ -48,6 +225,16 @@ auth.post('/register', async (c) => {
       return c.json(jsonError('AUTH_EMAIL_TAKEN', 'Email is already registered'), 409);
     }
 
+    const verification = await checkEmailVerificationCode(
+      db,
+      c.env,
+      normalizedEmail,
+      email_verification_code,
+    );
+    if (!verification.ok) {
+      return c.json(jsonError(verification.code, verification.message), verification.status);
+    }
+
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
     const today = new Date().toISOString().split('T')[0]!;
@@ -57,6 +244,8 @@ auth.post('/register', async (c) => {
             VALUES (?, ?, ?, ?, ?, ?)`,
       args: [id, normalizedEmail, id, passwordHash, name, today],
     });
+
+    await consumeEmailVerificationCode(db, verification.id);
 
     const token = await signAppJwt({ sub: id, email: normalizedEmail, name }, c.env.JWT_SECRET);
 
