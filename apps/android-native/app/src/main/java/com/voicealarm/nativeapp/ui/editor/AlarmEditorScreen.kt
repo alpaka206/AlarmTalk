@@ -1,9 +1,12 @@
 package com.voicealarm.nativeapp
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
@@ -97,6 +100,21 @@ internal fun AlarmEditorScreen(
     }
     var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
         mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
+    }
+    val ringtonePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val pickedUri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        if (pickedUri == null) {
+            editor.alarmSoundUri = null
+            editor.alarmSoundLabel = "무음"
+            editor.alarmVolumePercent = 0
+            return@rememberLauncherForActivityResult
+        }
+        editor.alarmSoundUri = pickedUri.toString()
+        editor.alarmSoundLabel = ringtoneTitle(context, pickedUri)
+        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
     }
 
     fun selectedFamilyRecipient(): FamilyGroupMember? =
@@ -552,6 +570,8 @@ internal fun AlarmEditorScreen(
                     snoozeMinutes = editor.snoozeMinutes,
                     snoozeRepeatLimit = editor.snoozeRepeatLimit,
                     vibrationPattern = editor.vibrationPattern,
+                    alarmVolumePercent = editor.alarmVolumePercent,
+                    alarmSoundLabel = editor.alarmSoundLabel,
                     onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                     onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                     onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -559,6 +579,25 @@ internal fun AlarmEditorScreen(
                         editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
                     },
                     onVibrationSelect = { editor.vibrationPattern = it },
+                    onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                    onPickAlarmSound = {
+                        ringtonePickerLauncher.launch(
+                            Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람 소리 선택")
+                                val current = editor.alarmSoundUri?.let(Uri::parse)
+                                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                            },
+                        )
+                    },
+                    onUseDefaultAlarmSound = {
+                        editor.alarmSoundUri = null
+                        editor.alarmSoundLabel = null
+                        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
+                    },
                 )
             }
         }
@@ -617,6 +656,11 @@ internal fun FamilyAlarmTargetCard(
 }
 
 private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+
+private fun ringtoneTitle(context: Context, uri: Uri): String =
+    runCatching {
+        RingtoneManager.getRingtone(context, uri)?.getTitle(context)
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람음"
 
 internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }

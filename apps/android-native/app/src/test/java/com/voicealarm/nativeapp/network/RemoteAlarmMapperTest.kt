@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp.network
 
 import com.voicealarm.nativeapp.data.AlarmEntity
+import com.voicealarm.nativeapp.data.AlarmOrigins
 import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.AlarmStates
 import com.voicealarm.nativeapp.data.AlarmSyncStates
@@ -99,6 +100,10 @@ class RemoteAlarmMapperTest {
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
+            alarmVolumePercent = 100,
+            alarmSoundUri = null,
+            alarmSoundLabel = null,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = 1_000L,

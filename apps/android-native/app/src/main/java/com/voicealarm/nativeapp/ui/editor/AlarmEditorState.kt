@@ -69,6 +69,9 @@ internal class AlarmEditorState(
     voiceLanguage: String?,
     voiceRandomPrompt: Boolean,
     ttsMessageId: String?,
+    alarmVolumePercent: Int,
+    alarmSoundUri: String?,
+    alarmSoundLabel: String?,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -90,6 +93,9 @@ internal class AlarmEditorState(
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var ttsMessageId by mutableStateOf(ttsMessageId)
+    var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
+    var alarmSoundUri by mutableStateOf(alarmSoundUri)
+    var alarmSoundLabel by mutableStateOf(alarmSoundLabel)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -123,6 +129,9 @@ internal class AlarmEditorState(
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceCategory,
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceLanguage,
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
+            alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
+            alarmSoundUri = alarmSoundUri,
+            alarmSoundLabel = alarmSoundLabel,
         )
     }
 
@@ -237,6 +246,9 @@ internal class AlarmEditorState(
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
                 } ?: false,
                 ttsMessageId = alarm?.ttsMessageId,
+                alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
+                alarmSoundUri = alarm?.alarmSoundUri,
+                alarmSoundLabel = alarm?.alarmSoundLabel,
             )
         }
     }

@@ -65,6 +65,10 @@ class AlarmRepository(
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
+            alarmVolumePercent = 100,
+            alarmSoundUri = null,
+            alarmSoundLabel = null,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -115,6 +119,10 @@ class AlarmRepository(
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
+            alarmVolumePercent = draft.alarmVolumePercent,
+            alarmSoundUri = draft.alarmSoundUri,
+            alarmSoundLabel = draft.alarmSoundLabel,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -165,6 +173,9 @@ class AlarmRepository(
             voiceLanguage = draft.voiceLanguage,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
+            alarmVolumePercent = draft.alarmVolumePercent,
+            alarmSoundUri = draft.alarmSoundUri,
+            alarmSoundLabel = draft.alarmSoundLabel,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             updatedAtMillis = now,
@@ -244,6 +255,7 @@ class AlarmRepository(
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
             enabled = true,
             state = AlarmStates.SCHEDULED,
             createdAtMillis = now,
@@ -412,6 +424,7 @@ class AlarmRepository(
         require(draft.repeatDaysMask in 0..0x7f) { "Repeat days mask must only use Sunday through Saturday bits." }
         require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
+        require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }

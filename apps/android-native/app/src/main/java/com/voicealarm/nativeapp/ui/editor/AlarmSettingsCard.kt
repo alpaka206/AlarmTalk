@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,11 +83,16 @@ internal fun AlarmSettingsCard(
     snoozeMinutes: Int,
     snoozeRepeatLimit: Int,
     vibrationPattern: String,
+    alarmVolumePercent: Int,
+    alarmSoundLabel: String?,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onSnoozeRepeatLimitChange: (Int) -> Unit,
     onVibrationEnabledChange: (Boolean) -> Unit,
     onVibrationSelect: (String) -> Unit,
+    onAlarmVolumeChange: (Int) -> Unit,
+    onPickAlarmSound: () -> Unit,
+    onUseDefaultAlarmSound: () -> Unit,
 ) {
     var detailDialog by remember { mutableStateOf<String?>(null) }
     Card(
@@ -140,6 +146,22 @@ internal fun AlarmSettingsCard(
                     checked = vibrationPattern != VibrationPatterns.NONE,
                     onCheckedChange = onVibrationEnabledChange,
                 )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+            Surface(
+                onClick = { detailDialog = "sound" },
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text("알람 소리", fontWeight = FontWeight.SemiBold)
+                    MutedText("${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}")
+                }
             }
         }
     }
@@ -235,7 +257,54 @@ internal fun AlarmSettingsCard(
             },
         )
     }
+
+    if (detailDialog == "sound") {
+        AlertDialog(
+            onDismissRequest = { detailDialog = null },
+            title = { Text("알람 소리") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("소리", fontWeight = FontWeight.SemiBold)
+                        MutedText(alarmSoundLabel ?: "기본 알람음")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = onPickAlarmSound,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("선택")
+                        }
+                        OutlinedButton(
+                            onClick = onUseDefaultAlarmSound,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("기본")
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("볼륨 ${alarmVolumeLabel(alarmVolumePercent)}", fontWeight = FontWeight.SemiBold)
+                        Slider(
+                            value = alarmVolumePercent.toFloat(),
+                            onValueChange = { onAlarmVolumeChange(it.toInt().coerceIn(0, 100)) },
+                            valueRange = 0f..100f,
+                            steps = 9,
+                        )
+                        MutedText("0%로 두면 소리 없이 진동 설정만 적용돼요.")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { detailDialog = null }) {
+                    Text("완료")
+                }
+            },
+        )
+    }
 }
+
+private fun alarmVolumeLabel(value: Int): String =
+    if (value <= 0) "무음" else "${value.coerceIn(0, 100)}%"
 
 @Composable
 internal fun EditorActionButtons(
