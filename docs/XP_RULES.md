@@ -12,7 +12,7 @@ Phase 7 게이미피케이션에서 캐릭터가 획득하는 XP·애정도 규�
 
 | 이벤트 (`XpEvent`)        | XP | 애정도 | 의미                                        |
 | ------------------------- | -- | ------ | ------------------------------------------- |
-| `alarm_completed`         | 30 | 2      | 알람을 끝까지 듣고 정상 종료                |
+| `alarm_completed`         | 10 | 2      | 알람을 끝까지 듣고 정상 종료                |
 | `alarm_snoozed`           | 5  | 0      | 스누즈 버튼 — 소량만 지급, 애정도는 없음    |
 | `alarm_dismissed`         | 0  | 0      | 강제 종료 / 재생 없이 무시                  |
 | `family_alarm_received`   | 10 | 3      | 가족이 보낸 알람을 성공적으로 수신·재생     |
@@ -20,7 +20,7 @@ Phase 7 게이미피케이션에서 캐릭터가 획득하는 XP·애정도 규�
 
 ### 설계 근거
 
-- **30 vs 5 vs 0**: 정상 완료(30)는 스누즈(5)의 6배. 스누즈를 계속 눌러 XP 파밍하는 유인을 막고, 강제 종료는 보상 없음.
+- **10 vs 5 vs 0**: 정상 완료(10)는 스누즈(5)의 2배. 매일 알람을 끄는 핵심 행동을 보상하되, 스누즈를 계속 눌러 XP 파밍하는 유인을 막고, 강제 종료는 보상 없음.
 - **가족 알람 10·3**: 개인 알람(30/2)보다 적지만 **애정도는 더 크다**. 게이미피케이션이 관계 기반 앱 본질과 맞닿도록 — 가족 간 교류가 잦을수록 감정 척도(affection)가 빨리 올라감.
 - **친구 초대 50·5**: 1회성 부스터. 네트워크 효과를 초기에 유도.
 
@@ -29,9 +29,9 @@ Phase 7 게이미피케이션에서 캐릭터가 획득하는 XP·애정도 규�
 - `DAILY_XP_CAP = 200 XP`
 - 오늘 이미 획득한 XP(=`alreadyEarnedToday`) 기준. 자정(사용자 로컬) 기준 리셋은 #42 API 구현 시 DB 쪽에서 관리.
 - **정확한 반감 규칙**: 지급 요청 XP 가 남은 캡을 넘으면 **남은 몫만 지급**하고 `capped=true` 플래그를 리턴. 예시:
-  - `already=190, earned=30` → `grantedXp=10, capped=true`
-  - `already=200, earned=30` → `grantedXp=0, capped=true`
-  - `already=0, earned=30` → `grantedXp=30, capped=false`
+  - `already=195, earned=10` → `grantedXp=5, capped=true`
+  - `already=200, earned=10` → `grantedXp=0, capped=true`
+  - `already=0, earned=10` → `grantedXp=10, capped=false`
 
 ### 왜 **애정도는 캡이 없는가**
 

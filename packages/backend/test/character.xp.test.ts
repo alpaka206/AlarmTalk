@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -78,14 +78,14 @@ describe('POST /characters/xp', () => {
     expect(res.status).toBe(404);
   });
 
-  it('여유 내 alarm_completed → 201, XP +30, affection +2', async () => {
+  it('여유 내 alarm_completed → 201, XP +10, affection +2', async () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]); // #1 resolveUserPk
     mockDB.pushResult([baseCharacter()]); // #2 loadOrCreateCharacter
     mockDB.pushResult([], 1); // #3 UPDATE characters
     mockDB.pushResult([], 1); // #4 INSERT character_xp_logs
     mockDB.pushResult([], 1); // #5 ensureStatsRow (INSERT OR IGNORE)
     mockDB.pushResult([], 1); // #6 UPDATE character_stats
-    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // #7 loadOrCreateCharacter (refresh)
+    mockDB.pushResult([baseCharacter({ xp: 10, affection: 2, daily_xp: 10 })]); // #7 loadOrCreateCharacter (refresh)
     mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #8 loadStats
     mockDB.pushResult([]); // #9 loadAchievements
 
@@ -96,11 +96,11 @@ describe('POST /characters/xp', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.grant.event).toBe('alarm_completed');
-    expect(body.grant.granted_xp).toBe(30);
+    expect(body.grant.granted_xp).toBe(10);
     expect(body.grant.affection).toBe(2);
     expect(body.grant.capped).toBe(false);
     expect(body.grant.duplicated).toBe(false);
-    expect(body.character.xp).toBe(30);
+    expect(body.character.xp).toBe(10);
     expect(body.character.level).toBe(1);
     expect(body.character.stage).toBe('seed');
   });
@@ -109,9 +109,9 @@ describe('POST /characters/xp', () => {
     mockDB.pushResult([{ id: 'user-pk-1' }]); // #1
     mockDB.pushResult([
       baseCharacter({
-        xp: 190,
+        xp: 195,
         affection: 10,
-        daily_xp: 190,
+        daily_xp: 195,
         daily_xp_reset_at: TODAY,
       }),
     ]); // #2
@@ -136,7 +136,7 @@ describe('POST /characters/xp', () => {
     );
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.grant.granted_xp).toBe(10);
+    expect(body.grant.granted_xp).toBe(5);
     expect(body.grant.capped).toBe(true);
     expect(body.grant.affection).toBe(2);
     expect(body.character.xp).toBe(200);
@@ -157,8 +157,8 @@ describe('POST /characters/xp', () => {
     mockDB.pushResult([], 1); // #6 UPDATE character_stats
     mockDB.pushResult([
       baseCharacter({
-        xp: 230,
-        daily_xp: 30,
+        xp: 210,
+        daily_xp: 10,
         daily_xp_reset_at: TODAY,
       }),
     ]); // #7 refresh
@@ -171,9 +171,9 @@ describe('POST /characters/xp', () => {
     );
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.grant.granted_xp).toBe(30);
+    expect(body.grant.granted_xp).toBe(10);
     expect(body.grant.capped).toBe(false);
-    expect(body.character.xp).toBe(230);
+    expect(body.character.xp).toBe(210);
     const updateCall = mockDB.calls.find((c) => c.sql.startsWith('UPDATE characters'));
     expect(updateCall).toBeDefined();
     expect(updateCall!.args).toContain(TODAY);
@@ -187,13 +187,13 @@ describe('POST /characters/xp', () => {
         character_id: 'char-1',
         event: 'alarm_completed',
         client_nonce: 'nonce-abc',
-        granted_xp: 30,
+        granted_xp: 10,
         affection_delta: 2,
         capped: 0,
         created_at: '2026-04-21',
       },
     ]); // duplicate lookup
-    mockDB.pushResult([baseCharacter({ xp: 30, affection: 2, daily_xp: 30 })]); // loadOrCreateCharacter for dup response
+    mockDB.pushResult([baseCharacter({ xp: 10, affection: 2, daily_xp: 10 })]); // loadOrCreateCharacter for dup response
     mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // loadStats
     mockDB.pushResult([]); // loadAchievements
 
@@ -207,7 +207,7 @@ describe('POST /characters/xp', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.grant.duplicated).toBe(true);
-    expect(body.grant.granted_xp).toBe(30);
+    expect(body.grant.granted_xp).toBe(10);
     expect(body.grant.affection).toBe(2);
     expect(mockDB.calls.some((c) => c.sql.startsWith('UPDATE characters'))).toBe(false);
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO character_xp_logs'))).toBe(
@@ -228,9 +228,9 @@ describe('POST /characters/xp', () => {
       baseCharacter({
         id: 'char-new',
         user_id: 'user-pk-2',
-        xp: 30,
+        xp: 10,
         affection: 2,
-        daily_xp: 30,
+        daily_xp: 10,
       }),
     ]); // #9 loadOrCreateCharacter (refresh)
     mockDB.pushResult([{ diligence: 1, health: 0, consistency: 1 }]); // #10 loadStats
@@ -243,7 +243,7 @@ describe('POST /characters/xp', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.character.id).toBe('char-new');
-    expect(body.grant.granted_xp).toBe(30);
+    expect(body.grant.granted_xp).toBe(10);
   });
 
   it('alarm_dismissed → XP 0, affection 0 이어도 로그는 남음', async () => {

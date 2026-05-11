@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+﻿import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -35,7 +35,7 @@ function buildApp(userId = 'google-1') {
   return app;
 }
 
-function pushBasicXpFlow(char = CHAR_ROW, refreshed = { ...CHAR_ROW, xp: 30 }) {
+function pushBasicXpFlow(char = CHAR_ROW, refreshed = { ...CHAR_ROW, xp: 10 }) {
   mockDB.pushResult([{ id: 'pk1' }]);
   mockDB.pushResult([char]);
   mockDB.pushResult([], 1);
@@ -45,7 +45,7 @@ function pushBasicXpFlow(char = CHAR_ROW, refreshed = { ...CHAR_ROW, xp: 30 }) {
   mockDB.pushResult([]);
 }
 
-function pushAlarmCompletedFlow(char = CHAR_ROW, refreshed = { ...CHAR_ROW, xp: 30, current_streak: 1, last_wakeup_date: '2026-04-25' }) {
+function pushAlarmCompletedFlow(char = CHAR_ROW, refreshed = { ...CHAR_ROW, xp: 10, current_streak: 1, last_wakeup_date: '2026-04-25' }) {
   mockDB.pushResult([{ id: 'pk1' }]);
   mockDB.pushResult([char]);
   mockDB.pushResult([], 1);
@@ -97,7 +97,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     );
     expect(updateQuery).toBeDefined();
     expect(updateQuery!.args).toHaveLength(10);
-    expect(updateQuery!.args[0]).toBe(30);
+    expect(updateQuery!.args[0]).toBe(10);
     expect(updateQuery!.args[1]).toBe(2);
     expect(updateQuery!.args[9]).toBe('char-1');
   });
@@ -115,7 +115,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     expect(logInsert!.args[1]).toBe('char-1');
     expect(logInsert!.args[2]).toBe('alarm_completed');
     expect(logInsert!.args[3]).toBeNull();
-    expect(logInsert!.args[4]).toBe(30);
+    expect(logInsert!.args[4]).toBe(10);
     expect(logInsert!.args[5]).toBe(2);
     expect(logInsert!.args[6]).toBe(0);
   });
@@ -175,10 +175,10 @@ describe('POST /characters/xp (characterMutation)', () => {
       ...CHAR_ROW,
       current_streak: 3,
       last_wakeup_date: '2026-04-25',
-      daily_xp: 30,
+      daily_xp: 10,
       daily_xp_reset_at: '2026-04-25',
     };
-    pushBasicXpFlow(charToday, { ...charToday, xp: 60, daily_xp: 60 });
+    pushBasicXpFlow(charToday, { ...charToday, xp: 20, daily_xp: 20 });
     await buildApp().request(
       jsonReq('POST', '/characters/xp', { event: 'alarm_completed', local_date: '2026-04-25' }),
     );
@@ -197,10 +197,10 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     const refreshed = {
       ...charStreak,
-      xp: 30,
+      xp: 10,
       current_streak: 6,
       longest_streak: 6,
-      daily_xp: 30,
+      daily_xp: 10,
       last_wakeup_date: '2026-04-25',
     };
     pushAlarmCompletedFlow(charStreak, refreshed);
@@ -223,9 +223,9 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     const refreshed = {
       ...charStreak,
-      xp: 30,
+      xp: 10,
       current_streak: 1,
-      daily_xp: 30,
+      daily_xp: 10,
       last_wakeup_date: '2026-04-25',
     };
     pushAlarmCompletedFlow(charStreak, refreshed);
@@ -257,10 +257,10 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([], 1);
     const refreshed = {
       ...charStreak29,
-      xp: 530,
+      xp: 510,
       current_streak: 30,
       longest_streak: 30,
-      daily_xp: 530,
+      daily_xp: 510,
       last_wakeup_date: '2026-04-25',
     };
     mockDB.pushResult([refreshed]);
@@ -271,7 +271,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     );
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.grant.granted_xp).toBe(530);
+    expect(body.grant.granted_xp).toBe(510);
     expect(body.grant.milestone_grants).toHaveLength(1);
     expect(body.grant.milestone_grants[0].event).toBe('streak_bonus_30');
     expect(body.grant.milestone_grants[0].xp).toBe(500);
@@ -296,10 +296,10 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([], 1);
     const refreshed = {
       ...charStreak89,
-      xp: 2030,
+      xp: 2010,
       current_streak: 90,
       longest_streak: 90,
-      daily_xp: 2030,
+      daily_xp: 2010,
       last_wakeup_date: '2026-04-25',
     };
     mockDB.pushResult([refreshed]);
@@ -310,7 +310,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     );
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.grant.granted_xp).toBe(2030);
+    expect(body.grant.granted_xp).toBe(2010);
     expect(body.grant.milestone_grants).toHaveLength(1);
     expect(body.grant.milestone_grants[0].event).toBe('streak_bonus_90');
     expect(body.grant.milestone_grants[0].xp).toBe(2000);
@@ -325,9 +325,9 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     pushAlarmCompletedFlow(charStreak2, {
       ...charStreak2,
-      xp: 30,
+      xp: 10,
       current_streak: 3,
-      daily_xp: 30,
+      daily_xp: 10,
       last_wakeup_date: '2026-04-25',
     });
     const res = await buildApp().request(
@@ -351,7 +351,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([{ id: 'existing' }]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    const refreshed = { ...charStreak6, xp: 30, current_streak: 7, daily_xp: 30 };
+    const refreshed = { ...charStreak6, xp: 10, current_streak: 7, daily_xp: 10 };
     mockDB.pushResult([refreshed]);
     mockDB.pushResult([]);
     mockDB.pushResult([]);
@@ -383,7 +383,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    const refreshed = { ...charStreak6, xp: 130, current_streak: 7, daily_xp: 130 };
+    const refreshed = { ...charStreak6, xp: 110, current_streak: 7, daily_xp: 110 };
     mockDB.pushResult([refreshed]);
     mockDB.pushResult([]);
     mockDB.pushResult([]);
@@ -416,7 +416,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
-    const refreshed = { ...charStreak6, xp: 130, current_streak: 7, daily_xp: 130 };
+    const refreshed = { ...charStreak6, xp: 110, current_streak: 7, daily_xp: 110 };
     mockDB.pushResult([refreshed]);
     mockDB.pushResult([]);
     mockDB.pushResult([]);
@@ -443,9 +443,9 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     const refreshed = {
       ...charStreak,
-      xp: 30,
+      xp: 10,
       current_streak: 1,
-      daily_xp: 30,
+      daily_xp: 10,
       last_wakeup_date: '2026-04-02',
     };
     pushAlarmCompletedFlow(charStreak, refreshed);
@@ -464,7 +464,7 @@ describe('POST /characters/xp (characterMutation)', () => {
       daily_xp: 100,
       daily_xp_reset_at: today,
     };
-    pushBasicXpFlow(charWithDailyXp, { ...charWithDailyXp, xp: 30, daily_xp: 130 });
+    pushBasicXpFlow(charWithDailyXp, { ...charWithDailyXp, xp: 10, daily_xp: 110 });
     const res = await buildApp().request(
       jsonReq('POST', '/characters/xp', { event: 'alarm_snoozed' }),
     );
@@ -477,7 +477,7 @@ describe('POST /characters/xp (characterMutation)', () => {
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{
       event: 'alarm_completed',
-      granted_xp: 30,
+      granted_xp: 10,
       affection_delta: 2,
       capped: 0,
     }]);
@@ -569,7 +569,7 @@ describe('POST /characters/xp (characterMutation)', () => {
   it('first wakeup (last_wakeup_date=null) → streak=1', async () => {
     pushAlarmCompletedFlow(CHAR_ROW, {
       ...CHAR_ROW,
-      xp: 30,
+      xp: 10,
       current_streak: 1,
       last_wakeup_date: '2026-04-25',
     });
