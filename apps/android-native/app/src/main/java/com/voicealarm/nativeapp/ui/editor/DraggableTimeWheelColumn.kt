@@ -196,8 +196,8 @@ internal suspend fun animateWheelSettle(
         Animatable(startOffsetPx).animateTo(
             targetValue = 0f,
             animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMediumLow,
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow,
             ),
         ) {
             onOffsetChange(value)
@@ -211,7 +211,7 @@ internal suspend fun animateWheelSettle(
         val targetOffset = if (direction > 0) -itemHeightPx else itemHeightPx
         Animatable(currentOffset).animateTo(
             targetValue = targetOffset,
-            animationSpec = tween(durationMillis = 64),
+            animationSpec = tween(durationMillis = 118),
         ) {
             onOffsetChange(value)
         }

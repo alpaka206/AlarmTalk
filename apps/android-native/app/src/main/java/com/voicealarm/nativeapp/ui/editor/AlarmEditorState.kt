@@ -91,6 +91,7 @@ internal class AlarmEditorState(
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(voiceCategory ?: "morning")
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
+    var voiceTranslationEnabled by mutableStateOf((voiceLanguage ?: "ko") != "ko")
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
     var ttsMessageId by mutableStateOf(ttsMessageId)
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
@@ -127,7 +128,7 @@ internal class AlarmEditorState(
             voiceProfileId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceProfileId,
             voiceText = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsTextForSave(),
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceCategory,
-            voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceLanguage,
+            voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceLanguage(),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
@@ -156,18 +157,23 @@ internal class AlarmEditorState(
 
     fun ttsTextForSave(): String =
         if (voiceRandomPrompt && voiceText.isBlank()) {
-            randomTtsPrompt(voiceCategory, voiceLanguage)
+            randomTtsPrompt(voiceCategory, activeVoiceLanguage())
         } else {
             voiceText.trim()
         }
 
     fun localizedTtsTextForSave(): String =
-        translateAlarmTextIfNeeded(ttsTextForSave(), voiceCategory, voiceLanguage)
+        translateAlarmTextIfNeeded(
+            text = ttsTextForSave(),
+            category = voiceCategory,
+            language = activeVoiceLanguage(),
+            enabled = voiceTranslationEnabled,
+        )
 
     fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
         !localAudioUri.isNullOrBlank() && (
-            generatedTtsKey == buildTtsKey(profileId, text, voiceCategory, voiceLanguage) ||
-                audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, voiceCategory, voiceLanguage)
+            generatedTtsKey == buildTtsKey(profileId, text, voiceCategory, activeVoiceLanguage()) ||
+                audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, voiceCategory, activeVoiceLanguage())
             )
 
     fun setGeneratedTtsAudio(
@@ -184,8 +190,10 @@ internal class AlarmEditorState(
         audioCacheKey = audio.cacheKey
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
-        generatedTtsKey = buildTtsKey(profileId, text, voiceCategory, voiceLanguage)
+        generatedTtsKey = buildTtsKey(profileId, text, voiceCategory, activeVoiceLanguage())
     }
+
+    fun activeVoiceLanguage(): String = if (voiceTranslationEnabled) voiceLanguage else "ko"
 
     fun setPendingServerTts(message: TtsMessage) {
         voiceSource = VoiceSources.SERVER_TTS
@@ -285,8 +293,8 @@ internal fun randomTtsPrompt(category: String, language: String): String {
     return pool.random()
 }
 
-private fun translateAlarmTextIfNeeded(text: String, category: String, language: String): String {
-    if (language == "ko" || text.none { it in '\uAC00'..'\uD7A3' }) return text
+private fun translateAlarmTextIfNeeded(text: String, category: String, language: String, enabled: Boolean): String {
+    if (!enabled || language == "ko" || text.none { it in '\uAC00'..'\uD7A3' }) return text
     return when (language) {
         "en" -> when {
             text.contains("점심") -> "It is lunch time. Take a short break and recharge."

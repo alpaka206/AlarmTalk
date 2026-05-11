@@ -153,15 +153,27 @@ internal fun AlarmSettingsCard(
                     .height(1.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
-            Surface(
-                onClick = { detailDialog = "sound" },
-                color = Color.Transparent,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                    Text("알람 소리", fontWeight = FontWeight.SemiBold)
-                    MutedText("${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}")
+                Surface(
+                    onClick = { detailDialog = "sound" },
+                    color = Color.Transparent,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text("알람 소리", fontWeight = FontWeight.SemiBold)
+                        MutedText("${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}")
+                    }
                 }
+                VoiceAlarmSwitch(
+                    checked = alarmVolumePercent > 0,
+                    onCheckedChange = { enabled ->
+                        onAlarmVolumeChange(if (enabled) 100 else 0)
+                    },
+                )
             }
         }
     }
@@ -264,6 +276,19 @@ internal fun AlarmSettingsCard(
             title = { Text("알람 소리") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (alarmVolumePercent > 0) "켜짐" else "무음", fontWeight = FontWeight.SemiBold)
+                        VoiceAlarmSwitch(
+                            checked = alarmVolumePercent > 0,
+                            onCheckedChange = { enabled ->
+                                onAlarmVolumeChange(if (enabled) 100 else 0)
+                            },
+                        )
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("소리", fontWeight = FontWeight.SemiBold)
                         MutedText(alarmSoundLabel ?: "기본 알람음")
@@ -289,8 +314,8 @@ internal fun AlarmSettingsCard(
                             onValueChange = { onAlarmVolumeChange(it.toInt().coerceIn(0, 100)) },
                             valueRange = 0f..100f,
                             steps = 9,
+                            enabled = alarmVolumePercent > 0,
                         )
-                        MutedText("0%로 두면 소리 없이 진동 설정만 적용돼요.")
                     }
                 }
             },

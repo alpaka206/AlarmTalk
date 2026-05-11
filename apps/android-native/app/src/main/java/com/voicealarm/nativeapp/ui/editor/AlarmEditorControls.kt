@@ -73,8 +73,7 @@ internal fun RepeatSelector(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
-                MutedText("반복 알람이 주요 공휴일과 겹치면 다음 선택 요일로 넘겨요")
+                Text("공휴일 제외", fontWeight = FontWeight.SemiBold)
             }
             VoiceAlarmSwitch(
                 checked = holidayOff,

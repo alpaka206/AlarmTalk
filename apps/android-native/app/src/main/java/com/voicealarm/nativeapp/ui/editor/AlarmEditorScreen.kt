@@ -321,7 +321,7 @@ internal fun AlarmEditorScreen(
             profileId = profileId,
             text = text,
             category = editor.voiceCategory,
-            language = editor.voiceLanguage,
+            language = editor.activeVoiceLanguage(),
         )
         audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
             editor.setGeneratedTtsAudio(
@@ -346,7 +346,7 @@ internal fun AlarmEditorScreen(
                         voiceProfileId = profileId,
                         text = text,
                         category = editor.voiceCategory,
-                        language = editor.voiceLanguage,
+                        language = editor.activeVoiceLanguage(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -355,7 +355,7 @@ internal fun AlarmEditorScreen(
                     profileId = profileId,
                     text = response.text,
                     category = editor.voiceCategory,
-                    language = editor.voiceLanguage,
+                    language = editor.activeVoiceLanguage(),
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
                     audioStore.cacheGeneratedAudio(
@@ -642,14 +642,14 @@ internal fun FamilyAlarmTargetCard(
         ) {
             Text("받는 사람", fontWeight = FontWeight.SemiBold)
             if (recipients.isEmpty()) {
-                MutedText("연결된 상대가 없어요. 코드 등록에서 먼저 연결해 주세요.")
+                MutedText("상대가 알람 설정을 허용하면 여기에 표시돼요.")
             } else {
                 ChipGrid(
                     options = recipients.map { it.userId to familyMemberLabel(it) },
                     selected = selectedRecipientId.orEmpty(),
                     onSelect = onSelectRecipient,
                 )
-                MutedText("선택한 상대에게 알람을 설정해요.")
+                MutedText("상대방 알람은 30분 뒤부터 설정할 수 있어요.")
             }
         }
     }

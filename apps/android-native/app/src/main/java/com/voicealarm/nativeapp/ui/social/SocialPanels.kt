@@ -315,6 +315,7 @@ internal fun VoiceMessagePanel(
     var notePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingNoteId by remember { mutableStateOf<String?>(null) }
     var loadingNoteId by remember { mutableStateOf<String?>(null) }
+    var showComposer by remember { mutableStateOf(false) }
 
     LaunchedEffect(sendMode, maxTextLength) {
         if (text.length > maxTextLength) text = text.take(maxTextLength)
@@ -397,8 +398,6 @@ internal fun VoiceMessagePanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("소중한 사람들에게 응원의 메시지를 보내봐요.")
-
             if (!isAvailable) {
                 MutedText("음성 메시지는 커플/가족 플랜에서만 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -418,108 +417,33 @@ internal fun VoiceMessagePanel(
                 return@Column
             }
 
-            Text("받는 사람", fontWeight = FontWeight.SemiBold)
-            if (recipients.isEmpty()) {
-                MutedText("연결된 상대가 아직 없어요. 코드 등록에서 초대권을 공유하거나 등록하면 여기에 표시돼요.")
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    recipients.take(3).forEach { member ->
-                        val selected = selectedRecipientId == member.userId
-                        FilterChip(
-                            selected = selected,
-                            onClick = { selectedRecipientId = member.userId },
-                            label = {
-                                Text(
-                                    text = member.name ?: member.email ?: "멤버",
-                                    maxLines = 1,
-                                )
-                            },
-                        )
-                    }
-                }
-            }
-
-            Text("보내기 방식", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = sendMode == VoiceMessageSendMode.Text,
-                    onClick = { sendMode = VoiceMessageSendMode.Text },
-                    label = { Text("텍스트") },
-                )
-                FilterChip(
-                    selected = sendMode == VoiceMessageSendMode.Tts,
-                    onClick = { sendMode = VoiceMessageSendMode.Tts },
-                    label = { Text("목소리 TTS") },
-                )
-            }
-            if (sendMode == VoiceMessageSendMode.Tts) {
-                Text("목소리", fontWeight = FontWeight.SemiBold)
-                when {
-                    voiceProfileBusy -> MutedText("목소리를 불러오는 중이에요.")
-                    voiceOptions.isEmpty() -> MutedText("사용 가능한 목소리가 없어요. 먼저 음성 프로필을 만들거나 공유받아 주세요.")
-                    else -> ChipGrid(
-                        options = voiceOptions,
-                        selected = selectedVoiceProfileId.orEmpty(),
-                        onSelect = { selectedVoiceProfileId = it },
-                    )
-                }
-            }
-
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it.take(maxTextLength) },
-                label = { Text("메시지") },
-                placeholder = { Text("전하고 싶은 말을 입력하세요") },
-                minLines = 3,
-                maxLines = 5,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                text = "${text.length}/$maxTextLength",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.End),
-            )
-            Button(
-                onClick = {
-                    val recipientId = selectedRecipientId
-                    if (recipientId != null) {
-                        if (sendMode == VoiceMessageSendMode.Tts) {
-                            selectedVoiceProfileId?.let { profileId ->
-                                onSendTtsNote(recipientId, text, profileId)
-                                text = ""
-                            }
-                        } else {
-                            onSendNote(recipientId, text)
-                            text = ""
-                        }
-                    }
-                },
-                enabled = selectedRecipientId != null &&
-                    text.isNotBlank() &&
-                    !noteBusy &&
-                    (sendMode == VoiceMessageSendMode.Text || !selectedVoiceProfileId.isNullOrBlank()),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Text(if (sendMode == VoiceMessageSendMode.Tts) "목소리로 보내기" else "메시지 보내기")
-            }
-            MutedText("보낸 메시지는 상대의 메시지함에 표시돼요.")
-
-            HorizontalDivider()
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("음성 메시지", fontWeight = FontWeight.SemiBold)
-                IconButton(onClick = onRefresh, enabled = !noteBusy) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = "새로고침")
+                Text("받은 메시지", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onRefresh, enabled = !noteBusy) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "새로고침")
+                    }
+                    Button(
+                        onClick = { showComposer = true },
+                        enabled = recipients.isNotEmpty() && !noteBusy,
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.size(6.dp))
+                        Text("새 메시지")
+                    }
                 }
+            }
+            if (recipients.isEmpty()) {
+                MutedText("연결된 상대가 아직 없어요. 코드 등록에서 먼저 연결해 주세요.")
             }
             if (receivedNotes.isEmpty()) {
                 MutedText("아직 받은 메시지가 없어요.")
@@ -535,6 +459,105 @@ internal fun VoiceMessagePanel(
                 }
             }
         }
+    }
+
+    if (showComposer) {
+        AlertDialog(
+            onDismissRequest = { showComposer = false },
+            title = { Text("새 메시지") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("받는 사람", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        recipients.take(3).forEach { member ->
+                            val selected = selectedRecipientId == member.userId
+                            FilterChip(
+                                selected = selected,
+                                onClick = { selectedRecipientId = member.userId },
+                                label = {
+                                    Text(
+                                        text = member.name ?: member.email ?: "멤버",
+                                        maxLines = 1,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                    Text("보내기 방식", fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = sendMode == VoiceMessageSendMode.Text,
+                            onClick = { sendMode = VoiceMessageSendMode.Text },
+                            label = { Text("텍스트") },
+                        )
+                        FilterChip(
+                            selected = sendMode == VoiceMessageSendMode.Tts,
+                            onClick = { sendMode = VoiceMessageSendMode.Tts },
+                            label = { Text("음성 메시지") },
+                        )
+                    }
+                    if (sendMode == VoiceMessageSendMode.Tts) {
+                        Text("음성", fontWeight = FontWeight.SemiBold)
+                        when {
+                            voiceProfileBusy -> MutedText("음성을 불러오는 중이에요.")
+                            voiceOptions.isEmpty() -> MutedText("사용 가능한 음성이 없어요. 먼저 음성 프로필을 만들거나 공유받아 주세요.")
+                            else -> ChipGrid(
+                                options = voiceOptions,
+                                selected = selectedVoiceProfileId.orEmpty(),
+                                onSelect = { selectedVoiceProfileId = it },
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.take(maxTextLength) },
+                        label = { Text("메시지") },
+                        placeholder = { Text("전하고 싶은 말을 입력하세요") },
+                        minLines = 3,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "${text.length}/$maxTextLength",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.End),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val recipientId = selectedRecipientId
+                        if (recipientId != null) {
+                            if (sendMode == VoiceMessageSendMode.Tts) {
+                                selectedVoiceProfileId?.let { profileId ->
+                                    onSendTtsNote(recipientId, text, profileId)
+                                }
+                            } else {
+                                onSendNote(recipientId, text)
+                            }
+                            text = ""
+                            showComposer = false
+                        }
+                    },
+                    enabled = selectedRecipientId != null &&
+                        text.isNotBlank() &&
+                        !noteBusy &&
+                        (sendMode == VoiceMessageSendMode.Text || !selectedVoiceProfileId.isNullOrBlank()),
+                ) {
+                    Text("보내기")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showComposer = false }) {
+                    Text("취소")
+                }
+            },
+        )
     }
 }
 
