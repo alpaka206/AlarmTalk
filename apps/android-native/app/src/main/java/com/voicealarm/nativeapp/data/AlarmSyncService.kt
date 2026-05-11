@@ -19,6 +19,14 @@ internal class AlarmSyncService(
     suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult {
         val authorization = VoiceAlarmApiClient.bearer(token)
         val localAlarms = alarmDao.getAllAlarms()
+            .filter { alarm ->
+                alarm.origin == AlarmOrigins.LOCAL_OWNED &&
+                    alarm.syncState in setOf(
+                        AlarmSyncStates.LOCAL_ONLY,
+                        AlarmSyncStates.DIRTY,
+                        AlarmSyncStates.FAILED,
+                    )
+            }
         var created = 0
         var updated = 0
         var failed = 0
