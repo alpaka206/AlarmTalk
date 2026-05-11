@@ -1,5 +1,6 @@
 package com.voicealarm.nativeapp.data
 
+import android.content.Context
 import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
@@ -12,6 +13,7 @@ class AlarmRepository(
     private val characterEventDao: CharacterEventDao,
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
+    private val context: Context,
 ) {
     private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
@@ -19,6 +21,7 @@ class AlarmRepository(
         alarmDao = alarmDao,
         alarmScheduler = alarmScheduler,
         alarmAudioStore = alarmAudioStore,
+        context = context,
     )
     private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
 

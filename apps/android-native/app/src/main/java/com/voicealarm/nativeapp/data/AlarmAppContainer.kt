@@ -14,6 +14,7 @@ object AlarmAppContainer {
                 characterEventDao = AlarmDatabase.getInstance(context).characterEventDao(),
                 alarmScheduler = AlarmScheduler(context.applicationContext),
                 alarmAudioStore = AlarmAudioStore(context.applicationContext),
+                context = context.applicationContext,
             ).also { repository = it }
         }
 }

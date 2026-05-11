@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.alarm.SocialNotificationTracker
 import com.voicealarm.nativeapp.data.AlarmAppContainer
 import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
@@ -157,6 +158,11 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
             runCatching {
                 api.listReceivedNotes(authorization, limit = 20, offset = 0).notes
             }.onSuccess { notes ->
+                SocialNotificationTracker.notifyNewNotes(
+                    context = getApplication(),
+                    notes = notes,
+                    allowInitialNotify = false,
+                )
                 receivedNotes = notes
             }.onFailure { error ->
                 Log.e(TAG, "Failed to refresh notes", error)
