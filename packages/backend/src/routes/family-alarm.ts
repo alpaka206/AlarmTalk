@@ -36,26 +36,44 @@ familyAlarm.post('/alarms', async (c) => {
   const recipientPk =
     typeof body.recipient_user_id === 'string' ? body.recipient_user_id.trim() : '';
   const wakeAt = typeof body.wake_at === 'string' ? body.wake_at.trim() : '';
-  const messageText =
-    typeof body.message_text === 'string' ? body.message_text.trim() : '';
+  const messageText = typeof body.message_text === 'string' ? body.message_text.trim() : '';
 
   if (!recipientPk) {
-    return c.json({ error: 'recipient_user_id 가 필요합니다', error_code: 'RECIPIENT_REQUIRED' }, 400);
+    return c.json(
+      { error: 'recipient_user_id 가 필요합니다', error_code: 'RECIPIENT_REQUIRED' },
+      400,
+    );
   }
   if (!WAKE_AT_RE.test(wakeAt)) {
-    return c.json({ error: 'wake_at 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_WAKE_AT' }, 400);
+    return c.json(
+      { error: 'wake_at 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_WAKE_AT' },
+      400,
+    );
   }
   if (messageText.length === 0) {
-    return c.json({ error: 'message_text 가 비어있습니다', error_code: 'MESSAGE_TEXT_REQUIRED' }, 400);
+    return c.json(
+      { error: 'message_text 가 비어있습니다', error_code: 'MESSAGE_TEXT_REQUIRED' },
+      400,
+    );
   }
   if (messageText.length > MESSAGE_TEXT_MAX) {
-    return c.json({ error: `message_text 는 ${MESSAGE_TEXT_MAX}자 이하여야 합니다`, error_code: 'MESSAGE_TEXT_TOO_LONG' }, 400);
+    return c.json(
+      {
+        error: `message_text 는 ${MESSAGE_TEXT_MAX}자 이하여야 합니다`,
+        error_code: 'MESSAGE_TEXT_TOO_LONG',
+      },
+      400,
+    );
   }
 
   const senderPk = await resolveUserPk(db, userId);
-  if (!senderPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+  if (!senderPk)
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   if (senderPk === recipientPk) {
-    return c.json({ error: '자기 자신에게는 가족 알람을 보낼 수 없습니다', error_code: 'SELF_ALARM' }, 400);
+    return c.json(
+      { error: '자기 자신에게는 가족 알람을 보낼 수 없습니다', error_code: 'SELF_ALARM' },
+      400,
+    );
   }
 
   const inSameGroup = await assertSameGroup(db, senderPk, recipientPk);
@@ -65,7 +83,8 @@ familyAlarm.post('/alarms', async (c) => {
 
   const recipientRes = await db.execute({
     sql: `SELECT id, google_id, allow_family_alarms,
-                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end
+                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
+                 family_alarm_quiet_windows
           FROM users WHERE id = ?`,
     args: [recipientPk],
   });
@@ -75,11 +94,20 @@ familyAlarm.post('/alarms', async (c) => {
   const recipient = recipientRes.rows[0]!;
   const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
   if (!recipientSettings.allowFamilyAlarms) {
-    return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
+    return c.json(
+      { error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' },
+      403,
+    );
   }
   const repeatDays = normalizeRepeatDays(body.repeat_days);
   if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
-    return c.json({ error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다', error_code: 'FAMILY_ALARM_QUIET_TIME' }, 403);
+    return c.json(
+      {
+        error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다',
+        error_code: 'FAMILY_ALARM_QUIET_TIME',
+      },
+      403,
+    );
   }
 
   let voiceProfileId =
@@ -90,7 +118,10 @@ familyAlarm.post('/alarms', async (c) => {
       args: [voiceProfileId, recipientPk],
     });
     if (owned.rows.length === 0) {
-      return c.json({ error: '지정한 voice_profile 이 수신자 소유가 아닙니다', error_code: 'VOICE_NOT_OWNED' }, 400);
+      return c.json(
+        { error: '지정한 voice_profile 이 수신자 소유가 아닙니다', error_code: 'VOICE_NOT_OWNED' },
+        400,
+      );
     }
   } else {
     const latest = await db.execute({
@@ -99,7 +130,10 @@ familyAlarm.post('/alarms', async (c) => {
       args: [recipientPk],
     });
     if (latest.rows.length === 0) {
-      return c.json({ error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' }, 400);
+      return c.json(
+        { error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' },
+        400,
+      );
     }
     voiceProfileId = String(latest.rows[0]!.id);
   }
@@ -119,7 +153,7 @@ familyAlarm.post('/alarms', async (c) => {
     args: [
       alarmId,
       userId,
-      ((recipient.google_id as string | null) ?? String(recipient.id)),
+      (recipient.google_id as string | null) ?? String(recipient.id),
       messageId,
       wakeAt,
       JSON.stringify(repeatDays),
@@ -165,22 +199,33 @@ familyAlarm.post('/alarms/voice', async (c) => {
   const recipientPk =
     typeof body.recipient_user_id === 'string' ? body.recipient_user_id.trim() : '';
   const wakeAt = typeof body.wake_at === 'string' ? body.wake_at.trim() : '';
-  const voiceUploadId =
-    typeof body.voice_upload_id === 'string' ? body.voice_upload_id.trim() : '';
+  const voiceUploadId = typeof body.voice_upload_id === 'string' ? body.voice_upload_id.trim() : '';
 
   if (!recipientPk) {
-    return c.json({ error: 'recipient_user_id 가 필요합니다', error_code: 'RECIPIENT_REQUIRED' }, 400);
+    return c.json(
+      { error: 'recipient_user_id 가 필요합니다', error_code: 'RECIPIENT_REQUIRED' },
+      400,
+    );
   }
   if (!WAKE_AT_RE.test(wakeAt)) {
-    return c.json({ error: 'wake_at 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_WAKE_AT' }, 400);
+    return c.json(
+      { error: 'wake_at 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_WAKE_AT' },
+      400,
+    );
   }
   if (!voiceUploadId) {
-    return c.json({ error: 'voice_upload_id 가 필요합니다', error_code: 'VOICE_UPLOAD_REQUIRED' }, 400);
+    return c.json(
+      { error: 'voice_upload_id 가 필요합니다', error_code: 'VOICE_UPLOAD_REQUIRED' },
+      400,
+    );
   }
 
   const rawLabel = typeof body.label === 'string' ? body.label.trim() : '';
   if (rawLabel.length > LABEL_MAX) {
-    return c.json({ error: `label 은 ${LABEL_MAX}자 이하여야 합니다`, error_code: 'LABEL_TOO_LONG' }, 400);
+    return c.json(
+      { error: `label 은 ${LABEL_MAX}자 이하여야 합니다`, error_code: 'LABEL_TOO_LONG' },
+      400,
+    );
   }
   const label = rawLabel.length > 0 ? rawLabel : DEFAULT_VOICE_LABEL;
 
@@ -189,7 +234,10 @@ familyAlarm.post('/alarms/voice', async (c) => {
     const raw = typeof body.dub_target_language === 'string' ? body.dub_target_language : '';
     if (!DUB_LANGUAGES.includes(raw as DubLanguage)) {
       return c.json(
-        { error: `dub_target_language 는 ${DUB_LANGUAGES.join('|')} 중 하나여야 합니다`, error_code: 'INVALID_DUB_LANGUAGE' },
+        {
+          error: `dub_target_language 는 ${DUB_LANGUAGES.join('|')} 중 하나여야 합니다`,
+          error_code: 'INVALID_DUB_LANGUAGE',
+        },
         400,
       );
     }
@@ -197,9 +245,13 @@ familyAlarm.post('/alarms/voice', async (c) => {
   }
 
   const senderPk = await resolveUserPk(db, userId);
-  if (!senderPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
+  if (!senderPk)
+    return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
   if (senderPk === recipientPk) {
-    return c.json({ error: '자기 자신에게는 가족 알람을 보낼 수 없습니다', error_code: 'SELF_ALARM' }, 400);
+    return c.json(
+      { error: '자기 자신에게는 가족 알람을 보낼 수 없습니다', error_code: 'SELF_ALARM' },
+      400,
+    );
   }
 
   const inSameGroup = await assertSameGroup(db, senderPk, recipientPk);
@@ -209,7 +261,8 @@ familyAlarm.post('/alarms/voice', async (c) => {
 
   const recipientRes = await db.execute({
     sql: `SELECT id, google_id, allow_family_alarms,
-                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end
+                 family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
+                 family_alarm_quiet_windows
           FROM users WHERE id = ?`,
     args: [recipientPk],
   });
@@ -219,11 +272,20 @@ familyAlarm.post('/alarms/voice', async (c) => {
   const recipient = recipientRes.rows[0]!;
   const recipientSettings = familyAlarmSettingsFromRow(recipient as Record<string, unknown>);
   if (!recipientSettings.allowFamilyAlarms) {
-    return c.json({ error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
+    return c.json(
+      { error: '수신자가 가족 알람을 허용하지 않았습니다', error_code: 'FAMILY_ALARM_DISABLED' },
+      403,
+    );
   }
   const repeatDays = normalizeRepeatDays(body.repeat_days);
   if (isBlockedByFamilyAlarmQuietTime(wakeAt, repeatDays, recipientSettings)) {
-    return c.json({ error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다', error_code: 'FAMILY_ALARM_QUIET_TIME' }, 403);
+    return c.json(
+      {
+        error: '수신자가 설정한 불가 시간에는 알람을 만들 수 없습니다',
+        error_code: 'FAMILY_ALARM_QUIET_TIME',
+      },
+      403,
+    );
   }
 
   const uploadRes = await db.execute({
@@ -244,7 +306,10 @@ familyAlarm.post('/alarms/voice', async (c) => {
     args: [recipientPk],
   });
   if (latestVp.rows.length === 0) {
-    return c.json({ error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' }, 400);
+    return c.json(
+      { error: '수신자의 음성 프로필이 없습니다', error_code: 'NO_VOICE_PROFILE' },
+      400,
+    );
   }
   const voiceProfileId = String(latestVp.rows[0]!.id);
 
@@ -264,7 +329,7 @@ familyAlarm.post('/alarms/voice', async (c) => {
     args: [
       alarmId,
       userId,
-      ((recipient.google_id as string | null) ?? String(recipient.id)),
+      (recipient.google_id as string | null) ?? String(recipient.id),
       messageId,
       wakeAt,
       JSON.stringify(repeatDays),

@@ -8,6 +8,7 @@ import {
   familyAlarmSettingsFromRow,
   validateQuietDays,
   validateQuietTime,
+  validateQuietWindows,
 } from '../lib/family-alarm-settings';
 
 const user = new Hono<AppEnv>();
@@ -53,6 +54,7 @@ user.get('/me', async (c) => {
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
       },
       stats: {
         voice_profiles: Number(profileCount.rows[0]?.count ?? 0),
@@ -85,6 +87,7 @@ user.patch('/me', async (c) => {
       family_alarm_quiet_days?: unknown;
       family_alarm_quiet_start?: unknown;
       family_alarm_quiet_end?: unknown;
+      family_alarm_quiet_windows?: unknown;
       name?: unknown;
     }>()
     .catch(() => ({}));
@@ -99,7 +102,10 @@ user.patch('/me', async (c) => {
     }
     const trimmed = body.name.trim();
     if (trimmed.length === 0 || trimmed.length > 30) {
-      return c.json({ error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' }, 400);
+      return c.json(
+        { error: '닉네임은 1~30자여야 합니다', error_code: 'INVALID_NAME_LENGTH' },
+        400,
+      );
     }
     updates.push('name = ?');
     args.push(trimmed);
@@ -110,40 +116,103 @@ user.patch('/me', async (c) => {
   if ('allow_family_alarms' in body && body.allow_family_alarms !== undefined) {
     const flag = toBoolFlag(body.allow_family_alarms);
     if (flag === null) {
-      return c.json({ error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' }, 400);
+      return c.json(
+        { error: 'allow_family_alarms 는 boolean 이어야 합니다', error_code: 'INVALID_BOOLEAN' },
+        400,
+      );
     }
     updates.push('allow_family_alarms = ?');
     args.push(flag);
     resolvedFlag = flag;
   }
 
+  const hasQuietWindows =
+    'family_alarm_quiet_windows' in body && body.family_alarm_quiet_windows !== undefined;
+  let resolvedQuietWindows: { days: number[]; start: string; end: string }[] | null = null;
   let resolvedQuietDays: number[] | null = null;
-  if ('family_alarm_quiet_days' in body && body.family_alarm_quiet_days !== undefined) {
+  let resolvedQuietStart: string | null = null;
+  let resolvedQuietEnd: string | null = null;
+
+  if (hasQuietWindows) {
+    const windows = validateQuietWindows(body.family_alarm_quiet_windows);
+    if (windows === null) {
+      return c.json(
+        {
+          error: 'family_alarm_quiet_windows 는 days/start/end 배열이어야 합니다',
+          error_code: 'INVALID_QUIET_WINDOWS',
+        },
+        400,
+      );
+    }
+    const firstWindow = windows[0] ?? { days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' };
+    updates.push('family_alarm_quiet_windows = ?');
+    args.push(JSON.stringify(windows));
+    updates.push('family_alarm_quiet_days = ?');
+    args.push(JSON.stringify(firstWindow.days));
+    updates.push('family_alarm_quiet_start = ?');
+    args.push(firstWindow.start);
+    updates.push('family_alarm_quiet_end = ?');
+    args.push(firstWindow.end);
+    resolvedQuietWindows = windows;
+    resolvedQuietDays = firstWindow.days;
+    resolvedQuietStart = firstWindow.start;
+    resolvedQuietEnd = firstWindow.end;
+  }
+
+  if (
+    !hasQuietWindows &&
+    'family_alarm_quiet_days' in body &&
+    body.family_alarm_quiet_days !== undefined
+  ) {
     const days = validateQuietDays(body.family_alarm_quiet_days);
     if (days === null) {
-      return c.json({ error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다', error_code: 'INVALID_QUIET_DAYS' }, 400);
+      return c.json(
+        {
+          error: 'family_alarm_quiet_days 는 0~6 숫자 배열이어야 합니다',
+          error_code: 'INVALID_QUIET_DAYS',
+        },
+        400,
+      );
     }
     updates.push('family_alarm_quiet_days = ?');
     args.push(JSON.stringify(days));
     resolvedQuietDays = days;
   }
 
-  let resolvedQuietStart: string | null = null;
-  if ('family_alarm_quiet_start' in body && body.family_alarm_quiet_start !== undefined) {
+  if (
+    !hasQuietWindows &&
+    'family_alarm_quiet_start' in body &&
+    body.family_alarm_quiet_start !== undefined
+  ) {
     const time = validateQuietTime(body.family_alarm_quiet_start);
     if (time === null) {
-      return c.json({ error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_QUIET_TIME' }, 400);
+      return c.json(
+        {
+          error: 'family_alarm_quiet_start 는 HH:mm 형식이어야 합니다',
+          error_code: 'INVALID_QUIET_TIME',
+        },
+        400,
+      );
     }
     updates.push('family_alarm_quiet_start = ?');
     args.push(time);
     resolvedQuietStart = time;
   }
 
-  let resolvedQuietEnd: string | null = null;
-  if ('family_alarm_quiet_end' in body && body.family_alarm_quiet_end !== undefined) {
+  if (
+    !hasQuietWindows &&
+    'family_alarm_quiet_end' in body &&
+    body.family_alarm_quiet_end !== undefined
+  ) {
     const time = validateQuietTime(body.family_alarm_quiet_end);
     if (time === null) {
-      return c.json({ error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다', error_code: 'INVALID_QUIET_TIME' }, 400);
+      return c.json(
+        {
+          error: 'family_alarm_quiet_end 는 HH:mm 형식이어야 합니다',
+          error_code: 'INVALID_QUIET_TIME',
+        },
+        400,
+      );
     }
     updates.push('family_alarm_quiet_end = ?');
     args.push(time);
@@ -171,6 +240,7 @@ user.patch('/me', async (c) => {
     family_alarm_quiet_days: resolvedQuietDays,
     family_alarm_quiet_start: resolvedQuietStart,
     family_alarm_quiet_end: resolvedQuietEnd,
+    family_alarm_quiet_windows: resolvedQuietWindows,
   });
 });
 

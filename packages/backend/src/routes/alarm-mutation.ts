@@ -60,25 +60,44 @@ alarmMutation.post('/', async (c) => {
     if (rawTargetUserId !== userId) {
       const targetRes = await db.execute({
         sql: `SELECT id, google_id, allow_family_alarms,
-                     family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end
+                     family_alarm_quiet_days, family_alarm_quiet_start, family_alarm_quiet_end,
+                     family_alarm_quiet_windows
               FROM users
               WHERE google_id = ? OR id = ?
               LIMIT 1`,
         args: [rawTargetUserId, rawTargetUserId],
       });
       if (targetRes.rows.length === 0) {
-        return c.json({ error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_FRIENDS' }, 403);
+        return c.json(
+          {
+            error: '친구 관계인 사용자에게만 알람을 설정할 수 있습니다.',
+            error_code: 'NOT_FRIENDS',
+          },
+          403,
+        );
       }
 
       const target = targetRes.rows[0]!;
       const targetPk = String(target.id);
-      const targetLoginId = ((target.google_id as string | null) ?? targetPk);
+      const targetLoginId = (target.google_id as string | null) ?? targetPk;
       const targetSettings = familyAlarmSettingsFromRow(target as Record<string, unknown>);
       if (!targetSettings.allowFamilyAlarms) {
-        return c.json({ error: '상대방이 알람 설정을 허용하지 않았습니다.', error_code: 'FAMILY_ALARM_DISABLED' }, 403);
+        return c.json(
+          {
+            error: '상대방이 알람 설정을 허용하지 않았습니다.',
+            error_code: 'FAMILY_ALARM_DISABLED',
+          },
+          403,
+        );
       }
       if (isBlockedByFamilyAlarmQuietTime(body.time, body.repeat_days ?? [], targetSettings)) {
-        return c.json({ error: '상대방이 설정한 불가 시간에는 알람을 만들 수 없습니다.', error_code: 'FAMILY_ALARM_QUIET_TIME' }, 403);
+        return c.json(
+          {
+            error: '상대방이 설정한 불가 시간에는 알람을 만들 수 없습니다.',
+            error_code: 'FAMILY_ALARM_QUIET_TIME',
+          },
+          403,
+        );
       }
 
       const friendship = await db.execute({
@@ -92,11 +111,15 @@ alarmMutation.post('/', async (c) => {
         targetUserIdForAlarm = targetLoginId;
       } else {
         const senderPk = await resolveUserPk(db, userId);
-        const allowed = targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
+        const allowed =
+          targetLoginId !== userId && !!senderPk && (await assertSameGroup(db, senderPk, targetPk));
 
         if (!allowed) {
           return c.json(
-            { error: '친구 또는 같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.', error_code: 'NOT_CONNECTED' },
+            {
+              error: '친구 또는 같은 커플/가족 그룹 멤버에게만 알람을 설정할 수 있습니다.',
+              error_code: 'NOT_CONNECTED',
+            },
             403,
           );
         }
@@ -118,7 +141,10 @@ alarmMutation.post('/', async (c) => {
       args: [alarmOwner, alarmOwner],
     });
     if (Number(alarmCount.rows[0]!.count) >= 2) {
-      return c.json({ error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.', error_code: 'FREE_PLAN_LIMIT' }, 403);
+      return c.json(
+        { error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.', error_code: 'FREE_PLAN_LIMIT' },
+        403,
+      );
     }
   }
 
@@ -145,12 +171,7 @@ alarmMutation.post('/', async (c) => {
     await db.execute({
       sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
             VALUES (?, ?, ?, '', ?, 'raw')`,
-      args: [
-        placeholderMsgId,
-        userPk,
-        firstVoice.rows[0]!.id as string,
-        body.raw_audio_url,
-      ],
+      args: [placeholderMsgId, userPk, firstVoice.rows[0]!.id as string, body.raw_audio_url],
     });
     resolvedMessageId = placeholderMsgId;
   } else if (resolvedMessageId) {
@@ -165,7 +186,8 @@ alarmMutation.post('/', async (c) => {
 
   const alarmId = crypto.randomUUID();
   const mode: AlarmMode = (body.mode as AlarmMode | undefined) ?? 'tts';
-  const vibPattern: VibrationPattern = (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
+  const vibPattern: VibrationPattern =
+    (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
   await db.execute({
     sql: `INSERT INTO alarms
