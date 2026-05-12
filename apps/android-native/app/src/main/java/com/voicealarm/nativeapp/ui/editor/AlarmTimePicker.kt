@@ -52,8 +52,8 @@ internal fun AlarmTimePickerCard(
     modifier: Modifier = Modifier,
 ) {
     val currentOnTimeChange by rememberUpdatedState(onTimeChange)
-    val itemHeight = 88.dp
-    val verticalWheelPadding = 44.dp
+    val itemHeight = 76.dp
+    val verticalWheelPadding = 26.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
     val wheelBackgroundColor = Color(0xFF050505)
@@ -78,10 +78,7 @@ internal fun AlarmTimePickerCard(
 
     fun applyMinuteSteps(steps: Int) {
         if (steps == 0) return
-        val totalMinutes = floorMod(workingHour * 60 + workingMinute + steps, 24 * 60)
-        val nextHour = totalMinutes / 60
-        val nextMinute = totalMinutes % 60
-        commitTime(nextHour, nextMinute)
+        commitTime(workingHour, floorMod(workingMinute + steps, 60))
     }
 
     Column(
