@@ -96,6 +96,8 @@ class RemoteAlarmMapperTest {
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,
+            voiceRandomPrompt = false,
+            voiceRepeat = true,
             ttsMessageId = ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,

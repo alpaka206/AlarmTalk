@@ -261,16 +261,29 @@ internal fun PlayModeChip(
 }
 
 internal val TtsCategories = listOf(
-    "morning" to "아침 기상",
+    "morning" to "아침",
     "lunch" to "점심",
+    "afternoon" to "오후",
+    "evening" to "저녁",
+    "night" to "밤",
     "sleep" to "취침",
     "medicine" to "약",
-    "study" to "영어 공부",
-    "custom" to "직접 입력",
+    "study" to "공부",
+    "cheer" to "응원",
+    "love" to "사랑",
+    "health" to "건강",
 )
 
 internal val TtsLanguages = listOf(
     "ko" to "한국어",
     "en" to "영어",
     "ja" to "일본어",
+)
+
+internal val TtsTranslationLanguages = listOf(
+    "ko" to "한국어",
+    "en" to "영어",
+    "ja" to "일본어",
+    "fr" to "프랑스어",
+    "it" to "이탈리아어",
 )

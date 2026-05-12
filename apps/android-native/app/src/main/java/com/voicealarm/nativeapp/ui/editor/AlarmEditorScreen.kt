@@ -346,7 +346,7 @@ internal fun AlarmEditorScreen(
         val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
             profileId = profileId,
             text = text,
-            category = editor.voiceCategory,
+            category = editor.activeVoiceCategory(),
             language = editor.activeVoiceLanguage(),
         )
         audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
@@ -371,9 +371,9 @@ internal fun AlarmEditorScreen(
                     TtsGenerateRequest(
                         voiceProfileId = profileId,
                         text = text,
-                        category = editor.voiceCategory,
+                        category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
-                        translate = editor.voiceTranslationEnabled,
+                        translate = editor.shouldTranslateVoiceText(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -381,7 +381,7 @@ internal fun AlarmEditorScreen(
                 val cacheKey = AlarmAudioStore.ttsCacheKey(
                     profileId = profileId,
                     text = response.text,
-                    category = editor.voiceCategory,
+                    category = editor.activeVoiceCategory(),
                     language = editor.activeVoiceLanguage(),
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
@@ -454,6 +454,21 @@ internal fun AlarmEditorScreen(
 
     BackHandler(enabled = settingsDetailPanel != null) {
         settingsDetailPanel = null
+    }
+
+    LaunchedEffect(editor.playMode, editor.voiceRandomPrompt) {
+        if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
+            settingsDetailPanel = null
+        }
+        if (!editor.voiceRandomPrompt && settingsDetailPanel == "random_prompt") {
+            settingsDetailPanel = null
+        }
+        if (
+            (editor.voiceRandomPrompt || !editor.voiceTranslationEnabled) &&
+            settingsDetailPanel == "voice_translation"
+        ) {
+            settingsDetailPanel = null
+        }
     }
 
     Box(
@@ -551,11 +566,7 @@ internal fun AlarmEditorScreen(
 
             if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
                 item {
-                    Column(
-                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        EditorSectionTitle("음성")
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
                         VoiceAudioCard(
                             editor = editor,
                             voiceProfiles = voiceProfiles,
@@ -604,6 +615,8 @@ internal fun AlarmEditorScreen(
                             },
                             onPreviewCrop = { playSelectedCrop() },
                             onPreviewAudio = { playCachedAudio() },
+                            onOpenRandomPromptSettings = { settingsDetailPanel = "random_prompt" },
+                            onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
                             onClear = {
                                 editor.clearAudio()
                                 selectedFileUri = null
@@ -624,6 +637,7 @@ internal fun AlarmEditorScreen(
                         vibrationPattern = editor.vibrationPattern,
                         alarmVolumePercent = editor.alarmVolumePercent,
                         alarmSoundLabel = editor.alarmSoundLabel,
+                        showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
                         onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                         onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                         onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -689,6 +703,31 @@ internal fun AlarmEditorScreen(
                             putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
                         },
                     )
+                },
+            )
+
+            "random_prompt" -> RandomPromptSettingsPane(
+                voiceCategory = editor.voiceCategory,
+                voiceLanguage = editor.voiceLanguage,
+                onDismiss = { settingsDetailPanel = null },
+                onCategoryChange = {
+                    editor.voiceCategory = it
+                    editor.voiceText = ""
+                    editor.clearTtsMeta()
+                },
+                onLanguageChange = {
+                    editor.voiceLanguage = it
+                    editor.voiceText = ""
+                    editor.clearTtsMeta()
+                },
+            )
+
+            "voice_translation" -> VoiceTranslationSettingsPane(
+                voiceLanguage = editor.voiceLanguage,
+                onDismiss = { settingsDetailPanel = null },
+                onLanguageChange = {
+                    editor.voiceLanguage = it
+                    editor.clearTtsMeta()
                 },
             )
         }

@@ -108,6 +108,7 @@ internal fun AlarmSettingsCard(
     vibrationPattern: String,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
+    showAlarmSound: Boolean,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onSnoozeRepeatLimitChange: (Int) -> Unit,
@@ -149,20 +150,22 @@ internal fun AlarmSettingsCard(
                     )
                 },
             )
-            AlarmSettingDivider()
-            AlarmSettingRow(
-                title = "알람음",
-                subtitle = "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}",
-                onClick = onOpenAlarmSoundSettings,
-                trailing = {
-                    VoiceAlarmSwitch(
-                        checked = alarmVolumePercent > 0,
-                        onCheckedChange = { enabled ->
-                            onAlarmVolumeChange(if (enabled) 100 else 0)
-                        },
-                    )
-                },
-            )
+            if (showAlarmSound) {
+                AlarmSettingDivider()
+                AlarmSettingRow(
+                    title = "알람음",
+                    subtitle = "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}",
+                    onClick = onOpenAlarmSoundSettings,
+                    trailing = {
+                        VoiceAlarmSwitch(
+                            checked = alarmVolumePercent > 0,
+                            onCheckedChange = { enabled ->
+                                onAlarmVolumeChange(if (enabled) 100 else 0)
+                            },
+                        )
+                    },
+                )
+            }
         }
     }
 }
@@ -417,6 +420,127 @@ internal fun VibrationSettingsPane(
                         if (index != VibrationOptions.lastIndex) {
                             SnoozeOptionDivider()
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun RandomPromptSettingsPane(
+    voiceCategory: String,
+    voiceLanguage: String,
+    onDismiss: () -> Unit,
+    onCategoryChange: (String) -> Unit,
+    onLanguageChange: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "뒤로",
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "랜덤 문구",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SnoozeOptionSection(title = "카테고리") {
+                    TtsCategories.forEachIndexed { index, (category, label) ->
+                        SnoozeRadioRow(
+                            label = label,
+                            selected = normalizedTtsCategory(voiceCategory) == category,
+                            onClick = { onCategoryChange(category) },
+                        )
+                        if (index != TtsCategories.lastIndex) SnoozeOptionDivider()
+                    }
+                }
+
+                SnoozeOptionSection(title = "언어") {
+                    TtsLanguages.forEachIndexed { index, (language, label) ->
+                        SnoozeRadioRow(
+                            label = label,
+                            selected = voiceLanguage == language,
+                            onClick = { onLanguageChange(language) },
+                        )
+                        if (index != TtsLanguages.lastIndex) SnoozeOptionDivider()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun VoiceTranslationSettingsPane(
+    voiceLanguage: String,
+    onDismiss: () -> Unit,
+    onLanguageChange: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "뒤로",
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "번역 언어",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SnoozeOptionSection(title = "언어") {
+                    TtsTranslationLanguages.forEachIndexed { index, (language, label) ->
+                        SnoozeRadioRow(
+                            label = label,
+                            selected = voiceLanguage == language,
+                            onClick = { onLanguageChange(language) },
+                        )
+                        if (index != TtsTranslationLanguages.lastIndex) SnoozeOptionDivider()
                     }
                 }
             }
