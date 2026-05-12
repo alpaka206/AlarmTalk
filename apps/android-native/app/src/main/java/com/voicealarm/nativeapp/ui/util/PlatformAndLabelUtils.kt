@@ -142,9 +142,18 @@ internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): 
     }
 
 internal fun vibrationLabel(pattern: String): String = when (pattern) {
-    VibrationPatterns.STRONG -> "강한 진동"
-    VibrationPatterns.NONE -> "진동 꺼짐"
-    else -> "기본 진동"
+    VibrationPatterns.STRONG -> "Strong"
+    VibrationPatterns.SHORT -> "Short"
+    VibrationPatterns.MEDIUM -> "Medium"
+    VibrationPatterns.HEARTBEAT -> "Heartbeat"
+    VibrationPatterns.TICKTOCK -> "Ticktock"
+    VibrationPatterns.WALTZ -> "Waltz"
+    VibrationPatterns.ZIGZAG -> "Zig-zig-zig"
+    VibrationPatterns.OFF_BEAT -> "Off-beat"
+    VibrationPatterns.RIPPLE -> "Ripple"
+    VibrationPatterns.SIREN -> "Siren"
+    VibrationPatterns.NONE -> "Off"
+    else -> "Basic call"
 }
 
 internal fun playModeLabel(mode: String): String = when (mode) {

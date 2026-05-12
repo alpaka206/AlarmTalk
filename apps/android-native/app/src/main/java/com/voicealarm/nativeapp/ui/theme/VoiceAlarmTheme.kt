@@ -1,11 +1,19 @@
 package com.voicealarm.nativeapp
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 @Composable
 internal fun VoiceAlarmTheme(
@@ -78,10 +86,35 @@ internal fun VoiceAlarmTheme(
         colorScheme = colorScheme,
         typography = VoiceAlarmTypography,
     ) {
+        AppSystemBars(isDark = isDark)
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
             content = content,
         )
     }
+}
+
+@Composable
+private fun AppSystemBars(isDark: Boolean) {
+    val view = LocalView.current
+    val backgroundColor = MaterialTheme.colorScheme.background.toArgb()
+    SideEffect {
+        val window = view.context.findActivity()?.window ?: return@SideEffect
+        window.statusBarColor = backgroundColor
+        window.navigationBarColor = backgroundColor
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.navigationBarDividerColor = backgroundColor
+        }
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !isDark
+            isAppearanceLightNavigationBars = !isDark
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

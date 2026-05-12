@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <color name="voice_alarm_app_background">#171A1D</color>
     <color name="voice_alarm_status_bar">#111827</color>
 </resources>

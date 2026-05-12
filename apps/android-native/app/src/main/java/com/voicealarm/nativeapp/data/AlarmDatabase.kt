@@ -8,13 +8,14 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AlarmEntity::class, CharacterEventEntity::class],
-    version = 8,
+    entities = [AlarmEntity::class, CharacterEventEntity::class, HolidayEntity::class],
+    version = 9,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
     abstract fun characterEventDao(): CharacterEventDao
+    abstract fun holidayDao(): HolidayDao
 
     companion object {
         @Volatile
@@ -34,6 +35,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
                 ).build()
                     .also { instance = it }
             }
@@ -112,6 +114,25 @@ abstract class AlarmDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN alarmVolumePercent INTEGER NOT NULL DEFAULT 100")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundUri TEXT")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN alarmSoundLabel TEXT")
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS holiday_dates (
+                        countryCode TEXT NOT NULL,
+                        regionCode TEXT NOT NULL,
+                        epochDay INTEGER NOT NULL,
+                        localDate TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        updatedAtMillis INTEGER NOT NULL,
+                        PRIMARY KEY(countryCode, regionCode, epochDay)
+                    )
+                    """.trimIndent(),
+                )
             }
         }
     }

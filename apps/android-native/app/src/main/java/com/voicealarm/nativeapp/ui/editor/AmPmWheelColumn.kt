@@ -1,8 +1,7 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -44,6 +43,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private val AmPmWheelEasing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+
 @Composable
 internal fun AmPmWheelColumn(
     hour: Int,
@@ -57,6 +58,8 @@ internal fun AmPmWheelColumn(
     val scope = rememberCoroutineScope()
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
     var dragOffsetPx by remember { mutableStateOf(0f) }
+    var previousAmPmIndex by remember { mutableIntStateOf(amPmIndex) }
+    var suppressNextAutoAnimation by remember { mutableStateOf(false) }
     val minOffset = if (isPm) -itemHeightPx * 0.22f else -itemHeightPx * 0.72f
     val maxOffset = if (isPm) itemHeightPx * 0.72f else itemHeightPx * 0.22f
     val rows = if (isPm) {
@@ -66,6 +69,24 @@ internal fun AmPmWheelColumn(
     }
     val draggableState = rememberDraggableState { delta ->
         dragOffsetPx = (dragOffsetPx + delta).coerceIn(minOffset, maxOffset)
+    }
+
+    LaunchedEffect(amPmIndex, itemHeightPx) {
+        if (previousAmPmIndex == amPmIndex) return@LaunchedEffect
+        previousAmPmIndex = amPmIndex
+        if (suppressNextAutoAnimation) {
+            suppressNextAutoAnimation = false
+            dragOffsetPx = 0f
+            return@LaunchedEffect
+        }
+        val startOffset = if (amPmIndex == 1) itemHeightPx else -itemHeightPx
+        Animatable(startOffset).animateTo(
+            targetValue = 0f,
+            animationSpec = tween(durationMillis = 155, easing = AmPmWheelEasing),
+        ) {
+            dragOffsetPx = value
+        }
+        dragOffsetPx = 0f
     }
 
     Box(
@@ -89,7 +110,10 @@ internal fun AmPmWheelColumn(
                             startOffsetPx = startOffset,
                             steps = requestedStep,
                             itemHeightPx = itemHeightPx,
-                            onStep = onStep,
+                            onStep = { step ->
+                                suppressNextAutoAnimation = true
+                                onStep(step)
+                            },
                             onOffsetChange = { dragOffsetPx = it },
                         )
                     }
@@ -111,7 +135,10 @@ internal fun AmPmWheelColumn(
                                     startOffsetPx = 0f,
                                     steps = step,
                                     itemHeightPx = itemHeightPx,
-                                    onStep = onStep,
+                                    onStep = { selectedStep ->
+                                        suppressNextAutoAnimation = true
+                                        onStep(selectedStep)
+                                    },
                                     onOffsetChange = { dragOffsetPx = it },
                                 )
                             }

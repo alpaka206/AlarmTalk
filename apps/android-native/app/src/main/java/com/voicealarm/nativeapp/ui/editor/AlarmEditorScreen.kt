@@ -11,6 +11,7 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -19,8 +20,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
@@ -442,15 +446,24 @@ internal fun AlarmEditorScreen(
     }
 
     val editorHorizontalPadding = 24.dp
+    val density = LocalDensity.current
+    val editorBottomPadding = with(density) {
+        WindowInsets.navigationBars.getBottom(this).toDp()
+    } + 36.dp
+    var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
 
-    LazyColumn(
+    BackHandler(enabled = settingsDetailPanel != null) {
+        settingsDetailPanel = null
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        item {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+        ) {
             AlarmTimePickerCard(
                 hour = editor.hour,
                 minute = editor.minute,
@@ -458,189 +471,230 @@ internal fun AlarmEditorScreen(
                     editor.hour = selectedHour
                     editor.minute = selectedMinute
                 },
-                modifier = Modifier.fillParentMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
             )
-        }
 
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                OutlinedTextField(
-                    value = editor.label,
-                    onValueChange = { editor.label = it },
-                    placeholder = { Text("알람 이름") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        if (familyAlarmMode) {
-            item {
-                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                    FamilyAlarmTargetCard(
-                        recipients = familyRecipients,
-                        selectedRecipientId = selectedFamilyRecipientId,
-                        hour = editor.hour,
-                        minute = editor.minute,
-                        repeatDaysMask = editor.repeatDaysMask,
-                        holidayOff = editor.holidayOff,
-                        onSelectRecipient = { selectedFamilyRecipientId = it },
-                    )
-                }
-            }
-        }
-
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(top = 18.dp, bottom = editorBottomPadding),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                RepeatSelector(
-                    repeatDaysMask = editor.repeatDaysMask,
-                    holidayOff = editor.holidayOff,
-                    onToggleDay = { dayIndex ->
-                        editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                    },
-                    onHolidayOffChange = { editor.holidayOff = it },
-                )
-            }
-        }
-
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                PlayModeSelector(
-                    selected = editor.playMode,
-                    onSelect = { selectedMode ->
-                        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
-                        editor.playMode = selectedMode
-                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
-                            editor.voiceSource = VoiceSources.LOCAL_AUDIO
-                            editor.clearTtsMeta()
-                        } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
-                            editor.voiceSource = VoiceSources.TTS_PROFILE
-                            editor.clearTtsMeta()
-                        }
-                    },
-                )
-            }
-        }
-
-        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            item {
-                Column(
-                    modifier = Modifier.padding(horizontal = editorHorizontalPadding),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    EditorSectionTitle("음성")
-                    VoiceAudioCard(
-                        editor = editor,
-                        voiceProfiles = voiceProfiles,
-                        familyVoices = familyVoices,
-                        voiceProfileBusy = voiceProfileBusy,
-                        audioMessage = audioMessage,
-                        localInputMode = localInputMode,
-                        isRecording = isRecording,
-                        recordingElapsedMillis = recordingElapsedMillis,
-                        recordingLevels = recordingLevels,
-                        selectedFileDurationMillis = selectedFileDurationMillis,
-                        cropStartMillis = cropStartMillis,
-                        cropEndMillis = cropEndMillis,
-                        onLocalInputModeChange = { mode ->
-                            if (!isRecording && mode != localInputMode) {
-                                mediaPlayer?.release()
-                                mediaPlayer = null
-                                if (mode == VoiceCaptureMode.File) {
-                                    editor.clearAudio()
-                                } else {
-                                    selectedFileUri = null
-                                    selectedFileDurationMillis = null
-                                    cropStartMillis = 0L
-                                    cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
-                                }
-                                audioMessage = null
-                                localInputMode = mode
-                            }
-                        },
-                        onPick = { pickAudioLauncher.launch("audio/*") },
-                        onRecord = {
-                            if (isRecording) {
-                                stopRecording()
-                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                startRecording()
-                            } else {
-                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        onCropChange = { start, end ->
-                            cropStartMillis = start
-                            cropEndMillis = end
-                            editor.clearAudio()
-                        },
-                        onPreviewCrop = { playSelectedCrop() },
-                        onPreviewAudio = { playCachedAudio() },
-                        onClear = {
-                            editor.clearAudio()
-                            selectedFileUri = null
-                            selectedFileDurationMillis = null
-                            audioMessage = "음성 오디오를 지웠어요"
-                        },
-                    )
-                }
-            }
-        }
-
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                AlarmSettingsCard(
-                    snoozeEnabled = editor.snoozeEnabled,
-                    snoozeMinutes = editor.snoozeMinutes,
-                    snoozeRepeatLimit = editor.snoozeRepeatLimit,
-                    vibrationPattern = editor.vibrationPattern,
-                    alarmVolumePercent = editor.alarmVolumePercent,
-                    alarmSoundLabel = editor.alarmSoundLabel,
-                    onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                    onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                    onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
-                    onVibrationEnabledChange = {
-                        editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
-                    },
-                    onVibrationSelect = { editor.vibrationPattern = it },
-                    onAlarmVolumeChange = { editor.alarmVolumePercent = it },
-                    onPickAlarmSound = {
-                        ringtonePickerLauncher.launch(
-                            Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람 소리 선택")
-                                val current = editor.alarmSoundUri?.let(Uri::parse)
-                                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                item {
+                    Column(
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+                    ) {
+                        RepeatSelector(
+                            hour = editor.hour,
+                            minute = editor.minute,
+                            repeatDaysMask = editor.repeatDaysMask,
+                            holidayOff = editor.holidayOff,
+                            onToggleDay = { dayIndex ->
+                                val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
+                                editor.repeatDaysMask = nextMask
+                                if (nextMask == 0) editor.holidayOff = false
+                            },
+                            onHolidayOffChange = { enabled ->
+                                if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
                             },
                         )
-                    },
-                    onUseDefaultAlarmSound = {
-                        editor.alarmSoundUri = null
-                        editor.alarmSoundLabel = null
-                        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
-                    },
-                )
+                    }
+                }
+
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    OutlinedTextField(
+                        value = editor.label,
+                        onValueChange = { editor.label = it },
+                        placeholder = { Text("알람 이름") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            if (familyAlarmMode) {
+                item {
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        FamilyAlarmTargetCard(
+                            recipients = familyRecipients,
+                            selectedRecipientId = selectedFamilyRecipientId,
+                            hour = editor.hour,
+                            minute = editor.minute,
+                            repeatDaysMask = editor.repeatDaysMask,
+                            holidayOff = editor.holidayOff,
+                            onSelectRecipient = { selectedFamilyRecipientId = it },
+                        )
+                    }
+                }
+            }
+
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    PlayModeSelector(
+                        selected = editor.playMode,
+                        onSelect = { selectedMode ->
+                            val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
+                            editor.playMode = selectedMode
+                            if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
+                                editor.voiceSource = VoiceSources.LOCAL_AUDIO
+                                editor.clearTtsMeta()
+                            } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
+                                editor.voiceSource = VoiceSources.TTS_PROFILE
+                                editor.clearTtsMeta()
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+                item {
+                    Column(
+                        modifier = Modifier.padding(horizontal = editorHorizontalPadding),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        EditorSectionTitle("음성")
+                        VoiceAudioCard(
+                            editor = editor,
+                            voiceProfiles = voiceProfiles,
+                            familyVoices = familyVoices,
+                            voiceProfileBusy = voiceProfileBusy,
+                            audioMessage = audioMessage,
+                            localInputMode = localInputMode,
+                            isRecording = isRecording,
+                            recordingElapsedMillis = recordingElapsedMillis,
+                            recordingLevels = recordingLevels,
+                            selectedFileDurationMillis = selectedFileDurationMillis,
+                            cropStartMillis = cropStartMillis,
+                            cropEndMillis = cropEndMillis,
+                            onLocalInputModeChange = { mode ->
+                                if (!isRecording && mode != localInputMode) {
+                                    mediaPlayer?.release()
+                                    mediaPlayer = null
+                                    if (mode == VoiceCaptureMode.File) {
+                                        editor.clearAudio()
+                                    } else {
+                                        selectedFileUri = null
+                                        selectedFileDurationMillis = null
+                                        cropStartMillis = 0L
+                                        cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
+                                    }
+                                    audioMessage = null
+                                    localInputMode = mode
+                                }
+                            },
+                            onPick = { pickAudioLauncher.launch("audio/*") },
+                            onRecord = {
+                                if (isRecording) {
+                                    stopRecording()
+                                } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                    PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    startRecording()
+                                } else {
+                                    recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            onCropChange = { start, end ->
+                                cropStartMillis = start
+                                cropEndMillis = end
+                                editor.clearAudio()
+                            },
+                            onPreviewCrop = { playSelectedCrop() },
+                            onPreviewAudio = { playCachedAudio() },
+                            onClear = {
+                                editor.clearAudio()
+                                selectedFileUri = null
+                                selectedFileDurationMillis = null
+                                audioMessage = "음성 오디오를 지웠어요"
+                            },
+                        )
+                    }
+                }
+            }
+
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    AlarmSettingsCard(
+                        snoozeEnabled = editor.snoozeEnabled,
+                        snoozeMinutes = editor.snoozeMinutes,
+                        snoozeRepeatLimit = editor.snoozeRepeatLimit,
+                        vibrationPattern = editor.vibrationPattern,
+                        alarmVolumePercent = editor.alarmVolumePercent,
+                        alarmSoundLabel = editor.alarmSoundLabel,
+                        onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                        onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                        onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
+                        onVibrationEnabledChange = {
+                            editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                        },
+                        onVibrationSelect = { editor.vibrationPattern = it },
+                        onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                        onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
+                        onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
+                        onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
+                    )
+                }
+            }
+
+            item {
+                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    EditorActionButtons(
+                        isEditing = alarm != null,
+                        isSaving = isSaving,
+                        onCancel = onCancel,
+                        onSave = ::saveEditor,
+                    )
+                }
             }
         }
+        }
 
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                EditorActionButtons(
-                    isEditing = alarm != null,
-                    isSaving = isSaving,
-                    onCancel = onCancel,
-                    onSave = ::saveEditor,
-                )
-            }
+        when (settingsDetailPanel) {
+            "snooze" -> SnoozeSettingsPane(
+                snoozeEnabled = editor.snoozeEnabled,
+                snoozeMinutes = editor.snoozeMinutes,
+                snoozeRepeatLimit = editor.snoozeRepeatLimit,
+                onDismiss = { settingsDetailPanel = null },
+                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
+            )
+
+            "vibration" -> VibrationSettingsPane(
+                vibrationPattern = editor.vibrationPattern,
+                onDismiss = { settingsDetailPanel = null },
+                onVibrationEnabledChange = {
+                    editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                },
+                onVibrationSelect = { editor.vibrationPattern = it },
+            )
+
+            "sound" -> AlarmSoundSettingsPane(
+                alarmVolumePercent = editor.alarmVolumePercent,
+                alarmSoundLabel = editor.alarmSoundLabel,
+                onDismiss = { settingsDetailPanel = null },
+                onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                onPickAlarmSound = {
+                    ringtonePickerLauncher.launch(
+                        Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람음 선택")
+                            val current = editor.alarmSoundUri?.let(Uri::parse)
+                                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                        },
+                    )
+                },
+            )
         }
     }
 }
+
 
 @Composable
 internal fun EditorSectionTitle(title: String) {

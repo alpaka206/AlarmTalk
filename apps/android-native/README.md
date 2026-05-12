@@ -208,7 +208,7 @@ Opening the alarm list also performs a startup sync from Room to `AlarmManager`,
 - `Voice only`: requires a generated voice-profile TTS clip, a server-saved dubbed/TTS clip, or a recorded/selected local audio clip.
 - `Alarm + Voice`: rings the bundled alarm first. When the user dismisses the alarm tone, the cached voice clip plays once, then the alarm is dismissed/rescheduled.
 
-If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips major fixed-date Korean public holidays locally without a network fetch.
+If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips holidays from the local `holiday_dates` cache by country/region, with a bundled KR seed as fallback, without a ring-time network fetch.
 
 ### Local Voice Audio
 
