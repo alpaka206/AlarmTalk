@@ -47,12 +47,7 @@ logcat-*.txt
 dumpsys-*.txt
 .DS_Store
 
-# Ralph harness (logs/heartbeat 만 ignore, 나머지는 버전 관리)
-.ralph/logs/
-.ralph/heartbeat
-.ralph/claude.pid
-
-# Claude Code local settings (로컬 전용, 공유 금지)
+# Claude Code local settings (local-only, not shared)
 .claude/settings.local.json
 .claude/agents/
 .claude/skills/
