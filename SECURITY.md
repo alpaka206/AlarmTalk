@@ -2,57 +2,58 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| latest  | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| latest  | ✅ |
+
+Older versions receive no fixes. Always upgrade to the latest released version.
 
 ## Reporting a Vulnerability
 
-We take the security of VoiceAlarm seriously. If you discover a security vulnerability, please report it responsibly.
+Please report security issues **privately**, not through public GitHub issues.
 
-### How to Report
-
-1. **DO NOT** create a public GitHub issue for security vulnerabilities.
-2. Use [GitHub Private Vulnerability Reporting](https://github.com/perso-devrel/voice_alarm/security/advisories/new) to submit your report.
-3. Alternatively, email us at **devrel.365@gmail.com** with:
-   - Description of the vulnerability
-   - Steps to reproduce
+1. **Do not** create a public issue or PR describing the vulnerability.
+2. Open a private report via [GitHub Private Vulnerability Reporting](https://github.com/perso-devrel/voice_alarm/security/advisories/new).
+3. Include:
+   - A clear description of the issue
+   - Step-by-step reproduction
    - Potential impact
-   - Suggested fix (if any)
+   - Suggested fix, if you have one
 
-### What to Expect
+### What to expect
 
-- **Acknowledgment**: Within 48 hours of your report.
-- **Status Update**: Within 7 days with an initial assessment.
-- **Resolution**: We aim to patch critical vulnerabilities within 14 days.
+- **Acknowledgment** within 48 hours.
+- **Initial assessment** within 7 days.
+- **Resolution** target: critical issues patched within 14 days.
 
-### Scope
+## Scope
 
-The following are in scope:
-- Authentication/authorization bypasses
+In scope:
+
+- Authentication / authorization bypass
 - SQL injection, XSS, CSRF
 - API key or secret exposure
 - Voice data privacy leaks
 - Privilege escalation
 - Remote code execution
 
-### Out of Scope
+Out of scope:
 
-- Denial of service (DoS) attacks
-- Social engineering
-- Issues in third-party dependencies (report to the upstream project)
-- Issues requiring physical access to a user's device
+- Denial of service against the public API
+- Social engineering of the maintainers or end users
+- Issues in third-party dependencies (please report upstream)
+- Issues requiring prior physical access to a user's device
 
-### Recognition
+## Recognition
 
-We appreciate responsible disclosure and will:
-- Credit reporters in our release notes (unless anonymity is requested)
-- Work with you to understand and resolve the issue
+Responsible reporters are credited in release notes unless they request anonymity.
 
-## Security Best Practices for Contributors
+## Security Practices for Contributors
 
-- Never commit API keys, tokens, or secrets
-- Use environment variables for all sensitive configuration
-- Voice data must be encrypted at rest and in transit
-- Follow OWASP Top 10 guidelines
-- All PRs require review before merging to main
+- Never commit API keys, tokens, or secrets. The `.gitignore` already covers the obvious patterns; double-check anything unusual.
+- Use environment variables / Cloudflare Worker secrets for all sensitive configuration.
+- Voice data must be encrypted in transit and stored in a private R2 bucket.
+- Follow the OWASP Top 10 guidance.
+- Every PR requires a review before merging to `main`.
+
+For the internal threat model, response headers, rate limits, and rotation policy, see `docs/standards/README.md` §12.
