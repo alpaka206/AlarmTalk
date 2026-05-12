@@ -1,119 +1,188 @@
 package com.voicealarm.nativeapp
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmPlayModes
-import com.voicealarm.nativeapp.data.VibrationPatterns
+import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.VoiceProfile
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 @Composable
 internal fun RepeatSelector(
+    hour: Int,
+    minute: Int,
     repeatDaysMask: Int,
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
 ) {
-    val days = listOf("일", "월", "화", "수", "목", "금", "토")
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val holidayEnabled = repeatDaysMask != 0
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = repeatSummaryLabel(hour, minute, repeatDaysMask),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            days.forEachIndexed { index, label ->
-                DayCircleChip(
+            WeekdayLabels.forEachIndexed { index, label ->
+                DayTextChip(
                     label = label,
+                    dayIndex = index,
                     selected = repeatDaysMask and (1 shl index) != 0,
                     onClick = { onToggleDay(index) },
+                    modifier = Modifier.weight(1f),
                 )
             }
         }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (holidayEnabled) 1f else 0.46f),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("공휴일 제외", fontWeight = FontWeight.SemiBold)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = "대체 공휴일 및 임시 공휴일 포함",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             VoiceAlarmSwitch(
-                checked = holidayOff,
-                onCheckedChange = onHolidayOffChange,
-            )
-        }
-        if (repeatDaysMask != 0) {
-            MutedText(repeatLabel(repeatDaysMask))
-        }
-    }
-}
-
-@Composable
-internal fun DayCircleChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(42.dp),
-        shape = CircleShape,
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
+                checked = holidayEnabled && holidayOff,
+                enabled = holidayEnabled,
+                onCheckedChange = { enabled ->
+                    if (holidayEnabled) onHolidayOffChange(enabled)
                 },
             )
         }
     }
 }
+
+@Composable
+internal fun DayTextChip(
+    label: String,
+    dayIndex: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val weekendColor = when (dayIndex) {
+        0 -> MaterialTheme.colorScheme.error
+        6 -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val selectedContainerColor = when (dayIndex) {
+        0 -> MaterialTheme.colorScheme.errorContainer
+        6 -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.primaryContainer
+    }
+    val selectedContentColor = when (dayIndex) {
+        0 -> MaterialTheme.colorScheme.onErrorContainer
+        6 -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
+    }
+    val selectedBorderColor = when (dayIndex) {
+        0 -> MaterialTheme.colorScheme.error
+        6 -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val contentColor = if (selected) {
+        selectedContentColor
+    } else {
+        weekendColor
+    }
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = if (selected) selectedContainerColor else Color.Transparent,
+        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 9.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            color = contentColor,
+        )
+    }
+}
+
+internal fun repeatSummaryLabel(
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String {
+    if (repeatDaysMask != 0) {
+        if (repeatDaysMask == 0b1111111) return "매일"
+        val selectedDays = WeekdayLabels
+            .filterIndexed { index, _ -> repeatDaysMask and (1 shl index) != 0 }
+            .joinToString(", ")
+        return "매주 $selectedDays"
+    }
+
+    val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
+        hour = hour,
+        minute = minute,
+        repeatDaysMask = 0,
+        nowMillis = nowMillis,
+        zoneId = zoneId,
+    )
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    val nextDate = Instant.ofEpochMilli(nextFireAt).atZone(zoneId).toLocalDate()
+    val dateLabel = koreanDateLabel(nextDate)
+    return when (nextDate) {
+        today -> "오늘 - $dateLabel"
+        today.plusDays(1) -> "내일 - $dateLabel"
+        else -> dateLabel
+    }
+}
+
+private fun koreanDateLabel(date: LocalDate): String {
+    val dayLabel = WeekdayLabels[date.dayOfWeek.value % 7]
+    return "${date.monthValue}월 ${date.dayOfMonth}일($dayLabel)"
+}
+
+private val WeekdayLabels = listOf("일", "월", "화", "수", "목", "금", "토")
 
 @Composable
 internal fun QuickChip(

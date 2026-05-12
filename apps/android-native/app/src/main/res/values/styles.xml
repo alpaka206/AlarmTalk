@@ -4,9 +4,13 @@
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionBar">false</item>
         <item name="android:windowNoTitle">true</item>
-        <item name="android:navigationBarColor">@android:color/white</item>
-        <item name="android:statusBarColor">@android:color/white</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@color/voice_alarm_app_background</item>
+        <item name="android:navigationBarDividerColor">@color/voice_alarm_app_background</item>
+        <item name="android:statusBarColor">@color/voice_alarm_app_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 
     <style name="Theme.VoiceAlarm.Ringing" parent="android:style/Theme.Material.NoActionBar">
@@ -15,6 +19,11 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:keepScreenOn">true</item>
         <item name="android:navigationBarColor">@color/voice_alarm_status_bar</item>
+        <item name="android:navigationBarDividerColor">@color/voice_alarm_status_bar</item>
         <item name="android:statusBarColor">@color/voice_alarm_status_bar</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>
