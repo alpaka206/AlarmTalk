@@ -30,6 +30,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.VibrationPatternLibrary
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -273,10 +274,7 @@ class RingingService : Service() {
             return
         }
 
-        val pattern = when (patternName) {
-            VibrationPatterns.STRONG -> longArrayOf(0L, 1_000L, 250L, 1_000L, 250L)
-            else -> longArrayOf(0L, 700L, 350L, 900L)
-        }
+        val pattern = VibrationPatternLibrary.waveform(patternName)
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

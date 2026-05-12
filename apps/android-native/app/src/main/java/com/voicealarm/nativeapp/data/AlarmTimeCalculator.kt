@@ -13,6 +13,7 @@ object AlarmTimeCalculator {
         holidayOff: Boolean = false,
         nowMillis: Long = System.currentTimeMillis(),
         zoneId: ZoneId = ZoneId.systemDefault(),
+        isHoliday: (LocalDate) -> Boolean = { LocalHolidayCalendar.isHoliday(it) },
     ): Long {
         require(hour in 0..23) { "Hour must be between 0 and 23." }
         require(minute in 0..59) { "Minute must be between 0 and 59." }
@@ -33,7 +34,7 @@ object AlarmTimeCalculator {
         for (offset in 0..7) {
             val date = today.plusDays(offset.toLong())
             if (!isSelected(date, repeatDaysMask)) continue
-            if (holidayOff && LocalHolidayCalendar.isHoliday(date)) continue
+            if (holidayOff && isHoliday(date)) continue
 
             val candidate = LocalDateTime.of(date, java.time.LocalTime.of(hour, minute))
             if (candidate.isAfter(now)) {
@@ -44,7 +45,7 @@ object AlarmTimeCalculator {
         for (offset in 8..21) {
             val date = today.plusDays(offset.toLong())
             if (!isSelected(date, repeatDaysMask)) continue
-            if (holidayOff && LocalHolidayCalendar.isHoliday(date)) continue
+            if (holidayOff && isHoliday(date)) continue
             return candidateMillis(date, hour, minute, zoneId)
         }
 
