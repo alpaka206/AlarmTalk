@@ -30,6 +30,8 @@ const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
+  fr: 'French',
+  it: 'Italian',
   ja: 'Japanese',
   ko: 'Korean',
 };

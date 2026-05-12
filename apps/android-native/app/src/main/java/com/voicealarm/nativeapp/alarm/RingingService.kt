@@ -177,9 +177,16 @@ class RingingService : Service() {
     private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         audioSequenceActive = false
         mediaPlayer?.release()
+        val repeatVoice = alarm?.voiceRepeat != false
         mediaPlayer = createVoicePlayer(voiceUri)?.apply {
             applyAlarmVolume(alarm)
-            isLooping = true
+            isLooping = repeatVoice
+            if (!repeatVoice) {
+                setOnCompletionListener { completed ->
+                    completed.release()
+                    if (mediaPlayer === completed) mediaPlayer = null
+                }
+            }
             start()
         }
         if (mediaPlayer == null) {

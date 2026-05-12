@@ -167,6 +167,8 @@ internal class RemoteAlarmPullSyncService(
             voiceText = remote.messageText,
             voiceCategory = remote.category,
             voiceLanguage = null,
+            voiceRandomPrompt = false,
+            voiceRepeat = existing?.voiceRepeat ?: true,
             ttsMessageId = remote.messageId,
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,

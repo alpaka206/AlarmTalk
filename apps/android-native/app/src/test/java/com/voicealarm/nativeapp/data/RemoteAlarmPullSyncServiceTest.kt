@@ -60,6 +60,8 @@ class RemoteAlarmPullSyncServiceTest {
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,
+            voiceRandomPrompt = false,
+            voiceRepeat = true,
             ttsMessageId = null,
             remoteAlarmId = "remote-id",
             lastSyncedAtMillis = 1_000L,
