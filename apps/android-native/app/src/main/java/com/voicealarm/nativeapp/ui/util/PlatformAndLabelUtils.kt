@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp
 
 import android.app.AlarmManager
+import android.app.Activity
 import android.app.Application
 import android.app.NotificationManager
 import android.content.ActivityNotFoundException
@@ -60,6 +61,9 @@ internal fun Context.openFullScreenIntentSettings() {
 }
 
 internal fun Context.startSettingsActivity(intent: Intent) {
+    if (this !is Activity) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
     runCatching {
         startActivity(intent)
     }.recoverCatching { error ->
@@ -98,7 +102,7 @@ internal fun audioFileLabel(localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
         ?.substringAfterLast('/')
         ?.ifBlank { null }
-        ?: "로컬 음성 오디오"
+        ?: "음성 파일"
 
 internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     val uri = Uri.parse(audio.localAudioUri)
@@ -157,8 +161,8 @@ internal fun vibrationLabel(pattern: String): String = when (pattern) {
 }
 
 internal fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "음성만"
-    AlarmPlayModes.ALARM_VOICE -> "알람+음성"
+    AlarmPlayModes.VOICE_ONLY -> "목소리만"
+    AlarmPlayModes.ALARM_VOICE -> "알람+목소리"
     else -> "알람만"
 }
 
@@ -212,8 +216,8 @@ internal fun inviteStatusLabel(status: String?): String = when (status) {
 }
 
 internal fun voiceStatusLabel(status: String?): String = when (status) {
-    null, "ready" -> "사용 가능"
-    "processing" -> "준비 중"
+    null, "ready" -> "목소리 준비됨"
+    "processing" -> "목소리 준비 중"
     "failed" -> "실패"
     else -> status
 }
@@ -223,7 +227,7 @@ internal fun planTypeLabel(type: String?): String = when (type) {
     "personal", "individual", "plus" -> "개인"
     "couple" -> "커플"
     "family" -> "가족"
-    else -> type ?: "플랜"
+    else -> type ?: "이용권"
 }
 
 internal fun voucherStatusLabel(status: String?): String = when (status) {
@@ -238,7 +242,7 @@ internal fun voucherStatusLabel(status: String?): String = when (status) {
 internal fun codeTypeLabel(type: String): String = when (type) {
     "voucher" -> "쿠폰"
     "invite" -> "초대 코드"
-    "subscription" -> "구독"
+    "subscription" -> "이용권"
     else -> type
 }
 

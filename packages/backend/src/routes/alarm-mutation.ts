@@ -155,7 +155,7 @@ alarmMutation.post('/', async (c) => {
   let resolvedMessageId: string | null = body.message_id ?? null;
   if (!resolvedMessageId && body.raw_audio_url) {
     const firstVoice = await db.execute({
-      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) LIMIT 1',
+      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) AND deleted_at IS NULL LIMIT 1',
       args: ownerIds,
     });
     if (firstVoice.rows.length === 0) {

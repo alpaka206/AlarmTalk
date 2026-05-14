@@ -23,7 +23,7 @@ async function findUsableVoiceProfile(
   voiceProfileId: string,
 ): Promise<Record<string, unknown> | null> {
   const owned = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?)',
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
     args: [voiceProfileId, userPk, userId],
   });
   if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
@@ -33,6 +33,7 @@ async function findUsableVoiceProfile(
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND vp.deleted_at IS NULL
           LIMIT 1`,
     args: [voiceProfileId],
   });

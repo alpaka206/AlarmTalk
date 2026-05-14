@@ -138,11 +138,11 @@ voiceProfile.get('/', async (c) => {
 
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ?${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id = ?${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -201,7 +201,10 @@ voiceProfile.get('/family', async (c) => {
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared, u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
-          WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready' AND COALESCE(vp.is_shared, 0) = 1
+          WHERE vp.user_id IN (${placeholders})
+            AND vp.deleted_at IS NULL
+            AND vp.status = 'ready'
+            AND COALESCE(vp.is_shared, 0) = 1
           ORDER BY vp.created_at DESC`,
     args: memberIds,
   });
@@ -224,7 +227,7 @@ voiceProfile.get('/:id', async (c) => {
   }
 
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
 
@@ -265,7 +268,7 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   const existing = await db.execute({
-    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
   if (existing.rows.length === 0) {
@@ -305,7 +308,7 @@ voiceProfile.post('/clone', async (c) => {
 
   try {
     const profileCount = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
+      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
       args: [userId],
     });
     const count = Number(profileCount.rows[0]!.count);
@@ -415,7 +418,7 @@ voiceProfile.get('/:id/stats', async (c) => {
 
   const [profileRes, msgRes, alarmRes] = await Promise.all([
     db.execute({
-      sql: 'SELECT id, name FROM voice_profiles WHERE id = ? AND user_id = ?',
+      sql: 'SELECT id, name FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
       args: [id, userId],
     }),
     db.execute({
@@ -451,7 +454,7 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
 
@@ -460,24 +463,6 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const profile = result.rows[0]!;
-
-  const msgCheck = await db.execute({
-    sql: 'SELECT COUNT(*) as cnt FROM messages WHERE voice_profile_id = ?',
-    args: [id],
-  });
-  const msgCount = Number(typedRow<{ cnt: number }>(msgCheck.rows[0]!).cnt ?? 0);
-
-  if (msgCount > 0 && c.req.query('force') !== 'true') {
-    return c.json(
-      {
-        warning: true,
-        error_code: 'VOICE_PROFILE_IN_USE',
-        message_count: msgCount,
-        message: `This voice profile has ${msgCount} message(s). Add ?force=true to delete anyway.`,
-      },
-      409,
-    );
-  }
 
   try {
     if (profile.elevenlabs_voice_id) {
@@ -488,31 +473,14 @@ voiceProfile.delete('/:id', async (c) => {
     // 외부 API 삭제 실패해도 로컬은 삭제 진행
   }
 
-  if (msgCount > 0) {
-    await db.execute({
-      sql: 'DELETE FROM alarms WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM message_library WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM messages WHERE voice_profile_id = ?',
-      args: [id],
-    });
-  }
-
   await db.execute({
-    sql: 'DELETE FROM voice_profiles WHERE id = ?',
+    sql: `UPDATE voice_profiles
+          SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
+          WHERE id = ?`,
     args: [id],
   });
 
-  return c.json({ success: true, messages_deleted: msgCount });
+  return c.json({ success: true, deleted: true });
 });
 
 export default voiceProfile;
