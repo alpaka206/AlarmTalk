@@ -125,6 +125,13 @@ describe('serializeCharacter', () => {
     expect(result.character.stage).toBe('sprout');
   });
 
+  it('does not lower a saved level when xp is below that level threshold', () => {
+    const row = { ...baseRow, level: 3, xp: 350 };
+    const result = serializeCharacter(row);
+    expect(result.character.level).toBe(3);
+    expect(result.character.stage).toBe('sprout');
+  });
+
   it('includes progress info', () => {
     const result = serializeCharacter(baseRow);
     expect(result.progress).toBeDefined();

@@ -80,7 +80,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 |---|---|---|---|
 | FR-6.1 | 4-stage character (egg / chick / chicken / golden chicken) | P1 | ✅ |
 | FR-6.2 | XP daily cap of 200; idempotency by client nonce | P1 | ✅ |
-| FR-6.3 | Event-based XP map (`alarm_completed=10`, `alarm_snoozed=5`, ...) | P1 | ✅ |
+| FR-6.3 | Event-based XP map (`alarm_completed=5`, `alarm_snoozed=-5`, `alarm_dismissed=-5`, ...) with no XP/level downgrade below floor | P1 | ✅ |
 | FR-6.4 | Wake-up streak with 7 / 30 / 90-day milestones | P1 | ✅ |
 | FR-6.5 | Three stat dimensions (`diligence` / `health` / `consistency`) | P2 | ✅ |
 

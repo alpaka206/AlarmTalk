@@ -81,7 +81,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "상대방 알람은 커플/가족 플랜에서 사용할 수 있어요"
+        message = "상대방 알람은 커플/가족 이용권에서 사용할 수 있어요"
         return
     }
     runCatching {

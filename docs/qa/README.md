@@ -123,8 +123,9 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 
 | ID | Title | Steps | Expected | P |
 |---|---|---|---|---|
-| TC-CHA-001 | Dismiss event | Let alarm finish, sync XP | +10 XP, +2 affection (within cap) | P1 |
+| TC-CHA-001 | On-time dismiss event | Let alarm finish, dismiss on time, then allow auto sync | +5 XP, +2 affection (within cap) | P1 |
 | TC-CHA-002 | Daily cap reached | Earn 200 XP, then more | `grantedXp = 0`, `capped = true`, affection still increases | P1 |
+| TC-CHA-002B | Missed/snoozed event | Snooze or miss the on-time path | -5 XP, but XP does not go below 0 and level does not decrease | P1 |
 | TC-CHA-003 | Streak +1 | Dismiss yesterday and today | `current_streak += 1`; date updated | P1 |
 | TC-CHA-004 | Streak break | Skip a day | Streak resets to 1 on next dismiss; `longest_streak` preserved | P1 |
 | TC-CHA-005 | Stage transition | Cross level threshold | Stage advances; animation shown | P2 |
@@ -170,7 +171,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 3. Voice tab → "+ New voice" → record 15 s, name it.
 4. Alarm tab → "+ New alarm" → time = now+2 min, voice profile + a preset message, save.
 5. Lock the device, wait.
-6. Expected: alarm rings full-screen; dismiss; XP queue +1.
+6. Expected: alarm rings full-screen; dismiss; +5 XP event queues locally and syncs automatically after sign-in/network is available.
 
 ### TS-2. Family share and partner alarm
 
