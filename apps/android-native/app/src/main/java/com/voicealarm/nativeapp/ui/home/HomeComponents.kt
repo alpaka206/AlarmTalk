@@ -1,7 +1,6 @@
 package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,21 +10,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Message
-import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -40,27 +38,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.voicealarm.nativeapp.data.AlarmEntity
-import com.voicealarm.nativeapp.network.AuthSession
-import com.voicealarm.nativeapp.network.CharacterResponse
 
 @Composable
 internal fun HomeHeader() {
     val hour = java.time.LocalTime.now().hour
     val greeting = when {
-        hour < 6 -> "좋은 밤이에요"
-        hour < 12 -> "좋은 아침이에요"
-        hour < 17 -> "좋은 오후예요"
-        hour < 21 -> "좋은 저녁이에요"
-        else -> "좋은 밤이에요"
+        hour < 6 -> "좋아하는 목소리로\n깨워드릴게요"
+        hour < 12 -> "오늘 아침,\n어떤 목소리로 깨어났나요?"
+        hour < 17 -> "내일의 목소리 알람을\n준비해요"
+        hour < 21 -> "서로의 목소리로\n아침을 예약해요"
+        else -> "좋아하는 목소리로\n깨워드릴게요"
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(end = 72.dp),
+    ) {
         Text(
             text = greeting,
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -78,7 +77,7 @@ internal fun ProfileMenu(
     Box {
         Surface(
             modifier = Modifier
-                .size(40.dp)
+                .size(44.dp)
                 .clickable { expanded = true },
             shape = CircleShape,
             color = MaterialTheme.colorScheme.secondaryContainer,
@@ -87,7 +86,7 @@ internal fun ProfileMenu(
             shadowElevation = 4.dp,
         ) {
             Box(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(44.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -100,31 +99,60 @@ internal fun ProfileMenu(
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
+            modifier = Modifier.width(232.dp),
+            shape = RoundedCornerShape(22.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 14.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            if (!isPlanOwner) {
-                ProfileMenuItem("코드 등록") {
-                    expanded = false
-                    onSelectTab(NativeTab.People)
+            Column(
+                modifier = Modifier.padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (!isPlanOwner) {
+                    ProfileMenuItem(
+                        icon = Icons.Outlined.QrCode2,
+                        label = "초대 코드 등록",
+                    ) {
+                        expanded = false
+                        onSelectTab(NativeTab.People)
+                    }
                 }
-            }
-            ProfileMenuItem("캐릭터") {
-                expanded = false
-                onSelectTab(NativeTab.Growth)
-            }
-            ProfileMenuItem("구독") {
-                expanded = false
-                onSelectTab(NativeTab.Billing)
-            }
-            if (isPlanOwner) {
-                ProfileMenuItem("멤버/공유 코드 관리") {
+                ProfileMenuItem(
+                    icon = Icons.Outlined.EmojiEvents,
+                    label = "캐릭터",
+                ) {
                     expanded = false
-                    onOpenMemberManagement()
+                    onSelectTab(NativeTab.Growth)
                 }
-            }
-            HorizontalDivider()
-            ProfileMenuItem("설정") {
-                expanded = false
-                onOpenSettings()
+                ProfileMenuItem(
+                    icon = Icons.Outlined.CreditCard,
+                    label = "이용권",
+                ) {
+                    expanded = false
+                    onSelectTab(NativeTab.Billing)
+                }
+                if (isPlanOwner) {
+                    ProfileMenuItem(
+                        icon = Icons.Outlined.People,
+                        label = "멤버 관리",
+                    ) {
+                        expanded = false
+                        onOpenMemberManagement()
+                    }
+                }
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                ProfileMenuItem(
+                    icon = Icons.Outlined.Settings,
+                    label = "설정",
+                ) {
+                    expanded = false
+                    onOpenSettings()
+                }
             }
         }
     }
@@ -132,13 +160,37 @@ internal fun ProfileMenu(
 
 @Composable
 internal fun ProfileMenuItem(
+    icon: ImageVector,
     label: String,
     onClick: () -> Unit,
 ) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        onClick = onClick,
-    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(21.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
 }
 
 
@@ -201,6 +253,8 @@ internal fun NicknameEditDialog(
                 label = { Text("닉네임") },
                 singleLine = true,
                 enabled = !busy,
+                shape = VocaWakeInputShape,
+                colors = vocaWakeOutlinedTextFieldColors(),
             )
         },
         confirmButton = {

@@ -1,6 +1,7 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import android.util.Patterns
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -87,8 +89,9 @@ internal fun AuthScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -103,14 +106,25 @@ internal fun AuthScreen(
                 fontWeight = FontWeight.Bold,
             )
         }
+        Text(
+            text = if (mode == AuthMode.Login) {
+                "좋아하는 목소리 알람을 다시 불러오세요."
+            } else {
+                "좋아하는 목소리 알람을 만들 계정을 준비해요."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         if (mode == AuthMode.Register) {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(30) },
-                label = { Text("닉네임") },
+                label = { Text("이름") },
                 singleLine = true,
                 enabled = !busy,
+                shape = VocaWakeInputShape,
+                colors = vocaWakeOutlinedTextFieldColors(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Next,
@@ -125,6 +139,8 @@ internal fun AuthScreen(
             label = { Text("이메일") },
             singleLine = true,
             enabled = !busy,
+            shape = VocaWakeInputShape,
+            colors = vocaWakeOutlinedTextFieldColors(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,
@@ -138,7 +154,10 @@ internal fun AuthScreen(
                 enabled = !busy && emailLooksValid && !isEmailVerified,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp),
+                    .height(54.dp),
+                shape = VocaWakeButtonShape,
+                border = vocaWakeCardBorder(),
+                colors = vocaWakeOutlinedButtonColors(),
             ) {
                 Text(
                     when {
@@ -161,6 +180,8 @@ internal fun AuthScreen(
                         label = { Text("인증 코드") },
                         singleLine = true,
                         enabled = !busy,
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.NumberPassword,
                             imeAction = ImeAction.Next,
@@ -171,12 +192,15 @@ internal fun AuthScreen(
                         onClick = { onConfirmEmailVerification(email, emailCode) },
                         enabled = !busy && emailCode.length == 6,
                         modifier = Modifier.height(56.dp),
+                        shape = VocaWakeButtonShape,
+                        border = vocaWakeCardBorder(),
+                        colors = vocaWakeOutlinedButtonColors(),
                     ) {
                         Text("확인")
                     }
                 }
                 Text(
-                    text = "메일로 받은 6자리 코드를 입력해 주세요",
+                    text = "메일로 받은 6자리 코드를 입력해 주세요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -191,6 +215,8 @@ internal fun AuthScreen(
             label = { Text("비밀번호") },
             singleLine = true,
             enabled = !busy,
+            shape = VocaWakeInputShape,
+            colors = vocaWakeOutlinedTextFieldColors(),
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -220,6 +246,8 @@ internal fun AuthScreen(
                 label = { Text("비밀번호 확인") },
                 singleLine = true,
                 enabled = !busy,
+                shape = VocaWakeInputShape,
+                colors = vocaWakeOutlinedTextFieldColors(),
                 isError = confirmPassword.isNotBlank() && !passwordMatches,
                 visualTransformation = if (confirmPasswordVisible) {
                     VisualTransformation.None
@@ -244,7 +272,7 @@ internal fun AuthScreen(
                 },
                 supportingText = {
                     if (confirmPassword.isNotBlank() && !passwordMatches) {
-                        Text("비밀번호가 일치하지 않아요")
+                        Text("비밀번호가 일치하지 않아요.")
                     }
                 },
                 keyboardOptions = KeyboardOptions(
@@ -263,7 +291,8 @@ internal fun AuthScreen(
             enabled = !busy && canSubmit,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
+                .height(54.dp),
+            shape = VocaWakeButtonShape,
         ) {
             Text(
                 when {
