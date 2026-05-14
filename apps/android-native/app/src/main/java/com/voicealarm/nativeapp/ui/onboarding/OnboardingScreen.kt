@@ -44,7 +44,7 @@ private val OnboardingPages = listOf(
     OnboardingPage(
         icon = Icons.Outlined.Mic,
         title = "음성으로 깨어나세요",
-        description = "내 목소리와 공유받은 음성으로\n알람을 만들 수 있어요.",
+        description = "음성 프로필과 공유받은 음성으로\n알람을 만들 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.Group,

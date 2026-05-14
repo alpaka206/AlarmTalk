@@ -103,7 +103,7 @@ export function serializeCharacter(
   stats: CharacterStats | null = null,
   achievements: StreakAchievementRow[] = [],
 ) {
-  const level = computeLevelFromXp(row.xp);
+  const level = Math.max(row.level, computeLevelFromXp(row.xp));
   const stage = computeStageFromLevel(level);
   return {
     character: { ...row, level, stage },

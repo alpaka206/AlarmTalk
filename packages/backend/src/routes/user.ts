@@ -33,7 +33,7 @@ user.get('/me', async (c) => {
     const u = result.rows[0]!;
     const [profileCount, alarmCount] = await Promise.all([
       db.execute({
-        sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
+        sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
         args: [userId],
       }),
       db.execute({

@@ -191,7 +191,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "음성 공유는 커플/가족 플랜에서 사용할 수 있어요"
+        message = "음성 공유는 커플/가족 이용권에서 사용할 수 있어요"
         return
     }
 
@@ -246,7 +246,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             message = "음성 프로필을 삭제했어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
-            message = userFacingError(error, "사용 중인 음성 프로필은 삭제할 수 없어요")
+            message = userFacingError(error, "음성 프로필 삭제에 실패했어요")
         }
         voiceProfileBusy = false
     }

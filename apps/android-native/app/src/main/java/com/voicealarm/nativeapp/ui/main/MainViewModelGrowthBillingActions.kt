@@ -55,6 +55,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import org.json.JSONObject
+import retrofit2.HttpException
 
 
 internal fun MainViewModel.refreshCharacterAndBilling() {
@@ -74,20 +76,9 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
     viewModelScope.launch {
         try {
             runCatching {
-                coroutineScope {
-                    val character = async { api.getCharacter(authorization) }
-                    val subscription = async { api.getSubscription(authorization) }
-                    val vouchers = async { api.listVouchers(authorization).vouchers }
-                    CharacterBillingSnapshot(
-                        character = character.await(),
-                        subscription = subscription.await(),
-                        vouchers = vouchers.await(),
-                    )
-                }
+                loadCharacterBillingSnapshot(authorization)
             }.onSuccess { snapshot ->
-                characterResponse = snapshot.character
-                subscriptionResponse = snapshot.subscription
-                vouchers = snapshot.vouchers
+                applyCharacterBillingSnapshot(snapshot)
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load character or billing", error)
                 if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
@@ -105,18 +96,96 @@ internal fun MainViewModel.syncCharacterEvents() {
         message = "성장 기록을 동기화하려면 먼저 로그인해 주세요"
         return
     }
+    if (characterBusy) return
     viewModelScope.launch {
         characterBusy = true
-        runCatching {
+        val syncResult = runCatching {
             repository.syncCharacterEvents(api, session.token)
-        }.onSuccess { result ->
+        }
+        characterBusy = false
+        syncResult.onSuccess { result ->
             message = "XP 동기화: 완료 ${result.synced}개, 실패 ${result.failed}개"
-            refreshCharacterAndBilling()
+            refreshCharacterAndBillingData(showMessage = false)
         }.onFailure { error ->
             Log.e(TAG, "Character event sync failed", error)
             message = userFacingError(error, "XP 동기화에 실패했어요")
         }
+    }
+}
+
+private suspend fun MainViewModel.loadCharacterBillingSnapshot(
+    authorization: String,
+): CharacterBillingSnapshot =
+    coroutineScope {
+        val character = async { api.getCharacter(authorization) }
+        val subscription = async { api.getSubscription(authorization) }
+        val vouchers = async { api.listVouchers(authorization).vouchers }
+        CharacterBillingSnapshot(
+            character = character.await(),
+            subscription = subscription.await(),
+            vouchers = vouchers.await(),
+        )
+    }
+
+private fun MainViewModel.applyCharacterBillingSnapshot(snapshot: CharacterBillingSnapshot) {
+    characterResponse = snapshot.character
+    subscriptionResponse = snapshot.subscription
+    vouchers = snapshot.vouchers
+}
+
+private suspend fun MainViewModel.refreshCharacterBillingAfterMutation(
+    authorization: String,
+    reason: String,
+) {
+    runCatching {
+        loadCharacterBillingSnapshot(authorization)
+    }.onSuccess { snapshot ->
+        applyCharacterBillingSnapshot(snapshot)
+    }.onFailure { error ->
+        Log.w(TAG, "Failed to refresh character or billing after $reason", error)
+    }
+}
+
+private fun billingErrorCode(error: Throwable): String? {
+    val body = (error as? HttpException)
+        ?.response()
+        ?.errorBody()
+        ?.string()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return runCatching {
+        JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
+    }.getOrNull()
+}
+
+private fun billingFailureMessage(errorCode: String?, fallback: String): String =
+    when (errorCode) {
+        "SAME_PLAN" -> "이미 사용 중인 이용권이에요"
+        "NO_ACTIVE_SUBSCRIPTION" -> "현재 적용된 이용권이 없어 새 이용권으로 적용할게요"
+        "PLAN_NOT_FOUND" -> "이용권 정보를 찾지 못했어요"
+        "PLAN_INACTIVE" -> "지금은 선택할 수 없는 이용권이에요"
+        "FREE_NOT_BILLABLE" -> "무료 이용권은 여기에서 적용할 수 없어요"
+        "GIFT_PERSONAL_ONLY" -> "선물하기는 개인 이용권에서만 사용할 수 있어요"
+        "USER_NOT_FOUND" -> "로그인 정보를 다시 확인해 주세요"
+        else -> fallback
+    }
+
+internal fun MainViewModel.syncPendingCharacterEventsSilently() {
+    val session = authSession ?: return
+    if (characterBusy) return
+    viewModelScope.launch {
+        characterBusy = true
+        val syncResult = runCatching {
+            repository.syncCharacterEvents(api, session.token)
+        }
         characterBusy = false
+        syncResult.onSuccess { result ->
+            if (result.synced > 0) {
+                refreshCharacterAndBillingData(showMessage = false)
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Silent character event sync failed", error)
+        }
     }
 }
 
@@ -128,8 +197,8 @@ internal fun MainViewModel.registerCode(code: String) {
             api.registerCode(authorization, CodeRegisterRequest(code.trim()))
         }.onSuccess { response ->
             message = "코드를 등록했어요"
+            refreshCharacterBillingAfterMutation(authorization, "code registration")
             refreshSocial()
-            refreshCharacterAndBilling()
             refreshAppSession()
             navigateHomeTick++
         }.onFailure { error ->
@@ -285,7 +354,7 @@ internal fun MainViewModel.markNoteRead(noteId: String) {
 }
 
 internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) {
-    val authorization = bearerOrMessage("구독을 변경하려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage("이용권을 변경하려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -313,10 +382,11 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
                 ) + vouchers
             }
             message = if (gift) {
-                "${response.plan.name} 이용권을 만들었어요"
+                "${response.plan.name} 이용권을 선물할 수 있어요"
             } else {
-                "${response.plan.name} 플랜을 적용했어요"
+                "${response.plan.name} 이용권을 적용했어요"
             }
+            refreshCharacterBillingAfterMutation(authorization, "checkout")
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
@@ -324,7 +394,8 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
-            message = userFacingError(error, "구매에 실패했어요")
+            val fallback = if (gift) "선물하기에 실패했어요" else "이용권 적용에 실패했어요"
+            message = billingFailureMessage(billingErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false
     }
@@ -344,11 +415,14 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         }.onSuccess { voucher ->
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = "$planLabel 공유 코드를 준비했어요"
+            refreshCharacterBillingAfterMutation(authorization, "family share code")
             refreshSocial()
-            refreshCharacterAndBilling()
         }.onFailure { error ->
             Log.e(TAG, "Failed to ensure family share code", error)
-            message = userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요")
+            message = billingFailureMessage(
+                billingErrorCode(error),
+                userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요"),
+            )
         }
         billingBusy = false
     }
@@ -365,14 +439,14 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             message = if (atPeriodEnd) {
                 "다음 결제일까지 사용 후 자동 해지되도록 예약했어요"
             } else {
-                "구독을 해지했어요"
+                "이용권을 해지했어요"
             }
-            refreshCharacterAndBilling()
+            refreshCharacterBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to cancel subscription mode=$mode", error)
-            message = userFacingError(error, "해지에 실패했어요")
+            message = billingFailureMessage(billingErrorCode(error), userFacingError(error, "해지에 실패했어요"))
         }
         billingBusy = false
     }
@@ -393,16 +467,28 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
                 return@onSuccess
             }
             message = if (atPeriodEnd) {
-                "다음 결제일에 플랜을 변경하도록 예약했어요"
+                "이용권 종료일에 변경하도록 예약했어요"
             } else {
-                "플랜을 변경했어요"
+                "이용권을 변경했어요"
             }
-            refreshCharacterAndBilling()
+            refreshCharacterBillingAfterMutation(authorization, "plan change")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
-            message = userFacingError(error, "플랜 변경에 실패했어요")
+            val errorCode = billingErrorCode(error)
+            if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
+                message = billingFailureMessage(errorCode, "현재 적용된 이용권이 없어 새 이용권으로 적용할게요")
+                billingBusy = false
+                checkoutPlan(planKey)
+                return@onFailure
+            }
+            if (errorCode == "SAME_PLAN") {
+                message = "이미 사용 중인 이용권이에요"
+                refreshCharacterBillingAfterMutation(authorization, "same plan check")
+                return@onFailure
+            }
+            message = billingFailureMessage(errorCode, userFacingError(error, "이용권 변경에 실패했어요"))
         }
         billingBusy = false
     }

@@ -15,10 +15,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -28,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -41,6 +45,39 @@ internal enum class VoiceCaptureMode {
 internal fun audioTimeLabel(millis: Long): String {
     val totalSeconds = (millis / 1000).coerceAtLeast(0L)
     return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+}
+
+internal fun voicePreviewContentDescription(
+    active: Boolean,
+    preparing: Boolean,
+): String = when {
+    preparing -> "미리듣기 준비 중"
+    active -> "미리듣기 일시정지"
+    else -> "미리듣기 재생"
+}
+
+@Composable
+internal fun VoicePreviewButtonIcon(
+    active: Boolean,
+    preparing: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    if (preparing) {
+        CircularProgressIndicator(
+            modifier = modifier
+                .size(20.dp)
+                .semantics {
+                    contentDescription = voicePreviewContentDescription(active = active, preparing = true)
+                },
+            strokeWidth = 2.dp,
+        )
+    } else {
+        Icon(
+            imageVector = if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+            contentDescription = voicePreviewContentDescription(active = active, preparing = false),
+            modifier = modifier.size(22.dp),
+        )
+    }
 }
 
 @Composable
@@ -168,6 +205,8 @@ internal fun VoiceFileControls(
     enabled: Boolean,
     uploadLabel: String,
     notice: String,
+    isPreviewActive: Boolean = false,
+    isPreviewPreparing: Boolean = false,
     onPickFile: () -> Unit,
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
@@ -191,6 +230,8 @@ internal fun VoiceFileControls(
                 cropEndMillis = cropEndMillis,
                 minDurationMillis = minDurationMillis,
                 maxDurationMillis = maxDurationMillis,
+                isPreviewActive = isPreviewActive,
+                isPreviewPreparing = isPreviewPreparing,
                 onCropChange = onCropChange,
                 onPreviewCrop = onPreviewCrop,
             )
@@ -205,6 +246,8 @@ internal fun AudioCropRangeSelector(
     cropEndMillis: Long,
     minDurationMillis: Long,
     maxDurationMillis: Long,
+    isPreviewActive: Boolean = false,
+    isPreviewPreparing: Boolean = false,
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
 ) {
@@ -232,10 +275,14 @@ internal fun AudioCropRangeSelector(
                 )
                 MutedText("선택 ${audioTimeLabel(selectedDuration)} / 전체 ${audioTimeLabel(safeDuration)}")
             }
-            OutlinedButton(onClick = onPreviewCrop, enabled = selectedDuration > 0L) {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("듣기")
+            OutlinedButton(
+                onClick = onPreviewCrop,
+                enabled = selectedDuration > 0L,
+            ) {
+                VoicePreviewButtonIcon(
+                    active = isPreviewActive,
+                    preparing = isPreviewPreparing,
+                )
             }
         }
         Row(
@@ -244,7 +291,7 @@ internal fun AudioCropRangeSelector(
                 .height(54.dp)
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
                 .padding(horizontal = 8.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             waveform.forEachIndexed { index, level ->
@@ -252,8 +299,8 @@ internal fun AudioCropRangeSelector(
                 val selected = point in safeStart..safeEnd
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .height((12 + level * 34).dp)
+                        .width(2.dp)
+                        .height((8 + level * 38).dp)
                         .background(
                             if (selected) {
                                 MaterialTheme.colorScheme.secondary
@@ -307,15 +354,18 @@ internal fun VoiceLevelBars(
     active: Boolean,
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        modifier = Modifier
+            .fillMaxWidth(0.72f)
+            .height(48.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         levels.forEachIndexed { index, level ->
             val resolvedLevel = if (active) level else 0.1f + (index % 4) * 0.04f
             Box(
                 modifier = Modifier
-                    .width(4.dp)
-                    .height((10 + resolvedLevel * 34).dp)
+                    .width(2.dp)
+                    .height((8 + resolvedLevel * 36).dp)
                     .background(
                         if (active) {
                             MaterialTheme.colorScheme.error

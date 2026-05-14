@@ -1,8 +1,8 @@
 package com.voicealarm.nativeapp
 
+import android.Manifest
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,6 +54,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.data.CharacterEventStates
 import com.voicealarm.nativeapp.data.AlarmOrigins
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.CharacterResponse
@@ -105,6 +106,102 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                 alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
         }
     }
+    val pendingCharacterEventCount = remember(characterEvents) {
+        characterEvents.count { it.state == CharacterEventStates.PENDING }
+    }
+    val permissionState = rememberPermissionStatusState()
+    val permissions = permissionState.snapshot
+    var bulkPermissionFlowActive by remember { mutableStateOf(false) }
+    var bulkRuntimeRequested by remember { mutableStateOf(false) }
+    var bulkOpenedSettingsTargets by remember { mutableStateOf<Set<PermissionTarget>>(emptySet()) }
+    val runtimePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        permissionState.refresh()
+    }
+
+    fun missingRuntimePermissions(snapshot: PermissionSnapshot): List<String> = buildList {
+        if (context.shouldRequestNotificationRuntimePermission()) {
+            add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (!snapshot.recordAudio) {
+            add(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    fun nextSettingsPermissionTarget(
+        snapshot: PermissionSnapshot,
+        openedTargets: Set<PermissionTarget>,
+    ): PermissionTarget? = listOfNotNull(
+        PermissionTarget.Notifications.takeIf { !snapshot.notifications },
+        PermissionTarget.ExactAlarms.takeIf { !snapshot.exactAlarms },
+        PermissionTarget.FullScreenIntent.takeIf { !snapshot.fullScreenIntent },
+        PermissionTarget.RecordAudio.takeIf { !snapshot.recordAudio },
+    ).firstOrNull { it !in openedTargets }
+
+    fun openPermissionSettings(target: PermissionTarget) {
+        when (target) {
+            PermissionTarget.Notifications -> context.openNotificationSettings()
+            PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
+            PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
+            PermissionTarget.RecordAudio -> context.openAppDetailsSettings()
+        }
+    }
+
+    fun requestPermission(target: PermissionTarget) {
+        when (target) {
+            PermissionTarget.Notifications -> {
+                if (context.shouldRequestNotificationRuntimePermission()) {
+                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+                } else {
+                    context.openNotificationSettings()
+                }
+            }
+            PermissionTarget.ExactAlarms -> context.openExactAlarmSettings()
+            PermissionTarget.FullScreenIntent -> context.openFullScreenIntentSettings()
+            PermissionTarget.RecordAudio -> {
+                runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            }
+        }
+        permissionState.refresh()
+    }
+
+    fun requestAllMissingPermissions() {
+        bulkPermissionFlowActive = true
+        bulkRuntimeRequested = false
+        bulkOpenedSettingsTargets = emptySet()
+        permissionState.refresh()
+    }
+
+    fun requestFirstMissingAlarmPermission() {
+        permissions.firstMissingAlarmTarget()?.let(viewModel::requestPermissionGate)
+    }
+
+    LaunchedEffect(permissionState.refreshTick, bulkPermissionFlowActive) {
+        if (!bulkPermissionFlowActive) return@LaunchedEffect
+
+        val current = PermissionSnapshot.read(context)
+        if (!bulkRuntimeRequested) {
+            val runtimePermissions = missingRuntimePermissions(current)
+            if (runtimePermissions.isNotEmpty()) {
+                bulkRuntimeRequested = true
+                runtimePermissionLauncher.launch(runtimePermissions.toTypedArray())
+                return@LaunchedEffect
+            }
+            bulkRuntimeRequested = true
+        }
+
+        val settingsTarget = nextSettingsPermissionTarget(current, bulkOpenedSettingsTargets)
+        if (settingsTarget != null) {
+            bulkOpenedSettingsTargets = bulkOpenedSettingsTargets + settingsTarget
+            openPermissionSettings(settingsTarget)
+            return@LaunchedEffect
+        }
+
+        bulkPermissionFlowActive = false
+        bulkRuntimeRequested = false
+        bulkOpenedSettingsTargets = emptySet()
+    }
 
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
@@ -118,7 +215,13 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    LoginPermissionGate(authSession = authSession)
+    LoginPermissionGate(
+        authSession = authSession,
+        enabled = authSession != null && !viewModel.showOnboarding,
+        permissions = permissions,
+        onRequestPermission = ::requestPermission,
+        onRequestAllPermissions = ::requestAllMissingPermissions,
+    )
 
     LaunchedEffect(sessionRouteKey) {
         if (sessionRouteKey != null) {
@@ -142,6 +245,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
             viewModel.preloadNotes()
+        }
+    }
+
+    LaunchedEffect(authSession?.token, pendingCharacterEventCount, characterBusy) {
+        if (authSession != null && pendingCharacterEventCount > 0 && !characterBusy) {
+            viewModel.syncPendingCharacterEventsSilently()
         }
     }
 
@@ -234,7 +343,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             authSession != null &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
-            planGateMessage = "메시지는 커플/가족 플랜에서 사용할 수 있어요. 초대 코드나 이용권을 등록하거나 플랜을 구매해 주세요."
+            planGateMessage = "메시지는 커플/가족 이용권에서 사용할 수 있어요. 초대 코드나 이용권 코드를 등록하거나 이용권을 적용해 주세요."
             return
         }
         navController.navigateTopLevelTab(tab)
@@ -277,7 +386,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             target = target,
             onDismiss = viewModel::dismissPermissionGate,
             onOpenSettings = {
-                context.openPermissionSettingsFor(target)
+                requestPermission(target)
                 viewModel.dismissPermissionGate()
             },
         )
@@ -286,7 +395,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     planGateMessage?.let { gateMessage ->
         AlertDialog(
             onDismissRequest = { planGateMessage = null },
-            title = { Text("플랜 안내") },
+            title = { Text("이용권 안내") },
             text = { Text(gateMessage) },
             confirmButton = {
                 TextButton(
@@ -295,7 +404,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                         navigateToTab(NativeTab.Billing)
                     },
                 ) {
-                    Text("구독 보기")
+                    Text("이용권 보기")
                 }
             },
             dismissButton = {
@@ -413,23 +522,24 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCheckoutPlan = viewModel::checkoutPlan,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
+                          permissions = permissions,
                           onCreateAlarm = {
-                              if (!context.hasAlarmPermissions()) {
-                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              if (!permissions.alarmReady) {
+                                  requestFirstMissingAlarmPermission()
                               } else {
                                   navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
                               }
                           },
                           onCreateFamilyAlarm = {
-                              if (!context.hasAlarmPermissions()) {
-                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              if (!permissions.alarmReady) {
+                                  requestFirstMissingAlarmPermission()
                               } else {
                                   navController.navigate(AppRoute.alarmCreate(familyTargetMode = true))
                               }
                           },
                           onToggleEnabled = { id, enabled ->
-                              if (enabled && !context.hasAlarmPermissions()) {
-                                  viewModel.requestPermissionGate(PermissionTarget.Alarm)
+                              if (enabled && !permissions.alarmReady) {
+                                  requestFirstMissingAlarmPermission()
                               } else {
                                   viewModel.setAlarmEnabled(id, enabled)
                               }
@@ -437,6 +547,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
                           onDeleteAlarm = viewModel::deleteAlarm,
                           onRequestPermissionGate = viewModel::requestPermissionGate,
+                          onRequestAllPermissions = ::requestAllMissingPermissions,
                           profileMenu = if (tab == NativeTab.Alarms) {
                               {
                                   ProfileMenu(
@@ -469,7 +580,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onCancel = ::goBackInApp,
                       onGenerateTts = viewModel::generateTtsAudio,
                       onSave = { draft ->
-                          viewModel.createAlarm(draft) { navController.popBackStackOrHome() }
+                          if (!permissions.alarmReady) {
+                              requestFirstMissingAlarmPermission()
+                          } else {
+                              viewModel.createAlarm(draft) { navController.popBackStackOrHome() }
+                          }
                       },
                   )
               }
@@ -496,8 +611,12 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCancel = ::goBackInApp,
                           onGenerateTts = viewModel::generateTtsAudio,
                           onSave = { draft ->
-                              viewModel.updateAlarm(currentAlarm.id, draft) {
-                                  navController.popBackStackOrHome()
+                              if (!permissions.alarmReady) {
+                                  requestFirstMissingAlarmPermission()
+                              } else {
+                                  viewModel.updateAlarm(currentAlarm.id, draft) {
+                                      navController.popBackStackOrHome()
+                                  }
                               }
                           },
                       )
@@ -508,8 +627,11 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       authSession = authSession,
                       themeMode = themeMode,
+                      permissions = permissions,
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
+                      onRequestPermission = ::requestPermission,
+                      onRequestAllPermissions = ::requestAllMissingPermissions,
                       onEditNickname = viewModel::requestEditNickname,
                       onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                       onLogout = ::logout,

@@ -37,7 +37,7 @@ Naro
 └─ 👤 Account (Account panel)
      ├─ Profile
      ├─ Sign in / out
-     ├─ Manual sync (Sync now / Sync XP)
+     ├─ Automatic sync status + manual refresh fallback
      ├─ Subscription / vouchers
      ├─ Code register (VA-XXXX or 6-digit)
      ├─ Permission status / shortcuts

@@ -120,7 +120,7 @@ internal fun MemberManagementScreen(
         if (group == null) {
             item {
                 Text(
-                    text = "참여 중인 공유 플랜이 없어요.",
+                    text = "참여 중인 공유 이용권이 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

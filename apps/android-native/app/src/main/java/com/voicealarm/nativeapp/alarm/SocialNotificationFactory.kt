@@ -48,13 +48,17 @@ object SocialNotificationFactory {
         body: String,
         groupId: String,
     ) {
+        val notificationManager = NotificationManagerCompat.from(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
+        if (!notificationManager.areNotificationsEnabled()) {
+            return
+        }
         NotificationChannels.ensure(context)
-        NotificationManagerCompat.from(context).notify(
+        notificationManager.notify(
             notificationId,
             NotificationCompat.Builder(context, NotificationChannels.SOCIAL_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_alarm_24)

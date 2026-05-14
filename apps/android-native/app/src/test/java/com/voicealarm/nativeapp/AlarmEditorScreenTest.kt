@@ -112,6 +112,13 @@ class AlarmEditorScreenTest {
         )
     }
 
+    @Test
+    fun voicePreviewContentDescriptionShowsPlaybackState() {
+        assertEquals("미리듣기 재생", voicePreviewContentDescription(active = false, preparing = false))
+        assertEquals("미리듣기 준비 중", voicePreviewContentDescription(active = false, preparing = true))
+        assertEquals("미리듣기 일시정지", voicePreviewContentDescription(active = true, preparing = false))
+    }
+
     private fun member(
         windows: List<FamilyAlarmQuietWindow>? = listOf(FamilyAlarmQuietWindow()),
     ): FamilyGroupMember =

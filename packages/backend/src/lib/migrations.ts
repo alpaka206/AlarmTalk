@@ -701,6 +701,18 @@ export const migrations: Migration[] = [
         ON email_verification_codes(expires_at)`,
     ],
   },
+  {
+    // Voice profile deletion must not remove alarms or generated message history.
+    // Keep the row for existing references, but hide it from profile selection and
+    // block any future synthesis/edit flow.
+    id: 32,
+    name: 'voice-profile-soft-delete',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN deleted_at TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profiles_active_user
+        ON voice_profiles(user_id, deleted_at, created_at)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

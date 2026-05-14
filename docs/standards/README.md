@@ -242,9 +242,9 @@ The numbers below are the source of truth and must match `packages/backend/src/l
 
 | Event (`XpEvent`) | XP | Affection | Meaning |
 |---|---|---|---|
-| `alarm_completed` | 10 | 2 | User listened through and dismissed |
-| `alarm_snoozed` | 5 | 0 | User snoozed (small reward; no affection) |
-| `alarm_dismissed` | 0 | 0 | Force-killed without listening |
+| `alarm_completed` | 5 | 2 | User dismissed on time |
+| `alarm_snoozed` | -5 | 0 | User snoozed or missed the on-time completion path |
+| `alarm_dismissed` | -5 | 0 | Force-killed or dismissed outside the on-time completion path |
 | `family_alarm_received` | 10 | 3 | A family-sent alarm successfully played for the recipient |
 | `friend_invited` | 50 | 5 | Friend accepted an invite (one-time boost) |
 
@@ -252,6 +252,8 @@ The numbers below are the source of truth and must match `packages/backend/src/l
 
 - `DAILY_XP_CAP = 200` XP.
 - Half-grant rule: if the request would push the day's earned XP past 200, only the remaining headroom is granted and the response sets `capped = true`.
+- Negative alarm XP is not counted against the daily cap.
+- Applied XP must never go below 0 or below the current level's minimum threshold, so level never decreases.
 - Affection has no cap: it represents a relationship dimension, not a level inflation lever.
 
 ### Pure-function contract
@@ -264,7 +266,10 @@ type XpEvent =
   | 'alarm_snoozed'
   | 'alarm_dismissed'
   | 'family_alarm_received'
-  | 'friend_invited';
+  | 'friend_invited'
+  | 'streak_bonus_7'
+  | 'streak_bonus_30'
+  | 'streak_bonus_90';
 
 const DAILY_XP_CAP = 200;
 
@@ -297,7 +302,8 @@ function computeGrant(
 
 ### Edge-case guarantees
 
-- `earned ≤ 0` or `NaN` → `grantedXp = 0`, `capped = false`. The cap is untouched.
+- `earned < 0` → negative `grantedXp` is returned as a penalty candidate; the character mutation layer clamps applied XP to 0 and the current level floor.
+- `earned = 0` or `NaN` → `grantedXp = 0`, `capped = false`. The cap is untouched.
 - `alreadyEarnedToday < 0` is treated as 0.
 - `cap` defaults to 200; passing 0 makes every grant a no-op (test scenario).
 - The runtime guard `isXpEvent` rejects out-of-whitelist event names.
@@ -306,7 +312,7 @@ function computeGrant(
 
 Server reads `alreadyEarnedToday` (from `characters.daily_xp` or `character_xp_logs`), runs `computeGrant`, then in a transaction:
 
-1. `UPDATE characters SET xp += grantedXp, affection += affection`
+1. `UPDATE characters SET xp += appliedGrantedXp, affection += affection`, clamping XP to 0 and the current level floor.
 2. `INSERT character_xp_logs` (with `(character_id, client_nonce)` unique constraint)
 3. Recompute `level` and `stage` and persist them
 4. Respond with the updated character snapshot

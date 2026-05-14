@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
@@ -77,12 +76,14 @@ internal fun AlarmListScreen(
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
+    permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onCreateFamilyAlarm: () -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestPermissionGate: (PermissionTarget) -> Unit,
+    onRequestAllPermissions: () -> Unit,
     profileMenu: (@Composable () -> Unit)? = null,
 ) {
     val sortedAlarms = remember(alarms) {
@@ -98,9 +99,8 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
-    val context = LocalContext.current
-    val voiceLocked = !context.hasRecordAudioPermission()
-    val alarmLocked = !context.hasAlarmPermissions()
+    val voiceLocked = !permissions.recordAudio
+    val alarmLocked = !permissions.alarmReady
 
     LazyColumn(
         modifier = Modifier
@@ -125,12 +125,6 @@ internal fun AlarmListScreen(
                     )
                 }
                 item {
-                    CharacterMiniCard(
-                        characterResponse = characterResponse,
-                        onClick = { onSelectTab(NativeTab.Growth) },
-                    )
-                }
-                item {
                     QuickStartGrid(
                         onRecordVoice = {
                             if (voiceLocked) onRequestPermissionGate(PermissionTarget.RecordAudio)
@@ -141,6 +135,12 @@ internal fun AlarmListScreen(
                         onAddFamilyAlarm = onCreateFamilyAlarm,
                         voiceLocked = voiceLocked,
                         alarmLocked = alarmLocked,
+                    )
+                }
+                item {
+                    CharacterMiniCard(
+                        characterResponse = characterResponse,
+                        onClick = { onSelectTab(NativeTab.Growth) },
                     )
                 }
             }
@@ -168,6 +168,15 @@ internal fun AlarmListScreen(
 
             NativeTab.Alarms -> {
                 item { AlarmsHeader(onCreateAlarm = onCreateAlarm, profileMenu = profileMenu) }
+                if (!permissions.alarmReady) {
+                    item {
+                        PermissionPanel(
+                            permissions = permissions,
+                            onRequestPermission = onRequestPermissionGate,
+                            onRequestAllPermissions = onRequestAllPermissions,
+                        )
+                    }
+                }
                 if (sortedAlarms.isEmpty()) {
                     item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
                 } else {
@@ -230,13 +239,11 @@ internal fun AlarmListScreen(
 
             NativeTab.Growth -> {
                 item {
-                    ScreenHeader(
-                        title = "캐릭터",
-                        subtitle = "알람 종료로 성장해요",
-                    )
+                    ScreenHeader(title = "캐릭터")
                 }
                 item {
                     CharacterBillingPanel(
+                        alarms = alarms,
                         characterEvents = characterEvents,
                         characterBusy = characterBusy,
                         characterResponse = characterResponse,
@@ -252,7 +259,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(title = "구독")
+                    ScreenHeader(title = "이용권")
                 }
                 item {
                     SubscriptionPanel(
@@ -260,7 +267,6 @@ internal fun AlarmListScreen(
                         subscriptionResponse = subscriptionResponse,
                         familyGroup = familyGroup,
                         vouchers = vouchers,
-                        onRefresh = onRefreshCharacterBilling,
                         onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
                         onCancelSubscription = onCancelSubscription,

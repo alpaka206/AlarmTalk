@@ -557,44 +557,43 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 
-  it('연관 메시지 있으면 409 경고', async () => {
+  it('연관 메시지가 있어도 프로필만 숨김 처리', async () => {
     mockDB.pushResult([
       { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
     ]);
-    mockDB.pushResult([{ cnt: 3 }]);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}`));
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.warning).toBe(true);
-    expect(body.message_count).toBe(3);
-    expect(body.error_code).toBe('VOICE_PROFILE_IN_USE');
+    expect(body.success).toBe(true);
+    expect(body.deleted).toBe(true);
   });
 
-  it('force=true로 연관 메시지 있어도 삭제', async () => {
+  it('force=true로 요청해도 메시지와 알람은 삭제하지 않음', async () => {
     mockDB.pushResult([
       { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
     ]);
-    mockDB.pushResult([{ cnt: 3 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}?force=true`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+    expect(body.deleted).toBe(true);
   });
 
-  it('연관 메시지 없으면 바로 삭제', async () => {
+  it('연관 메시지가 없어도 소프트 삭제', async () => {
     mockDB.pushResult([
       { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
     ]);
-    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/voice/${V1}`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+    expect(body.deleted).toBe(true);
   });
 });
 

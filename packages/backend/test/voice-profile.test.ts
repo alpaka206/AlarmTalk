@@ -404,27 +404,26 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('연관 메시지 있고 force 없으면 409', async () => {
+  it('연관 메시지가 있어도 프로필만 숨김 처리', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 5 }]);
+    mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error_code).toBe('VOICE_PROFILE_IN_USE');
-    expect(body.message_count).toBe(5);
+    expect(body.success).toBe(true);
+    expect(body.deleted).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
+    const update = mockDB.calls.find((c) => c.sql.startsWith('UPDATE voice_profiles'));
+    expect(update?.sql).toContain('deleted_at');
+    expect(update?.sql).toContain('is_shared = 0');
   });
 
-  it('연관 메시지 있고 force=true 면 cascade 삭제', async () => {
+  it('force=true 여도 메시지와 알람은 삭제하지 않음', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 3 }]);
-    mockDB.pushResult([], 2); // DELETE alarms
-    mockDB.pushResult([], 1); // DELETE message_library
-    mockDB.pushResult([], 1); // DELETE generated_audio_assets
-    mockDB.pushResult([], 3); // DELETE messages
-    mockDB.pushResult([], 1); // DELETE voice_profiles
+    mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}?force=true`, { method: 'DELETE' }),
@@ -432,21 +431,13 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.messages_deleted).toBe(3);
-
-    const deleteQueries = mockDB.calls.filter((c) => c.sql.startsWith('DELETE'));
-    expect(deleteQueries).toHaveLength(5);
-    expect(deleteQueries[0]!.sql).toContain('alarms');
-    expect(deleteQueries[1]!.sql).toContain('message_library');
-    expect(deleteQueries[2]!.sql).toContain('generated_audio_assets');
-    expect(deleteQueries[3]!.sql).toContain('messages');
-    expect(deleteQueries[4]!.sql).toContain('voice_profiles');
+    expect(body.deleted).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
   });
 
-  it('연관 메시지 없으면 바로 삭제 (cascade 스킵)', async () => {
+  it('프로필은 삭제 시 목록에서만 숨김 처리', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 0 }]);
-    mockDB.pushResult([], 1); // DELETE voice_profiles
+    mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
@@ -454,15 +445,13 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.messages_deleted).toBe(0);
-    const deleteQueries = mockDB.calls.filter((c) => c.sql.startsWith('DELETE'));
-    expect(deleteQueries).toHaveLength(1);
-    expect(deleteQueries[0]!.sql).toContain('voice_profiles');
+    const updateQueries = mockDB.calls.filter((c) => c.sql.startsWith('UPDATE voice_profiles'));
+    expect(updateQueries).toHaveLength(1);
+    expect(updateQueries[0]!.sql).toContain('deleted_at');
   });
 
   it('ElevenLabs voice 삭제 호출', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-xyz' }]);
-    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDeleteVoice.mockResolvedValue(undefined);
     await req(buildApp(), new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }));
@@ -471,7 +460,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
 
   it('ElevenLabs 삭제 실패해도 로컬 삭제 진행', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-fail' }]);
-    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     mockDeleteVoice.mockRejectedValue(new Error('API error'));
     const res = await req(
@@ -484,7 +472,6 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
 
   it('elevenlabs_voice_id 없으면 외부 API 호출 안 함', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
     await req(buildApp(), new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }));
     expect(mockDeleteVoice).not.toHaveBeenCalled();
@@ -640,35 +627,31 @@ describe('POST /clone — edge cases (voice-profile)', () => {
 /*  Edge cases — DELETE /:id force parameter                           */
 /* ------------------------------------------------------------------ */
 describe('DELETE /:id — force edge cases (voice-profile)', () => {
-  it('force=false → "true" 아니므로 409', async () => {
+  it('force=false 여도 소프트 삭제', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 2 }]);
+    mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}?force=false`, { method: 'DELETE' }),
     );
-    expect(res.status).toBe(409);
-    expect((await res.json()).error_code).toBe('VOICE_PROFILE_IN_USE');
+    expect(res.status).toBe(200);
+    expect((await res.json()).deleted).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
   });
 
-  it('force=TRUE (대문자) → 대소문자 구분으로 409', async () => {
+  it('force=TRUE 여도 소프트 삭제', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
-    mockDB.pushResult([{ cnt: 1 }]);
+    mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
       new Request(`http://localhost/vp/${V1}?force=TRUE`, { method: 'DELETE' }),
     );
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
   });
 
-  it('force=true + elevenlabs_voice_id 있으면 외부 삭제 + cascade', async () => {
+  it('force=true + elevenlabs_voice_id 있으면 외부 삭제 + 소프트 삭제', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: 'elv-abc' }]);
-    mockDB.pushResult([{ cnt: 2 }]);
-    mockDB.pushResult([], 1); // DELETE alarms
-    mockDB.pushResult([], 1); // DELETE message_library
-    mockDB.pushResult([], 1); // DELETE generated_audio_assets
-    mockDB.pushResult([], 2); // DELETE messages
-    mockDB.pushResult([], 1); // DELETE voice_profiles
+    mockDB.pushResult([], 1);
     mockDeleteVoice.mockResolvedValue(undefined);
     const res = await req(
       buildApp(),
@@ -676,6 +659,7 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     );
     expect(res.status).toBe(200);
     expect(mockDeleteVoice).toHaveBeenCalledWith('elv-abc');
-    expect((await res.json()).messages_deleted).toBe(2);
+    expect((await res.json()).deleted).toBe(true);
+    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
   });
 });

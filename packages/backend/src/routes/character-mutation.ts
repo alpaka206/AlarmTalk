@@ -5,6 +5,7 @@ import { typedRow } from '../lib/db-types';
 import {
   computeLevelFromXp,
   computeStageFromLevel,
+  xpThresholdForLevel,
 } from '../lib/character';
 import { computeGrant, isXpEvent, type XpEvent } from '../lib/xpRules';
 import { computeStreak, MILESTONE_BONUS_XP } from '../lib/streak';
@@ -79,9 +80,8 @@ characterMutation.post('/xp', async (c) => {
     current.daily_xp_reset_at === today ? current.daily_xp : 0;
 
   const grant = computeGrant(event, dailyXpBase);
-  let totalGrantedXp = grant.xp.grantedXp;
   let totalAffection = grant.affection;
-  let newDailyXp = dailyXpBase + grant.xp.grantedXp;
+  let newDailyXp = dailyXpBase + Math.max(grant.xp.grantedXp, 0);
 
   let streakUpdated = false;
   const milestoneEvents: XpEvent[] = [];
@@ -110,10 +110,12 @@ characterMutation.post('/xp', async (c) => {
     }
   }
 
-  let newXp = current.xp + totalGrantedXp;
+  const minimumXpForCurrentLevel = Math.max(0, xpThresholdForLevel(current.level));
+  let newXp = Math.max(current.xp + grant.xp.grantedXp, minimumXpForCurrentLevel);
+  let totalGrantedXp = newXp - current.xp;
   const newAffectionTotal = current.affection + totalAffection;
 
-  const newLevel = computeLevelFromXp(newXp);
+  const newLevel = Math.max(current.level, computeLevelFromXp(newXp));
   const newStage = computeStageFromLevel(newLevel);
 
   await db.execute({
@@ -138,7 +140,7 @@ characterMutation.post('/xp', async (c) => {
           VALUES (?, ?, ?, ?, ?, ?, ?)`,
     args: [
       logId, current.id, event, clientNonce,
-      grant.xp.grantedXp, grant.affection,
+      totalGrantedXp, grant.affection,
       grant.xp.capped ? 1 : 0,
     ],
   });
@@ -186,14 +188,14 @@ characterMutation.post('/xp', async (c) => {
     milestoneGrants.push({ event: mEvent, xp: mGrant.xp.grantedXp });
   }
 
-  if (event === 'alarm_completed' && streakUpdated) {
+  if (event === 'alarm_completed') {
     await ensureStatsRow(db, current.id);
     await db.execute({
       sql: `UPDATE character_stats
-            SET diligence = diligence + 1, consistency = consistency + 1,
+            SET diligence = diligence + 1, consistency = consistency + ?,
                 updated_at = datetime('now')
             WHERE character_id = ?`,
-      args: [current.id],
+      args: [streakUpdated ? 1 : 0, current.id],
     });
   }
 

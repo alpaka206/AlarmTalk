@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -71,7 +70,7 @@ internal fun StepperField(
                 Icon(Icons.Outlined.Remove, contentDescription = "$label 줄이기")
             }
             IconButton(onClick = onIncrease) {
-                Icon(Icons.Outlined.Add, contentDescription = "$label 늘리기")
+                Icon(Icons.Outlined.Add, contentDescription = "$label 올리기")
             }
         }
     }
@@ -174,11 +173,11 @@ internal fun GoogleSignInButton(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(40.dp),
-        shape = RoundedCornerShape(999.dp),
+        modifier = modifier.height(56.dp),
+        shape = VocaWakeButtonShape,
         color = Color.White,
         contentColor = Color(0xFF1F1F1F),
-        border = BorderStroke(1.dp, Color(0xFF747775)),
+        border = BorderStroke(1.dp, Color(0xFFD7D9DE)),
     ) {
         Box(
             modifier = Modifier
@@ -190,7 +189,7 @@ internal fun GoogleSignInButton(
                 contentDescription = null,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .size(18.dp)
+                    .size(21.dp)
                     .padding(0.dp),
                 alpha = contentAlpha,
             )
@@ -202,8 +201,8 @@ internal fun GoogleSignInButton(
                 color = Color(0xFF1F1F1F).copy(alpha = contentAlpha),
                 fontFamily = FontFamily.Default,
                 fontWeight = FontWeight.Medium,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontSize = 16.sp,
+                lineHeight = 22.sp,
                 maxLines = 1,
             )
         }
