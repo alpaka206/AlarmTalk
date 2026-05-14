@@ -46,12 +46,12 @@ internal class RingingNotificationFactory(
             .setFullScreenIntent(fullScreenIntent, true)
             .addAction(
                 R.drawable.ic_alarm_24,
-                "Snooze",
+                "다시 울리기",
                 servicePendingIntent(ACTION_SNOOZE, alarmId, SNOOZE_REQUEST_CODE),
             )
             .addAction(
                 R.drawable.ic_alarm_24,
-                "Dismiss",
+                "알람 끄기",
                 servicePendingIntent(ACTION_DISMISS, alarmId, DISMISS_REQUEST_CODE),
             )
             .build()

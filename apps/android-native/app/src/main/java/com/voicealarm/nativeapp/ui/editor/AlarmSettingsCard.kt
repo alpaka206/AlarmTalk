@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import android.content.Context
 import android.media.AudioAttributes
@@ -22,19 +22,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -48,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -119,17 +121,21 @@ internal fun AlarmSettingsCard(
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-        ) {
+            Text(
+                text = "세부 설정",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
             AlarmSettingRow(
                 title = "다시 울림",
                 subtitle = if (snoozeEnabled) "${snoozeMinutes}분 · ${snoozeRepeatLabel(snoozeRepeatLimit)}" else "꺼짐",
+                icon = Icons.Outlined.Snooze,
                 onClick = onOpenSnoozeSettings,
                 trailing = {
                     VoiceAlarmSwitch(
@@ -142,6 +148,7 @@ internal fun AlarmSettingsCard(
             AlarmSettingRow(
                 title = "진동",
                 subtitle = vibrationLabel(vibrationPattern),
+                icon = Icons.Outlined.Notifications,
                 onClick = onOpenVibrationSettings,
                 trailing = {
                     VoiceAlarmSwitch(
@@ -155,6 +162,7 @@ internal fun AlarmSettingsCard(
                 AlarmSettingRow(
                     title = "알람음",
                     subtitle = "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}",
+                    icon = Icons.Outlined.Alarm,
                     onClick = onOpenAlarmSoundSettings,
                     trailing = {
                         VoiceAlarmSwitch(
@@ -167,7 +175,6 @@ internal fun AlarmSettingsCard(
                 )
             }
         }
-    }
 }
 
 private fun alarmVolumeLabel(value: Int): String =
@@ -569,6 +576,7 @@ private fun previewVibration(context: Context, patternName: String) {
 private fun AlarmSettingRow(
     title: String,
     subtitle: String,
+    icon: ImageVector,
     onClick: () -> Unit,
     trailing: @Composable () -> Unit,
 ) {
@@ -580,10 +588,25 @@ private fun AlarmSettingRow(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Surface(
+            modifier = Modifier.size(38.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(end = 14.dp),
+                .padding(end = 12.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
@@ -594,6 +617,13 @@ private fun AlarmSettingRow(
             MutedText(subtitle)
         }
         trailing()
+        Spacer(Modifier.width(6.dp))
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 
@@ -737,6 +767,8 @@ internal fun SnoozeSettingsPane(
                     label = { Text("분") },
                     singleLine = true,
                     isError = customMinutesText.isNotBlank() && customMinutes !in 1..60,
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
                 )
             },
             confirmButton = {
@@ -857,35 +889,22 @@ private fun SnoozeOptionDivider() {
 internal fun EditorActionButtons(
     isEditing: Boolean,
     isSaving: Boolean,
-    onCancel: () -> Unit,
     onSave: () -> Unit,
 ) {
-    Row(
+    Button(
+        onClick = onSave,
+        enabled = !isSaving,
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        shape = VocaWakeButtonShape,
     ) {
-        OutlinedButton(
-            onClick = onCancel,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text("취소")
-        }
-        Button(
-            onClick = onSave,
-            enabled = !isSaving,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Icon(Icons.Outlined.Save, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                when {
-                    isSaving -> "저장 중"
-                    isEditing -> "변경사항 저장"
-                    else -> "알람 설정하기"
-                },
-            )
-        }
+        Icon(Icons.Outlined.Save, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            when {
+                isSaving -> "저장 중"
+                isEditing -> "변경사항 저장"
+                else -> "알람 설정하기"
+            },
+        )
     }
 }

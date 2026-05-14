@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -14,11 +14,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +60,9 @@ internal fun VoiceAudioCard(
     selectedFileDurationMillis: Long?,
     cropStartMillis: Long,
     cropEndMillis: Long,
+    isCropPreviewActive: Boolean,
+    isCachedAudioPreviewActive: Boolean,
+    isPreviewPreparing: Boolean,
     onLocalInputModeChange: (VoiceCaptureMode) -> Unit,
     onPick: () -> Unit,
     onRecord: () -> Unit,
@@ -84,17 +86,15 @@ internal fun VoiceAudioCard(
         }
     }
 
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
+            Text(
+                text = "목소리",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
             OptionChips(
                 options = listOf(
                     VoiceSources.TTS_PROFILE to "음성 프로필",
@@ -121,7 +121,7 @@ internal fun VoiceAudioCard(
                     VoiceProfileOption(
                         id = it.id,
                         name = it.name,
-                        detail = if (it.isShared == true) "내 음성 · 공유 중" else "내 음성",
+                        detail = if (it.isShared == true) "내 음성 프로필 · 공유 중" else "내 음성 프로필",
                     )
                 } +
                     readyFamilyVoices.map { profile ->
@@ -140,13 +140,16 @@ internal fun VoiceAudioCard(
                         editor.voiceProfileId = profileOptions.first().id
                     }
                 }
-                Text("음성 프로필", fontWeight = FontWeight.SemiBold)
+                val selectedProfileUnavailable = !voiceProfileBusy &&
+                    !editor.voiceProfileId.isNullOrBlank() &&
+                    profileOptions.none { it.id == editor.voiceProfileId }
+                Text("알람에 들을 목소리", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
                     MutedText("음성 프로필을 불러오는 중이에요.")
                 } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
-                    MutedText("사용 가능한 음성이 없어요.")
+                    MutedText("아직 사용할 목소리가 없어요.")
                 } else if (profileOptions.isEmpty()) {
-                    MutedText("준비 완료된 음성 프로필이 아직 없어요.")
+                    MutedText("준비 완료된 목소리가 아직 없어요.")
                 } else {
                     VoiceProfileOptionList(
                         options = profileOptions,
@@ -157,13 +160,36 @@ internal fun VoiceAudioCard(
                         },
                     )
                 }
+                if (selectedProfileUnavailable) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.58f),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = "삭제된 음성 프로필",
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Text(
+                                text = "이미 저장된 음성은 그대로 울리지만, 문구를 바꾸려면 다른 음성 프로필을 선택해 주세요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
+                            )
+                        }
+                    }
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
+                        Text("깨워줄 말", fontWeight = FontWeight.SemiBold)
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,
@@ -230,21 +256,32 @@ internal fun VoiceAudioCard(
                         enabled = !isRecording,
                         uploadLabel = "파일 업로드",
                         notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
+                        isPreviewActive = isCropPreviewActive,
+                        isPreviewPreparing = isCropPreviewActive && isPreviewPreparing,
                         onPickFile = onPick,
                         onCropChange = onCropChange,
                         onPreviewCrop = onPreviewCrop,
                     )
                 }
-                if (editor.localAudioUri != null) {
+                if (editor.localAudioUri != null && !isRecording) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        OutlinedButton(onClick = onPreviewAudio, modifier = Modifier.weight(1f)) {
-                            Text("들어보기")
+                        OutlinedButton(
+                            onClick = onPreviewAudio,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            VoicePreviewButtonIcon(
+                                active = isCachedAudioPreviewActive,
+                                preparing = isCachedAudioPreviewActive && isPreviewPreparing,
+                            )
                         }
-                        OutlinedButton(onClick = onClear, modifier = Modifier.weight(1f)) {
-                            Text("지우기")
+                        OutlinedButton(
+                            onClick = onClear,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "지우기")
                         }
                     }
                 }
@@ -280,7 +317,6 @@ internal fun VoiceAudioCard(
                 )
             }
         }
-    }
 }
 
 private data class VoiceProfileOption(
@@ -385,7 +421,8 @@ private fun ManualVoiceMessageField(
             placeholder = { Text("알람에서 들을 음성 메시지") },
             minLines = 3,
             maxLines = 5,
-            shape = RoundedCornerShape(14.dp),
+            shape = VocaWakeInputShape,
+            colors = vocaWakeOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         ManualTranslationRow(
@@ -486,7 +523,7 @@ private fun VoiceRepeatSelector(
     onRepeatChange: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("음성 재생", fontWeight = FontWeight.SemiBold)
+        Text("목소리 반복", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             VoiceRepeatChoice(
                 label = "한 번만",

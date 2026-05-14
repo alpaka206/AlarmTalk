@@ -2,13 +2,18 @@ package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +34,42 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 @Composable
+internal fun ScheduleDetailsCard(
+    hour: Int,
+    minute: Int,
+    repeatDaysMask: Int,
+    holidayOff: Boolean,
+    label: String,
+    onLabelChange: (String) -> Unit,
+    onToggleDay: (Int) -> Unit,
+    onHolidayOffChange: (Boolean) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        RepeatSelector(
+            hour = hour,
+            minute = minute,
+            repeatDaysMask = repeatDaysMask,
+            holidayOff = holidayOff,
+            onToggleDay = onToggleDay,
+            onHolidayOffChange = onHolidayOffChange,
+        )
+        OutlinedTextField(
+            value = label,
+            onValueChange = onLabelChange,
+            label = { Text("알람 이름") },
+            placeholder = { Text("예: 출근 준비") },
+            singleLine = true,
+            shape = VocaWakeInputShape,
+            colors = vocaWakeOutlinedTextFieldColors(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
 internal fun RepeatSelector(
     hour: Int,
     minute: Int,
@@ -47,7 +88,7 @@ internal fun RepeatSelector(
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             WeekdayLabels.forEachIndexed { index, label ->
                 DayTextChip(
@@ -125,23 +166,36 @@ internal fun DayTextChip(
     }
     Surface(
         onClick = onClick,
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = if (selected) selectedContainerColor else Color.Transparent,
-        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
+        modifier = modifier.aspectRatio(1f),
+        shape = CircleShape,
+        color = if (selected) {
+            selectedContainerColor
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+        },
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) {
+                selectedBorderColor.copy(alpha = 0.58f)
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            },
+        ),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Text(
-            text = label,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 9.dp),
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            color = contentColor,
-        )
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                color = contentColor,
+            )
+        }
     }
 }
 
@@ -204,6 +258,28 @@ internal fun QuickChip(
 }
 
 @Composable
+internal fun PlayModeCard(
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "재생 방식",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        PlayModeSelector(
+            selected = selected,
+            onSelect = onSelect,
+        )
+    }
+}
+
+@Composable
 internal fun PlayModeSelector(
     selected: String,
     onSelect: (String) -> Unit,
@@ -240,8 +316,17 @@ internal fun PlayModeChip(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
+        },
+        border = if (selected) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.42f))
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f))
+        },
     ) {
         Text(
             text = label,
@@ -252,7 +337,7 @@ internal fun PlayModeChip(
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
             color = if (selected) {
-                MaterialTheme.colorScheme.onPrimary
+                MaterialTheme.colorScheme.onPrimaryContainer
             } else {
                 MaterialTheme.colorScheme.onSurface
             },

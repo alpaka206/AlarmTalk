@@ -1,9 +1,5 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
-import android.app.AlarmManager
-import android.app.NotificationManager
-import android.content.Context
-import android.os.Build
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -25,7 +21,9 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -49,8 +47,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.getSystemService
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmStates
 import com.voicealarm.nativeapp.data.AlarmSyncStates
@@ -82,40 +78,60 @@ internal fun VoiceAlarmSwitch(
 @Composable
 internal fun PermissionPanel(
     permissions: PermissionSnapshot,
-    onRequestNotifications: () -> Unit,
-    onRequestExactAlarms: () -> Unit,
-    onRequestFullScreen: () -> Unit,
+    onRequestPermission: (PermissionTarget) -> Unit,
+    onRequestAllPermissions: () -> Unit,
 ) {
-    OutlinedCard {
+    OutlinedCard(
+        shape = VocaWakeCardShape,
+        border = vocaWakeCardBorder(),
+    ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
                 text = "권한",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
+            if (!permissions.allStartupGranted) {
+                Button(
+                    onClick = onRequestAllPermissions,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = VocaWakeButtonShape,
+                ) {
+                    Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("필요 권한 모두 허용")
+                }
+            }
             PermissionRow(
                 icon = Icons.Outlined.Alarm,
                 label = "정확한 알람",
                 granted = permissions.exactAlarms,
-                actionLabel = "열기",
-                onAction = onRequestExactAlarms,
+                actionLabel = "허용하기",
+                onAction = { onRequestPermission(PermissionTarget.ExactAlarms) },
             )
             PermissionRow(
                 icon = Icons.Outlined.Notifications,
                 label = "알림",
                 granted = permissions.notifications,
-                actionLabel = "허용",
-                onAction = onRequestNotifications,
+                actionLabel = "허용하기",
+                onAction = { onRequestPermission(PermissionTarget.Notifications) },
             )
             PermissionRow(
                 icon = Icons.Outlined.Fullscreen,
-                label = "전체화면 알람",
+                label = "전체 화면 알람",
                 granted = permissions.fullScreenIntent,
-                actionLabel = "열기",
-                onAction = onRequestFullScreen,
+                actionLabel = "허용하기",
+                onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
+            )
+            PermissionRow(
+                icon = Icons.Outlined.Mic,
+                label = "마이크",
+                granted = permissions.recordAudio,
+                actionLabel = "허용하기",
+                onAction = { onRequestPermission(PermissionTarget.RecordAudio) },
             )
         }
     }
@@ -138,7 +154,24 @@ internal fun PermissionRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(icon, contentDescription = null)
+            Surface(
+                modifier = Modifier.size(38.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = if (granted) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = if (granted) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
+            }
             Column {
                 Text(text = label, fontWeight = FontWeight.Medium)
                 Text(
@@ -155,7 +188,7 @@ internal fun PermissionRow(
         if (granted) {
             Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         } else {
-            TextButton(onClick = onAction) {
+            TextButton(onClick = onAction, shape = VocaWakeButtonShape) {
                 Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(actionLabel)
@@ -218,9 +251,10 @@ internal fun AlarmRow(
                         dragOffsetPx = 0f
                     },
                 ),
-            shape = RoundedCornerShape(16.dp),
+            shape = VocaWakeCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            border = vocaWakeCardBorder(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
@@ -289,7 +323,7 @@ internal fun AlarmRow(
 }
 
 private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
-    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했습니다. 시간을 확인한 뒤 다시 저장해 주세요."
+    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했습니다. 시간을 확인하고 다시 저장해 주세요."
     alarm.syncState == AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다. 이 기기의 알람은 그대로 울려요."
     else -> null
 }
@@ -303,7 +337,7 @@ internal fun DeleteRevealButton(
         onClick = onDelete,
         modifier = modifier.fillMaxHeight(),
         color = MaterialTheme.colorScheme.error,
-        shape = RoundedCornerShape(16.dp),
+        shape = VocaWakeCardShape,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -324,29 +358,3 @@ internal fun DeleteRevealButton(
     }
 }
 
-internal data class PermissionSnapshot(
-    val exactAlarms: Boolean,
-    val notifications: Boolean,
-    val fullScreenIntent: Boolean,
-) {
-    companion object {
-        fun read(context: Context): PermissionSnapshot {
-            val alarmManager = requireNotNull(context.getSystemService<AlarmManager>())
-            val notificationManager = NotificationManagerCompat.from(context)
-            val platformNotificationManager = requireNotNull(context.getSystemService<NotificationManager>())
-
-            val exactAlarms = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-                alarmManager.canScheduleExactAlarms()
-            val notifications = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                notificationManager.areNotificationsEnabled()
-            val fullScreenIntent = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
-                platformNotificationManager.canUseFullScreenIntent()
-
-            return PermissionSnapshot(
-                exactAlarms = exactAlarms,
-                notifications = notifications,
-                fullScreenIntent = fullScreenIntent,
-            )
-        }
-    }
-}
