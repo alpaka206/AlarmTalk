@@ -55,19 +55,19 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
 }
 
 internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
-    val authorization = bearerOrMessage("플랜에서 나가려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage("이용권에서 나가려면 먼저 로그인해 주세요") ?: return
     viewModelScope.launch {
         socialBusy = true
         runCatching {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
-            message = "플랜에서 나갔어요. 무료 플랜으로 전환됐어요."
+            message = "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
             refreshSocial()
             refreshCharacterAndBilling()
             refreshAppSession()
         }.onFailure { error ->
             Log.e(TAG, "Failed to leave family group id=$groupId", error)
-            message = userFacingError(error, "플랜에서 나가지 못했어요")
+            message = userFacingError(error, "이용권에서 나가지 못했어요")
         }
         socialBusy = false
     }
