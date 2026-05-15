@@ -769,7 +769,7 @@ private fun VoiceProfileDeleteDialog(
                         Icon(Icons.Outlined.Close, contentDescription = "닫기")
                     }
                 }
-                MutedText("삭제하면 이 프로필로 만든 서버 저장 음원이 모두 함께 지워져요. 이미 기기에 받아둔 알람 음성은 그대로 남지만, 새로 음성을 만들거나 문구를 수정할 수 없어요.")
+                MutedText("이 음성 프로필을 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 서버에 저장된 음원은 함께 정리됩니다.")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

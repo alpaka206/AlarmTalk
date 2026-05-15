@@ -381,6 +381,19 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(new Uint8Array(audioArg)).toEqual(new Uint8Array([10, 20, 30]));
     expect(nameArg).toBe('이름');
   });
+
+  it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockRejectedValue(
+      new Error('ElevenLabs clone error 400: {"detail":{"status":"voice_limit_reached","message":"You have reached your maximum voice limit."}}'),
+    );
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name'));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_SLOT_EXHAUSTED');
+    expect(body.error).toContain('서비스가 확장중');
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -424,6 +437,10 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
       c.sql.startsWith('DELETE FROM generated_audio_assets'),
     );
     expect(assetsDelete).toBeDefined();
+    const alarmsCascade = mockDB.calls.find((c) => c.sql.startsWith('UPDATE alarms'));
+    expect(alarmsCascade).toBeDefined();
+    expect(alarmsCascade!.sql).toContain("mode = 'sound-only'");
+    expect(alarmsCascade!.sql).toContain('voice_profile_id = NULL');
     const messagesUpdate = mockDB.calls.find((c) =>
       c.sql.startsWith('UPDATE messages SET audio_url'),
     );
