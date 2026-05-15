@@ -45,20 +45,23 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun HomeHeader() {
     val hour = java.time.LocalTime.now().hour
-    val greeting = when {
-        hour < 6 -> "좋아하는 목소리로\n깨워드릴게요"
-        hour < 12 -> "오늘 아침,\n어떤 목소리로 깨어났나요?"
-        hour < 17 -> "내일의 목소리 알람을\n준비해요"
-        hour < 21 -> "서로의 목소리로\n아침을 예약해요"
-        else -> "좋아하는 목소리로\n깨워드릴게요"
+    val (greetingTop, greetingBottom) = when {
+        hour < 6 -> "좋아하는 목소리로" to "깨워드릴게요"
+        hour < 12 -> "오늘 아침," to "어떤 목소리로 깨어났나요?"
+        hour < 17 -> "내일의 목소리 알람을" to "준비해요"
+        hour < 21 -> "서로의 목소리로" to "아침을 예약해요"
+        else -> "좋아하는 목소리로" to "깨워드릴게요"
     }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(end = 72.dp),
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = greeting,
+            text = greetingTop,
+            modifier = Modifier.padding(end = 72.dp),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
+        Text(
+            text = greetingBottom,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
