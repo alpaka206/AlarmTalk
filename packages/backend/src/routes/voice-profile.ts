@@ -479,8 +479,9 @@ voiceProfile.delete('/:id', async (c) => {
           WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
     args: [id],
   });
-  if (c.env.VOICE_BUCKET && assetsRes.rows.length > 0) {
-    const storage = new R2VoiceStorage(c.env.VOICE_BUCKET);
+  const bucket = c.env?.VOICE_BUCKET;
+  if (bucket && assetsRes.rows.length > 0) {
+    const storage = new R2VoiceStorage(bucket);
     for (const row of assetsRes.rows) {
       const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
       if (!key) continue;
