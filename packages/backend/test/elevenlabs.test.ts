@@ -61,8 +61,10 @@ describe('ElevenLabsClient', () => {
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
       expect(body.model_id).toBe('eleven_multilingual_v2');
-      expect(body.voice_settings.stability).toBe(0.5);
+      expect(body.voice_settings.stability).toBe(1);
       expect(body.voice_settings.similarity_boost).toBe(0.75);
+      expect(body.voice_settings.style).toBe(0);
+      expect(body.voice_settings.speed).toBe(1);
       expect(body.voice_settings.use_speaker_boost).toBe(true);
     });
 
