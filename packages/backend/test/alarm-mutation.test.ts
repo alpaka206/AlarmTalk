@@ -803,6 +803,7 @@ describe('DELETE /alarms/:id', () => {
   });
 
   it('존재하지 않는 알람 → 404', async () => {
+    mockDB.pushResult([]);
     mockDB.pushResult([], 0);
     const res = await buildApp().request(
       new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
@@ -811,21 +812,56 @@ describe('DELETE /alarms/:id', () => {
     expect((await res.json()).error_code).toBe('ALARM_NOT_FOUND');
   });
 
-  it('성공 삭제 → 200 success', async () => {
+  it('성공 삭제 (message_id 없음) → 200 success, cascade 미발생', async () => {
+    mockDB.pushResult([{ message_id: null }]);
     mockDB.pushResult([], 1);
     const res = await buildApp().request(
       new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
     );
     expect(res.status).toBe(200);
     expect((await res.json()).success).toBe(true);
+    expect(
+      mockDB.calls.some((c) => c.sql.startsWith('DELETE FROM generated_audio_assets')),
+    ).toBe(false);
+  });
+
+  it('마지막 참조 알람 삭제 시 generated_audio_assets 정리', async () => {
+    mockDB.pushResult([{ message_id: ID.message }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ cnt: 0 }]);
+    mockDB.pushResult([]);
+    const res = await buildApp().request(
+      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    const cascadeDelete = mockDB.calls.find((c) =>
+      c.sql.startsWith('DELETE FROM generated_audio_assets'),
+    );
+    expect(cascadeDelete).toBeDefined();
+    expect(cascadeDelete!.args).toContain(ID.message);
+  });
+
+  it('다른 알람이 같은 message_id 쓰면 generated_audio_assets 보존', async () => {
+    mockDB.pushResult([{ message_id: ID.message }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ cnt: 1 }]);
+    const res = await buildApp().request(
+      new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(200);
+    expect(
+      mockDB.calls.some((c) => c.sql.startsWith('DELETE FROM generated_audio_assets')),
+    ).toBe(false);
   });
 
   it('DELETE SQL에 userId 바인딩 (다른 사용자 알람 삭제 방지)', async () => {
+    mockDB.pushResult([{ message_id: null }]);
     mockDB.pushResult([], 1);
     await buildApp('user-A').request(
       new Request(`http://localhost/alarms/${ID.alarm}`, { method: 'DELETE' }),
     );
-    const deleteCall = mockDB.calls[0];
+    const deleteCall = mockDB.calls.find((c) => c.sql.startsWith('DELETE FROM alarms'));
+    expect(deleteCall).toBeDefined();
     expect(deleteCall!.sql).toContain('user_id');
     expect(deleteCall!.args).toContain('user-A');
   });

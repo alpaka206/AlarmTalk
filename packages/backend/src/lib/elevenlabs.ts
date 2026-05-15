@@ -22,10 +22,17 @@ export class ElevenLabsClient {
   }
 
   /** Instant Voice Clone - 짧은 샘플로 즉시 음성 클론 */
-  async createInstantClone(audioData: ArrayBuffer, name: string): Promise<{ voice_id: string }> {
+  async createInstantClone(
+    audioData: ArrayBuffer,
+    name: string,
+    options?: { removeBackgroundNoise?: boolean },
+  ): Promise<{ voice_id: string }> {
     const formData = new FormData();
     formData.append('files', new Blob([audioData], { type: 'audio/wav' }), 'sample.wav');
     formData.append('name', name);
+    if (options?.removeBackgroundNoise) {
+      formData.append('remove_background_noise', 'true');
+    }
 
     const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/voices/add`, {
       method: 'POST',

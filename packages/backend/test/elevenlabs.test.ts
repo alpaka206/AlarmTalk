@@ -113,6 +113,20 @@ describe('ElevenLabsClient', () => {
       expect(result.voice_id).toBe('new-voice-id');
     });
 
+    it('기본 옵션에서는 remove_background_noise 미전송', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'v' }));
+      await client.createInstantClone(new ArrayBuffer(10), 'n');
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.get('remove_background_noise')).toBeNull();
+    });
+
+    it('removeBackgroundNoise=true 시 FormData 에 remove_background_noise=true 첨부', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'v' }));
+      await client.createInstantClone(new ArrayBuffer(10), 'n', { removeBackgroundNoise: true });
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.get('remove_background_noise')).toBe('true');
+    });
+
     it('API 에러 시 예외', async () => {
       mockFetch.mockResolvedValueOnce(errorResponse(400, 'Bad audio'));
 
