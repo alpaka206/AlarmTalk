@@ -5,6 +5,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
+import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 
 const voiceProfile = new Hono<AppEnv>();
@@ -472,6 +473,35 @@ voiceProfile.delete('/:id', async (c) => {
   } catch {
     // 외부 API 삭제 실패해도 로컬은 삭제 진행
   }
+
+  const assetsRes = await db.execute({
+    sql: `SELECT audio_object_key FROM generated_audio_assets
+          WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
+    args: [id],
+  });
+  if (c.env.VOICE_BUCKET && assetsRes.rows.length > 0) {
+    const storage = new R2VoiceStorage(c.env.VOICE_BUCKET);
+    for (const row of assetsRes.rows) {
+      const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
+      if (!key) continue;
+      try {
+        await storage.delete(key);
+      } catch (err) {
+        // R2 객체 삭제 실패해도 DB 정리는 진행
+        logRouteError(c, err);
+      }
+    }
+  }
+
+  await db.execute({
+    sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
+    args: [id],
+  });
+
+  await db.execute({
+    sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
+    args: [id],
+  });
 
   await db.execute({
     sql: `UPDATE voice_profiles

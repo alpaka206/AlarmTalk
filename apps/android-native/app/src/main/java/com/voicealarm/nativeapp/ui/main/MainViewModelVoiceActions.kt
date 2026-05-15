@@ -245,8 +245,13 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = "음성 프로필을 삭제했어요"
         }.onFailure { error ->
-            Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
-            message = userFacingError(error, "음성 프로필 삭제에 실패했어요")
+            if (error is retrofit2.HttpException && error.code() == 404) {
+                voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
+                message = "이미 삭제된 음성 프로필이에요"
+            } else {
+                Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
+                message = userFacingError(error, "음성 프로필 삭제에 실패했어요")
+            }
         }
         voiceProfileBusy = false
     }
