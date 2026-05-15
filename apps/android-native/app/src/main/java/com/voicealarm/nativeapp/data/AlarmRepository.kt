@@ -249,7 +249,11 @@ class AlarmRepository(
             return
         }
         alarmScheduler.cancel(alarmId)
+        val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
+        if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
+            alarmAudioStore.deleteCachedAudio(cacheKey)
+        }
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 

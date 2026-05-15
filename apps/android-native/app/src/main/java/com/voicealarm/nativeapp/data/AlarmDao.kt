@@ -39,6 +39,9 @@ interface AlarmDao {
     )
     suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
 
+    @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
+    suspend fun countByAudioCacheKey(cacheKey: String): Int
+
     @Upsert
     suspend fun upsert(alarm: AlarmEntity)
 
