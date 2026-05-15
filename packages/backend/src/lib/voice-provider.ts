@@ -72,7 +72,9 @@ export function createEnrollmentAttempts(params: {
       provider: 'elevenlabs',
       enroll: async () => {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
-        const result = await client.createInstantClone(params.audioData, params.name);
+        const result = await client.createInstantClone(params.audioData, params.name, {
+          removeBackgroundNoise: true,
+        });
         return {
           provider: 'elevenlabs',
           providerVoiceId: result.voice_id,
