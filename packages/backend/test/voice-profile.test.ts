@@ -404,7 +404,7 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('연관 메시지가 있어도 프로필만 숨김 처리', async () => {
+  it('생성된 음원은 정리하되 메시지와 알람 자체는 보존', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -415,13 +415,25 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.deleted).toBe(true);
-    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+      ),
+    ).toBe(false);
+    const assetsDelete = mockDB.calls.find((c) =>
+      c.sql.startsWith('DELETE FROM generated_audio_assets'),
+    );
+    expect(assetsDelete).toBeDefined();
+    const messagesUpdate = mockDB.calls.find((c) =>
+      c.sql.startsWith('UPDATE messages SET audio_url'),
+    );
+    expect(messagesUpdate).toBeDefined();
     const update = mockDB.calls.find((c) => c.sql.startsWith('UPDATE voice_profiles'));
     expect(update?.sql).toContain('deleted_at');
     expect(update?.sql).toContain('is_shared = 0');
   });
 
-  it('force=true 여도 메시지와 알람은 삭제하지 않음', async () => {
+  it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {
     mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
     mockDB.pushResult([], 1);
     const res = await req(
@@ -432,7 +444,11 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.deleted).toBe(true);
-    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+      ),
+    ).toBe(false);
   });
 
   it('프로필은 삭제 시 목록에서만 숨김 처리', async () => {
@@ -636,7 +652,11 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()).deleted).toBe(true);
-    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+      ),
+    ).toBe(false);
   });
 
   it('force=TRUE 여도 소프트 삭제', async () => {
@@ -660,6 +680,10 @@ describe('DELETE /:id — force edge cases (voice-profile)', () => {
     expect(res.status).toBe(200);
     expect(mockDeleteVoice).toHaveBeenCalledWith('elv-abc');
     expect((await res.json()).deleted).toBe(true);
-    expect(mockDB.calls.some((c) => c.sql.startsWith('DELETE'))).toBe(false);
+    expect(
+      mockDB.calls.some(
+        (c) => c.sql.startsWith('DELETE FROM messages') || c.sql.startsWith('DELETE FROM alarms'),
+      ),
+    ).toBe(false);
   });
 });
