@@ -1,0 +1,168 @@
+{
+  "meta": {
+    "title": "VocaWake · The one alarm that changes your morning",
+    "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time, every time."
+  },
+  "nav": {
+    "voices": "Features",
+    "how": "How it works",
+    "faq": "FAQ",
+    "cta": "Get early access"
+  },
+  "hero": {
+    "tag": "Voice alarm",
+    "badge": "A voice alarm app, made in Korea",
+    "headline1": "The one alarm that",
+    "headline2": "changes your morning.",
+    "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time. A real native alarm, not a push notification.",
+    "primary": "Get early access",
+    "secondary": "How it works",
+    "qrLabel": "Scan to download",
+    "qrCaption": "Use this QR at launch",
+    "phone": {
+      "greetTop": "Good morning,",
+      "greetBottom": "whose voice woke you up?",
+      "nextAlarm": "Next alarm",
+      "alarmLabel": "Mom's voice",
+      "alarmEdit": "Edit",
+      "quickStart": "Quick start",
+      "quickVoice": "Voice profiles",
+      "quickAlarm": "New alarm",
+      "streak": "7 days streak",
+      "tabHome": "Home",
+      "tabVoice": "Voice",
+      "tabAlarms": "Alarms",
+      "tabMessages": "Inbox"
+    }
+  },
+  "trust": {
+    "headline": "Not just another alarm.",
+    "items": [
+      {
+        "metric": "100%",
+        "title": "Native alarm",
+        "body": "Not a push notification. Rings on time even with the screen locked or in airplane mode."
+      },
+      {
+        "metric": "0",
+        "title": "AI-generated voice",
+        "body": "A real recording from a real person. Not the polished perfection of synthetic voice — the living tone that wakes you."
+      },
+      {
+        "metric": "3",
+        "title": "kinds of voices",
+        "body": "Voices you record yourself, voices shared from someone, and translated phrases for language practice."
+      }
+    ]
+  },
+  "voice": {
+    "eyebrow": "Your voice",
+    "headline1": "You can't ignore",
+    "headline2": "your mom's voice.",
+    "description": "Adding a hundred more bell sounds still gives you the same noise. The moment a real human voice wakes you up, everything changes.",
+    "bullet1": "Record a line for the day — workout, exam, or trip",
+    "bullet2": "Schedule a different voice for each context",
+    "bullet3": "Voices you record once get reused across alarms"
+  },
+  "shared": {
+    "eyebrow": "Shared voice",
+    "headline1": "What if someone you love",
+    "headline2": "woke you every morning?",
+    "description": "Use a share code to collect voices from family, partner, or friends. A week of greetings, each in a slightly different tone, stack up in your library.",
+    "bullet1": "Share voices with family or partner via invite code",
+    "bullet2": "Received voices live safely in your own library",
+    "bullet3": "Distance disappears every morning"
+  },
+  "language": {
+    "eyebrow": "Translated phrases",
+    "headline1": "Five seconds at the alarm",
+    "headline2": "becomes daily listening.",
+    "description": "Set today's memorized sentence as tomorrow's alarm. Five seconds groggily heard each day adds up to 35 minutes of practice a week.",
+    "bullet1": "Set foreign-language phrases in a native voice",
+    "bullet2": "Perfect for the month before a trip",
+    "bullet3": "Swap in new sentences as you progress"
+  },
+  "scenarios": {
+    "headline": "Some people use it like this.",
+    "description": "VocaWake redesigns the first second of every morning, not just the alarm sound.",
+    "items": [
+      {
+        "tag": "Couple",
+        "title": "Apart on weekends",
+        "body": "Recorded after work: “Good night. See you tomorrow morning.” Plays every day at 7:30 sharp."
+      },
+      {
+        "tag": "Student",
+        "title": "A note to your future self",
+        "body": "“The you in three months is grateful for the you who got up today.” Recorded yesterday, played this morning."
+      },
+      {
+        "tag": "Family",
+        "title": "A grandmother waking her granddaughter",
+        "body": "She sends a fresh recording every week. Greetings stack up, each in a slightly different tone."
+      },
+      {
+        "tag": "Language",
+        "title": "Listening practice before a trip",
+        "body": "Today's sentence becomes tomorrow's alarm. Five seconds a day adds up to 35 minutes a week."
+      }
+    ]
+  },
+  "faq": {
+    "headline": "Frequently asked",
+    "items": [
+      {
+        "q": "Is it a push notification or a real alarm?",
+        "a": "A real native alarm. Even with the screen locked or in airplane mode, it rings exactly on time. No reliance on server pushes."
+      },
+      {
+        "q": "Is my voice stored safely?",
+        "a": "Recordings stay tied to your account until you delete them. Voices you share live only in the recipient's library."
+      },
+      {
+        "q": "Is it paid?",
+        "a": "Core alarm and voice features will be free. Some things — extra cloud storage, translation, premium voices — will be in a paid tier."
+      },
+      {
+        "q": "Which devices does it support?",
+        "a": "Android native first. iOS follows once we've validated AlarmKit separately."
+      },
+      {
+        "q": "How is it different from other alarm apps?",
+        "a": "Other apps add more sounds. VocaWake redefines an alarm as a person's voice. Who's speaking is the feature."
+      }
+    ]
+  },
+  "waitlist": {
+    "headline1": "Want early access?",
+    "headline2": "We'll tell you first.",
+    "description": "Before launch, we'll email you a beta invite. No marketing emails — just the invite.",
+    "placeholder": "you@example.com",
+    "cta": "Join waitlist",
+    "ctaSuccess": "You're in",
+    "messageSuccess": "Thanks. You'll hear from us as soon as the beta opens.",
+    "messageError": "That doesn't look like an email.",
+    "agreement": "By submitting, you agree to our privacy policy."
+  },
+  "footer": {
+    "tagline": "The one alarm that changes your morning. Wake up to a voice you love.",
+    "product": "Product",
+    "company": "Company",
+    "legal": "Legal",
+    "linkVoices": "Features",
+    "linkHow": "How it works",
+    "linkFaq": "FAQ",
+    "linkGithub": "GitHub",
+    "linkContact": "Contact",
+    "linkPrivacy": "Privacy",
+    "linkTerms": "Terms",
+    "rights": "All rights reserved.",
+    "made": "Made in Korea"
+  },
+  "language_switcher": {
+    "label": "Language",
+    "ko": "한국어",
+    "en": "English",
+    "ja": "日本語"
+  }
+}
