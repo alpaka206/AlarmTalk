@@ -21,8 +21,6 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -127,12 +125,12 @@ internal fun FamilyConnectionPanel(
             val isSharedMember = currentGroup != null && familyGroup?.role == "member"
 
             if (canManageShareCode) {
-                MutedText("공유 플랜을 관리 중이에요.")
+                MutedText("공유 이용권을 관리 중이에요.")
                 return@Column
             }
 
             if (hasActivePlan && !showCodeInputs) {
-                MutedText("$activePlanName 플랜 사용중이라 등록은 플랜이 종료된 다음에 가능합니다.")
+                MutedText("$activePlanName 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
                 if (isSharedMember) {
                     OutlinedButton(
                         onClick = { showLeaveDialog = true },
@@ -141,7 +139,7 @@ internal fun FamilyConnectionPanel(
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(
-                            text = "플랜에서 나가고 다른 코드 등록하기",
+                            text = "이용권에서 나가고 다른 코드 등록하기",
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -157,7 +155,7 @@ internal fun FamilyConnectionPanel(
                 }
             } else {
                 if (hasActivePlan) {
-                    MutedText("등록하면 현재 $activePlanName 플랜이 변경돼요.")
+                    MutedText("등록하면 현재 $activePlanName 이용권이 변경돼요.")
                 }
                 Text("초대 코드", fontWeight = FontWeight.SemiBold)
                 Row(
@@ -174,6 +172,8 @@ internal fun FamilyConnectionPanel(
                         },
                         placeholder = { Text("INV-XXXX-XXXX-XXXX") },
                         singleLine = true,
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
                         modifier = Modifier.weight(1f),
                     )
                     Button(
@@ -199,6 +199,8 @@ internal fun FamilyConnectionPanel(
                         },
                         placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
                         singleLine = true,
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
                         modifier = Modifier.weight(1f),
                     )
                     Button(
@@ -215,9 +217,9 @@ internal fun FamilyConnectionPanel(
     if (showLeaveDialog && currentGroup != null) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("플랜에서 나가고 다른 코드 등록") },
+            title = { Text("이용권에서 나가고 다른 코드 등록") },
             text = {
-                MutedText("현재 플랜에서 나가고 새 코드를 등록할까요?")
+                MutedText("현재 이용권에서 나가고 이 코드를 등록할까요?")
             },
             confirmButton = {
                 TextButton(
@@ -248,7 +250,7 @@ internal fun FamilyConnectionPanel(
             text = {
                 MutedText(
                     if (hasActivePlan) {
-                        "유효한 코드면 현재 $activePlanName 플랜은 해지되고 새 플랜으로 전환돼요. 등록하시겠어요?"
+                        "유효한 코드면 현재 $activePlanName 이용권은 해지되고 새 이용권으로 전환돼요. 등록하시겠어요?"
                     } else {
                         "이 코드를 등록할까요?"
                     },
@@ -403,7 +405,7 @@ internal fun VoiceMessagePanel(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MutedText("커플/가족 플랜에서 사용할 수 있어요.")
+                MutedText("커플/가족 이용권에서 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
@@ -415,7 +417,7 @@ internal fun VoiceMessagePanel(
                         onClick = onOpenBilling,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("플랜 보기")
+                        Text("이용권 보기")
                     }
                 }
             }
@@ -517,14 +519,14 @@ internal fun VoiceMessagePanel(
                                 selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             ),
-                            label = { Text("음성 메시지") },
+                            label = { Text("목소리 메시지") },
                         )
                     }
                     if (sendMode == VoiceMessageSendMode.Tts) {
-                        Text("음성", fontWeight = FontWeight.SemiBold)
+                        Text("보낼 목소리", fontWeight = FontWeight.SemiBold)
                         when {
-                            voiceProfileBusy -> MutedText("음성을 불러오는 중이에요.")
-                            voiceOptions.isEmpty() -> MutedText("사용 가능한 음성이 없어요.")
+                            voiceProfileBusy -> MutedText("목소리를 불러오는 중이에요.")
+                            voiceOptions.isEmpty() -> MutedText("사용 가능한 목소리가 없어요.")
                             else -> ChipGrid(
                                 options = voiceOptions,
                                 selected = selectedVoiceProfileId.orEmpty(),
@@ -541,6 +543,8 @@ internal fun VoiceMessagePanel(
                         placeholder = { Text("전하고 싶은 말을 입력하세요") },
                         minLines = 3,
                         maxLines = 5,
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
@@ -622,16 +626,13 @@ internal fun NoteRow(
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
-                    if (unread) {
-                        AssistChip(
-                            onClick = onMarkRead,
-                            label = { Text("새") },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.secondary,
-                                labelColor = MaterialTheme.colorScheme.onSecondary,
-                            ),
-                        )
-                    }
+                if (unread) {
+                    Surface(
+                        modifier = Modifier.size(9.dp),
+                        color = MaterialTheme.colorScheme.secondary,
+                        shape = CircleShape,
+                    ) {}
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),

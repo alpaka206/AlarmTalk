@@ -480,6 +480,7 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
 
 describe('DELETE /alarm/:id — 알람 삭제', () => {
   it('존재하지 않으면 404 + ALARM_NOT_FOUND', async () => {
+    mockDB.pushResult([]);
     mockDB.pushResult([], 0);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/alarm/${ID.alarm404}`));
@@ -489,6 +490,7 @@ describe('DELETE /alarm/:id — 알람 삭제', () => {
   });
 
   it('정상 삭제', async () => {
+    mockDB.pushResult([{ message_id: null }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/alarm/${ID.alarm}`));

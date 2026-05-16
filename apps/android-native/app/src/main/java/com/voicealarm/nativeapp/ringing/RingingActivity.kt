@@ -11,6 +11,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,14 +19,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,8 +43,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.alarm.RingingService
 import com.voicealarm.nativeapp.data.AlarmAppContainer
@@ -154,12 +160,13 @@ private fun RingingRoute(
 ) {
     MaterialTheme(
         colorScheme = androidx.compose.material3.darkColorScheme(
-            primary = Color(0xFFF0C25C),
-            secondary = Color(0xFF7B8FB5),
-            background = Color(0xFF1F1B14),
-            surface = Color(0xFF2A251D),
-            onPrimary = Color(0xFF1F1B14),
-            onSurface = Color(0xFFF0EBE0),
+            primary = Color(0xFFE6A6A1),
+            secondary = Color(0xFFA9C8E8),
+            background = Color(0xFF090A0F),
+            surface = Color(0xFF14161E),
+            onPrimary = Color(0xFF2C1110),
+            onSurface = Color(0xFFF7F7FA),
+            onSurfaceVariant = Color(0xFFA8AEBA),
         ),
     ) {
         Column(
@@ -168,27 +175,46 @@ private fun RingingRoute(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Alarm,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(22.dp))
-            Text(
-                text = "보이스 알람",
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 36.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "알람이 울리는 중",
-                color = Color(0xFFA89F8F),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(24.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Surface(
+                    modifier = Modifier.size(128.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Outlined.Alarm,
+                            contentDescription = null,
+                            modifier = Modifier.size(68.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(28.dp))
+                Text(
+                    text = "좋아하는 목소리로\n일어날 시간이에요",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "오늘의 목소리 알람이 울리고 있어요",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(28.dp))
+                RingingVoiceWaveform()
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -196,20 +222,61 @@ private fun RingingRoute(
                 if (snoozeEnabled) {
                     OutlinedButton(
                         onClick = onSnooze,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(58.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
                     ) {
                         Icon(Icons.Outlined.Snooze, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("다시 울림")
+                        Text("다시 울리기")
                     }
                 }
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(58.dp),
+                    shape = RoundedCornerShape(18.dp),
                 ) {
-                    Text("끄기")
+                    Text("알람 끄기")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RingingVoiceWaveform() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth(0.78f)
+            .height(54.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val levels = listOf(
+            0.16f, 0.28f, 0.22f, 0.42f, 0.30f, 0.64f, 0.44f, 0.86f,
+            0.52f, 0.72f, 0.38f, 0.58f, 0.34f, 0.66f, 0.42f, 0.78f,
+            0.36f, 0.54f, 0.24f, 0.40f, 0.20f,
+        )
+        levels.forEachIndexed { index, level ->
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .height((8 + level * 42).dp)
+                    .background(
+                        color = when (index) {
+                            in 5..15 -> MaterialTheme.colorScheme.primary
+                            16, 17 -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.outlineVariant
+                        },
+                        shape = RoundedCornerShape(999.dp),
+                    ),
+            )
         }
     }
 }

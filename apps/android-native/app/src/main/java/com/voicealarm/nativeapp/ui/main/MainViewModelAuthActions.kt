@@ -27,6 +27,8 @@ import com.voicealarm.nativeapp.network.CodeRegisterRequest
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.EmailVerificationConfirmRequest
+import com.voicealarm.nativeapp.network.EmailVerificationRequest
 import com.voicealarm.nativeapp.network.GoogleLoginRequest
 import com.voicealarm.nativeapp.network.LoginRequest
 import com.voicealarm.nativeapp.network.ReceivedNote
@@ -52,7 +54,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import retrofit2.HttpException
 
 
 internal fun MainViewModel.login(email: String, password: String) {
@@ -73,13 +74,83 @@ internal fun MainViewModel.login(email: String, password: String) {
     }
 }
 
-internal fun MainViewModel.register(email: String, password: String, name: String) {
+internal fun MainViewModel.requestEmailVerification(email: String) {
+    val normalizedEmail = email.trim().lowercase()
+    if (normalizedEmail.isBlank()) {
+        message = "이메일을 입력해 주세요"
+        return
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
-            api.register(RegisterRequest(email = email.trim(), password = password, name = name.trim()))
+            api.requestEmailVerification(EmailVerificationRequest(email = normalizedEmail))
+        }.onSuccess { response ->
+            registerEmailVerificationSentTo = normalizedEmail
+            registerEmailVerified = null
+            message = response.debugCode
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "개발용 인증 코드: $it" }
+                ?: "인증 코드를 보냈어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Email verification request failed", error)
+            message = userFacingError(error, "인증 코드를 보내지 못했어요")
+        }
+        authBusy = false
+    }
+}
+
+internal fun MainViewModel.confirmEmailVerification(email: String, code: String) {
+    val normalizedEmail = email.trim().lowercase()
+    if (normalizedEmail.isBlank() || code.trim().length != 6) {
+        message = "6자리 인증 코드를 입력해 주세요"
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.confirmEmailVerification(
+                EmailVerificationConfirmRequest(
+                    email = normalizedEmail,
+                    code = code.trim(),
+                ),
+            )
+        }.onSuccess {
+            registerEmailVerified = normalizedEmail
+            message = "이메일 인증이 완료됐어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Email verification confirm failed", error)
+            message = userFacingError(error, "인증 코드가 맞지 않아요")
+        }
+        authBusy = false
+    }
+}
+
+internal fun MainViewModel.register(
+    email: String,
+    password: String,
+    name: String,
+    emailVerificationCode: String,
+) {
+    val normalizedEmail = email.trim().lowercase()
+    if (registerEmailVerified != normalizedEmail) {
+        message = "이메일 인증을 먼저 완료해 주세요"
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.register(
+                RegisterRequest(
+                    email = normalizedEmail,
+                    password = password,
+                    name = name.trim(),
+                    emailVerificationCode = emailVerificationCode.trim(),
+                ),
+            )
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            registerEmailVerificationSentTo = null
+            registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = "${response.user.email} 계정을 만들었어요"
@@ -91,7 +162,7 @@ internal fun MainViewModel.register(email: String, password: String, name: Strin
     }
 }
 
-internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email: String, name: String) {
+internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -102,20 +173,8 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String, id: String, email:
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = null
         }.onFailure { error ->
-            if ((error as? HttpException)?.code() == 404) {
-                authSession = authSessionStore.saveLegacyGoogleSession(
-                    idToken = idToken,
-                    id = id,
-                    email = email,
-                    name = name,
-                )
-                RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
-                RemoteAlarmSyncScheduler.runOnce(getApplication())
-                message = null
-            } else {
-                Log.e(TAG, "Google token exchange failed", error)
-                message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
-            }
+            Log.e(TAG, "Google token exchange failed", error)
+            message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
         }
         authBusy = false
     }

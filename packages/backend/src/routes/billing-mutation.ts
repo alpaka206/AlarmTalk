@@ -68,7 +68,7 @@ type FamilyShareCodeResult =
   | { voucher: ShareableVoucherCode }
   | {
       error: {
-        status: 404;
+        status: 404 | 409;
         body: {
           error: string;
           error_code: string;
@@ -306,6 +306,8 @@ billingMutation.post('/vouchers/family-share', async (c) => {
   const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
     const subscriptionRes = await tx.execute({
       sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
+                   pg.id AS plan_group_id, pg.max_members AS group_max_members,
+                   (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = pg.id) AS member_count,
                    p.key AS plan_key, p.name AS plan_name, p.plan_type,
                    p.period_days, p.max_members, p.price_krw
             FROM subscriptions s
@@ -339,7 +341,19 @@ billingMutation.post('/vouchers/family-share', async (c) => {
     const planKey = String(subscription.plan_key);
     const planName = String(subscription.plan_name);
     const planType = String(subscription.plan_type);
-    const maxMembers = Number(subscription.max_members) || 6;
+    const maxMembers = Number(subscription.group_max_members ?? subscription.max_members) || 6;
+    const memberCount = Number(subscription.member_count ?? 0);
+    if (memberCount >= maxMembers) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `Group is full: max ${maxMembers}`,
+            error_code: 'GROUP_FULL',
+          },
+        },
+      };
+    }
     const maxUses = plannedMaxUses(planType, maxMembers);
 
     const existingRes = await tx.execute({

@@ -8,9 +8,11 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -24,12 +26,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -71,9 +76,15 @@ import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private enum class AudioPreviewTarget {
+    SelectedCrop,
+    CachedAudio,
+}
 
 @Composable
 internal fun AlarmEditorScreen(
@@ -106,6 +117,9 @@ internal fun AlarmEditorScreen(
     var cropStartMillis by remember { mutableStateOf(0L) }
     var cropEndMillis by remember { mutableStateOf(AlarmAudioLimits.MAX_DURATION_MILLIS) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
+    var previewPreparing by remember { mutableStateOf(false) }
+    var previewStopJob by remember { mutableStateOf<Job?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
@@ -136,14 +150,99 @@ internal fun AlarmEditorScreen(
         audioMessage = null
     }
 
-    // 가족(상대방) 알람 등록 흐름의 핵심 안내는 카드 안 텍스트만으론 놓치기 쉬워
-    // 토스트로도 함께 띄운다. 알람만/음성만/둘다 모드 전부 동일.
+    // 가족/상대방 알람 등록 흐름의 안내는 카드와 텍스트로만 노출한다.
+    // 토스트로 숨겨진 알림만 의존하지 않고 모든 모드에서 동일하게 확인할 수 있게 한다.
     fun showFamilyAlarmToast(message: String) {
         if (!familyAlarmMode) return
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
+    fun stopPreview() {
+        previewStopJob?.cancel()
+        previewStopJob = null
+        mediaPlayer?.release()
+        mediaPlayer = null
+        previewTarget = null
+        previewPreparing = false
+    }
+
+    fun startPreparedPreview(
+        uri: Uri,
+        target: AudioPreviewTarget,
+        startMillis: Long = 0L,
+        stopAfterMillis: Long? = null,
+    ) {
+        if (previewTarget == target && mediaPlayer != null) {
+            stopPreview()
+            return
+        }
+        stopPreview()
+        previewTarget = target
+        previewPreparing = true
+
+        val player = MediaPlayer()
+        mediaPlayer = player
+        runCatching {
+            player.setDataSource(context, uri)
+            player.setOnPreparedListener { preparedPlayer ->
+                if (mediaPlayer !== preparedPlayer) {
+                    preparedPlayer.release()
+                    return@setOnPreparedListener
+                }
+                runCatching {
+                    fun scheduleAutoStop() {
+                        val duration = stopAfterMillis ?: return
+                        previewStopJob?.cancel()
+                        previewStopJob = scope.launch {
+                            delay(duration.coerceAtLeast(1L))
+                            if (mediaPlayer === preparedPlayer) stopPreview()
+                        }
+                    }
+
+                    fun startFromPreparedPosition() {
+                        if (mediaPlayer !== preparedPlayer) return
+                        previewPreparing = false
+                        preparedPlayer.start()
+                        scheduleAutoStop()
+                    }
+
+                    if (startMillis > 0L) {
+                        preparedPlayer.setOnSeekCompleteListener { seekedPlayer ->
+                            seekedPlayer.setOnSeekCompleteListener(null)
+                            if (mediaPlayer === seekedPlayer) {
+                                startFromPreparedPosition()
+                            }
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            preparedPlayer.seekTo(startMillis, MediaPlayer.SEEK_CLOSEST)
+                        } else {
+                            preparedPlayer.seekTo(startMillis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                        }
+                    } else {
+                        startFromPreparedPosition()
+                    }
+                }.onFailure { error ->
+                    Log.e(TAG, "Failed to start alarm audio preview", error)
+                    stopPreview()
+                }
+            }
+            player.setOnCompletionListener { completedPlayer ->
+                if (mediaPlayer === completedPlayer) stopPreview() else completedPlayer.release()
+            }
+            player.setOnErrorListener { errorPlayer, what, extra ->
+                Log.e(TAG, "Alarm audio preview error what=$what extra=$extra")
+                if (mediaPlayer === errorPlayer) stopPreview() else errorPlayer.release()
+                true
+            }
+            player.prepareAsync()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to prepare alarm audio preview", error)
+            stopPreview()
+        }
+    }
+
     fun prepareSelectedAudio(uri: Uri) {
+        stopPreview()
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
@@ -158,13 +257,13 @@ internal fun AlarmEditorScreen(
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache selected audio", error)
-                    audioMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요")
+                    audioMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요.")
                 }
         }
     }
 
     suspend fun cacheSelectedCrop(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요")
+        val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요.")
         val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {
             audioStore.cacheFromUri(
@@ -176,42 +275,23 @@ internal fun AlarmEditorScreen(
     }
 
     fun playSelectedCrop() {
-        scope.launch {
-            runCatching {
-                cacheSelectedCrop()
-            }.onSuccess { audio ->
-                mediaPlayer?.release()
-                mediaPlayer = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))?.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to play cropped alarm audio", error)
-                audioMessage = userFacingError(error, "선택한 구간을 재생하지 못했어요")
-            }
-        }
+        val uri = selectedFileUri ?: return
+        val previewDurationMillis = (cropEndMillis - cropStartMillis)
+            .coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
+        startPreparedPreview(
+            uri = uri,
+            target = AudioPreviewTarget.SelectedCrop,
+            startMillis = cropStartMillis,
+            stopAfterMillis = previewDurationMillis,
+        )
     }
 
     fun playCachedAudio() {
         val audioUri = editor.localAudioUri ?: return
-        runCatching {
-            mediaPlayer?.release()
-            val player = MediaPlayer.create(context, Uri.parse(audioUri))
-                ?: throw IllegalStateException("음성을 재생할 수 없어요")
-            mediaPlayer = player.apply {
-                setOnCompletionListener {
-                    it.release()
-                    if (mediaPlayer === it) mediaPlayer = null
-                }
-                start()
-            }
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to play cached alarm audio", error)
-            audioMessage = userFacingError(error, "음성을 재생하지 못했어요")
-        }
+        startPreparedPreview(
+            uri = Uri.parse(audioUri),
+            target = AudioPreviewTarget.CachedAudio,
+        )
     }
 
     fun submitDraft(draft: AlarmDraft) {
@@ -221,10 +301,10 @@ internal fun AlarmEditorScreen(
         }
         val recipient = selectedFamilyRecipient()
         if (recipient == null) {
-            audioMessage = "알람을 받을 사람을 선택해 주세요"
+            audioMessage = "알람을 받을 사람을 선택해 주세요."
             return
         }
-        showFamilyAlarmToast("상대방 알람을 등록했어요")
+        showFamilyAlarmToast("상대방 알람을 등록했어요.")
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -246,12 +326,13 @@ internal fun AlarmEditorScreen(
             }.onFailure { error ->
                 isRecording = false
                 Log.e(TAG, "Failed to stop recording", error)
-                audioMessage = userFacingError(error, "녹음에 실패했어요")
+                audioMessage = userFacingError(error, "녹음에 실패했어요.")
             }
         }
     }
 
     fun startRecording() {
+        stopPreview()
         runCatching {
             recorder.start(maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS)
             isRecording = true
@@ -260,7 +341,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "녹음 중..."
         }.onFailure { error ->
             Log.e(TAG, "Failed to start recording", error)
-            audioMessage = userFacingError(error, "녹음을 시작할 수 없어요")
+            audioMessage = userFacingError(error, "녹음을 시작할 수 없어요.")
         }
     }
 
@@ -285,7 +366,7 @@ internal fun AlarmEditorScreen(
                 return
             }
             if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
-                val message = "상대가 받지 않도록 설정한 시간이에요."
+                val message = "상대가 받을 수 없는 시간이에요."
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -307,32 +388,40 @@ internal fun AlarmEditorScreen(
                         submitDraft(editor.toDraft())
                     }.onFailure { error ->
                         Log.e(TAG, "Failed to cache cropped local alarm audio", error)
-                        audioMessage = userFacingError(error, "선택한 구간을 저장하지 못했어요")
+                        audioMessage = userFacingError(error, "선택한 구간을 저장하지 못했어요.")
                     }
                     isSaving = false
                 }
                 return
             }
             if (editor.localAudioUri.isNullOrBlank()) {
-                audioMessage = "녹음하거나 파일을 선택해 주세요"
+                audioMessage = "녹음하거나 파일을 선택해 주세요."
                 return
             }
             submitDraft(editor.toDraft())
             return
         }
         if (authSession == null) {
-            audioMessage = "음성 메시지는 로그인 후 사용할 수 있어요"
+            audioMessage = "음성 메시지는 로그인 후 사용할 수 있어요."
             return
         }
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
-            audioMessage = "사용할 음성 프로필을 선택해 주세요"
+            audioMessage = "사용할 음성 프로필을 선택해 주세요."
             return
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank()) {
-            audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요"
+            audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요."
+            return
+        }
+        val usableProfileIds = (
+            voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+                familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+            ).toSet()
+        if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
+            audioMessage = "삭제된 음성 프로필이라 문구를 수정할 수 없어요. 다른 음성 프로필을 선택해 주세요."
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
@@ -342,7 +431,7 @@ internal fun AlarmEditorScreen(
         val localTtsCacheKey = AlarmAudioStore.ttsCacheKey(
             profileId = profileId,
             text = text,
-            category = editor.voiceCategory,
+            category = editor.activeVoiceCategory(),
             language = editor.activeVoiceLanguage(),
         )
         audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
@@ -353,7 +442,7 @@ internal fun AlarmEditorScreen(
                 messageId = cached.messageId ?: editor.ttsMessageId ?: "",
                 rawAudioUri = cached.rawAudioUri,
             )
-            audioMessage = "기존 음성 캐시를 사용했어요"
+            audioMessage = "기존 음성 캐시를 사용했어요."
             submitDraft(editor.toDraft())
             return
         }
@@ -367,9 +456,9 @@ internal fun AlarmEditorScreen(
                     TtsGenerateRequest(
                         voiceProfileId = profileId,
                         text = text,
-                        category = editor.voiceCategory,
+                        category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
-                        translate = editor.voiceTranslationEnabled,
+                        translate = editor.shouldTranslateVoiceText(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -377,7 +466,7 @@ internal fun AlarmEditorScreen(
                 val cacheKey = AlarmAudioStore.ttsCacheKey(
                     profileId = profileId,
                     text = response.text,
-                    category = editor.voiceCategory,
+                    category = editor.activeVoiceCategory(),
                     language = editor.activeVoiceLanguage(),
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
@@ -396,11 +485,11 @@ internal fun AlarmEditorScreen(
                     messageId = response.messageId,
                     rawAudioUri = rawAudioUri,
                 )
-                audioMessage = "생성한 음성을 로컬에 저장했어요"
+                audioMessage = "생성한 음성을 로컬에 저장했어요."
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
-                audioMessage = userFacingError(error, "음성 생성에 실패했어요")
+                audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
             }
             isSaving = false
         }
@@ -413,7 +502,7 @@ internal fun AlarmEditorScreen(
         if (granted) {
             startRecording()
         } else {
-            audioMessage = "마이크 권한이 필요해요"
+            audioMessage = "마이크 권한이 필요해요."
         }
     }
 
@@ -437,208 +526,339 @@ internal fun AlarmEditorScreen(
     DisposableEffect(Unit) {
         onDispose {
             if (recorder.isRecording) recorder.cancel()
-            mediaPlayer?.release()
+            stopPreview()
         }
     }
 
     val editorHorizontalPadding = 24.dp
+    val editorBottomPadding = 12.dp
+    var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
 
-    LazyColumn(
+    BackHandler(enabled = settingsDetailPanel != null) {
+        settingsDetailPanel = null
+    }
+
+    LaunchedEffect(editor.playMode, editor.voiceRandomPrompt) {
+        if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
+            settingsDetailPanel = null
+        }
+        if (!editor.voiceRandomPrompt && settingsDetailPanel == "random_prompt") {
+            settingsDetailPanel = null
+        }
+        if (
+            (editor.voiceRandomPrompt || !editor.voiceTranslationEnabled) &&
+            settingsDetailPanel == "voice_translation"
+        ) {
+            settingsDetailPanel = null
+        }
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
-        contentPadding = PaddingValues(bottom = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        item {
-            AlarmTimePickerCard(
-                hour = editor.hour,
-                minute = editor.minute,
-                onTimeChange = { selectedHour, selectedMinute ->
-                    editor.hour = selectedHour
-                    editor.minute = selectedMinute
-                },
-                modifier = Modifier.fillParentMaxWidth(),
+        Column(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            AlarmEditorTopBar(
+                isEditing = alarm != null,
+                familyAlarmMode = familyAlarmMode,
+                onCancel = onCancel,
             )
-        }
-
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                OutlinedTextField(
-                    value = editor.label,
-                    onValueChange = { editor.label = it },
-                    placeholder = { Text("알람 이름") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        if (familyAlarmMode) {
-            item {
-                Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                    FamilyAlarmTargetCard(
-                        recipients = familyRecipients,
-                        selectedRecipientId = selectedFamilyRecipientId,
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentPadding = PaddingValues(top = 8.dp, bottom = editorBottomPadding),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item {
+                    AlarmTimePickerCard(
                         hour = editor.hour,
                         minute = editor.minute,
-                        repeatDaysMask = editor.repeatDaysMask,
-                        holidayOff = editor.holidayOff,
-                        onSelectRecipient = { selectedFamilyRecipientId = it },
+                        onTimeChange = { selectedHour, selectedMinute ->
+                            editor.hour = selectedHour
+                            editor.minute = selectedMinute
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-            }
-        }
 
-        item {
-            Column(
-                modifier = Modifier.padding(horizontal = editorHorizontalPadding),
-            ) {
-                RepeatSelector(
-                    repeatDaysMask = editor.repeatDaysMask,
-                    holidayOff = editor.holidayOff,
-                    onToggleDay = { dayIndex ->
-                        editor.repeatDaysMask = editor.repeatDaysMask xor (1 shl dayIndex)
-                    },
-                    onHolidayOffChange = { editor.holidayOff = it },
-                )
-            }
-        }
-
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                PlayModeSelector(
-                    selected = editor.playMode,
-                    onSelect = { selectedMode ->
-                        val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
-                        editor.playMode = selectedMode
-                        if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
-                            editor.voiceSource = VoiceSources.LOCAL_AUDIO
-                            editor.clearTtsMeta()
-                        } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
-                            editor.voiceSource = VoiceSources.TTS_PROFILE
-                            editor.clearTtsMeta()
-                        }
-                    },
-                )
-            }
-        }
-
-        if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
-            item {
-                Column(
-                    modifier = Modifier.padding(horizontal = editorHorizontalPadding),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    EditorSectionTitle("음성")
-                    VoiceAudioCard(
-                        editor = editor,
-                        voiceProfiles = voiceProfiles,
-                        familyVoices = familyVoices,
-                        voiceProfileBusy = voiceProfileBusy,
-                        audioMessage = audioMessage,
-                        localInputMode = localInputMode,
-                        isRecording = isRecording,
-                        recordingElapsedMillis = recordingElapsedMillis,
-                        recordingLevels = recordingLevels,
-                        selectedFileDurationMillis = selectedFileDurationMillis,
-                        cropStartMillis = cropStartMillis,
-                        cropEndMillis = cropEndMillis,
-                        onLocalInputModeChange = { mode ->
-                            if (!isRecording && mode != localInputMode) {
-                                mediaPlayer?.release()
-                                mediaPlayer = null
-                                if (mode == VoiceCaptureMode.File) {
-                                    editor.clearAudio()
-                                } else {
-                                    selectedFileUri = null
-                                    selectedFileDurationMillis = null
-                                    cropStartMillis = 0L
-                                    cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
-                                }
-                                audioMessage = null
-                                localInputMode = mode
-                            }
-                        },
-                        onPick = { pickAudioLauncher.launch("audio/*") },
-                        onRecord = {
-                            if (isRecording) {
-                                stopRecording()
-                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                PackageManager.PERMISSION_GRANTED
-                            ) {
-                                startRecording()
-                            } else {
-                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                            }
-                        },
-                        onCropChange = { start, end ->
-                            cropStartMillis = start
-                            cropEndMillis = end
-                            editor.clearAudio()
-                        },
-                        onPreviewCrop = { playSelectedCrop() },
-                        onPreviewAudio = { playCachedAudio() },
-                        onClear = {
-                            editor.clearAudio()
-                            selectedFileUri = null
-                            selectedFileDurationMillis = null
-                            audioMessage = "음성 오디오를 지웠어요"
-                        },
-                    )
-                }
-            }
-        }
-
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                AlarmSettingsCard(
-                    snoozeEnabled = editor.snoozeEnabled,
-                    snoozeMinutes = editor.snoozeMinutes,
-                    snoozeRepeatLimit = editor.snoozeRepeatLimit,
-                    vibrationPattern = editor.vibrationPattern,
-                    alarmVolumePercent = editor.alarmVolumePercent,
-                    alarmSoundLabel = editor.alarmSoundLabel,
-                    onSnoozeEnabledChange = { editor.snoozeEnabled = it },
-                    onSnoozeMinutesChange = { editor.snoozeMinutes = it },
-                    onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
-                    onVibrationEnabledChange = {
-                        editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
-                    },
-                    onVibrationSelect = { editor.vibrationPattern = it },
-                    onAlarmVolumeChange = { editor.alarmVolumePercent = it },
-                    onPickAlarmSound = {
-                        ringtonePickerLauncher.launch(
-                            Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람 소리 선택")
-                                val current = editor.alarmSoundUri?.let(Uri::parse)
-                                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                item {
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        ScheduleDetailsCard(
+                            hour = editor.hour,
+                            minute = editor.minute,
+                            repeatDaysMask = editor.repeatDaysMask,
+                            holidayOff = editor.holidayOff,
+                            label = editor.label,
+                            onLabelChange = { editor.label = it },
+                            onToggleDay = { dayIndex ->
+                                val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
+                                editor.repeatDaysMask = nextMask
+                                if (nextMask == 0) editor.holidayOff = false
+                            },
+                            onHolidayOffChange = { enabled ->
+                                if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
                             },
                         )
-                    },
-                    onUseDefaultAlarmSound = {
-                        editor.alarmSoundUri = null
-                        editor.alarmSoundLabel = null
-                        if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
-                    },
-                )
+                    }
+                }
+
+                if (familyAlarmMode) {
+                    item {
+                        Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                            FamilyAlarmTargetCard(
+                                recipients = familyRecipients,
+                                selectedRecipientId = selectedFamilyRecipientId,
+                                hour = editor.hour,
+                                minute = editor.minute,
+                                repeatDaysMask = editor.repeatDaysMask,
+                                holidayOff = editor.holidayOff,
+                                onSelectRecipient = { selectedFamilyRecipientId = it },
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        PlayModeCard(
+                            selected = editor.playMode,
+                            onSelect = { selectedMode ->
+                                val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
+                                editor.playMode = selectedMode
+                                if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
+                                    editor.voiceSource = VoiceSources.LOCAL_AUDIO
+                                    editor.clearTtsMeta()
+                                } else if (selectedMode != AlarmPlayModes.ALARM_ONLY && wasAlarmOnly) {
+                                    editor.voiceSource = VoiceSources.TTS_PROFILE
+                                    editor.clearTtsMeta()
+                                }
+                            },
+                        )
+                    }
+                }
+
+                if (editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+                    item {
+                        Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                            VoiceAudioCard(
+                                editor = editor,
+                                voiceProfiles = voiceProfiles,
+                                familyVoices = familyVoices,
+                                voiceProfileBusy = voiceProfileBusy,
+                                audioMessage = audioMessage,
+                                localInputMode = localInputMode,
+                                isRecording = isRecording,
+                                recordingElapsedMillis = recordingElapsedMillis,
+                                recordingLevels = recordingLevels,
+                                selectedFileDurationMillis = selectedFileDurationMillis,
+                                cropStartMillis = cropStartMillis,
+                                cropEndMillis = cropEndMillis,
+                                isCropPreviewActive = previewTarget == AudioPreviewTarget.SelectedCrop,
+                                isCachedAudioPreviewActive = previewTarget == AudioPreviewTarget.CachedAudio,
+                                isPreviewPreparing = previewPreparing,
+                                onLocalInputModeChange = { mode ->
+                                    if (!isRecording && mode != localInputMode) {
+                                        stopPreview()
+                                        if (mode == VoiceCaptureMode.File) {
+                                            editor.clearAudio()
+                                        } else {
+                                            selectedFileUri = null
+                                            selectedFileDurationMillis = null
+                                            cropStartMillis = 0L
+                                            cropEndMillis = AlarmAudioLimits.MAX_DURATION_MILLIS
+                                        }
+                                        audioMessage = null
+                                        localInputMode = mode
+                                    }
+                                },
+                                onPick = { pickAudioLauncher.launch("audio/*") },
+                                onRecord = {
+                                    if (isRecording) {
+                                        stopRecording()
+                                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                        PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        startRecording()
+                                    } else {
+                                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                },
+                                onCropChange = { start, end ->
+                                    stopPreview()
+                                    cropStartMillis = start
+                                    cropEndMillis = end
+                                    editor.clearAudio()
+                                },
+                                onPreviewCrop = { playSelectedCrop() },
+                                onPreviewAudio = { playCachedAudio() },
+                                onOpenRandomPromptSettings = { settingsDetailPanel = "random_prompt" },
+                                onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
+                                onClear = {
+                                    stopPreview()
+                                    editor.clearAudio()
+                                    selectedFileUri = null
+                                    selectedFileDurationMillis = null
+                                    audioMessage = "음성 오디오를 지웠어요."
+                                },
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                        AlarmSettingsCard(
+                            snoozeEnabled = editor.snoozeEnabled,
+                            snoozeMinutes = editor.snoozeMinutes,
+                            snoozeRepeatLimit = editor.snoozeRepeatLimit,
+                            vibrationPattern = editor.vibrationPattern,
+                            alarmVolumePercent = editor.alarmVolumePercent,
+                            alarmSoundLabel = editor.alarmSoundLabel,
+                            showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
+                            onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                            onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                            onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
+                            onVibrationEnabledChange = {
+                                editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                            },
+                            onVibrationSelect = { editor.vibrationPattern = it },
+                            onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                            onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
+                            onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
+                            onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Column {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    Box(
+                        modifier = Modifier.padding(
+                            start = 16.dp,
+                            end = 16.dp,
+                            top = 10.dp,
+                            bottom = 10.dp,
+                        ),
+                    ) {
+                        EditorActionButtons(
+                            isEditing = alarm != null,
+                            isSaving = isSaving,
+                            onSave = ::saveEditor,
+                        )
+                    }
+                }
             }
         }
 
-        item {
-            Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
-                EditorActionButtons(
-                    isEditing = alarm != null,
-                    isSaving = isSaving,
-                    onCancel = onCancel,
-                    onSave = ::saveEditor,
-                )
-            }
+        when (settingsDetailPanel) {
+            "snooze" -> SnoozeSettingsPane(
+                snoozeEnabled = editor.snoozeEnabled,
+                snoozeMinutes = editor.snoozeMinutes,
+                snoozeRepeatLimit = editor.snoozeRepeatLimit,
+                onDismiss = { settingsDetailPanel = null },
+                onSnoozeEnabledChange = { editor.snoozeEnabled = it },
+                onSnoozeMinutesChange = { editor.snoozeMinutes = it },
+                onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
+            )
+
+            "vibration" -> VibrationSettingsPane(
+                vibrationPattern = editor.vibrationPattern,
+                onDismiss = { settingsDetailPanel = null },
+                onVibrationEnabledChange = {
+                    editor.vibrationPattern = if (it) VibrationPatterns.DEFAULT else VibrationPatterns.NONE
+                },
+                onVibrationSelect = { editor.vibrationPattern = it },
+            )
+
+            "sound" -> AlarmSoundSettingsPane(
+                alarmVolumePercent = editor.alarmVolumePercent,
+                alarmSoundLabel = editor.alarmSoundLabel,
+                onDismiss = { settingsDetailPanel = null },
+                onAlarmVolumeChange = { editor.alarmVolumePercent = it },
+                onPickAlarmSound = {
+                    ringtonePickerLauncher.launch(
+                        Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람음 선택")
+                            val current = editor.alarmSoundUri?.let(Uri::parse)
+                                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
+                        },
+                    )
+                },
+            )
+
+            "random_prompt" -> RandomPromptSettingsPane(
+                voiceCategory = editor.voiceCategory,
+                voiceLanguage = editor.voiceLanguage,
+                onDismiss = { settingsDetailPanel = null },
+                onCategoryChange = {
+                    editor.voiceCategory = it
+                    editor.voiceText = ""
+                    editor.clearTtsMeta()
+                },
+                onLanguageChange = {
+                    editor.voiceLanguage = it
+                    editor.voiceText = ""
+                    editor.clearTtsMeta()
+                },
+            )
+
+            "voice_translation" -> VoiceTranslationSettingsPane(
+                voiceLanguage = editor.voiceLanguage,
+                onDismiss = { settingsDetailPanel = null },
+                onLanguageChange = {
+                    editor.voiceLanguage = it
+                    editor.clearTtsMeta()
+                },
+            )
         }
+    }
+}
+
+
+@Composable
+private fun AlarmEditorTopBar(
+    isEditing: Boolean,
+    familyAlarmMode: Boolean,
+    onCancel: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, top = 4.dp, end = 20.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onCancel) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = "닫기",
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = when {
+                familyAlarmMode -> "함께 울릴 알람"
+                isEditing -> "알람 수정"
+                else -> "새 알람"
+            },
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+        )
     }
 }
 
@@ -733,7 +953,7 @@ internal fun FamilyAlarmTargetCard(
                 )
 
                 if (recipients.size == 1) {
-                    MutedText("수신자는 한 명이라 바로 이 사람에게 설정돼요.")
+                    MutedText("수신자는 한 명이고 바로 그 사람에게 설정돼요.")
                 }
             }
         }
@@ -848,7 +1068,7 @@ private fun FamilyAlarmTargetStatus(
     val blocked = leadTooSoon || quietUnavailable
     val statusText = when {
         leadTooSoon -> "30분 뒤부터 설정할 수 있어요."
-        quietUnavailable -> "이 시간은 상대가 받지 않도록 설정한 시간이에요."
+        quietUnavailable -> "이 시간은 상대가 받을 수 없는 시간이에요."
         else -> "설정 가능"
     }
     Surface(
@@ -879,7 +1099,7 @@ private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 private fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
         RingtoneManager.getRingtone(context, uri)?.getTitle(context)
-    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람음"
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람"
 
 internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }
@@ -997,7 +1217,7 @@ private fun quietDaysLabelForFamily(days: List<Int>): String {
     val sorted = days.distinct().sorted()
     return when (sorted) {
         emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "월-금"
+        listOf(1, 2, 3, 4, 5) -> "평일"
         listOf(0, 6) -> "주말"
         listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
         else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }

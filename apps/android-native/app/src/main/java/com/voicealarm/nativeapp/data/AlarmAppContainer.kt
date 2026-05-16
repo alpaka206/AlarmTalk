@@ -12,6 +12,7 @@ object AlarmAppContainer {
             repository ?: AlarmRepository(
                 alarmDao = AlarmDatabase.getInstance(context).alarmDao(),
                 characterEventDao = AlarmDatabase.getInstance(context).characterEventDao(),
+                holidayCalendarStore = HolidayCalendarStore(AlarmDatabase.getInstance(context).holidayDao()),
                 alarmScheduler = AlarmScheduler(context.applicationContext),
                 alarmAudioStore = AlarmAudioStore(context.applicationContext),
                 context = context.applicationContext,

@@ -9,10 +9,10 @@ import {
 } from '../src/lib/xpRules';
 
 describe('computeXpForEvent', () => {
-  it('alarm_completed=10, alarm_snoozed=5, alarm_dismissed=0', () => {
-    expect(computeXpForEvent('alarm_completed')).toBe(10);
-    expect(computeXpForEvent('alarm_snoozed')).toBe(5);
-    expect(computeXpForEvent('alarm_dismissed')).toBe(0);
+  it('alarm_completed=5, alarm_snoozed=-5, alarm_dismissed=-5', () => {
+    expect(computeXpForEvent('alarm_completed')).toBe(5);
+    expect(computeXpForEvent('alarm_snoozed')).toBe(-5);
+    expect(computeXpForEvent('alarm_dismissed')).toBe(-5);
   });
 
   it('family_alarm_received=10, friend_invited=50', () => {
@@ -88,8 +88,8 @@ describe('applyDailyXpCap', () => {
     });
   });
 
-  it('음수·NaN earned 방어', () => {
-    expect(applyDailyXpCap(-10, 0).grantedXp).toBe(0);
+  it('음수 earned 는 캡과 무관하게 차감 후보로 반환하고 NaN 은 0 처리', () => {
+    expect(applyDailyXpCap(-10, 0).grantedXp).toBe(-10);
     expect(applyDailyXpCap(Number.NaN, 0).grantedXp).toBe(0);
   });
 
@@ -115,24 +115,24 @@ describe('applyDailyXpCap', () => {
 });
 
 describe('computeGrant', () => {
-  it('여유 내 alarm_completed → xp 10 + 애정도 2', () => {
+  it('여유 내 alarm_completed → xp 5 + 애정도 2', () => {
     const r = computeGrant('alarm_completed', 0);
     expect(r.event).toBe('alarm_completed');
-    expect(r.xp.grantedXp).toBe(10);
+    expect(r.xp.grantedXp).toBe(5);
     expect(r.xp.capped).toBe(false);
     expect(r.affection).toBe(2);
   });
 
-  it('캡 초과되어 일부만 지급돼도 애정도는 온전히 유지', () => {
+  it('캡에 정확히 도달해도 애정도는 온전히 유지', () => {
     const r = computeGrant('alarm_completed', 195);
     expect(r.xp.grantedXp).toBe(5);
-    expect(r.xp.capped).toBe(true);
+    expect(r.xp.capped).toBe(false);
     expect(r.affection).toBe(2);
   });
 
-  it('강제 종료는 XP·애정도 모두 0', () => {
+  it('강제 종료는 XP -5, 애정도 0', () => {
     const r = computeGrant('alarm_dismissed', 0);
-    expect(r.xp.grantedXp).toBe(0);
+    expect(r.xp.grantedXp).toBe(-5);
     expect(r.affection).toBe(0);
   });
 

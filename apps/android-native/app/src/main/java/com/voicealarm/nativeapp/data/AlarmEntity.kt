@@ -2,6 +2,7 @@ package com.voicealarm.nativeapp.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import java.time.LocalDate
 
 @Entity(tableName = "alarms")
 data class AlarmEntity(
@@ -27,6 +28,8 @@ data class AlarmEntity(
     val voiceText: String?,
     val voiceCategory: String?,
     val voiceLanguage: String?,
+    val voiceRandomPrompt: Boolean,
+    val voiceRepeat: Boolean,
     val ttsMessageId: String?,
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
@@ -67,9 +70,81 @@ object AlarmOrigins {
 object VibrationPatterns {
     const val DEFAULT = "default"
     const val STRONG = "strong"
+    const val SHORT = "short"
+    const val MEDIUM = "medium"
+    const val HEARTBEAT = "heartbeat"
+    const val TICKTOCK = "ticktock"
+    const val WALTZ = "waltz"
+    const val ZIGZAG = "zigzag"
+    const val OFF_BEAT = "off_beat"
+    const val RIPPLE = "ripple"
+    const val SIREN = "siren"
     const val NONE = "none"
 
-    val all = listOf(DEFAULT, STRONG, NONE)
+    val all = listOf(
+        DEFAULT,
+        STRONG,
+        SHORT,
+        MEDIUM,
+        HEARTBEAT,
+        TICKTOCK,
+        WALTZ,
+        ZIGZAG,
+        OFF_BEAT,
+        RIPPLE,
+        SIREN,
+        NONE,
+    )
+}
+
+object VibrationPatternLibrary {
+    fun waveform(patternName: String): LongArray =
+        when (patternName) {
+            VibrationPatterns.STRONG -> longArrayOf(0L, 1_000L, 240L, 1_000L, 240L)
+            VibrationPatterns.SHORT -> longArrayOf(0L, 260L, 520L)
+            VibrationPatterns.MEDIUM -> longArrayOf(0L, 560L, 420L)
+            VibrationPatterns.HEARTBEAT -> longArrayOf(0L, 120L, 120L, 240L, 580L)
+            VibrationPatterns.TICKTOCK -> longArrayOf(0L, 90L, 210L, 90L, 620L)
+            VibrationPatterns.WALTZ -> longArrayOf(0L, 280L, 140L, 150L, 140L, 150L, 620L)
+            VibrationPatterns.ZIGZAG -> longArrayOf(0L, 110L, 100L, 180L, 100L, 280L, 520L)
+            VibrationPatterns.OFF_BEAT -> longArrayOf(0L, 80L, 260L, 240L, 150L, 110L, 560L)
+            VibrationPatterns.RIPPLE -> longArrayOf(0L, 90L, 110L, 160L, 130L, 260L, 620L)
+            VibrationPatterns.SIREN -> longArrayOf(0L, 240L, 110L, 240L, 110L, 520L, 360L)
+            else -> longArrayOf(0L, 700L, 350L, 900L)
+        }
+}
+
+object HolidaySeedData {
+    fun holidays(countryCode: String, year: Int): List<HolidayDate> =
+        when (countryCode.uppercase()) {
+            "KR" -> koreanHolidaysByYear[year].orEmpty()
+            else -> emptyList()
+        }
+
+    private val koreanHolidaysByYear = mapOf(
+        2026 to listOf(
+            HolidayDate(LocalDate.of(2026, 1, 1), "신정"),
+            HolidayDate(LocalDate.of(2026, 2, 16), "설날 연휴"),
+            HolidayDate(LocalDate.of(2026, 2, 17), "설날"),
+            HolidayDate(LocalDate.of(2026, 2, 18), "설날 연휴"),
+            HolidayDate(LocalDate.of(2026, 3, 1), "삼일절"),
+            HolidayDate(LocalDate.of(2026, 3, 2), "대체공휴일"),
+            HolidayDate(LocalDate.of(2026, 5, 5), "어린이날"),
+            HolidayDate(LocalDate.of(2026, 5, 24), "부처님오신날"),
+            HolidayDate(LocalDate.of(2026, 5, 25), "대체공휴일"),
+            HolidayDate(LocalDate.of(2026, 6, 3), "전국동시지방선거"),
+            HolidayDate(LocalDate.of(2026, 6, 6), "현충일"),
+            HolidayDate(LocalDate.of(2026, 8, 15), "광복절"),
+            HolidayDate(LocalDate.of(2026, 8, 17), "대체공휴일"),
+            HolidayDate(LocalDate.of(2026, 9, 24), "추석 연휴"),
+            HolidayDate(LocalDate.of(2026, 9, 25), "추석"),
+            HolidayDate(LocalDate.of(2026, 9, 26), "추석 연휴"),
+            HolidayDate(LocalDate.of(2026, 10, 3), "개천절"),
+            HolidayDate(LocalDate.of(2026, 10, 5), "대체공휴일"),
+            HolidayDate(LocalDate.of(2026, 10, 9), "한글날"),
+            HolidayDate(LocalDate.of(2026, 12, 25), "기독탄신일"),
+        ),
+    )
 }
 
 object AlarmPlayModes {
@@ -122,6 +197,8 @@ data class AlarmDraft(
     val voiceText: String? = null,
     val voiceCategory: String? = null,
     val voiceLanguage: String? = null,
+    val voiceRandomPrompt: Boolean = false,
+    val voiceRepeat: Boolean = true,
     val ttsMessageId: String? = null,
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,

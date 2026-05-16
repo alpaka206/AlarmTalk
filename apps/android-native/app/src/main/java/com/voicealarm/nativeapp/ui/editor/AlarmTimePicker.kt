@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,13 +51,13 @@ internal fun AlarmTimePickerCard(
     modifier: Modifier = Modifier,
 ) {
     val currentOnTimeChange by rememberUpdatedState(onTimeChange)
-    val itemHeight = 88.dp
-    val verticalWheelPadding = 44.dp
+    val itemHeight = 72.dp
+    val verticalWheelPadding = 24.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
-    val wheelBackgroundColor = Color(0xFF050505)
-    val selectedTextColor = Color.White
-    val unselectedTextColor = Color.White
+    val wheelBackgroundColor = MaterialTheme.colorScheme.primaryContainer
+    val selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+    val unselectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer
 
     LaunchedEffect(hour, minute) {
         workingHour = hour
@@ -78,10 +77,7 @@ internal fun AlarmTimePickerCard(
 
     fun applyMinuteSteps(steps: Int) {
         if (steps == 0) return
-        val totalMinutes = floorMod(workingHour * 60 + workingMinute + steps, 24 * 60)
-        val nextHour = totalMinutes / 60
-        val nextMinute = totalMinutes % 60
-        commitTime(nextHour, nextMinute)
+        commitTime(workingHour, floorMod(workingMinute + steps, 60))
     }
 
     Column(
@@ -90,15 +86,18 @@ internal fun AlarmTimePickerCard(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            shape = RoundedCornerShape(34.dp),
             color = wheelBackgroundColor,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(itemHeight * 3 + verticalWheelPadding * 2)
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                    .padding(horizontal = 22.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 AmPmWheelColumn(
@@ -123,7 +122,7 @@ internal fun AlarmTimePickerCard(
                 )
                 Box(
                     modifier = Modifier
-                        .width(24.dp)
+                        .width(36.dp)
                         .height(itemHeight * 3),
                     contentAlignment = Alignment.Center,
                 ) {

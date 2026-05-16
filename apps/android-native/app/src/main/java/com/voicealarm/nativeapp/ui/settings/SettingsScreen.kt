@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -45,8 +45,11 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
+    permissions: PermissionSnapshot,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
+    onRequestPermission: (PermissionTarget) -> Unit,
+    onRequestAllPermissions: () -> Unit,
     onEditNickname: () -> Unit,
     onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
     onLogout: () -> Unit,
@@ -89,6 +92,14 @@ internal fun SettingsScreen(
                     onClick = { showThemeDialog = true },
                 )
             }
+        }
+
+        item {
+            PermissionPanel(
+                permissions = permissions,
+                onRequestPermission = onRequestPermission,
+                onRequestAllPermissions = onRequestAllPermissions,
+            )
         }
 
         if (authSession != null) {
@@ -287,12 +298,15 @@ private fun FamilyAlarmQuietTimeDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    text = "선택한 시간에는 다른 사람이 내 알람을 만들 수 없어요.",
+                    text = "선택한 시간에는 다른 사람이 알람을 만들 수 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 drafts.forEachIndexed { draftIndex, draft ->
-                    OutlinedCard {
+                    OutlinedCard(
+                        shape = VocaWakeCardShape,
+                        border = vocaWakeCardBorder(),
+                    ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -384,6 +398,7 @@ private fun FamilyAlarmQuietTimeDialog(
                     },
                     enabled = drafts.size < 8,
                     modifier = Modifier.fillMaxWidth(),
+                    shape = VocaWakeButtonShape,
                 ) {
                     Text("시간 추가")
                 }
@@ -419,6 +434,8 @@ private fun TimePartField(
         label = { Text(label) },
         singleLine = true,
         isError = isError,
+        shape = VocaWakeInputShape,
+        colors = vocaWakeOutlinedTextFieldColors(),
         modifier = modifier,
     )
 }
@@ -480,7 +497,7 @@ private fun quietDaysLabel(days: List<Int>): String {
     val sorted = days.distinct().sorted()
     return when (sorted) {
         emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "월-금"
+        listOf(1, 2, 3, 4, 5) -> "평일"
         listOf(0, 6) -> "주말"
         listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
         else -> sorted.joinToString(",") { dayLabels()[it] }

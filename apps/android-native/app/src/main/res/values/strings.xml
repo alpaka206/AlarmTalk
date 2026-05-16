@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">보이스 알람</string>
-    <string name="ringing_notification_title">보이스 알람</string>
-    <string name="ringing_notification_text">알람이 울리는 중이에요</string>
+    <string name="app_name">VocaWake</string>
+    <string name="ringing_notification_title">목소리 알람이 울려요</string>
+    <string name="ringing_notification_text">좋아하는 목소리로 일어날 시간이에요</string>
 </resources>

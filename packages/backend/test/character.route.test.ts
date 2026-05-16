@@ -66,17 +66,17 @@ describe('GET /characters/me', () => {
     expect(body.progress.progress_ratio).toBe(0);
   });
 
-  it('캐릭터가 있으면 그대로 반환 + 서버가 XP 로 level/stage 재계산', async () => {
+  it('캐릭터가 있으면 레벨을 내리지 않고 stage만 현재 level 기준으로 보정', async () => {
     mockDB.pushResult([{ id: 'user-pk-2' }]); // resolveUserPk
     mockDB.pushResult([
       {
         id: 'char-2',
         user_id: 'user-pk-2',
         name: '햇살이',
-        level: 999, // 클라이언트가 오염시켰다고 가정
+        level: 999, // 이미 오른 레벨은 XP 감소로 내려가지 않는다
         xp: 500,
         affection: 12,
-        stage: 'seed', // 클라이언트가 오염시켰다고 가정
+        stage: 'seed', // stage가 오래된 값이라고 가정
         created_at: '2026-04-20 10:00:00',
         updated_at: '2026-04-21 09:00:00',
       },
@@ -86,13 +86,12 @@ describe('GET /characters/me', () => {
     const res = await app.request('/characters/me');
     expect(res.status).toBe(200);
     const body = await res.json();
-    // 500 xp → level 3 (100/400 임계 → 3), stage sprout
-    expect(body.character.level).toBe(3);
-    expect(body.character.stage).toBe('sprout');
+    expect(body.character.level).toBe(999);
+    expect(body.character.stage).toBe('bloom');
     expect(body.character.xp).toBe(500);
     expect(body.character.name).toBe('햇살이');
-    expect(body.progress.xp_into_level).toBe(100); // 500 - threshold(3)=400
-    expect(body.progress.xp_to_next_level).toBe(400); // threshold(4)=900 - 500
+    expect(body.progress.xp_into_level).toBe(0);
+    expect(body.progress.xp_to_next_level).toBeGreaterThan(0);
   });
 
   it('생성 SQL 에 user_id·stage·xp 기본값 바인딩', async () => {

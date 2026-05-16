@@ -5,6 +5,7 @@ import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
+import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 
 const voiceProfile = new Hono<AppEnv>();
@@ -138,11 +139,11 @@ voiceProfile.get('/', async (c) => {
 
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ?${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id = ?${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -201,7 +202,10 @@ voiceProfile.get('/family', async (c) => {
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared, u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
-          WHERE vp.user_id IN (${placeholders}) AND vp.status = 'ready' AND COALESCE(vp.is_shared, 0) = 1
+          WHERE vp.user_id IN (${placeholders})
+            AND vp.deleted_at IS NULL
+            AND vp.status = 'ready'
+            AND COALESCE(vp.is_shared, 0) = 1
           ORDER BY vp.created_at DESC`,
     args: memberIds,
   });
@@ -224,7 +228,7 @@ voiceProfile.get('/:id', async (c) => {
   }
 
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
 
@@ -265,7 +269,7 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   const existing = await db.execute({
-    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
   if (existing.rows.length === 0) {
@@ -305,7 +309,7 @@ voiceProfile.post('/clone', async (c) => {
 
   try {
     const profileCount = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ?',
+      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
       args: [userId],
     });
     const count = Number(profileCount.rows[0]!.count);
@@ -393,6 +397,17 @@ voiceProfile.post('/clone', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : 'Unknown error';
 
+    if (isVoiceSlotExhaustedError(detail)) {
+      return c.json(
+        {
+          error: '서비스가 확장중이에요. 잠시만 기다려주세요!',
+          error_code: 'VOICE_SLOT_EXHAUSTED',
+          detail,
+        },
+        503,
+      );
+    }
+
     return c.json(
       {
         error: 'Voice cloning failed',
@@ -403,6 +418,17 @@ voiceProfile.post('/clone', async (c) => {
     );
   }
 });
+
+function isVoiceSlotExhaustedError(detail: string): boolean {
+  const lower = detail.toLowerCase();
+  return (
+    lower.includes('voice_limit_reached') ||
+    lower.includes('max_voice_limit_reached') ||
+    lower.includes('voice_add_edit_counter') ||
+    lower.includes('voice limit') ||
+    lower.includes('voice slot')
+  );
+}
 
 voiceProfile.get('/:id/stats', async (c) => {
   const userId = c.get('userId');
@@ -415,7 +441,7 @@ voiceProfile.get('/:id/stats', async (c) => {
 
   const [profileRes, msgRes, alarmRes] = await Promise.all([
     db.execute({
-      sql: 'SELECT id, name FROM voice_profiles WHERE id = ? AND user_id = ?',
+      sql: 'SELECT id, name FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
       args: [id, userId],
     }),
     db.execute({
@@ -451,7 +477,7 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ?',
+    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
     args: [id, userId],
   });
 
@@ -460,24 +486,6 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const profile = result.rows[0]!;
-
-  const msgCheck = await db.execute({
-    sql: 'SELECT COUNT(*) as cnt FROM messages WHERE voice_profile_id = ?',
-    args: [id],
-  });
-  const msgCount = Number(typedRow<{ cnt: number }>(msgCheck.rows[0]!).cnt ?? 0);
-
-  if (msgCount > 0 && c.req.query('force') !== 'true') {
-    return c.json(
-      {
-        warning: true,
-        error_code: 'VOICE_PROFILE_IN_USE',
-        message_count: msgCount,
-        message: `This voice profile has ${msgCount} message(s). Add ?force=true to delete anyway.`,
-      },
-      409,
-    );
-  }
 
   try {
     if (profile.elevenlabs_voice_id) {
@@ -488,31 +496,55 @@ voiceProfile.delete('/:id', async (c) => {
     // 외부 API 삭제 실패해도 로컬은 삭제 진행
   }
 
-  if (msgCount > 0) {
-    await db.execute({
-      sql: 'DELETE FROM alarms WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM message_library WHERE message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
-      args: [id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM messages WHERE voice_profile_id = ?',
-      args: [id],
-    });
+  const assetsRes = await db.execute({
+    sql: `SELECT audio_object_key FROM generated_audio_assets
+          WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
+    args: [id],
+  });
+  const bucket = c.env?.VOICE_BUCKET;
+  if (bucket && assetsRes.rows.length > 0) {
+    const storage = new R2VoiceStorage(bucket);
+    for (const row of assetsRes.rows) {
+      const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
+      if (!key) continue;
+      try {
+        await storage.delete(key);
+      } catch (err) {
+        // R2 객체 삭제 실패해도 DB 정리는 진행
+        logRouteError(c, err);
+      }
+    }
   }
 
   await db.execute({
-    sql: 'DELETE FROM voice_profiles WHERE id = ?',
+    sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
     args: [id],
   });
 
-  return c.json({ success: true, messages_deleted: msgCount });
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only',
+              voice_profile_id = NULL,
+              raw_audio_url = NULL,
+              raw_audio_duration_ms = NULL
+          WHERE voice_profile_id = ?
+             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
+    args: [id, id],
+  });
+
+  await db.execute({
+    sql: `UPDATE messages SET audio_url = NULL WHERE voice_profile_id = ?`,
+    args: [id],
+  });
+
+  await db.execute({
+    sql: `UPDATE voice_profiles
+          SET deleted_at = datetime('now'), is_shared = 0, updated_at = datetime('now')
+          WHERE id = ?`,
+    args: [id],
+  });
+
+  return c.json({ success: true, deleted: true });
 });
 
 export default voiceProfile;

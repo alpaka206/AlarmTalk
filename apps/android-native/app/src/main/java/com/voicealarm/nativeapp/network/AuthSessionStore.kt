@@ -57,28 +57,6 @@ class AuthSessionStore(context: Context) {
             user = response.user,
         )
 
-    fun saveLegacyGoogleSession(
-        idToken: String,
-        id: String,
-        email: String,
-        name: String,
-    ): AuthSession =
-        save(
-            token = idToken,
-            provider = PROVIDER_GOOGLE,
-            user = AuthUser(
-                id = id,
-                email = email,
-                name = name,
-                plan = "unknown",
-                allowFamilyAlarms = false,
-                familyAlarmQuietDays = listOf(1, 2, 3, 4, 5),
-                familyAlarmQuietStart = "09:00",
-                familyAlarmQuietEnd = "18:30",
-                familyAlarmQuietWindows = listOf(FamilyAlarmQuietWindow()),
-            ),
-        )
-
     fun clear() {
         prefs.edit().clear().apply()
     }

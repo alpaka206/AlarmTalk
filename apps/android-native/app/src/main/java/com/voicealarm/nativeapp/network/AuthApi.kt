@@ -45,6 +45,26 @@ data class RegisterRequest(
     val email: String,
     val password: String,
     val name: String,
+    @SerializedName("email_verification_code") val emailVerificationCode: String,
+)
+
+data class EmailVerificationRequest(
+    val email: String,
+)
+
+data class EmailVerificationResponse(
+    val success: Boolean,
+    @SerializedName("expires_in_seconds") val expiresInSeconds: Int? = null,
+    @SerializedName("debug_code") val debugCode: String? = null,
+)
+
+data class EmailVerificationConfirmRequest(
+    val email: String,
+    val code: String,
+)
+
+data class EmailVerificationConfirmResponse(
+    val success: Boolean,
 )
 
 data class GoogleLoginRequest(
@@ -75,6 +95,14 @@ data class DeleteAccountResponse(
 )
 
 interface AuthApi {
+    @POST("auth/email-code")
+    suspend fun requestEmailVerification(@Body request: EmailVerificationRequest): EmailVerificationResponse
+
+    @POST("auth/email-code/verify")
+    suspend fun confirmEmailVerification(
+        @Body request: EmailVerificationConfirmRequest,
+    ): EmailVerificationConfirmResponse
+
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthTokenResponse
 

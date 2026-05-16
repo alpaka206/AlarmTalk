@@ -38,10 +38,10 @@ internal fun AlarmsHeader(
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "알람",
+            text = "목소리 알람",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -60,7 +60,7 @@ internal fun AlarmsHeader(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("추가")
+                Text("만들기")
             }
             profileMenu?.invoke()
         }
@@ -120,12 +120,12 @@ internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
                 modifier = Modifier.size(44.dp),
             )
             Text(
-                text = "알람이 없어요",
+                text = "아직 알람이 없어요.",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
-                Text("첫 알람 만들기")
+                Text("새 알람 만들기")
             }
         }
     }

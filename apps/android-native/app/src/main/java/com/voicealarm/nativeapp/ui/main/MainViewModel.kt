@@ -68,6 +68,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var authBusy by mutableStateOf(false)
         internal set
 
+    var registerEmailVerificationSentTo by mutableStateOf<String?>(null)
+        internal set
+
+    var registerEmailVerified by mutableStateOf<String?>(null)
+        internal set
+
     var syncBusy by mutableStateOf(false)
         internal set
 

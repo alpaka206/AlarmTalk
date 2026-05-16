@@ -5,12 +5,15 @@ import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
+import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
     private val characterEventDao: CharacterEventDao,
+    private val holidayCalendarStore: HolidayCalendarStore,
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
     private val context: Context,
@@ -64,6 +67,8 @@ class AlarmRepository(
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,
+            voiceRandomPrompt = false,
+            voiceRepeat = true,
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -89,6 +94,7 @@ class AlarmRepository(
         requireUniqueTime(draft.hour, draft.minute)
 
         val now = System.currentTimeMillis()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = draft.label.trim().ifBlank { "알람" },
@@ -100,6 +106,7 @@ class AlarmRepository(
                 repeatDaysMask = draft.repeatDaysMask,
                 holidayOff = draft.holidayOff,
                 nowMillis = now,
+                isHoliday = holidayPredicate,
             ),
             repeatDaysMask = draft.repeatDaysMask,
             holidayOff = draft.holidayOff,
@@ -118,6 +125,8 @@ class AlarmRepository(
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
+            voiceRandomPrompt = draft.voiceRandomPrompt,
+            voiceRepeat = draft.voiceRepeat,
             ttsMessageId = draft.ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -144,12 +153,14 @@ class AlarmRepository(
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         requireUniqueTime(draft.hour, draft.minute, excludeAlarmId = alarmId)
         val now = System.currentTimeMillis()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
             repeatDaysMask = draft.repeatDaysMask,
             holidayOff = draft.holidayOff,
             nowMillis = now,
+            isHoliday = holidayPredicate,
         )
         requireExactAlarmPermission()
         val updated = current.copy(
@@ -174,6 +185,8 @@ class AlarmRepository(
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
+            voiceRandomPrompt = draft.voiceRandomPrompt,
+            voiceRepeat = draft.voiceRepeat,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
@@ -198,6 +211,7 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
 
         val updated = if (enabled) {
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
             current.copy(
                 fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                     hour = current.hour,
@@ -205,6 +219,7 @@ class AlarmRepository(
                     repeatDaysMask = current.repeatDaysMask,
                     holidayOff = current.holidayOff,
                     nowMillis = now,
+                    isHoliday = holidayPredicate,
                 ),
                 enabled = true,
                 snoozeCount = 0,
@@ -234,7 +249,11 @@ class AlarmRepository(
             return
         }
         alarmScheduler.cancel(alarmId)
+        val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
+        if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
+            alarmAudioStore.deleteCachedAudio(cacheKey)
+        }
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
@@ -243,6 +262,7 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         val copiedTime = copyTargetTime(current.hour, current.minute)
         requireUniqueTime(copiedTime.hour, copiedTime.minute)
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val copied = current.copy(
             id = UUID.randomUUID().toString(),
             label = current.label.takeIf { it.isNotBlank() }?.let { "$it 복사본" } ?: "복사한 알람",
@@ -254,6 +274,7 @@ class AlarmRepository(
                 repeatDaysMask = current.repeatDaysMask,
                 holidayOff = current.holidayOff,
                 nowMillis = now,
+                isHoliday = holidayPredicate,
             ),
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -291,12 +312,14 @@ class AlarmRepository(
 
         val now = System.currentTimeMillis()
         if (current.repeatDaysMask != 0) {
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
             val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
                 hour = current.hour,
                 minute = current.minute,
                 repeatDaysMask = current.repeatDaysMask,
                 holidayOff = current.holidayOff,
                 nowMillis = now,
+                isHoliday = holidayPredicate,
             )
             val next = current.copy(
                 fireAtMillis = nextFireAt,
@@ -371,6 +394,7 @@ class AlarmRepository(
                 val alarmToSchedule = if (alarm.fireAtMillis > now) {
                     alarm
                 } else if (alarm.repeatDaysMask != 0) {
+                    val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
                     alarm.copy(
                         fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
@@ -378,6 +402,7 @@ class AlarmRepository(
                             repeatDaysMask = alarm.repeatDaysMask,
                             holidayOff = alarm.holidayOff,
                             nowMillis = now,
+                            isHoliday = holidayPredicate,
                         ),
                         state = AlarmStates.SCHEDULED,
                         updatedAtMillis = now,
@@ -444,6 +469,11 @@ class AlarmRepository(
 
     private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
         java.time.LocalTime.of(hour, minute).plusMinutes(10)
+
+    private fun currentLocalDate(nowMillis: Long): java.time.LocalDate =
+        Instant.ofEpochMilli(nowMillis)
+            .atZone(ZoneId.systemDefault())
+            .toLocalDate()
 
     private fun requireExactAlarmPermission() {
         require(alarmScheduler.canScheduleExactAlarms()) {

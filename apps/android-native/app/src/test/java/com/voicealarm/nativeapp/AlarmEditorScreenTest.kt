@@ -5,6 +5,7 @@ import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupMember
 import java.time.LocalDateTime
 import java.time.ZoneId
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -93,6 +94,29 @@ class AlarmEditorScreenTest {
                 nowMillis = nowMillis,
             ),
         )
+    }
+
+    @Test
+    fun repeatSummaryShowsNextOneShotDateOrWeeklyDays() {
+        val zoneId = ZoneId.of("UTC")
+        val nowMillis = LocalDateTime.of(2026, 5, 13, 8, 0)
+            .atZone(zoneId)
+            .toInstant()
+            .toEpochMilli()
+
+        assertEquals("오늘 - 5월 13일(수)", repeatSummaryLabel(8, 30, 0, nowMillis, zoneId))
+        assertEquals("내일 - 5월 14일(목)", repeatSummaryLabel(7, 30, 0, nowMillis, zoneId))
+        assertEquals(
+            "매주 월, 화, 수",
+            repeatSummaryLabel(7, 30, (1 shl 1) or (1 shl 2) or (1 shl 3), nowMillis, zoneId),
+        )
+    }
+
+    @Test
+    fun voicePreviewContentDescriptionShowsPlaybackState() {
+        assertEquals("미리듣기 재생", voicePreviewContentDescription(active = false, preparing = false))
+        assertEquals("미리듣기 준비 중", voicePreviewContentDescription(active = false, preparing = true))
+        assertEquals("미리듣기 일시정지", voicePreviewContentDescription(active = true, preparing = false))
     }
 
     private fun member(

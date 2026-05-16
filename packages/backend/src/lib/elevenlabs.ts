@@ -22,10 +22,17 @@ export class ElevenLabsClient {
   }
 
   /** Instant Voice Clone - 짧은 샘플로 즉시 음성 클론 */
-  async createInstantClone(audioData: ArrayBuffer, name: string): Promise<{ voice_id: string }> {
+  async createInstantClone(
+    audioData: ArrayBuffer,
+    name: string,
+    options?: { removeBackgroundNoise?: boolean },
+  ): Promise<{ voice_id: string }> {
     const formData = new FormData();
     formData.append('files', new Blob([audioData], { type: 'audio/wav' }), 'sample.wav');
     formData.append('name', name);
+    if (options?.removeBackgroundNoise) {
+      formData.append('remove_background_noise', 'true');
+    }
 
     const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/voices/add`, {
       method: 'POST',
@@ -51,6 +58,8 @@ export class ElevenLabsClient {
       stability?: number;
       similarity_boost?: number;
       style?: number;
+      speed?: number;
+      use_speaker_boost?: boolean;
       model_id?: string;
     },
   ): Promise<ArrayBuffer> {
@@ -64,10 +73,11 @@ export class ElevenLabsClient {
         text,
         model_id: options?.model_id ?? 'eleven_multilingual_v2',
         voice_settings: {
-          stability: options?.stability ?? 0.5,
+          stability: options?.stability ?? 1,
           similarity_boost: options?.similarity_boost ?? 0.75,
-          style: options?.style ?? 0.5,
-          use_speaker_boost: true,
+          style: options?.style ?? 0,
+          speed: options?.speed ?? 1,
+          use_speaker_boost: options?.use_speaker_boost ?? true,
         },
       }),
     });

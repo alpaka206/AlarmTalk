@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
+import { typedRow } from '../lib/db-types';
 import { UUID_RE } from '../lib/validate';
+import { logRouteError } from '../lib/logger';
+import { R2VoiceStorage } from '../lib/r2-storage';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   familyAlarmSettingsFromRow,
@@ -155,7 +158,7 @@ alarmMutation.post('/', async (c) => {
   let resolvedMessageId: string | null = body.message_id ?? null;
   if (!resolvedMessageId && body.raw_audio_url) {
     const firstVoice = await db.execute({
-      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) LIMIT 1',
+      sql: 'SELECT id FROM voice_profiles WHERE user_id IN (?, ?) AND deleted_at IS NULL LIMIT 1',
       args: ownerIds,
     });
     if (firstVoice.rows.length === 0) {
@@ -351,6 +354,14 @@ alarmMutation.delete('/:id', async (c) => {
     return c.json({ error: 'Invalid alarm ID format', error_code: 'INVALID_ALARM_ID' }, 400);
   }
 
+  const targetRes = await db.execute({
+    sql: 'SELECT message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
+    args: [id, userId],
+  });
+  const messageId = targetRes.rows.length > 0
+    ? (typedRow<{ message_id: string | null }>(targetRes.rows[0]!).message_id ?? null)
+    : null;
+
   const result = await db.execute({
     sql: 'DELETE FROM alarms WHERE id = ? AND user_id = ?',
     args: [id, userId],
@@ -358,6 +369,38 @@ alarmMutation.delete('/:id', async (c) => {
 
   if (result.rowsAffected === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
+  }
+
+  if (messageId) {
+    const refRes = await db.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE message_id = ?',
+      args: [messageId],
+    });
+    const cnt = Number(typedRow<{ cnt: number }>(refRes.rows[0]!).cnt ?? 0);
+    if (cnt === 0) {
+      const assetsRes = await db.execute({
+        sql: `SELECT audio_object_key FROM generated_audio_assets
+              WHERE message_id = ? AND audio_object_key IS NOT NULL`,
+        args: [messageId],
+      });
+      const bucket = c.env?.VOICE_BUCKET;
+      if (bucket && assetsRes.rows.length > 0) {
+        const storage = new R2VoiceStorage(bucket);
+        for (const row of assetsRes.rows) {
+          const key = typedRow<{ audio_object_key: string | null }>(row).audio_object_key;
+          if (!key) continue;
+          try {
+            await storage.delete(key);
+          } catch (err) {
+            logRouteError(c, err);
+          }
+        }
+      }
+      await db.execute({
+        sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
+        args: [messageId],
+      });
+    }
   }
 
   return c.json({ success: true });

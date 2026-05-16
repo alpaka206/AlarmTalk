@@ -187,6 +187,19 @@ class AlarmAudioStore(
         )
     }
 
+    fun deleteCachedAudio(cacheKey: String) {
+        val safeKey = safeCacheKey(cacheKey)
+        audioDir.listFiles()?.forEach { file ->
+            if (file.isFile && file.nameWithoutExtension == safeKey) {
+                if (file.delete()) {
+                    Log.i(TAG, "Deleted cached alarm audio path=${file.absolutePath}")
+                } else {
+                    Log.w(TAG, "Failed to delete cached alarm audio path=${file.absolutePath}")
+                }
+            }
+        }
+    }
+
     fun readDurationMillis(uri: Uri): Long? {
         val retriever = MediaMetadataRetriever()
         return runCatching {

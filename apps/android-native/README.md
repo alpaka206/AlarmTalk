@@ -208,7 +208,7 @@ Opening the alarm list also performs a startup sync from Room to `AlarmManager`,
 - `Voice only`: requires a generated voice-profile TTS clip, a server-saved dubbed/TTS clip, or a recorded/selected local audio clip.
 - `Alarm + Voice`: rings the bundled alarm first. When the user dismisses the alarm tone, the cached voice clip plays once, then the alarm is dismissed/rescheduled.
 
-If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips major fixed-date Korean public holidays locally without a network fetch.
+If no repeat days are selected, the alarm is a one-shot alarm and is disabled after Dismiss. Repeat alarms can enable `Holiday off`; this skips holidays from the local `holiday_dates` cache by country/region, with a bundled KR seed as fallback, without a ring-time network fetch.
 
 ### Local Voice Audio
 
@@ -322,18 +322,18 @@ Dismiss and snooze enqueue local character events in Room:
 - Dismiss queues `alarm_completed`.
 - Snooze queues `alarm_snoozed`.
 - Duplicate event nonces are ignored locally.
-- Sync XP sends queued events to `POST /api/characters/xp`.
+- The app automatically syncs queued XP events to `POST /api/characters/xp` after sign-in/network is available.
+- The Growth refresh icon is a manual fallback for reloading server state.
 
 Verification flow:
 
 1. Let an alarm ring and tap Dismiss.
-2. Open the app and confirm Growth shows one queued event.
-3. Sign in and tap Sync XP.
-4. Tap Refresh in Growth.
+2. Open the app and sign in if needed.
+3. Confirm Growth reflects the event automatically; use the refresh icon only as a fallback.
 
 Expected:
 
-- Character/streak/XP refreshes from `/api/characters/me`.
+- Character/streak/XP refreshes from `/api/characters/me`; pending local events sync without requiring manual refresh.
 - Subscription loads from `/api/billing/subscription`.
 - Issued vouchers load from `/api/billing/vouchers`.
 - Coupon or invite code entry uses `/api/code/register`.

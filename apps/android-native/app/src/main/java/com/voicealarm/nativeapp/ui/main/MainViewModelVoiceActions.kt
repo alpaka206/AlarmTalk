@@ -50,6 +50,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import org.json.JSONObject
+import retrofit2.HttpException
 
 
 internal fun MainViewModel.loadVoiceProfiles() {
@@ -126,10 +128,25 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to create voice profile", error)
-            message = userFacingError(error, "음성 프로필 생성에 실패했어요")
+            message = when (voiceErrorCode(error)) {
+                "VOICE_SLOT_EXHAUSTED" -> "서비스가 확장중이에요. 잠시만 기다려주세요!"
+                else -> userFacingError(error, "음성 프로필 생성에 실패했어요")
+            }
         }
         voiceProfileBusy = false
     }
+}
+
+private fun voiceErrorCode(error: Throwable): String? {
+    val body = (error as? HttpException)
+        ?.response()
+        ?.errorBody()
+        ?.string()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return runCatching {
+        JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
+    }.getOrNull()
 }
 
 internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
@@ -191,7 +208,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "음성 공유는 커플/가족 플랜에서 사용할 수 있어요"
+        message = "음성 공유는 커플/가족 이용권에서 사용할 수 있어요"
         return
     }
 
@@ -245,8 +262,13 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = "음성 프로필을 삭제했어요"
         }.onFailure { error ->
-            Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
-            message = userFacingError(error, "사용 중인 음성 프로필은 삭제할 수 없어요")
+            if (error is retrofit2.HttpException && error.code() == 404) {
+                voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
+                message = "이미 삭제된 음성 프로필이에요"
+            } else {
+                Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
+                message = userFacingError(error, "음성 프로필 삭제에 실패했어요")
+            }
         }
         voiceProfileBusy = false
     }

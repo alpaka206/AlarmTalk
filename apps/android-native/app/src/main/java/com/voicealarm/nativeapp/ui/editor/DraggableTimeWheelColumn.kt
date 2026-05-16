@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -59,6 +60,7 @@ internal fun DraggableTimeWheelColumn(
     val itemHeightPx = with(LocalDensity.current) { itemHeight.toPx() }
     var dragOffsetPx by remember { mutableStateOf(0f) }
     var gestureSteps by remember { mutableIntStateOf(0) }
+    var settleJob by remember { mutableStateOf<Job?>(null) }
 
     fun remainingStepsFor(nextSteps: Int): Int {
         return if (nextSteps > 0) {
@@ -104,7 +106,10 @@ internal fun DraggableTimeWheelColumn(
             .draggable(
                 state = draggableState,
                 orientation = Orientation.Vertical,
-                onDragStarted = { gestureSteps = 0 },
+                onDragStarted = {
+                    settleJob?.cancel()
+                    gestureSteps = 0
+                },
                 onDragStopped = { velocity ->
                     val startOffset = dragOffsetPx
                     val snapStep = when {
@@ -115,7 +120,8 @@ internal fun DraggableTimeWheelColumn(
                     val velocitySteps = flingStepsFor(velocity)
                     val requestedSteps = if (velocitySteps != 0) velocitySteps else snapStep
                     val stepsToSettle = remainingStepsFor(requestedSteps)
-                    scope.launch {
+                    settleJob?.cancel()
+                    settleJob = scope.launch {
                         animateWheelSettle(
                             startOffsetPx = startOffset,
                             steps = stepsToSettle,
@@ -148,7 +154,8 @@ internal fun DraggableTimeWheelColumn(
                 Surface(
                     onClick = {
                         if (offset != 0) {
-                            scope.launch {
+                            settleJob?.cancel()
+                            settleJob = scope.launch {
                                 animateWheelSettle(
                                     startOffsetPx = 0f,
                                     steps = offset.coerceIn(-maxStepsPerGesture, maxStepsPerGesture),
@@ -204,19 +211,35 @@ internal suspend fun animateWheelSettle(
     }
 
     val direction = if (steps > 0) 1 else -1
-    var currentOffset = startOffsetPx
-    repeat(abs(steps)) {
-        val targetOffset = if (direction > 0) -itemHeightPx else itemHeightPx
-        Animatable(currentOffset).animateTo(
-            targetValue = targetOffset,
-            animationSpec = tween(durationMillis = 165, easing = TimeWheelEasing),
-        ) {
-            onOffsetChange(value)
+    var consumedSteps = 0
+    val totalSteps = abs(steps)
+    val targetOffset = -steps * itemHeightPx
+    val durationMillis = (190 + totalSteps * 42).coerceIn(230, 720)
+
+    Animatable(startOffsetPx).animateTo(
+        targetValue = targetOffset,
+        animationSpec = tween(durationMillis = durationMillis, easing = TimeWheelEasing),
+    ) {
+        while (direction > 0 && value <= -(consumedSteps + 1) * itemHeightPx) {
+            consumedSteps += 1
+            onStep(1)
         }
-        onStep(direction)
-        onOffsetChange(0f)
-        currentOffset = 0f
+        while (direction < 0 && value >= (consumedSteps + 1) * itemHeightPx) {
+            consumedSteps += 1
+            onStep(-1)
+        }
+        val residualOffset = if (direction > 0) {
+            value + consumedSteps * itemHeightPx
+        } else {
+            value - consumedSteps * itemHeightPx
+        }
+        onOffsetChange(residualOffset)
     }
+    while (consumedSteps < totalSteps) {
+        consumedSteps += 1
+        onStep(direction)
+    }
+    onOffsetChange(0f)
 }
 
 internal fun floorMod(value: Int, divisor: Int): Int = ((value % divisor) + divisor) % divisor

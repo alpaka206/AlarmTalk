@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
@@ -28,6 +30,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAppContainer
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.AlarmPlayModes
+import com.voicealarm.nativeapp.data.VibrationPatternLibrary
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +43,8 @@ class RingingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var audioManager: AudioManager? = null
+    private var audioFocusRequest: AudioFocusRequest? = null
     private var audioSequenceActive = false
     private var currentAlarm: AlarmEntity? = null
     private var voiceAfterAlarmStarted = false
@@ -53,6 +58,7 @@ class RingingService : Service() {
             @Suppress("DEPRECATION")
             getSystemService(VIBRATOR_SERVICE) as Vibrator
         }
+        audioManager = getSystemService(AudioManager::class.java)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -106,6 +112,7 @@ class RingingService : Service() {
             val alarm = AlarmAppContainer.repository(applicationContext).getAlarm(alarmId)
             currentAlarm = alarm
             voiceAfterAlarmStarted = false
+            requestAlarmAudioFocus()
             startRingingAudio(alarm)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
             startVibration(pattern)
@@ -170,9 +177,16 @@ class RingingService : Service() {
     private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         audioSequenceActive = false
         mediaPlayer?.release()
+        val repeatVoice = alarm?.voiceRepeat != false
         mediaPlayer = createVoicePlayer(voiceUri)?.apply {
             applyAlarmVolume(alarm)
-            isLooping = true
+            isLooping = repeatVoice
+            if (!repeatVoice) {
+                setOnCompletionListener { completed ->
+                    completed.release()
+                    if (mediaPlayer === completed) mediaPlayer = null
+                }
+            }
             start()
         }
         if (mediaPlayer == null) {
@@ -267,10 +281,7 @@ class RingingService : Service() {
             return
         }
 
-        val pattern = when (patternName) {
-            VibrationPatterns.STRONG -> longArrayOf(0L, 1_000L, 250L, 1_000L, 250L)
-            else -> longArrayOf(0L, 700L, 350L, 900L)
-        }
+        val pattern = VibrationPatternLibrary.waveform(patternName)
         val alarmAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -367,6 +378,7 @@ class RingingService : Service() {
         runCatching {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
+        abandonAlarmAudioFocus()
     }
 
     private fun stopMediaAndVibration() {
@@ -379,6 +391,44 @@ class RingingService : Service() {
         }
         mediaPlayer = null
         vibrator?.cancel()
+    }
+
+    private fun requestAlarmAudioFocus() {
+        val manager = audioManager ?: return
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                .setAudioAttributes(attributes)
+                .setWillPauseWhenDucked(false)
+                .setOnAudioFocusChangeListener { }
+                .build()
+            audioFocusRequest = request
+            manager.requestAudioFocus(request)
+        } else {
+            @Suppress("DEPRECATION")
+            manager.requestAudioFocus(
+                null,
+                AudioManager.STREAM_ALARM,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT,
+            )
+        }
+        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.w(TAG, "Alarm audio focus was not granted result=$result")
+        }
+    }
+
+    private fun abandonAlarmAudioFocus() {
+        val manager = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let(manager::abandonAudioFocusRequest)
+            audioFocusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            manager.abandonAudioFocus(null)
+        }
     }
 
     companion object {

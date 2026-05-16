@@ -686,11 +686,14 @@ describe.skip('POST /billing/redeem (billingMutation)', () => {
 describe('POST /billing/vouchers/family-share (billingMutation)', () => {
   const FUTURE = '2027-12-31T00:00:00.000Z';
 
-  function pushOwnerFamilySubscription() {
+  function pushOwnerFamilySubscription(memberCount = 1) {
     mockDB.pushResult([{
       subscription_id: 'sub-family-1',
       plan_id: PLAN_FAMILY.id,
       expires_at: FUTURE,
+      plan_group_id: 'group-family-1',
+      group_max_members: PLAN_FAMILY.max_members,
+      member_count: memberCount,
       plan_key: PLAN_FAMILY.key,
       plan_name: PLAN_FAMILY.name,
       plan_type: PLAN_FAMILY.plan_type,
@@ -748,6 +751,17 @@ describe('POST /billing/vouchers/family-share (billingMutation)', () => {
     expect(insertCall?.args[4]).toBe('user-pk-1');
     expect(insertCall?.args[5]).toBe('sub-family-1');
     expect(insertCall?.args[8]).toBe(5);
+  });
+
+  it('가족 플랜 정원이 가득 차면 공유 코드를 발급하지 않는다', async () => {
+    mockDB.pushResult([{ id: 'user-pk-1' }]);
+    pushOwnerFamilySubscription(PLAN_FAMILY.max_members);
+
+    const res = await buildApp().request(jsonReq('POST', '/billing/vouchers/family-share'));
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error_code).toBe('GROUP_FULL');
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT OR IGNORE INTO voucher_codes'))).toBe(false);
   });
 
   it('가족 플랜 소유자가 아니면 404를 반환한다', async () => {

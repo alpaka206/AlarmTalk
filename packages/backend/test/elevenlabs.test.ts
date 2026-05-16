@@ -61,8 +61,10 @@ describe('ElevenLabsClient', () => {
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
       expect(body.model_id).toBe('eleven_multilingual_v2');
-      expect(body.voice_settings.stability).toBe(0.5);
+      expect(body.voice_settings.stability).toBe(1);
       expect(body.voice_settings.similarity_boost).toBe(0.75);
+      expect(body.voice_settings.style).toBe(0);
+      expect(body.voice_settings.speed).toBe(1);
       expect(body.voice_settings.use_speaker_boost).toBe(true);
     });
 
@@ -109,6 +111,20 @@ describe('ElevenLabsClient', () => {
       expect(opts.method).toBe('POST');
       expect(opts.headers['xi-api-key']).toBe('test-api-key-123');
       expect(result.voice_id).toBe('new-voice-id');
+    });
+
+    it('기본 옵션에서는 remove_background_noise 미전송', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'v' }));
+      await client.createInstantClone(new ArrayBuffer(10), 'n');
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.get('remove_background_noise')).toBeNull();
+    });
+
+    it('removeBackgroundNoise=true 시 FormData 에 remove_background_noise=true 첨부', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'v' }));
+      await client.createInstantClone(new ArrayBuffer(10), 'n', { removeBackgroundNoise: true });
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      expect(body.get('remove_background_noise')).toBe('true');
     });
 
     it('API 에러 시 예외', async () => {

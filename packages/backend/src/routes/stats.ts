@@ -34,7 +34,7 @@ stats.get('/', async (c) => {
         args: [userId],
       }),
       db.execute({
-        sql: 'SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ?',
+        sql: 'SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
         args: [userId],
       }),
       db.execute({
@@ -132,7 +132,7 @@ stats.get('/activity', async (c) => {
       }),
       db.execute({
         sql: `SELECT id, name, status, created_at, 'voice' as type FROM voice_profiles
-              WHERE user_id = ?
+              WHERE user_id = ? AND deleted_at IS NULL
               ORDER BY created_at DESC LIMIT 5`,
         args: [userId],
       }),
