@@ -397,6 +397,17 @@ voiceProfile.post('/clone', async (c) => {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : 'Unknown error';
 
+    if (isVoiceSlotExhaustedError(detail)) {
+      return c.json(
+        {
+          error: '서비스가 확장중이에요. 잠시만 기다려주세요!',
+          error_code: 'VOICE_SLOT_EXHAUSTED',
+          detail,
+        },
+        503,
+      );
+    }
+
     return c.json(
       {
         error: 'Voice cloning failed',
@@ -407,6 +418,17 @@ voiceProfile.post('/clone', async (c) => {
     );
   }
 });
+
+function isVoiceSlotExhaustedError(detail: string): boolean {
+  const lower = detail.toLowerCase();
+  return (
+    lower.includes('voice_limit_reached') ||
+    lower.includes('max_voice_limit_reached') ||
+    lower.includes('voice_add_edit_counter') ||
+    lower.includes('voice limit') ||
+    lower.includes('voice slot')
+  );
+}
 
 voiceProfile.get('/:id/stats', async (c) => {
   const userId = c.get('userId');
@@ -497,6 +519,17 @@ voiceProfile.delete('/:id', async (c) => {
   await db.execute({
     sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
     args: [id],
+  });
+
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only',
+              voice_profile_id = NULL,
+              raw_audio_url = NULL,
+              raw_audio_duration_ms = NULL
+          WHERE voice_profile_id = ?
+             OR message_id IN (SELECT id FROM messages WHERE voice_profile_id = ?)`,
+    args: [id, id],
   });
 
   await db.execute({
