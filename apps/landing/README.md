@@ -66,4 +66,4 @@ components/
 - 대기자 폼을 Cloudflare Workers 엔드포인트와 연결
 - 다국어(en/ja) 라우팅
 - 실제 도메인 연결 후 OG·sitemap의 SITE_URL 갱신
-- 정책 페이지(`/privacy`, `/terms`) 채우기
+- 정책 문구의 운영자/수탁사/시행일 정보를 출시 전 최종 확정

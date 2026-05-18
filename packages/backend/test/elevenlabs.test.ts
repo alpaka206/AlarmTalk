@@ -76,10 +76,12 @@ describe('ElevenLabsClient', () => {
         similarity_boost: 0.9,
         style: 0.3,
         model_id: 'eleven_turbo_v2',
+        language_code: 'ko',
       });
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.model_id).toBe('eleven_turbo_v2');
+      expect(body.language_code).toBe('ko');
       expect(body.voice_settings.stability).toBe(0.8);
       expect(body.voice_settings.similarity_boost).toBe(0.9);
       expect(body.voice_settings.style).toBe(0.3);

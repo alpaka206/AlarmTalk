@@ -383,7 +383,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.voice_profile_id).toBe(V1);
     // category defaults to 'custom'
     const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
-    expect(insertSql!.args[4]).toBe('custom');
+    expect(insertSql!.args[6]).toBe('custom');
   });
 
   it('R2 bucket configured: stores generated TTS under a deterministic cache object key', async () => {
@@ -490,7 +490,87 @@ describe('POST /tts/generate — edge cases', () => {
     );
     expect(res.status).toBe(201);
     const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
-    expect(insertSql!.args[4]).toBe('morning');
+    expect(insertSql!.args[6]).toBe('morning');
+  });
+
+  it('수동 입력 문구는 delivery tag를 자동 삽입하지 않는다', async () => {
+    const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.original_text).toBe(text);
+    expect(body.synthesis_text).toBe(text);
+    expect(body.tags).toEqual([]);
+    const inserted = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    expect(inserted!.args[3]).toBe(text);
+    expect(inserted!.args[4]).toBe(text);
+    expect(inserted!.args[5]).toBe('[]');
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
+      language_code: 'ko',
+      stability: 0.45,
+      similarity_boost: 0.82,
+      style: 0.28,
+      speed: 0.96,
+    }));
+  });
+
+  it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
+    const text = 'Good morning! Wake up! I hope you have a great day!';
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text,
+        category: 'custom',
+        language: 'ko',
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.original_text).toBe(text);
+    expect(body.synthesis_text).toBe(text);
+    expect(body.language).toBe('en');
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
+      language_code: 'en',
+    }));
+  });
+
+  it('번역 요청인데 번역 설정이 없으면 원문 언어로 잘못 합성하지 않고 실패한다', async () => {
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text: '좋은 아침이에요!',
+        category: 'custom',
+        language: 'en',
+        translate: true,
+      }),
+    );
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('TRANSLATION_NOT_CONFIGURED');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
   it('random=true 면 서버 프리셋 문구를 골라 TTS를 생성한다', async () => {
@@ -520,12 +600,15 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.original_text).toBe('서버가 고른 아침 문구');
-    expect(body.text).toContain(body.original_text);
+    expect(body.text).toBe(body.original_text);
+    expect(body.synthesis_text).toContain(body.original_text);
     expect(body.tags).toContain('warmly');
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', body.text, expect.any(Object));
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', body.synthesis_text, expect.any(Object));
     const inserted = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
-    expect(inserted!.args[3]).toBe(body.text);
-    expect(inserted!.args[4]).toBe('morning');
+    expect(inserted!.args[3]).toBe(body.original_text);
+    expect(inserted!.args[4]).toBe(body.synthesis_text);
+    expect(inserted!.args[5]).toBe(JSON.stringify(body.tags));
+    expect(inserted!.args[6]).toBe('morning');
   });
 
   it('random=true 에 custom category 면 400', async () => {

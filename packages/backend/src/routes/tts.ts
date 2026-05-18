@@ -9,10 +9,16 @@ import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
+  inferSynthesisLanguage,
   noVoiceProviderError,
+  normalizeSynthesisLanguage,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
-import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
+import {
+  AlarmTextPreparationInvalidError,
+  AlarmTextTranslationUnavailableError,
+  prepareAlarmTextWithVertex,
+} from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
 
@@ -217,14 +223,22 @@ tts.post('/generate', async (c) => {
   }
 
   try {
-    const requestLanguage = body.language ?? 'ko';
+    const requestedLanguage = normalizeSynthesisLanguage(body.language);
+    const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
+    const shouldTranslate =
+      body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
     const prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
-      targetLanguage: requestLanguage,
-      sourceLanguage: 'ko',
-      translate: body.translate === true,
-      autoTag: true,
+      targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
+      sourceLanguage,
+      translate: shouldTranslate,
+      autoTag: randomRequested,
     });
     const synthesisText = prepared.text;
+    const messageText = requestText;
+    const deliveryTagsJson = JSON.stringify(prepared.tags);
+    const synthesisLanguage = prepared.translated
+      ? requestedLanguage
+      : inferSynthesisLanguage(synthesisText, sourceLanguage);
 
     if (synthesisText.length > 200) {
       return c.json(
@@ -240,7 +254,8 @@ tts.post('/generate', async (c) => {
         elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
       },
       text: synthesisText,
-      language: requestLanguage,
+      language: synthesisLanguage,
+      category,
     });
 
     if (attempts.length === 0) {
@@ -257,7 +272,8 @@ tts.post('/generate', async (c) => {
           providerVoiceId: attempt.providerVoiceId,
           voiceProfileId: body.voice_profile_id,
           modelId: attempt.modelId,
-          language: requestLanguage,
+          language: synthesisLanguage,
+          languageCode: synthesisLanguage,
           text: synthesisText,
           outputFormat: attempt.outputFormat,
           voiceSettings: attempt.voiceSettings,
@@ -276,12 +292,13 @@ tts.post('/generate', async (c) => {
             audio_format: cached.audioFormat,
             audio_url: cached.audioUrl,
             audio_object_key: cached.audioObjectKey,
-            text: cached.text,
-            original_text: requestText,
+            text: messageText,
+            original_text: messageText,
+            synthesis_text: cached.synthesisText,
             translated: prepared.translated,
             tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
-            language: requestLanguage,
+            language: synthesisLanguage,
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
@@ -323,13 +340,16 @@ tts.post('/generate', async (c) => {
 
         const messageId = crypto.randomUUID();
         await db.execute({
-          sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, category, audio_url)
-                VALUES (?, ?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO messages
+                (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, category, audio_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           args: [
             messageId,
             userPk,
             body.voice_profile_id,
+            messageText,
             synthesisText,
+            deliveryTagsJson,
             category,
             audioUrl,
           ],
@@ -339,9 +359,9 @@ tts.post('/generate', async (c) => {
           await db.execute({
             sql: `INSERT OR IGNORE INTO generated_audio_assets
                   (id, user_id, voice_profile_id, message_id, provider, provider_voice_id,
-                   model_id, language, request_hash, text, category, audio_url,
+                   model_id, language, request_hash, text, original_text, delivery_tags_json, category, audio_url,
                    audio_object_key, audio_format, mime_type, size_bytes)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             args: [
               crypto.randomUUID(),
               userPk,
@@ -350,9 +370,11 @@ tts.post('/generate', async (c) => {
               generated.provider,
               generated.providerVoiceId,
               generated.modelId,
-              requestLanguage,
+              synthesisLanguage,
               cacheKey,
               synthesisText,
+              messageText,
+              deliveryTagsJson,
               category,
               audioUrl,
               audioObjectKey,
@@ -380,12 +402,13 @@ tts.post('/generate', async (c) => {
             audio_format: generated.outputFormat,
             audio_url: audioUrl,
             audio_object_key: audioObjectKey,
-            text: synthesisText,
-            original_text: requestText,
+            text: messageText,
+            original_text: messageText,
+            synthesis_text: synthesisText,
             translated: prepared.translated,
             tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
-            language: requestLanguage,
+            language: synthesisLanguage,
             provider: generated.provider,
             cache_key: cacheKey,
             cache_hit: false,
@@ -401,6 +424,24 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    if (err instanceof AlarmTextTranslationUnavailableError) {
+      return c.json(
+        {
+          error: 'Alarm text translation is not configured.',
+          error_code: 'TRANSLATION_NOT_CONFIGURED',
+        },
+        503,
+      );
+    }
+    if (err instanceof AlarmTextPreparationInvalidError) {
+      return c.json(
+        {
+          error: 'Alarm text preparation returned invalid content.',
+          error_code: 'TEXT_PREPARATION_FAILED',
+        },
+        502,
+      );
+    }
     return c.json(
       {
         error: 'TTS generation failed',
@@ -473,7 +514,8 @@ tts.get('/messages/:id/audio', async (c) => {
   }
 
   const result = await db.execute({
-    sql: `SELECT id, user_id, voice_profile_id, text, audio_url, category
+    sql: `SELECT id, user_id, voice_profile_id, text, synthesis_text,
+                 delivery_tags_json, audio_url, category
           FROM messages
           WHERE id = ?
             AND (
@@ -495,6 +537,8 @@ tts.get('/messages/:id/audio', async (c) => {
     id: string;
     voice_profile_id: string;
     text: string | null;
+    synthesis_text: string | null;
+    delivery_tags_json: string | null;
     audio_url: string | null;
     category: string | null;
   }>(result.rows[0]!);
@@ -520,6 +564,8 @@ tts.get('/messages/:id/audio', async (c) => {
     audio_format: loaded.format,
     audio_url: audioUrl,
     text: message.text ?? '',
+    synthesis_text: message.synthesis_text ?? message.text ?? '',
+    tags: parseDeliveryTags(message.delivery_tags_json),
     category: message.category ?? 'custom',
     voice_profile_id: message.voice_profile_id,
   });
@@ -587,7 +633,7 @@ async function findCachedGeneratedAudio(
 ): Promise<{
   messageId: string;
   provider: string;
-  text: string;
+  synthesisText: string;
   audioUrl: string;
   audioObjectKey: string | null;
   audioFormat: string;
@@ -595,8 +641,9 @@ async function findCachedGeneratedAudio(
 } | null> {
   const db = getDB(c.env);
   const result = await db.execute({
-    sql: `SELECT ga.message_id, ga.provider, ga.text, ga.audio_url, ga.audio_object_key,
-                 ga.audio_format, ga.mime_type
+    sql: `SELECT ga.message_id, ga.provider,
+                 COALESCE(ga.text, m.synthesis_text, m.text) AS synthesis_text,
+                 ga.audio_url, ga.audio_object_key, ga.audio_format, ga.mime_type
           FROM generated_audio_assets ga
           JOIN messages m ON m.id = ga.message_id
           WHERE ga.user_id IN (?, ?) AND ga.request_hash = ?
@@ -608,7 +655,7 @@ async function findCachedGeneratedAudio(
   const cached = typedRow<{
     message_id: string;
     provider: string;
-    text: string;
+    synthesis_text: string | null;
     audio_url: string | null;
     audio_object_key: string | null;
     audio_format: string | null;
@@ -621,12 +668,24 @@ async function findCachedGeneratedAudio(
   return {
     messageId: cached.message_id,
     provider: cached.provider,
-    text: cached.text,
+    synthesisText: cached.synthesis_text ?? '',
     audioUrl: cached.audio_url,
     audioObjectKey: cached.audio_object_key,
     audioFormat: cached.audio_format ?? loaded.format,
     bytes: loaded.bytes,
   };
+}
+
+function parseDeliveryTags(value: unknown): string[] {
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 export default tts;

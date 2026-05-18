@@ -40,8 +40,7 @@ internal class RingingNotificationFactory(
             .setAutoCancel(false)
             .setSound(null)
             .setVibrate(null)
-            .setSilent(true)
-            .setOnlyAlertOnce(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(fullScreenIntent)
             .setFullScreenIntent(fullScreenIntent, true)
             .addAction(
