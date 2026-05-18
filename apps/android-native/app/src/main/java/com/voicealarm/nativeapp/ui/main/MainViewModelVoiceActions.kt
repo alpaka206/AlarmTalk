@@ -134,6 +134,9 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
         }.onFailure { error ->
             Log.e(TAG, "Failed to create voice profile", error)
             message = when (voiceErrorCode(error)) {
+                "VOICE_CLONE_AUDIO_TOO_SHORT" -> "학습 음성은 1분 이상이어야 해요."
+                "VOICE_CLONE_AUDIO_TOO_LONG" -> "학습 음성은 2분 이하로 준비해 주세요."
+                "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
                 "VOICE_SLOT_EXHAUSTED" -> "서비스가 확장중이에요. 잠시만 기다려주세요!"
                 "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 요금제를 사용해야 목소리를 만들 수 있어요."
                 else -> userFacingError(error, "알람 음성 생성에 실패했어요")

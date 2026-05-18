@@ -126,13 +126,17 @@ internal fun VoiceAudioCard(
                             detail = sharedVoiceDetail(profile),
                         )
                     }
-                LaunchedEffect(visibleVoiceSource, profileOptions) {
+                LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
                     if (
                         visibleVoiceSource == VoiceSources.TTS_PROFILE &&
-                        editor.voiceProfileId.isNullOrBlank() &&
+                        !voiceProfileBusy &&
                         profileOptions.isNotEmpty()
                     ) {
-                        editor.voiceProfileId = profileOptions.first().id
+                        val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
+                        if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
+                            editor.voiceProfileId = profileOptions.first().id
+                            editor.clearTtsMeta()
+                        }
                     }
                 }
                 val selectedProfileUnavailable = !voiceProfileBusy &&
