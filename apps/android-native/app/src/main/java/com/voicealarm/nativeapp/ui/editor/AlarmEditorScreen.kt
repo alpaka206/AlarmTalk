@@ -489,6 +489,7 @@ internal fun AlarmEditorScreen(
                     text = response.text,
                     category = editor.activeVoiceCategory(),
                     language = editor.activeVoiceLanguage(),
+                    serverCacheKey = response.cacheKey,
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
                     audioStore.cacheGeneratedAudio(

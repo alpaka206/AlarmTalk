@@ -493,6 +493,78 @@ describe('POST /tts/generate — edge cases', () => {
     expect(insertSql!.args[4]).toBe('morning');
   });
 
+  it('수동 입력 문구는 delivery tag를 자동 삽입하지 않는다', async () => {
+    const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.tags).toEqual([]);
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
+      language_code: 'ko',
+      stability: 0.45,
+      similarity_boost: 0.82,
+      style: 0.28,
+      speed: 0.96,
+    }));
+  });
+
+  it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
+    const text = 'Good morning! Wake up! I hope you have a great day!';
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text,
+        category: 'custom',
+        language: 'ko',
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.text).toBe(text);
+    expect(body.language).toBe('en');
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
+      language_code: 'en',
+    }));
+  });
+
+  it('번역 요청인데 번역 설정이 없으면 원문 언어로 잘못 합성하지 않고 실패한다', async () => {
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        text: '좋은 아침이에요!',
+        category: 'custom',
+        language: 'en',
+        translate: true,
+      }),
+    );
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('TRANSLATION_NOT_CONFIGURED');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
   it('random=true 면 서버 프리셋 문구를 골라 TTS를 생성한다', async () => {
     mockDB.pushResult([{
       category: 'morning',

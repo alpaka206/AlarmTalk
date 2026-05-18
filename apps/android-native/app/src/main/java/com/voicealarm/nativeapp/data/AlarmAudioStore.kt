@@ -430,7 +430,7 @@ class AlarmAudioStore(
             serverCacheKey: String? = null,
         ): String =
             serverCacheKey?.takeIf { it.isNotBlank() }
-                ?: sha256(listOf("tts", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
+                ?: sha256(listOf("tts-v2", profileId, text.trim().replace(Regex("\\s+"), " "), category, language).joinToString("|"))
 
         fun audioCacheKeyForSource(
             sourceUri: String,
