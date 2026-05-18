@@ -217,4 +217,14 @@ describe('migrations', () => {
     expect(all).toContain("'morning'");
     expect(all).toContain("'love'");
   });
+
+  it('migration #34 separates TTS display text from synthesis text and tags', () => {
+    const m = migrations.find((x) => x.id === 34);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('ALTER TABLE messages ADD COLUMN synthesis_text TEXT');
+    expect(all).toContain("ALTER TABLE messages ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'");
+    expect(all).toContain('ALTER TABLE generated_audio_assets ADD COLUMN original_text TEXT');
+    expect(all).toContain("ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'");
+  });
 });
