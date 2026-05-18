@@ -759,6 +759,16 @@ export const migrations: Migration[] = [
       `ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'`,
     ],
   },
+  {
+    id: 35,
+    name: 'apple-login-users',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

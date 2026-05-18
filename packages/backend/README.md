@@ -19,6 +19,7 @@ Cloudflare Workers + Hono 기반 API 서버.
 | `JWT_SECRET` | JWT 서명 시크릿 (32자 이상 권장) | ✅ |
 | `PASSWORD_PEPPER` | 비밀번호 해싱 페퍼 | ✅ |
 | `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | 선택 |
+| `APPLE_CLIENT_ID` | Sign in with Apple audience / iOS bundle ID | iOS 로그인 시 필수 |
 
 ## 로컬 실행
 
@@ -50,6 +51,7 @@ npm run typecheck # tsc --noEmit
 |---|---|
 | `POST /api/auth/register` | 이메일+비밀번호 가입 |
 | `POST /api/auth/login` | 이메일+비밀번호 로그인 |
+| `POST /api/auth/apple` | Apple identity token 검증 후 앱 JWT 발급 |
 | `GET /api/auth/me` | 현재 사용자 정보 |
 | `/api/voice/*` | 음성 프로필 CRUD + 업로드 + 화자 분리 |
 | `/api/tts/*` | TTS 생성 + 메시지 관리 |
@@ -60,3 +62,9 @@ npm run typecheck # tsc --noEmit
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
 | `/api/characters/*` | 캐릭터 조회 + XP 지급 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
+
+## Apple Login
+
+- `POST /api/auth/apple` accepts an Apple `id_token`, verifies its RS256 signature with Apple JWKS, checks issuer/audience/expiry, and returns the app JWT.
+- `APPLE_CLIENT_ID` must match the iOS bundle ID, for example `com.voicealarm.nativeapp.ios`.
+- Migration `35_apple-login-users` adds `users.apple_id` and a nullable unique index for Apple account linking.

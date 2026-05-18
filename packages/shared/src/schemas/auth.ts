@@ -39,6 +39,13 @@ export const GoogleLoginRequestSchema = z.object({
 });
 export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
 
+export const AppleLoginRequestSchema = z.object({
+  id_token: z.string().min(1),
+  email: z.string().email().optional(),
+  name: z.string().min(1).max(64).optional(),
+});
+export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
+
 export const AuthResponseSchema = z.object({
   token: z.string().min(1),
   user: z.object({

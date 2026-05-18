@@ -10,10 +10,11 @@ import {
   RegisterRequestSchema,
   LoginRequestSchema,
   GoogleLoginRequestSchema,
+  AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
 } from '@voice-alarm/shared';
-import { verifyGoogleIdToken } from '../lib/oauth';
+import { verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMAIL_VERIFICATION_MAX_ATTEMPTS,
@@ -468,6 +469,144 @@ auth.post('/google', async (c) => {
         ? 401
         : 500;
     return c.json(jsonError('AUTH_GOOGLE_FAILED', detail), status);
+  }
+});
+
+auth.post('/apple', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = AppleLoginRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const db = getDB(c.env);
+
+  try {
+    if (!c.env.APPLE_CLIENT_ID) {
+      return c.json(
+        jsonError('AUTH_APPLE_CONFIG_MISSING', 'Apple client ID is not configured'),
+        500,
+      );
+    }
+    const apple = await verifyAppleIdToken(parsed.data.id_token, c.env.APPLE_CLIENT_ID);
+    const appleId = apple.sub;
+    const email = (apple.email || parsed.data.email || `${appleId}@apple.local`)
+      .toLowerCase()
+      .trim();
+    const name = parsed.data.name ?? apple.name ?? '';
+
+    const existing = await db.execute({
+      sql: `SELECT id, google_id, apple_id, email, name, plan,
+                   allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users
+            WHERE apple_id = ? OR google_id = ? OR email = ?
+            LIMIT 1`,
+      args: [appleId, appleId, email],
+    });
+
+    let userId: string;
+    let loginSub: string;
+    let plan: 'free' | 'plus' | 'family';
+    let resolvedName: string;
+
+    if (existing.rows.length > 0) {
+      const row = typedRow<
+        {
+          id: string;
+          google_id: string | null;
+          apple_id?: string | null;
+          email: string;
+          name: string | null;
+          plan: 'free' | 'plus' | 'family' | null;
+        } & Record<string, unknown>
+      >(existing.rows[0]!);
+      userId = row.id;
+      loginSub = row.google_id ?? appleId;
+      plan = row.plan ?? 'free';
+      resolvedName = name || row.name || '';
+
+      await db.execute({
+        sql: `UPDATE users
+              SET apple_id = ?,
+                  google_id = COALESCE(google_id, ?),
+                  email = ?,
+                  name = COALESCE(NULLIF(?, ''), name),
+                  updated_at = datetime('now')
+              WHERE id = ?`,
+        args: [appleId, appleId, email, name, userId],
+      });
+    } else {
+      userId = appleId;
+      loginSub = appleId;
+      plan = 'free';
+      resolvedName = name;
+      await db.execute({
+        sql: `INSERT INTO users (id, google_id, apple_id, email, name)
+              VALUES (?, ?, ?, ?, ?)`,
+        args: [userId, appleId, appleId, email, name || null],
+      });
+    }
+
+    const token = await signAppJwt(
+      { sub: loginSub, email, name: resolvedName || undefined },
+      c.env.JWT_SECRET,
+    );
+
+    const fresh = await db.execute({
+      sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
+                   family_alarm_quiet_start, family_alarm_quiet_end,
+                   family_alarm_quiet_windows
+            FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
+      args: [userId, loginSub, appleId],
+    });
+    const familyAlarmSettings =
+      fresh.rows.length > 0
+        ? familyAlarmSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : {
+            allowFamilyAlarms: false,
+            quietDays: [1, 2, 3, 4, 5],
+            quietStart: '09:00',
+            quietEnd: '18:30',
+            quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          };
+
+    return c.json({
+      token,
+      user: {
+        id: userId,
+        email,
+        name: resolvedName,
+        plan,
+        allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
+        family_alarm_quiet_days: familyAlarmSettings.quietDays,
+        family_alarm_quiet_start: familyAlarmSettings.quietStart,
+        family_alarm_quiet_end: familyAlarmSettings.quietEnd,
+        family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+      },
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    const status =
+      detail.includes('Apple token') ||
+      detail.includes('Apple JWKS') ||
+      detail.includes('issuer') ||
+      detail.includes('audience') ||
+      detail.includes('expired') ||
+      detail.includes('signature') ||
+      detail.includes('algorithm') ||
+      detail.includes('key') ||
+      detail.includes('format')
+        ? 401
+        : 500;
+    return c.json(jsonError('AUTH_APPLE_FAILED', detail), status);
   }
 });
 
