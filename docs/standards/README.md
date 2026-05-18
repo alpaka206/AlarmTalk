@@ -128,7 +128,7 @@ Cloudflare Worker secrets:
 - `JWT_SECRET`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
 - `ELEVENLABS_API_KEY`
 - `SENTRY_DSN`
-- `GOOGLE_OAUTH_CLIENT_ID`, `APPLE_OAUTH_CLIENT_ID`
+- `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`
 
 Android Gradle properties (override via `local.properties` or `-P`):
 
