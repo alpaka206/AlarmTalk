@@ -211,18 +211,32 @@ internal fun AlarmRow(
     val warningText = alarmRowWarningText(alarm)
     val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
     val currentOffsetPx = if (dragOffsetPx != 0f) dragOffsetPx else settledOffsetPx
+    val deleteVisible = deleteRevealed || currentOffsetPx < -0.5f
+    val alarmCardShape = RoundedCornerShape(
+        topStart = 22.dp,
+        topEnd = if (deleteVisible) 0.dp else 22.dp,
+        bottomEnd = if (deleteVisible) 0.dp else 22.dp,
+        bottomStart = 22.dp,
+    )
+    val deleteButtonShape = RoundedCornerShape(
+        topStart = 0.dp,
+        topEnd = 22.dp,
+        bottomEnd = 22.dp,
+        bottomStart = 0.dp,
+    )
     val dragState = rememberDraggableState { delta ->
         dragOffsetPx = (dragOffsetPx + delta).coerceIn(-deleteWidthPx, 0f)
     }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        if (deleteRevealed || currentOffsetPx < -0.5f) {
+        if (deleteVisible) {
             Row(
                 modifier = Modifier.matchParentSize(),
                 horizontalArrangement = Arrangement.End,
             ) {
                 DeleteRevealButton(
                     modifier = Modifier.width(deleteWidth),
+                    shape = deleteButtonShape,
                     onDelete = onDeleteAlarm,
                 )
             }
@@ -251,7 +265,7 @@ internal fun AlarmRow(
                         dragOffsetPx = 0f
                     },
                 ),
-            shape = VocaWakeCardShape,
+            shape = alarmCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = vocaWakeCardBorder(),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -331,13 +345,14 @@ private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
 @Composable
 internal fun DeleteRevealButton(
     modifier: Modifier,
+    shape: RoundedCornerShape = VocaWakeCardShape,
     onDelete: () -> Unit,
 ) {
     Surface(
         onClick = onDelete,
         modifier = modifier.fillMaxHeight(),
         color = MaterialTheme.colorScheme.error,
-        shape = VocaWakeCardShape,
+        shape = shape,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,

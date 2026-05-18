@@ -88,6 +88,7 @@ interface VoiceProfileApi {
         @Part audio: MultipartBody.Part,
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
+        @Part("durationMs") durationMs: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart

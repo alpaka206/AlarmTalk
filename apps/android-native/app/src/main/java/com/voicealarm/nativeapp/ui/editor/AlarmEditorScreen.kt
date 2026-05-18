@@ -9,6 +9,7 @@ import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Base64
 import android.util.Log
 import android.widget.Toast
@@ -65,6 +66,7 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
@@ -91,12 +93,14 @@ internal fun AlarmEditorScreen(
     contentPadding: PaddingValues,
     alarm: AlarmEntity?,
     authSession: AuthSession?,
+    subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     familyAlarmMode: Boolean,
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
+    onOpenBilling: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onSave: (AlarmDraft) -> Unit,
 ) {
@@ -120,12 +124,14 @@ internal fun AlarmEditorScreen(
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
+    var voicePlanGateOpen by remember { mutableStateOf(false) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
     var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
         mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
     }
+    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -133,12 +139,17 @@ internal fun AlarmEditorScreen(
         val pickedUri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
         if (pickedUri == null) {
             editor.alarmSoundUri = null
-            editor.alarmSoundLabel = "무음"
+            editor.alarmSoundLabel = null
             editor.alarmVolumePercent = 0
             return@rememberLauncherForActivityResult
         }
-        editor.alarmSoundUri = pickedUri.toString()
-        editor.alarmSoundLabel = ringtoneTitle(context, pickedUri)
+        if (isDefaultAlarmSoundUri(pickedUri)) {
+            editor.alarmSoundUri = null
+            editor.alarmSoundLabel = null
+        } else {
+            editor.alarmSoundUri = pickedUri.toString()
+            editor.alarmSoundLabel = ringtoneTitle(context, pickedUri)
+        }
         if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
     }
 
@@ -345,8 +356,17 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    fun showVoicePlanGate() {
+        audioMessage = null
+        voicePlanGateOpen = true
+    }
+
     fun saveEditor() {
         if (isSaving) return
+        if (voicePlanLocked && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            showVoicePlanGate()
+            return
+        }
         if (familyAlarmMode) {
             val recipient = selectedFamilyRecipient()
             if (recipient == null) {
@@ -408,11 +428,11 @@ internal fun AlarmEditorScreen(
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
-            audioMessage = "사용할 음성 프로필을 선택해 주세요."
+            audioMessage = "사용할 알람 음성을 선택해 주세요."
             return
         }
         val text = editor.ttsTextForSave()
-        if (text.isBlank()) {
+        if (text.isBlank() && !editor.voiceRandomPrompt) {
             audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요."
             return
         }
@@ -421,7 +441,7 @@ internal fun AlarmEditorScreen(
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
-            audioMessage = "삭제된 음성 프로필이라 문구를 수정할 수 없어요. 다른 음성 프로필을 선택해 주세요."
+            audioMessage = "삭제된 알람 음성이라 문구를 수정할 수 없어요. 다른 알람 음성을 선택해 주세요."
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
@@ -459,6 +479,7 @@ internal fun AlarmEditorScreen(
                         category = editor.activeVoiceCategory(),
                         language = editor.activeVoiceLanguage(),
                         translate = editor.shouldTranslateVoiceText(),
+                        random = editor.voiceRandomPrompt,
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -486,7 +507,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = rawAudioUri,
                 )
                 audioMessage = "생성한 음성을 로컬에 저장했어요."
-                submitDraft(editor.toDraft())
+            submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
@@ -527,6 +548,17 @@ internal fun AlarmEditorScreen(
         onDispose {
             if (recorder.isRecording) recorder.cancel()
             stopPreview()
+        }
+    }
+
+    LaunchedEffect(voicePlanLocked) {
+        if (voicePlanLocked && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            stopPreview()
+            editor.playMode = AlarmPlayModes.ALARM_ONLY
+            editor.clearAudio()
+            selectedFileUri = null
+            selectedFileDurationMillis = null
+            audioMessage = "무료 이용권에서는 일반 알람을 사용할 수 있어요."
         }
     }
 
@@ -626,7 +658,13 @@ internal fun AlarmEditorScreen(
                     Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
                         PlayModeCard(
                             selected = editor.playMode,
+                            voiceLocked = voicePlanLocked,
+                            onLockedVoiceClick = ::showVoicePlanGate,
                             onSelect = { selectedMode ->
+                                if (voicePlanLocked && selectedMode != AlarmPlayModes.ALARM_ONLY) {
+                                    showVoicePlanGate()
+                                    return@PlayModeCard
+                                }
                                 val wasAlarmOnly = editor.playMode == AlarmPlayModes.ALARM_ONLY
                                 editor.playMode = selectedMode
                                 if (selectedMode != AlarmPlayModes.ALARM_ONLY && authSession == null) {
@@ -826,6 +864,17 @@ internal fun AlarmEditorScreen(
                 },
             )
         }
+    }
+
+    if (voicePlanGateOpen) {
+        PlanGateDialog(
+            message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요.",
+            onConfirm = {
+                voicePlanGateOpen = false
+                onOpenBilling()
+            },
+            onDismiss = { voicePlanGateOpen = false },
+        )
     }
 }
 
@@ -1100,6 +1149,14 @@ private fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
         RingtoneManager.getRingtone(context, uri)?.getTitle(context)
     }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람"
+
+private fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
+    val uriText = uri.toString()
+    return listOf(
+        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+        Settings.System.DEFAULT_ALARM_ALERT_URI,
+    ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
+}
 
 internal fun familyMemberLabel(member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }

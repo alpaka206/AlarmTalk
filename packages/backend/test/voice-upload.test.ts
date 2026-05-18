@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware } from './helpers';
-import { resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
 
 const UPLOAD_ID = '50000000-0000-4000-8000-000000000001';
 const SPEAKER_ID = '60000000-0000-4000-8000-000000000001';
@@ -45,6 +45,26 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
+async function storeTestVoiceObject(userId = 'user-1'): Promise<string> {
+  const meta = await getSharedInMemoryVoiceStorage().store({
+    userId,
+    bytes: new Uint8Array([1, 2, 3, 4]),
+    mimeType: 'audio/wav',
+    durationMs: 90_000,
+    originalName: 'sample.wav',
+  });
+  return meta.objectKey;
+}
+
+function diarizationResult(count = 3) {
+  return {
+    speakers: Array.from({ length: count }, (_, index) => ({
+      speaker_id: `speaker-${index + 1}`,
+      segments: [{ start: index, end: index + 0.75 }],
+    })),
+  };
+}
+
 function uploadForm(
   opts: {
     audio?: { bytes: Uint8Array; type: string; name?: string } | null;
@@ -80,14 +100,14 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
       buildApp(),
       uploadForm({
         audio: { bytes: new Uint8Array([1, 2, 3, 4]), type: 'audio/wav', name: 'my.wav' },
-        fields: { durationMs: '5000', originalName: '녹음파일.wav' },
+        fields: { durationMs: '90000', originalName: '녹음파일.wav' },
       }),
     );
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.upload.mimeType).toBe('audio/wav');
     expect(body.upload.sizeBytes).toBe(4);
-    expect(body.upload.durationMs).toBe(5000);
+    expect(body.upload.durationMs).toBe(90000);
     expect(body.upload.originalName).toBe('녹음파일.wav');
     expect(body.upload.objectKey).toContain('mem://');
   });
@@ -120,8 +140,8 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     expect((await res.json()).error_code).toBe('AUDIO_FILE_EMPTY');
   });
 
-  it('10 MiB 초과 → 413', async () => {
-    const big = new Uint8Array(10 * 1024 * 1024 + 1);
+  it('25 MiB 초과 → 413', async () => {
+    const big = new Uint8Array(25 * 1024 * 1024 + 1);
     const res = await req(
       buildApp(),
       uploadForm({ audio: { bytes: big, type: 'audio/wav' } }),
@@ -130,13 +150,16 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     expect((await res.json()).error_code).toBe('AUDIO_FILE_TOO_LARGE');
   });
 
-  it('10 MiB 정확히 → 통과', async () => {
+  it('25 MiB 정확히 → 통과', async () => {
     mockDB.pushResult([], 1);
-    const exact = new Uint8Array(10 * 1024 * 1024);
+    const exact = new Uint8Array(25 * 1024 * 1024);
     exact[0] = 1;
     const res = await req(
       buildApp(),
-      uploadForm({ audio: { bytes: exact, type: 'audio/wav' } }),
+      uploadForm({
+        audio: { bytes: exact, type: 'audio/wav' },
+        fields: { durationMs: '90000' },
+      }),
     );
     expect(res.status).toBe(201);
   });
@@ -177,14 +200,25 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     expect((await res.json()).error_code).toBe('INVALID_DURATION');
   });
 
-  it('durationMs 생략 시 null 로 저장', async () => {
-    mockDB.pushResult([], 1);
+  it('durationMs 생략 시 400', async () => {
     const res = await req(
       buildApp(),
       uploadForm({ audio: { bytes: new Uint8Array([1, 2]), type: 'audio/wav' } }),
     );
-    expect(res.status).toBe(201);
-    expect((await res.json()).upload.durationMs).toBeNull();
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_DURATION');
+  });
+
+  it('1분 미만 durationMs 는 400', async () => {
+    const res = await req(
+      buildApp(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2]), type: 'audio/wav' },
+        fields: { durationMs: '59999' },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUDIO_DURATION_TOO_SHORT');
   });
 
   it('originalName 200자 초과 시 잘림', async () => {
@@ -194,7 +228,7 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
       buildApp(),
       uploadForm({
         audio: { bytes: new Uint8Array([1]), type: 'audio/wav' },
-        fields: { originalName: longName },
+        fields: { durationMs: '90000', originalName: longName },
       }),
     );
     expect(res.status).toBe(201);
@@ -206,7 +240,10 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     mockDB.pushResult([], 1);
     const res = await req(
       buildApp(),
-      uploadForm({ audio: { bytes: new Uint8Array([1]), type: 'audio/wav', name: 'voice.wav' } }),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1]), type: 'audio/wav', name: 'voice.wav' },
+        fields: { durationMs: '90000' },
+      }),
     );
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -219,7 +256,7 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
       buildApp('user-X'),
       uploadForm({
         audio: { bytes: new Uint8Array([10, 20]), type: 'audio/mpeg' },
-        fields: { durationMs: '3000' },
+        fields: { durationMs: '90000' },
       }),
     );
     const insertCall = mockDB.calls[0]!;
@@ -227,7 +264,7 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     expect(insertCall.args[1]).toBe('user-X');
     expect(insertCall.args[3]).toBe('audio/mpeg');
     expect(insertCall.args[4]).toBe(2);
-    expect(insertCall.args[5]).toBe(3000);
+    expect(insertCall.args[5]).toBe(90000);
   });
 });
 
@@ -264,7 +301,9 @@ describe('POST /uploads/:id/separate — 화자 분리 (voice-upload)', () => {
   });
 
   it('정상 화자 분리 → 201 + speakers + provider', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: 'mem://voice/1' }]);
+    const objectKey = await storeTestVoiceObject();
+    mockDiarize.mockResolvedValueOnce(diarizationResult());
+    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
     mockDB.pushResult([], 0); // DELETE old speakers
     mockDB.pushResult([], 1); // INSERT speaker 1
     mockDB.pushResult([], 1); // INSERT speaker 2
@@ -277,12 +316,14 @@ describe('POST /uploads/:id/separate — 화자 분리 (voice-upload)', () => {
     const body = await res.json();
     expect(body.speakers.length).toBeGreaterThanOrEqual(1);
     expect(body.speakers.length).toBeLessThanOrEqual(3);
-    expect(body.provider).toBe('mock');
+    expect(body.provider).toBe('elevenlabs');
     expect(body.speakers[0].label).toMatch(/^화자 \d+$/);
   });
 
   it('기존 화자 DELETE 후 새 INSERT (멱등성)', async () => {
-    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: 'mem://v' }]);
+    const objectKey = await storeTestVoiceObject();
+    mockDiarize.mockResolvedValueOnce(diarizationResult());
+    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
     mockDB.pushResult([], 2); // DELETE old
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);

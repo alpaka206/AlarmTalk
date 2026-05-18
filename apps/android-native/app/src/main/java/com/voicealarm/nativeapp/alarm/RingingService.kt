@@ -10,6 +10,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -233,8 +234,12 @@ class RingingService : Service() {
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        val selectedUri = alarm?.alarmSoundUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        val player = selectedUri?.let { uri ->
+        val alarmUris = buildList {
+            alarm?.alarmSoundUri?.takeIf { it.isNotBlank() }?.let { add(Uri.parse(it)) }
+            add(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM))
+            add(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE))
+        }.filterNotNull().distinct()
+        val player = alarmUris.firstNotNullOfOrNull { uri ->
             runCatching {
                 MediaPlayer().apply {
                     setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
@@ -243,7 +248,7 @@ class RingingService : Service() {
                     prepare()
                 }
             }.onFailure { error ->
-                Log.w(TAG, "Failed to prepare selected alarm sound uri=$uri; using bundled default", error)
+                Log.w(TAG, "Failed to prepare alarm sound uri=$uri", error)
             }.getOrNull()
         } ?: MediaPlayer.create(this, R.raw.voice_alarm_default, alarmAttributes, 0)
 

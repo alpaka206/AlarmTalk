@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Alarm
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Card
@@ -210,7 +209,7 @@ internal fun QuickStartGrid(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HomeActionCard(
-                label = "음성 프로필",
+                label = "알람 음성",
                 icon = Icons.Outlined.Mic,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -268,30 +267,42 @@ internal fun HomeActionCard(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Surface(
-                    modifier = Modifier.size(42.dp),
-                    shape = CircleShape,
-                    color = if (locked) {
-                        MaterialTheme.colorScheme.surfaceVariant
-                    } else {
-                        accentContainerColor
-                    },
-                    contentColor = if (locked) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        accentContentColor
-                    },
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(23.dp),
+                Box(modifier = Modifier.size(48.dp)) {
+                    Surface(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .align(Alignment.CenterStart),
+                        shape = CircleShape,
+                        color = if (locked) {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        } else {
+                            accentContainerColor
+                        },
+                        contentColor = if (locked) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            accentContentColor
+                        },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(23.dp),
+                            )
+                        }
+                    }
+                    if (locked) {
+                        FeatureLockBadge(
+                            modifier = Modifier.align(Alignment.TopEnd),
+                            size = 20.dp,
+                            iconSize = 11.dp,
                         )
                     }
                 }
                 Text(
                     text = label,
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = if (locked) {
@@ -302,15 +313,6 @@ internal fun HomeActionCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.weight(1f))
-                if (locked) {
-                    Icon(
-                        imageVector = Icons.Outlined.Lock,
-                        contentDescription = "권한 필요",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
             }
         }
     }

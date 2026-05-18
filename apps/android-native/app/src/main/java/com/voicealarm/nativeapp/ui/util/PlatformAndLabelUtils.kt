@@ -161,9 +161,9 @@ internal fun vibrationLabel(pattern: String): String = when (pattern) {
 }
 
 internal fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "목소리만"
-    AlarmPlayModes.ALARM_VOICE -> "알람+목소리"
-    else -> "알람만"
+    AlarmPlayModes.VOICE_ONLY -> "음성"
+    AlarmPlayModes.ALARM_VOICE -> "알람 + 음성"
+    else -> "알람"
 }
 
 internal fun userFacingError(error: Throwable, fallback: String): String =
@@ -185,6 +185,14 @@ internal fun hasCoupleOrFamilyAccess(
         plan?.key == "couple" ||
         plan?.planType == "family" ||
         plan?.planType == "couple"
+}
+
+internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionResponse?): Boolean {
+    val subscription = subscriptionResponse?.subscription ?: return false
+    if (subscription.status != "active") return false
+    val plan = subscriptionResponse.plan ?: return false
+    return plan.key in setOf("personal", "plus", "couple", "family") ||
+        plan.planType in setOf("personal", "individual", "plus", "couple", "family")
 }
 
 internal fun familyAlarmRecipients(

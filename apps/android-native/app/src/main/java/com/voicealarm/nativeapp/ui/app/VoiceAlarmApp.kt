@@ -23,7 +23,6 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -31,7 +30,6 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -92,7 +90,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
     val selectedTab = currentTab ?: NativeTab.Home
-    var planGateMessage by remember { mutableStateOf<String?>(null) }
+    var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
     var authRoute by remember { mutableStateOf<AuthRoute>(AuthRoute.Landing) }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
@@ -228,7 +226,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             navController.navigateHomeClearingStack()
         }
         viewModel.loadReceivedAlarmBadgeState()
-        planGateMessage = null
+        planGateDialog = null
         authRoute = AuthRoute.Landing
     }
 
@@ -245,6 +243,39 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
             viewModel.preloadNotes()
+        }
+    }
+
+    LaunchedEffect(
+        authSession?.user?.id,
+        subscriptionResponse?.subscription?.id,
+        subscriptionResponse?.subscription?.status,
+        subscriptionResponse?.plan?.key,
+        subscriptionResponse?.plan?.planType,
+    ) {
+        if (authSession != null && subscriptionResponse != null && !hasPaidVoiceAccess(subscriptionResponse)) {
+            viewModel.applyFreePlanVoiceLock()
+        }
+    }
+
+    LaunchedEffect(
+        currentTab,
+        authSession?.user?.id,
+        subscriptionResponse?.subscription?.id,
+        subscriptionResponse?.subscription?.status,
+        subscriptionResponse?.plan?.key,
+        subscriptionResponse?.plan?.planType,
+    ) {
+        if (
+            currentTab == NativeTab.Voices &&
+            authSession != null &&
+            subscriptionResponse != null &&
+            !hasPaidVoiceAccess(subscriptionResponse)
+        ) {
+            planGateDialog = PlanGateDialogState(
+                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+            )
+            navController.navigateTopLevelTab(NativeTab.Home)
         }
     }
 
@@ -337,15 +368,27 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     fun navigateToTab(tab: NativeTab) {
-        if (selectedTab == tab) return
+        if (
+            tab == NativeTab.Voices &&
+            authSession != null &&
+            !hasPaidVoiceAccess(subscriptionResponse)
+        ) {
+            planGateDialog = PlanGateDialogState(
+                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+            )
+            return
+        }
         if (
             tab == NativeTab.Messages &&
             authSession != null &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
-            planGateMessage = "메시지는 커플/가족 이용권에서 사용할 수 있어요. 초대 코드나 이용권 코드를 등록하거나 이용권을 적용해 주세요."
+            planGateDialog = PlanGateDialogState(
+                message = "메시지는 커플/가족 플랜에서 사용할 수 있어요.",
+            )
             return
         }
+        if (selectedTab == tab) return
         navController.navigateTopLevelTab(tab)
     }
 
@@ -392,31 +435,16 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         )
     }
 
-    planGateMessage?.let { gateMessage ->
-        AlertDialog(
-            onDismissRequest = { planGateMessage = null },
-            title = { Text("이용권 안내") },
-            text = { Text(gateMessage) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        planGateMessage = null
-                        navigateToTab(NativeTab.Billing)
-                    },
-                ) {
-                    Text("이용권 보기")
-                }
+    planGateDialog?.let { gate ->
+        PlanGateDialog(
+            message = gate.message,
+            confirmLabel = gate.confirmLabel,
+            dismissLabel = gate.dismissLabel,
+            onConfirm = {
+                planGateDialog = null
+                navController.navigateTopLevelTab(NativeTab.Billing)
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        planGateMessage = null
-                        navigateToTab(NativeTab.People)
-                    },
-                ) {
-                    Text("코드 등록")
-                }
-            },
+            onDismiss = { planGateDialog = null },
         )
     }
 
@@ -572,12 +600,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       alarm = null,
                       authSession = authSession,
+                      subscriptionResponse = subscriptionResponse,
                       familyGroup = familyGroup,
                       familyAlarmMode = familyTargetMode,
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
                       onCancel = ::goBackInApp,
+                      onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onGenerateTts = viewModel::generateTtsAudio,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
@@ -603,12 +633,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           contentPadding = padding,
                           alarm = currentAlarm,
                           authSession = authSession,
+                          subscriptionResponse = subscriptionResponse,
                           familyGroup = familyGroup,
                           familyAlarmMode = false,
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
                           onCancel = ::goBackInApp,
+                          onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onGenerateTts = viewModel::generateTtsAudio,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
@@ -782,6 +814,12 @@ private sealed interface AuthRoute {
 }
 
 private enum class MessageSeverity { Success, Error, Info }
+
+private data class PlanGateDialogState(
+    val message: String,
+    val confirmLabel: String = "요금제 변경하러 가기",
+    val dismissLabel: String = "닫기",
+)
 
 private fun messageSeverity(text: String): MessageSeverity = when {
     "실패" in text || "못했어요" in text || "오류" in text -> MessageSeverity.Error

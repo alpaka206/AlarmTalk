@@ -205,4 +205,16 @@ describe('migrations', () => {
       expect(stmt).toContain('INSERT OR IGNORE');
     }
   });
+
+  it('migration #33 stores editable TTS preset categories in DB', () => {
+    const m = migrations.find((x) => x.id === 33);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('CREATE TABLE IF NOT EXISTS tts_presets');
+    expect(all).toContain('messages_json TEXT NOT NULL');
+    expect(all).toContain('idx_tts_presets_order');
+    expect(m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length).toBe(8);
+    expect(all).toContain("'morning'");
+    expect(all).toContain("'love'");
+  });
 });

@@ -239,7 +239,7 @@ async function redeemVoucherCodeInTransaction(
     redeemedAt: startsAt.toISOString(),
   });
 
-  await cancelActiveSubscriptionsForUser(db, params.userPk, startsAt);
+  await cancelActiveSubscriptionsForUser(db, params.userPk, startsAt, { deleteVoiceData: false });
 
   const planGroupId = await (async () => {
     try {

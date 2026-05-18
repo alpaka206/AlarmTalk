@@ -3,6 +3,7 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { cancelActiveSubscriptionsForUser } from '../lib/billing-cancel';
+import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   familyAlarmSettingsFromRow,
@@ -255,11 +256,24 @@ user.patch('/plan', async (c) => {
       return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
     }
 
-    const result = await db.execute({
-      sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE google_id = ?`,
-      args: [body.plan, userId],
+    const result = await withWriteTransaction(db, async (tx) => {
+      const update = await tx.execute({
+        sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE google_id = ?`,
+        args: [body.plan, userId],
+      });
+      if (update.rowsAffected === 0) return update;
+      if (body.plan === 'free') {
+        const userRes = await tx.execute({
+          sql: `SELECT id FROM users WHERE google_id = ? LIMIT 1`,
+          args: [userId],
+        });
+        const userPk = userRes.rows[0]?.id;
+        if (typeof userPk === 'string') {
+          await deletePaidVoiceDataForUser(tx, userPk, userId);
+        }
+      }
+      return update;
     });
-
     if (result.rowsAffected === 0) {
       return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
     }

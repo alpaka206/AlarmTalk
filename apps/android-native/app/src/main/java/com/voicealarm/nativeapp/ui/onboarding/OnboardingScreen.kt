@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Group
@@ -43,18 +45,18 @@ private data class OnboardingPage(
 private val OnboardingPages = listOf(
     OnboardingPage(
         icon = Icons.Outlined.Mic,
-        title = "음성으로 깨어나세요",
-        description = "음성 프로필과 공유받은 음성으로\n알람을 만들 수 있어요.",
+        title = "좋아하는 목소리로 깨어나요",
+        description = "녹음하거나 만든 목소리로\n내 알람을 울릴 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.Group,
-        title = "가족과 함께",
-        description = "음성과 메시지를 공유하고\n서로의 알람을 챙길 수 있어요.",
+        title = "소중한 사람들과 함께",
+        description = "목소리와 메시지를 주고받고\n서로의 아침을 챙길 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.AutoAwesome,
-        title = "캐릭터와 함께 성장해요",
-        description = "알람을 끄면 캐릭터가 자라요.\n하루 한 번 성장 기록이 쌓여요.",
+        title = "알람을 끄며 함께 성장해요",
+        description = "하루를 시작할 때마다\n캐릭터의 성장 기록이 쌓여요.",
     ),
 )
 
@@ -159,7 +161,10 @@ internal fun OnboardingScreen(
                     onComplete()
                 } else {
                     scope.launch {
-                        pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        pagerState.animateScrollToPage(
+                            page = pagerState.currentPage + 1,
+                            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                        )
                     }
                 }
             },

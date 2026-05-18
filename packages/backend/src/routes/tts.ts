@@ -12,9 +12,54 @@ import {
   noVoiceProviderError,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
-import { translateTextWithVertex } from '../lib/vertex-translate';
+import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
+import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
+import { isPaidVoicePlan } from './billing-helpers';
 
 const tts = new Hono<AppEnv>();
+const TTS_CATEGORIES = [
+  'morning',
+  'lunch',
+  'evening',
+  'night',
+  'health',
+  'study',
+  'cheer',
+  'love',
+  'custom',
+] as const;
+
+const LEGACY_TTS_CATEGORY_ALIASES: Record<string, (typeof TTS_CATEGORIES)[number]> = {
+  afternoon: 'cheer',
+  sleep: 'night',
+  medicine: 'health',
+};
+
+function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
+  const raw = category.trim();
+  if ((TTS_CATEGORIES as readonly string[]).includes(raw)) {
+    return raw as (typeof TTS_CATEGORIES)[number];
+  }
+  return LEGACY_TTS_CATEGORY_ALIASES[raw] ?? null;
+}
+
+function randomIndex(length: number): number {
+  if (length <= 1) return 0;
+  const values = new Uint32Array(1);
+  crypto.getRandomValues(values);
+  return values[0]! % length;
+}
+
+async function pickRandomPresetText(
+  env: AppEnv['Bindings'],
+  category: string,
+): Promise<string | null> {
+  const presets: TtsPreset[] = await loadTtsPresets(env);
+  const preset = presets.find((item) => item.category === category);
+  const messages = preset?.messages.map((message) => message.trim()).filter(Boolean) ?? [];
+  if (messages.length === 0) return null;
+  return messages[randomIndex(messages.length)]!;
+}
 
 async function findUsableVoiceProfile(
   db: ReturnType<typeof getDB>,
@@ -50,19 +95,21 @@ async function findUsableVoiceProfile(
 
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
+  const resolvedUserPk = c.get('userIdPK');
+  const userPk = resolvedUserPk || userId;
   const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
 
   const body = await c.req.json<{
     voice_profile_id: string;
-    text: string;
+    text?: string;
     category?: string;
     language?: string;
     translate?: boolean;
+    random?: boolean;
   }>();
 
-  if (!body.voice_profile_id || !body.text) {
+  if (!body.voice_profile_id) {
     return c.json(
       { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
       400,
@@ -76,33 +123,40 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  if (body.text.length > 200) {
+  const category = normalizeTtsCategory(body.category ?? 'custom');
+  if (!category) {
     return c.json(
-      { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
+      {
+        error: `Invalid category. Must be one of: ${TTS_CATEGORIES.join(', ')}`,
+        error_code: 'INVALID_CATEGORY',
+      },
+      400,
+    );
+  }
+  const randomRequested = body.random === true;
+  if (randomRequested && category === 'custom') {
+    return c.json(
+      {
+        error: 'Random TTS requires a preset category.',
+        error_code: 'RANDOM_CATEGORY_REQUIRED',
+      },
       400,
     );
   }
 
-  const validCategories = [
-    'morning',
-    'lunch',
-    'afternoon',
-    'evening',
-    'night',
-    'sleep',
-    'medicine',
-    'study',
-    'cheer',
-    'love',
-    'health',
-    'custom',
-  ];
-  if (body.category && !validCategories.includes(body.category)) {
+  const requestText = randomRequested
+    ? await pickRandomPresetText(c.env, category)
+    : (body.text ?? '').trim();
+  if (!requestText) {
     return c.json(
-      {
-        error: `Invalid category. Must be one of: ${validCategories.join(', ')}`,
-        error_code: 'INVALID_CATEGORY',
-      },
+      { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
+      400,
+    );
+  }
+
+  if (requestText.length > 200) {
+    return c.json(
+      { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
     );
   }
@@ -118,6 +172,16 @@ tts.post('/generate', async (c) => {
     const plan = u.plan as string;
     const today = new Date().toISOString().split('T')[0]!;
 
+    if (resolvedUserPk && !isPaidVoicePlan(plan)) {
+      return c.json(
+        {
+          error: 'Voice features require a paid plan.',
+          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+        },
+        403,
+      );
+    }
+
     if (u.daily_tts_reset_at !== today) {
       await db.execute({
         sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE id = ? OR google_id = ?`,
@@ -130,6 +194,14 @@ tts.post('/generate', async (c) => {
         dailyLimitExceeded = true;
       }
     }
+  } else if (resolvedUserPk) {
+    return c.json(
+      {
+        error: 'Voice features require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
   }
 
   const vp = await findUsableVoiceProfile(db, userId, userPk, body.voice_profile_id);
@@ -146,14 +218,17 @@ tts.post('/generate', async (c) => {
 
   try {
     const requestLanguage = body.language ?? 'ko';
-    const shouldTranslate = body.translate === true && requestLanguage !== 'ko';
-    const synthesisText = shouldTranslate
-      ? await translateTextWithVertex(c.env, body.text, requestLanguage, 'ko')
-      : body.text;
+    const prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
+      targetLanguage: requestLanguage,
+      sourceLanguage: 'ko',
+      translate: body.translate === true,
+      autoTag: true,
+    });
+    const synthesisText = prepared.text;
 
     if (synthesisText.length > 200) {
       return c.json(
-        { error: 'Translated text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
+        { error: 'Prepared text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
         400,
       );
     }
@@ -185,6 +260,7 @@ tts.post('/generate', async (c) => {
           language: requestLanguage,
           text: synthesisText,
           outputFormat: attempt.outputFormat,
+          voiceSettings: attempt.voiceSettings,
         });
         return { attempt, cacheKey };
       }),
@@ -201,6 +277,9 @@ tts.post('/generate', async (c) => {
             audio_url: cached.audioUrl,
             audio_object_key: cached.audioObjectKey,
             text: cached.text,
+            original_text: requestText,
+            translated: prepared.translated,
+            tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
             language: requestLanguage,
             provider: cached.provider,
@@ -251,7 +330,7 @@ tts.post('/generate', async (c) => {
             userPk,
             body.voice_profile_id,
             synthesisText,
-            body.category ?? 'custom',
+            category,
             audioUrl,
           ],
         });
@@ -274,7 +353,7 @@ tts.post('/generate', async (c) => {
               requestLanguage,
               cacheKey,
               synthesisText,
-              body.category ?? 'custom',
+              category,
               audioUrl,
               audioObjectKey,
               generated.outputFormat,
@@ -302,6 +381,9 @@ tts.post('/generate', async (c) => {
             audio_url: audioUrl,
             audio_object_key: audioObjectKey,
             text: synthesisText,
+            original_text: requestText,
+            translated: prepared.translated,
+            tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
             language: requestLanguage,
             provider: generated.provider,
@@ -495,8 +577,7 @@ tts.delete('/messages/:id', async (c) => {
 });
 
 tts.get('/presets', async (c) => {
-  const { PRESETS } = await import('../data/presets');
-  return c.json({ presets: PRESETS });
+  return c.json({ presets: await loadTtsPresets(c.env) });
 });
 
 async function findCachedGeneratedAudio(

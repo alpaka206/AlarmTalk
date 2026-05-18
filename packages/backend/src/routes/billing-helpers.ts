@@ -3,11 +3,16 @@ import type { Context } from 'hono';
 import { getDB } from '../lib/db';
 
 export const PAID_PLAN_TYPES = new Set(['personal', 'family']);
+export const PAID_USER_PLANS = new Set(['plus', 'family', 'personal', 'couple']);
 
 export function planTypeToUserPlan(planType: string): 'free' | 'plus' | 'family' {
   if (planType === 'family') return 'family';
   if (planType === 'personal') return 'plus';
   return 'free';
+}
+
+export function isPaidVoicePlan(plan: unknown): boolean {
+  return typeof plan === 'string' && PAID_USER_PLANS.has(plan);
 }
 
 export async function resolveUserPk(c: Context<AppEnv>): Promise<string | null> {

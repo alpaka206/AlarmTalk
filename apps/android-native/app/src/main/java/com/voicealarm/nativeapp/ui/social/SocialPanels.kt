@@ -405,7 +405,7 @@ internal fun VoiceMessagePanel(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MutedText("커플/가족 이용권에서 사용할 수 있어요.")
+                MutedText("메시지는 커플/가족 플랜에서 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
