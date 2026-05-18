@@ -15,6 +15,11 @@ crons = ["*/5 * * * *"]
 # 실제 배포 시 wrangler secret put 으로 설정
 # PERSO_API_KEY = ""
 # ELEVENLABS_API_KEY = ""
+# GEMINI_API_KEY = ""
+# GOOGLE_VERTEX_API_KEY = ""
+# GOOGLE_VERTEX_CREDENTIALS_JSON = ""
+# GOOGLE_VERTEX_LOCATION = "global"
+# GOOGLE_VERTEX_MODEL = "gemini-2.5-flash"
 # TURSO_DATABASE_URL = ""
 # TURSO_AUTH_TOKEN = ""
 # FIREBASE_PROJECT_ID = ""

@@ -10,6 +10,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,10 +22,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -44,16 +48,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.voicealarm.nativeapp.alarm.RingingService
 import com.voicealarm.nativeapp.data.AlarmAppContainer
+import com.voicealarm.nativeapp.data.AlarmEntity
+import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class RingingActivity : ComponentActivity() {
-    private var alarmId: String? = null
+    private var alarmId by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,29 +69,25 @@ class RingingActivity : ComponentActivity() {
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
 
         setContent {
-            var snoozeEnabled by remember { mutableStateOf(true) }
+            var uiState by remember { mutableStateOf(RingingUiState()) }
             val currentAlarmId = alarmId
             LaunchedEffect(currentAlarmId) {
-                snoozeEnabled = currentAlarmId?.let { id ->
+                uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(applicationContext).getAlarm(id)?.let { alarm ->
-                            alarm.snoozeEnabled &&
-                                (
-                                    alarm.snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER ||
-                                        alarm.snoozeCount < alarm.snoozeRepeatLimit
-                                    )
-                        }
+                        AlarmAppContainer.repository(applicationContext)
+                            .getAlarm(id)
+                            ?.toRingingUiState()
                     }
-                } ?: true
+                } ?: RingingUiState()
             }
             RingingRoute(
-                snoozeEnabled = snoozeEnabled,
+                uiState = uiState,
                 onDismiss = {
-                    alarmId?.let { RingingService.dismiss(this, it) }
+                    currentAlarmId?.let { RingingService.dismiss(this, it) }
                     finishAndRemoveTask()
                 },
                 onSnooze = {
-                    alarmId?.let { RingingService.snooze(this, it) }
+                    currentAlarmId?.let { RingingService.snooze(this, it) }
                     finishAndRemoveTask()
                 },
             )
@@ -131,7 +134,8 @@ class RingingActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             window.addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON,
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD,
             )
         }
 
@@ -154,72 +158,89 @@ class RingingActivity : ComponentActivity() {
 
 @Composable
 private fun RingingRoute(
-    snoozeEnabled: Boolean,
+    uiState: RingingUiState,
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
     MaterialTheme(
-        colorScheme = androidx.compose.material3.darkColorScheme(
-            primary = Color(0xFFE6A6A1),
-            secondary = Color(0xFFA9C8E8),
+        colorScheme = darkColorScheme(
+            primary = Color(0xFFA8D4FF),
+            onPrimary = Color(0xFF08243C),
+            primaryContainer = Color(0xFF1E4263),
+            onPrimaryContainer = Color(0xFFD9ECFF),
+            secondary = Color(0xFFF0B8AF),
+            onSecondary = Color(0xFF351210),
+            secondaryContainer = Color(0xFF4F2824),
+            onSecondaryContainer = Color(0xFFFFDED9),
+            tertiary = Color(0xFFC7E5D6),
+            onTertiary = Color(0xFF123226),
             background = Color(0xFF090A0F),
-            surface = Color(0xFF14161E),
-            onPrimary = Color(0xFF2C1110),
+            surface = Color(0xFF131821),
+            surfaceVariant = Color(0xFF202833),
             onSurface = Color(0xFFF7F7FA),
-            onSurfaceVariant = Color(0xFFA8AEBA),
+            onSurfaceVariant = Color(0xFFB6BEC9),
+            outlineVariant = Color(0xFF303A46),
         ),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(28.dp),
+                .padding(horizontal = 24.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Spacer(Modifier.height(24.dp))
+            RingingStatusPill()
             Column(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
                 Surface(
-                    modifier = Modifier.size(128.dp),
+                    modifier = Modifier.size(112.dp),
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                    contentColor = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Outlined.Alarm,
                             contentDescription = null,
-                            modifier = Modifier.size(68.dp),
+                            modifier = Modifier.size(58.dp),
                         )
                     }
                 }
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(24.dp))
                 Text(
-                    text = "좋아하는 목소리로\n일어날 시간이에요",
+                    text = uiState.title,
                     color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "오늘의 목소리 알람이 울리고 있어요",
+                    text = uiState.subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(28.dp))
+                uiState.voiceText?.let { voiceText ->
+                    Spacer(Modifier.height(22.dp))
+                    RingingVoiceText(voiceText)
+                }
+                Spacer(Modifier.height(24.dp))
                 RingingVoiceWaveform()
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (snoozeEnabled) {
+                if (uiState.snoozeEnabled) {
                     OutlinedButton(
                         onClick = onSnooze,
                         modifier = Modifier
@@ -229,6 +250,7 @@ private fun RingingRoute(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     ) {
                         Icon(Icons.Outlined.Snooze, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -250,10 +272,60 @@ private fun RingingRoute(
 }
 
 @Composable
+private fun RingingStatusPill() {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.GraphicEq,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = "알람 울림",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RingingVoiceText(text: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 420.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun RingingVoiceWaveform() {
     Row(
         modifier = Modifier
-            .fillMaxWidth(0.78f)
+            .fillMaxWidth(0.76f)
             .height(54.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
@@ -270,13 +342,54 @@ private fun RingingVoiceWaveform() {
                     .height((8 + level * 42).dp)
                     .background(
                         color = when (index) {
-                            in 5..15 -> MaterialTheme.colorScheme.primary
-                            16, 17 -> MaterialTheme.colorScheme.secondary
-                            else -> MaterialTheme.colorScheme.outlineVariant
+                            in 5..14 -> MaterialTheme.colorScheme.primary
+                            15, 16, 17 -> MaterialTheme.colorScheme.secondary
+                            else -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.52f)
                         },
                         shape = RoundedCornerShape(999.dp),
                     ),
             )
         }
     }
+}
+
+private data class RingingUiState(
+    val title: String = "알람이 울리고 있어요",
+    val subtitle: String = "지금 알람을 확인해 주세요",
+    val voiceText: String? = null,
+    val snoozeEnabled: Boolean = true,
+)
+
+private fun AlarmEntity.toRingingUiState(): RingingUiState {
+    val customTitle = label.trim().takeIf { it.isNotBlank() && it != "알람" }
+    val timeText = alarmTimeLabel(hour, minute)
+    val voiceMessage = voiceText
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
+    val snoozeAvailable = snoozeEnabled &&
+        (
+            snoozeRepeatLimit == SnoozeRepeatLimits.FOREVER ||
+                snoozeCount < snoozeRepeatLimit
+            )
+
+    return RingingUiState(
+        title = customTitle ?: timeText,
+        subtitle = if (customTitle != null) timeText else ringingModeLabel(playMode, voiceMessage != null),
+        voiceText = voiceMessage,
+        snoozeEnabled = snoozeAvailable,
+    )
+}
+
+private fun alarmTimeLabel(hour: Int, minute: Int): String {
+    val marker = if (hour < 12) "오전" else "오후"
+    val hour12 = hour % 12
+    val displayHour = if (hour12 == 0) 12 else hour12
+    return "$marker $displayHour:${"%02d".format(minute)}"
+}
+
+private fun ringingModeLabel(playMode: String, hasVoiceText: Boolean): String = when {
+    hasVoiceText -> "목소리 알람이 울리고 있어요"
+    playMode == AlarmPlayModes.VOICE_ONLY -> "음성이 울리고 있어요"
+    playMode == AlarmPlayModes.ALARM_VOICE -> "알람과 음성이 준비되어 있어요"
+    else -> "알람이 울리고 있어요"
 }

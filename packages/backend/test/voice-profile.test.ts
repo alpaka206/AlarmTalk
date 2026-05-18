@@ -46,10 +46,11 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
-function cloneForm(audio: Uint8Array | null, name: string | null): Request {
+function cloneForm(audio: Uint8Array | null, name: string | null, durationMs = '90000'): Request {
   const form = new FormData();
   if (audio) form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'sample.wav');
   if (name) form.append('name', name);
+  if (durationMs) form.append('durationMs', durationMs);
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
 }
 
@@ -329,6 +330,20 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect((await res.json()).error_code).toBe('NAME_TOO_LONG');
   });
 
+  it('durationMs 생략 시 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', ''));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_DURATION');
+  });
+
+  it('1분 미만 durationMs 는 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '59999'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('VOICE_CLONE_AUDIO_TOO_SHORT');
+  });
+
   it('name 50자 정확히 → 통과', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
@@ -377,9 +392,14 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-x' });
     await req(buildApp(), cloneForm(new Uint8Array([10, 20, 30]), '이름'));
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
-    const [audioArg, nameArg] = mockCreateInstantClone.mock.calls[0]! as [ArrayBuffer, string];
+    const [audioArg, nameArg, optionsArg] = mockCreateInstantClone.mock.calls[0]! as [
+      ArrayBuffer,
+      string,
+      { removeBackgroundNoise?: boolean },
+    ];
     expect(new Uint8Array(audioArg)).toEqual(new Uint8Array([10, 20, 30]));
     expect(nameArg).toBe('이름');
+    expect(optionsArg).toEqual({ removeBackgroundNoise: true });
   });
 
   it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {

@@ -180,7 +180,7 @@ internal fun PermissionGateDialog(
         )
         PermissionTarget.RecordAudio -> Triple(
             "마이크 권한이 필요해요",
-            "이 권한이 없어 지금은 녹음을 시작할 수 없어요. 음성 프로필을 만들려면 마이크 권한이 필요해요.",
+            "이 권한이 없어 지금은 녹음을 시작할 수 없어요. 알람 음성을 만들려면 마이크 권한이 필요해요.",
             "허용하기",
         )
     }

@@ -57,6 +57,10 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
+    if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
+        message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
+        return
+    }
     viewModelScope.launch {
         if (!draft.targetUserId.isNullOrBlank()) {
             createFamilyTargetAlarm(draft, onDone)
@@ -160,6 +164,10 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
 }
 
 internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDone: () -> Unit) {
+    if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
+        message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
+        return
+    }
     viewModelScope.launch {
         runCatching {
             repository.updateAlarm(alarmId, draft)

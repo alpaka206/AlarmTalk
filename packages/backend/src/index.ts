@@ -5,7 +5,7 @@ import { authMiddleware } from './middleware/auth';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
-import { publicCache, privateCache, noStore } from './middleware/cache';
+import { privateCache, noStore } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
@@ -107,9 +107,9 @@ app.post('/api/init-db', async (c) => {
 });
 
 // 공개 라우트 (인증 불필요)
-app.get('/api/tts/presets', publicCache, async (c) => {
-  const { PRESETS } = await import('./data/presets');
-  return c.json({ presets: PRESETS });
+app.get('/api/tts/presets', noStore, async (c) => {
+  const { loadTtsPresets } = await import('./lib/tts-presets');
+  return c.json({ presets: await loadTtsPresets(c.env) });
 });
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)

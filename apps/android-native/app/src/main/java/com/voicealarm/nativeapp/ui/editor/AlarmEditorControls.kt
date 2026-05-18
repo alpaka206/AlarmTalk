@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmPlayModes
@@ -261,6 +262,8 @@ internal fun QuickChip(
 internal fun PlayModeCard(
     selected: String,
     onSelect: (String) -> Unit,
+    voiceLocked: Boolean = false,
+    onLockedVoiceClick: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -275,6 +278,8 @@ internal fun PlayModeCard(
         PlayModeSelector(
             selected = selected,
             onSelect = onSelect,
+            voiceLocked = voiceLocked,
+            onLockedVoiceClick = onLockedVoiceClick,
         )
     }
 }
@@ -283,24 +288,32 @@ internal fun PlayModeCard(
 internal fun PlayModeSelector(
     selected: String,
     onSelect: (String) -> Unit,
+    voiceLocked: Boolean = false,
+    onLockedVoiceClick: () -> Unit = {},
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PlayModeChip(
-            label = "알람만",
+            label = "알람",
             selected = selected == AlarmPlayModes.ALARM_ONLY,
             onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "음성만",
+            label = "음성",
             selected = selected == AlarmPlayModes.VOICE_ONLY,
-            onClick = { onSelect(AlarmPlayModes.VOICE_ONLY) },
+            locked = voiceLocked,
+            onClick = {
+                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.VOICE_ONLY)
+            },
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "알람+음성",
+            label = "알람 + 음성",
             selected = selected == AlarmPlayModes.ALARM_VOICE,
-            onClick = { onSelect(AlarmPlayModes.ALARM_VOICE) },
+            locked = voiceLocked,
+            onClick = {
+                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
+            },
             modifier = Modifier.weight(1f),
         )
     }
@@ -312,13 +325,16 @@ internal fun PlayModeChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    locked: Boolean = false,
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.alpha(if (locked && !selected) 0.58f else 1f),
         shape = RoundedCornerShape(14.dp),
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
+        } else if (locked) {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f)
         } else {
             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
         },
@@ -328,35 +344,49 @@ internal fun PlayModeChip(
             BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.62f))
         },
     ) {
-        Text(
-            text = label,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp, vertical = 14.dp),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else if (locked) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+            if (locked && !selected) {
+                FeatureLockBadge(
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    size = 18.dp,
+                    iconSize = 10.dp,
+                )
+            }
+        }
     }
 }
 
 internal val TtsCategories = listOf(
-    "morning" to "아침",
-    "lunch" to "점심",
-    "afternoon" to "오후",
-    "evening" to "저녁",
+    "morning" to "기상",
+    "lunch" to "점심 식사",
+    "evening" to "퇴근",
     "night" to "밤",
-    "sleep" to "취침",
-    "medicine" to "약",
+    "health" to "건강",
     "study" to "공부",
     "cheer" to "응원",
     "love" to "사랑",
-    "health" to "건강",
 )
 
 internal val TtsLanguages = listOf(

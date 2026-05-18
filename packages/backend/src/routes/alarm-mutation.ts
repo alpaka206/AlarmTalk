@@ -18,12 +18,30 @@ import {
   type VibrationPattern,
   type WakeMode,
 } from './alarm-helpers';
+import { isPaidVoicePlan } from './billing-helpers';
 
 const alarmMutation = new Hono<AppEnv>();
 
+function alarmUsesPaidVoice(body: {
+  mode?: string | null;
+  wake_mode?: string | null;
+  message_id?: string | null;
+  voice_profile_id?: string | null;
+  speaker_id?: string | null;
+  raw_audio_url?: string | null;
+}): boolean {
+  return body.mode === 'tts' ||
+    body.wake_mode === 'voice_only' ||
+    !!body.message_id ||
+    !!body.voice_profile_id ||
+    !!body.speaker_id ||
+    !!body.raw_audio_url;
+}
+
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
-  const userPk = c.get('userIdPK') || userId;
+  const resolvedUserPk = c.get('userIdPK');
+  const userPk = resolvedUserPk || userId;
   const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
 
@@ -137,6 +155,28 @@ alarmMutation.post('/', async (c) => {
     sql: 'SELECT plan FROM users WHERE google_id = ?',
     args: [alarmOwner],
   });
+  let creatorPlanValue = alarmOwner === userId && user.rows.length > 0
+    ? user.rows[0]!.plan
+    : undefined;
+  if (resolvedUserPk && alarmOwner !== userId) {
+    const creatorPlan = await db.execute({
+      sql: 'SELECT plan FROM users WHERE google_id = ? OR id = ? LIMIT 1',
+      args: [userId, userPk],
+    });
+    creatorPlanValue = creatorPlan.rows[0]?.plan;
+  }
+  const creatorHasPaidVoice = !resolvedUserPk ||
+    creatorPlanValue === undefined ||
+    isPaidVoicePlan(creatorPlanValue);
+  if (!creatorHasPaidVoice && alarmUsesPaidVoice(body)) {
+    return c.json(
+      {
+        error: 'Voice alarms require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
+  }
 
   if (user.rows.length > 0 && user.rows[0]!.plan === 'free') {
     const alarmCount = await db.execute({
@@ -188,7 +228,9 @@ alarmMutation.post('/', async (c) => {
   }
 
   const alarmId = crypto.randomUUID();
-  const mode: AlarmMode = (body.mode as AlarmMode | undefined) ?? 'tts';
+  const mode: AlarmMode = (body.mode as AlarmMode | undefined) ?? (
+    creatorHasPaidVoice ? 'tts' : 'sound-only'
+  );
   const vibPattern: VibrationPattern =
     (body.vibration_pattern as VibrationPattern | undefined) ?? 'default';
   const wakeMode: WakeMode = (body.wake_mode as WakeMode | undefined) ?? 'sound_then_voice';
@@ -260,11 +302,45 @@ alarmMutation.patch('/:id', async (c) => {
   if (fieldError) return c.json(fieldError, 400);
 
   const existing = await db.execute({
-    sql: 'SELECT id FROM alarms WHERE id = ? AND user_id = ?',
+    sql: `SELECT a.id, a.message_id, a.mode, a.wake_mode, a.voice_profile_id,
+                 a.speaker_id, a.raw_audio_url, u.plan AS user_plan
+          FROM alarms a
+          LEFT JOIN users u ON u.google_id = a.user_id OR u.id = a.user_id
+          WHERE a.id = ? AND a.user_id = ?`,
     args: [id, userId],
   });
   if (existing.rows.length === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
+  }
+
+  const current = typedRow<{
+    message_id: string | null;
+    mode: string | null;
+    wake_mode: string | null;
+    voice_profile_id: string | null;
+    speaker_id: string | null;
+    raw_audio_url: string | null;
+    user_plan?: string | null;
+  }>(existing.rows[0]!);
+  const resolvedUserPk = c.get('userIdPK');
+  const creatorHasPaidVoice = !resolvedUserPk ||
+    current.user_plan === undefined ||
+    isPaidVoicePlan(current.user_plan);
+  if (!creatorHasPaidVoice && alarmUsesPaidVoice({
+    mode: body.mode !== undefined ? body.mode : current.mode,
+    wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,
+    message_id: body.message_id !== undefined ? body.message_id : current.message_id,
+    voice_profile_id: body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
+    speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
+    raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
+  })) {
+    return c.json(
+      {
+        error: 'Voice alarms require a paid plan.',
+        error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+      },
+      403,
+    );
   }
 
   const updates: string[] = [];

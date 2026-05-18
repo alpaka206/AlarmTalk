@@ -78,7 +78,7 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
             voiceProfiles = profiles
         }.onFailure { error ->
             Log.e(TAG, "Failed to load voice profiles", error)
-            if (showMessage) message = userFacingError(error, "음성 프로필을 불러오지 못했어요")
+            if (showMessage) message = userFacingError(error, "알람 음성을 불러오지 못했어요")
         }
         voiceProfileBusy = false
     }
@@ -91,16 +91,20 @@ internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAu
 internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, CachedAlarmAudio, Boolean>>) {
     val session = authSession
     if (session == null) {
-        message = "음성 프로필을 만들려면 먼저 로그인해 주세요"
+        message = "알람 음성을 만들려면 먼저 로그인해 주세요"
+        return
+    }
+    if (!hasPaidVoiceAccess(subscriptionResponse)) {
+        message = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
         return
     }
     val drafts = items.map { (name, audio, shared) -> Triple(name.trim(), audio, shared) }
     if (drafts.isEmpty() || drafts.any { it.first.isBlank() }) {
-        message = "음성 프로필 이름을 입력해 주세요"
+        message = "알람 음성 이름을 입력해 주세요"
         return
     }
     if (voiceProfiles.size + drafts.size > MAX_VOICE_PROFILES) {
-        message = "음성 프로필은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
+        message = "알람 음성은 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
         return
     }
 
@@ -115,6 +119,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
                         audio = voiceUploadPart(audio),
                         name = name.toRequestBody("text/plain".toMediaType()),
                         isShared = shared.toString().toRequestBody("text/plain".toMediaType()),
+                        durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -122,15 +127,16 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
             val newIds = profiles.map { it.id }.toSet()
             voiceProfiles = profiles + voiceProfiles.filterNot { it.id in newIds }
             message = if (profiles.size == 1) {
-                "음성 프로필 '${profiles.first().name}'을 만들었어요"
+                "알람 음성 '${profiles.first().name}'을 만들었어요"
             } else {
-                "음성 프로필 ${profiles.size}개를 만들었어요"
+                "알람 음성 ${profiles.size}개를 만들었어요"
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to create voice profile", error)
             message = when (voiceErrorCode(error)) {
                 "VOICE_SLOT_EXHAUSTED" -> "서비스가 확장중이에요. 잠시만 기다려주세요!"
-                else -> userFacingError(error, "음성 프로필 생성에 실패했어요")
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 요금제를 사용해야 목소리를 만들 수 있어요."
+                else -> userFacingError(error, "알람 음성 생성에 실패했어요")
             }
         }
         voiceProfileBusy = false
@@ -151,6 +157,9 @@ private fun voiceErrorCode(error: Throwable): String? {
 
 internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
     val session = authSession ?: throw IllegalStateException("화자 분리를 하려면 먼저 로그인해 주세요")
+    check(hasPaidVoiceAccess(subscriptionResponse)) {
+        "유료 요금제를 사용해야 목소리를 만들 수 있어요."
+    }
     return withContext(Dispatchers.IO) {
         val upload = api.uploadVoiceAudio(
             authorization = VoiceAlarmApiClient.bearer(session.token),
@@ -168,12 +177,12 @@ internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio
 internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
     val session = authSession
     if (session == null) {
-        message = "음성 프로필을 수정하려면 먼저 로그인해 주세요"
+        message = "알람 음성을 수정하려면 먼저 로그인해 주세요"
         return
     }
     val trimmedName = name.trim()
     if (trimmedName.isBlank()) {
-        message = "음성 프로필 이름을 입력해 주세요"
+        message = "알람 음성 이름을 입력해 주세요"
         return
     }
 
@@ -192,10 +201,10 @@ internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
             voiceProfiles = voiceProfiles.map {
                 if (it.id == profile.id) it.copy(name = profile.name, isShared = profile.isShared ?: it.isShared) else it
             }
-            message = "음성 프로필 이름을 바꿨어요"
+            message = "알람 음성 이름을 바꿨어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
-            message = userFacingError(error, "음성 프로필 이름 변경에 실패했어요")
+            message = userFacingError(error, "알람 음성 이름 변경에 실패했어요")
         }
         voiceProfileBusy = false
     }
@@ -204,7 +213,7 @@ internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
     val session = authSession
     if (session == null) {
-        message = "음성 프로필을 공유하려면 먼저 로그인해 주세요"
+        message = "알람 음성을 공유하려면 먼저 로그인해 주세요"
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
@@ -232,10 +241,10 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
             }.onSuccess { profiles ->
                 familyVoices = profiles
             }
-            message = if (shared) "음성 프로필을 공유했어요" else "음성 프로필 공유를 껐어요"
+            message = if (shared) "알람 음성을 공유했어요" else "알람 음성 공유를 껐어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to update voice profile sharing id=$profileId shared=$shared", error)
-            message = userFacingError(error, "음성 프로필 공유 설정에 실패했어요")
+            message = userFacingError(error, "알람 음성 공유 설정에 실패했어요")
         }
         voiceProfileBusy = false
     }
@@ -244,7 +253,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
 internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
     val session = authSession
     if (session == null) {
-        message = "음성 프로필을 삭제하려면 먼저 로그인해 주세요"
+        message = "알람 음성을 삭제하려면 먼저 로그인해 주세요"
         return
     }
 
@@ -256,18 +265,19 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
                 api.deleteVoiceProfile(
                     authorization = VoiceAlarmApiClient.bearer(session.token),
                     id = profileId,
+                    force = true,
                 )
             }
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            message = "음성 프로필을 삭제했어요"
+            message = "알람 음성을 삭제했어요"
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-                message = "이미 삭제된 음성 프로필이에요"
+                message = "이미 삭제된 알람 음성이에요"
             } else {
                 Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
-                message = userFacingError(error, "음성 프로필 삭제에 실패했어요")
+                message = userFacingError(error, "알람 음성 삭제에 실패했어요")
             }
         }
         voiceProfileBusy = false
@@ -275,6 +285,9 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
+    check(hasPaidVoiceAccess(subscriptionResponse)) {
+        "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
+    }
     val session = authSession ?: throw IllegalStateException("음성 오디오를 만들려면 먼저 로그인해 주세요")
     return withContext(Dispatchers.IO) {
         api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)

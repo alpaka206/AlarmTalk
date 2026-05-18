@@ -23,10 +23,30 @@ type VertexGenerateContentResponse = {
   }>;
 };
 
+export type AlarmTextPreparation = {
+  text: string;
+  translated: boolean;
+  tags: string[];
+  provider: 'vertex' | 'gemini-api-key' | 'local';
+};
+
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
 const DEFAULT_VERTEX_MODEL = 'gemini-2.5-flash';
+const TAG_RE = /\[[a-z][a-z -]{1,32}\]/i;
+const APPROVED_TAGS = [
+  'warmly',
+  'encouraging',
+  'gentle',
+  'softly',
+  'calmly',
+  'happily',
+  'proudly',
+  'brightly',
+  'sleepily',
+  'comforting',
+];
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
@@ -36,26 +56,82 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ko: 'Korean',
 };
 
+export async function prepareAlarmTextWithVertex(
+  env: Env,
+  text: string,
+  options: {
+    targetLanguage: string;
+    sourceLanguage?: string;
+    translate?: boolean;
+    autoTag?: boolean;
+  },
+): Promise<AlarmTextPreparation> {
+  const trimmed = text.trim();
+  const sourceLanguage = options.sourceLanguage ?? 'ko';
+  const targetLanguage = options.targetLanguage || sourceLanguage;
+  const shouldTranslate = options.translate === true && targetLanguage !== sourceLanguage;
+  const shouldTag = options.autoTag !== false && !TAG_RE.test(trimmed);
+
+  if (!trimmed) {
+    return { text: trimmed, translated: false, tags: [], provider: 'local' };
+  }
+
+  if (!shouldTranslate && !shouldTag) {
+    return {
+      text: trimmed,
+      translated: false,
+      tags: extractTags(trimmed),
+      provider: 'local',
+    };
+  }
+
+  if (!hasGeminiConfiguration(env)) {
+    const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
+    return {
+      text: fallbackText,
+      translated: false,
+      tags: extractTags(fallbackText),
+      provider: 'local',
+    };
+  }
+
+  const prompt = alarmTextPrompt({
+    text: trimmed,
+    sourceLanguage,
+    targetLanguage,
+    shouldTranslate,
+    shouldTag,
+  });
+  const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
+  const raw = await generateContentText(env, prompt, {
+    temperature: 0.15,
+    maxOutputTokens: 256,
+  });
+  const parsed = parseAlarmTextPreparation(raw);
+  const preparedText = parsed.text || (shouldTag ? tagAlarmTextLocally(trimmed) : trimmed);
+  const tags = extractTags(preparedText);
+
+  return {
+    text: preparedText,
+    translated: shouldTranslate,
+    tags,
+    provider,
+  };
+}
+
 export async function translateTextWithVertex(
   env: Env,
   text: string,
   targetLanguage: string,
   sourceLanguage = 'ko',
 ): Promise<string> {
-  const trimmed = text.trim();
-  if (!trimmed || targetLanguage === sourceLanguage || targetLanguage === 'ko') return trimmed;
-
-  const credentials = readVertexCredentials(env);
-  const accessToken = await createAccessToken(credentials);
-  const translated = await generateTranslation({
-    env,
-    credentials,
-    accessToken,
-    text: trimmed,
+  const prepared = await prepareAlarmTextWithVertex(env, text, {
     targetLanguage,
     sourceLanguage,
+    translate: true,
+    autoTag: false,
   });
-  return translated || trimmed;
+  return prepared.text;
 }
 
 function readVertexCredentials(env: Env): Required<
@@ -121,7 +197,7 @@ async function createAccessToken(
   return json.access_token;
 }
 
-async function generateTranslation(args: {
+export async function generateTranslation(args: {
   env: Env;
   credentials: ReturnType<typeof readVertexCredentials>;
   accessToken: string;
@@ -172,6 +248,171 @@ async function generateTranslation(args: {
   return (json.candidates?.[0]?.content?.parts?.[0]?.text || '')
     .trim()
     .replace(/^["“”]+|["“”]+$/g, '');
+}
+
+async function generateContentText(
+  env: Env,
+  prompt: string,
+  config: { temperature: number; maxOutputTokens: number },
+): Promise<string> {
+  const apiKey = readGeminiApiKey(env);
+  if (apiKey) {
+    return generateContentWithApiKey(env, apiKey, prompt, config);
+  }
+
+  const credentials = readVertexCredentials(env);
+  const accessToken = await createAccessToken(credentials);
+  const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
+  const model = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
+  const endpoint =
+    `https://aiplatform.googleapis.com/v1/projects/${credentials.project_id}` +
+    `/locations/${location}/publishers/google/models/${model}:generateContent`;
+  return generateContentAtEndpoint(endpoint, prompt, config, {
+    authorization: `Bearer ${accessToken}`,
+  });
+}
+
+async function generateContentWithApiKey(
+  env: Env,
+  apiKey: string,
+  prompt: string,
+  config: { temperature: number; maxOutputTokens: number },
+): Promise<string> {
+  const rawModel = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
+  const model = rawModel.startsWith('models/') ? rawModel : `models/${rawModel}`;
+  const endpoint =
+    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent` +
+    `?key=${encodeURIComponent(apiKey)}`;
+  return generateContentAtEndpoint(endpoint, prompt, config);
+}
+
+async function generateContentAtEndpoint(
+  endpoint: string,
+  prompt: string,
+  config: { temperature: number; maxOutputTokens: number },
+  extraHeaders: Record<string, string> = {},
+): Promise<string> {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      ...extraHeaders,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: config.temperature,
+        maxOutputTokens: config.maxOutputTokens,
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+  const json: VertexGenerateContentResponse & { error?: { message?: string } } = await response
+    .json<VertexGenerateContentResponse & { error?: { message?: string } }>()
+    .catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error?.message || `Gemini text preparation failed (${response.status})`);
+  }
+  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+}
+
+function alarmTextPrompt(args: {
+  text: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  shouldTranslate: boolean;
+  shouldTag: boolean;
+}): string {
+  const sourceName = LANGUAGE_NAMES[args.sourceLanguage] || args.sourceLanguage;
+  const targetName = LANGUAGE_NAMES[args.targetLanguage] || args.targetLanguage;
+  const action = args.shouldTranslate
+    ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
+    : `Keep the user's alarm message in ${sourceName}.`;
+  const tagInstruction = args.shouldTag
+    ? `Add one or two ElevenLabs v3 delivery tags from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put tags inline before the phrase they affect.`
+    : 'Do not add or remove delivery tags.';
+
+  return [
+    'You prepare short voice-alarm text for text-to-speech.',
+    action,
+    tagInstruction,
+    'Do not add explanations, markdown, quotes, emojis, or extra fields.',
+    'Keep the final text natural, spoken, and 200 characters or fewer.',
+    'Return strict JSON: {"text":"final text","tags":["tag names without brackets"]}.',
+    '',
+    args.text,
+  ].join('\n');
+}
+
+function parseAlarmTextPreparation(raw: string): { text: string; tags: string[] } {
+  const cleaned = raw
+    .trim()
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  const candidate = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+  try {
+    const parsed = JSON.parse(candidate) as { text?: unknown; tags?: unknown };
+    const text = typeof parsed.text === 'string' ? parsed.text.trim() : '';
+    const tags = Array.isArray(parsed.tags)
+      ? parsed.tags.filter((tag): tag is string => typeof tag === 'string').map(normalizeTag)
+      : extractTags(text);
+    return {
+      text: stripWrappingQuotes(text),
+      tags: tags.filter(Boolean),
+    };
+  } catch {
+    return {
+      text: stripWrappingQuotes(cleaned),
+      tags: extractTags(cleaned),
+    };
+  }
+}
+
+function hasGeminiConfiguration(env: Env): boolean {
+  return Boolean(readGeminiApiKey(env) || env.GOOGLE_VERTEX_CREDENTIALS_JSON);
+}
+
+function readGeminiApiKey(env: Env): string | undefined {
+  return env.GOOGLE_VERTEX_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+}
+
+function extractTags(text: string): string[] {
+  const matches = text.match(/\[([a-z][a-z -]{1,32})\]/gi) ?? [];
+  return Array.from(new Set(matches.map((tag) => normalizeTag(tag))));
+}
+
+function normalizeTag(tag: string): string {
+  return tag.replace(/^\[/, '').replace(/\]$/, '').trim().toLowerCase();
+}
+
+function stripWrappingQuotes(text: string): string {
+  return text.trim().replace(/^["'“”]+|["'“”]+$/g, '').trim();
+}
+
+function tagAlarmTextLocally(text: string): string {
+  if (TAG_RE.test(text)) return text;
+  const lower = text.toLowerCase();
+  const tag = lower.includes('잘 자') || lower.includes('night') || lower.includes('sleep')
+    ? '[softly]'
+    : lower.includes('사랑') || lower.includes('love')
+      ? '[warmly]'
+      : lower.includes('고생') || lower.includes('퇴근') || lower.includes('수고')
+        ? '[gentle]'
+        : lower.includes('공부') || lower.includes('study') || lower.includes('힘')
+          ? '[encouraging]'
+          : lower.includes('건강') || lower.includes('약') || lower.includes('물')
+            ? '[calmly]'
+            : '[warmly]';
+  const tagged = `${tag} ${text}`;
+  return tagged.length <= 200 ? tagged : text;
 }
 
 async function signJwt(

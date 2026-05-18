@@ -60,12 +60,12 @@ describe('ElevenLabsClient', () => {
       expect(opts.method).toBe('POST');
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
-      expect(body.model_id).toBe('eleven_multilingual_v2');
-      expect(body.voice_settings.stability).toBe(1);
-      expect(body.voice_settings.similarity_boost).toBe(0.75);
-      expect(body.voice_settings.style).toBe(0);
-      expect(body.voice_settings.speed).toBe(1);
-      expect(body.voice_settings.use_speaker_boost).toBe(true);
+      expect(body.model_id).toBe('eleven_v3');
+      expect(body.voice_settings.stability).toBe(0.5);
+      expect(body.voice_settings.similarity_boost).toBe(0.82);
+      expect(body.voice_settings.style).toBe(0.25);
+      expect(body.voice_settings.speed).toBe(0.96);
+      expect(body.voice_settings.use_speaker_boost).toBeUndefined();
     });
 
     it('커스텀 옵션 반영', async () => {
@@ -139,17 +139,26 @@ describe('ElevenLabsClient', () => {
   describe('diarize', () => {
     it('FormData로 전송 + 결과 반환', async () => {
       const diarizeResult = {
-        speakers: [{ speaker_id: 's1', segments: [{ start: 0, end: 5 }] }],
+        words: [
+          { text: 'hello', start: 0, end: 0.4, type: 'word', speaker_id: 'speaker_1' },
+          { text: 'world', start: 0.45, end: 0.8, type: 'word', speaker_id: 'speaker_1' },
+          { text: 'again', start: 1.5, end: 2, type: 'word', speaker_id: 'speaker_2' },
+        ],
       };
       mockFetch.mockResolvedValueOnce(okJson(diarizeResult));
 
       const result = await client.diarize(new ArrayBuffer(500));
 
       const [url, opts] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.elevenlabs.io/v1/audio/diarize');
+      expect(url).toBe('https://api.elevenlabs.io/v1/speech-to-text');
       expect(opts.method).toBe('POST');
-      expect(result.speakers).toHaveLength(1);
-      expect(result.speakers[0].speaker_id).toBe('s1');
+      const body = opts.body as FormData;
+      expect(body.get('model_id')).toBe('scribe_v2');
+      expect(body.get('diarize')).toBe('true');
+      expect(body.get('timestamps_granularity')).toBe('word');
+      expect(result.speakers).toHaveLength(2);
+      expect(result.speakers[0].speaker_id).toBe('speaker_1');
+      expect(result.speakers[0].segments).toEqual([{ start: 0, end: 0.8 }]);
     });
 
     it('API 에러 시 예외', async () => {

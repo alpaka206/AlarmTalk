@@ -250,7 +250,7 @@ billingMutation.post('/checkout', async (c) => {
       };
     }
 
-    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt);
+    await cancelActiveSubscriptionsForUser(tx, userPk, startsAt, { deleteVoiceData: false });
 
     return createPaidSubscriptionArtifacts(tx, {
       userPk,
@@ -458,7 +458,7 @@ billingMutation.post('/cancel', async (c) => {
   }
 
   await withWriteTransaction(db, (tx) =>
-    cancelActiveSubscriptionsForUser(tx, userPk),
+    cancelActiveSubscriptionsForUser(tx, userPk, undefined, { deleteVoiceData: true }),
   );
   return c.json({ success: true, mode, subscription_id: active.subscriptionId });
 });
@@ -539,7 +539,7 @@ billingMutation.post('/change-plan', async (c) => {
     }
 
     for (const subscription of freshActive) {
-      await cancelSubscriptionImmediate(tx, subscription, startsAt);
+      await cancelSubscriptionImmediate(tx, subscription, startsAt, { deleteVoiceData: false });
     }
     const created = await createPaidSubscriptionArtifacts(tx, {
       userPk,

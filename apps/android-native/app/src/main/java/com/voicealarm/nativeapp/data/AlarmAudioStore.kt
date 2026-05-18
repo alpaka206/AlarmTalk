@@ -23,8 +23,9 @@ object AlarmAudioLimits {
 }
 
 object VoiceProfileAudioLimits {
-    const val MIN_DURATION_MILLIS = 30_000L
-    const val MAX_DURATION_MILLIS = 60_000L
+    const val MIN_DURATION_MILLIS = 60_000L
+    const val RECOMMENDED_DURATION_MILLIS = 90_000L
+    const val MAX_DURATION_MILLIS = 120_000L
 }
 
 data class CachedAlarmAudio(
@@ -76,7 +77,9 @@ class AlarmAudioStore(
             ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
+        val sourceMimeType = context.contentResolver.getType(sourceUri)
         val trackMimeType = audioTrackMime(sourceUri)
+        val forceExtractAudio = sourceMimeType?.startsWith("video/") == true
         val trimAsMp3 = extension == "mp3" || isMp3Mime(trackMimeType)
         val resolvedStartMillis = startMillis.coerceIn(0L, (durationMillis - maxDurationMillis).coerceAtLeast(0L))
         val cacheKey = audioCacheKeyForSource(
@@ -97,7 +100,7 @@ class AlarmAudioStore(
                 messageId = metadata.messageId,
             )
         }
-        val target = if (resolvedStartMillis > 0 || durationMillis > maxDurationMillis) {
+        val target = if (forceExtractAudio || resolvedStartMillis > 0 || durationMillis > maxDurationMillis) {
             val trimExtension = if (trimAsMp3) "mp3" else "m4a"
             File(audioDir, "${safeCacheKey(cacheKey)}.$trimExtension").also {
                 trimToMaxDuration(

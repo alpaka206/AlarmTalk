@@ -257,6 +257,28 @@ class AlarmRepository(
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
+    suspend fun deletePaidVoiceAlarms(): Int {
+        val targets = alarmDao.getAllAlarms().filter { alarm ->
+            alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
+                !alarm.localAudioUri.isNullOrBlank() ||
+                !alarm.rawAudioUri.isNullOrBlank() ||
+                !alarm.voiceProfileId.isNullOrBlank() ||
+                !alarm.ttsMessageId.isNullOrBlank()
+        }
+        targets.forEach { alarm ->
+            alarmScheduler.cancel(alarm.id)
+            val cacheKey = alarm.audioCacheKey
+            alarmDao.delete(alarm)
+            if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
+                alarmAudioStore.deleteCachedAudio(cacheKey)
+            }
+        }
+        if (targets.isNotEmpty()) {
+            Log.i(TAG, "Deleted paid voice alarms after free-plan downgrade count=${targets.size}")
+        }
+        return targets.size
+    }
+
     suspend fun copyAlarm(alarmId: String): AlarmEntity {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()

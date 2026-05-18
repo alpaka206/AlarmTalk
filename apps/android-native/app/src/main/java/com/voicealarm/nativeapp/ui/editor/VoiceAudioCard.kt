@@ -97,7 +97,7 @@ internal fun VoiceAudioCard(
             )
             OptionChips(
                 options = listOf(
-                    VoiceSources.TTS_PROFILE to "음성 프로필",
+                    VoiceSources.TTS_PROFILE to "알람 음성",
                     VoiceSources.LOCAL_AUDIO to "녹음/파일",
                 ),
                 selected = visibleVoiceSource,
@@ -121,7 +121,7 @@ internal fun VoiceAudioCard(
                     VoiceProfileOption(
                         id = it.id,
                         name = it.name,
-                        detail = if (it.isShared == true) "내 음성 프로필 · 공유 중" else "내 음성 프로필",
+                        detail = if (it.isShared == true) "내 알람 음성 · 공유 중" else "내 알람 음성",
                     )
                 } +
                     readyFamilyVoices.map { profile ->
@@ -145,7 +145,7 @@ internal fun VoiceAudioCard(
                     profileOptions.none { it.id == editor.voiceProfileId }
                 Text("알람에 들을 목소리", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
-                    MutedText("음성 프로필을 불러오는 중이에요.")
+                    MutedText("알람 음성을 불러오는 중이에요.")
                 } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
                     MutedText("아직 사용할 목소리가 없어요.")
                 } else if (profileOptions.isEmpty()) {
@@ -171,12 +171,12 @@ internal fun VoiceAudioCard(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "삭제된 음성 프로필",
+                                text = "삭제된 알람 음성",
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                             Text(
-                                text = "이미 저장된 음성은 그대로 울리지만, 문구를 바꾸려면 다른 음성 프로필을 선택해 주세요.",
+                                text = "이미 저장된 음성은 그대로 울리지만, 문구를 바꾸려면 다른 알람 음성을 선택해 주세요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
                             )
