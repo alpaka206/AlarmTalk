@@ -172,7 +172,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     fun requestFirstMissingAlarmPermission() {
-        permissions.firstMissingAlarmTarget()?.let(viewModel::requestPermissionGate)
+        val target = PermissionSnapshot.read(context).firstMissingAlarmTarget() ?: return
+        viewModel.message = alarmPermissionRequiredMessage(target)
+        requestPermission(target)
     }
 
     LaunchedEffect(permissionState.refreshTick, bulkPermissionFlowActive) {
@@ -574,7 +576,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           },
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
                           onDeleteAlarm = viewModel::deleteAlarm,
-                          onRequestPermissionGate = viewModel::requestPermissionGate,
+                          onRequestPermissionGate = ::requestPermission,
                           onRequestAllPermissions = ::requestAllMissingPermissions,
                           profileMenu = if (tab == NativeTab.Alarms) {
                               {
@@ -753,6 +755,13 @@ private val NativeTab.route: String
 
 private fun String?.toNativeTab(): NativeTab? =
     NativeTab.values().firstOrNull { it.route == this }
+
+private fun alarmPermissionRequiredMessage(target: PermissionTarget): String = when (target) {
+    PermissionTarget.Notifications -> "알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요."
+    PermissionTarget.ExactAlarms -> "정해진 시간에 울리려면 정확한 알람 권한이 필요해요."
+    PermissionTarget.FullScreenIntent -> "잠금화면 위에 알람 화면을 띄우려면 전체 화면 알람 권한을 켜 주세요."
+    PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
+}
 
 private fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     navigate(tab.route) {

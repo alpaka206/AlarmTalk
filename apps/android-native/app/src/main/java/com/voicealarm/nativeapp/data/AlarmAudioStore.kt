@@ -91,11 +91,15 @@ class AlarmAudioStore(
         findCachedFile(cacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val metadata = readMetadata(cacheKey)
+            val cachedDurationMillis = normalizeDurationWithinLimit(
+                durationMillis = readDurationMillis(cachedUri) ?: durationMillis,
+                maxDurationMillis = maxDurationMillis,
+            )
             return CachedAlarmAudio(
                 localAudioUri = cachedUri.toString(),
                 rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
                 displayName = cached.name,
-                durationMillis = readDurationMillis(cachedUri) ?: durationMillis,
+                durationMillis = cachedDurationMillis,
                 cacheKey = cacheKey,
                 messageId = metadata.messageId,
             )
@@ -121,14 +125,14 @@ class AlarmAudioStore(
         }
 
         val cachedDurationMillis = readDurationMillis(target.toUri()) ?: durationMillis
-        requireWithinLimit(cachedDurationMillis, maxDurationMillis)
+        val normalizedDurationMillis = normalizeDurationWithinLimit(cachedDurationMillis, maxDurationMillis)
 
-        Log.i(TAG, "Cached local voice audio path=${target.absolutePath} durationMillis=$cachedDurationMillis")
+        Log.i(TAG, "Cached local voice audio path=${target.absolutePath} durationMillis=$normalizedDurationMillis")
         return CachedAlarmAudio(
             localAudioUri = target.toUri().toString(),
             rawAudioUri = sourceUri.toString(),
             displayName = displayName,
-            durationMillis = cachedDurationMillis,
+            durationMillis = normalizedDurationMillis,
             cacheKey = cacheKey,
             messageId = null,
         )
@@ -215,11 +219,20 @@ class AlarmAudioStore(
         }
     }
 
+    private fun normalizeDurationWithinLimit(
+        durationMillis: Long?,
+        maxDurationMillis: Long,
+    ): Long? {
+        requireWithinLimit(durationMillis, maxDurationMillis)
+        return durationMillis?.coerceAtMost(maxDurationMillis)
+    }
+
     private fun requireWithinLimit(
         durationMillis: Long?,
         maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
     ) {
-        require(durationMillis == null || durationMillis <= maxDurationMillis) {
+        val toleratedLimit = maxDurationMillis + DURATION_METADATA_TOLERANCE_MILLIS
+        require(durationMillis == null || durationMillis <= toleratedLimit) {
             "Voice audio must be ${maxDurationMillis / 1000} seconds or shorter."
         }
     }
@@ -264,7 +277,7 @@ class AlarmAudioStore(
 
                 while (true) {
                     val sampleTimeUs = extractor.sampleTime
-                    if (sampleTimeUs < 0 || sampleTimeUs > endUs) break
+                    if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
                     buffer.clear()
                     val sampleSize = extractor.readSampleData(buffer, 0)
                     if (sampleSize < 0) break
@@ -321,7 +334,7 @@ class AlarmAudioStore(
                 target.outputStream().use { output ->
                     while (true) {
                         val sampleTimeUs = extractor.sampleTime
-                        if (sampleTimeUs < 0 || sampleTimeUs > endUs) break
+                        if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
                         buffer.clear()
                         val sampleSize = extractor.readSampleData(buffer, 0)
                         if (sampleSize < 0) break
@@ -421,6 +434,7 @@ class AlarmAudioStore(
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
+        private const val DURATION_METADATA_TOLERANCE_MILLIS = 750L
 
         fun ttsCacheKey(
             profileId: String,
