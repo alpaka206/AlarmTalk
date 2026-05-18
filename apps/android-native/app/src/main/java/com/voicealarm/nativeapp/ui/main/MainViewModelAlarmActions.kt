@@ -56,11 +56,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 
+private fun MainViewModel.requireAlarmPermissionsForMutation(): Boolean {
+    val snapshot = PermissionSnapshot.read(getApplication<Application>())
+    val missingTarget = snapshot.firstMissingAlarmTarget() ?: return true
+    requestPermissionGate(missingTarget)
+    message = alarmPermissionBlockedMessage(missingTarget)
+    return false
+}
+
+private fun alarmPermissionBlockedMessage(target: PermissionTarget): String = when (target) {
+    PermissionTarget.Notifications -> "알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요."
+    PermissionTarget.ExactAlarms -> "정해진 시간에 울리려면 정확한 알람 권한이 필요해요."
+    PermissionTarget.FullScreenIntent -> "잠금화면 위에 알람 화면을 띄우려면 전체 화면 알람 권한을 켜 주세요."
+    PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
+}
+
 internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
         message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
         return
     }
+    if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         if (!draft.targetUserId.isNullOrBlank()) {
             createFamilyTargetAlarm(draft, onDone)
@@ -168,6 +184,7 @@ internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDon
         message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
         return
     }
+    if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
             repository.updateAlarm(alarmId, draft)
@@ -182,6 +199,7 @@ internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDon
 }
 
 internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
+    if (enabled && !requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
             repository.setEnabled(alarmId, enabled)
@@ -208,6 +226,7 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
 }
 
 internal fun MainViewModel.copyAlarm(alarmId: String) {
+    if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
             repository.copyAlarm(alarmId)
@@ -221,6 +240,7 @@ internal fun MainViewModel.copyAlarm(alarmId: String) {
 }
 
 internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
+    if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
             repository.createTestAlarm(delayMinutes)
