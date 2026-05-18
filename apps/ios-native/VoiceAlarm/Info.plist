@@ -21,9 +21,13 @@
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>NSAlarmKitUsageDescription</key>
-  <string>Voice Alarm needs permission to schedule prominent local alarms.</string>
+  <string>Naro needs permission to schedule real local alarms that appear on the Lock Screen.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Naro needs microphone access to record voice samples for voice alarms.</string>
   <key>NSSupportsLiveActivities</key>
   <true/>
+  <key>VOICE_ALARM_API_BASE_URL</key>
+  <string>https://voice-alarm-api.voicealarm.workers.dev/api</string>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>

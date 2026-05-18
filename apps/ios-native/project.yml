@@ -21,6 +21,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
         INFOPLIST_FILE: VoiceAlarm/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VoiceAlarm/VoiceAlarm.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   VoiceAlarmWidget:
     type: app-extension
