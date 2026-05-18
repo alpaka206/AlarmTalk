@@ -99,7 +99,8 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
-    val voiceLocked = !permissions.recordAudio
+    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    val voiceLocked = voicePlanLocked || !permissions.recordAudio
     val alarmLocked = !permissions.alarmReady
 
     LazyColumn(
@@ -127,8 +128,11 @@ internal fun AlarmListScreen(
                 item {
                     QuickStartGrid(
                         onRecordVoice = {
-                            if (voiceLocked) onRequestPermissionGate(PermissionTarget.RecordAudio)
-                            else onSelectTab(NativeTab.Voices)
+                            when {
+                                voicePlanLocked -> onSelectTab(NativeTab.Voices)
+                                !permissions.recordAudio -> onRequestPermissionGate(PermissionTarget.RecordAudio)
+                                else -> onSelectTab(NativeTab.Voices)
+                            }
                         },
                         onAddAlarm = onCreateAlarm,
                         canCreateFamilyAlarm = canCreateFamilyAlarm,
@@ -162,6 +166,7 @@ internal fun AlarmListScreen(
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
                     )
                 }
             }

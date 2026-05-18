@@ -1,4 +1,28 @@
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
+const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
+const DIARIZATION_MERGE_GAP_SECONDS = 0.35;
+
+type TranscriptWord = {
+  start?: number;
+  end?: number;
+  type?: string;
+  speaker_id?: string | null;
+};
+
+type SpeechToTextResponse = {
+  words?: TranscriptWord[];
+  transcripts?: Array<{
+    words?: TranscriptWord[];
+  }>;
+};
+
+type DiarizedSpeaker = {
+  speaker_id: string;
+  segments: Array<{
+    start: number;
+    end: number;
+  }>;
+};
 
 export class ElevenLabsClient {
   constructor(private apiKey: string) {}
@@ -63,6 +87,16 @@ export class ElevenLabsClient {
       model_id?: string;
     },
   ): Promise<ArrayBuffer> {
+    const voiceSettings: Record<string, number | boolean> = {
+      stability: options?.stability ?? 0.5,
+      similarity_boost: options?.similarity_boost ?? 0.82,
+      style: options?.style ?? 0.25,
+      speed: options?.speed ?? 0.96,
+    };
+    if (options?.use_speaker_boost !== undefined) {
+      voiceSettings.use_speaker_boost = options.use_speaker_boost;
+    }
+
     const res = await this.request(`/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
       headers: {
@@ -71,14 +105,8 @@ export class ElevenLabsClient {
       },
       body: JSON.stringify({
         text,
-        model_id: options?.model_id ?? 'eleven_multilingual_v2',
-        voice_settings: {
-          stability: options?.stability ?? 1,
-          similarity_boost: options?.similarity_boost ?? 0.75,
-          style: options?.style ?? 0,
-          speed: options?.speed ?? 1,
-          use_speaker_boost: options?.use_speaker_boost ?? true,
-        },
+        model_id: options?.model_id ?? DEFAULT_TTS_MODEL_ID,
+        voice_settings: voiceSettings,
       }),
     });
 
@@ -87,18 +115,16 @@ export class ElevenLabsClient {
 
   /** Speaker Diarization - 화자 분리 */
   async diarize(audioData: ArrayBuffer): Promise<{
-    speakers: Array<{
-      speaker_id: string;
-      segments: Array<{
-        start: number;
-        end: number;
-      }>;
-    }>;
+    speakers: DiarizedSpeaker[];
   }> {
     const formData = new FormData();
-    formData.append('audio', new Blob([audioData], { type: 'audio/wav' }), 'recording.wav');
+    formData.append('file', new Blob([audioData], { type: 'audio/wav' }), 'recording.wav');
+    formData.append('model_id', 'scribe_v2');
+    formData.append('diarize', 'true');
+    formData.append('timestamps_granularity', 'word');
+    formData.append('tag_audio_events', 'false');
 
-    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/audio/diarize`, {
+    const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/speech-to-text`, {
       method: 'POST',
       headers: {
         'xi-api-key': this.apiKey,
@@ -111,7 +137,8 @@ export class ElevenLabsClient {
       throw new Error(`ElevenLabs diarize error ${res.status}: ${errorBody}`);
     }
 
-    return res.json();
+    const transcript = (await res.json()) as SpeechToTextResponse;
+    return { speakers: diarizedSpeakersFromTranscript(transcript) };
   }
 
   /** 음성 프로필 삭제 */
@@ -124,4 +151,48 @@ export class ElevenLabsClient {
     const res = await this.request('/v1/voices');
     return res.json();
   }
+}
+
+function diarizedSpeakersFromTranscript(transcript: SpeechToTextResponse): DiarizedSpeaker[] {
+  const words = [
+    ...(transcript.words ?? []),
+    ...((transcript.transcripts ?? []).flatMap((item) => item.words ?? [])),
+  ];
+  const bySpeaker = new Map<string, Array<{ start: number; end: number }>>();
+
+  for (const word of words) {
+    if (!word.speaker_id || word.type === 'spacing') continue;
+    if (typeof word.start !== 'number' || typeof word.end !== 'number') continue;
+    if (word.end <= word.start) continue;
+
+    const segments = bySpeaker.get(word.speaker_id) ?? [];
+    segments.push({ start: word.start, end: word.end });
+    bySpeaker.set(word.speaker_id, segments);
+  }
+
+  return Array.from(bySpeaker.entries())
+    .map(([speakerId, segments]) => ({
+      speaker_id: speakerId,
+      segments: mergeDiarizedSegments(segments),
+    }))
+    .filter((speaker) => speaker.segments.length > 0)
+    .sort((a, b) => a.segments[0]!.start - b.segments[0]!.start);
+}
+
+function mergeDiarizedSegments(
+  segments: Array<{ start: number; end: number }>,
+): Array<{ start: number; end: number }> {
+  const sorted = [...segments].sort((a, b) => a.start - b.start);
+  const merged: Array<{ start: number; end: number }> = [];
+
+  for (const segment of sorted) {
+    const previous = merged[merged.length - 1];
+    if (!previous || segment.start > previous.end + DIARIZATION_MERGE_GAP_SECONDS) {
+      merged.push({ ...segment });
+      continue;
+    }
+    previous.end = Math.max(previous.end, segment.end);
+  }
+
+  return merged;
 }

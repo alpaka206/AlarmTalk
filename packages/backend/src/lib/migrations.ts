@@ -1,10 +1,29 @@
 import type { Client } from '@libsql/client/web';
+import { PRESETS } from '../data/presets';
 
 export interface Migration {
   id: number;
   name: string;
   statements: string[];
 }
+
+function sqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
+  const messagesJson = JSON.stringify(preset.messages);
+  return `INSERT OR IGNORE INTO tts_presets
+    (category, label, emoji, messages_json, sort_order, enabled)
+    VALUES (
+      ${sqlLiteral(preset.category)},
+      ${sqlLiteral(preset.label)},
+      ${sqlLiteral(preset.emoji)},
+      ${sqlLiteral(messagesJson)},
+      ${index},
+      1
+    )`;
+});
 
 export const migrations: Migration[] = [
   {
@@ -711,6 +730,23 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN deleted_at TEXT`,
       `CREATE INDEX IF NOT EXISTS idx_voice_profiles_active_user
         ON voice_profiles(user_id, deleted_at, created_at)`,
+    ],
+  },
+  {
+    id: 33,
+    name: 'tts-preset-remote-config',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS tts_presets (
+        category TEXT PRIMARY KEY,
+        label TEXT NOT NULL,
+        emoji TEXT,
+        messages_json TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_tts_presets_order ON tts_presets(enabled, sort_order, category)',
+      ...TTS_PRESET_SEED_STATEMENTS,
     ],
   },
 ];

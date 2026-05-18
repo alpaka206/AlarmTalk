@@ -9,10 +9,11 @@ import retrofit2.http.Path
 
 data class TtsGenerateRequest(
     @SerializedName("voice_profile_id") val voiceProfileId: String,
-    val text: String,
+    val text: String = "",
     val category: String,
     val language: String,
     val translate: Boolean = false,
+    val random: Boolean = false,
 )
 
 data class TtsGenerateResponse(

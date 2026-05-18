@@ -269,6 +269,21 @@ describe('GET /tts/presets — 프리셋 메시지', () => {
     expect(body.presets[0]).toHaveProperty('category');
     expect(body.presets[0]).toHaveProperty('messages');
   });
+
+  it('DB tts_presets row가 있으면 서버 프리셋으로 반환', async () => {
+    mockDB.pushResult([{
+      category: 'morning',
+      label: '아침',
+      emoji: 'sun',
+      messages_json: JSON.stringify(['서버 아침 문구']),
+    }]);
+    const app = buildApp();
+    const res = await reqWithEnv(app, jsonReq('GET', '/tts/presets'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.presets).toHaveLength(1);
+    expect(body.presets[0].messages).toEqual(['서버 아침 문구']);
+  });
 });
 
 /* ------------------------------------------------------------------ */
@@ -476,6 +491,50 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(201);
     const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
     expect(insertSql!.args[4]).toBe('morning');
+  });
+
+  it('random=true 면 서버 프리셋 문구를 골라 TTS를 생성한다', async () => {
+    mockDB.pushResult([{
+      category: 'morning',
+      label: '아침',
+      emoji: 'sun',
+      messages_json: JSON.stringify(['서버가 고른 아침 문구']),
+    }]);
+    mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await reqWithEnv(app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        category: 'morning',
+        random: true,
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.original_text).toBe('서버가 고른 아침 문구');
+    expect(body.text).toContain(body.original_text);
+    expect(body.tags).toContain('warmly');
+    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', body.text, expect.any(Object));
+    const inserted = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    expect(inserted!.args[3]).toBe(body.text);
+    expect(inserted!.args[4]).toBe('morning');
+  });
+
+  it('random=true 에 custom category 면 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, random: true, category: 'custom' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('RANDOM_CATEGORY_REQUIRED');
   });
 
   it('text 정확히 200자면 허용', async () => {

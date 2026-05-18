@@ -452,6 +452,24 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     }
 }
 
+internal fun MainViewModel.applyFreePlanVoiceLock() {
+    viewModelScope.launch {
+        runCatching {
+            repository.deletePaidVoiceAlarms()
+        }.onSuccess { deletedAlarms ->
+            if (voiceProfiles.isNotEmpty()) voiceProfiles = emptyList()
+            if (familyVoices.isNotEmpty()) familyVoices = emptyList()
+            if (ttsMessages.isNotEmpty()) ttsMessages = emptyList()
+            if (receivedNotes.isNotEmpty()) receivedNotes = emptyList()
+            if (deletedAlarms > 0) {
+                message = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to apply free-plan voice lock", error)
+        }
+    }
+}
+
 internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"

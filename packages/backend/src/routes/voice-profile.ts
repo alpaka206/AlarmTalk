@@ -7,9 +7,12 @@ import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
+import { isPaidVoicePlan } from './billing-helpers';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
+const MIN_CLONE_DURATION_MS = 60_000;
+const MAX_CLONE_DURATION_MS = 120_000;
 
 /**
  * Dev/cleanup helper: delete every voice profile (and its dependent
@@ -305,9 +308,27 @@ voiceProfile.patch('/:id', async (c) => {
 
 voiceProfile.post('/clone', async (c) => {
   const userId = c.get('userId');
+  const resolvedUserPk = c.get('userIdPK');
+  const userPk = resolvedUserPk || userId;
   const db = getDB(c.env);
 
   try {
+    if (resolvedUserPk) {
+      const userPlan = await db.execute({
+        sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+        args: [userPk, userId],
+      });
+      if (userPlan.rows.length === 0 || !isPaidVoicePlan(userPlan.rows[0]!.plan)) {
+        return c.json(
+          {
+            error: 'Voice features require a paid plan.',
+            error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+          },
+          403,
+        );
+      }
+    }
+
     const profileCount = await db.execute({
       sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
       args: [userId],
@@ -330,6 +351,9 @@ voiceProfile.post('/clone', async (c) => {
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
+
+    const durationCheck = validateCloneDuration(formData.get('durationMs'));
+    if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
 
     if (name.length > 50) {
       return c.json({ error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' }, 400);
@@ -428,6 +452,50 @@ function isVoiceSlotExhaustedError(detail: string): boolean {
     lower.includes('voice limit') ||
     lower.includes('voice slot')
   );
+}
+
+function validateCloneDuration(value: unknown): {
+  status: 400;
+  body: { error: string; error_code: string };
+} | null {
+  if (value == null || value === '') {
+    return {
+      status: 400,
+      body: { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
+    };
+  }
+  if (typeof value !== 'string') {
+    return {
+      status: 400,
+      body: { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
+    };
+  }
+  const durationMs = Number.parseInt(value, 10);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return {
+      status: 400,
+      body: { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
+    };
+  }
+  if (durationMs < MIN_CLONE_DURATION_MS) {
+    return {
+      status: 400,
+      body: {
+        error: `voice clone audio must be at least ${MIN_CLONE_DURATION_MS / 1000} seconds`,
+        error_code: 'VOICE_CLONE_AUDIO_TOO_SHORT',
+      },
+    };
+  }
+  if (durationMs > MAX_CLONE_DURATION_MS) {
+    return {
+      status: 400,
+      body: {
+        error: `voice clone audio must be ${MAX_CLONE_DURATION_MS / 1000} seconds or shorter`,
+        error_code: 'VOICE_CLONE_AUDIO_TOO_LONG',
+      },
+    };
+  }
+  return null;
 }
 
 voiceProfile.get('/:id/stats', async (c) => {

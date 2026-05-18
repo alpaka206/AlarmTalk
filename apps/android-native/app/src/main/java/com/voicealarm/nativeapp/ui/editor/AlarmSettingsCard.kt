@@ -161,7 +161,10 @@ internal fun AlarmSettingsCard(
                 AlarmSettingDivider()
                 AlarmSettingRow(
                     title = "알람음",
-                    subtitle = "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}",
+                    subtitle = alarmSoundSummary(
+                        alarmVolumePercent = alarmVolumePercent,
+                        alarmSoundLabel = alarmSoundLabel,
+                    ),
                     icon = Icons.Outlined.Alarm,
                     onClick = onOpenAlarmSoundSettings,
                     trailing = {
@@ -179,6 +182,16 @@ internal fun AlarmSettingsCard(
 
 private fun alarmVolumeLabel(value: Int): String =
     if (value <= 0) "무음" else "${value.coerceIn(0, 100)}%"
+
+private fun alarmSoundSummary(
+    alarmVolumePercent: Int,
+    alarmSoundLabel: String?,
+): String =
+    if (alarmVolumePercent <= 0) {
+        "무음"
+    } else {
+        "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}"
+    }
 
 @Composable
 private fun AlarmSoundActionRow(
@@ -295,12 +308,14 @@ internal fun AlarmSoundSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection(title = "알람음") {
-                    AlarmSoundActionRow(
-                        title = "알람음",
-                        subtitle = alarmSoundLabel ?: "기본 알람음",
-                        onClick = onPickAlarmSound,
-                    )
+                if (alarmEnabled) {
+                    SnoozeOptionSection(title = "알람음") {
+                        AlarmSoundActionRow(
+                            title = "알람음",
+                            subtitle = alarmSoundLabel ?: "기본 알람음",
+                            onClick = onPickAlarmSound,
+                        )
+                    }
                 }
 
                 SnoozeOptionSection(title = "볼륨") {

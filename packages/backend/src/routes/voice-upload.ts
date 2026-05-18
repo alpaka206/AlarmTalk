@@ -1,12 +1,13 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
 import type { VoiceStorage } from '@voice-alarm/voice';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
-import { getSharedInMemoryVoiceStorage, MockVoiceProvider } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { UUID_RE } from '../lib/validate';
+import { isPaidVoicePlan } from './billing-helpers';
 
 function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
   if (env?.VOICE_BUCKET) return new R2VoiceStorage(env.VOICE_BUCKET);
@@ -14,8 +15,33 @@ function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
 }
 
 const voiceUpload = new Hono<AppEnv>();
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MiB
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MiB for up to 2 minutes of voice audio.
+const MIN_UPLOAD_DURATION_MS = 60_000;
+const MAX_UPLOAD_DURATION_MS = 120_000;
 const MAX_SPEAKERS = 3;
+
+async function hasPaidVoiceAccess(c: Context<AppEnv>): Promise<boolean> {
+  const userId = c.get('userId');
+  const resolvedUserPk = c.get('userIdPK');
+  if (!resolvedUserPk) return true;
+  const userPk = resolvedUserPk || userId;
+  const db = getDB(c.env);
+  const result = await db.execute({
+    sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',
+    args: [userPk, userId],
+  });
+  return result.rows.length > 0 && isPaidVoicePlan(result.rows[0]!.plan);
+}
+
+function paidVoiceRequired(c: Context<AppEnv>) {
+  return c.json(
+    {
+      error: 'Voice features require a paid plan.',
+      error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+    },
+    403,
+  );
+}
 
 voiceUpload.post('/upload', async (c) => {
   const userId = c.get('userId');
@@ -50,13 +76,34 @@ voiceUpload.post('/upload', async (c) => {
   }
 
   const durationRaw = formData.get('durationMs');
-  let durationMs: number | undefined;
-  if (typeof durationRaw === 'string' && durationRaw.length > 0) {
-    const n = Number.parseInt(durationRaw, 10);
-    if (!Number.isFinite(n) || n <= 0) {
-      return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
-    }
-    durationMs = n;
+  if (typeof durationRaw !== 'string' || durationRaw.length === 0) {
+    return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
+  }
+  const durationMs = Number.parseInt(durationRaw, 10);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
+  }
+  if (durationMs < MIN_UPLOAD_DURATION_MS) {
+    return c.json(
+      {
+        error: `audio file must be at least ${MIN_UPLOAD_DURATION_MS / 1000} seconds`,
+        error_code: 'AUDIO_DURATION_TOO_SHORT',
+      },
+      400,
+    );
+  }
+  if (durationMs > MAX_UPLOAD_DURATION_MS) {
+    return c.json(
+      {
+        error: `audio file exceeds ${MAX_UPLOAD_DURATION_MS / 1000} seconds`,
+        error_code: 'AUDIO_DURATION_TOO_LONG',
+      },
+      400,
+    );
+  }
+
+  if (!(await hasPaidVoiceAccess(c))) {
+    return paidVoiceRequired(c);
   }
 
   const originalNameRaw = formData.get('originalName');
@@ -127,11 +174,42 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     return c.json({ error: 'Forbidden', error_code: 'FORBIDDEN' }, 403);
   }
 
-  const provider = new MockVoiceProvider();
-  const result = await provider.separate({
-    audioUri: upload.object_key,
-    maxSpeakers: MAX_SPEAKERS,
-  });
+  if (!(await hasPaidVoiceAccess(c))) {
+    return paidVoiceRequired(c);
+  }
+
+  const stored = await getStorage(c.env).get(upload.object_key);
+  if (!stored) {
+    return c.json(
+      { error: 'Uploaded voice object not found', error_code: 'VOICE_UPLOAD_OBJECT_NOT_FOUND' },
+      404,
+    );
+  }
+
+  let result: {
+    provider: string;
+    speakers: Array<{ startMs: number; endMs: number; confidence: number }>;
+  };
+  try {
+    const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
+    const diarized = await client.diarize(toArrayBuffer(stored.bytes));
+    result = {
+      provider: 'elevenlabs',
+      speakers: diarized.speakers
+        .map(toSpeakerSpan)
+        .filter((speaker) => speaker.endMs > speaker.startMs)
+        .slice(0, MAX_SPEAKERS),
+    };
+  } catch (err) {
+    return c.json(
+      {
+        error: 'Speaker diarization failed',
+        error_code: 'DIARIZATION_FAILED',
+        detail: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500,
+    );
+  }
 
   await db.execute({
     sql: 'DELETE FROM voice_speakers WHERE upload_id = ?',
@@ -245,6 +323,10 @@ voiceUpload.post('/diarize', async (c) => {
 
   const audioBuffer = await audioFile.arrayBuffer();
 
+  if (!(await hasPaidVoiceAccess(c))) {
+    return paidVoiceRequired(c);
+  }
+
   try {
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
     const result = await client.diarize(audioBuffer);
@@ -268,5 +350,23 @@ voiceUpload.post('/diarize', async (c) => {
     );
   }
 });
+
+function toSpeakerSpan(speaker: {
+  segments: Array<{ start: number; end: number }>;
+}): { startMs: number; endMs: number; confidence: number } {
+  const segments = speaker.segments.filter((segment) => segment.end > segment.start);
+  if (segments.length === 0) return { startMs: 0, endMs: 0, confidence: 0 };
+  return {
+    startMs: Math.floor(Math.min(...segments.map((segment) => segment.start)) * 1000),
+    endMs: Math.ceil(Math.max(...segments.map((segment) => segment.end)) * 1000),
+    confidence: 0.9,
+  };
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
 
 export default voiceUpload;

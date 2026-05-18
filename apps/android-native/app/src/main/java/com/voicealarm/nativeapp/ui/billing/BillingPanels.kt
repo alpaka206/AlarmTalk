@@ -99,7 +99,7 @@ internal fun SubscriptionPanel(
                 name = "개인",
                 price = "월 4,900원",
                 description = "내가 좋아하는 목소리로 알람을 만들어요.",
-                features = listOf("음성 프로필", "음성 메시지", "개인 이용권 선물"),
+                features = listOf("알람 음성", "음성 메시지", "개인 이용권 선물"),
             ),
             SubscriptionPlanOption(
                 key = "couple",
@@ -195,6 +195,7 @@ internal fun SubscriptionPanel(
 
     if (showCancelDialog) {
         CancelSubscriptionDialog(
+            subscription = subscription,
             onDismiss = { showCancelDialog = false },
             onConfirm = { atPeriodEnd ->
                 showCancelDialog = false
@@ -632,25 +633,41 @@ internal fun SubscriptionPlanCard(
 
 @Composable
 private fun CancelSubscriptionDialog(
+    subscription: BillingSubscription?,
     onDismiss: () -> Unit,
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
+    val endDate = formatPassShortDate(subscription?.expiresAt)
+    val description = if (endDate != null) {
+        "종료일인 ${endDate}까지 이용권을 유지하거나, 지금 바로 무료 이용권으로 전환할 수 있어요."
+    } else {
+        "해지 시점을 선택해 주세요. 목소리와 알람 기록은 보존되며, 다시 이용권을 적용하면 그대로 사용할 수 있어요."
+    }
+    val finalDescription = if (endDate != null) {
+        "종료일인 ${endDate}까지 이용권을 유지하거나, 지금 바로 무료 이용권으로 전환할 수 있어요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+    } else {
+        "해지 시점을 선택해 주세요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+    }
     BillingActionDialog(
         title = "이용권 해지",
-        description = "해지 시점을 선택해 주세요. 목소리와 알람 기록은 보존되며, 다시 이용권을 적용하면 그대로 사용할 수 있어요.",
+        description = finalDescription,
         onDismiss = onDismiss,
     ) {
-        BillingDialogButton(
-            label = "종료일까지 사용하고 해지",
-            primary = false,
-            onClick = { onConfirm(true) },
-        )
-        BillingDialogButton(
-            label = "지금 해지하기",
-            primary = true,
-            destructive = true,
-            onClick = { onConfirm(false) },
-        )
+        BillingDialogButtonRow {
+            BillingDialogButton(
+                label = endDate?.let { "${it}에 해지" } ?: "종료일에 해지",
+                primary = false,
+                modifier = Modifier.weight(1f),
+                onClick = { onConfirm(true) },
+            )
+            BillingDialogButton(
+                label = "지금 해지하기",
+                primary = true,
+                destructive = true,
+                modifier = Modifier.weight(1f),
+                onClick = { onConfirm(false) },
+            )
+        }
     }
 }
 
@@ -1036,6 +1053,14 @@ private fun formatPassDate(value: String?): String? =
         }.getOrNull()
     }
 
+private fun formatPassShortDate(value: String?): String? =
+    value?.let {
+        runCatching {
+            val dateTime = Instant.parse(it).atZone(ZoneId.systemDefault())
+            PassShortDateFormatter.format(dateTime)
+        }.getOrNull()
+    }
+
 private fun Int.formatKrw(): String = "%,d".format(this)
 
 @Composable
@@ -1050,6 +1075,9 @@ private val CharacterEventTimeFormatter: DateTimeFormatter =
 
 private val PassDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy.MM.dd")
+
+private val PassShortDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("M/d")
 
 @Composable
 internal fun CharacterXpBar(

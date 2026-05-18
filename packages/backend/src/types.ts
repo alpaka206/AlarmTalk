@@ -5,6 +5,9 @@ export interface Env {
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
+  GOOGLE_VERTEX_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_API_KEY?: string;
   GOOGLE_VERTEX_LOCATION?: string;
   GOOGLE_VERTEX_MODEL?: string;
   RESEND_API_KEY?: string;

@@ -26,6 +26,7 @@ export interface VoiceProviderAttempt {
   providerVoiceId: string;
   modelId: string;
   outputFormat: string;
+  voiceSettings?: Record<string, string | number | boolean | null | undefined>;
   synthesize(): Promise<VoiceProviderSynthesizeResult>;
 }
 
@@ -47,6 +48,14 @@ export class UnsupportedVoiceProviderError extends Error {
     this.name = 'UnsupportedVoiceProviderError';
   }
 }
+
+const ELEVENLABS_V3_MODEL_ID = 'eleven_v3';
+const ELEVENLABS_V3_VOICE_SETTINGS = {
+  stability: 0.5,
+  similarity_boost: 0.82,
+  style: 0.25,
+  speed: 0.96,
+};
 
 export function createEnrollmentAttempts(params: {
   env: Env;
@@ -115,17 +124,19 @@ export function createSynthesisAttempts(params: {
     attempts.push({
       provider: 'elevenlabs',
       providerVoiceId: params.profile.elevenlabs_voice_id,
-      modelId: 'eleven_multilingual_v2',
+      modelId: ELEVENLABS_V3_MODEL_ID,
       outputFormat: 'mp3',
+      voiceSettings: ELEVENLABS_V3_VOICE_SETTINGS,
       synthesize: async () => {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
         const audioBuffer = await client.textToSpeech(params.profile.elevenlabs_voice_id!, params.text, {
-          model_id: 'eleven_multilingual_v2',
+          model_id: ELEVENLABS_V3_MODEL_ID,
+          ...ELEVENLABS_V3_VOICE_SETTINGS,
         });
         return {
           provider: 'elevenlabs',
           providerVoiceId: params.profile.elevenlabs_voice_id!,
-          modelId: 'eleven_multilingual_v2',
+          modelId: ELEVENLABS_V3_MODEL_ID,
           outputFormat: 'mp3',
           mimeType: 'audio/mpeg',
           bytes: new Uint8Array(audioBuffer),

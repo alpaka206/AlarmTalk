@@ -1,13 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import type { AppEnv } from '../src/types';
+import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware } from './helpers';
 import { resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
 
 const mockDB = createMockDB();
+const mockDiarize = vi.fn();
+
+const ENV: Env = {
+  PERSO_API_KEY: 'x',
+  ELEVENLABS_API_KEY: 'test-key',
+  TURSO_DATABASE_URL: 'x',
+  TURSO_AUTH_TOKEN: 'x',
+  GOOGLE_CLIENT_ID: 'x',
+  JWT_SECRET: 'test-secret-32-chars-or-longer!',
+  PASSWORD_PEPPER: 'pepper',
+  ENVIRONMENT: 'test',
+};
 
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
+}));
+
+vi.mock('../src/lib/elevenlabs', () => ({
+  ElevenLabsClient: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
+    this.diarize = mockDiarize;
+  }),
 }));
 
 import voiceRoutes from '../src/routes/voice';
@@ -19,10 +37,14 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function reqWithEnv(app: Hono<AppEnv>, r: Request) {
+  return app.request(r, undefined, ENV);
+}
+
 function uploadRequest(bytes = new Uint8Array([1, 2, 3, 4]), mime = 'audio/mpeg') {
   const form = new FormData();
   form.append('audio', new Blob([bytes], { type: mime }), 'sample.mp3');
-  form.append('durationMs', '4000');
+  form.append('durationMs', '90000');
   return new Request('http://localhost/voice/upload', { method: 'POST', body: form });
 }
 
@@ -38,7 +60,18 @@ function jsonRequest(method: string, path: string, body?: Record<string, unknown
 beforeEach(() => {
   mockDB.reset();
   resetSharedInMemoryVoiceStorage();
+  mockDiarize.mockReset();
+  mockDiarize.mockResolvedValue(diarizationResult());
 });
+
+function diarizationResult(count = 3) {
+  return {
+    speakers: Array.from({ length: count }, (_, index) => ({
+      speaker_id: `speaker-${index + 1}`,
+      segments: [{ start: index, end: index + 0.75 }],
+    })),
+  };
+}
 
 describe('음성 업로드/화자 편집 E2E 플로우', () => {
   it('정상 플로우: 업로드 → 분리 → 라벨 변경 → 조회 반영', async () => {
@@ -63,7 +96,8 @@ describe('음성 업로드/화자 편집 E2E 플로우', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
-    const separateRes = await app.request(
+    const separateRes = await reqWithEnv(
+      app,
       jsonRequest('POST', `/voice/uploads/${upload.id}/separate`),
     );
     expect(separateRes.status).toBe(201);
@@ -132,7 +166,8 @@ describe('음성 업로드/화자 편집 E2E 플로우', () => {
       { id: upload.id, user_id: 'intruder-2', object_key: upload.objectKey },
     ]);
 
-    const res = await app.request(
+    const res = await reqWithEnv(
+      app,
       jsonRequest('POST', `/voice/uploads/${upload.id}/separate`),
     );
     expect(res.status).toBe(403);

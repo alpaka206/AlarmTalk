@@ -2,6 +2,7 @@ import type { Client } from '@libsql/client';
 import { issueVoucherCode } from './voucher-issue';
 import type { DbExecutor } from './transactions';
 import { withWriteTransaction } from './transactions';
+import { deletePaidVoiceDataForUser } from './paid-voice-cleanup';
 import { planTypeToUserPlan } from '../routes/billing-helpers';
 
 export interface ActiveSubscription {
@@ -40,11 +41,31 @@ export async function findActiveSubscriptionsByUserPk(
   }));
 }
 
-export async function downgradeUserToFree(db: DbExecutor, userPk: string): Promise<void> {
+type CancelCleanupOptions = {
+  deleteVoiceData?: boolean;
+};
+
+async function resolveUserLoginId(db: DbExecutor, userPk: string): Promise<string | null> {
+  const res = await db.execute({
+    sql: `SELECT google_id FROM users WHERE id = ? LIMIT 1`,
+    args: [userPk],
+  });
+  return res.rows.length > 0 ? ((res.rows[0]!.google_id as string | null) ?? null) : null;
+}
+
+export async function downgradeUserToFree(
+  db: DbExecutor,
+  userPk: string,
+  options: CancelCleanupOptions = {},
+): Promise<void> {
   await db.execute({
     sql: `UPDATE users SET plan = 'free', updated_at = datetime('now') WHERE id = ?`,
     args: [userPk],
   });
+  if (options.deleteVoiceData === true) {
+    await deletePaidVoiceDataForUser(db, userPk, await resolveUserLoginId(db, userPk));
+    return;
+  }
   await db.execute({
     sql: `UPDATE voice_profiles SET is_shared = 0 WHERE user_id = ? AND is_shared = 1`,
     args: [userPk],
@@ -104,6 +125,7 @@ async function cancelOneSubscriptionRow(
   subscriptionId: string,
   userPk: string,
   now: Date,
+  options: CancelCleanupOptions = {},
 ): Promise<void> {
   await db.execute({
     sql: `UPDATE subscriptions
@@ -114,7 +136,7 @@ async function cancelOneSubscriptionRow(
           WHERE id = ? AND status = 'active'`,
     args: [now.toISOString(), now.toISOString(), subscriptionId],
   });
-  await downgradeUserToFree(db, userPk);
+  await downgradeUserToFree(db, userPk, options);
   await expireUnusedVouchersFor(db, subscriptionId);
 }
 
@@ -122,8 +144,9 @@ export async function cancelSubscriptionImmediate(
   db: DbExecutor,
   subscription: ActiveSubscription,
   now: Date = new Date(),
+  options: CancelCleanupOptions = { deleteVoiceData: true },
 ): Promise<void> {
-  await cancelOneSubscriptionRow(db, subscription.subscriptionId, subscription.userPk, now);
+  await cancelOneSubscriptionRow(db, subscription.subscriptionId, subscription.userPk, now, options);
 
   if (!subscription.planGroupId) return;
 
@@ -159,7 +182,7 @@ export async function cancelSubscriptionImmediate(
     for (const subRow of memberSubRes.rows) {
       await cancelOneSubscriptionRow(db, String(subRow.id), memberUserId, now);
     }
-    await downgradeUserToFree(db, memberUserId);
+    await downgradeUserToFree(db, memberUserId, options);
   }
 
   await db.execute({
@@ -172,10 +195,11 @@ export async function cancelActiveSubscriptionsForUser(
   db: DbExecutor,
   userPk: string,
   now: Date = new Date(),
+  options: CancelCleanupOptions = { deleteVoiceData: true },
 ): Promise<ActiveSubscription[]> {
   const subscriptions = await findActiveSubscriptionsByUserPk(db, userPk);
   for (const subscription of subscriptions) {
-    await cancelSubscriptionImmediate(db, subscription, now);
+    await cancelSubscriptionImmediate(db, subscription, now, options);
   }
   return subscriptions;
 }
@@ -197,17 +221,23 @@ export async function leavePlanGroupMember(
     args: [params.userPk, params.planGroupId],
   });
 
-  for (const row of subscriptionRes.rows) {
-    await cancelOneSubscriptionRow(db, String(row.id), params.userPk, now);
-  }
-  if (subscriptionRes.rows.length === 0) {
-    await downgradeUserToFree(db, params.userPk);
-  }
-
   await db.execute({
     sql: `DELETE FROM plan_group_members WHERE id = ?`,
     args: [params.membershipId],
   });
+
+  for (const row of subscriptionRes.rows) {
+    await cancelOneSubscriptionRow(
+      db,
+      String(row.id),
+      params.userPk,
+      now,
+      { deleteVoiceData: true },
+    );
+  }
+  if (subscriptionRes.rows.length === 0) {
+    await downgradeUserToFree(db, params.userPk, { deleteVoiceData: true });
+  }
 
   await releaseInviteUseForMember(db, params.userPk, params.planGroupId);
 }
@@ -318,7 +348,12 @@ export async function processSubscriptionExpiry(db: Client, now: Date = new Date
     const nextPlanId = (r.next_plan_id as string | null) ?? null;
 
     await withWriteTransaction(db, async (tx) => {
-      await cancelSubscriptionImmediate(tx, active, now);
+      await cancelSubscriptionImmediate(
+        tx,
+        active,
+        now,
+        { deleteVoiceData: !nextPlanId },
+      );
 
       if (!nextPlanId) return;
       const nextPlanRes = await tx.execute({
@@ -358,6 +393,7 @@ export async function processSubscriptionExpiry(db: Client, now: Date = new Date
           planGroupId: (r.plan_group_id as string | null) ?? null,
         },
         now,
+        { deleteVoiceData: true },
       );
     });
   }
