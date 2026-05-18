@@ -90,11 +90,6 @@ internal fun VoiceAudioCard(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-            Text(
-                text = "목소리",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
             OptionChips(
                 options = listOf(
                     VoiceSources.TTS_PROFILE to "알람 음성",
@@ -189,7 +184,7 @@ internal fun VoiceAudioCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("깨워줄 말", fontWeight = FontWeight.SemiBold)
+                        Text("랜덤 생성", fontWeight = FontWeight.SemiBold)
                     }
                     VoiceAlarmSwitch(
                         checked = editor.voiceRandomPrompt,

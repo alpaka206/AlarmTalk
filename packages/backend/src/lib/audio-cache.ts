@@ -4,6 +4,7 @@ export interface TtsCacheInput {
   voiceProfileId: string;
   modelId: string;
   language: string;
+  languageCode?: string;
   text: string;
   outputFormat: string;
   voiceSettings?: Record<string, string | number | boolean | null | undefined>;
@@ -20,6 +21,7 @@ export async function computeTtsCacheKey(input: TtsCacheInput): Promise<string> 
     voiceProfileId: input.voiceProfileId,
     modelId: input.modelId,
     language: input.language,
+    languageCode: input.languageCode ?? input.language,
     text: normalizeTtsText(input.text),
     outputFormat: input.outputFormat,
     voiceSettings: stableObject(input.voiceSettings ?? {}),

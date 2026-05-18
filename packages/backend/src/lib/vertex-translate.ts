@@ -30,6 +30,13 @@ export type AlarmTextPreparation = {
   provider: 'vertex' | 'gemini-api-key' | 'local';
 };
 
+export class AlarmTextTranslationUnavailableError extends Error {
+  constructor() {
+    super('Alarm text translation is not configured.');
+    this.name = 'AlarmTextTranslationUnavailableError';
+  }
+}
+
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
@@ -86,6 +93,9 @@ export async function prepareAlarmTextWithVertex(
   }
 
   if (!hasGeminiConfiguration(env)) {
+    if (shouldTranslate) {
+      throw new AlarmTextTranslationUnavailableError();
+    }
     const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
     return {
       text: fallbackText,

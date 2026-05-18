@@ -9,10 +9,15 @@ import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import {
   createSynthesisAttempts,
+  inferSynthesisLanguage,
   noVoiceProviderError,
+  normalizeSynthesisLanguage,
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
-import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
+import {
+  AlarmTextTranslationUnavailableError,
+  prepareAlarmTextWithVertex,
+} from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
 
@@ -217,14 +222,20 @@ tts.post('/generate', async (c) => {
   }
 
   try {
-    const requestLanguage = body.language ?? 'ko';
+    const requestedLanguage = normalizeSynthesisLanguage(body.language);
+    const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
+    const shouldTranslate =
+      body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
     const prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
-      targetLanguage: requestLanguage,
-      sourceLanguage: 'ko',
-      translate: body.translate === true,
-      autoTag: true,
+      targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
+      sourceLanguage,
+      translate: shouldTranslate,
+      autoTag: randomRequested,
     });
     const synthesisText = prepared.text;
+    const synthesisLanguage = prepared.translated
+      ? requestedLanguage
+      : inferSynthesisLanguage(synthesisText, sourceLanguage);
 
     if (synthesisText.length > 200) {
       return c.json(
@@ -240,7 +251,8 @@ tts.post('/generate', async (c) => {
         elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
       },
       text: synthesisText,
-      language: requestLanguage,
+      language: synthesisLanguage,
+      category,
     });
 
     if (attempts.length === 0) {
@@ -257,7 +269,8 @@ tts.post('/generate', async (c) => {
           providerVoiceId: attempt.providerVoiceId,
           voiceProfileId: body.voice_profile_id,
           modelId: attempt.modelId,
-          language: requestLanguage,
+          language: synthesisLanguage,
+          languageCode: synthesisLanguage,
           text: synthesisText,
           outputFormat: attempt.outputFormat,
           voiceSettings: attempt.voiceSettings,
@@ -281,7 +294,7 @@ tts.post('/generate', async (c) => {
             translated: prepared.translated,
             tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
-            language: requestLanguage,
+            language: synthesisLanguage,
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
@@ -350,7 +363,7 @@ tts.post('/generate', async (c) => {
               generated.provider,
               generated.providerVoiceId,
               generated.modelId,
-              requestLanguage,
+              synthesisLanguage,
               cacheKey,
               synthesisText,
               category,
@@ -385,7 +398,7 @@ tts.post('/generate', async (c) => {
             translated: prepared.translated,
             tags: prepared.tags,
             voice_profile_id: body.voice_profile_id,
-            language: requestLanguage,
+            language: synthesisLanguage,
             provider: generated.provider,
             cache_key: cacheKey,
             cache_hit: false,
@@ -401,6 +414,15 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    if (err instanceof AlarmTextTranslationUnavailableError) {
+      return c.json(
+        {
+          error: 'Alarm text translation is not configured.',
+          error_code: 'TRANSLATION_NOT_CONFIGURED',
+        },
+        503,
+      );
+    }
     return c.json(
       {
         error: 'TTS generation failed',

@@ -85,6 +85,7 @@ export class ElevenLabsClient {
       speed?: number;
       use_speaker_boost?: boolean;
       model_id?: string;
+      language_code?: string;
     },
   ): Promise<ArrayBuffer> {
     const voiceSettings: Record<string, number | boolean> = {
@@ -106,6 +107,7 @@ export class ElevenLabsClient {
       body: JSON.stringify({
         text,
         model_id: options?.model_id ?? DEFAULT_TTS_MODEL_ID,
+        ...(options?.language_code ? { language_code: options.language_code } : {}),
         voice_settings: voiceSettings,
       }),
     });
