@@ -94,20 +94,20 @@ export function SiteFooter() {
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
-                  <a
+                  <Link
                     href="/privacy"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkPrivacy")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
+                  <Link
                     href="/terms"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkTerms")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
