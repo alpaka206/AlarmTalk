@@ -37,6 +37,13 @@ export class AlarmTextTranslationUnavailableError extends Error {
   }
 }
 
+export class AlarmTextPreparationInvalidError extends Error {
+  constructor() {
+    super('Alarm text preparation returned invalid content.');
+    this.name = 'AlarmTextPreparationInvalidError';
+  }
+}
+
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token';
 const DEFAULT_VERTEX_LOCATION = 'global';
@@ -118,7 +125,16 @@ export async function prepareAlarmTextWithVertex(
     maxOutputTokens: 256,
   });
   const parsed = parseAlarmTextPreparation(raw);
-  const preparedText = parsed.text || (shouldTag ? tagAlarmTextLocally(trimmed) : trimmed);
+  const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
+  let preparedText = parsed.text;
+
+  if (!preparedText || isMetaJsonResponse(preparedText) || (!parsed.parsedJson && isMetaJsonResponse(raw))) {
+    if (shouldTranslate) {
+      throw new AlarmTextPreparationInvalidError();
+    }
+    preparedText = fallbackText;
+  }
+
   const tags = extractTags(preparedText);
 
   return {
@@ -359,7 +375,7 @@ function alarmTextPrompt(args: {
   ].join('\n');
 }
 
-function parseAlarmTextPreparation(raw: string): { text: string; tags: string[] } {
+function parseAlarmTextPreparation(raw: string): { text: string; tags: string[]; parsedJson: boolean } {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')
@@ -377,13 +393,26 @@ function parseAlarmTextPreparation(raw: string): { text: string; tags: string[] 
     return {
       text: stripWrappingQuotes(text),
       tags: tags.filter(Boolean),
+      parsedJson: true,
     };
   } catch {
     return {
       text: stripWrappingQuotes(cleaned),
       tags: extractTags(cleaned),
+      parsedJson: false,
     };
   }
+}
+
+function isMetaJsonResponse(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    normalized === 'here is the json requested:' ||
+    normalized === 'here is the json requested' ||
+    normalized === 'here is the requested json:' ||
+    normalized === 'here is the requested json' ||
+    normalized.includes('json requested')
+  );
 }
 
 function hasGeminiConfiguration(env: Env): boolean {

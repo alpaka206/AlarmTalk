@@ -749,6 +749,16 @@ export const migrations: Migration[] = [
       ...TTS_PRESET_SEED_STATEMENTS,
     ],
   },
+  {
+    id: 34,
+    name: 'tts-prepared-text-fields',
+    statements: [
+      `ALTER TABLE messages ADD COLUMN synthesis_text TEXT`,
+      `ALTER TABLE messages ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN original_text TEXT`,
+      `ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
