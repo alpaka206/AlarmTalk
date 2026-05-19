@@ -1,12 +1,29 @@
 name: VoiceAlarmNative
 options:
+  bundleIdPrefix: com.voicealarm.nativeapp.ios
   deploymentTarget:
     iOS: "26.0"
+configurations:
+  Debug: debug
+  Release: release
 settings:
   base:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
+    # DEVELOPMENT_TEAM must be set per-developer via xcconfig or Xcode UI.
+    # Leaving empty here so xcodegen does not hard-bake a team ID into the project.
+    DEVELOPMENT_TEAM: "$(DEVELOPMENT_TEAM)"
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: "DEBUG"
+      ONLY_ACTIVE_ARCH: YES
+      GCC_OPTIMIZATION_LEVEL: "0"
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      GCC_OPTIMIZATION_LEVEL: "s"
+      ONLY_ACTIVE_ARCH: NO
 targets:
   VoiceAlarm:
     type: application
@@ -14,6 +31,11 @@ targets:
     sources:
       - VoiceAlarm
       - Shared
+      # Phase 4-D1: StoreKit Configuration 파일을 build resources 에 포함시켜
+      # Xcode 의 scheme 에서 시뮬레이터용 IAP 테스트 환경을 선택할 수 있게 한다.
+      # 실기기/TestFlight/AppStore 빌드에서는 자동으로 무시됨 (App Store Connect 가 권위).
+      - path: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
+        buildPhase: resources
     dependencies:
       - target: VoiceAlarmWidget
         embed: true
@@ -21,7 +43,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
         INFOPLIST_FILE: VoiceAlarm/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VoiceAlarm/VoiceAlarm.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    scheme:
+      # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
+      # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
+      storeKitConfiguration: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
   VoiceAlarmWidget:
     type: app-extension
     platform: iOS
@@ -32,4 +62,19 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.widget
         INFOPLIST_FILE: VoiceAlarmWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: VoiceAlarmWidget/VoiceAlarmWidget.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_NSSupportsLiveActivities: YES
+  VoiceAlarmTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - VoiceAlarmTests
+    dependencies:
+      - target: VoiceAlarm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.tests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VoiceAlarm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VoiceAlarm"

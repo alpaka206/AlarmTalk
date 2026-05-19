@@ -1,0 +1,169 @@
+import XCTest
+@testable import VoiceAlarm
+
+@MainActor
+final class VoiceStudioViewModelTests: XCTestCase {
+
+    // MARK: - errorCode 매핑
+
+    func test_localizedVoiceMessage_VOICE_SLOT_EXHAUSTED() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_SLOT_EXHAUSTED"),
+            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_VOICE_FEATURE_REQUIRES_PAID_PLAN() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN"),
+            "유료 플랜에서 사용할 수 있어요."
+        )
+    }
+
+    func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_SHORT() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_SHORT"),
+            "60초 이상의 음성을 녹음해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_LONG() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_LONG"),
+            "120초 이내로 녹음해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_VOICE_LIMIT_REACHED() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_LIMIT_REACHED"),
+            "이번 달 보이스 생성 한도를 모두 사용했어요."
+        )
+    }
+
+    func test_localizedVoiceMessage_AUDIO_DURATION_TOO_SHORT() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "AUDIO_DURATION_TOO_SHORT"),
+            "음성이 너무 짧아요. 다시 녹음해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_VOICE_PROFILE_NOT_FOUND() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PROFILE_NOT_FOUND"),
+            "보이스를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_unknownCodeIsPassthrough() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "MYSTERY_CODE"),
+            "MYSTERY_CODE"
+        )
+    }
+
+    // MARK: - APIError.server -> mapVoiceError
+
+    func test_mapVoiceError_picksUpServerErrorCode() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 403, message: "Voice features require a paid plan.", errorCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN")
+        XCTAssertEqual(vm.mapVoiceError(err), "유료 플랜에서 사용할 수 있어요.")
+    }
+
+    func test_mapVoiceError_jsonInMessageFallback() {
+        let vm = VoiceStudioViewModel()
+        // server 응답 message 안에 raw JSON 이 박힌 경우.
+        let raw = "{\"error\":\"slot\",\"error_code\":\"VOICE_SLOT_EXHAUSTED\"}"
+        let err = APIError.server(status: 403, message: raw, errorCode: nil)
+        XCTAssertEqual(
+            vm.mapVoiceError(err),
+            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+        )
+    }
+
+    func test_mapVoiceError_keywordFallback() {
+        let vm = VoiceStudioViewModel()
+        // JSON 디코드 실패하지만 message 안에 known code substring 이 있는 경우.
+        let err = APIError.server(status: 400, message: "raw: AUDIO_DURATION_TOO_SHORT detected", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "음성이 너무 짧아요. 다시 녹음해 주세요.")
+    }
+
+    func test_mapVoiceError_genericServer500() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 500, message: "internal", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.")
+    }
+
+    func test_mapVoiceError_unauthorized() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 401, message: "no token", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "권한이 없어요. 로그인 상태를 확인해 주세요.")
+    }
+
+    func test_mapVoiceError_urlError() {
+        let vm = VoiceStudioViewModel()
+        let err = URLError(.notConnectedToInternet)
+        XCTAssertEqual(vm.mapVoiceError(err), "네트워크가 불안정해요. 잠시 후 다시 시도해 주세요.")
+    }
+
+    func test_mapVoiceError_recorderError() {
+        let vm = VoiceStudioViewModel()
+        XCTAssertEqual(
+            vm.mapVoiceError(VoiceRecorderError.microphoneDenied),
+            VoiceRecorderError.microphoneDenied.errorDescription
+        )
+    }
+
+    func test_mapVoiceError_invalidResponse() {
+        let vm = VoiceStudioViewModel()
+        XCTAssertEqual(
+            vm.mapVoiceError(APIError.invalidResponse),
+            "서버 응답을 해석하지 못했어요."
+        )
+    }
+
+    // MARK: - VoiceProfileLimits
+
+    func test_profileLimits_constants() {
+        XCTAssertEqual(VoiceProfileLimits.maxProfiles, 5)
+        XCTAssertEqual(VoiceProfileLimits.minDurationMs, 60_000)
+        XCTAssertEqual(VoiceProfileLimits.maxDurationMs, 120_000)
+    }
+
+    func test_isProfileLimitReached_andRemainingSlots() {
+        let vm = VoiceStudioViewModel()
+        vm.profiles = []
+        XCTAssertFalse(vm.isProfileLimitReached)
+        XCTAssertEqual(vm.remainingProfileSlots, 5)
+
+        vm.profiles = Array(repeating: VoiceProfile(id: "x", name: "x", status: "ready", createdAt: nil, isShared: nil), count: 5)
+        XCTAssertTrue(vm.isProfileLimitReached)
+        XCTAssertEqual(vm.remainingProfileSlots, 0)
+    }
+
+    // MARK: - VoiceSpeakerSegment 헬퍼
+
+    func test_voiceSpeakerSegment_durationLabel() {
+        let s = VoiceSpeakerSegment(id: "a", uploadId: nil, label: "Speaker A",
+                                    startMs: 10_000, endMs: 95_000, confidence: nil)
+        XCTAssertEqual(s.durationMs, 85_000)
+        XCTAssertEqual(s.durationLabel, "1:25")
+    }
+
+    func test_voiceSpeakerSegment_negativeRangeClampsToZero() {
+        let s = VoiceSpeakerSegment(id: "b", uploadId: nil, label: "X",
+                                    startMs: 5_000, endMs: 0, confidence: nil)
+        XCTAssertEqual(s.durationMs, 0)
+        XCTAssertEqual(s.durationLabel, "0:00")
+    }
+
+    // MARK: - APIError 보조
+
+    func test_apiError_serverErrorCodeAccessor() {
+        let e1 = APIError.server(status: 400, message: "x", errorCode: "VOICE_LIMIT_REACHED")
+        XCTAssertEqual(e1.serverErrorCode, "VOICE_LIMIT_REACHED")
+
+        let e2 = APIError.invalidResponse
+        XCTAssertNil(e2.serverErrorCode)
+    }
+}

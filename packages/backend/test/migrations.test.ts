@@ -213,9 +213,20 @@ describe('migrations', () => {
     expect(all).toContain('CREATE TABLE IF NOT EXISTS tts_presets');
     expect(all).toContain('messages_json TEXT NOT NULL');
     expect(all).toContain('idx_tts_presets_order');
-    expect(m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length).toBe(8);
+    expect(
+      m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length,
+    ).toBe(8);
     expect(all).toContain("'morning'");
     expect(all).toContain("'love'");
+  });
+
+  it('migration #35 adds Apple login identity storage', () => {
+    const m = migrations.find((x) => x.id === 35);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('ALTER TABLE users ADD COLUMN apple_id');
+    expect(all).toContain('idx_users_apple_id');
+    expect(all).toContain('WHERE apple_id IS NOT NULL');
   });
 
   it('migration #34 separates TTS display text from synthesis text and tags', () => {
@@ -223,8 +234,12 @@ describe('migrations', () => {
     expect(m).toBeDefined();
     const all = m!.statements.join('\n');
     expect(all).toContain('ALTER TABLE messages ADD COLUMN synthesis_text TEXT');
-    expect(all).toContain("ALTER TABLE messages ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'");
+    expect(all).toContain(
+      "ALTER TABLE messages ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'",
+    );
     expect(all).toContain('ALTER TABLE generated_audio_assets ADD COLUMN original_text TEXT');
-    expect(all).toContain("ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'");
+    expect(all).toContain(
+      "ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'",
+    );
   });
 });
