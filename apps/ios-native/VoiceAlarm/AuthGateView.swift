@@ -1,45 +1,19 @@
-import AuthenticationServices
 import SwiftUI
 
+/// 비로그인 사용자를 위한 진입 컨테이너.
+///
+/// Phase 3-C3 에서 기존의 단순 Apple 버튼 화면이 본격적인 진입 퍼널로 교체됐다.
+/// 이제 본 View 는 `NavigationStack` 만 제공하고, 실제 내용은
+/// `LandingView` → `LoginView` 흐름이 담당한다.
+///
+/// 분해 매핑:
+/// - 랜딩(브랜드/미리듣기/CTA): `Views/Auth/LandingView.swift`
+/// - 로그인/회원가입 폼: `Views/Auth/LoginView.swift`
+/// - 권한 게이트: `Views/Permission/LoginPermissionGateView.swift`
 struct AuthGateView: View {
-    @EnvironmentObject private var auth: AuthViewModel
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Naro")
-                    .font(.system(size: 40, weight: .bold, design: .rounded))
-                    .foregroundStyle(VoiceAlarmTheme.text)
-                Text("실제 알람처럼 울리는 네이티브 음성 알람")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.text)
-                Text("iOS에서는 Apple 로그인 후 AlarmKit 권한을 허용해야 잠금화면 알람을 예약할 수 있어요.")
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
-
-            SignInWithAppleButton(.signIn) { request in
-                request.requestedScopes = [.fullName, .email]
-            } onCompletion: { result in
-                switch result {
-                case .success(let authorization):
-                    Task { await auth.handleAppleAuthorization(authorization) }
-                case .failure(let error):
-                    Task { @MainActor in auth.handleAppleAuthorizationFailure(error) }
-                }
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 52)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .disabled(auth.isBusy)
-
-            if let status = auth.statusMessage {
-                Text(status)
-                    .font(.footnote)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
+        NavigationStack {
+            LandingView()
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .background(VoiceAlarmTheme.background)
     }
 }
