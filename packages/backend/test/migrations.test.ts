@@ -242,4 +242,13 @@ describe('migrations', () => {
       "ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'",
     );
   });
+
+  it('migration #37 stores voice relationship labels', () => {
+    const m = migrations.find((x) => x.id === 37);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('ALTER TABLE voice_profiles ADD COLUMN relationship_label TEXT');
+    expect(all).toContain('CREATE TABLE IF NOT EXISTS voice_profile_relationships');
+    expect(all).toContain('UNIQUE(user_id, voice_profile_id)');
+  });
 });

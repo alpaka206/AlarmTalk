@@ -27,12 +27,12 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -207,6 +207,8 @@ internal fun VoiceFileControls(
     notice: String,
     isPreviewActive: Boolean = false,
     isPreviewPreparing: Boolean = false,
+    waveformLevels: List<Float> = emptyList(),
+    waveformLoading: Boolean = false,
     onPickFile: () -> Unit,
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
@@ -232,6 +234,8 @@ internal fun VoiceFileControls(
                 maxDurationMillis = maxDurationMillis,
                 isPreviewActive = isPreviewActive,
                 isPreviewPreparing = isPreviewPreparing,
+                waveformLevels = waveformLevels,
+                waveformLoading = waveformLoading,
                 onCropChange = onCropChange,
                 onPreviewCrop = onPreviewCrop,
             )
@@ -248,6 +252,8 @@ internal fun AudioCropRangeSelector(
     maxDurationMillis: Long,
     isPreviewActive: Boolean = false,
     isPreviewPreparing: Boolean = false,
+    waveformLevels: List<Float> = emptyList(),
+    waveformLoading: Boolean = false,
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
 ) {
@@ -255,11 +261,7 @@ internal fun AudioCropRangeSelector(
     val safeStart = cropStartMillis.coerceIn(0L, safeDuration)
     val safeEnd = cropEndMillis.coerceIn(safeStart, safeDuration)
     val selectedDuration = (safeEnd - safeStart).coerceAtLeast(0L)
-    val waveform = remember(safeDuration) {
-        List(40) { index ->
-            0.18f + ((index * 17) % 31) / 40f
-        }
-    }
+    val waveform = waveformLevels.filter { it.isFinite() && it >= 0f }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -294,22 +296,52 @@ internal fun AudioCropRangeSelector(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            waveform.forEachIndexed { index, level ->
-                val point = safeDuration * index / waveform.lastIndex.coerceAtLeast(1)
-                val selected = point in safeStart..safeEnd
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height((8 + level * 38).dp)
-                        .background(
-                            if (selected) {
-                                MaterialTheme.colorScheme.secondary
-                            } else {
-                                MaterialTheme.colorScheme.outline
-                            },
-                            RoundedCornerShape(999.dp),
-                        ),
-                )
+            when {
+                waveformLoading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(
+                        text = "파형 분석 중",
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(22.dp))
+                }
+
+                waveform.isNotEmpty() -> {
+                    waveform.forEachIndexed { index, rawLevel ->
+                        val point = safeDuration * index / waveform.lastIndex.coerceAtLeast(1)
+                        val selected = point in safeStart..safeEnd
+                        val level = rawLevel.coerceIn(0.05f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .width(2.dp)
+                                .height((8 + level * 38).dp)
+                                .background(
+                                    if (selected) {
+                                        MaterialTheme.colorScheme.secondary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    },
+                                    RoundedCornerShape(999.dp),
+                                ),
+                        )
+                    }
+                }
+
+                else -> {
+                    Text(
+                        text = "파형을 표시하지 못했어요.",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         RangeSlider(

@@ -789,6 +789,24 @@ export const migrations: Migration[] = [
         WHERE apple_original_transaction_id IS NOT NULL`,
     ],
   },
+  {
+    id: 37,
+    name: 'voice-profile-relationship-labels',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN relationship_label TEXT`,
+      `CREATE TABLE IF NOT EXISTS voice_profile_relationships (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        voice_profile_id TEXT NOT NULL REFERENCES voice_profiles(id),
+        relationship_label TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, voice_profile_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_user
+        ON voice_profile_relationships(user_id, voice_profile_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
