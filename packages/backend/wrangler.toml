@@ -28,8 +28,9 @@ crons = ["*/5 * * * *"]
 # GOOGLE_CLIENT_ID = ""    # Google Sign In OAuth audience (web client ID)
 # APPLE_CLIENT_ID = "com.voicealarm.nativeapp.ios"  # Apple Sign In bundle ID (run: wrangler secret put APPLE_CLIENT_ID)
 # APPLE_SHARED_SECRET = ""  # App Store Connect → 앱 → "앱 전용 공유 비밀(App-Specific Shared Secret)".
-#                             POST /api/billing/apple/confirm 게이트로 사용. 미설정 시 503. 후속 PR 에서
-#                             Apple App Store Server API v2 JWS 검증 시 동일 secret 을 재사용.
+#                             미설정 시 POST /api/billing/apple/confirm 은 503. 설정돼도 현재는
+#                             fail-closed(501) 이며, 후속 PR 의 App Store Server API/JWS 검증 뒤
+#                             entitlement 갱신을 열어야 한다.
 # RESEND_API_KEY = ""      # 회원가입 이메일 인증 코드 발송용
 # AUTH_EMAIL_FROM = ""     # 예: Voice Alarm <no-reply@your-domain.com>
 # AUTH_EMAIL_REPLY_TO = ""

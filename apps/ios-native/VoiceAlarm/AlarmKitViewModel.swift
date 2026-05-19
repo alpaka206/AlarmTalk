@@ -87,7 +87,6 @@ final class AlarmKitViewModel: ObservableObject {
             .subtracting(currentIDs)
         for kitID in disappearedIDs {
             let recordExisted = store.recordByAlarmKitID(kitID) != nil
-            store.markStopped(alarmKitID: kitID)
             // In-app voice fallback 재생 중이면 정지 (AlarmKit 자체 stop 과 별개).
             AlarmVoicePlayer.shared.stop()
             // CharacterEvent emit (LiveActivity 가 아닌 경로의 stop 도 포함).
@@ -95,6 +94,8 @@ final class AlarmKitViewModel: ObservableObject {
             // 가 이미 queue 했다면 store 측에서 중복 제거가 된다.
             if recordExisted, let ctx = AlarmAppContext.shared {
                 await ctx.handleAlarmStopped(alarmKitIDString: kitID)
+            } else {
+                store.markStopped(alarmKitID: kitID)
             }
         }
 
@@ -171,7 +172,8 @@ final class AlarmKitViewModel: ObservableObject {
         await schedule(record: record, store: store)
     }
 
-    func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async {
+    @discardableResult
+    func schedule(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
         #if canImport(AlarmKit)
         do {
             if AlarmManager.shared.authorizationState != .authorized {
@@ -179,7 +181,7 @@ final class AlarmKitViewModel: ObservableObject {
                 authorizationLabel = String(describing: state)
                 guard state == .authorized else {
                     statusMessage = "AlarmKit permission is required before scheduling."
-                    return
+                    return false
                 }
             }
             let id = UUID()
@@ -198,31 +200,43 @@ final class AlarmKitViewModel: ObservableObject {
             _ = try await AlarmManager.shared.schedule(id: id, configuration: configuration)
             store.markScheduled(localID: record.id, alarmKitID: id.uuidString)
             statusMessage = describeScheduleStatus(record: record, resolution: resolution)
+            return true
         } catch {
             statusMessage = "Schedule failed: \(error.localizedDescription)"
+            return false
         }
         #else
         statusMessage = "AlarmKit is unavailable in this SDK."
+        return false
+        #endif
+    }
+
+    @discardableResult
+    func cancelScheduledAlarm(record: LocalAlarmRecord) async -> Bool {
+        #if canImport(AlarmKit)
+        guard let alarmKitUUID = record.alarmKitUUID else { return true }
+        do {
+            try AlarmManager.shared.cancel(id: alarmKitUUID)
+            statusMessage = "Canceled \(record.label)"
+            return true
+        } catch {
+            statusMessage = "Cancel failed: \(error.localizedDescription)"
+            return false
+        }
+        #else
+        statusMessage = "AlarmKit is unavailable in this SDK."
+        return false
         #endif
     }
 
     func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async {
-        #if canImport(AlarmKit)
-        guard let alarmKitUUID = record.alarmKitUUID else {
+        guard record.alarmKitUUID != nil else {
             store.delete(record)
             return
         }
-        do {
-            try AlarmManager.shared.cancel(id: alarmKitUUID)
+        if await cancelScheduledAlarm(record: record) {
             store.delete(record)
-            statusMessage = "Canceled \(record.label)"
-        } catch {
-            statusMessage = "Cancel failed: \(error.localizedDescription)"
         }
-        #else
-        store.delete(record)
-        statusMessage = "AlarmKit is unavailable in this SDK."
-        #endif
     }
 
     #if canImport(AlarmKit)

@@ -112,14 +112,12 @@ enum VibrationPattern: String, Codable, CaseIterable {
 
 // MARK: - Snooze Repeat Limit
 // Android: `AlarmEntity.kt:158-164` `SnoozeRepeatLimits` (3 / 5 / 0=무제한).
-// 사양 문서에서 "once = 1" 도 명시. 모두 보존.
 enum SnoozeRepeatLimit: Int, Codable, CaseIterable {
     case unlimited = 0
-    case once = 1
     case three = 3
     case five = 5
 
-    static var validValues: [Int] { allCases.map(\.rawValue) }
+    static var validValues: [Int] { [three.rawValue, five.rawValue, unlimited.rawValue] }
     static func isValid(_ value: Int) -> Bool { validValues.contains(value) }
 }
 

@@ -24,12 +24,13 @@ Cloudflare Workers + Hono 기반 API 서버.
 
 ### Apple IAP confirm 검증 강화 로드맵
 
-`POST /api/billing/apple/confirm` 은 본 phase 에서 다음 trust model 로 작동한다.
+`POST /api/billing/apple/confirm` 은 서버가 Apple transaction 을 직접 검증하기 전까지 fail-closed 로 작동한다.
 
 - 라우트 진입에는 authMiddleware (JWT) 가 선행해 호출자 신원을 보장.
 - 알려진 SKU 화이트리스트 (`com.voicealarm.nativeapp.ios.{personal|couple|family}_{monthly|yearly}`) 만 수락.
 - `APPLE_SHARED_SECRET` 미설정 시 503 으로 즉시 거부 (운영자 설정 강제).
-- 동일 `transaction_id` 의 중복 confirm 은 멱등 (200, 기존 row).
+- secret 과 SKU 가 유효해도 클라이언트가 보낸 transaction_id/product_id 만으로 entitlement 를 갱신하지 않는다.
+- 현재는 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하고 DB 를 변경하지 않는다.
 
 후속 PR 에서 다음 server-to-server 검증을 추가해 영수증 진위까지 본인 검증한다.
 

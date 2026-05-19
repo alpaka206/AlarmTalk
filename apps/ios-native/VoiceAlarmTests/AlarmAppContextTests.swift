@@ -81,6 +81,20 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(mockQueue.events.count, 0)
     }
 
+    func test_handleAlarmStopped_repeatingAlarmRemainsArmed() async throws {
+        let kitID = UUID().uuidString
+        var record = makeArmedRecord(alarmKitID: kitID)
+        record.repeatDaysMask = RepeatDay.monday.mask
+        store.upsert(record)
+
+        await ctx.handleAlarmStopped(alarmKitIDString: kitID)
+
+        let updated = try XCTUnwrap(store.record(id: record.id))
+        XCTAssertEqual(updated.state, AlarmRuntimeState.armed.rawValue)
+        XCTAssertTrue(updated.enabled)
+        XCTAssertEqual(updated.snoozeCount, 0)
+    }
+
     // MARK: - Snooze
 
     func test_handleAlarmSnoozed_advancesFireAndIncrementsCount() async throws {
@@ -123,6 +137,35 @@ final class AlarmAppContextTests: XCTestCase {
     func test_handleAlarmSnoozed_unknownKitID_noMutation_noQueue() async {
         let unknown = UUID().uuidString
         await ctx.handleAlarmSnoozed(alarmKitIDString: unknown, snoozeMinutesOverride: 5)
+        XCTAssertEqual(mockQueue.events.count, 0)
+    }
+
+    func test_handleAlarmSnoozed_disabledNoOps() async throws {
+        let kitID = UUID().uuidString
+        var record = makeArmedRecord(alarmKitID: kitID)
+        record.snoozeEnabled = false
+        store.upsert(record)
+
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: nil)
+
+        let updated = try XCTUnwrap(store.record(id: record.id))
+        XCTAssertEqual(updated.snoozeCount, record.snoozeCount)
+        XCTAssertEqual(updated.state, record.state)
+        XCTAssertEqual(mockQueue.events.count, 0)
+    }
+
+    func test_handleAlarmSnoozed_limitReachedNoOps() async throws {
+        let kitID = UUID().uuidString
+        var record = makeArmedRecord(alarmKitID: kitID)
+        record.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
+        record.snoozeCount = 3
+        store.upsert(record)
+
+        await ctx.handleAlarmSnoozed(alarmKitIDString: kitID, snoozeMinutesOverride: nil)
+
+        let updated = try XCTUnwrap(store.record(id: record.id))
+        XCTAssertEqual(updated.snoozeCount, 3)
+        XCTAssertEqual(updated.state, record.state)
         XCTAssertEqual(mockQueue.events.count, 0)
     }
 
