@@ -188,7 +188,7 @@ export async function generateDynamicAlarmTextWithVertex(
 
   const prompt = dynamicAlarmTextPrompt(context);
   const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
-  let raw = '';
+  let raw: string;
   try {
     raw = await generateContentText(env, prompt, {
       temperature: 0.85,

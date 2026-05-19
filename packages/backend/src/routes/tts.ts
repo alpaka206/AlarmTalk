@@ -111,11 +111,6 @@ function normalizeRelationshipLabel(value: unknown): string | null {
   return label.slice(0, 30);
 }
 
-function numberOrDefault(value: unknown, fallback: number, min: number, max: number): number {
-  const numeric = typeof value === 'number' ? value : Number(value);
-  return Number.isFinite(numeric) && numeric >= min && numeric <= max ? numeric : fallback;
-}
-
 function optionalInt(value: unknown, min: number, max: number): number | null {
   const numeric = typeof value === 'number' ? value : Number(value);
   if (!Number.isInteger(numeric) || numeric < min || numeric > max) return null;
