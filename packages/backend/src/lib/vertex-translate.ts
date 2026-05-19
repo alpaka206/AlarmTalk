@@ -30,6 +30,26 @@ export type AlarmTextPreparation = {
   provider: 'vertex' | 'gemini-api-key' | 'local';
 };
 
+export type DynamicAlarmTextMode =
+  | 'wake_weather'
+  | 'wake_fortune'
+  | 'meal'
+  | 'sleep'
+  | 'exercise'
+  | 'love';
+
+export type DynamicAlarmTextContext = {
+  mode: DynamicAlarmTextMode;
+  category: string;
+  targetLanguage: string;
+  dateLabel: string;
+  relationshipLabel?: string | null;
+  weatherSummary?: string | null;
+  fortuneProfile?: string | null;
+  mealLabel?: string | null;
+  alarmTimeLabel?: string | null;
+};
+
 export class AlarmTextTranslationUnavailableError extends Error {
   constructor() {
     super('Alarm text translation is not configured.');
@@ -41,6 +61,13 @@ export class AlarmTextPreparationInvalidError extends Error {
   constructor() {
     super('Alarm text preparation returned invalid content.');
     this.name = 'AlarmTextPreparationInvalidError';
+  }
+}
+
+export class DynamicAlarmTextGenerationInvalidError extends Error {
+  constructor() {
+    super('Dynamic alarm text generation returned invalid content.');
+    this.name = 'DynamicAlarmTextGenerationInvalidError';
   }
 }
 
@@ -128,7 +155,11 @@ export async function prepareAlarmTextWithVertex(
   const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
   let preparedText = parsed.text;
 
-  if (!preparedText || isMetaJsonResponse(preparedText) || (!parsed.parsedJson && isMetaJsonResponse(raw))) {
+  if (
+    !preparedText ||
+    isMetaJsonResponse(preparedText) ||
+    (!parsed.parsedJson && isMetaJsonResponse(raw))
+  ) {
     if (shouldTranslate) {
       throw new AlarmTextPreparationInvalidError();
     }
@@ -141,6 +172,47 @@ export async function prepareAlarmTextWithVertex(
     text: preparedText,
     translated: shouldTranslate,
     tags,
+    provider,
+  };
+}
+
+export async function generateDynamicAlarmTextWithVertex(
+  env: Env,
+  context: DynamicAlarmTextContext,
+): Promise<AlarmTextPreparation> {
+  const fallback = dynamicAlarmTextPreparationFallback(context);
+
+  if (!hasGeminiConfiguration(env)) {
+    return fallback;
+  }
+
+  const prompt = dynamicAlarmTextPrompt(context);
+  const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
+  let raw = '';
+  try {
+    raw = await generateContentText(env, prompt, {
+      temperature: 0.85,
+      maxOutputTokens: 256,
+    });
+  } catch {
+    return fallback;
+  }
+  const parsed = parseAlarmTextPreparation(raw);
+  const text = parsed.text.trim();
+
+  if (
+    !text ||
+    isMetaJsonResponse(text) ||
+    text.length > 200 ||
+    hasUnsupportedListenerAddress(text)
+  ) {
+    return fallback;
+  }
+
+  return {
+    text,
+    translated: false,
+    tags: extractTags(text),
     provider,
   };
 }
@@ -335,6 +407,9 @@ async function generateContentAtEndpoint(
         temperature: config.temperature,
         maxOutputTokens: config.maxOutputTokens,
         responseMimeType: 'application/json',
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
       },
     }),
   });
@@ -375,7 +450,110 @@ function alarmTextPrompt(args: {
   ].join('\n');
 }
 
-function parseAlarmTextPreparation(raw: string): { text: string; tags: string[]; parsedJson: boolean } {
+function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
+  const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
+  const relationship = context.relationshipLabel?.trim()
+    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it for warmth and tone only. Never address the listener as grandmother, grandfather, mom, dad, or another family title unless that exact listener title is explicitly provided. Do not invent names or private facts.`
+    : 'No relationship label is available, so keep the line generally warm.';
+  const modeInstruction = (() => {
+    if (context.mode === 'wake_weather') {
+      return `Use this weather context if available: ${context.weatherSummary || 'weather information is unavailable'}. Give one practical morning tip when it fits.`;
+    }
+    if (context.mode === 'wake_fortune') {
+      return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer a gentle saju-style daily tone from gender, birth date, and birth time, but do not repeat the raw birth data. Fortune input: ${context.fortuneProfile || 'fortune profile is unavailable'}. Do not sound like a real prediction or guarantee.`;
+    }
+    if (context.mode === 'meal') {
+      return `Create a ${context.mealLabel || 'meal'} reminder. Ask naturally whether they have eaten and recommend one menu idea. Consider this weather if available: ${context.weatherSummary || 'weather information is unavailable'}.`;
+    }
+    if (context.mode === 'sleep') {
+      return 'Create a bedtime message that helps the listener wind down, put the phone away, and rest without sounding like a generic notification.';
+    }
+    if (context.mode === 'exercise') {
+      return `Create an exercise reminder. Make it energetic but not childish. If the weather suggests it, choose indoor strength training or outdoor cardio naturally. Weather context: ${context.weatherSummary || 'weather information is unavailable'}.`;
+    }
+    return 'Create a warm love/relationship message that feels personal, caring, and suitable for a voice alarm without being overly dramatic.';
+  })();
+
+  return [
+    'You write one short, natural voice-alarm sentence for text-to-speech.',
+    `Write in ${targetName}.`,
+    `Date context: ${context.dateLabel}.`,
+    context.alarmTimeLabel ? `Alarm time context: ${context.alarmTimeLabel}.` : '',
+    `Alarm category: ${context.category}.`,
+    relationship,
+    modeInstruction,
+    'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter.',
+    'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
+    'Make it feel meaningfully different from a prerecorded fixed alarm.',
+    'No markdown, no emojis, no quotes, no explanations, no extra fields.',
+    'Keep the final text spoken, kind, and 200 characters or fewer.',
+    'Return strict JSON: {"text":"final alarm line"}.',
+  ].join('\n');
+}
+
+function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): string {
+  const relationship = context.relationshipLabel?.trim();
+  const opener = relationship ? `${relationship} 목소리로 전해요.` : '좋은 아침이에요.';
+  if (context.mode === 'wake_weather' && context.weatherSummary) {
+    return `${opener} ${context.dateLabel}, ${context.weatherSummary} 오늘 필요한 것만 챙기고 가볍게 시작해요.`
+      .slice(0, 200)
+      .trim();
+  }
+  if (context.mode === 'wake_fortune') {
+    const profileText = context.fortuneProfile ? ' 입력한 생년월일과 태어난 시간 기준으로' : '';
+    return `${opener} ${context.dateLabel}${profileText} 오늘은 작은 선택에 좋은 기운이 따르는 날이에요. 차근차근 시작해 봐요.`
+      .slice(0, 200)
+      .trim();
+  }
+  if (context.mode === 'meal') {
+    const weatherTip = context.weatherSummary ? ` ${context.weatherSummary}` : '';
+    return `${opener} ${context.mealLabel || '식사'} 챙길 시간이에요.${weatherTip} 오늘은 부담 없는 따뜻한 메뉴로 에너지를 채워 봐요.`
+      .slice(0, 200)
+      .trim();
+  }
+  if (context.mode === 'sleep') {
+    return `${opener} 이제 쉬어갈 시간이에요. 화면은 잠시 내려놓고, 편안한 숨으로 하루를 마무리해요.`
+      .slice(0, 200)
+      .trim();
+  }
+  if (context.mode === 'exercise') {
+    return `${opener} 운동 갈 시간이에요. 오늘도 무리하지 말고 한 세트씩, 몸이 깨어나는 느낌으로 시작해 봐요.`
+      .slice(0, 200)
+      .trim();
+  }
+  if (context.mode === 'love') {
+    return `${opener} 잠깐이라도 네 생각이 났어. 오늘도 마음은 네 편이니까 천천히 다녀와.`
+      .slice(0, 200)
+      .trim();
+  }
+  return `${opener} ${context.dateLabel} 오늘은 새로운 하루가 시작됐어요. 천천히 일어나서 좋은 리듬을 만들어 봐요.`
+    .slice(0, 200)
+    .trim();
+}
+
+function dynamicAlarmTextPreparationFallback(
+  context: DynamicAlarmTextContext,
+): AlarmTextPreparation {
+  const text = dynamicAlarmTextReadableFallback(context);
+  return {
+    text,
+    translated: false,
+    tags: extractTags(text),
+    provider: 'local',
+  };
+}
+
+function hasUnsupportedListenerAddress(text: string): boolean {
+  return /(^|[\s"'“”‘’(（])(?:할머니|할머님|할아버지|할아버님|엄마|어머니|어머님|아빠|아버지|아버님|부모님|할미|할배|손녀|손자|딸|아들)(?:님)?(?=[\s,，.!！?？~]|$)/.test(
+    text,
+  );
+}
+
+function parseAlarmTextPreparation(raw: string): {
+  text: string;
+  tags: string[];
+  parsedJson: boolean;
+} {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')
@@ -407,10 +585,13 @@ function parseAlarmTextPreparation(raw: string): { text: string; tags: string[];
 function isMetaJsonResponse(text: string): boolean {
   const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
   return (
+    normalized === 'here is the json' ||
+    normalized === 'here is the json:' ||
     normalized === 'here is the json requested:' ||
     normalized === 'here is the json requested' ||
     normalized === 'here is the requested json:' ||
     normalized === 'here is the requested json' ||
+    normalized.includes('here is the json') ||
     normalized.includes('json requested')
   );
 }
@@ -433,23 +614,27 @@ function normalizeTag(tag: string): string {
 }
 
 function stripWrappingQuotes(text: string): string {
-  return text.trim().replace(/^["'“”]+|["'“”]+$/g, '').trim();
+  return text
+    .trim()
+    .replace(/^["'“”]+|["'“”]+$/g, '')
+    .trim();
 }
 
 function tagAlarmTextLocally(text: string): string {
   if (TAG_RE.test(text)) return text;
   const lower = text.toLowerCase();
-  const tag = lower.includes('잘 자') || lower.includes('night') || lower.includes('sleep')
-    ? '[softly]'
-    : lower.includes('사랑') || lower.includes('love')
-      ? '[warmly]'
-      : lower.includes('고생') || lower.includes('퇴근') || lower.includes('수고')
-        ? '[gentle]'
-        : lower.includes('공부') || lower.includes('study') || lower.includes('힘')
-          ? '[encouraging]'
-          : lower.includes('건강') || lower.includes('약') || lower.includes('물')
-            ? '[calmly]'
-            : '[warmly]';
+  const tag =
+    lower.includes('잘 자') || lower.includes('night') || lower.includes('sleep')
+      ? '[softly]'
+      : lower.includes('사랑') || lower.includes('love')
+        ? '[warmly]'
+        : lower.includes('고생') || lower.includes('퇴근') || lower.includes('수고')
+          ? '[gentle]'
+          : lower.includes('공부') || lower.includes('study') || lower.includes('힘')
+            ? '[encouraging]'
+            : lower.includes('건강') || lower.includes('약') || lower.includes('물')
+              ? '[calmly]'
+              : '[warmly]';
   const tagged = `${tag} ${text}`;
   return tagged.length <= 200 ? tagged : text;
 }

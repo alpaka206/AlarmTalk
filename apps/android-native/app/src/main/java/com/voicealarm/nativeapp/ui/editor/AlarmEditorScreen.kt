@@ -63,6 +63,7 @@ import com.voicealarm.nativeapp.data.AlarmPlayModes
 import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
+import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
@@ -101,6 +102,7 @@ internal fun AlarmEditorScreen(
     voiceProfileBusy: Boolean,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
+    onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onSave: (AlarmDraft) -> Unit,
 ) {
@@ -108,6 +110,10 @@ internal fun AlarmEditorScreen(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
+    val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
+    var dynamicPromptPreferences by remember(appContext) {
+        mutableStateOf(dynamicPromptPreferenceStore.read())
+    }
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var audioMessage by remember { mutableStateOf<String?>(null) }
@@ -151,6 +157,15 @@ internal fun AlarmEditorScreen(
             editor.alarmSoundLabel = ringtoneTitle(context, pickedUri)
         }
         if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
+    }
+
+    LaunchedEffect(dynamicPromptPreferences.weatherCountry, dynamicPromptPreferences.weatherCity) {
+        if (editor.voiceWeatherCountry.isBlank()) {
+            editor.voiceWeatherCountry = dynamicPromptPreferences.weatherCountry
+        }
+        if (editor.voiceWeatherCity.isBlank()) {
+            editor.voiceWeatherCity = dynamicPromptPreferences.weatherCity
+        }
     }
 
     fun selectedFamilyRecipient(): FamilyGroupMember? =
@@ -436,6 +451,26 @@ internal fun AlarmEditorScreen(
             audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요."
             return
         }
+        if (
+            editor.voiceRandomPrompt &&
+            randomContextUsesWeather(editor.voiceRandomContext) &&
+            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+        ) {
+            audioMessage = "날씨 문구는 나라와 도시를 입력해 주세요."
+            return
+        }
+        if (
+            editor.voiceRandomPrompt &&
+            normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+            (
+                editor.voiceFortuneGender.isBlank() ||
+                    editor.voiceFortuneBirthDate.isBlank() ||
+                    editor.voiceFortuneBirthTime.isBlank()
+                )
+        ) {
+            audioMessage = "운세 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
+            return
+        }
         val usableProfileIds = (
             voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
@@ -454,17 +489,19 @@ internal fun AlarmEditorScreen(
             category = editor.activeVoiceCategory(),
             language = editor.activeVoiceLanguage(),
         )
-        audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
-            editor.setGeneratedTtsAudio(
-                audio = cached,
-                profileId = profileId,
-                text = text,
-                messageId = cached.messageId ?: editor.ttsMessageId ?: "",
-                rawAudioUri = cached.rawAudioUri,
-            )
-            audioMessage = "기존 음성 캐시를 사용했어요."
-            submitDraft(editor.toDraft())
-            return
+        if (!editor.voiceRandomPrompt) {
+            audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
+                editor.setGeneratedTtsAudio(
+                    audio = cached,
+                    profileId = profileId,
+                    text = text,
+                    messageId = cached.messageId ?: editor.ttsMessageId ?: "",
+                    rawAudioUri = cached.rawAudioUri,
+                )
+                audioMessage = "기존 음성 캐시를 사용했어요."
+                submitDraft(editor.toDraft())
+                return
+            }
         }
 
         scope.launch {
@@ -480,6 +517,28 @@ internal fun AlarmEditorScreen(
                         language = editor.activeVoiceLanguage(),
                         translate = editor.shouldTranslateVoiceText(),
                         random = editor.voiceRandomPrompt,
+                        randomContext = if (editor.voiceRandomPrompt) {
+                            normalizedRandomPromptContext(editor.voiceRandomContext)
+                        } else {
+                            null
+                        },
+                        alarmHour = editor.hour,
+                        alarmMinute = editor.minute,
+                        weatherCountry = editor.voiceWeatherCountry.takeIf {
+                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
+                        },
+                        weatherCity = editor.voiceWeatherCity.takeIf {
+                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
+                        },
+                        fortuneGender = editor.voiceFortuneGender.takeIf {
+                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
+                        },
+                        fortuneBirthDate = editor.voiceFortuneBirthDate.takeIf {
+                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
+                        },
+                        fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
+                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
+                        },
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -566,16 +625,98 @@ internal fun AlarmEditorScreen(
     val editorHorizontalPadding = 24.dp
     val editorBottomPadding = 12.dp
     var settingsDetailPanel by remember { mutableStateOf<String?>(null) }
+    var randomPromptWasEnabledWhenOpened by remember { mutableStateOf(false) }
+
+    val usableTtsProfileIds = (
+        voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
+            familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
+        ).toSet()
+
+    fun randomPromptSettingsComplete(): Boolean {
+        if (!editor.voiceRandomPrompt) return false
+        val context = normalizedRandomPromptContext(editor.voiceRandomContext)
+        if (
+            randomContextUsesWeather(context) &&
+            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+        ) {
+            return false
+        }
+        if (
+            context == "wake_fortune" &&
+            (
+                editor.voiceFortuneGender.isBlank() ||
+                    editor.voiceFortuneBirthDate.isBlank() ||
+                    editor.voiceFortuneBirthTime.isBlank()
+                )
+        ) {
+            return false
+        }
+        return true
+    }
+
+    fun canSaveTtsAlarm(): Boolean {
+        val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() } ?: return false
+        val text = editor.ttsTextForSave()
+        val profileAvailable = profileId in usableTtsProfileIds || editor.hasFreshTtsAudio(profileId, text)
+        if (!profileAvailable) return false
+        return if (editor.voiceRandomPrompt) {
+            randomPromptSettingsComplete()
+        } else {
+            editor.voiceText.trim().isNotBlank()
+        }
+    }
+
+    val editorCanSave = when {
+        editor.playMode == AlarmPlayModes.ALARM_ONLY -> true
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()
+        else -> canSaveTtsAlarm()
+    }
+
+    fun openRandomPromptSettings() {
+        randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
+        settingsDetailPanel = "random_prompt"
+    }
+
+    fun dismissRandomPromptSettingsWithoutSave() {
+        if (!randomPromptWasEnabledWhenOpened) {
+            editor.voiceRandomPrompt = false
+        }
+        settingsDetailPanel = null
+    }
+
+    fun applyRandomPromptSettings(result: RandomPromptSettingsResult) {
+        editor.voiceRandomPrompt = true
+        editor.voiceRandomContext = normalizedRandomPromptContext(result.randomContext)
+        editor.voiceLanguage = result.voiceLanguage
+        editor.voiceText = ""
+        editor.voiceWeatherCountry = result.weatherCountry
+        editor.voiceWeatherCity = result.weatherCity
+        editor.voiceFortuneGender = result.fortuneGender
+        editor.voiceFortuneBirthDate = result.fortuneBirthDate
+        editor.voiceFortuneBirthTime = result.fortuneBirthTime
+        editor.clearAudio()
+        editor.clearTtsMeta()
+        if (
+            randomContextUsesWeather(result.randomContext) &&
+            result.weatherCountry.isNotBlank() &&
+            result.weatherCity.isNotBlank()
+        ) {
+            dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+        }
+        settingsDetailPanel = null
+    }
 
     BackHandler(enabled = settingsDetailPanel != null) {
+        if (settingsDetailPanel == "random_prompt") {
+            dismissRandomPromptSettingsWithoutSave()
+            return@BackHandler
+        }
         settingsDetailPanel = null
     }
 
     LaunchedEffect(editor.playMode, editor.voiceRandomPrompt) {
         if (editor.playMode == AlarmPlayModes.VOICE_ONLY && settingsDetailPanel == "sound") {
-            settingsDetailPanel = null
-        }
-        if (!editor.voiceRandomPrompt && settingsDetailPanel == "random_prompt") {
             settingsDetailPanel = null
         }
         if (
@@ -734,7 +875,8 @@ internal fun AlarmEditorScreen(
                                 },
                                 onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
-                                onOpenRandomPromptSettings = { settingsDetailPanel = "random_prompt" },
+                                onCreateVoiceProfileClick = onCreateVoiceProfile,
+                                onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
                                 onClear = {
                                     stopPreview()
@@ -793,6 +935,7 @@ internal fun AlarmEditorScreen(
                         EditorActionButtons(
                             isEditing = alarm != null,
                             isSaving = isSaving,
+                            canSave = editorCanSave,
                             onSave = ::saveEditor,
                         )
                     }
@@ -841,19 +984,17 @@ internal fun AlarmEditorScreen(
             )
 
             "random_prompt" -> RandomPromptSettingsPane(
-                voiceCategory = editor.voiceCategory,
                 voiceLanguage = editor.voiceLanguage,
-                onDismiss = { settingsDetailPanel = null },
-                onCategoryChange = {
-                    editor.voiceCategory = it
-                    editor.voiceText = ""
-                    editor.clearTtsMeta()
-                },
-                onLanguageChange = {
-                    editor.voiceLanguage = it
-                    editor.voiceText = ""
-                    editor.clearTtsMeta()
-                },
+                randomContext = editor.voiceRandomContext,
+                weatherCountry = editor.voiceWeatherCountry,
+                weatherCity = editor.voiceWeatherCity,
+                savedWeatherCountry = dynamicPromptPreferences.weatherCountry,
+                savedWeatherCity = dynamicPromptPreferences.weatherCity,
+                fortuneGender = editor.voiceFortuneGender,
+                fortuneBirthDate = editor.voiceFortuneBirthDate,
+                fortuneBirthTime = editor.voiceFortuneBirthTime,
+                onDismissWithoutSave = ::dismissRandomPromptSettingsWithoutSave,
+                onSaveSettings = ::applyRandomPromptSettings,
             )
 
             "voice_translation" -> VoiceTranslationSettingsPane(

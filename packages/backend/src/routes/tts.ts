@@ -15,8 +15,10 @@ import {
   UnsupportedVoiceProviderError,
 } from '../lib/voice-provider';
 import {
+  DynamicAlarmTextGenerationInvalidError,
   AlarmTextPreparationInvalidError,
   AlarmTextTranslationUnavailableError,
+  generateDynamicAlarmTextWithVertex,
   prepareAlarmTextWithVertex,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
@@ -40,6 +42,42 @@ const LEGACY_TTS_CATEGORY_ALIASES: Record<string, (typeof TTS_CATEGORIES)[number
   sleep: 'night',
   medicine: 'health',
 };
+const RANDOM_CONTEXTS = [
+  'preset',
+  'wake_weather',
+  'wake_fortune',
+  'meal',
+  'sleep',
+  'exercise',
+  'love',
+] as const;
+type RandomContext = (typeof RANDOM_CONTEXTS)[number];
+
+const LEGACY_RANDOM_CONTEXT_ALIASES: Record<string, RandomContext> = {
+  daily: 'wake_weather',
+  weather: 'wake_weather',
+  fortune: 'wake_fortune',
+};
+
+type WeatherForecastResponse = {
+  daily?: {
+    time?: unknown[];
+    weather_code?: unknown[];
+    temperature_2m_max?: unknown[];
+    temperature_2m_min?: unknown[];
+    precipitation_probability_max?: unknown[];
+    precipitation_sum?: unknown[];
+  };
+};
+
+type WeatherGeocodingResponse = {
+  results?: Array<{
+    name?: unknown;
+    country?: unknown;
+    latitude?: unknown;
+    longitude?: unknown;
+  }>;
+};
 
 function normalizeTtsCategory(category: string): (typeof TTS_CATEGORIES)[number] | null {
   const raw = category.trim();
@@ -54,6 +92,88 @@ function randomIndex(length: number): number {
   const values = new Uint32Array(1);
   crypto.getRandomValues(values);
   return values[0]! % length;
+}
+
+function normalizeRandomContext(value: unknown): RandomContext {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return (RANDOM_CONTEXTS as readonly string[]).includes(raw) ? (raw as RandomContext) : 'preset';
+}
+
+function normalizeRandomContextWithAliases(value: unknown): RandomContext {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return LEGACY_RANDOM_CONTEXT_ALIASES[raw] ?? normalizeRandomContext(raw);
+}
+
+function normalizeRelationshipLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const label = value.trim();
+  if (!label) return null;
+  return label.slice(0, 30);
+}
+
+function numberOrDefault(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) && numeric >= min && numeric <= max ? numeric : fallback;
+}
+
+function optionalInt(value: unknown, min: number, max: number): number | null {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(numeric) || numeric < min || numeric > max) return null;
+  return numeric;
+}
+
+function optionalNumber(value: unknown, min: number, max: number): number | null {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric < min || numeric > max) return null;
+  return numeric;
+}
+
+function normalizeShortText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : null;
+}
+
+function mealLabelForHour(hour: number | null): string {
+  if (hour == null) return '식사';
+  if (hour >= 5 && hour < 10) return '아침';
+  if (hour >= 10 && hour < 15) return '점심';
+  if (hour >= 15 && hour < 22) return '저녁';
+  return '가벼운 식사';
+}
+
+function alarmTimeLabel(hour: number | null, minute: number | null): string | null {
+  if (hour == null || minute == null) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function fortuneProfile(args: {
+  gender?: unknown;
+  birthDate?: unknown;
+  birthTime?: unknown;
+}): string | null {
+  const gender = normalizeShortText(args.gender, 12);
+  const birthDate = normalizeShortText(args.birthDate, 16);
+  const birthTime = normalizeShortText(args.birthTime, 8);
+  const parts = [
+    gender ? `gender=${gender}` : null,
+    birthDate ? `birth date=${birthDate}` : null,
+    birthTime ? `birth time=${birthTime}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
+}
+
+function randomContextUsesWeather(context: RandomContext): boolean {
+  return context === 'wake_weather' || context === 'meal' || context === 'exercise';
+}
+
+function todayKoreaLabel(): string {
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long',
+  }).format(new Date());
 }
 
 async function pickRandomPresetText(
@@ -99,6 +219,153 @@ async function findUsableVoiceProfile(
   return inSameGroup ? row : null;
 }
 
+async function findViewerRelationshipLabel(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  userId: string,
+  voiceProfileId: string,
+): Promise<string | null> {
+  const result = await db.execute({
+    sql: `SELECT relationship_label
+          FROM voice_profile_relationships
+          WHERE voice_profile_id = ? AND user_id IN (?, ?)
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+    args: [voiceProfileId, userPk, userId],
+  });
+  return normalizeRelationshipLabel(result.rows[0]?.relationship_label);
+}
+
+async function loadWeatherSummary(args: {
+  latitude?: unknown;
+  longitude?: unknown;
+  locationLabel?: unknown;
+  country?: unknown;
+  city?: unknown;
+}): Promise<string | null> {
+  const location = await resolveWeatherLocation(args);
+  const url = new URL('https://api.open-meteo.com/v1/forecast');
+  url.searchParams.set('latitude', String(location.latitude));
+  url.searchParams.set('longitude', String(location.longitude));
+  url.searchParams.set(
+    'daily',
+    [
+      'weather_code',
+      'temperature_2m_max',
+      'temperature_2m_min',
+      'precipitation_probability_max',
+      'precipitation_sum',
+    ].join(','),
+  );
+  url.searchParams.set('timezone', 'Asia/Seoul');
+  url.searchParams.set('forecast_days', '1');
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { accept: 'application/json' },
+    });
+    const json = await response
+      .json<WeatherForecastResponse>()
+      .catch(() => ({}) as WeatherForecastResponse);
+    if (!response.ok || !json.daily) return null;
+    const code = Number(json.daily.weather_code?.[0]);
+    const maxTemp = Number(json.daily.temperature_2m_max?.[0]);
+    const minTemp = Number(json.daily.temperature_2m_min?.[0]);
+    const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
+    const precipitation = Number(json.daily.precipitation_sum?.[0]);
+    const weather = weatherCodeLabel(code);
+    const temperatureText =
+      Number.isFinite(maxTemp) && Number.isFinite(minTemp)
+        ? `최저 ${Math.round(minTemp)}도, 최고 ${Math.round(maxTemp)}도`
+        : '';
+    const rainText = Number.isFinite(rainProbability)
+      ? `강수 확률 ${Math.round(rainProbability)}%`
+      : Number.isFinite(precipitation) && precipitation > 0
+        ? `예상 강수량 ${Math.round(precipitation)}mm`
+        : '';
+    const umbrella =
+      (Number.isFinite(rainProbability) && rainProbability >= 50) ||
+      (Number.isFinite(precipitation) && precipitation > 0.5) ||
+      [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code)
+        ? '우산을 챙기면 좋아요.'
+        : '가볍게 나서기 좋아요.';
+    return [`${location.label} 날씨는 ${weather}`, temperatureText, rainText, umbrella]
+      .filter(Boolean)
+      .join(', ');
+  } catch {
+    return null;
+  }
+}
+
+async function resolveWeatherLocation(args: {
+  latitude?: unknown;
+  longitude?: unknown;
+  locationLabel?: unknown;
+  country?: unknown;
+  city?: unknown;
+}): Promise<{ latitude: number; longitude: number; label: string }> {
+  const fallback = { latitude: 37.5665, longitude: 126.978, label: '서울' };
+  const latitude = optionalNumber(args.latitude, -90, 90);
+  const longitude = optionalNumber(args.longitude, -180, 180);
+  const country = normalizeShortText(args.country, 30);
+  const city = normalizeShortText(args.city, 30);
+  const label =
+    normalizeShortText(args.locationLabel, 40) ||
+    [country, city].filter(Boolean).join(' ').trim() ||
+    fallback.label;
+  if (latitude != null && longitude != null) {
+    return { latitude, longitude, label };
+  }
+  if (!city) {
+    return { ...fallback, label };
+  }
+  try {
+    const url = new URL('https://geocoding-api.open-meteo.com/v1/search');
+    url.searchParams.set('name', city);
+    url.searchParams.set('count', '10');
+    url.searchParams.set('language', 'ko');
+    url.searchParams.set('format', 'json');
+    const response = await fetch(url.toString(), {
+      headers: { accept: 'application/json' },
+    });
+    const json = await response
+      .json<WeatherGeocodingResponse>()
+      .catch(() => ({}) as WeatherGeocodingResponse);
+    if (!response.ok) return { ...fallback, label };
+    const results = json.results ?? [];
+    const matched =
+      results.find((item) => {
+        const resultCountry = typeof item.country === 'string' ? item.country : '';
+        return country ? resultCountry.toLowerCase().includes(country.toLowerCase()) : true;
+      }) ?? results[0];
+    const resolvedLatitude = optionalNumber(matched?.latitude, -90, 90);
+    const resolvedLongitude = optionalNumber(matched?.longitude, -180, 180);
+    if (resolvedLatitude == null || resolvedLongitude == null) return { ...fallback, label };
+    const resolvedCity = typeof matched?.name === 'string' ? matched.name : city;
+    const resolvedCountry = typeof matched?.country === 'string' ? matched.country : country;
+    return {
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
+      label: [resolvedCountry, resolvedCity].filter(Boolean).join(' ').trim() || label,
+    };
+  } catch {
+    return { ...fallback, label };
+  }
+}
+
+function weatherCodeLabel(code: number): string {
+  if (code === 0) return '맑음';
+  if ([1, 2, 3].includes(code)) return '구름 많음';
+  if ([45, 48].includes(code)) return '안개';
+  if ([51, 53, 55, 56, 57].includes(code)) return '이슬비';
+  if ([61, 63, 65, 66, 67].includes(code)) return '비';
+  if ([71, 73, 75, 77].includes(code)) return '눈';
+  if ([80, 81, 82].includes(code)) return '소나기';
+  if ([85, 86].includes(code)) return '눈 소나기';
+  if ([95, 96, 99].includes(code)) return '뇌우';
+  return '변동 있음';
+}
+
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -113,6 +380,35 @@ tts.post('/generate', async (c) => {
     language?: string;
     translate?: boolean;
     random?: boolean;
+    random_context?: string;
+    randomContext?: string;
+    random_mode?: string;
+    randomMode?: string;
+    relationship_label?: string;
+    relationshipLabel?: string;
+    weather_location_label?: string;
+    weatherLocationLabel?: string;
+    weather_latitude?: number;
+    weatherLatitude?: number;
+    weather_longitude?: number;
+    weatherLongitude?: number;
+    weather_country?: string;
+    weatherCountry?: string;
+    weather_city?: string;
+    weatherCity?: string;
+    alarm_hour?: number;
+    alarmHour?: number;
+    alarm_minute?: number;
+    alarmMinute?: number;
+    fortune_gender?: string;
+    fortuneGender?: string;
+    gender?: string;
+    fortune_birth_date?: string;
+    fortuneBirthDate?: string;
+    birthDate?: string;
+    fortune_birth_time?: string;
+    fortuneBirthTime?: string;
+    birthTime?: string;
   }>();
 
   if (!body.voice_profile_id) {
@@ -140,6 +436,11 @@ tts.post('/generate', async (c) => {
     );
   }
   const randomRequested = body.random === true;
+  const randomContext = randomRequested
+    ? normalizeRandomContextWithAliases(
+        body.random_context ?? body.randomContext ?? body.random_mode ?? body.randomMode,
+      )
+    : 'preset';
   if (randomRequested && category === 'custom') {
     return c.json(
       {
@@ -150,17 +451,22 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  const requestText = randomRequested
-    ? await pickRandomPresetText(c.env, category)
-    : (body.text ?? '').trim();
+  let requestText =
+    randomRequested && randomContext === 'preset'
+      ? await pickRandomPresetText(c.env, category)
+      : (body.text ?? '').trim();
   if (!requestText) {
-    return c.json(
-      { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
-      400,
-    );
+    if (randomRequested && randomContext !== 'preset') {
+      requestText = '';
+    } else {
+      return c.json(
+        { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
+        400,
+      );
+    }
   }
 
-  if (requestText.length > 200) {
+  if (requestText && requestText.length > 200) {
     return c.json(
       { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
       400,
@@ -224,6 +530,56 @@ tts.post('/generate', async (c) => {
 
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
+    if (randomRequested && randomContext !== 'preset') {
+      const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
+      const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
+      const relationshipLabel =
+        normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
+        (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
+        normalizeRelationshipLabel(vp.relationship_label);
+      const weatherSummary = randomContextUsesWeather(randomContext)
+        ? await loadWeatherSummary({
+            latitude: body.weather_latitude ?? body.weatherLatitude,
+            longitude: body.weather_longitude ?? body.weatherLongitude,
+            locationLabel: body.weather_location_label ?? body.weatherLocationLabel,
+            country: body.weather_country ?? body.weatherCountry,
+            city: body.weather_city ?? body.weatherCity,
+          })
+        : null;
+      const generated = await generateDynamicAlarmTextWithVertex(c.env, {
+        mode: randomContext,
+        category,
+        targetLanguage: requestedLanguage,
+        dateLabel: todayKoreaLabel(),
+        relationshipLabel,
+        weatherSummary,
+        fortuneProfile:
+          randomContext === 'wake_fortune'
+            ? fortuneProfile({
+                gender: body.fortune_gender ?? body.fortuneGender ?? body.gender,
+                birthDate: body.fortune_birth_date ?? body.fortuneBirthDate ?? body.birthDate,
+                birthTime: body.fortune_birth_time ?? body.fortuneBirthTime ?? body.birthTime,
+              })
+            : null,
+        mealLabel: randomContext === 'meal' ? mealLabelForHour(alarmHour) : null,
+        alarmTimeLabel: alarmTimeLabel(alarmHour, alarmMinute),
+      });
+      requestText = generated.text;
+    }
+
+    if (!requestText) {
+      return c.json(
+        { error: 'voice_profile_id and text are required', error_code: 'VOICE_AND_TEXT_REQUIRED' },
+        400,
+      );
+    }
+    if (requestText.length > 200) {
+      return c.json(
+        { error: 'Text must be 200 characters or less', error_code: 'TEXT_TOO_LONG' },
+        400,
+      );
+    }
+
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
     const shouldTranslate =
       body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
@@ -302,6 +658,7 @@ tts.post('/generate', async (c) => {
             provider: cached.provider,
             cache_key: cacheKey,
             cache_hit: true,
+            random_context: randomRequested ? randomContext : null,
           },
           200,
         );
@@ -412,6 +769,7 @@ tts.post('/generate', async (c) => {
             provider: generated.provider,
             cache_key: cacheKey,
             cache_hit: false,
+            random_context: randomRequested ? randomContext : null,
           },
           201,
         );
@@ -438,6 +796,15 @@ tts.post('/generate', async (c) => {
         {
           error: 'Alarm text preparation returned invalid content.',
           error_code: 'TEXT_PREPARATION_FAILED',
+        },
+        502,
+      );
+    }
+    if (err instanceof DynamicAlarmTextGenerationInvalidError) {
+      return c.json(
+        {
+          error: 'Dynamic alarm text generation returned invalid content.',
+          error_code: 'DYNAMIC_TEXT_GENERATION_FAILED',
         },
         502,
       );

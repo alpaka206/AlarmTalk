@@ -35,8 +35,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 
@@ -55,7 +57,11 @@ internal fun SettingsScreen(
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val promptPreferenceStore = remember(context) { DynamicPromptPreferenceStore(context) }
+    var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFamilyAlarmDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -90,6 +96,19 @@ internal fun SettingsScreen(
                     label = "화면 모드",
                     value = themeModeLabel(themeMode),
                     onClick = { showThemeDialog = true },
+                )
+            }
+        }
+
+        item {
+            SettingsCard(title = "AI 문구") {
+                SettingsRow(
+                    label = "날씨 위치",
+                    value = weatherLocationSettingsLabel(
+                        promptPreferences.weatherCountry,
+                        promptPreferences.weatherCity,
+                    ),
+                    onClick = { showWeatherLocationDialog = true },
                 )
             }
         }
@@ -163,6 +182,19 @@ internal fun SettingsScreen(
             onSelect = { mode ->
                 showThemeDialog = false
                 onChangeTheme(mode)
+            },
+        )
+    }
+
+    if (showWeatherLocationDialog) {
+        WeatherLocationPreferenceDialog(
+            country = promptPreferences.weatherCountry,
+            city = promptPreferences.weatherCity,
+            onDismiss = { showWeatherLocationDialog = false },
+            onConfirm = { country, city ->
+                promptPreferenceStore.saveWeatherLocation(country, city)
+                promptPreferences = promptPreferenceStore.read()
+                showWeatherLocationDialog = false
             },
         )
     }
@@ -264,6 +296,80 @@ private fun SettingsToggleRow(
             onCheckedChange = onCheckedChange,
         )
     }
+}
+
+@Composable
+private fun WeatherLocationPreferenceDialog(
+    country: String,
+    city: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftCountry by remember(country) { mutableStateOf(country) }
+    var draftCity by remember(city) { mutableStateOf(city) }
+    var submitted by remember { mutableStateOf(false) }
+    val countryError = submitted && draftCountry.isBlank()
+    val cityError = submitted && draftCity.isBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("날씨 위치") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "랜덤 문구에서 날씨가 필요한 옵션을 고르면 이 위치를 재사용해요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = draftCountry,
+                    onValueChange = { draftCountry = it.take(30) },
+                    label = { Text("나라") },
+                    placeholder = { Text("예: 대한민국") },
+                    singleLine = true,
+                    isError = countryError,
+                    supportingText = {
+                        if (countryError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftCity,
+                    onValueChange = { draftCity = it.take(30) },
+                    label = { Text("도시") },
+                    placeholder = { Text("예: 서울") },
+                    singleLine = true,
+                    isError = cityError,
+                    supportingText = {
+                        if (cityError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    submitted = true
+                    if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
+                        onConfirm(draftCountry.trim(), draftCity.trim())
+                    }
+                },
+                shape = VocaWakeButtonShape,
+            ) {
+                Text("저장")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소")
+            }
+        },
+    )
 }
 
 @Composable
@@ -488,6 +594,14 @@ private fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
     val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
     val hidden = windows.size - 2
     return if (hidden > 0) "$visible 외 ${hidden}개" else visible
+}
+
+private fun weatherLocationSettingsLabel(country: String, city: String): String {
+    val value = listOf(country, city)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+    return value.ifBlank { "미설정" }
 }
 
 private fun quietWindowLabel(window: FamilyAlarmQuietWindow): String =
