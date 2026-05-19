@@ -500,7 +500,7 @@ struct EmailRegisterRequest: Encodable {
     var email: String
     var password: String
     var name: String
-    var verificationCode: String
+    var emailVerificationCode: String
 }
 
 struct EmailLoginRequest: Encodable {
@@ -1004,7 +1004,7 @@ final class VoiceAlarmAPI {
     /// 이메일 인증 코드 발송 요청. Android `AuthApi.requestEmailVerification` 와 동일.
     func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
         try await request(
-            "auth/email/verify/request",
+            "auth/email-code",
             method: "POST",
             body: RequestEmailVerificationRequest(email: email)
         )
@@ -1013,7 +1013,7 @@ final class VoiceAlarmAPI {
     /// 이메일 인증 코드 검증.
     func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse {
         try await request(
-            "auth/email/verify/confirm",
+            "auth/email-code/verify",
             method: "POST",
             body: VerifyEmailCodeRequest(email: email, code: code)
         )
@@ -1022,13 +1022,13 @@ final class VoiceAlarmAPI {
     /// 이메일/비밀번호 회원가입. 인증코드 검증 이후 호출되어야 한다.
     func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession {
         try await request(
-            "auth/email/register",
+            "auth/register",
             method: "POST",
             body: EmailRegisterRequest(
                 email: email,
                 password: password,
                 name: name,
-                verificationCode: verificationCode
+                emailVerificationCode: verificationCode
             )
         )
     }
@@ -1036,7 +1036,7 @@ final class VoiceAlarmAPI {
     /// 이메일/비밀번호 로그인.
     func loginWithEmail(email: String, password: String) async throws -> AuthSession {
         try await request(
-            "auth/email/login",
+            "auth/login",
             method: "POST",
             body: EmailLoginRequest(email: email, password: password)
         )
@@ -1046,23 +1046,21 @@ final class VoiceAlarmAPI {
 
     /// 가족 그룹에서 다른 멤버를 내보낸다. 소유자 전용. Android `FamilyApi.removeMember`.
     func removeFamilyMember(groupId: String, userId: String, token: String) async throws -> EmptyResponse {
-        struct Body: Encodable { var userId: String }
         return try await request(
-            "family/groups/\(groupId)/remove",
-            method: "POST",
-            token: token,
-            body: Body(userId: userId)
+            "family/groups/\(groupId)/members/\(userId)",
+            method: "DELETE",
+            token: token
         )
     }
 
     /// 소유권 이양. 새 소유자는 동일 그룹 멤버여야 한다.
     func transferFamilyOwnership(groupId: String, newOwnerId: String, token: String) async throws -> EmptyResponse {
-        struct Body: Encodable { var newOwnerId: String }
+        struct Body: Encodable { var targetUserId: String }
         return try await request(
-            "family/groups/\(groupId)/transfer",
+            "family/groups/\(groupId)/transfer-ownership",
             method: "POST",
             token: token,
-            body: Body(newOwnerId: newOwnerId)
+            body: Body(targetUserId: newOwnerId)
         )
     }
 
@@ -1082,7 +1080,7 @@ final class VoiceAlarmAPI {
     /// `createFamilyVoiceAlarm`. targetUserId 가 수신자.
     func createFamilyVoiceAlarm(_ requestBody: FamilyVoiceAlarmRequest, token: String) async throws -> FamilyVoiceAlarmResponse {
         try await request(
-            "family/alarms",
+            "family/alarms/voice",
             method: "POST",
             token: token,
             body: requestBody
@@ -1094,7 +1092,7 @@ final class VoiceAlarmAPI {
     func redeemVoucher(code: String, token: String) async throws -> VoucherRedemptionResponse {
         struct Body: Encodable { var code: String }
         return try await request(
-            "billing/vouchers/redeem",
+            "billing/redeem",
             method: "POST",
             token: token,
             body: Body(code: code)
