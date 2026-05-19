@@ -23,7 +23,7 @@
     "@voice-alarm/shared": "*",
     "@voice-alarm/voice": "*",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.18",
+    "hono": "^4.12.19",
     "toucan-js": "^4.1.1"
   }
 }
