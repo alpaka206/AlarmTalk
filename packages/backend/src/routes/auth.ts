@@ -14,7 +14,7 @@ import {
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
 } from '@voice-alarm/shared';
-import { verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
+import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
   EMAIL_VERIFICATION_MAX_ATTEMPTS,
@@ -494,7 +494,34 @@ auth.post('/apple', async (c) => {
         500,
       );
     }
-    const apple = await verifyAppleIdToken(parsed.data.id_token, c.env.APPLE_CLIENT_ID);
+
+    // raw nonce 를 SHA-256 으로 hex 인코딩한 뒤 id_token.nonce 와 동일성 비교.
+    // 클라이언트가 nonce 를 보내지 않은 경우(legacy) verifyAppleIdToken 이
+    // 내부적으로 console.warn 만 남기고 통과시킨다. 다만 클라이언트가 nonce
+    // 를 빠뜨렸는데 토큰 자체엔 nonce 클레임이 있다면 점진 마이그레이션
+    // 정책상 replay 가능성이 있으므로 mismatch 로 거부한다.
+    let expectedNonceHash: string | undefined;
+    if (parsed.data.nonce) {
+      const digest = await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(parsed.data.nonce),
+      );
+      expectedNonceHash = Array.from(new Uint8Array(digest))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+    } else {
+      const preview = decodeJwtPayload(parsed.data.id_token);
+      if (typeof preview.nonce === 'string' && preview.nonce.length > 0) {
+        throw new Error('Apple token nonce mismatch: client did not supply raw nonce');
+      }
+      console.warn('[auth] /auth/apple called without nonce; replay defense disabled for request');
+    }
+
+    const apple = await verifyAppleIdToken(
+      parsed.data.id_token,
+      c.env.APPLE_CLIENT_ID,
+      expectedNonceHash,
+    );
     const appleId = apple.sub;
     const email = (apple.email || parsed.data.email || `${appleId}@apple.local`)
       .toLowerCase()
@@ -585,6 +612,10 @@ auth.post('/apple', async (c) => {
         email,
         name: resolvedName,
         plan,
+        // Phase 4-D2: 클라이언트가 ASAuthorizationAppleIDProvider.credentialState
+        // 조회에 사용하는 stable Apple user identifier. iOS AuthViewModel 가
+        // 세션에 보관해 foreground 진입 시 revoke 여부를 확인한다.
+        apple_user_id: appleId,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
@@ -594,6 +625,9 @@ auth.post('/apple', async (c) => {
     });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    if (detail.includes('nonce mismatch')) {
+      return c.json(jsonError('AUTH_APPLE_NONCE_MISMATCH', detail), 401);
+    }
     const status =
       detail.includes('Apple token') ||
       detail.includes('Apple JWKS') ||
@@ -619,13 +653,15 @@ auth.get('/me', async (c) => {
   try {
     const payload = await verifyAppJwt(token, c.env.JWT_SECRET);
     const db = getDB(c.env);
+    // Phase 4-D2: apple_id 컬럼도 함께 조회·매칭한다. Apple 로그인 사용자의 JWT sub
+    // 는 google_id 칼럼이 아닌 apple_id 칼럼에만 저장돼 있을 수 있다.
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan,
+      sql: `SELECT id, email, name, plan, apple_id,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows
-            FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
-      args: [payload.sub, payload.sub],
+            FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
+      args: [payload.sub, payload.sub, payload.sub],
     });
     if (result.rows.length === 0) {
       return c.json(jsonError('AUTH_USER_NOT_FOUND', 'User not found'), 404);
@@ -636,6 +672,7 @@ auth.get('/me', async (c) => {
         email: string;
         name: string | null;
         plan: 'free' | 'plus' | 'family' | null;
+        apple_id: string | null;
       } & Record<string, unknown>
     >(result.rows[0]!);
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
@@ -645,6 +682,9 @@ auth.get('/me', async (c) => {
         email: row.email,
         name: row.name ?? '',
         plan: row.plan ?? 'free',
+        // Phase 4-D2: iOS 클라이언트가 credentialState 조회에 사용. 비-Apple 사용자
+        // 는 null. iOS AuthUser.appleUserId 는 옵셔널이라 누락도 호환.
+        apple_user_id: row.apple_id ?? null,
         allow_family_alarms: familyAlarmSettings.allowFamilyAlarms,
         family_alarm_quiet_days: familyAlarmSettings.quietDays,
         family_alarm_quiet_start: familyAlarmSettings.quietStart,

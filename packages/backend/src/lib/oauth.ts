@@ -7,6 +7,7 @@ export interface ExternalTokenPayload {
   iss: string;
   aud: string;
   exp: number;
+  nonce?: string;
 }
 
 interface JwtHeader {
@@ -141,6 +142,7 @@ export async function verifyGoogleIdToken(
 export async function verifyAppleIdToken(
   idToken: string,
   expectedClientId?: string,
+  expectedNonceHash?: string,
 ): Promise<ExternalTokenPayload> {
   const header = decodeJwtHeader(idToken);
   await verifyAppleSignature(idToken, header);
@@ -155,6 +157,20 @@ export async function verifyAppleIdToken(
   }
   if (Number(payload.exp) < Date.now() / 1000) {
     throw new Error('Apple token expired');
+  }
+
+  // nonce 검증 — Apple 가이드: 클라이언트가 raw nonce 의 SHA256 해시를
+  // ASAuthorizationAppleIDRequest.nonce 로 설정하면 발급된 id_token 의
+  // nonce 클레임에 동일한 해시가 들어온다. 서버는 클라이언트가 함께 보낸
+  // raw nonce 를 다시 해싱해 비교한다. expectedNonceHash 가 명시적으로
+  // 전달된 경우에만 검증을 수행하고, 미전달 시(레거시/middleware 경로)
+  // 검증을 건너뛰되 경고 로그를 남긴다.
+  if (expectedNonceHash !== undefined) {
+    if (typeof payload.nonce !== 'string' || payload.nonce !== expectedNonceHash) {
+      throw new Error('Apple token nonce mismatch');
+    }
+  } else {
+    console.warn('[oauth] apple token verified without nonce check');
   }
 
   return { ...payload, exp: Number(payload.exp) };

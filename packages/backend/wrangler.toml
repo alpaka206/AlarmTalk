@@ -25,6 +25,11 @@ crons = ["*/5 * * * *"]
 # FIREBASE_PROJECT_ID = ""
 # JWT_SECRET = ""          # 자체 발급 JWT HS256 서명 시크릿 (최소 32자 권장)
 # PASSWORD_PEPPER = ""     # bcrypt 해싱 전에 비밀번호에 덧붙일 서버측 페퍼
+# GOOGLE_CLIENT_ID = ""    # Google Sign In OAuth audience (web client ID)
+# APPLE_CLIENT_ID = "com.voicealarm.nativeapp.ios"  # Apple Sign In bundle ID (run: wrangler secret put APPLE_CLIENT_ID)
+# APPLE_SHARED_SECRET = ""  # App Store Connect → 앱 → "앱 전용 공유 비밀(App-Specific Shared Secret)".
+#                             POST /api/billing/apple/confirm 게이트로 사용. 미설정 시 503. 후속 PR 에서
+#                             Apple App Store Server API v2 JWS 검증 시 동일 secret 을 재사용.
 # RESEND_API_KEY = ""      # 회원가입 이메일 인증 코드 발송용
 # AUTH_EMAIL_FROM = ""     # 예: Voice Alarm <no-reply@your-domain.com>
 # AUTH_EMAIL_REPLY_TO = ""
