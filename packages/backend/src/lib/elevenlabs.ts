@@ -88,14 +88,26 @@ export class ElevenLabsClient {
       language_code?: string;
     },
   ): Promise<ArrayBuffer> {
-    const voiceSettings: Record<string, number | boolean> = {
-      stability: options?.stability ?? 0.5,
-      similarity_boost: options?.similarity_boost ?? 0.82,
-      style: options?.style ?? 0.25,
-      speed: options?.speed ?? 0.96,
+    const modelId = options?.model_id ?? DEFAULT_TTS_MODEL_ID;
+    const body: Record<string, unknown> = {
+      text,
+      model_id: modelId,
     };
-    if (options?.use_speaker_boost !== undefined) {
-      voiceSettings.use_speaker_boost = options.use_speaker_boost;
+    if (options?.language_code) {
+      body.language_code = options.language_code;
+    }
+
+    if (modelId !== DEFAULT_TTS_MODEL_ID) {
+      const voiceSettings: Record<string, number | boolean> = {
+        stability: options?.stability ?? 0.5,
+        similarity_boost: options?.similarity_boost ?? 0.82,
+        style: options?.style ?? 0.25,
+        speed: options?.speed ?? 0.96,
+      };
+      if (options?.use_speaker_boost !== undefined) {
+        voiceSettings.use_speaker_boost = options.use_speaker_boost;
+      }
+      body.voice_settings = voiceSettings;
     }
 
     const res = await this.request(`/v1/text-to-speech/${voiceId}`, {
@@ -104,12 +116,7 @@ export class ElevenLabsClient {
         'Content-Type': 'application/json',
         Accept: 'audio/mpeg',
       },
-      body: JSON.stringify({
-        text,
-        model_id: options?.model_id ?? DEFAULT_TTS_MODEL_ID,
-        ...(options?.language_code ? { language_code: options.language_code } : {}),
-        voice_settings: voiceSettings,
-      }),
+      body: JSON.stringify(body),
     });
 
     return res.arrayBuffer();
