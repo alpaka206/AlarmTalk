@@ -6,9 +6,12 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +40,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -54,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatternLibrary
 import com.voicealarm.nativeapp.data.VibrationPatterns
@@ -449,28 +455,91 @@ internal fun VibrationSettingsPane(
     }
 }
 
+internal data class RandomPromptSettingsResult(
+    val voiceLanguage: String,
+    val randomContext: String,
+    val weatherCountry: String,
+    val weatherCity: String,
+    val fortuneGender: String,
+    val fortuneBirthDate: String,
+    val fortuneBirthTime: String,
+)
+
 @Composable
 internal fun RandomPromptSettingsPane(
-    voiceCategory: String,
     voiceLanguage: String,
-    onDismiss: () -> Unit,
-    onCategoryChange: (String) -> Unit,
-    onLanguageChange: (String) -> Unit,
+    randomContext: String,
+    weatherCountry: String,
+    weatherCity: String,
+    savedWeatherCountry: String,
+    savedWeatherCity: String,
+    fortuneGender: String,
+    fortuneBirthDate: String,
+    fortuneBirthTime: String,
+    onDismissWithoutSave: () -> Unit,
+    onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
+    var draftLanguage by remember(voiceLanguage) {
+        mutableStateOf(voiceLanguage.takeIf { language -> TtsLanguages.any { it.first == language } } ?: "ko")
+    }
+    var draftContext by remember(randomContext) {
+        mutableStateOf(normalizedRandomPromptContext(randomContext))
+    }
+    var draftWeatherCountry by remember(weatherCountry, savedWeatherCountry) {
+        mutableStateOf(weatherCountry.ifBlank { savedWeatherCountry })
+    }
+    var draftWeatherCity by remember(weatherCity, savedWeatherCity) {
+        mutableStateOf(weatherCity.ifBlank { savedWeatherCity })
+    }
+    var draftFortuneGender by remember(fortuneGender) { mutableStateOf(fortuneGender) }
+    var draftFortuneBirthDate by remember(fortuneBirthDate) { mutableStateOf(fortuneBirthDate) }
+    var draftFortuneBirthTime by remember(fortuneBirthTime) { mutableStateOf(fortuneBirthTime) }
+    var weatherDialogOpen by remember { mutableStateOf(false) }
+    var fortuneDialogOpen by remember { mutableStateOf(false) }
+    val normalizedContext = normalizedRandomPromptContext(draftContext)
+
+    fun saveResolvedSettings() {
+        onSaveSettings(
+            RandomPromptSettingsResult(
+                voiceLanguage = draftLanguage,
+                randomContext = normalizedContext,
+                weatherCountry = draftWeatherCountry.trim(),
+                weatherCity = draftWeatherCity.trim(),
+                fortuneGender = draftFortuneGender.trim(),
+                fortuneBirthDate = draftFortuneBirthDate.trim(),
+                fortuneBirthTime = draftFortuneBirthTime.trim(),
+            ),
+        )
+    }
+
+    fun requestRequiredInfoOrSave() {
+        when {
+            randomContextUsesWeather(normalizedContext) &&
+                (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) -> weatherDialogOpen = true
+            normalizedContext == "wake_fortune" &&
+                (
+                    draftFortuneGender.isBlank() ||
+                        draftFortuneBirthDate.isBlank() ||
+                        draftFortuneBirthTime.isBlank()
+                    ) -> fortuneDialogOpen = true
+            else -> saveResolvedSettings()
+        }
+    }
+
+    BackHandler(onBack = onDismissWithoutSave)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onDismiss) {
+                IconButton(onClick = onDismissWithoutSave) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = "뒤로",
@@ -486,35 +555,367 @@ internal fun RandomPromptSettingsPane(
 
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                SnoozeOptionSection(title = "카테고리") {
-                    TtsCategories.forEachIndexed { index, (category, label) ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                ) {
+                    Text(
+                        text = "옵션을 고른 뒤 아래 저장을 눌러야 랜덤 생성이 적용돼요. 저장하지 않고 나가면 직접 문구 입력으로 돌아가요.",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+
+                SnoozeOptionSection(title = "문구 종류") {
+                    RandomPromptContexts.forEachIndexed { index, (context, label) ->
                         SnoozeRadioRow(
                             label = label,
-                            selected = normalizedTtsCategory(voiceCategory) == category,
-                            onClick = { onCategoryChange(category) },
+                            selected = normalizedContext == context,
+                            onClick = { draftContext = context },
                         )
-                        if (index != TtsCategories.lastIndex) SnoozeOptionDivider()
+                        if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
                     }
+                }
+
+                if (randomContextUsesWeather(normalizedContext)) {
+                    RandomPromptDetailRow(
+                        title = "날씨 위치",
+                        value = if (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) {
+                            "저장할 때 나라와 도시를 입력해요."
+                        } else {
+                            "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                        },
+                    )
+                }
+
+                if (normalizedContext == "wake_fortune") {
+                    RandomPromptDetailRow(
+                        title = "운세 정보",
+                        value = if (
+                            draftFortuneGender.isBlank() ||
+                            draftFortuneBirthDate.isBlank() ||
+                            draftFortuneBirthTime.isBlank()
+                        ) {
+                            "저장할 때 성별, 생년월일, 태어난 시간을 입력해요."
+                        } else {
+                            fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                        },
+                    )
                 }
 
                 SnoozeOptionSection(title = "언어") {
                     TtsLanguages.forEachIndexed { index, (language, label) ->
                         SnoozeRadioRow(
                             label = label,
-                            selected = voiceLanguage == language,
-                            onClick = { onLanguageChange(language) },
+                            selected = draftLanguage == language,
+                            onClick = { draftLanguage = language },
                         )
                         if (index != TtsLanguages.lastIndex) SnoozeOptionDivider()
+                    }
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Button(
+                        onClick = ::requestRequiredInfoOrSave,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Icon(Icons.Outlined.Save, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("랜덤 설정 저장")
+                    }
+                }
+            }
+        }
+    }
+
+    if (weatherDialogOpen) {
+        WeatherLocationDialog(
+            country = draftWeatherCountry,
+            city = draftWeatherCity,
+            onDismissWithoutSave = onDismissWithoutSave,
+            onConfirm = { country, city ->
+                draftWeatherCountry = country
+                draftWeatherCity = city
+                weatherDialogOpen = false
+                saveResolvedSettings()
+            },
+        )
+    }
+
+    if (fortuneDialogOpen) {
+        FortuneInfoDialog(
+            gender = draftFortuneGender,
+            birthDate = draftFortuneBirthDate,
+            birthTime = draftFortuneBirthTime,
+            onDismissWithoutSave = onDismissWithoutSave,
+            onConfirm = { gender, birthDate, birthTime ->
+                draftFortuneGender = gender
+                draftFortuneBirthDate = birthDate
+                draftFortuneBirthTime = birthTime
+                fortuneDialogOpen = false
+                saveResolvedSettings()
+            },
+        )
+    }
+}
+
+@Composable
+private fun RandomPromptDetailRow(
+    title: String,
+    value: String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WeatherLocationDialog(
+    country: String,
+    city: String,
+    onDismissWithoutSave: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftCountry by remember(country) { mutableStateOf(country) }
+    var draftCity by remember(city) { mutableStateOf(city) }
+    var submitted by remember { mutableStateOf(false) }
+    val countryError = submitted && draftCountry.isBlank()
+    val cityError = submitted && draftCity.isBlank()
+
+    Dialog(onDismissRequest = onDismissWithoutSave) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 16.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("날씨 위치 저장", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "이 위치는 저장해두고 날씨가 필요한 랜덤 문구에서 다시 사용해요. 이 창에서 저장하지 않으면 랜덤 생성이 적용되지 않아요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedTextField(
+                    value = draftCountry,
+                    onValueChange = { draftCountry = it.take(30) },
+                    label = { Text("나라") },
+                    placeholder = { Text("예: 대한민국") },
+                    singleLine = true,
+                    isError = countryError,
+                    supportingText = {
+                        if (countryError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftCity,
+                    onValueChange = { draftCity = it.take(30) },
+                    label = { Text("도시") },
+                    placeholder = { Text("예: 서울") },
+                    singleLine = true,
+                    isError = cityError,
+                    supportingText = {
+                        if (cityError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    OutlinedButton(
+                        onClick = onDismissWithoutSave,
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("닫기")
+                    }
+                    Button(
+                        onClick = {
+                            submitted = true
+                            if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
+                                onConfirm(draftCountry.trim(), draftCity.trim())
+                            }
+                        },
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("저장")
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun FortuneInfoDialog(
+    gender: String,
+    birthDate: String,
+    birthTime: String,
+    onDismissWithoutSave: () -> Unit,
+    onConfirm: (String, String, String) -> Unit,
+) {
+    var draftGender by remember(gender) { mutableStateOf(gender) }
+    var draftBirthDate by remember(birthDate) { mutableStateOf(birthDate) }
+    var draftBirthTime by remember(birthTime) { mutableStateOf(birthTime) }
+    var submitted by remember { mutableStateOf(false) }
+    val genderError = submitted && draftGender.isBlank()
+    val birthDateError = submitted && draftBirthDate.isBlank()
+    val birthTimeError = submitted && draftBirthTime.isBlank()
+
+    Dialog(onDismissRequest = onDismissWithoutSave) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 16.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .heightIn(max = 620.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("운세 정보", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "입력한 정보는 운세형 문구를 만들 때만 사용돼요. 이 창에서 저장하지 않으면 랜덤 생성이 적용되지 않아요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedTextField(
+                    value = draftGender,
+                    onValueChange = { draftGender = it.take(12) },
+                    label = { Text("성별") },
+                    placeholder = { Text("예: 남성, 여성") },
+                    singleLine = true,
+                    isError = genderError,
+                    supportingText = {
+                        if (genderError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftBirthDate,
+                    onValueChange = { draftBirthDate = it.take(10) },
+                    label = { Text("생년월일") },
+                    placeholder = { Text("예: 1950-05-19") },
+                    singleLine = true,
+                    isError = birthDateError,
+                    supportingText = {
+                        if (birthDateError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftBirthTime,
+                    onValueChange = { draftBirthTime = it.take(5) },
+                    label = { Text("태어난 시간") },
+                    placeholder = { Text("예: 07:30") },
+                    singleLine = true,
+                    isError = birthTimeError,
+                    supportingText = {
+                        if (birthTimeError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                ) {
+                    OutlinedButton(
+                        onClick = onDismissWithoutSave,
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("닫기")
+                    }
+                    Button(
+                        onClick = {
+                            submitted = true
+                            if (
+                                draftGender.isNotBlank() &&
+                                draftBirthDate.isNotBlank() &&
+                                draftBirthTime.isNotBlank()
+                            ) {
+                                onConfirm(
+                                    draftGender.trim(),
+                                    draftBirthDate.trim(),
+                                    draftBirthTime.trim(),
+                                )
+                            }
+                        },
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("저장")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun weatherLocationSummary(country: String, city: String): String =
+    listOf(country, city)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { "나라와 도시를 입력해 주세요." }
+
+private fun fortuneInfoSummary(gender: String, birthDate: String, birthTime: String): String =
+    listOf(gender, birthDate, birthTime)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
+        .ifBlank { "성별, 생년월일, 태어난 시간을 입력해 주세요." }
 
 @Composable
 internal fun VoiceTranslationSettingsPane(
@@ -904,11 +1305,12 @@ private fun SnoozeOptionDivider() {
 internal fun EditorActionButtons(
     isEditing: Boolean,
     isSaving: Boolean,
+    canSave: Boolean,
     onSave: () -> Unit,
 ) {
     Button(
         onClick = onSave,
-        enabled = !isSaving,
+        enabled = canSave && !isSaving,
         modifier = Modifier.fillMaxWidth(),
         shape = VocaWakeButtonShape,
     ) {

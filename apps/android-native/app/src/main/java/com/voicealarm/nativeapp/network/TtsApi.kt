@@ -14,6 +14,14 @@ data class TtsGenerateRequest(
     val language: String,
     val translate: Boolean = false,
     val random: Boolean = false,
+    @SerializedName("random_context") val randomContext: String? = null,
+    @SerializedName("alarm_hour") val alarmHour: Int? = null,
+    @SerializedName("alarm_minute") val alarmMinute: Int? = null,
+    @SerializedName("weather_country") val weatherCountry: String? = null,
+    @SerializedName("weather_city") val weatherCity: String? = null,
+    @SerializedName("fortune_gender") val fortuneGender: String? = null,
+    @SerializedName("fortune_birth_date") val fortuneBirthDate: String? = null,
+    @SerializedName("fortune_birth_time") val fortuneBirthTime: String? = null,
 )
 
 data class TtsGenerateResponse(
@@ -27,6 +35,7 @@ data class TtsGenerateResponse(
     @SerializedName("cache_key") val cacheKey: String? = null,
     @SerializedName("cache_hit") val cacheHit: Boolean = false,
     val provider: String? = null,
+    @SerializedName("random_context") val randomContext: String? = null,
 )
 
 data class TtsMessageListResponse(

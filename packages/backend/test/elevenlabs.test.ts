@@ -61,14 +61,28 @@ describe('ElevenLabsClient', () => {
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
       expect(body.model_id).toBe('eleven_v3');
-      expect(body.voice_settings.stability).toBe(0.5);
-      expect(body.voice_settings.similarity_boost).toBe(0.82);
-      expect(body.voice_settings.style).toBe(0.25);
-      expect(body.voice_settings.speed).toBe(0.96);
-      expect(body.voice_settings.use_speaker_boost).toBeUndefined();
+      expect(body.voice_settings).toBeUndefined();
     });
 
-    it('커스텀 옵션 반영', async () => {
+    it('v3는 커스텀 voice settings 옵션을 전송하지 않는다', async () => {
+      mockFetch.mockResolvedValueOnce(okArrayBuffer());
+
+      await client.textToSpeech('v1', 'hello', {
+        stability: 0.8,
+        similarity_boost: 0.9,
+        style: 0.3,
+        speed: 0.7,
+        use_speaker_boost: true,
+        language_code: 'ko',
+      });
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.model_id).toBe('eleven_v3');
+      expect(body.language_code).toBe('ko');
+      expect(body.voice_settings).toBeUndefined();
+    });
+
+    it('비-v3 모델은 커스텀 옵션을 반영', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('v1', 'hello', {
@@ -85,6 +99,7 @@ describe('ElevenLabsClient', () => {
       expect(body.voice_settings.stability).toBe(0.8);
       expect(body.voice_settings.similarity_boost).toBe(0.9);
       expect(body.voice_settings.style).toBe(0.3);
+      expect(body.voice_settings.speed).toBe(0.96);
     });
 
     it('ArrayBuffer 반환', async () => {

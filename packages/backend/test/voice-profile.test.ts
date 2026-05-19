@@ -585,7 +585,7 @@ describe('GET /family — 가족 음성 프로필 (voice-profile)', () => {
     await req(buildApp(), new Request('http://localhost/vp/family'));
     const voiceQuery = mockDB.calls[1]!;
     expect(voiceQuery.sql).toContain('?,?,?');
-    expect(voiceQuery.args).toEqual(['a', 'b', 'c']);
+    expect(voiceQuery.args).toEqual(['user-1', 'user-1', 'a', 'b', 'c']);
   });
 });
 

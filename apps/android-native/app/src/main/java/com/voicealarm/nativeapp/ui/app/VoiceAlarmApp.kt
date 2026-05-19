@@ -610,6 +610,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       voiceProfileBusy = voiceProfileBusy,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
+                      onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
@@ -643,6 +644,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           voiceProfileBusy = voiceProfileBusy,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
+                          onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
