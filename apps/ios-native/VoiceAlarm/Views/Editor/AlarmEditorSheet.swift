@@ -231,11 +231,6 @@ struct AlarmEditorSheet: View {
             store.alarms.first { $0.id == id }
         }
 
-        // 기존 record 가 있으면 우선 cancel — alarmKit ID 가 stale 해지지 않게.
-        if let existing {
-            await alarmKit.cancel(record: existing, store: store)
-        }
-
         let fireAt: Int64 = (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: draft.hour,
             minute: draft.minute,
@@ -255,6 +250,7 @@ struct AlarmEditorSheet: View {
         if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.serverTts.rawValue
             merged.localAudioUri = prepared.localAudioFileName
+            merged.audioCacheKey = prepared.audioCacheKey
             merged.rawAudioUri = prepared.rawAudioURL ?? merged.rawAudioUri
             merged.voiceProfileId = prepared.voiceProfileID
             merged.voiceText = prepared.text
@@ -263,7 +259,22 @@ struct AlarmEditorSheet: View {
         }
 
         store.upsert(merged)
-        await alarmKit.schedule(record: merged, store: store)
+        let scheduled = await alarmKit.schedule(record: merged, store: store)
+        guard scheduled else {
+            if let existing {
+                store.upsert(existing)
+            } else {
+                store.deleteByID(merged.id)
+            }
+            validationAlert = ValidationAlertContent(
+                title: "예약할 수 없어요",
+                message: alarmKit.statusMessage ?? "AlarmKit 예약에 실패했어요."
+            )
+            return
+        }
+        if let existing {
+            await alarmKit.cancelScheduledAlarm(record: existing)
+        }
         onSchedulingDidFinish()
     }
 

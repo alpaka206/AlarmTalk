@@ -83,10 +83,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     // MARK: Merge
 
     /// 단일 remote 알람을 로컬 store 와 머지한다.
-    private func mergeRemote(remote: RemoteAlarm, mapped: LocalAlarmRecord, token: String) async {
+    private func mergeRemote(remote: RemoteAlarm, mapped initialMapped: LocalAlarmRecord, token: String) async {
+        var mapped = initialMapped
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // 충돌 정책 + last write wins.
             guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return }
+
+            mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
 
             // 기존 로컬 ID/alarmKitID/snoozeCount/state 는 보존해서 머지.
             let merged = Self.merge(existing: existing, mapped: mapped)
@@ -97,6 +100,8 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 await rescheduleReceivedRemote(record: merged, existing: existing)
             }
         } else {
+            mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
+
             // 신규 import.
             store.upsert(mapped)
 
@@ -104,14 +109,6 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if mapped.originEnum == .receivedRemote && mapped.enabled {
                 await alarmKit.schedule(record: mapped, store: store)
             }
-        }
-
-        // 3. TTS 음원 캐싱. cacheKey 가 있고 아직 디스크에 없으면 백그라운드로 다운로드.
-        if let cacheKey = mapped.audioCacheKey,
-           audioCache.cachedURL(for: cacheKey) == nil,
-           let messageId = mapped.ttsMessageId,
-           !messageId.isEmpty {
-            await fetchAndCacheTTS(messageId: messageId, cacheKey: cacheKey, token: token)
         }
     }
 
@@ -150,11 +147,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     }
 
     private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async {
-        // alarmKitID 가 있으면 먼저 cancel. cancel 이 실패해도 schedule 은 시도.
-        if existing.alarmKitID != nil {
-            await alarmKit.cancel(record: existing, store: store)
+        // 새 예약을 먼저 성공시킨 뒤 기존 AlarmKit ID 를 해제해 로컬 레코드가
+        // 삭제되거나 무예약 상태로 남는 일을 막는다.
+        let scheduled = await alarmKit.schedule(record: record, store: store)
+        if scheduled, existing.alarmKitID != nil {
+            await alarmKit.cancelScheduledAlarm(record: existing)
         }
-        await alarmKit.schedule(record: record, store: store)
     }
 
     // MARK: Cascade delete
@@ -190,5 +188,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         } catch {
             // 캐싱 실패는 sync 전체를 실패시키지 않는다. 다음 사이클에서 재시도.
         }
+    }
+
+    private func recordWithCachedTTSIfNeeded(_ record: LocalAlarmRecord, token: String) async -> LocalAlarmRecord {
+        var copy = record
+        guard let cacheKey = copy.audioCacheKey,
+              let messageId = copy.ttsMessageId,
+              !messageId.isEmpty else { return copy }
+
+        if audioCache.cachedURL(for: cacheKey) == nil {
+            await fetchAndCacheTTS(messageId: messageId, cacheKey: cacheKey, token: token)
+        }
+        if let cached = audioCache.cachedURL(for: cacheKey) {
+            copy.localAudioUri = cached.lastPathComponent
+        }
+        return copy
     }
 }

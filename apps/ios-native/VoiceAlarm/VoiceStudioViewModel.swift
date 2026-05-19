@@ -5,6 +5,7 @@ struct PreparedVoiceAlarm {
     var messageID: String
     var voiceProfileID: String
     var localAudioFileName: String
+    var audioCacheKey: String
     var rawAudioURL: String?
     var text: String
     var language: String
@@ -329,6 +330,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 messageID: response.messageId,
                 voiceProfileID: response.voiceProfileId,
                 localAudioFileName: cached.fileName,
+                audioCacheKey: cached.cacheKey,
                 rawAudioURL: response.audioUrl,
                 text: response.text,
                 language: ttsLanguage
