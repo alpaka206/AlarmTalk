@@ -401,6 +401,32 @@ describe('authMiddleware — Apple token', () => {
     expect(body.userId).toBe('apple-user-002');
     expect(body.userEmail).toBe('');
   });
+
+  // 회귀: Authorization 헤더로 직접 Apple id_token 을 들고 오는 경로는
+  // nonce 비교가 불가능하므로 (raw nonce 가 없음) 기존 동작이 유지되어야 한다.
+  // 즉 토큰에 nonce 클레임이 있어도 미들웨어는 통과시킨다.
+  it('토큰에 nonce 클레임이 있어도 미들웨어는 nonce 검사 없이 통과한다', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const payload = {
+        sub: 'apple-user-mw-nonce',
+        email: 'mw-nonce@apple.com',
+        iss: 'https://appleid.apple.com',
+        aud: ENV.APPLE_CLIENT_ID,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        nonce: 'a'.repeat(64),
+      };
+      const token = await signedAppleToken(payload);
+
+      const app = buildApp();
+      const res = await reqWithEnv(app, req(`Bearer ${token}`));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.userId).toBe('apple-user-mw-nonce');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe('authMiddleware — 토큰 발급자 분기', () => {

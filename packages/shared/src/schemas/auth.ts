@@ -43,6 +43,9 @@ export const AppleLoginRequestSchema = z.object({
   id_token: z.string().min(1),
   email: z.string().email().optional(),
   name: z.string().min(1).max(64).optional(),
+  // 클라이언트가 SecRandomCopyBytes 로 생성한 raw nonce.
+  // 서버는 이 값을 SHA256 해싱해 id_token.nonce 와 비교한다.
+  nonce: z.string().min(16).max(128).optional(),
 });
 export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
 

@@ -769,6 +769,26 @@ export const migrations: Migration[] = [
         WHERE apple_id IS NOT NULL`,
     ],
   },
+  {
+    // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
+    //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+    //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
+    id: 36,
+    name: 'subscriptions-apple-fields',
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

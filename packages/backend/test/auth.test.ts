@@ -621,6 +621,142 @@ describe('POST /auth/apple', () => {
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_APPLE_CONFIG_MISSING');
   });
+
+  it('nonce 일치 시 200을 반환한다', async () => {
+    const rawNonce = 'nonce-replay-defense-1234';
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(rawNonce),
+    );
+    const nonceHash = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const appleToken = await signedAppleToken({
+      sub: 'apple-user-nonce-ok',
+      email: 'nonce-ok@icloud.com',
+      iss: 'https://appleid.apple.com',
+      aud: 'com.voicealarm.nativeapp.ios',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce: nonceHash,
+    });
+
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/apple', {
+        id_token: appleToken,
+        nonce: rawNonce,
+      }),
+      undefined,
+      { ...ENV, APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios' },
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.user.id).toBe('apple-user-nonce-ok');
+  });
+
+  it('nonce 불일치 시 401 AUTH_APPLE_NONCE_MISMATCH 를 반환한다', async () => {
+    const rawNonce = 'client-nonce-AAAA-1234567890';
+    const otherDigest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode('SOMETHING-ELSE-1234567890'),
+    );
+    const wrongNonceHash = Array.from(new Uint8Array(otherDigest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const appleToken = await signedAppleToken({
+      sub: 'apple-user-nonce-bad',
+      email: 'nonce-bad@icloud.com',
+      iss: 'https://appleid.apple.com',
+      aud: 'com.voicealarm.nativeapp.ios',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce: wrongNonceHash,
+    });
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/apple', {
+        id_token: appleToken,
+        nonce: rawNonce,
+      }),
+      undefined,
+      { ...ENV, APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios' },
+    );
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_APPLE_NONCE_MISMATCH');
+  });
+
+  it('nonce 미전달 + 토큰에도 nonce 없음 → 200 + console.warn', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const appleToken = await signedAppleToken({
+        sub: 'apple-user-no-nonce',
+        email: 'no-nonce@icloud.com',
+        iss: 'https://appleid.apple.com',
+        aud: 'com.voicealarm.nativeapp.ios',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      });
+
+      mockDB.pushResult([]);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+
+      const app = buildApp();
+      const res = await app.request(
+        jsonReq('POST', '/auth/apple', {
+          id_token: appleToken,
+        }),
+        undefined,
+        { ...ENV, APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios' },
+      );
+
+      expect(res.status).toBe(200);
+      const warnCalls = warnSpy.mock.calls.map((call) => String(call[0] ?? ''));
+      expect(warnCalls.some((msg) => msg.includes('nonce'))).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('토큰엔 nonce 클레임 있는데 요청 nonce 없으면 401 mismatch', async () => {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode('some-raw-nonce-1234567890'),
+    );
+    const nonceHash = Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    const appleToken = await signedAppleToken({
+      sub: 'apple-user-token-has-nonce',
+      email: 'token-nonce@icloud.com',
+      iss: 'https://appleid.apple.com',
+      aud: 'com.voicealarm.nativeapp.ios',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      nonce: nonceHash,
+    });
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/apple', {
+        id_token: appleToken,
+      }),
+      undefined,
+      { ...ENV, APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios' },
+    );
+
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_APPLE_NONCE_MISMATCH');
+  });
 });
 
 describe('GET /auth/me', () => {
