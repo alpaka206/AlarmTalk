@@ -6,9 +6,9 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   APPLE_CLIENT_ID?: string;
   /**
-   * App Store Connect 의 "Apple shared secret" — 본 phase 에서는 클라이언트가 보낸
-   * transaction 데이터가 신뢰 가능한 서버 환경에서 전달됐는지 표시하기 위한 게이트로 사용.
-   * 후속 PR 에서 Apple App Store Server API v2 의 JWS 검증으로 강화 예정. README 참조.
+   * App Store Connect 의 "Apple shared secret".
+   * 현재 /billing/apple/confirm 은 이 secret 이 있어도 fail-closed 로 동작하며,
+   * 후속 PR 에서 Apple App Store Server API v2 의 JWS 검증으로 entitlement 갱신을 열 예정.
    */
   APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;

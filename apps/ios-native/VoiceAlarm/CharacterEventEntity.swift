@@ -22,22 +22,22 @@ import Foundation
 //                          도 body 에 context 를 싣지 않음).
 //   - attempts            : 재시도 횟수. 백오프/관측 용도.
 //   - updatedAtMillis     : 마지막 상태 변경 시점.
-public struct CharacterEventEntity: Codable, Identifiable, Equatable, Hashable {
-    public let id: String
-    public let eventType: String
-    public let occurredAtMillis: Int64
-    public let clientNonce: String
-    public let localDate: String
-    public let sourceAlarmId: String?
-    public let contextJson: String?
-    public var syncState: String
-    public var attempts: Int
-    public var lastError: String?
-    public let createdAtMillis: Int64
-    public var syncedAtMillis: Int64?
-    public var updatedAtMillis: Int64
+struct CharacterEventEntity: Codable, Identifiable, Equatable, Hashable {
+    let id: String
+    let eventType: String
+    let occurredAtMillis: Int64
+    let clientNonce: String
+    let localDate: String
+    let sourceAlarmId: String?
+    let contextJson: String?
+    var syncState: String
+    var attempts: Int
+    var lastError: String?
+    let createdAtMillis: Int64
+    var syncedAtMillis: Int64?
+    var updatedAtMillis: Int64
 
-    public init(
+    init(
         id: String,
         eventType: String,
         occurredAtMillis: Int64,
@@ -73,12 +73,12 @@ public struct CharacterEventEntity: Codable, Identifiable, Equatable, Hashable {
 // Android 의 `CharacterEventTypes` / `CharacterEventStates` (string const 객체) 를
 // Swift enum 으로 포팅. rawValue 는 서버 contract 와 동일하게 snake_case 유지.
 
-public enum CharacterEventType: String, Codable, CaseIterable, Sendable {
+enum CharacterEventType: String, Codable, CaseIterable, Sendable {
     case alarmCompleted = "alarm_completed"
     case alarmSnoozed = "alarm_snoozed"
 }
 
-public enum CharacterEventSyncState: String, Codable, Sendable {
+enum CharacterEventSyncState: String, Codable, Sendable {
     case pending
     case synced
     case failed

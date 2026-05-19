@@ -7,6 +7,7 @@ struct CachedVoiceAudio: Equatable {
     var url: URL
     var fileName: String
     var format: String
+    var cacheKey: String
 }
 
 // MARK: - AudioCacheMetadata
@@ -85,7 +86,7 @@ final class AudioCacheStore {
             enforceMaxDuration: false  // tts 길이는 서버가 보장. 한도는 메타에만.
         )
 
-        return CachedVoiceAudio(url: url, fileName: fileName, format: format)
+        return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
     }
 
     /// Legacy URL 조회. messageId 기반 파일명용.

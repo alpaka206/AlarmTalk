@@ -56,6 +56,7 @@ export const AuthResponseSchema = z.object({
     email: z.string().email(),
     name: z.string(),
     plan: z.enum(['free', 'plus', 'family']),
+    apple_user_id: z.string().nullable().optional(),
   }),
 });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;

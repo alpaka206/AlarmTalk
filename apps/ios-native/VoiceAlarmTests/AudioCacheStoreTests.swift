@@ -43,6 +43,26 @@ final class AudioCacheStoreTests: XCTestCase {
         XCTAssertEqual(e3, "")
     }
 
+    func test_legacyTtsCacheReturnsCacheKeyForAlarmScheduling() throws {
+        let response = TtsGenerateResponse(
+            messageId: "msg-cache-key",
+            audioBase64: Data("fake-audio".utf8).base64EncodedString(),
+            audioFormat: "mp3",
+            audioUrl: "r2://tts/msg-cache-key.mp3",
+            audioObjectKey: nil,
+            text: "wake up",
+            voiceProfileId: "voice-1",
+            cacheKey: "server-cache-key",
+            cacheHit: false,
+            provider: "test"
+        )
+
+        let cached = try AudioCacheStore.cache(tts: response)
+
+        XCTAssertEqual(cached.cacheKey, "server-cache-key")
+        XCTAssertNotNil(AudioCacheStore.shared.cachedURL(for: cached.cacheKey))
+    }
+
     func test_cacheBytes_writesFileAndMetadata_andCascadeCleanupRespectsActiveKeys() throws {
         let store = AudioCacheStore()
         let payload = Data([0x49, 0x44, 0x33] + Array(repeating: UInt8(0x20), count: 64)) // ID3 흉내

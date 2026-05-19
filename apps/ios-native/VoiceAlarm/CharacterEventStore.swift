@@ -7,14 +7,14 @@ import Foundation
 // 분단위 sync 가 아니라 앱 활성화/포그라운드 진입 시점 sync 라 JSON 으로 충분.
 //
 // `actor` 로 격리해 store mutation 과 디스크 I/O 가 직렬화되도록 한다.
-public actor CharacterEventPersistence {
-    public let url: URL
+actor CharacterEventPersistence {
+    let url: URL
 
-    public init(url: URL) {
+    init(url: URL) {
         self.url = url
     }
 
-    public init() {
+    init() {
         let dir = (try? FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -24,16 +24,16 @@ public actor CharacterEventPersistence {
         self.url = dir.appendingPathComponent("character-events.json")
     }
 
-    public static var `default`: CharacterEventPersistence { CharacterEventPersistence() }
+    static var `default`: CharacterEventPersistence { CharacterEventPersistence() }
 
-    public func save(events: [CharacterEventEntity]) async {
+    func save(events: [CharacterEventEntity]) async {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(events) else { return }
         try? data.write(to: url, options: .atomic)
     }
 
-    public func load() async -> [CharacterEventEntity] {
+    func load() async -> [CharacterEventEntity] {
         guard let data = try? Data(contentsOf: url) else { return [] }
         let decoder = JSONDecoder()
         guard let events = try? decoder.decode([CharacterEventEntity].self, from: data) else {
@@ -50,7 +50,7 @@ public actor CharacterEventPersistence {
 //
 // API 의존성을 protocol 로 분리해 테스트 시 mock 주입을 자명하게 만든다.
 // 실제 구현은 `VoiceAlarmAPI` 의 extension 으로 conform.
-public protocol CharacterXPGranting: AnyObject {
+protocol CharacterXPGranting: AnyObject {
     func grantCharacterXP(
         event: String,
         clientNonce: String,
@@ -83,20 +83,20 @@ public protocol CharacterXPGranting: AnyObject {
 //     `buildClientNonce(alarmID:eventType:occurredAtMillis:timezone:)` 를 static 으로 노출.
 //     수동 grant 경로 또는 디버그 호출에서 사용.
 @MainActor
-public final class CharacterEventStore: ObservableObject {
-    @Published public private(set) var events: [CharacterEventEntity] = []
-    @Published public private(set) var isFlushing: Bool = false
-    @Published public private(set) var lastFlushSummary: FlushSummary?
+final class CharacterEventStore: ObservableObject {
+    @Published private(set) var events: [CharacterEventEntity] = []
+    @Published private(set) var isFlushing: Bool = false
+    @Published private(set) var lastFlushSummary: FlushSummary?
 
-    public struct FlushSummary: Equatable, Sendable {
-        public let total: Int
-        public let synced: Int
-        public let failed: Int
-        public let skipped: Int
-        public let finishedAtMillis: Int64
+    struct FlushSummary: Equatable, Sendable {
+        let total: Int
+        let synced: Int
+        let failed: Int
+        let skipped: Int
+        let finishedAtMillis: Int64
     }
 
-    public typealias TokenProvider = @MainActor () -> String?
+    typealias TokenProvider = @MainActor () -> String?
 
     private let api: CharacterXPGranting
     private let tokenProvider: TokenProvider
@@ -104,7 +104,7 @@ public final class CharacterEventStore: ObservableObject {
     private let calendarTimeZone: TimeZone
     private var nowProvider: () -> Date
 
-    public init(
+    init(
         api: CharacterXPGranting,
         tokenProvider: @escaping TokenProvider,
         persistence: CharacterEventPersistence = .default,
@@ -119,7 +119,7 @@ public final class CharacterEventStore: ObservableObject {
     }
 
     /// 초기 로드. `VoiceAlarmApp` `.task` 에서 1회 호출해 디스크 → 메모리 hydrate.
-    public func loadFromDisk() async {
+    func loadFromDisk() async {
         let loaded = await persistence.load()
         events = loaded
     }
@@ -129,7 +129,7 @@ public final class CharacterEventStore: ObservableObject {
     /// 멱등 큐 진입점. 동일 `clientNonce` 가 이미 있으면 (state 무관) skip 한다.
     /// SYNCED 인 nonce 가 다시 들어와도 무시 — 서버는 duplicated=true 를 반환할
     /// 뿐이지만, 굳이 또 호출할 이유가 없다.
-    public func queue(
+    func queue(
         eventType: CharacterEventType,
         occurredAtMillis: Int64,
         clientNonce: String,
@@ -168,7 +168,7 @@ public final class CharacterEventStore: ObservableObject {
     /// 백그라운드/포그라운드 재시도 진입점. token 이 없으면 즉시 return.
     /// 중복 호출은 isFlushing 가드로 한 번만 실행.
     @discardableResult
-    public func flushPending() async -> FlushSummary {
+    func flushPending() async -> FlushSummary {
         if isFlushing {
             return lastFlushSummary ?? FlushSummary(
                 total: 0,
@@ -247,7 +247,7 @@ public final class CharacterEventStore: ObservableObject {
     /// 알고리즘 (구분자만 `-` 로 통일 — AlarmAppContext 가 `record.id-stop-...` 형식을
     /// 쓰는 것과 시각적으로 호환). 멱등성 자체는 store 가 `events.contains(where:)`
     /// 로 보장하므로 구분자 차이는 무관.
-    public static func buildClientNonce(
+    static func buildClientNonce(
         alarmID: String,
         eventType: CharacterEventType,
         occurredAtMillis: Int64,
@@ -296,7 +296,7 @@ public final class CharacterEventStore: ObservableObject {
 // `AlarmAppContext` (Phase 2-B2) 가 사용하는 단일 진입점. 시그니처는 B2 의 protocol
 // 정의를 그대로 따른다 — 절대 변경 금지.
 extension CharacterEventStore: CharacterEventQueueing {
-    public func queueAlarmEvent(
+    func queueAlarmEvent(
         eventType: CharacterEventKind,
         occurredAtMillis: Int64,
         clientNonce: String,

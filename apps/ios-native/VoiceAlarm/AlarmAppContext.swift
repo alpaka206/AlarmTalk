@@ -19,13 +19,13 @@ import Foundation
 //   1. 컴파일 순서 독립성 — B2 가 B5 보다 먼저 머지될 수 있다.
 //   2. 테스트에서 mock 주입이 자명해진다 (`AlarmAppContextTests` 참고).
 //   3. clientNonce 멱등성 검증을 store 내부 책임으로 떠넘긴다.
-public enum CharacterEventKind: String, Sendable {
+enum CharacterEventKind: String, Sendable {
     case alarmCompleted = "alarm_completed"
     case alarmSnoozed = "alarm_snoozed"
 }
 
 @MainActor
-public protocol CharacterEventQueueing: AnyObject {
+protocol CharacterEventQueueing: AnyObject {
     func queueAlarmEvent(
         eventType: CharacterEventKind,
         occurredAtMillis: Int64,
@@ -50,11 +50,11 @@ public protocol CharacterEventQueueing: AnyObject {
 //     줄에서). 두 인스턴스가 동시에 존재할 수 없는 이유: VoiceAlarmApp 은
 //     `@main` 단일 진입점이고 `@StateObject` 는 Scene 당 1회 init.
 @MainActor
-public final class AlarmAppContext {
-    public static var shared: AlarmAppContext?
+final class AlarmAppContext {
+    static var shared: AlarmAppContext?
 
-    public weak var store: LocalAlarmStore?
-    public weak var characterEvents: AnyObject?
+    weak var store: LocalAlarmStore?
+    weak var characterEvents: AnyObject?
 
     /// CharacterEventQueueing 으로 cast 해서 사용. weak any-protocol 은 Swift 에서
     /// 직접 표현이 까다로워 AnyObject 로 보관 후 호출 시점에 cast.
@@ -63,9 +63,9 @@ public final class AlarmAppContext {
     }
 
     /// `now()` 를 주입 가능하게 만들어 테스트에서 clock 을 고정한다.
-    public var nowProvider: () -> Date = { Date() }
+    var nowProvider: () -> Date = { Date() }
 
-    public init(
+    init(
         store: LocalAlarmStore,
         characterEvents: (AnyObject & CharacterEventQueueing)?
     ) {
@@ -80,7 +80,7 @@ public final class AlarmAppContext {
     /// 멱등성: clientNonce 가 `"{record.id}-stop-{record.updatedAtMillis}"` 형태로
     /// 같은 알람의 같은 stop 시점에 항상 같은 값을 만들도록 한다 — 두 경로가
     /// 1초 내 같은 stop 을 emit 해도 store 측 멱등 검사에서 한 번만 처리된다.
-    public func handleAlarmStopped(alarmKitIDString: String) async {
+    func handleAlarmStopped(alarmKitIDString: String) async {
         guard let store else { return }
         let recordBeforeStop = store.recordByAlarmKitID(alarmKitIDString)
         // markStopped 는 alarmKitID 매칭이 안 되면 no-op 이므로 안전.
@@ -109,14 +109,20 @@ public final class AlarmAppContext {
 
     // MARK: - Snooze
 
+    func canSnooze(alarmKitIDString: String) -> Bool {
+        guard let record = store?.recordByAlarmKitID(alarmKitIDString) else { return false }
+        return record.canSnooze
+    }
+
     /// LiveActivity 의 Snooze 버튼이 눌렸을 때 호출.
     /// snoozeMinutesOverride 가 nil 이면 record.snoozeMinutes 사용.
-    public func handleAlarmSnoozed(
+    func handleAlarmSnoozed(
         alarmKitIDString: String,
         snoozeMinutesOverride: Int? = nil
     ) async {
         guard let store else { return }
         guard let record = store.recordByAlarmKitID(alarmKitIDString) else { return }
+        guard record.canSnooze else { return }
 
         let now = nowProvider()
         let minutes = snoozeMinutesOverride ?? record.snoozeMinutes
@@ -153,7 +159,7 @@ public final class AlarmAppContext {
 extension LocalAlarmStore {
     /// 명세에서 요구하는 alias. 기존 `record(alarmKitID:)` 와 동일하지만
     /// 호출 사이트에서 의도가 더 명시적이다.
-    public func recordByAlarmKitID(_ alarmKitID: String) -> LocalAlarmRecord? {
+    func recordByAlarmKitID(_ alarmKitID: String) -> LocalAlarmRecord? {
         record(alarmKitID: alarmKitID)
     }
 }

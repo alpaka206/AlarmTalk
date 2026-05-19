@@ -13,7 +13,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var holidayOff: Bool
     var snoozeEnabled: Bool
     var snoozeMinutes: Int          // 1..30
-    var snoozeRepeatLimit: Int      // 0/1/3/5 (0 == 무제한)
+    var snoozeRepeatLimit: Int      // 0/3/5 (0 == 무제한)
     var snoozeCount: Int
     var vibrationPattern: String    // VibrationPattern.rawValue
     var playMode: String            // AlarmPlayMode.rawValue (alarm_only / voice_only / sound_then_voice)
@@ -56,6 +56,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
     var hasVoiceAudio: Bool {
         ttsMessageId != nil || rawAudioUri != nil || localAudioUri != nil
+    }
+
+    var canSnooze: Bool {
+        snoozeEnabled &&
+            (snoozeRepeatLimit == SnoozeRepeatLimit.unlimited.rawValue ||
+                snoozeCount < snoozeRepeatLimit)
     }
 
     var timeString: String {
@@ -547,9 +553,24 @@ final class LocalAlarmStore: ObservableObject {
     /// AlarmKit alarmUpdates 에서 알람이 사라졌을 때 호출.
     func markStopped(alarmKitID: String) {
         guard let index = alarms.firstIndex(where: { $0.alarmKitID == alarmKitID }) else { return }
-        alarms[index].state = AlarmRuntimeState.dismissed.rawValue
-        alarms[index].enabled = false
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        if alarms[index].repeatDaysMask != 0,
+           let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
+            hour: alarms[index].hour,
+            minute: alarms[index].minute,
+            repeatDaysMask: alarms[index].repeatDaysMask,
+            holidayOff: alarms[index].holidayOff,
+            nowMillis: now
+           ) {
+            alarms[index].fireAtMillis = nextFireAt
+            alarms[index].state = AlarmRuntimeState.armed.rawValue
+            alarms[index].enabled = true
+            alarms[index].snoozeCount = 0
+        } else {
+            alarms[index].state = AlarmRuntimeState.dismissed.rawValue
+            alarms[index].enabled = false
+        }
+        alarms[index].updatedAtMillis = now
         persist()
     }
 
