@@ -131,7 +131,9 @@ xcodegen 후 Xcode 에서:
 
 ### 백엔드 요구 사항
 
-`SubscriptionManager` 는 결제 성공 후 즉시 `POST /api/billing/apple/confirm` 라우트를 호출해 백엔드 `subscriptions` 테이블의 entitlement 를 동기화한다. 백엔드는 Apple App Store Server API (`https://api.storekit.itunes.apple.com/inApps/v1/transactions/{transactionId}`) 를 사용해 transaction 의 진위와 만료일을 검증해야 한다.
+`SubscriptionManager` 는 결제 성공 후 즉시 `POST /api/billing/apple/confirm` 라우트를 호출해 백엔드 entitlement 동기화를 시도한다. 백엔드는 Apple App Store Server API (`https://api.storekit.itunes.apple.com/inApps/v1/transactions/{transactionId}`) 로 transaction 의 진위와 만료일을 검증한 뒤에만 `subscriptions` 테이블을 갱신해야 한다.
+
+현재 백엔드 라우트는 server-to-server 검증이 구현되기 전까지 fail-closed 로 동작한다. 유효한 SKU 여도 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하며 DB entitlement 를 변경하지 않는다. iOS 클라이언트는 StoreKit `currentEntitlements` 를 로컬 권위로 사용하고, 서버 검증 구현 후 foreground 진입 시 `resyncEntitlements()` 로 catch-up 한다.
 
 **라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`VoiceAlarmApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
 
@@ -145,7 +147,7 @@ xcodegen 후 Xcode 에서:
 }
 ```
 
-응답 페이로드 (`ConfirmAppleSubscriptionResponse`):
+서버 검증 구현 후 응답 페이로드 (`ConfirmAppleSubscriptionResponse`):
 
 ```json
 {
