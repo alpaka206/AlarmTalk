@@ -21,6 +21,11 @@ struct AuthUser: Codable, Equatable, Identifiable {
     var familyAlarmQuietStart: String?
     var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    /// Apple `sub` (user identifier). Apple 로그인 사용자만 비-nil.
+    /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` 호출에 사용.
+    /// 백엔드 `/auth/apple` 와 `/auth/me` 응답이 `apple_user_id` 키로 전달한다.
+    /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
+    var appleUserId: String?
 }
 
 struct RemoteAlarmListResponse: Decodable {
@@ -118,6 +123,22 @@ struct VoiceSpeakerSegment: Decodable, Identifiable, Equatable {
     var startMs: Int
     var endMs: Int
     var confidence: Double?
+
+    /// 화자 구간 길이(ms). 음수 방지.
+    var durationMs: Int { max(0, endMs - startMs) }
+
+    /// 사람이 읽을 시간 라벨. (`mm:ss`)
+    var durationLabel: String {
+        let totalSeconds = max(0, durationMs / 1000)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+/// 업로드된 raw 음원 + 분리된 화자 list 한 묶음. SpeakerSeparationFlow 가 사용.
+struct VoiceUploadSpeakersResponse: Decodable, Equatable {
+    var uploadId: String
+    var speakers: [VoiceSpeakerSegment]
+    var provider: String?
 }
 
 struct TtsGenerateRequest: Encodable {
@@ -453,6 +474,95 @@ struct DeleteAccountResponse: Decodable, Equatable {
     var success: Bool
 }
 
+// MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처 + 검색
+
+struct RequestEmailVerificationRequest: Encodable {
+    var email: String
+}
+
+struct RequestEmailVerificationResponse: Decodable, Equatable {
+    var success: Bool
+    /// 디버그 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
+    var devCode: String?
+}
+
+struct VerifyEmailCodeRequest: Encodable {
+    var email: String
+    var code: String
+}
+
+struct VerifyEmailCodeResponse: Decodable, Equatable {
+    var success: Bool
+    var verified: Bool?
+}
+
+struct EmailRegisterRequest: Encodable {
+    var email: String
+    var password: String
+    var name: String
+    var verificationCode: String
+}
+
+struct EmailLoginRequest: Encodable {
+    var email: String
+    var password: String
+}
+
+struct FamilyVoiceAlarmRequest: Encodable {
+    var targetUserId: String
+    var voiceProfileId: String
+    var time: String
+    var repeatDays: [Int]
+    var messageId: String?
+    var snoozeMinutes: Int?
+}
+
+struct FamilyVoiceAlarmResponse: Decodable, Equatable {
+    var alarm: RemoteAlarm
+}
+
+struct VoucherRedemptionResponse: Decodable, Equatable {
+    var success: Bool
+    var voucher: VoucherItem?
+    var planKey: String?
+}
+
+struct UserSearchResult: Decodable, Identifiable, Equatable {
+    var id: String
+    var email: String?
+    var name: String?
+    var picture: String?
+}
+
+struct UserSearchResponse: Decodable {
+    var users: [UserSearchResult]
+}
+
+// MARK: - Phase 4-D1: Apple StoreKit2 IAP confirmation
+
+/// Apple StoreKit 영수증 검증을 백엔드에 위임하기 위한 페이로드.
+///
+/// 백엔드는 Apple 의 verifyReceipt / App Store Server API 를 사용해 transaction
+/// 의 진위와 만료일을 확인한 뒤, 자체 `subscriptions` 테이블에 plan key 매핑을
+/// 기록한다. 라우트: `POST /api/billing/apple/confirm`.
+///
+/// 라우트가 미구현이거나 일시적으로 다운된 경우 클라이언트는 graceful
+/// degradation — StoreKit 영수증 자체가 권위이므로 currentTier 는 이미 정확.
+struct ConfirmAppleSubscriptionRequest: Encodable {
+    var transactionId: String
+    var originalTransactionId: String
+    var productId: String
+}
+
+struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
+    /// 백엔드가 발급한 subscriptions row id. 미구현 환경에서는 nil.
+    var subscriptionId: String?
+    /// 백엔드 plan key (`personal` / `couple` / `family`).
+    var plan: String
+    /// ISO8601 만료 시각. 백엔드가 Apple 의 expiresDate 를 그대로 echo.
+    var expiresAt: String?
+}
+
 final class VoiceAlarmAPI {
     static let shared = VoiceAlarmAPI()
 
@@ -473,16 +583,27 @@ final class VoiceAlarmAPI {
         encoder.keyEncodingStrategy = .convertToSnakeCase
     }
 
-    func loginWithApple(idToken: String, name: String?, email: String?) async throws -> AuthSession {
+    func loginWithApple(
+        idToken: String,
+        name: String?,
+        email: String?,
+        nonce: String?
+    ) async throws -> AuthSession {
         struct Body: Encodable {
             var idToken: String
             var name: String?
             var email: String?
+            var nonce: String?
         }
         return try await request(
             "auth/apple",
             method: "POST",
-            body: Body(idToken: idToken, name: name.nilIfBlank, email: email.nilIfBlank)
+            body: Body(
+                idToken: idToken,
+                name: name.nilIfBlank,
+                email: email.nilIfBlank,
+                nonce: nonce?.isEmpty == true ? nil : nonce
+            )
         )
     }
 
@@ -531,16 +652,24 @@ final class VoiceAlarmAPI {
         name: String,
         isShared: Bool,
         durationMs: Int,
-        token: String
+        token: String,
+        noiseRemoval: Bool = false
     ) async throws -> VoiceProfile {
+        var fields: [String: String] = [
+            "name": name,
+            "isShared": isShared ? "true" : "false",
+            "durationMs": String(durationMs),
+        ]
+        // noise_removal 플래그 — `feat/voice-clone-noise-removal` 머지 이후 backend 가
+        // 인식하지만, 미인식 환경(이전 deploy)에서도 무시되도록 옵션으로 추가.
+        if noiseRemoval {
+            fields["noiseRemoval"] = "true"
+            fields["noise_removal"] = "true"
+        }
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
             token: token,
-            fields: [
-                "name": name,
-                "isShared": isShared ? "true" : "false",
-                "durationMs": String(durationMs),
-            ],
+            fields: fields,
             files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
         )
         return response.profile
@@ -573,6 +702,66 @@ final class VoiceAlarmAPI {
         return response.speakers
     }
 
+    /// 업로드된 raw 음원의 화자 분리 결과를 다시 불러온다.
+    /// `separate` 가 한 번 실행된 뒤 클라이언트가 재진입했을 때 호출.
+    /// `GET /api/voice/uploads/:uploadId/speakers`.
+    func getVoiceUploadSpeakers(uploadId: String, token: String) async throws -> VoiceUploadSpeakersResponse {
+        let response: VoiceSpeakerListResponse = try await request(
+            "voice/uploads/\(uploadId)/speakers",
+            token: token
+        )
+        return VoiceUploadSpeakersResponse(
+            uploadId: uploadId,
+            speakers: response.speakers,
+            provider: response.provider
+        )
+    }
+
+    /// 화자 라벨 변경 — Android `MainViewModelVoiceActions` 의 rename speaker 와 동일.
+    /// `PATCH /api/voice/uploads/:uploadId/speakers/:speakerId`.
+    func updateVoiceUploadSpeaker(
+        uploadId: String,
+        speakerId: String,
+        label: String,
+        token: String
+    ) async throws -> VoiceSpeakerSegment {
+        struct Body: Encodable { var label: String }
+        struct Response: Decodable { var speaker: VoiceSpeakerSegment }
+        let response: Response = try await request(
+            "voice/uploads/\(uploadId)/speakers/\(speakerId)",
+            method: "PATCH",
+            token: token,
+            body: Body(label: label)
+        )
+        return response.speaker
+    }
+
+    /// 업로드와 화자 분리를 한 번에 — 라이트한 단발 사용용. `POST /api/voice/diarize`.
+    func diarizeVoice(
+        audioFileURL: URL,
+        durationMs: Int,
+        token: String
+    ) async throws -> VoiceUploadSpeakersResponse {
+        struct Response: Decodable {
+            var uploadId: String?
+            var speakers: [VoiceSpeakerSegment]
+            var provider: String?
+        }
+        let response: Response = try await multipartRequest(
+            "voice/diarize",
+            token: token,
+            fields: [
+                "durationMs": String(durationMs),
+            ],
+            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
+        )
+        return VoiceUploadSpeakersResponse(
+            uploadId: response.uploadId ?? "",
+            speakers: response.speakers,
+            provider: response.provider
+        )
+    }
+
     func updateVoiceProfile(
         id: String,
         name: String? = nil,
@@ -588,8 +777,11 @@ final class VoiceAlarmAPI {
         return response.profile
     }
 
-    func deleteVoiceProfile(id: String, token: String) async throws {
-        let _: EmptyResponse = try await request("voice/\(id)", method: "DELETE", token: token)
+    func deleteVoiceProfile(id: String, token: String, force: Bool = false) async throws {
+        // 백엔드는 항상 cascade(알람을 sound-only 로 강등) 하지만, force 옵션을 명시적으로
+        // 보내 향후 백엔드가 "사용 중일 때 거부" 모드를 도입해도 호환되도록 한다.
+        let path = force ? "voice/\(id)?force=true" : "voice/\(id)"
+        let _: EmptyResponse = try await request(path, method: "DELETE", token: token)
     }
 
     func listFamilyVoiceProfiles(token: String) async throws -> [FamilyVoiceProfile] {
@@ -608,6 +800,40 @@ final class VoiceAlarmAPI {
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {
         try await request("tts/messages/\(id)/audio", token: token)
+    }
+
+    // MARK: - Sync convenience
+    // RemoteAlarmPullSync / RemoteAlarmPushSync 가 사용하는 헬퍼.
+    // base64 payload 를 디코드해 `(bytes, mimeType, durationMs)` 로 노출한다.
+    //
+    // 서버 응답의 `audioFormat` ("mp3" / "m4a" / "wav" 등) 을 audio/<format>
+    // 또는 표준 MIME 으로 변환한 뒤 `AudioCacheStore.cacheBytes(_:cacheKey:...)`
+    // 가 그대로 받아 쓸 수 있는 형태로 정규화한다.
+
+    struct DecodedTtsAudio: Equatable {
+        var bytes: Data
+        var mimeType: String
+        var durationMs: Int64?
+        var rawAudioUri: String?
+        var messageId: String
+    }
+
+    /// `tts/messages/{id}/audio` 응답을 디코드해 raw bytes 로 노출.
+    /// `RemoteAlarmPullSync` 가 신규 수신 알람의 음원을 캐싱할 때 호출.
+    func getTtsAudio(messageId: String, token: String) async throws -> DecodedTtsAudio {
+        let response = try await getTTSMessageAudio(id: messageId, token: token)
+        guard let data = Data(base64Encoded: response.audioBase64) else {
+            throw APIError.invalidResponse
+        }
+        let format = AudioCacheStore.normalizedFormat(response.audioFormat)
+        let mime = AudioCacheStore.mimeType(forFormat: format)
+        return DecodedTtsAudio(
+            bytes: data,
+            mimeType: mime,
+            durationMs: nil,
+            rawAudioUri: response.audioUrl,
+            messageId: messageId
+        )
     }
 
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
@@ -658,18 +884,40 @@ final class VoiceAlarmAPI {
     }
 
     func grantCharacterXP(event: String, token: String) async throws -> CharacterGrantResponse {
+        // 레거시 진입점. nonce 를 매번 새 UUID 로 만들어 서버 멱등성을 활용하지 못한다.
+        // 새 코드는 `CharacterEventStore` 가 nonce 를 만들고 아래
+        // `grantCharacterXP(event:clientNonce:localDate:token:)` 를 호출하도록 한다.
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
         formatter.dateFormat = "yyyy-MM-dd"
-        return try await request(
+        return try await grantCharacterXP(
+            event: event,
+            clientNonce: UUID().uuidString,
+            localDate: formatter.string(from: Date()),
+            token: token
+        )
+    }
+
+    /// 멱등 grant — `CharacterEventStore.flushPending` 가 사용한다. 서버는 같은
+    /// (user, event, client_nonce, local_date) 조합을 받으면 200 + `duplicated=true`
+    /// 를 반환해 안전하게 재시도 가능. Android `CharacterXpRequest` 와 동일한 body
+    /// 형태 (`context` 없음).
+    func grantCharacterXP(
+        event: String,
+        clientNonce: String,
+        localDate: String,
+        token: String
+    ) async throws -> CharacterGrantResponse {
+        try await request(
             "characters/xp",
             method: "POST",
             token: token,
             body: CharacterXpRequest(
                 event: event,
-                clientNonce: UUID().uuidString,
-                localDate: formatter.string(from: Date())
+                clientNonce: clientNonce,
+                localDate: localDate
             )
         )
     }
@@ -683,12 +931,44 @@ final class VoiceAlarmAPI {
         return response.vouchers
     }
 
+    /// 백엔드 stub-friendly 체크아웃. **Phase 4-D1 이후 deprecated** — App Store
+    /// 심사 통과를 위해 디지털 구독은 Apple StoreKit2 IAP (`SubscriptionManager`)
+    /// 가 권위 경로다. 본 메서드는 비-IAP 흐름 (gift 발급용 voucher / 내부 테스트)
+    /// 에만 남겨두며, 일반 사용자 구매에는 사용하지 않는다.
+    @available(*, deprecated, message: "Apple IAP 로 통합. SubscriptionManager.purchase(_:) 사용. gift voucher 발급만 남는 경우 유지.")
     func checkoutPlan(planKey: String, gift: Bool, token: String) async throws -> CheckoutResponse {
         try await request(
             "billing/checkout",
             method: "POST",
             token: token,
             body: CheckoutRequest(planKey: planKey, gift: gift)
+        )
+    }
+
+    /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
+    ///
+    /// 백엔드는 transactionId/originalTransactionId 를 Apple App Store Server API
+    /// 로 검증하고, 매칭되는 plan key (`personal` / `couple` / `family`) 와 만료
+    /// 시각을 `subscriptions` 테이블에 upsert 한다.
+    ///
+    /// 본 호출이 실패해도 클라이언트는 StoreKit currentEntitlements 를 권위로 사용
+    /// 하므로 currentTier 는 정확. 다음 foreground 사이클이나 명시적 재시도에서
+    /// 자동 catch-up 된다.
+    func confirmAppleSubscription(
+        transactionID: String,
+        originalTransactionID: String,
+        productID: String,
+        token: String
+    ) async throws -> ConfirmAppleSubscriptionResponse {
+        try await request(
+            "billing/apple/confirm",
+            method: "POST",
+            token: token,
+            body: ConfirmAppleSubscriptionRequest(
+                transactionId: transactionID,
+                originalTransactionId: originalTransactionID,
+                productId: productID
+            )
         )
     }
 
@@ -719,6 +999,117 @@ final class VoiceAlarmAPI {
         )
     }
 
+    // MARK: - Phase 3-C3: 이메일 인증 / 이메일 로그인·회원가입
+
+    /// 이메일 인증 코드 발송 요청. Android `AuthApi.requestEmailVerification` 와 동일.
+    func requestEmailVerification(email: String) async throws -> RequestEmailVerificationResponse {
+        try await request(
+            "auth/email/verify/request",
+            method: "POST",
+            body: RequestEmailVerificationRequest(email: email)
+        )
+    }
+
+    /// 이메일 인증 코드 검증.
+    func verifyEmailCode(email: String, code: String) async throws -> VerifyEmailCodeResponse {
+        try await request(
+            "auth/email/verify/confirm",
+            method: "POST",
+            body: VerifyEmailCodeRequest(email: email, code: code)
+        )
+    }
+
+    /// 이메일/비밀번호 회원가입. 인증코드 검증 이후 호출되어야 한다.
+    func register(email: String, password: String, name: String, verificationCode: String) async throws -> AuthSession {
+        try await request(
+            "auth/email/register",
+            method: "POST",
+            body: EmailRegisterRequest(
+                email: email,
+                password: password,
+                name: name,
+                verificationCode: verificationCode
+            )
+        )
+    }
+
+    /// 이메일/비밀번호 로그인.
+    func loginWithEmail(email: String, password: String) async throws -> AuthSession {
+        try await request(
+            "auth/email/login",
+            method: "POST",
+            body: EmailLoginRequest(email: email, password: password)
+        )
+    }
+
+    // MARK: - Phase 3-C3: Family/Couple 그룹 멤버 액션
+
+    /// 가족 그룹에서 다른 멤버를 내보낸다. 소유자 전용. Android `FamilyApi.removeMember`.
+    func removeFamilyMember(groupId: String, userId: String, token: String) async throws -> EmptyResponse {
+        struct Body: Encodable { var userId: String }
+        return try await request(
+            "family/groups/\(groupId)/remove",
+            method: "POST",
+            token: token,
+            body: Body(userId: userId)
+        )
+    }
+
+    /// 소유권 이양. 새 소유자는 동일 그룹 멤버여야 한다.
+    func transferFamilyOwnership(groupId: String, newOwnerId: String, token: String) async throws -> EmptyResponse {
+        struct Body: Encodable { var newOwnerId: String }
+        return try await request(
+            "family/groups/\(groupId)/transfer",
+            method: "POST",
+            token: token,
+            body: Body(newOwnerId: newOwnerId)
+        )
+    }
+
+    /// 내가 가족 그룹에서 나간다. 본 메서드는 명시적 alias 로,
+    /// 기존 `leaveFamilyGroup(id:token:)` 와 동일한 endpoint 를 호출한다.
+    func leaveFamilyGroup(groupId: String, token: String) async throws -> EmptyResponse {
+        try await request(
+            "family/groups/\(groupId)/leave",
+            method: "POST",
+            token: token
+        )
+    }
+
+    // MARK: - Phase 3-C3: Family voice alarm + 바우처 redeem + user 검색
+
+    /// 가족 멤버에게 보내는 voice alarm 생성. Android `FamilyApi.kt:87` 의
+    /// `createFamilyVoiceAlarm`. targetUserId 가 수신자.
+    func createFamilyVoiceAlarm(_ requestBody: FamilyVoiceAlarmRequest, token: String) async throws -> FamilyVoiceAlarmResponse {
+        try await request(
+            "family/alarms",
+            method: "POST",
+            token: token,
+            body: requestBody
+        )
+    }
+
+    /// 코드 redeem — 자기 자신의 바우처를 사용해 플랜을 적용. Android
+    /// `BillingApi.redeem` 과 동등. 일반 INV 코드는 `registerCode` 로 처리.
+    func redeemVoucher(code: String, token: String) async throws -> VoucherRedemptionResponse {
+        struct Body: Encodable { var code: String }
+        return try await request(
+            "billing/vouchers/redeem",
+            method: "POST",
+            token: token,
+            body: Body(code: code)
+        )
+    }
+
+    /// 사용자 검색. 백엔드가 도입되기 전이라도 SocialFeatureViewModel 의 send-note
+    /// 흐름이 컴파일되도록 미리 정의해 둔다. 호출 사이트가 없으면 dead code 가 아닌
+    /// "공개된 미사용 API" 로 남는다.
+    func searchUsers(query: String, token: String) async throws -> [UserSearchResult] {
+        let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let response: UserSearchResponse = try await request("users/search?q=\(escaped)", token: token)
+        return response.users
+    }
+
     private func request<Response: Decodable, Body: Encodable>(
         _ path: String,
         method: String = "GET",
@@ -747,7 +1138,11 @@ final class VoiceAlarmAPI {
             return try decoder.decode(Response.self, from: data)
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
-        throw APIError.server(status: http.statusCode, message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
+        throw APIError.server(
+            status: http.statusCode,
+            message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            errorCode: serverError?.errorCode
+        )
     }
 
     private func request<Response: Decodable>(
@@ -798,7 +1193,11 @@ final class VoiceAlarmAPI {
             return try decoder.decode(Response.self, from: responseData)
         }
         let serverError = try? decoder.decode(ServerError.self, from: responseData)
-        throw APIError.server(status: http.statusCode, message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
+        throw APIError.server(
+            status: http.statusCode,
+            message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+            errorCode: serverError?.errorCode
+        )
     }
 
     private static func defaultBaseURL() -> URL {
@@ -810,9 +1209,22 @@ final class VoiceAlarmAPI {
     }
 
     private func endpoint(_ path: String) -> URL {
-        path.split(separator: "/").reduce(baseURL) { url, component in
+        // path 가 query("?xxx=yyy") 를 포함할 수 있으므로 둘로 쪼개 처리한다.
+        let (rawPath, query) = splitPathAndQuery(path)
+        let base = rawPath.split(separator: "/").reduce(baseURL) { url, component in
             url.appendingPathComponent(String(component))
         }
+        guard let query, !query.isEmpty,
+              var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
+        }
+        components.percentEncodedQuery = query
+        return components.url ?? base
+    }
+
+    private func splitPathAndQuery(_ path: String) -> (path: String, query: String?) {
+        guard let qIndex = path.firstIndex(of: "?") else { return (path, nil) }
+        return (String(path[path.startIndex..<qIndex]), String(path[path.index(after: qIndex)...]))
     }
 
     private func multipartFile(fieldName: String, fileURL: URL) throws -> MultipartFile {
@@ -837,6 +1249,13 @@ final class VoiceAlarmAPI {
     }
 }
 
+// MARK: - CharacterXPGranting conformance
+//
+// `CharacterEventStore` 는 protocol 의존성으로 grant API 를 호출한다. 이미 동일한
+// 시그니처 메서드 (`grantCharacterXP(event:clientNonce:localDate:token:)`) 가 위에
+// 정의되어 있으므로 declarative 한 conformance 선언만 추가.
+extension VoiceAlarmAPI: CharacterXPGranting {}
+
 struct EmptyBody: Encodable {}
 struct EmptyResponse: Decodable {}
 struct MultipartFile {
@@ -853,15 +1272,21 @@ struct ServerError: Decodable {
 
 enum APIError: LocalizedError {
     case invalidResponse
-    case server(status: Int, message: String)
+    case server(status: Int, message: String, errorCode: String? = nil)
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
             return "Invalid server response."
-        case .server(let status, let message):
+        case .server(let status, let message, _):
             return "Server error \(status): \(message)"
         }
+    }
+
+    /// 매핑된 백엔드 error_code 가 있으면 노출. VoiceStudioViewModel.mapVoiceError 가 사용.
+    var serverErrorCode: String? {
+        if case .server(_, _, let code) = self { return code }
+        return nil
     }
 }
 
