@@ -1,0 +1,314 @@
+import AuthenticationServices
+import Foundation
+import XCTest
+@testable import VoiceAlarm
+
+/// Phase 4-D2 — `AuthViewModel` 의 에러 분기 + Apple credentialState 점검.
+///
+/// 검증 대상
+///   1. `refreshUser` 의 status code 별 분기
+///      - 401 → signOut + statusMessage 설정
+///      - 403 → 세션 유지 + `lastNetworkError`
+///      - 5xx → 세션 유지 + `lastNetworkError`
+///      - URLError(네트워크 단절) → 세션 유지 + `lastNetworkError`
+///      - APIError.invalidResponse → 세션 유지 + `lastNetworkError`
+///   2. `verifyAppleCredentialStateIfNeeded`
+///      - .authorized → no-op (세션 유지, lastNetworkError 변화 없음)
+///      - .revoked → signOut
+///      - .notFound → signOut
+///      - .transferred → 세션 유지 + 안내 메시지
+///      - appleUserId nil(이메일/Google) → 즉시 return, credentialState 호출 안 함
+@MainActor
+final class AuthViewModelTests: XCTestCase {
+
+    // MARK: - Helpers
+
+    private func makeAppleSession(appleUserId: String? = "apple-sub-12345") -> AuthSession {
+        AuthSession(
+            token: "test-jwt",
+            user: AuthUser(
+                id: "user-1",
+                email: "tester@example.com",
+                name: "Tester",
+                plan: "free",
+                allowFamilyAlarms: false,
+                familyAlarmQuietDays: nil,
+                familyAlarmQuietStart: nil,
+                familyAlarmQuietEnd: nil,
+                familyAlarmQuietWindows: nil,
+                appleUserId: appleUserId
+            )
+        )
+    }
+
+    private func makeEmailSession() -> AuthSession {
+        AuthSession(
+            token: "test-jwt",
+            user: AuthUser(
+                id: "user-1",
+                email: "tester@example.com",
+                name: "Tester",
+                plan: "free",
+                allowFamilyAlarms: false,
+                familyAlarmQuietDays: nil,
+                familyAlarmQuietStart: nil,
+                familyAlarmQuietEnd: nil,
+                familyAlarmQuietWindows: nil,
+                appleUserId: nil
+            )
+        )
+    }
+
+    // MARK: - refreshUser status code branches
+
+    func test_refreshUser_with401_signsOutAndSetsStatusMessage() async {
+        let api = MockAuthAPI()
+        api.meResult = .failure(.server(status: 401, message: "expired", errorCode: nil))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNil(vm.session, "401 은 세션 만료로 처리되어 signOut 되어야 한다")
+        XCTAssertEqual(vm.statusMessage, "세션이 만료됐어요. 다시 로그인해 주세요.")
+        XCTAssertNil(vm.lastNetworkError, "signOut 후 lastNetworkError 는 nil 로 초기화된다")
+    }
+
+    func test_refreshUser_with403_keepsSessionAndSetsLastNetworkError() async {
+        let api = MockAuthAPI()
+        api.meResult = .failure(.server(status: 403, message: "forbidden", errorCode: nil))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session, "403 은 세션을 유지해야 한다")
+        XCTAssertEqual(vm.lastNetworkError, "이 계정으로는 접근할 수 없는 기능이 있어요.")
+    }
+
+    func test_refreshUser_with500_keepsSessionAndSetsLastNetworkError() async {
+        let api = MockAuthAPI()
+        api.meResult = .failure(.server(status: 500, message: "internal", errorCode: nil))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session, "5xx 일시 오류는 세션을 유지해야 한다")
+        XCTAssertEqual(vm.lastNetworkError, "internal")
+    }
+
+    func test_refreshUser_with500_blankMessage_fallsBackToGenericCopy() async {
+        let api = MockAuthAPI()
+        api.meResult = .failure(.server(status: 503, message: "   ", errorCode: nil))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session)
+        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
+    }
+
+    func test_refreshUser_withURLError_keepsSession() async {
+        let api = MockAuthAPI()
+        api.meResult = .failureRaw(URLError(.notConnectedToInternet))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session, "URLError 는 일시 네트워크 단절로 보고 세션 유지")
+        XCTAssertEqual(vm.lastNetworkError, "네트워크 연결을 확인해 주세요.")
+    }
+
+    func test_refreshUser_withInvalidResponse_keepsSession() async {
+        let api = MockAuthAPI()
+        api.meResult = .failure(.invalidResponse)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session)
+        XCTAssertEqual(vm.lastNetworkError, "서버 응답을 해석하지 못했어요.")
+    }
+
+    func test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId() async {
+        let api = MockAuthAPI()
+        // 서버 응답이 appleUserId 를 누락해도 기존 세션의 값이 유지되어야 한다.
+        api.meResult = .success(AuthUser(
+            id: "user-1",
+            email: "tester@example.com",
+            name: "Tester (renamed)",
+            plan: "personal",
+            allowFamilyAlarms: nil,
+            familyAlarmQuietDays: nil,
+            familyAlarmQuietStart: nil,
+            familyAlarmQuietEnd: nil,
+            familyAlarmQuietWindows: nil,
+            appleUserId: nil
+        ))
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeAppleSession(appleUserId: "preserved-sub"))
+
+        await vm.refreshUser()
+
+        XCTAssertNotNil(vm.session)
+        XCTAssertEqual(vm.session?.user.name, "Tester (renamed)")
+        XCTAssertEqual(
+            vm.session?.user.appleUserId, "preserved-sub",
+            "백엔드 응답이 appleUserId 누락 시 이전 세션 값이 보존되어야 한다"
+        )
+        XCTAssertNil(vm.lastNetworkError)
+    }
+
+    // MARK: - verifyAppleCredentialStateIfNeeded
+
+    func test_verifyAppleCredentialState_emailUser_isNoOp() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .revoked  // 호출되면 안 됨
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertEqual(credentialProvider.callCount, 0, "이메일 사용자는 credentialState 조회 자체를 건너뛴다")
+        XCTAssertNotNil(vm.session, "이메일 사용자는 세션 유지")
+    }
+
+    func test_verifyAppleCredentialState_appleUserButBlankId_isNoOp() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .revoked
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        // appleUserId 가 빈 문자열이면 조회 불가 — no-op.
+        vm._setSessionForTesting(makeAppleSession(appleUserId: ""))
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertEqual(credentialProvider.callCount, 0)
+        XCTAssertNotNil(vm.session)
+    }
+
+    func test_verifyAppleCredentialState_authorized_isNoOp() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .authorized
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeAppleSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertEqual(credentialProvider.callCount, 1)
+        XCTAssertNotNil(vm.session, ".authorized 면 세션 유지")
+        XCTAssertNil(vm.lastNetworkError, ".authorized 면 lastNetworkError 변화 없음")
+    }
+
+    func test_verifyAppleCredentialState_revoked_signsOut() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .revoked
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeAppleSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertNil(vm.session, ".revoked 는 강제 signOut")
+        XCTAssertEqual(vm.statusMessage, "Apple ID 로그인이 더 이상 유효하지 않아요. 다시 로그인해 주세요.")
+    }
+
+    func test_verifyAppleCredentialState_notFound_signsOut() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .notFound
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeAppleSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertNil(vm.session, ".notFound 는 강제 signOut")
+    }
+
+    func test_verifyAppleCredentialState_transferred_keepsSessionWithMessage() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.stubState = .transferred
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeAppleSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertNotNil(vm.session, ".transferred 는 세션을 유지하고 사용자에게 안내만 한다")
+        XCTAssertEqual(vm.lastNetworkError, "다른 기기로 이전된 Apple ID 입니다. 다시 로그인해 주세요.")
+    }
+
+    func test_verifyAppleCredentialState_providerThrows_keepsSession() async {
+        let api = MockAuthAPI()
+        let credentialProvider = MockAppleCredentialProvider()
+        credentialProvider.shouldThrow = true
+        let vm = AuthViewModel(api: api, appleCredentialProvider: credentialProvider)
+        vm._setSessionForTesting(makeAppleSession())
+
+        await vm.verifyAppleCredentialStateIfNeeded()
+
+        XCTAssertNotNil(vm.session, "credentialState 조회 자체가 실패해도 세션 유지")
+        XCTAssertEqual(vm.lastNetworkError, "Apple 로그인 상태를 확인하지 못했어요.")
+    }
+
+    // MARK: - signOut clears state
+
+    func test_signOut_clearsSessionAndLastNetworkError() {
+        let vm = AuthViewModel(api: MockAuthAPI(), appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        vm.signOut(message: "bye")
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(vm.statusMessage, "bye")
+        XCTAssertNil(vm.lastNetworkError)
+    }
+}
+
+// MARK: - Mocks
+
+/// `AuthAPIProviding` mock. `me(token:)` 호출에 미리 stub 한 결과를 반환한다.
+private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
+    enum StubResult {
+        case success(AuthUser)
+        case failure(APIError)
+        /// `APIError` 가 아닌 임의의 Error 를 throw. URLError 등에 사용.
+        case failureRaw(Error)
+    }
+
+    var meResult: StubResult = .failure(.invalidResponse)
+    private(set) var meCallCount = 0
+
+    func me(token: String) async throws -> AuthUser {
+        meCallCount += 1
+        switch meResult {
+        case .success(let user):
+            return user
+        case .failure(let apiError):
+            throw apiError
+        case .failureRaw(let err):
+            throw err
+        }
+    }
+}
+
+/// `AppleCredentialStateProviding` mock.
+private final class MockAppleCredentialProvider: AppleCredentialStateProviding, @unchecked Sendable {
+    var stubState: ASAuthorizationAppleIDProvider.CredentialState = .authorized
+    var shouldThrow = false
+    private(set) var callCount = 0
+
+    func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState {
+        callCount += 1
+        if shouldThrow {
+            throw NSError(domain: "Test", code: -1, userInfo: nil)
+        }
+        return stubState
+    }
+}

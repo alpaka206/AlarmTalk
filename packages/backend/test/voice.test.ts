@@ -234,6 +234,22 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
     expect(update!.args).toContain('엄마 목소리');
     expect(update!.args).toContain(V1);
   });
+
+  it('updates relationship label', async () => {
+    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('PATCH', `/voice/${V1}`, { relationship_label: '손녀' }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profile.relationship_label).toBe('손녀');
+    const update = mockDB.calls.find((c) => c.sql.includes('UPDATE voice_profiles'));
+    expect(update).toBeDefined();
+    expect(update!.sql).toContain('relationship_label = ?');
+    expect(update!.args).toContain('손녀');
+  });
 });
 
 describe('GET /voice/:id/stats — 음성 프로필 통계', () => {
@@ -731,6 +747,30 @@ describe('POST /voice/clone — 음성 클론', () => {
     expect(body.profile.status).toBe('ready');
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
     expect(mockCreateInstantClone.mock.calls[0]![2]).toEqual({ removeBackgroundNoise: true });
+  });
+
+  it('stores relationship label when cloning a voice', async () => {
+    const form = new FormData();
+    form.append('audio', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), 'sample.wav');
+    form.append('name', 'Child voice');
+    form.append('durationMs', '90000');
+    form.append('relationshipLabel', '손녀');
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-voice-001' });
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      new Request('http://localhost/voice/clone', { method: 'POST', body: form }),
+    );
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.profile.relationship_label).toBe('손녀');
+    const insert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO voice_profiles'));
+    expect(insert).toBeDefined();
+    expect(insert!.sql).toContain('relationship_label');
+    expect(insert!.args).toContain('손녀');
   });
 
   it('ElevenLabs 실패 시 500', async () => {

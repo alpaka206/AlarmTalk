@@ -7,12 +7,45 @@ import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
+import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
+const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
+
+function normalizeRelationshipLabel(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return '';
+  return String(value).trim();
+}
+
+function validateRelationshipLabel(label: string | undefined): boolean {
+  return label === undefined || label.length <= MAX_RELATIONSHIP_LABEL_LENGTH;
+}
+
+async function canUseSharedVoiceProfile(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  voiceProfileId: string,
+): Promise<boolean> {
+  const shared = await db.execute({
+    sql: `SELECT vp.user_id, u.id AS owner_pk
+          FROM voice_profiles vp
+          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND vp.deleted_at IS NULL
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return false;
+  const row = typedRow<{ owner_pk?: string | null; user_id?: string }>(shared.rows[0]!);
+  const ownerPk = row.owner_pk || row.user_id || null;
+  if (!ownerPk || ownerPk === userPk) return false;
+  return assertSameGroup(db, userPk, ownerPk);
+}
 
 /**
  * Dev/cleanup helper: delete every voice profile (and its dependent
@@ -59,6 +92,12 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids, ...ids],
+  );
+  await tryDel(
+    'voice_profile_relationships',
+    `DELETE FROM voice_profile_relationships WHERE user_id IN (${ph})
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids],
   );
   await tryDel(
     'dub_jobs',
@@ -165,6 +204,7 @@ voiceProfile.get('/', async (c) => {
 
 voiceProfile.get('/family', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
   const db = getDB(c.env);
 
   const memberRes = await db.execute({
@@ -202,15 +242,19 @@ voiceProfile.get('/family', async (c) => {
 
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
-    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared, u.name as owner_name
+    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
+                 COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
+                 u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
+          LEFT JOIN voice_profile_relationships vpr
+            ON vpr.voice_profile_id = vp.id AND vpr.user_id IN (?, ?)
           WHERE vp.user_id IN (${placeholders})
             AND vp.deleted_at IS NULL
             AND vp.status = 'ready'
             AND COALESCE(vp.is_shared, 0) = 1
           ORDER BY vp.created_at DESC`,
-    args: memberIds,
+    args: [userPk, userId, ...memberIds],
   });
 
   return c.json({
@@ -252,7 +296,13 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
-  let body: { name?: unknown; is_shared?: unknown; isShared?: unknown };
+  let body: {
+    name?: unknown;
+    is_shared?: unknown;
+    isShared?: unknown;
+    relationship_label?: unknown;
+    relationshipLabel?: unknown;
+  };
   try {
     body = await c.req.json();
   } catch {
@@ -264,11 +314,23 @@ voiceProfile.patch('/:id', async (c) => {
   const sharedValue = body.is_shared ?? body.isShared;
   const isSharedUpdate = typeof sharedValue === 'boolean' ? sharedValue : undefined;
   const hasShared = isSharedUpdate !== undefined;
-  if (!hasName && !hasShared) {
+  const hasRelationship =
+    body.relationship_label !== undefined || body.relationshipLabel !== undefined;
+  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
+  if (!hasName && !hasShared && !hasRelationship) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
   if (hasName && (name.length === 0 || name.length > 50)) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
+  }
+  if (!validateRelationshipLabel(relationshipLabel)) {
+    return c.json(
+      {
+        error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+        error_code: 'INVALID_RELATIONSHIP_LABEL',
+      },
+      400,
+    );
   }
 
   const existing = await db.execute({
@@ -289,6 +351,10 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('is_shared = ?');
     args.push(isSharedUpdate ? 1 : 0);
   }
+  if (hasRelationship) {
+    updates.push('relationship_label = ?');
+    args.push(relationshipLabel ?? '');
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -302,6 +368,71 @@ voiceProfile.patch('/:id', async (c) => {
       id,
       ...(hasName ? { name } : {}),
       ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
+      ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
+    },
+  });
+});
+
+voiceProfile.patch('/:id/relationship', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+  const userPk = c.get('userIdPK') || (await resolveUserPk(db, userId)) || userId;
+
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+  }
+
+  let body: { relationship_label?: unknown; relationshipLabel?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
+  }
+
+  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
+  if (relationshipLabel === undefined || !validateRelationshipLabel(relationshipLabel)) {
+    return c.json(
+      {
+        error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+        error_code: 'INVALID_RELATIONSHIP_LABEL',
+      },
+      400,
+    );
+  }
+
+  const owned = await db.execute({
+    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
+    args: [id, userPk, userId],
+  });
+
+  if (owned.rows.length > 0) {
+    await db.execute({
+      sql: `UPDATE voice_profiles
+            SET relationship_label = ?, updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [relationshipLabel, id],
+    });
+  } else {
+    const canUse = await canUseSharedVoiceProfile(db, userPk, id);
+    if (!canUse) {
+      return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+    }
+    await db.execute({
+      sql: `INSERT INTO voice_profile_relationships
+              (id, user_id, voice_profile_id, relationship_label)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, voice_profile_id) DO UPDATE SET
+              relationship_label = excluded.relationship_label,
+              updated_at = datetime('now')`,
+      args: [crypto.randomUUID(), userPk, id, relationshipLabel],
+    });
+  }
+
+  return c.json({
+    profile: {
+      id,
+      relationship_label: relationshipLabel,
     },
   });
 });
@@ -348,6 +479,9 @@ voiceProfile.post('/clone', async (c) => {
     const audioFile = getFormFile(formData, 'audio');
     const name = formData.get('name') as string | null;
     const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
+    const relationshipLabel = normalizeRelationshipLabel(
+      formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
+    ) ?? '';
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
@@ -358,14 +492,23 @@ voiceProfile.post('/clone', async (c) => {
     if (name.length > 50) {
       return c.json({ error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' }, 400);
     }
+    if (!validateRelationshipLabel(relationshipLabel)) {
+      return c.json(
+        {
+          error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+          error_code: 'INVALID_RELATIONSHIP_LABEL',
+        },
+        400,
+      );
+    }
 
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared)
-            VALUES (?, ?, ?, 'processing', ?)`,
-      args: [profileId, userId, name, isShared ? 1 : 0],
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, relationship_label)
+            VALUES (?, ?, ?, 'processing', ?, ?)`,
+      args: [profileId, userId, name, isShared ? 1 : 0, relationshipLabel],
     });
 
     const attempts = createEnrollmentAttempts({
@@ -413,6 +556,7 @@ voiceProfile.post('/clone', async (c) => {
           provider,
           status: 'ready',
           is_shared: isShared,
+          relationship_label: relationshipLabel,
         },
       },
       201,

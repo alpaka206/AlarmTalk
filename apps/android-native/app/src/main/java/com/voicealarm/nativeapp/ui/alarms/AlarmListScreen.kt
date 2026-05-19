@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.CharacterEventEntity
+import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
@@ -56,10 +57,10 @@ internal fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean) -> Unit,
-    onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String) -> Unit,
+    onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
-    onRenameVoiceProfile: (String, String) -> Unit,
+    onRenameVoiceProfile: (String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,

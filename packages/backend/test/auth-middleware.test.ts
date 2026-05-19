@@ -16,6 +16,7 @@ const ENV: Env = {
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'test-google-client-id',
+  APPLE_CLIENT_ID: 'com.voicealarm.nativeapp.ios',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -55,6 +56,44 @@ function fakeToken(payload: Record<string, unknown>): string {
   const header = encodeJwtPart({ alg: 'RS256', typ: 'JWT' });
   const body = encodeJwtPart(payload);
   return `${header}.${body}.fakesignature`;
+}
+
+function encodeBytes(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function signedAppleToken(payload: Record<string, unknown>): Promise<string> {
+  const kid = crypto.randomUUID();
+  const keyPair = (await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  )) as CryptoKeyPair;
+  const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+  const header = encodeJwtPart({ alg: 'RS256', kid, typ: 'JWT' });
+  const body = encodeJwtPart(payload);
+  const unsigned = `${header}.${body}`;
+  const signature = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    keyPair.privateKey,
+    new TextEncoder().encode(unsigned),
+  );
+
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ keys: [{ ...publicJwk, kid, alg: 'RS256', use: 'sig' }] }),
+  }) as unknown as typeof fetch;
+
+  return `${unsigned}.${encodeBytes(new Uint8Array(signature))}`;
 }
 
 const originalFetch = globalThis.fetch;
@@ -111,7 +150,12 @@ describe('authMiddleware — Authorization header 검증', () => {
 
 describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
   it('유효한 앱 JWT 시 context에 사용자 정보 설정', async () => {
-    const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1', email: 'test@test.com', name: 'Test' });
+    const token = fakeToken({
+      iss: 'voice-alarm',
+      sub: 'user-1',
+      email: 'test@test.com',
+      name: 'Test',
+    });
     mockVerifyAppJwt.mockResolvedValue({
       sub: 'user-1',
       email: 'test@test.com',
@@ -293,7 +337,9 @@ describe('authMiddleware — Google token', () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
 
-    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Network error')) as unknown as typeof fetch;
+    globalThis.fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('Network error')) as unknown as typeof fetch;
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
@@ -307,10 +353,10 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@privaterelay.appleid.com',
       iss: 'https://appleid.apple.com',
-      aud: 'com.voicealarm.app',
+      aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
-    const token = fakeToken(payload);
+    const token = await signedAppleToken(payload);
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
@@ -327,10 +373,10 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@apple.com',
       iss: 'https://appleid.apple.com',
-      aud: 'com.voicealarm.app',
+      aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) - 3600,
     };
-    const token = fakeToken(payload);
+    const token = await signedAppleToken(payload);
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
@@ -343,10 +389,10 @@ describe('authMiddleware — Apple token', () => {
     const payload = {
       sub: 'apple-user-002',
       iss: 'https://appleid.apple.com',
-      aud: 'com.voicealarm.app',
+      aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
-    const token = fakeToken(payload);
+    const token = await signedAppleToken(payload);
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
@@ -354,6 +400,32 @@ describe('authMiddleware — Apple token', () => {
     const body = await res.json();
     expect(body.userId).toBe('apple-user-002');
     expect(body.userEmail).toBe('');
+  });
+
+  // 회귀: Authorization 헤더로 직접 Apple id_token 을 들고 오는 경로는
+  // nonce 비교가 불가능하므로 (raw nonce 가 없음) 기존 동작이 유지되어야 한다.
+  // 즉 토큰에 nonce 클레임이 있어도 미들웨어는 통과시킨다.
+  it('토큰에 nonce 클레임이 있어도 미들웨어는 nonce 검사 없이 통과한다', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const payload = {
+        sub: 'apple-user-mw-nonce',
+        email: 'mw-nonce@apple.com',
+        iss: 'https://appleid.apple.com',
+        aud: ENV.APPLE_CLIENT_ID,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        nonce: 'a'.repeat(64),
+      };
+      const token = await signedAppleToken(payload);
+
+      const app = buildApp();
+      const res = await reqWithEnv(app, req(`Bearer ${token}`));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.userId).toBe('apple-user-mw-nonce');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 
@@ -397,20 +469,19 @@ describe('authMiddleware — 토큰 발급자 분기', () => {
     expect(mockVerifyAppJwt).toHaveBeenCalled();
   });
 
-  it('appleid.apple.com issuer는 Apple 경로 (fetch 호출 없음)', async () => {
+  it('appleid.apple.com issuer는 Apple JWKS 검증 경로', async () => {
     const payload = {
       sub: 'apple-u',
       iss: 'https://appleid.apple.com',
-      aud: 'app',
+      aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
-    const token = fakeToken(payload);
-    globalThis.fetch = vi.fn() as unknown as typeof fetch;
+    const token = await signedAppleToken(payload);
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(200);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalled();
     expect(mockVerifyAppJwt).not.toHaveBeenCalled();
   });
 });
@@ -419,13 +490,14 @@ describe('authMiddleware — base64url 디코딩 엣지 케이스', () => {
   it('payload에 패딩 없는 base64url 인코딩도 정상 디코딩', async () => {
     const payload = {
       sub: 'apple-user',
-      iss: 'https://appleid.apple.com',
-      aud: 'app',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
     const header = btoa(JSON.stringify({ alg: 'RS256' }));
     const body = btoa(JSON.stringify(payload));
     const token = `${header}.${body}.sig`;
+    mockVerifyAppJwt.mockResolvedValue(payload);
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));

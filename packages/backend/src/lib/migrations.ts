@@ -759,6 +759,54 @@ export const migrations: Migration[] = [
       `ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'`,
     ],
   },
+  {
+    id: 35,
+    name: 'apple-login-users',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
+  {
+    // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
+    //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+    //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
+    id: 36,
+    name: 'subscriptions-apple-fields',
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+    ],
+  },
+  {
+    id: 37,
+    name: 'voice-profile-relationship-labels',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN relationship_label TEXT`,
+      `CREATE TABLE IF NOT EXISTS voice_profile_relationships (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        voice_profile_id TEXT NOT NULL REFERENCES voice_profiles(id),
+        relationship_label TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, voice_profile_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_user
+        ON voice_profile_relationships(user_id, voice_profile_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

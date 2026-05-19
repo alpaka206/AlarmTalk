@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, CharacterEventEntity::class, HolidayEntity::class],
-    version = 10,
+    version = 13,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -37,6 +37,9 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_7_8,
                     MIGRATION_8_9,
                     MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
+                    MIGRATION_12_13,
                 ).build()
                     .also { instance = it }
             }
@@ -141,6 +144,28 @@ abstract class AlarmDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceRandomPrompt INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceRepeat INTEGER NOT NULL DEFAULT 1")
+            }
+        }
+
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceRandomContext TEXT")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceFortuneGender TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceFortuneBirthDate TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceFortuneBirthTime TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN dynamicVoicePreparedForFireAtMillis INTEGER")
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceWeatherCountry TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceWeatherCity TEXT")
             }
         }
     }

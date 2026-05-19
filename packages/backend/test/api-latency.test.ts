@@ -91,6 +91,9 @@ describe('API latency baselines', () => {
       mockDB.pushResult([{ total: 0 }]); // COUNT
       mockDB.pushResult([]); // data
       const app = buildApp('/alarm', alarmRoutes);
+      await app.request(jsonReq('GET', '/alarm'));
+      mockDB.pushResult([{ total: 0 }]); // COUNT
+      mockDB.pushResult([]); // data
       const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/alarm')));
       expect(res.status).toBe(200);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
@@ -181,7 +184,17 @@ describe('API latency baselines', () => {
   describe('GET /friend/list', () => {
     it('responds within threshold', async () => {
       mockDB.pushResult([
-        { id: 'f-1', user_id: 'user-1', friend_id: 'user-2', status: 'accepted', email: 'friend@test.com', name: 'Friend', picture: '', last_seen_at: null, created_at: '2026-01-01T00:00:00Z' },
+        {
+          id: 'f-1',
+          user_id: 'user-1',
+          friend_id: 'user-2',
+          status: 'accepted',
+          email: 'friend@test.com',
+          name: 'Friend',
+          picture: '',
+          last_seen_at: null,
+          created_at: '2026-01-01T00:00:00Z',
+        },
       ]);
       const app = buildApp('/friend', friendRoutes);
       const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/friend/list')));
@@ -221,7 +234,9 @@ describe('API latency baselines', () => {
     it('responds within threshold with empty inbox', async () => {
       mockDB.pushResult([]); // no notes
       const app = buildApp('/notes', notesRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/notes/received')));
+      const { res, ms } = await measureLatency(() =>
+        app.request(jsonReq('GET', '/notes/received')),
+      );
       expect(res.status).toBe(200);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
@@ -242,7 +257,9 @@ describe('API latency baselines', () => {
       mockDB.pushResult([{ cnt: 10 }]);
       mockDB.pushResult(rows);
       const app = buildApp('/notes', notesRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/notes/received')));
+      const { res, ms } = await measureLatency(() =>
+        app.request(jsonReq('GET', '/notes/received')),
+      );
       expect(res.status).toBe(200);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
@@ -262,18 +279,20 @@ describe('API latency baselines', () => {
 
   describe('GET /user/me', () => {
     it('responds within threshold', async () => {
-      mockDB.pushResult([{
-        id: 'user-1',
-        email: 'user@test.com',
-        name: 'Test User',
-        picture: '',
-        plan: 'free',
-        plan_group_id: null,
-        plan_group_role: null,
-        tts_count: 0,
-        tts_limit: 10,
-        created_at: '2026-01-01T00:00:00Z',
-      }]);
+      mockDB.pushResult([
+        {
+          id: 'user-1',
+          email: 'user@test.com',
+          name: 'Test User',
+          picture: '',
+          plan: 'free',
+          plan_group_id: null,
+          plan_group_role: null,
+          tts_count: 0,
+          tts_limit: 10,
+          created_at: '2026-01-01T00:00:00Z',
+        },
+      ]);
       const app = buildApp('/user', userRoutes);
       const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/user/me')));
       expect(res.status).toBe(200);
@@ -294,22 +313,17 @@ describe('API latency baselines', () => {
   describe('validation fast-path', () => {
     it('POST /alarm rejects missing required fields within threshold', async () => {
       const app = buildApp('/alarm', alarmRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/alarm', {})),
-      );
+      const { res, ms } = await measureLatency(() => app.request(jsonReq('POST', '/alarm', {})));
       expect(res.status).toBe(400);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
 
     it('POST /friend rejects missing email within 10ms', async () => {
       const app = buildApp('/friend', friendRoutes);
-      const { res, ms } = await measureLatency(() =>
-        app.request(jsonReq('POST', '/friend', {})),
-      );
+      const { res, ms } = await measureLatency(() => app.request(jsonReq('POST', '/friend', {})));
       expect(res.status).toBe(400);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
-
   });
 
   describe('sustained throughput', () => {

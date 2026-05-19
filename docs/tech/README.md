@@ -27,7 +27,7 @@ System architecture, database schema, and HTTP API for Naro.
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
    │ 22 tables    │  │ voice + tts  │  │ ElevenLabs           │
-   │ 18 migrations│  │ objects      │  │ Google JWKS          │
+   │ 35 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -111,7 +111,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Cloudflare R2 | Object store (voice / TTS) | Workers binding `VOICE_BUCKET` |
 | ElevenLabs | Voice clone + TTS | HTTPS REST |
 | Google JWKS | ID token verification | HTTPS |
-| Apple JWKS | ID token verification (hardening pending) | HTTPS |
+| Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
 | Sentry | Error capture | toucan-js (server) + client SDK (optional) |
 
 ### Failure domains
@@ -149,7 +149,7 @@ Backend secrets are managed as Cloudflare Worker secrets:
 - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
 - `ELEVENLABS_API_KEY`
 - `SENTRY_DSN`
-- `GOOGLE_OAUTH_CLIENT_ID`, `APPLE_OAUTH_CLIENT_ID`
+- `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`
 
 R2 binding: `VOICE_BUCKET → voice-alarm-voices`.
 
@@ -159,7 +159,7 @@ Cron: `* * * * *` (1-minute interval) handles subscription expiry and downgrade.
 
 - **DB**: Turso (libSQL / SQLite)
 - **Tables**: 22 + `_migrations`
-- **Migrations**: 18, defined in `packages/backend/src/lib/migrations.ts`
+- **Migrations**: 35, defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
@@ -318,6 +318,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | 16 | user-last-active | `users.last_active_at` |
 | 17 | alarm-wake-mode | `alarms.wake_mode` |
 | 18 | notes-table | `notes` |
+| 35 | apple-login-users | `users.apple_id` + unique nullable Apple ID index |
 
 ### Operations
 
@@ -379,6 +380,15 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 Req:  { "email": "u@x.com", "password": "********", "name": "Sue" }
 Res:  { "token": "...", "user": { "id": "...", "email": "u@x.com", "name": "Sue", "plan": "free" } }
 ```
+
+#### `POST /auth/apple`
+
+```json
+Req:  { "id_token": "<apple identity token>", "email": "u@privaterelay.appleid.com", "name": "Sue" }
+Res:  { "token": "...", "user": { "id": "...", "email": "u@privaterelay.appleid.com", "name": "Sue", "plan": "free" } }
+```
+
+The backend verifies the Apple token signature against Apple JWKS, checks issuer, audience (`APPLE_CLIENT_ID`), and expiry, links `users.apple_id`, then returns the app JWT used by native clients.
 
 #### `POST /voice/clone` (multipart)
 

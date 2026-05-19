@@ -69,6 +69,7 @@ internal fun VoiceAudioCard(
     onCropChange: (Long, Long) -> Unit,
     onPreviewCrop: () -> Unit,
     onPreviewAudio: () -> Unit,
+    onCreateVoiceProfileClick: () -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
     onOpenVoiceTranslationSettings: () -> Unit,
     onClear: () -> Unit,
@@ -77,6 +78,29 @@ internal fun VoiceAudioCard(
         VoiceSources.TTS_PROFILE
     } else {
         editor.voiceSource
+    }
+    val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
+    val readyFamilyVoices = familyVoices.filter {
+        (it.status == null || it.status == "ready") && it.isShared != false
+    }
+    val profileOptions = readyProfiles.map {
+        VoiceProfileOption(
+            id = it.id,
+            name = it.name,
+            detail = ownedVoiceDetail(it),
+        )
+    } +
+        readyFamilyVoices.map { profile ->
+            VoiceProfileOption(
+                id = profile.id,
+                name = profile.name,
+                detail = sharedVoiceDetail(profile),
+            )
+        }
+    val hasConfiguredVoice = when (visibleVoiceSource) {
+        VoiceSources.TTS_PROFILE -> profileOptions.isNotEmpty() || !editor.localAudioUri.isNullOrBlank()
+        VoiceSources.LOCAL_AUDIO -> !editor.localAudioUri.isNullOrBlank() || selectedFileDurationMillis != null
+        else -> false
     }
 
     LaunchedEffect(editor.voiceSource) {
@@ -108,24 +132,6 @@ internal fun VoiceAudioCard(
             )
 
             if (visibleVoiceSource == VoiceSources.TTS_PROFILE) {
-                val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
-                val readyFamilyVoices = familyVoices.filter {
-                    (it.status == null || it.status == "ready") && it.isShared != false
-                }
-                val profileOptions = readyProfiles.map {
-                    VoiceProfileOption(
-                        id = it.id,
-                        name = it.name,
-                        detail = if (it.isShared == true) "내 알람 음성 · 공유 중" else "내 알람 음성",
-                    )
-                } +
-                    readyFamilyVoices.map { profile ->
-                        VoiceProfileOption(
-                            id = profile.id,
-                            name = profile.name,
-                            detail = sharedVoiceDetail(profile),
-                        )
-                    }
                 LaunchedEffect(visibleVoiceSource, voiceProfileBusy, profileOptions, editor.voiceProfileId) {
                     if (
                         visibleVoiceSource == VoiceSources.TTS_PROFILE &&
@@ -145,10 +151,8 @@ internal fun VoiceAudioCard(
                 Text("알람에 들을 목소리", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
                     MutedText("알람 음성을 불러오는 중이에요.")
-                } else if (voiceProfiles.isEmpty() && readyFamilyVoices.isEmpty()) {
-                    MutedText("아직 사용할 목소리가 없어요.")
                 } else if (profileOptions.isEmpty()) {
-                    MutedText("준비 완료된 목소리가 아직 없어요.")
+                    NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
                     VoiceProfileOptionList(
                         options = profileOptions,
@@ -182,52 +186,53 @@ internal fun VoiceAudioCard(
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("랜덤 생성", fontWeight = FontWeight.SemiBold)
-                    }
-                    VoiceAlarmSwitch(
-                        checked = editor.voiceRandomPrompt,
-                        onCheckedChange = {
-                            editor.voiceRandomPrompt = it
-                            editor.clearTtsMeta()
-                            if (it) {
-                                editor.voiceText = ""
-                                if (TtsLanguages.none { (language, _) -> language == editor.voiceLanguage }) {
-                                    editor.voiceLanguage = "ko"
+                if (profileOptions.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("랜덤 생성", fontWeight = FontWeight.SemiBold)
+                        }
+                        VoiceAlarmSwitch(
+                            checked = editor.voiceRandomPrompt,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    onOpenRandomPromptSettings()
+                                } else {
+                                    editor.voiceRandomPrompt = false
+                                    editor.clearAudio()
+                                    editor.clearTtsMeta()
                                 }
-                            }
-                        },
-                    )
-                }
-                if (!editor.voiceRandomPrompt) {
-                    ManualVoiceMessageField(
-                        text = editor.voiceText,
-                        translationEnabled = editor.voiceTranslationEnabled,
-                        language = editor.voiceLanguage,
-                        onTextChange = {
-                            editor.voiceText = it.take(200)
-                            editor.clearTtsMeta()
-                        },
-                        onTranslationEnabledChange = { enabled ->
-                            editor.voiceTranslationEnabled = enabled
-                            if (enabled && editor.voiceLanguage == "ko") {
-                                editor.voiceLanguage = "en"
-                            }
-                            editor.clearTtsMeta()
-                        },
-                        onOpenTranslationSettings = onOpenVoiceTranslationSettings,
-                    )
-                } else {
-                    RandomPromptSummaryRow(
-                        category = editor.voiceCategory,
-                        language = editor.voiceLanguage,
-                        onClick = onOpenRandomPromptSettings,
-                    )
+                            },
+                        )
+                    }
+                    if (!editor.voiceRandomPrompt) {
+                        ManualVoiceMessageField(
+                            text = editor.voiceText,
+                            translationEnabled = editor.voiceTranslationEnabled,
+                            language = editor.voiceLanguage,
+                            onTextChange = {
+                                editor.voiceText = it.take(200)
+                                editor.clearTtsMeta()
+                            },
+                            onTranslationEnabledChange = { enabled ->
+                                editor.voiceTranslationEnabled = enabled
+                                if (enabled && editor.voiceLanguage == "ko") {
+                                    editor.voiceLanguage = "en"
+                                }
+                                editor.clearTtsMeta()
+                            },
+                            onOpenTranslationSettings = onOpenVoiceTranslationSettings,
+                        )
+                    } else {
+                        RandomPromptSummaryRow(
+                            language = editor.voiceLanguage,
+                            randomContext = editor.voiceRandomContext,
+                            onClick = onOpenRandomPromptSettings,
+                        )
+                    }
                 }
             } else {
                 VoiceCaptureModeSelector(
@@ -296,7 +301,7 @@ internal fun VoiceAudioCard(
                     )
                 }
             }
-            if (editor.playMode == AlarmPlayModes.VOICE_ONLY) {
+            if (editor.playMode == AlarmPlayModes.VOICE_ONLY && hasConfiguredVoice) {
                 VoiceRepeatSelector(
                     repeat = editor.voiceRepeat,
                     onRepeatChange = {
@@ -323,6 +328,36 @@ private data class VoiceProfileOption(
     val name: String,
     val detail: String,
 )
+
+@Composable
+private fun NoUsableVoiceProfileCallout(
+    onCreateVoiceProfileClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "아직 사용할 목소리가 없어요.",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(
+                onClick = onCreateVoiceProfileClick,
+                shape = VocaWakeButtonShape,
+            ) {
+                Text("음성 생성하러 가기")
+            }
+        }
+    }
+}
 
 @Composable
 private fun VoiceProfileOptionList(
@@ -481,12 +516,12 @@ private fun ManualTranslationRow(
 
 @Composable
 private fun RandomPromptSummaryRow(
-    category: String,
     language: String,
+    randomContext: String,
     onClick: () -> Unit,
 ) {
-    val categoryLabel = voiceOptionLabel(TtsCategories, normalizedTtsCategory(category))
     val languageLabel = voiceOptionLabel(TtsLanguages, language)
+    val contextLabel = voiceOptionLabel(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -503,7 +538,7 @@ private fun RandomPromptSummaryRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text("랜덤 문구 설정", fontWeight = FontWeight.SemiBold)
-                MutedText("$categoryLabel · $languageLabel")
+                MutedText("$contextLabel · $languageLabel")
             }
             Spacer(Modifier.width(12.dp))
             Text(
@@ -606,9 +641,17 @@ private fun voiceOptionLabel(options: List<Pair<String, String>>, value: String)
 
 private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
-    return if (owner == null) {
+    val base = if (owner == null) {
         "공유 음성"
     } else {
         "공유 음성 · $owner"
     }
+    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
+    return relation?.let { "$base · 관계 $it" } ?: base
+}
+
+private fun ownedVoiceDetail(profile: VoiceProfile): String {
+    val base = if (profile.isShared == true) "내 알람 음성 · 공유 중" else "내 알람 음성"
+    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
+    return relation?.let { "$base · 관계 $it" } ?: base
 }

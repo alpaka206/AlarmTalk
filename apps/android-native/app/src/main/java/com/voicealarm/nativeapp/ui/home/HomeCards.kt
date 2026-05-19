@@ -229,7 +229,7 @@ internal fun QuickStartGrid(
         }
         if (canCreateFamilyAlarm) {
             HomeActionCard(
-                label = "함께",
+                label = "다른 사람 알람 맞춰주기",
                 icon = Icons.Outlined.People,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,

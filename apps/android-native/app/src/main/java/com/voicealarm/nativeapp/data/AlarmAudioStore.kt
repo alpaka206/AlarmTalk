@@ -17,6 +17,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
+import kotlin.math.abs
 
 object AlarmAudioLimits {
     const val MAX_DURATION_MILLIS = 30_000L
@@ -219,6 +220,120 @@ class AlarmAudioStore(
         }
     }
 
+    fun readWaveformLevels(uri: Uri, bins: Int = 48): List<Float> {
+        val safeBins = bins.coerceIn(12, 120)
+        val durationMillis = readDurationMillis(uri)?.coerceAtLeast(1L) ?: return emptyList()
+        val extractor = MediaExtractor()
+        var codec: MediaCodec? = null
+        return runCatching {
+            extractor.setDataSource(context, uri, null)
+            val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
+                extractor.getTrackFormat(index)
+                    .getString(MediaFormat.KEY_MIME)
+                    ?.startsWith("audio/") == true
+            } ?: return@runCatching emptyList()
+            val format = extractor.getTrackFormat(trackIndex)
+            val mimeType = format.getString(MediaFormat.KEY_MIME) ?: return@runCatching emptyList()
+            var sampleRate = format.integerOrNull(MediaFormat.KEY_SAMPLE_RATE)?.takeIf { it > 0 } ?: 44_100
+            var channelCount = format.integerOrNull(MediaFormat.KEY_CHANNEL_COUNT)?.coerceAtLeast(1) ?: 1
+            extractor.selectTrack(trackIndex)
+            val decoder = MediaCodec.createDecoderByType(mimeType)
+            codec = decoder
+            decoder.configure(format, null, null, 0)
+            decoder.start()
+
+            val sums = DoubleArray(safeBins)
+            val counts = LongArray(safeBins)
+            val info = MediaCodec.BufferInfo()
+            var inputDone = false
+            var outputDone = false
+            var idleOutputCount = 0
+
+            while (!outputDone) {
+                if (!inputDone) {
+                    val inputIndex = decoder.dequeueInputBuffer(DECODE_TIMEOUT_US)
+                    if (inputIndex >= 0) {
+                        val inputBuffer = decoder.getInputBuffer(inputIndex)
+                        val sampleSize = if (inputBuffer != null) {
+                            inputBuffer.clear()
+                            extractor.readSampleData(inputBuffer, 0)
+                        } else {
+                            -1
+                        }
+                        if (sampleSize < 0) {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                0,
+                                0L,
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
+                            )
+                            inputDone = true
+                        } else {
+                            decoder.queueInputBuffer(
+                                inputIndex,
+                                0,
+                                sampleSize,
+                                extractor.sampleTime.coerceAtLeast(0L),
+                                0,
+                            )
+                            extractor.advance()
+                        }
+                    }
+                }
+
+                when (val outputIndex = decoder.dequeueOutputBuffer(info, DECODE_TIMEOUT_US)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        val outputFormat = decoder.outputFormat
+                        sampleRate = outputFormat.integerOrNull(MediaFormat.KEY_SAMPLE_RATE)
+                            ?.takeIf { it > 0 }
+                            ?: sampleRate
+                        channelCount = outputFormat.integerOrNull(MediaFormat.KEY_CHANNEL_COUNT)
+                            ?.coerceAtLeast(1)
+                            ?: channelCount
+                    }
+
+                    MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                        idleOutputCount += 1
+                        if (inputDone && idleOutputCount > MAX_IDLE_OUTPUT_DEQUEUE_COUNT) {
+                            outputDone = true
+                        }
+                    }
+
+                    else -> if (outputIndex >= 0) {
+                        idleOutputCount = 0
+                        val outputBuffer = decoder.getOutputBuffer(outputIndex)
+                        if (outputBuffer != null && info.size > 0) {
+                            outputBuffer.position(info.offset)
+                            outputBuffer.limit(info.offset + info.size)
+                            collectPcmWaveformLevels(
+                                buffer = outputBuffer,
+                                presentationTimeUs = info.presentationTimeUs.coerceAtLeast(0L),
+                                sampleRate = sampleRate,
+                                channelCount = channelCount,
+                                durationMillis = durationMillis,
+                                sums = sums,
+                                counts = counts,
+                            )
+                        }
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            outputDone = true
+                        }
+                        decoder.releaseOutputBuffer(outputIndex, false)
+                    }
+                }
+            }
+
+            normalizeWaveformLevels(sums, counts)
+        }.onFailure { error ->
+            Log.w(TAG, "Unable to read audio waveform uri=$uri", error)
+        }.getOrDefault(emptyList()).also {
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            extractor.release()
+        }
+    }
+
     private fun normalizeDurationWithinLimit(
         durationMillis: Long?,
         maxDurationMillis: Long,
@@ -352,6 +467,54 @@ class AlarmAudioStore(
         }.getOrThrow()
     }
 
+    private fun collectPcmWaveformLevels(
+        buffer: ByteBuffer,
+        presentationTimeUs: Long,
+        sampleRate: Int,
+        channelCount: Int,
+        durationMillis: Long,
+        sums: DoubleArray,
+        counts: LongArray,
+    ) {
+        val safeSampleRate = sampleRate.coerceAtLeast(1)
+        val safeChannelCount = channelCount.coerceAtLeast(1)
+        val bytesPerFrame = safeChannelCount * 2
+        var frameIndex = 0L
+        while (buffer.remaining() >= bytesPerFrame) {
+            var frameLevel = 0.0
+            repeat(safeChannelCount) {
+                val low = buffer.get().toInt() and 0xff
+                val high = buffer.get().toInt()
+                val sample = ((high shl 8) or low).toShort().toInt()
+                frameLevel += abs(sample) / PCM_16BIT_MAX_LEVEL
+            }
+            val frameTimeMillis = (presentationTimeUs + (frameIndex * 1_000_000L / safeSampleRate)) / 1_000L
+            val bin = (frameTimeMillis * sums.size / durationMillis)
+                .toInt()
+                .coerceIn(0, sums.lastIndex)
+            sums[bin] += frameLevel / safeChannelCount
+            counts[bin] += 1
+            frameIndex += 1
+        }
+    }
+
+    private fun normalizeWaveformLevels(
+        sums: DoubleArray,
+        counts: LongArray,
+    ): List<Float> {
+        if (counts.all { it == 0L }) return emptyList()
+        val rawLevels = sums.indices.map { index ->
+            if (counts[index] > 0L) sums[index] / counts[index] else 0.0
+        }
+        val maxLevel = rawLevels.maxOrNull() ?: 0.0
+        if (maxLevel <= 0.0) return List(sums.size) { 0.05f }
+        return rawLevels.map { level ->
+            (0.06 + (level / maxLevel) * 0.94)
+                .toFloat()
+                .coerceIn(0.05f, 1f)
+        }
+    }
+
     private fun audioTrackMime(uri: Uri): String? {
         val extractor = MediaExtractor()
         return runCatching {
@@ -435,6 +598,9 @@ class AlarmAudioStore(
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
         private const val DURATION_METADATA_TOLERANCE_MILLIS = 750L
+        private const val DECODE_TIMEOUT_US = 10_000L
+        private const val MAX_IDLE_OUTPUT_DEQUEUE_COUNT = 20
+        private const val PCM_16BIT_MAX_LEVEL = 32768.0
 
         fun ttsCacheKey(
             profileId: String,
@@ -480,3 +646,10 @@ private data class CachedAudioMetadata(
     val rawAudioUri: String? = null,
     val messageId: String? = null,
 )
+
+private fun MediaFormat.integerOrNull(key: String): Int? =
+    if (containsKey(key)) {
+        runCatching { getInteger(key) }.getOrNull()
+    } else {
+        null
+    }
