@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// 스누즈 반복 횟수(1 / 3 / 5 / 무제한) segmented selector.
+/// 스누즈 반복 횟수(3 / 5 / 무제한) segmented selector.
 ///
-/// Android `AlarmSettingsCard.kt` 의 `snoozeRepeatLabel` 4종을 칩 행으로
-/// 재현. `SnoozeRepeatLimit` 의 raw value(`0/1/3/5`) 와 양방향 바인딩한다.
+/// Android `AlarmSettingsCard.kt` 의 `snoozeRepeatLabel` 3종을 칩 행으로
+/// 재현. `SnoozeRepeatLimit` 의 raw value(`0/3/5`) 와 양방향 바인딩한다.
 struct SnoozeRepeatLimitPicker: View {
     @Binding var limit: SnoozeRepeatLimit
 
     @Environment(\.voiceAlarmTheme) private var theme
 
-    private let options: [SnoozeRepeatLimit] = [.once, .three, .five, .unlimited]
+    private let options: [SnoozeRepeatLimit] = [.three, .five, .unlimited]
 
     var body: some View {
         HStack(spacing: 8) {
@@ -63,7 +63,6 @@ struct SnoozeRepeatLimitPicker: View {
 extension SnoozeRepeatLimit {
     var shortLabel: String {
         switch self {
-        case .once: return "1회"
         case .three: return "3회"
         case .five: return "5회"
         case .unlimited: return "무제한"
@@ -72,7 +71,6 @@ extension SnoozeRepeatLimit {
 
     var fullLabel: String {
         switch self {
-        case .once: return "1회"
         case .three: return "3회"
         case .five: return "5회"
         case .unlimited: return "무제한"

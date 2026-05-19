@@ -53,9 +53,9 @@ final class AlarmEnumsTests: XCTestCase {
 
     func test_snoozeRepeatLimitValidValues() {
         XCTAssertTrue(SnoozeRepeatLimit.isValid(0))
-        XCTAssertTrue(SnoozeRepeatLimit.isValid(1))
         XCTAssertTrue(SnoozeRepeatLimit.isValid(3))
         XCTAssertTrue(SnoozeRepeatLimit.isValid(5))
+        XCTAssertFalse(SnoozeRepeatLimit.isValid(1))
         XCTAssertFalse(SnoozeRepeatLimit.isValid(2))
         XCTAssertFalse(SnoozeRepeatLimit.isValid(99))
     }

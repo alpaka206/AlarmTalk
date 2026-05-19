@@ -92,6 +92,10 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
+        if let ctx = AlarmAppContext.shared,
+           !ctx.canSnooze(alarmKitIDString: uuid.uuidString) {
+            return .result()
+        }
         do {
             try AlarmManager.shared.countdown(id: uuid)
         } catch {
