@@ -50,22 +50,33 @@ voiceUpload.post('/upload', async (c) => {
   let formData: FormData;
   try {
     formData = await c.req.formData();
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] formData parse failed', err);
     return c.json({ error: 'multipart/form-data body required', error_code: 'MULTIPART_BODY_REQUIRED' }, 400);
   }
 
   const audioFile = getFormFile(formData, 'audio');
+  // eslint-disable-next-line no-console
+  console.log('[voice/upload] keys', Array.from(formData.keys()).join(','), 'audio?', !!audioFile, 'type=', (audioFile as File | null)?.type, 'name=', (audioFile as File | null)?.name, 'size=', (audioFile as File | null)?.size, 'durationMs=', formData.get('durationMs'));
+
   if (!audioFile || typeof audioFile === 'string') {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] AUDIO_FILE_REQUIRED');
     return c.json({ error: 'audio file is required', error_code: 'AUDIO_FILE_REQUIRED' }, 400);
   }
 
   const mimeType = audioFile.type || 'application/octet-stream';
   if (!mimeType.startsWith('audio/')) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] INVALID_AUDIO_MIME_TYPE', mimeType);
     return c.json({ error: 'audio/* MIME type required', error_code: 'INVALID_AUDIO_MIME_TYPE' }, 415);
   }
 
   const buffer = await audioFile.arrayBuffer();
   if (buffer.byteLength === 0) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] AUDIO_FILE_EMPTY');
     return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
   }
   if (buffer.byteLength > MAX_UPLOAD_BYTES) {
@@ -77,13 +88,19 @@ voiceUpload.post('/upload', async (c) => {
 
   const durationRaw = formData.get('durationMs');
   if (typeof durationRaw !== 'string' || durationRaw.length === 0) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] INVALID_DURATION raw=', durationRaw);
     return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
   }
   const durationMs = Number.parseInt(durationRaw, 10);
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] INVALID_DURATION parsed=', durationMs);
     return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
   }
   if (durationMs < MIN_UPLOAD_DURATION_MS) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] AUDIO_DURATION_TOO_SHORT', durationMs);
     return c.json(
       {
         error: `audio file must be at least ${MIN_UPLOAD_DURATION_MS / 1000} seconds`,
@@ -93,6 +110,8 @@ voiceUpload.post('/upload', async (c) => {
     );
   }
   if (durationMs > MAX_UPLOAD_DURATION_MS) {
+    // eslint-disable-next-line no-console
+    console.error('[voice/upload] AUDIO_DURATION_TOO_LONG', durationMs);
     return c.json(
       {
         error: `audio file exceeds ${MAX_UPLOAD_DURATION_MS / 1000} seconds`,
