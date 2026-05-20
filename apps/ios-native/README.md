@@ -170,5 +170,5 @@ xcodegen 후 Xcode 에서:
 `SocialFeatureViewModel.checkout(planKey:)` 는 `@available(*, deprecated)` 마크되었다. 비-IAP 흐름 중 다음만 살아남는다.
 
 - `/api/billing/vouchers/family-share` — 가족 공유 코드 발급.
-- `/api/billing/vouchers/redeem` — 외부 voucher/INV 코드 redeem.
+- `/api/billing/redeem` — 외부 voucher/INV 코드 redeem.
 - `/api/billing/cancel` — 구독 해지 예약.

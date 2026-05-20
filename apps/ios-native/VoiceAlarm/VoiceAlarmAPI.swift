@@ -600,12 +600,12 @@ struct EmailLoginRequest: Encodable {
 }
 
 struct FamilyVoiceAlarmRequest: Encodable {
-    var targetUserId: String
-    var voiceProfileId: String
-    var time: String
+    var recipientUserId: String
+    var wakeAt: String
+    var voiceUploadId: String
+    var label: String?
+    var dubTargetLanguage: String?
     var repeatDays: [Int]
-    var messageId: String?
-    var snoozeMinutes: Int?
 }
 
 struct FamilyVoiceAlarmResponse: Decodable, Equatable {
