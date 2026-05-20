@@ -65,7 +65,9 @@ data class VoiceProfileRelationshipUpdateRequest(
 
 data class VoiceProfile(
     val id: String,
-    val name: String,
+    // Gson 은 JSON 에 name 이 누락되거나 null 이어도 기본값을 통하지 않고 그대로 null 을 주입할 수 있어
+    // 추후 NPE 를 막기 위해 기본값을 부여한다.
+    val name: String = "",
     val status: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
