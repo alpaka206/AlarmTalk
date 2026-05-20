@@ -451,14 +451,40 @@ function alarmTextPrompt(args: {
   ].join('\n');
 }
 
+// 한국어일 때 관계 라벨에 맞는 어체(반말/해요체/합니다체) 가이드를 추가한다.
+// 알람 청자는 보통 부모/조부모 (어른) 이라는 가정을 기본으로 깔고, speaker(말하는 사람)
+// 가 어떤 관계냐에 따라 자연스러운 한국어 화법을 매핑한다.
+function koreanRegisterGuidance(relationshipLabel: string | null | undefined): string {
+  if (!relationshipLabel) return '';
+  const label = relationshipLabel.trim();
+  if (!label) return '';
+  const youngerToElder = ['손녀', '손자', '손주', '딸', '아들', '자식', '며느리', '사위', '조카'];
+  const elderToYounger = ['할머니', '할아버지', '엄마', '어머니', '아빠', '아버지', '부모', '이모', '고모', '삼촌', '외할머니', '외할아버지'];
+  const peerOrIntimate = ['친구', '연인', '여자친구', '남자친구', '애인', '여보', '자기', '동생'];
+
+  if (youngerToElder.some((k) => label.includes(k))) {
+    return ' Speaker is younger than the listener: write in warm 해요체 (e.g. "할머니, 일어나셨어요?", "오늘은 ~해요"). Do NOT use stiff 합니다체 like "~합니다", "~하십시오". Sound like family talking, not a TV news anchor.';
+  }
+  if (elderToYounger.some((k) => label.includes(k))) {
+    return ' Speaker is older than the listener: write in caring 반말 or 해요체 mixed style (e.g. "우리 딸, 잘 잤어?", "오늘도 화이팅이야"). Avoid 합니다체.';
+  }
+  if (peerOrIntimate.some((k) => label.includes(k))) {
+    return ' Speaker and listener are peers/intimate: write in 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). Never use 합니다체.';
+  }
+  return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
+}
+
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
   const listenerTitle = context.listenerTitle?.trim();
   const listenerInstruction = listenerTitle
     ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
     : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
+  const koreanRegisterInstruction = context.targetLanguage === 'ko'
+    ? koreanRegisterGuidance(context.relationshipLabel?.trim())
+    : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it only to shape warmth and tone. ${listenerInstruction} Do not invent names or private facts.`
+    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it to shape both warmth AND the speaker's natural speech register (반말 / 해요체 / 합니다체 in Korean). ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
@@ -490,6 +516,12 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     listenerTitle
       ? `Address the listener as "${listenerTitle}" rather than guessing a family title.`
       : 'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
+    context.targetLanguage === 'ko'
+      ? '한국어 어체 규칙: 가족·친구·연인 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀→조부모, 자식→부모 등 손아랫사람이 손윗사람에게 말할 때는 친근한 해요체 ("~해요", "~예요"). 부모→자식, 형/누나→동생 등은 다정한 반말 또는 해요체 혼용. 친구·연인 사이는 반말. 뉴스 앵커처럼 들리지 않게 진짜 가족이 옆에서 말하는 톤으로.'
+      : '',
+    context.targetLanguage === 'ko'
+      ? '문장 구조 예시 (손녀가 할아버지에게 비 오는 날 깨우는 wake_weather): "할아버지, 일어나세요! 오늘 서울에는 비가 와요. 나가실 때 우산 챙기시고, 건강하세요!" — 호칭으로 시작, 짧은 문장 3~4개, 마지막에 안부/응원으로 마무리. 이 패턴을 따르되 내용은 컨텍스트에 맞게 새로 작성.'
+      : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     'No markdown, no emojis, no quotes, no explanations, no extra fields.',
     'Keep the final text spoken, kind, and 200 characters or fewer.',
