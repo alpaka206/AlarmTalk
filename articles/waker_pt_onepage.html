@@ -79,7 +79,8 @@ html, body {
   grid-row: 2;
   display: flex;
   flex-direction: column;
-  width: 100%;
+  width: fit-content;
+  max-width: min(36ch, 100%);
 }
 
 /* ==== Sequential reveal cover ==== */
@@ -115,10 +116,10 @@ html, body {
 .q-tl {
   background: var(--mustard-bg);
   color: var(--mustard-deep);
-  justify-items: start;
+  justify-items: center;
   text-align: left;
 }
-.q-tl .quad-content { align-items: flex-start; }
+.q-tl .quad-content { align-items: flex-start; text-align: left; }
 .q-tl::before {
   background:
     radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.45), transparent 60%),
@@ -128,10 +129,10 @@ html, body {
 .q-tr {
   background: var(--navy-bg);
   color: var(--navy-deep);
-  justify-items: end;
+  justify-items: center;
   text-align: right;
 }
-.q-tr .quad-content { align-items: flex-end; }
+.q-tr .quad-content { align-items: flex-end; text-align: right; }
 .q-tr::before {
   background:
     radial-gradient(circle at 0% 100%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -141,10 +142,10 @@ html, body {
 .q-bl {
   background: var(--green-bg);
   color: var(--green-deep);
-  justify-items: start;
+  justify-items: center;
   text-align: left;
 }
-.q-bl .quad-content { align-items: flex-start; }
+.q-bl .quad-content { align-items: flex-start; text-align: left; }
 .q-bl::before {
   background:
     radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -154,10 +155,10 @@ html, body {
 .q-br {
   background: var(--terra-bg);
   color: var(--terra-deep);
-  justify-items: end;
+  justify-items: center;
   text-align: right;
 }
-.q-br .quad-content { align-items: flex-end; }
+.q-br .quad-content { align-items: flex-end; text-align: right; }
 .q-br::before {
   background:
     radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -212,7 +213,8 @@ html, body {
   font-weight: 500;
   line-height: 1.55;
   opacity: 0.78;
-  max-width: 100%;
+  max-width: fit-content;
+  max-width: min(36ch, 100%);
   margin: var(--gap-tt) 0 0;
 }
 .q-tr .copy, .q-br .copy { margin-left: auto; }
@@ -269,7 +271,8 @@ html, body {
   cursor: default;
 }
 .modal-content video {
-  width: 100%;
+  width: fit-content;
+  max-width: min(36ch, 100%);
   height: 100%;
   object-fit: contain;
   background: #000;
