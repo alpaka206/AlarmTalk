@@ -11,6 +11,8 @@ struct SettingsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
     @State private var nicknameDraft: String = ""
+    /// "설정 불가 시간" 편집 모달 표시 플래그.
+    @State private var quietDialogOpen: Bool = false
 
     /// 보조 화면 요청 — 부모가 settingsPresented 를 false 로 만들고,
     /// 시트 dismiss 후 auxiliaryScreen 을 세팅한다.
@@ -66,7 +68,27 @@ struct SettingsView: View {
                             }
                         }
                         Divider()
-                        SettingsRow(label: "설정 불가 시간", value: HelperFormatters.quietScheduleLabel(user.familyAlarmQuietWindows))
+                        // Android `FamilyAlarmQuietTimeDialog` 와 동등 — 라벨 부분은 현재 값을
+                        // 그대로 보여주고, 탭 시 편집 모달을 띄운다.
+                        Button {
+                            quietDialogOpen = true
+                        } label: {
+                            HStack {
+                                Text("설정 불가 시간")
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(VoiceAlarmTheme.text)
+                                Spacer()
+                                Text(HelperFormatters.quietScheduleLabel(user.familyAlarmQuietWindows))
+                                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                     .settingsCard(title: "공유 알람")
 
@@ -84,6 +106,20 @@ struct SettingsView: View {
         .background(VoiceAlarmTheme.background)
         .onAppear {
             nicknameDraft = auth.session?.user.name ?? ""
+        }
+        .sheet(isPresented: $quietDialogOpen) {
+            FamilyAlarmQuietTimeDialog(
+                initialWindows: auth.session?.user.familyAlarmQuietWindows ?? [],
+                onCancel: { quietDialogOpen = false },
+                onConfirm: { windows in
+                    quietDialogOpen = false
+                    Task {
+                        await auth.updateProfile(quietWindows: windows)
+                        await socialFeatures.refreshAll(session: auth.session)
+                    }
+                }
+            )
+            .presentationDetents([.large])
         }
     }
 }

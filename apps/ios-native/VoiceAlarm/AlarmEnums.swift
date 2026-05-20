@@ -175,6 +175,34 @@ enum VoiceProfileAudioLimits {
     static let maxDurationMillis: Int64 = 120_000
 }
 
+// MARK: - Random Prompt Context
+// Android: `TtsApi.kt:17` `randomContext`. 랜덤 깨움말 생성 시 함께 보내는
+// 컨텍스트 키. 백엔드가 컨텍스트별 프롬프트 템플릿/추가 입력값 (날씨/운세 등) 을
+// 결정한다. 추가 컨텍스트는 백엔드 합의 후 enum case 만 늘리면 된다.
+enum RandomPromptContext: String, CaseIterable, Identifiable {
+    case preset
+    case wakeWeather = "wake_weather"
+    case wakeFortune = "wake_fortune"
+    case meal
+    case sleep
+    case exercise
+    case love
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .preset: return "기본"
+        case .wakeWeather: return "날씨"
+        case .wakeFortune: return "운세"
+        case .meal: return "식사"
+        case .sleep: return "수면"
+        case .exercise: return "운동"
+        case .love: return "사랑"
+        }
+    }
+}
+
 // MARK: - Default Alarm Sound IDs
 // Android: `AlarmEntity.kt:174-176` `DefaultAlarmSounds`
 enum DefaultAlarmSounds {

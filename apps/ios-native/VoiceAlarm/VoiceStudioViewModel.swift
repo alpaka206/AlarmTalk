@@ -36,6 +36,10 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var ttsLanguage = "ko"
     @Published var translateText = false
     @Published var randomPrompt = false
+    /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
+    /// 허용 값: preset / wake_weather / wake_fortune / meal / sleep / exercise / love.
+    /// randomPrompt 가 true 일 때만 의미가 있다.
+    @Published var randomContext: String = "preset"
     @Published var cloneName = "내 목소리"
     @Published var isBusy = false
     @Published var statusMessage: String?
@@ -122,7 +126,11 @@ final class VoiceStudioViewModel: ObservableObject {
         statusMessage = "녹음을 저장했어요. \(recordingDurationLabel)"
     }
 
-    func uploadRecordingForClone(session: AuthSession?) async {
+    func uploadRecordingForClone(
+        session: AuthSession?,
+        isShared: Bool = false,
+        listenerTitle: String? = nil
+    ) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
@@ -145,9 +153,10 @@ final class VoiceStudioViewModel: ObservableObject {
             let profile = try await api.cloneVoice(
                 audioFileURL: url,
                 name: cloneName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "내 목소리" : cloneName,
-                isShared: false,
+                isShared: isShared,
                 durationMs: durationMs,
-                token: token
+                token: token,
+                listenerTitle: listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
@@ -163,7 +172,8 @@ final class VoiceStudioViewModel: ObservableObject {
         name: String,
         durationMs: Int,
         isShared: Bool,
-        session: AuthSession?
+        session: AuthSession?,
+        listenerTitle: String? = nil
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -179,7 +189,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
-                noiseRemoval: true
+                noiseRemoval: true,
+                listenerTitle: listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
@@ -188,6 +199,35 @@ final class VoiceStudioViewModel: ObservableObject {
         } catch {
             statusMessage = mapVoiceError(error)
             return nil
+        }
+    }
+
+    /// 공유받은 음성에 viewer 의 관계·호칭을 등록한다.
+    /// `VoiceProfileManagementPanel` 의 SharedVoiceViewerInfoDialog 가 호출.
+    func updateSharedVoiceViewerInfo(
+        profileId: String,
+        relationshipLabel: String,
+        listenerTitle: String,
+        session: AuthSession?
+    ) async {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await api.updateVoiceProfileRelationship(
+                profileId: profileId,
+                relationshipLabel: relationshipLabel,
+                listenerTitle: listenerTitle,
+                token: token
+            )
+            statusMessage = "공유 음성 정보를 저장했어요."
+            await refresh(session: session)
+        } catch {
+            statusMessage = mapVoiceError(error)
         }
     }
 
@@ -321,7 +361,8 @@ final class VoiceStudioViewModel: ObservableObject {
                     category: ttsCategory,
                     language: ttsLanguage,
                     translate: translateText,
-                    random: randomPrompt
+                    random: randomPrompt,
+                    randomContext: randomPrompt ? randomContext : nil
                 ),
                 token: token
             )

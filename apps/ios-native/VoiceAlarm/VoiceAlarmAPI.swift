@@ -90,11 +90,46 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var status: String?
     var createdAt: String?
     var isShared: Bool?
+    /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
+    /// Android `VoiceProfileApi.kt:72`.
+    var isDraft: Bool?
+    /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
+    /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:73`.
+    var relationshipLabel: String?
+    /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
+    /// Android `VoiceProfileApi.kt:74`.
+    var listenerTitle: String?
 }
 
 struct VoiceProfileUpdateRequest: Encodable {
     var name: String?
     var isShared: Bool?
+    /// promote 시 false 로 명시 전송.
+    var isDraft: Bool?
+    var relationshipLabel: String?
+    var listenerTitle: String?
+
+    init(
+        name: String? = nil,
+        isShared: Bool? = nil,
+        isDraft: Bool? = nil,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil
+    ) {
+        self.name = name
+        self.isShared = isShared
+        self.isDraft = isDraft
+        self.relationshipLabel = relationshipLabel
+        self.listenerTitle = listenerTitle
+    }
+}
+
+/// `PATCH /voice/:id/relationship` 의 body. 공유받은 음성 viewer 가 자신의
+/// 관계/호칭을 등록할 때 사용. 두 값 모두 필수.
+/// Android `VoiceProfileApi.kt:61-64`.
+struct VoiceProfileRelationshipUpdateRequest: Encodable {
+    var relationshipLabel: String
+    var listenerTitle: String
 }
 
 struct VoiceUploadResponse: Decodable {
@@ -148,6 +183,55 @@ struct TtsGenerateRequest: Encodable {
     var language: String
     var translate: Bool
     var random: Bool
+    /// 랜덤 프롬프트 컨텍스트 (preset / wake_weather / wake_fortune / meal /
+    /// sleep / exercise / love). Android `TtsApi.kt:17` 참고.
+    var randomContext: String?
+    /// 알람이 울릴 시각 (랜덤 프롬프트에 시간 컨텍스트 제공).
+    var alarmHour: Int?
+    var alarmMinute: Int?
+    /// 날씨 랜덤 프롬프트용 위치.
+    var weatherCountry: String?
+    var weatherCity: String?
+    /// 운세 랜덤 프롬프트용 사주.
+    var fortuneGender: String?
+    var fortuneBirthDate: String?
+    var fortuneBirthTime: String?
+    /// 공유 음성 viewer 가 자신을 부를 호칭.
+    var listenerTitle: String?
+
+    init(
+        voiceProfileId: String,
+        text: String,
+        category: String,
+        language: String,
+        translate: Bool,
+        random: Bool,
+        randomContext: String? = nil,
+        alarmHour: Int? = nil,
+        alarmMinute: Int? = nil,
+        weatherCountry: String? = nil,
+        weatherCity: String? = nil,
+        fortuneGender: String? = nil,
+        fortuneBirthDate: String? = nil,
+        fortuneBirthTime: String? = nil,
+        listenerTitle: String? = nil
+    ) {
+        self.voiceProfileId = voiceProfileId
+        self.text = text
+        self.category = category
+        self.language = language
+        self.translate = translate
+        self.random = random
+        self.randomContext = randomContext
+        self.alarmHour = alarmHour
+        self.alarmMinute = alarmMinute
+        self.weatherCountry = weatherCountry
+        self.weatherCity = weatherCity
+        self.fortuneGender = fortuneGender
+        self.fortuneBirthDate = fortuneBirthDate
+        self.fortuneBirthTime = fortuneBirthTime
+        self.listenerTitle = listenerTitle
+    }
 }
 
 struct TtsGenerateResponse: Decodable, Equatable {
@@ -161,6 +245,9 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var cacheKey: String?
     var cacheHit: Bool?
     var provider: String?
+    /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
+    /// Android `TtsApi.kt:39`.
+    var randomContext: String?
 }
 
 struct TtsMessageListResponse: Decodable {
@@ -230,6 +317,10 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var userId: String?
     var ownerName: String?
     var isShared: Bool?
+    /// 받은 사람이 음성 주인과의 관계로 등록한 라벨.
+    var relationshipLabel: String?
+    /// 받은 사람을 음성이 부를 호칭.
+    var listenerTitle: String?
 }
 
 struct CodeRegisterRequest: Encodable {
@@ -653,7 +744,10 @@ final class VoiceAlarmAPI {
         isShared: Bool,
         durationMs: Int,
         token: String,
-        noiseRemoval: Bool = false
+        noiseRemoval: Bool = false,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil,
+        isDraft: Bool? = nil
     ) async throws -> VoiceProfile {
         var fields: [String: String] = [
             "name": name,
@@ -665,6 +759,17 @@ final class VoiceAlarmAPI {
         if noiseRemoval {
             fields["noiseRemoval"] = "true"
             fields["noise_removal"] = "true"
+        }
+        // Android `VoiceProfileApi.kt:97-108` 와 동일하게 multipart 필드로 전송.
+        // 비어 있으면 보내지 않아 백엔드 누락 검증을 피한다.
+        if let trimmed = relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            fields["relationshipLabel"] = trimmed
+        }
+        if let trimmed = listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            fields["listenerTitle"] = trimmed
+        }
+        if let isDraft {
+            fields["isDraft"] = isDraft ? "true" : "false"
         }
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
@@ -766,13 +871,22 @@ final class VoiceAlarmAPI {
         id: String,
         name: String? = nil,
         isShared: Bool? = nil,
+        isDraft: Bool? = nil,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil,
         token: String
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
-            body: VoiceProfileUpdateRequest(name: name.nilIfBlank, isShared: isShared)
+            body: VoiceProfileUpdateRequest(
+                name: name.nilIfBlank,
+                isShared: isShared,
+                isDraft: isDraft,
+                relationshipLabel: relationshipLabel?.nilIfBlank,
+                listenerTitle: listenerTitle?.nilIfBlank
+            )
         )
         return response.profile
     }
@@ -782,6 +896,45 @@ final class VoiceAlarmAPI {
         // 보내 향후 백엔드가 "사용 중일 때 거부" 모드를 도입해도 호환되도록 한다.
         let path = force ? "voice/\(id)?force=true" : "voice/\(id)"
         let _: EmptyResponse = try await request(path, method: "DELETE", token: token)
+    }
+
+    /// 임시(draft) 음성을 정식 프로필로 승격. `PATCH /voice/:id` body 에
+    /// `is_draft: false` 만 보내는 변형. Android `MainViewModelVoiceActions` 의 promote 흐름.
+    func promoteDraftVoice(profileId: String, token: String) async throws -> VoiceProfile {
+        let response: VoiceProfileResponse = try await request(
+            "voice/\(profileId)",
+            method: "PATCH",
+            token: token,
+            body: VoiceProfileUpdateRequest(isDraft: false)
+        )
+        return response.profile
+    }
+
+    /// 임시(draft) 음성을 영구 삭제. `DELETE /voice/:id?force=true`.
+    /// promote 하지 않고 시트를 닫은 경우 호출.
+    func deleteDraftVoice(profileId: String, token: String) async throws {
+        try await deleteVoiceProfile(id: profileId, token: token, force: true)
+    }
+
+    /// 공유받은 음성에 대한 viewer 의 관계/호칭 갱신.
+    /// `PATCH /voice/:id/relationship`. body 의 두 필드는 모두 필수.
+    /// Android `VoiceProfileApi.kt:132-137`.
+    func updateVoiceProfileRelationship(
+        profileId: String,
+        relationshipLabel: String,
+        listenerTitle: String,
+        token: String
+    ) async throws -> VoiceProfile {
+        let response: VoiceProfileResponse = try await request(
+            "voice/\(profileId)/relationship",
+            method: "PATCH",
+            token: token,
+            body: VoiceProfileRelationshipUpdateRequest(
+                relationshipLabel: relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines),
+                listenerTitle: listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        )
+        return response.profile
     }
 
     func listFamilyVoiceProfiles(token: String) async throws -> [FamilyVoiceProfile] {

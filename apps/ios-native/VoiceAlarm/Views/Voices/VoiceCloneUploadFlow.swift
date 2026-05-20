@@ -16,6 +16,9 @@ struct VoiceCloneUploadFlow: View {
     @State private var profileName: String = ""
     @State private var noiseRemovalEnabled: Bool = false
     @State private var isShared: Bool = false
+    /// 공유된 음성을 받는 사람이 자신을 부를 호칭. Android `VoiceProfileApi.kt:74`.
+    /// 본인이 사용할 때는 비어 있어도 무방하나, 가족·커플에게 공유할 거라면 미리 채워둔다.
+    @State private var listenerTitle: String = ""
     @State private var animatedLevel: CGFloat = 0.0
     @State private var levelTimer: Timer?
 
@@ -73,6 +76,15 @@ struct VoiceCloneUploadFlow: View {
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
                 }
+            Text("이 목소리가 부를 호칭")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                .padding(.top, 4)
+            TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
+                .textFieldStyle(.roundedBorder)
+            Text("공유 받은 사람이 듣게 될 호칭이에요. 공유하지 않으면 비워둬도 돼요.")
+                .font(.caption2)
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
             HStack(spacing: 10) {
                 Toggle(isOn: $isShared) {
                     Text("가족·커플과 공유")
@@ -266,17 +278,24 @@ struct VoiceCloneUploadFlow: View {
         }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveName = trimmedName.isEmpty ? "내 목소리" : trimmedName
+        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveListener = trimmedListener.isEmpty ? nil : trimmedListener
         if noiseRemovalEnabled {
             let _ = await voice.cloneWithNoiseRemoval(
                 audioFileURL: url,
                 name: effectiveName,
                 durationMs: durationMs,
                 isShared: isShared,
-                session: auth.session
+                session: auth.session,
+                listenerTitle: effectiveListener
             )
         } else {
             voice.cloneName = effectiveName
-            await voice.uploadRecordingForClone(session: auth.session)
+            await voice.uploadRecordingForClone(
+                session: auth.session,
+                isShared: isShared,
+                listenerTitle: effectiveListener
+            )
         }
         // 성공 시 management 로 복귀.
         if voice.statusMessage?.contains("등록") == true || voice.statusMessage?.contains("완료") == true {
