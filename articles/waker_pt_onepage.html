@@ -205,7 +205,7 @@ html, body {
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.title .br { display: block; }
+.title .br, .info-title .br { display: block; }
 .q-tr .title, .q-br .title { margin-left: auto; }
 
 .copy {
@@ -243,6 +243,171 @@ html, body {
 @keyframes dotBlink {
   0%, 100% { opacity: 0.42; }
   50% { opacity: 1; }
+}
+
+/* ==== Context screens before demo ==== */
+.info-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: #F3EAD9;
+  color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  overflow: hidden;
+}
+.info-screen.active {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.info-grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  grid-template-rows: 1fr 1fr;
+}
+.info-panel {
+  min-width: 0;
+  min-height: 0;
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid rgba(20, 22, 30, 0.08);
+}
+.info-lead { background: var(--mustard-bg); color: var(--mustard-deep); }
+.info-blue { background: var(--navy-bg); color: var(--navy-deep); }
+.info-green { background: var(--green-bg); color: var(--green-deep); }
+.info-terra { background: var(--terra-bg); color: var(--terra-deep); }
+.info-title {
+  font-size: clamp(30px, 4.2vmin, 58px);
+  font-weight: 900;
+  line-height: 1.12;
+  letter-spacing: -0.028em;
+  max-width: 16ch;
+}
+.info-title .accent {
+  background: linear-gradient(135deg, currentColor 0%, rgba(0,0,0,0.42) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.info-copy {
+  margin-top: clamp(16px, 2vmin, 28px);
+  font-size: clamp(12px, 1.35vmin, 17px);
+  line-height: 1.6;
+  font-weight: 550;
+  opacity: 0.76;
+  max-width: 40ch;
+}
+.persona-label,
+.mini-label {
+  font-size: clamp(10px, 0.95vmin, 13px);
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: clamp(10px, 1.2vmin, 18px);
+}
+.info-panel h3 {
+  font-size: clamp(20px, 2.25vmin, 31px);
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  max-width: 15ch;
+}
+.info-panel h3 + p,
+.compact-list,
+.swot-grid {
+  margin-top: clamp(14px, 1.7vmin, 24px);
+}
+.info-panel h3 + p {
+  font-size: clamp(12px, 1.25vmin, 16px);
+  line-height: 1.62;
+  font-weight: 560;
+  opacity: 0.74;
+  max-width: 34ch;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(12px, 1.5vmin, 22px);
+}
+.metric strong {
+  display: block;
+  font-size: clamp(23px, 3.1vmin, 42px);
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.metric span {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(10px, 1.05vmin, 14px);
+  line-height: 1.45;
+  font-weight: 700;
+  opacity: 0.7;
+}
+.compact-list {
+  list-style: none;
+  display: grid;
+  gap: clamp(10px, 1.15vmin, 16px);
+}
+.compact-list li {
+  display: grid;
+  grid-template-columns: minmax(84px, 0.72fr) 1fr;
+  gap: 14px;
+  align-items: start;
+  font-size: clamp(11px, 1.12vmin, 15px);
+  line-height: 1.45;
+}
+.compact-list strong {
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+.compact-list span {
+  font-weight: 580;
+  opacity: 0.74;
+}
+.swot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(10px, 1.2vmin, 16px);
+}
+.swot-item {
+  min-height: clamp(72px, 9vmin, 112px);
+  padding: clamp(12px, 1.5vmin, 20px);
+  border: 1px solid rgba(20, 22, 30, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.swot-item b {
+  font-size: clamp(12px, 1.15vmin, 15px);
+  font-weight: 950;
+  letter-spacing: 0.06em;
+}
+.swot-item span {
+  margin-top: 8px;
+  font-size: clamp(10px, 1.03vmin, 13px);
+  line-height: 1.45;
+  font-weight: 620;
+  opacity: 0.72;
+}
+.sources {
+  position: absolute;
+  left: var(--pad);
+  right: var(--pad);
+  bottom: clamp(9px, 1.1vmin, 16px);
+  z-index: 2;
+  font-size: clamp(8px, 0.82vmin, 11px);
+  line-height: 1.45;
+  font-weight: 560;
+  color: rgba(20, 22, 30, 0.46);
 }
 
 /* ==== Demo modal ==== */
@@ -329,12 +494,24 @@ html, body {
   .q-tr, .q-br { justify-items: start; text-align: left; }
   .q-tr .quad-content, .q-br .quad-content { align-items: flex-start; }
   .q-tr .title, .q-br .title, .q-tr .copy, .q-br .copy { margin-left: 0; }
+  .info-screen { overflow: auto; }
+  .info-grid {
+    position: relative;
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(4, minmax(172px, auto));
+    min-height: 100%;
+    padding-bottom: 54px;
+  }
+  .info-panel { padding: clamp(22px, 6vw, 36px); }
+  .metrics { grid-template-columns: 1fr; }
+  .compact-list li { grid-template-columns: 1fr; gap: 4px; }
+  .sources { position: fixed; }
 }
 </style>
 </head>
 <body>
 
-<div class="stage" id="stage" role="button" tabindex="0" aria-label="데모 영상 재생">
+<div class="stage" id="stage" role="button" tabindex="0" aria-label="발표 화면 넘기기 및 데모 영상 재생">
 
   <!-- 좌상: 보이스 클로닝 -->
   <section class="quad q-tl" data-index="1">
@@ -380,9 +557,73 @@ html, body {
     <div class="quad-cover" aria-hidden="true"></div>
   </section>
 
+  <!-- 근거 1: 타깃과 사용자 행태 -->
+  <section class="info-screen" data-info-index="5" aria-hidden="true">
+    <div class="info-grid">
+      <article class="info-panel info-lead">
+        <div class="eyebrow"><span class="num">5</span>Why Waker</div>
+        <h2 class="info-title">누구의 목소리가<span class="br"></span><span class="accent">아침을 바꾸는가</span></h2>
+        <p class="info-copy">Waker는 기본 알람음을 감정이 있는 음성으로 바꿉니다. 핵심은 더 큰 소리가 아니라, 매일 다시 듣고 싶은 한마디입니다.</p>
+      </article>
+      <article class="info-panel info-blue">
+        <div class="persona-label">Persona A</div>
+        <h3>좋아하는 연예인의 목소리로 일어나고 싶은 사람</h3>
+        <p>팬심과 루틴을 연결합니다. 반복되는 알람음 대신, 아침마다 기대되는 개인화된 목소리를 제공합니다.</p>
+      </article>
+      <article class="info-panel info-green">
+        <div class="persona-label">Persona B</div>
+        <h3>손주·자식의 목소리를 듣고 싶은 부모님과 시니어</h3>
+        <p>멀리 떨어져 있어도 익숙한 가족의 목소리로 하루를 시작합니다. 알람이 단순한 도구를 넘어 안부가 됩니다.</p>
+      </article>
+      <article class="info-panel info-terra">
+        <div class="mini-label">Validated Signals</div>
+        <div class="metrics">
+          <div class="metric"><strong>36.1%</strong><span>한국 1인 가구 비중<br>800만 가구 규모</span></div>
+          <div class="metric"><strong>31.5%</strong><span>직장인 오전 7시대<br>출근 비중</span></div>
+          <div class="metric"><strong>460억</strong><span>Alarmy 2025년<br>매출로 검증된 카테고리</span></div>
+        </div>
+      </article>
+    </div>
+    <p class="sources">출처: 통계청·KTV News, 시프티 2024 분석·뉴시스 2025-05-16, 벤처스퀘어·서울경제 2025, MDPI Applied Sciences 2020.</p>
+  </section>
+
+  <!-- 근거 2: 경쟁 구도와 SWOT -->
+  <section class="info-screen" data-info-index="6" aria-hidden="true">
+    <div class="info-grid">
+      <article class="info-panel info-lead">
+        <div class="eyebrow"><span class="num">6</span>Positioning</div>
+        <h2 class="info-title">강제 기상 다음은<span class="br"></span><span class="accent">관계형 알람</span></h2>
+        <p class="info-copy">Alarmy가 미션으로 깨운다면, Waker는 관계와 목소리로 깨웁니다. 미션 기능은 확장 가능하지만 첫 검증은 감정적 기상 경험에 둡니다.</p>
+      </article>
+      <article class="info-panel info-blue">
+        <div class="mini-label">Direct Competitors</div>
+        <ul class="compact-list">
+          <li><strong>Alarmy</strong><span>미션 기반 강제 기상. 1억+ 다운로드, MAU 700만+.</span></li>
+          <li><strong>Sleep Cycle</strong><span>수면 분석과 스마트 알람 중심의 글로벌 수면 앱.</span></li>
+          <li><strong>OS Clock</strong><span>무료 기본 앱. 개인 음성·공유 경험은 Waker가 차별화.</span></li>
+        </ul>
+      </article>
+      <article class="info-panel info-green">
+        <div class="mini-label">Waker SWOT</div>
+        <div class="swot-grid">
+          <div class="swot-item"><b>S</b><span>OS-native 알람 신뢰성, TTS 캐싱, Android 실기기 100/100 성공.</span></div>
+          <div class="swot-item"><b>W</b><span>ElevenLabs 의존, 초기 음성팩 라이브러리 부족.</span></div>
+          <div class="swot-item"><b>O</b><span>1인 가구 증가, 스마트 알람 성장, 검증된 유료 카테고리.</span></div>
+          <div class="swot-item"><b>T</b><span>경쟁 앱 음성 기능 추가, Android 정확 알람 권한 UX 부담.</span></div>
+        </div>
+      </article>
+      <article class="info-panel info-terra">
+        <div class="mini-label">Go-to-market Focus</div>
+        <h3>처음부터 모두를 위한 알람이 아니다</h3>
+        <p>좋아하는 목소리로 하루를 시작하고 싶은 팬, 그리고 가족의 목소리를 듣고 싶은 부모님·시니어를 먼저 공략합니다.</p>
+      </article>
+    </div>
+    <p class="sources">출처: Delightroom 공식 페이지, flex 공식 블로그 2025, 서울경제·벤처스퀘어 2025, Sleep Cycle IR, Urbandroid 공식, Slant 2026, Android Developers.</p>
+  </section>
+
 </div>
 
-<div class="step-indicator" id="stepIndicator" aria-live="polite">1 / 4</div>
+<div class="step-indicator" id="stepIndicator" aria-live="polite">1 / 6</div>
 
 <!-- Demo modal -->
 <div class="modal-backdrop" id="modal" aria-hidden="true">
@@ -411,9 +652,11 @@ html, body {
   const fallback = document.getElementById('videoFallback');
   const indicator = document.getElementById('stepIndicator');
   const quads = Array.from(document.querySelectorAll('.quad'));
-  const TOTAL = 4;
+  const infoScreens = Array.from(document.querySelectorAll('.info-screen'));
+  const FEATURE_TOTAL = 4;
+  const TOTAL = 6;
 
-  // 현재 노출된 분면 수 (1~4). 초기에는 1번만 보임.
+  // 현재 노출된 발표 단계. 1~4는 기능 분면, 5~6은 설명 화면.
   let sectionIndex = 1;
 
   function updateCovers() {
@@ -421,11 +664,17 @@ html, body {
       const idx = parseInt(quad.getAttribute('data-index'), 10);
       const cover = quad.querySelector('.quad-cover');
       if (!cover) return;
-      if (idx <= sectionIndex) {
+      if (idx <= Math.min(sectionIndex, FEATURE_TOTAL)) {
         cover.classList.add('hidden');
       } else {
         cover.classList.remove('hidden');
       }
+    });
+    infoScreens.forEach((screen) => {
+      const idx = parseInt(screen.getAttribute('data-info-index'), 10);
+      const active = idx === sectionIndex;
+      screen.classList.toggle('active', active);
+      screen.setAttribute('aria-hidden', active ? 'false' : 'true');
     });
     if (indicator) {
       if (sectionIndex >= TOTAL) {
@@ -474,12 +723,12 @@ html, body {
     modal.classList.remove('open');
     modal.setAttribute('aria-hidden', 'true');
     try { video.pause(); video.currentTime = 0; } catch (_) {}
-    // sectionIndex 는 그대로 유지 (4 상태 유지)
+    // sectionIndex 는 그대로 유지 (마지막 설명 화면 상태 유지)
   }
 
   stage.addEventListener('click', () => {
     // 클릭한 위치와 무관하게 항상 한 단계만 진행.
-    // 1 → 2 → 3 → 4 → (다시 클릭) 영상 모달.
+    // 1 → 2 → 3 → 4 → 5 → 6 → (다시 클릭) 영상 모달.
     if (sectionIndex >= TOTAL) {
       openModal();
       return;
