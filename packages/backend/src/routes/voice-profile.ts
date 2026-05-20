@@ -59,6 +59,17 @@ async function canUseSharedVoiceProfile(
 }
 
 /**
+ * 소유권 검증용 user_id 후보 목록. 일부 라우트는 `user_id` 컬럼에 google sub
+ * (= userId)을 저장하고, 다른 라우트는 users.id (= userIdPK)를 저장하기 때문에
+ * 둘 다 매칭해야 owner check 가 일관되게 동작한다.
+ */
+function ownerIds(c: { get: (k: 'userId' | 'userIdPK') => string | undefined }): string[] {
+  const sub = c.get('userId') as string;
+  const pk = c.get('userIdPK') as string | undefined;
+  return Array.from(new Set([sub, pk].filter((v): v is string => Boolean(v))));
+}
+
+/**
  * Dev/cleanup helper: delete every voice profile (and its dependent
  * messages + alarms) belonging to the calling user. Useful for wiping
  * failed clones that piled up during testing. R2 objects are left for
@@ -66,6 +77,11 @@ async function canUseSharedVoiceProfile(
  */
 voiceProfile.delete('/_dev/clear-mine', async (c) => {
   const subId = c.get('userId') as string;
+  // production 환경에서는 노출 자체를 막는다. 인증을 통과한 뒤에도 dev/test 가 아니면
+  // 라우트가 존재하지 않는 것처럼 404 로 응답.
+  if (c.env.ENVIRONMENT === 'production') {
+    return c.json({ error: 'dev-only', error_code: 'DEV_ONLY_ROUTE' }, 404);
+  }
   const pkId = (c.get('userIdPK') as string | undefined) ?? subId;
   const db = getDB(c.env);
   const ids = Array.from(new Set([subId, pkId].filter(Boolean)));
@@ -176,15 +192,16 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
 });
 
 voiceProfile.get('/', async (c) => {
-  const userId = c.get('userId');
+  const ids = ownerIds(c);
   const db = getDB(c.env);
   const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '50', 10) || 50, 1), 100);
   const offset = Math.max(parseInt(c.req.query('offset') || '0', 10) || 0, 0);
   const status = c.req.query('status');
 
+  const ph = ids.map(() => '?').join(',');
   const validStatuses = ['ready', 'processing', 'failed'];
   let statusClause = '';
-  const baseArgs: (string | number)[] = [userId];
+  const baseArgs: (string | number)[] = [...ids];
   if (status && validStatuses.includes(status)) {
     statusClause = ' AND status = ?';
     baseArgs.push(status);
@@ -192,11 +209,11 @@ voiceProfile.get('/', async (c) => {
 
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -280,7 +297,7 @@ voiceProfile.get('/family', async (c) => {
 });
 
 voiceProfile.get('/:id', async (c) => {
-  const userId = c.get('userId');
+  const ids = ownerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -288,9 +305,10 @@ voiceProfile.get('/:id', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
+  const ph = ids.map(() => '?').join(',');
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
-    args: [id, userId],
+    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+    args: [id, ...ids],
   });
 
   if (result.rows.length === 0) {
@@ -308,7 +326,7 @@ voiceProfile.get('/:id', async (c) => {
 });
 
 voiceProfile.patch('/:id', async (c) => {
-  const userId = c.get('userId');
+  const ids = ownerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -372,9 +390,10 @@ voiceProfile.patch('/:id', async (c) => {
     );
   }
 
+  const ph = ids.map(() => '?').join(',');
   const existing = await db.execute({
-    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
-    args: [id, userId],
+    sql: `SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+    args: [id, ...ids],
   });
   if (existing.rows.length === 0) {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
@@ -384,9 +403,9 @@ voiceProfile.patch('/:id', async (c) => {
   if (hasDraft && isDraftUpdate === false) {
     const nonDraftCount = await db.execute({
       sql: `SELECT COUNT(*) as count FROM voice_profiles
-            WHERE user_id = ? AND deleted_at IS NULL
+            WHERE user_id IN (${ph}) AND deleted_at IS NULL
               AND COALESCE(is_draft, 0) = 0 AND id != ?`,
-      args: [userId, id],
+      args: [...ids, id],
     });
     const existingCount = Number(nonDraftCount.rows[0]!.count);
     if (existingCount >= MAX_VOICE_PROFILES) {
@@ -549,7 +568,8 @@ voiceProfile.post('/clone', async (c) => {
 
     const formData = await c.req.formData();
     const audioFile = getFormFile(formData, 'audio');
-    const name = formData.get('name') as string | null;
+    const rawName = formData.get('name');
+    const name = typeof rawName === 'string' ? rawName.trim() : '';
     const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
     const isDraft = ['true', '1', 'yes'].includes(String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'));
     const relationshipLabel = normalizeRelationshipLabel(
@@ -561,10 +581,12 @@ voiceProfile.post('/clone', async (c) => {
 
     // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
     if (!isDraft) {
+      const ids = ownerIds(c);
+      const phCount = ids.map(() => '?').join(',');
       const profileCount = await db.execute({
         sql: `SELECT COUNT(*) as count FROM voice_profiles
-              WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0`,
-        args: [userId],
+              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0`,
+        args: ids,
       });
       const count = Number(profileCount.rows[0]!.count);
       if (count >= MAX_VOICE_PROFILES) {
@@ -579,6 +601,7 @@ voiceProfile.post('/clone', async (c) => {
     }
 
     if (!audioFile || !name) {
+      // trim 후 공백만 남는 이름도 거부 — 빈 라벨 저장 방지
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
 
@@ -750,6 +773,7 @@ function validateCloneDuration(value: unknown): {
 }
 
 voiceProfile.get('/:id/stats', async (c) => {
+  const ids = ownerIds(c);
   const userId = c.get('userId');
   const db = getDB(c.env);
   const id = c.req.param('id');
@@ -758,14 +782,15 @@ voiceProfile.get('/:id/stats', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
+  const ph = ids.map(() => '?').join(',');
   const [profileRes, msgRes, alarmRes] = await Promise.all([
     db.execute({
-      sql: 'SELECT id, name FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
-      args: [id, userId],
+      sql: `SELECT id, name FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+      args: [id, ...ids],
     }),
     db.execute({
-      sql: 'SELECT COUNT(*) as count FROM messages WHERE voice_profile_id = ? AND user_id = ?',
-      args: [id, userId],
+      sql: `SELECT COUNT(*) as count FROM messages WHERE voice_profile_id = ? AND user_id IN (${ph})`,
+      args: [id, ...ids],
     }),
     db.execute({
       sql: `SELECT COUNT(*) as count FROM alarms a
@@ -787,7 +812,7 @@ voiceProfile.get('/:id/stats', async (c) => {
 });
 
 voiceProfile.delete('/:id', async (c) => {
-  const userId = c.get('userId');
+  const ids = ownerIds(c);
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -795,9 +820,10 @@ voiceProfile.delete('/:id', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
+  const ph = ids.map(() => '?').join(',');
   const result = await db.execute({
-    sql: 'SELECT * FROM voice_profiles WHERE id = ? AND user_id = ? AND deleted_at IS NULL',
-    args: [id, userId],
+    sql: `SELECT * FROM voice_profiles WHERE id = ? AND user_id IN (${ph}) AND deleted_at IS NULL`,
+    args: [id, ...ids],
   });
 
   if (result.rows.length === 0) {

@@ -900,8 +900,16 @@ export async function runMigrations(db: Client): Promise<string[]> {
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) continue;
 
+    // 마이그레이션 #5 와 #17 처럼 동일 컬럼(alarms.voice_profile_id)을
+    // 중복 ALTER 하는 케이스가 있으므로, idempotent DDL 에러는 무시한다.
+    // runMigrationsRange 와 동일한 정책을 적용해 두 진입점이 동일하게 동작.
     for (const stmt of migration.statements) {
-      await db.execute(stmt);
+      try {
+        await db.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!isIdempotentDDLError(msg)) throw err;
+      }
     }
 
     await db.execute({
