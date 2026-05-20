@@ -231,6 +231,23 @@ async function findViewerRelationshipLabel(
   return normalizeRelationshipLabel(result.rows[0]?.relationship_label);
 }
 
+async function findViewerListenerTitle(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  userId: string,
+  voiceProfileId: string,
+): Promise<string | null> {
+  const result = await db.execute({
+    sql: `SELECT listener_title
+          FROM voice_profile_relationships
+          WHERE voice_profile_id = ? AND user_id IN (?, ?)
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+    args: [voiceProfileId, userPk, userId],
+  });
+  return normalizeRelationshipLabel(result.rows[0]?.listener_title);
+}
+
 async function loadWeatherSummary(args: {
   latitude?: unknown;
   longitude?: unknown;
@@ -381,6 +398,8 @@ tts.post('/generate', async (c) => {
     randomMode?: string;
     relationship_label?: string;
     relationshipLabel?: string;
+    listener_title?: string;
+    listenerTitle?: string;
     weather_location_label?: string;
     weatherLocationLabel?: string;
     weather_latitude?: number;
@@ -532,6 +551,10 @@ tts.post('/generate', async (c) => {
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
         (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
         normalizeRelationshipLabel(vp.relationship_label);
+      const listenerTitle =
+        normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
+        (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
+        normalizeRelationshipLabel(vp.listener_title);
       const weatherSummary = randomContextUsesWeather(randomContext)
         ? await loadWeatherSummary({
             latitude: body.weather_latitude ?? body.weatherLatitude,
@@ -547,6 +570,7 @@ tts.post('/generate', async (c) => {
         targetLanguage: requestedLanguage,
         dateLabel: todayKoreaLabel(),
         relationshipLabel,
+        listenerTitle,
         weatherSummary,
         fortuneProfile:
           randomContext === 'wake_fortune'
@@ -777,6 +801,8 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[tts/generate] failed', err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err);
     if (err instanceof AlarmTextTranslationUnavailableError) {
       return c.json(
         {

@@ -54,6 +54,12 @@ data class VoiceProfileUpdateRequest(
     val name: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
+)
+
+data class VoiceProfileRelationshipUpdateRequest(
+    @SerializedName("relationship_label") val relationshipLabel: String,
+    @SerializedName("listener_title") val listenerTitle: String,
 )
 
 data class VoiceProfile(
@@ -63,6 +69,7 @@ data class VoiceProfile(
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -74,6 +81,7 @@ data class FamilyVoiceProfile(
     @SerializedName("owner_name") val ownerName: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
 )
 
 data class FamilyVoiceProfileListResponse(
@@ -92,6 +100,7 @@ interface VoiceProfileApi {
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
         @Part("relationshipLabel") relationshipLabel: RequestBody,
+        @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
     ): VoiceProfileResponse
 
@@ -115,6 +124,13 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Body request: VoiceProfileUpdateRequest,
+    ): VoiceProfileResponse
+
+    @PATCH("voice/{id}/relationship")
+    suspend fun updateVoiceProfileRelationship(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoiceProfileRelationshipUpdateRequest,
     ): VoiceProfileResponse
 
     @DELETE("voice/{id}")

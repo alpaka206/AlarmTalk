@@ -1,9 +1,12 @@
 ﻿package com.voicealarm.nativeapp
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,15 +21,21 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +47,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import java.util.Locale
 import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
@@ -372,6 +384,7 @@ private fun WeatherLocationPreferenceDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FamilyAlarmQuietTimeDialog(
     initialWindows: List<FamilyAlarmQuietWindow>,
@@ -385,6 +398,7 @@ private fun FamilyAlarmQuietTimeDialog(
                 .map { it.toDraft() },
         )
     }
+    var timePickerTarget by remember { mutableStateOf<QuietTimePickerTarget?>(null) }
     val valid = drafts.isNotEmpty() && drafts.all { it.isValid() }
 
     fun updateDraft(index: Int, transform: (QuietWindowDraft) -> QuietWindowDraft) {
@@ -393,157 +407,276 @@ private fun FamilyAlarmQuietTimeDialog(
         }
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("설정 불가 시간") },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            shadowElevation = 18.dp,
+        ) {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(horizontal = 22.dp, vertical = 22.dp)
+                    .heightIn(max = 620.dp),
             ) {
                 Text(
-                    text = "선택한 시간에는 다른 사람이 알람을 만들 수 없어요.",
+                    text = "설정 불가 시간",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
                 )
-                drafts.forEachIndexed { draftIndex, draft ->
-                    OutlinedCard(
-                        shape = VocaWakeCardShape,
-                        border = vocaWakeCardBorder(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = "불가 시간 ${draftIndex + 1}",
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (drafts.size > 1) {
-                                    IconButton(
-                                        onClick = { drafts = drafts.filterIndexed { index, _ -> index != draftIndex } },
-                                    ) {
-                                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
-                                    }
+                Column(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    drafts.forEachIndexed { draftIndex, draft ->
+                        QuietWindowCard(
+                            index = draftIndex,
+                            draft = draft,
+                            removable = drafts.size > 1,
+                            onToggleDay = { dayIndex ->
+                                updateDraft(draftIndex) {
+                                    val days = if (dayIndex in it.days) it.days - dayIndex else it.days + dayIndex
+                                    it.copy(days = days)
                                 }
+                            },
+                            onPickStart = {
+                                timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = true)
+                            },
+                            onPickEnd = {
+                                timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = false)
+                            },
+                            onRemove = {
+                                drafts = drafts.filterIndexed { index, _ -> index != draftIndex }
+                            },
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            if (drafts.size < 8) {
+                                drafts = drafts + FamilyAlarmQuietWindow(
+                                    days = listOf(1, 2, 3, 4, 5),
+                                    start = "22:00",
+                                    end = "07:00",
+                                ).toDraft()
                             }
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                dayLabels()
-                                    .mapIndexed { index, label -> index to label }
-                                    .chunked(4)
-                                    .forEach { row ->
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            row.forEach { (dayIndex, label) ->
-                                                FilterChip(
-                                                    selected = dayIndex in draft.days,
-                                                    onClick = {
-                                                        updateDraft(draftIndex) {
-                                                            val days = if (dayIndex in it.days) {
-                                                                it.days - dayIndex
-                                                            } else {
-                                                                it.days + dayIndex
-                                                            }
-                                                            it.copy(days = days)
-                                                        }
-                                                    },
-                                                    label = { Text(label) },
-                                                )
-                                            }
-                                        }
-                                    }
-                            }
-                            Text("시작", style = MaterialTheme.typography.labelMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TimePartField(
-                                    value = draft.startHour,
-                                    label = "시",
-                                    isError = draft.startHour.isNotBlank() && !isHourText(draft.startHour),
-                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(startHour = value) } },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                TimePartField(
-                                    value = draft.startMinute,
-                                    label = "분",
-                                    isError = draft.startMinute.isNotBlank() && !isMinuteText(draft.startMinute),
-                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(startMinute = value) } },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                            Text("종료", style = MaterialTheme.typography.labelMedium)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TimePartField(
-                                    value = draft.endHour,
-                                    label = "시",
-                                    isError = draft.endHour.isNotBlank() && !isHourText(draft.endHour),
-                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(endHour = value) } },
-                                    modifier = Modifier.weight(1f),
-                                )
-                                TimePartField(
-                                    value = draft.endMinute,
-                                    label = "분",
-                                    isError = draft.endMinute.isNotBlank() && !isMinuteText(draft.endMinute),
-                                    onValueChange = { value -> updateDraft(draftIndex) { it.copy(endMinute = value) } },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
-                        }
+                        },
+                        enabled = drafts.size < 8,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = VocaWakeButtonShape,
+                        border = vocaWakeCardBorder(),
+                        colors = vocaWakeOutlinedButtonColors(),
+                    ) {
+                        Text("+ 시간 추가")
                     }
                 }
-                Button(
-                    onClick = {
-                        if (drafts.size < 8) {
-                            drafts = drafts + FamilyAlarmQuietWindow(days = listOf(1), start = "09:00", end = "18:30").toDraft()
-                        }
-                    },
-                    enabled = drafts.size < 8,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 18.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("시간 추가")
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("취소")
+                    }
+                    Button(
+                        onClick = { onConfirm(drafts.map { it.toWindow() }) },
+                        enabled = valid,
+                        modifier = Modifier.weight(1f),
+                        shape = VocaWakeButtonShape,
+                    ) {
+                        Text("저장")
+                    }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(drafts.map { it.toWindow() }) },
-                enabled = valid,
+        }
+    }
+
+    timePickerTarget?.let { target ->
+        val draft = drafts.getOrNull(target.index) ?: return@let
+        val initialHour = (if (target.isStart) draft.startHour else draft.endHour).toIntOrNull()?.coerceIn(0, 23) ?: 9
+        val initialMinute = (if (target.isStart) draft.startMinute else draft.endMinute).toIntOrNull()?.coerceIn(0, 59) ?: 0
+        val state = rememberTimePickerState(
+            initialHour = initialHour,
+            initialMinute = initialMinute,
+            is24Hour = true,
+        )
+        Dialog(onDismissRequest = { timePickerTarget = null }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 18.dp,
             ) {
-                Text("저장")
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = if (target.isStart) "시작 시간" else "종료 시간",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TimePicker(state = state)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    ) {
+                        TextButton(onClick = { timePickerTarget = null }) { Text("취소") }
+                        TextButton(
+                            onClick = {
+                                val hh = String.format(Locale.US, "%02d", state.hour)
+                                val mm = String.format(Locale.US, "%02d", state.minute)
+                                updateDraft(target.index) {
+                                    if (target.isStart) it.copy(startHour = hh, startMinute = mm)
+                                    else it.copy(endHour = hh, endMinute = mm)
+                                }
+                                timePickerTarget = null
+                            },
+                        ) { Text("확인") }
+                    }
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("취소")
-            }
-        },
+        }
+    }
+}
+
+private data class QuietTimePickerTarget(val index: Int, val isStart: Boolean)
+
+@Composable
+private fun QuietWindowCard(
+    index: Int,
+    draft: QuietWindowDraft,
+    removable: Boolean,
+    onToggleDay: (Int) -> Unit,
+    onPickStart: () -> Unit,
+    onPickEnd: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val chipColors = FilterChipDefaults.filterChipColors(
+        selectedContainerColor = MaterialTheme.colorScheme.primary,
+        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
     )
+    OutlinedCard(
+        shape = VocaWakeCardShape,
+        border = vocaWakeCardBorder(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "시간대 ${index + 1}",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                if (removable) {
+                    IconButton(onClick = onRemove) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                dayLabels().forEachIndexed { dayIndex, label ->
+                    FilterChip(
+                        selected = dayIndex in draft.days,
+                        onClick = { onToggleDay(dayIndex) },
+                        label = {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(text = label, fontWeight = FontWeight.SemiBold)
+                            }
+                        },
+                        colors = chipColors,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                QuietTimeChip(
+                    label = quietTimeLabel(draft.startHour, draft.startMinute),
+                    onClick = onPickStart,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "~",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                QuietTimeChip(
+                    label = quietTimeLabel(draft.endHour, draft.endMinute),
+                    onClick = onPickEnd,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun TimePartField(
-    value: String,
+private fun QuietTimeChip(
     label: String,
-    isError: Boolean,
-    onValueChange: (String) -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { value -> onValueChange(value.filter { it.isDigit() }.take(2)) },
-        label = { Text(label) },
-        singleLine = true,
-        isError = isError,
-        shape = VocaWakeInputShape,
-        colors = vocaWakeOutlinedTextFieldColors(),
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
         modifier = modifier,
-    )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+    }
+}
+
+private fun quietTimeLabel(hour: String, minute: String): String {
+    val h = hour.toIntOrNull() ?: 0
+    val m = minute.toIntOrNull() ?: 0
+    return String.format(Locale.US, "%d:%02d", h, m)
 }
 
 private data class QuietWindowDraft(
@@ -605,7 +738,14 @@ private fun weatherLocationSettingsLabel(country: String, city: String): String 
 }
 
 private fun quietWindowLabel(window: FamilyAlarmQuietWindow): String =
-    "${quietDaysLabel(window.days)} ${window.start}-${window.end}"
+    "${quietDaysLabel(window.days)} ${formatQuietTime(window.start)} ~ ${formatQuietTime(window.end)}"
+
+private fun formatQuietTime(value: String): String {
+    val parts = value.split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
+    val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
+    return String.format(Locale.US, "%d:%02d", hour, minute)
+}
 
 private fun quietDaysLabel(days: List<Int>): String {
     val sorted = days.distinct().sorted()

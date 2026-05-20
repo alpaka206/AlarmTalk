@@ -134,11 +134,12 @@ internal fun VoiceProfileManagementPanel(
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
-    onRenameVoiceProfile: (String, String, String) -> Unit,
+    onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
+    onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onOpenBilling: () -> Unit,
 ) {
@@ -149,6 +150,7 @@ internal fun VoiceProfileManagementPanel(
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
     var profileRelationship by remember { mutableStateOf("") }
+    var profileListenerTitle by remember { mutableStateOf("") }
     var shareVoice by remember { mutableStateOf(false) }
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
@@ -172,7 +174,9 @@ internal fun VoiceProfileManagementPanel(
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
     var renameRelationship by remember { mutableStateOf("") }
+    var renameListenerTitle by remember { mutableStateOf("") }
     var renameSubmitAttempted by remember { mutableStateOf(false) }
+    var sharedInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
@@ -298,6 +302,7 @@ internal fun VoiceProfileManagementPanel(
         createSubmitAttempted = false
         profileName = ""
         profileRelationship = ""
+        profileListenerTitle = ""
         shareVoice = false
         selectedAudio = null
         mediaPlayer?.release()
@@ -485,11 +490,16 @@ internal fun VoiceProfileManagementPanel(
         createSubmitAttempted = true
         val trimmedName = name.trim()
         val trimmedRelationship = profileRelationship.trim()
+        val trimmedListener = profileListenerTitle.trim()
         if (trimmedName.isBlank()) {
             localMessage = null
             return
         }
         if (trimmedRelationship.isBlank()) {
+            localMessage = null
+            return
+        }
+        if (trimmedListener.isBlank()) {
             localMessage = null
             return
         }
@@ -504,7 +514,7 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             if (voiceProfileDurationError(audio.durationMillis) != null) return
-            onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship)
+            onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
             closeCreateDialog()
             return
         }
@@ -559,6 +569,7 @@ internal fun VoiceProfileManagementPanel(
                         audio = audio,
                         shared = shareVoice,
                         relationshipLabel = trimmedRelationship,
+                        listenerTitle = trimmedListener,
                     )
                 }
             }.onSuccess { drafts ->
@@ -621,6 +632,7 @@ internal fun VoiceProfileManagementPanel(
                         renameTarget = profile
                         renameName = profile.name
                         renameRelationship = profile.relationshipLabel.orEmpty()
+                        renameListenerTitle = profile.listenerTitle.orEmpty()
                         renameSubmitAttempted = false
                     },
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
@@ -636,7 +648,10 @@ internal fun VoiceProfileManagementPanel(
                 fontWeight = FontWeight.SemiBold,
             )
             familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(profile = profile)
+                SharedVoiceProfileRow(
+                    profile = profile,
+                    onEdit = { sharedInfoTarget = profile },
+                )
             }
         }
     }
@@ -668,8 +683,10 @@ internal fun VoiceProfileManagementPanel(
         }
         val resolvedProfileName = profileName.trim()
         val resolvedRelationship = profileRelationship.trim()
+        val resolvedListener = profileListenerTitle.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
         val relationshipRequiredError = createSubmitAttempted && resolvedRelationship.isBlank()
+        val listenerRequiredError = createSubmitAttempted && resolvedListener.isBlank()
         val hasSeparatedSpeakers = detectedSpeakers.isNotEmpty()
         val fileInputLocked = separatingBusy || hasSeparatedSpeakers
         Dialog(
@@ -746,6 +763,24 @@ internal fun VoiceProfileManagementPanel(
                             isError = relationshipRequiredError,
                             supportingText = {
                                 if (relationshipRequiredError) Text("필수 입력 값입니다.")
+                            },
+                            shape = VocaWakeInputShape,
+                            colors = vocaWakeOutlinedTextFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = profileListenerTitle,
+                            onValueChange = { profileListenerTitle = it.take(30) },
+                            label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
+                            placeholder = { Text("예: 민지야, 여보, 우리 손주") },
+                            singleLine = true,
+                            isError = listenerRequiredError,
+                            supportingText = {
+                                if (listenerRequiredError) {
+                                    Text("필수 입력 값입니다.")
+                                } else {
+                                    Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
+                                }
                             },
                             shape = VocaWakeInputShape,
                             colors = vocaWakeOutlinedTextFieldColors(),
@@ -920,8 +955,10 @@ internal fun VoiceProfileManagementPanel(
     renameTarget?.let { profile ->
         val resolvedRenameName = renameName.trim()
         val resolvedRenameRelationship = renameRelationship.trim()
+        val resolvedRenameListener = renameListenerTitle.trim()
         val renameNameError = renameSubmitAttempted && resolvedRenameName.isBlank()
         val renameRelationshipError = renameSubmitAttempted && resolvedRenameRelationship.isBlank()
+        val renameListenerError = renameSubmitAttempted && resolvedRenameListener.isBlank()
         AlertDialog(
             onDismissRequest = { renameTarget = null },
             title = { Text("알람 음성 수정") },
@@ -954,14 +991,37 @@ internal fun VoiceProfileManagementPanel(
                         colors = vocaWakeOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    OutlinedTextField(
+                        value = renameListenerTitle,
+                        onValueChange = { renameListenerTitle = it.take(30) },
+                        label = { Text("나를 부를 호칭") },
+                        placeholder = { Text("예: 민지야, 여보") },
+                        singleLine = true,
+                        isError = renameListenerError,
+                        supportingText = {
+                            if (renameListenerError) Text("필수 입력 값입니다.")
+                        },
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         renameSubmitAttempted = true
-                        if (resolvedRenameName.isNotBlank() && resolvedRenameRelationship.isNotBlank()) {
-                            onRenameVoiceProfile(profile.id, resolvedRenameName, resolvedRenameRelationship)
+                        if (
+                            resolvedRenameName.isNotBlank() &&
+                            resolvedRenameRelationship.isNotBlank() &&
+                            resolvedRenameListener.isNotBlank()
+                        ) {
+                            onRenameVoiceProfile(
+                                profile.id,
+                                resolvedRenameName,
+                                resolvedRenameRelationship,
+                                resolvedRenameListener,
+                            )
                             renameTarget = null
                         }
                     },
@@ -973,6 +1033,19 @@ internal fun VoiceProfileManagementPanel(
                 TextButton(onClick = { renameTarget = null }) {
                     Text("취소")
                 }
+            },
+        )
+    }
+
+    sharedInfoTarget?.let { profile ->
+        SharedVoiceViewerInfoDialog(
+            profileName = profile.name,
+            initialRelationship = profile.relationshipLabel.orEmpty(),
+            initialListenerTitle = profile.listenerTitle.orEmpty(),
+            onDismiss = { sharedInfoTarget = null },
+            onConfirm = { relationship, listener ->
+                onUpdateSharedVoiceInfo(profile.id, relationship, listener)
+                sharedInfoTarget = null
             },
         )
     }
@@ -1327,40 +1400,139 @@ internal fun VoiceProfileRow(
 }
 
 @Composable
-private fun SharedVoiceProfileRow(profile: FamilyVoiceProfile) {
+private fun SharedVoiceProfileRow(
+    profile: FamilyVoiceProfile,
+    onEdit: () -> Unit,
+) {
+    val needsViewerInfo = profile.relationshipLabel.isNullOrBlank() ||
+        profile.listenerTitle.isNullOrBlank()
     OutlinedCard(
         shape = VocaWakeCardShape,
         border = vocaWakeCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Mic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(profile.name, fontWeight = FontWeight.SemiBold)
+                    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
+                    val listener = profile.listenerTitle?.takeIf { it.isNotBlank() }
+                    val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
+                        ?.let { "$it 님의 알람 음성" } ?: "공유받은 알람 음성"
+                    val detail = buildList {
+                        add(ownerText)
+                        relation?.let { add("관계 $it") }
+                        listener?.let { add("호칭 $it") }
+                    }.joinToString(" · ")
+                    MutedText(detail)
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "내 정보 수정")
+                }
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold)
-                val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
-                val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }?.let { "$it 님의 알람 음성" } ?: "공유받은 알람 음성"
-                MutedText(relation?.let { "$ownerText · 관계 $it" } ?: ownerText)
+            if (needsViewerInfo) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = VocaWakeButtonShape,
+                    border = vocaWakeCardBorder(),
+                    colors = vocaWakeOutlinedButtonColors(),
+                ) {
+                    Text("이 음성이 나를 부를 호칭 설정하기")
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SharedVoiceViewerInfoDialog(
+    profileName: String,
+    initialRelationship: String,
+    initialListenerTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
+    var draftListener by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
+    var submitted by remember { mutableStateOf(false) }
+    val relationshipError = submitted && draftRelationship.isBlank()
+    val listenerError = submitted && draftListener.isBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("공유 음성 설정") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MutedText("'$profileName' 가 내게 어떻게 말할지 알려주세요.")
+                OutlinedTextField(
+                    value = draftRelationship,
+                    onValueChange = { draftRelationship = it.take(30) },
+                    label = { Text("나와의 관계") },
+                    placeholder = { Text("예: 손주, 자식, 형제") },
+                    singleLine = true,
+                    isError = relationshipError,
+                    supportingText = {
+                        if (relationshipError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftListener,
+                    onValueChange = { draftListener = it.take(30) },
+                    label = { Text("이 목소리가 나를 부를 호칭") },
+                    placeholder = { Text("예: 지호야, 우리 강아지") },
+                    singleLine = true,
+                    isError = listenerError,
+                    supportingText = {
+                        if (listenerError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    submitted = true
+                    if (draftRelationship.isNotBlank() && draftListener.isNotBlank()) {
+                        onConfirm(draftRelationship.trim(), draftListener.trim())
+                    }
+                },
+            ) {
+                Text("저장")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("취소") }
+        },
+    )
 }

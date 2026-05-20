@@ -44,6 +44,7 @@ export type DynamicAlarmTextContext = {
   targetLanguage: string;
   dateLabel: string;
   relationshipLabel?: string | null;
+  listenerTitle?: string | null;
   weatherSummary?: string | null;
   fortuneProfile?: string | null;
   mealLabel?: string | null;
@@ -452,9 +453,13 @@ function alarmTextPrompt(args: {
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
+  const listenerTitle = context.listenerTitle?.trim();
+  const listenerInstruction = listenerTitle
+    ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
+    : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it for warmth and tone only. Never address the listener as grandmother, grandfather, mom, dad, or another family title unless that exact listener title is explicitly provided. Do not invent names or private facts.`
-    : 'No relationship label is available, so keep the line generally warm.';
+    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it only to shape warmth and tone. ${listenerInstruction} Do not invent names or private facts.`
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
       return `Use this weather context if available: ${context.weatherSummary || 'weather information is unavailable'}. Give one practical morning tip when it fits.`;
@@ -482,8 +487,9 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     `Alarm category: ${context.category}.`,
     relationship,
     modeInstruction,
-    'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter.',
-    'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
+    listenerTitle
+      ? `Address the listener as "${listenerTitle}" rather than guessing a family title.`
+      : 'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     'No markdown, no emojis, no quotes, no explanations, no extra fields.',
     'Keep the final text spoken, kind, and 200 characters or fewer.',
@@ -493,7 +499,13 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
 
 function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): string {
   const relationship = context.relationshipLabel?.trim();
-  const opener = relationship ? `${relationship} 목소리로 전해요.` : '좋은 아침이에요.';
+  const listener = context.listenerTitle?.trim();
+  const opener = (() => {
+    if (listener && relationship) return `${listener}, ${relationship} 목소리로 전해요.`;
+    if (listener) return `${listener}, 좋은 아침이에요.`;
+    if (relationship) return `${relationship} 목소리로 전해요.`;
+    return '좋은 아침이에요.';
+  })();
   if (context.mode === 'wake_weather' && context.weatherSummary) {
     return `${opener} ${context.dateLabel}, ${context.weatherSummary} 오늘 필요한 것만 챙기고 가볍게 시작해요.`
       .slice(0, 200)
