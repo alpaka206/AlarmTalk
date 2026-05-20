@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,8 +67,11 @@ import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
+import com.voicealarm.nativeapp.network.TtsGenerateRequest
+import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -118,6 +122,10 @@ internal fun VoiceProfileManagementPanel(
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean) -> Unit,
     onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
+    onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
+    onPromoteDraftVoice: suspend (String) -> Unit,
+    onDeleteDraftVoice: suspend (String) -> Unit,
+    onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onRenameVoiceProfile: (String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
@@ -142,9 +150,10 @@ internal fun VoiceProfileManagementPanel(
     var cropEndMillis by remember { mutableStateOf(VoiceProfileAudioLimits.MAX_DURATION_MILLIS) }
     var speakerCount by remember { mutableStateOf(1) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
-    var selectedSpeakerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var removedSpeakerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var speakerDraftStates by remember { mutableStateOf<Map<String, SpeakerDraftState>>(emptyMap()) }
+    var activePlayingSpeakerId by remember { mutableStateOf<String?>(null) }
     var separatingBusy by remember { mutableStateOf(false) }
+    var promotingBusy by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
@@ -154,7 +163,6 @@ internal fun VoiceProfileManagementPanel(
     var filePreviewPreparing by remember { mutableStateOf(false) }
     var filePreviewPlaying by remember { mutableStateOf(false) }
     val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
-    val remainingProfileSlots = (MAX_VOICE_PROFILES - voiceProfiles.size).coerceAtLeast(0)
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
     val paidVoiceRequiredMessage = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
@@ -185,8 +193,8 @@ internal fun VoiceProfileManagementPanel(
                 cropStartMillis = 0L
                 cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 detectedSpeakers = emptyList()
-                selectedSpeakerIds = emptySet()
-                removedSpeakerIds = emptySet()
+                speakerDraftStates = emptyMap()
+                activePlayingSpeakerId = null
                 localMessage = voiceProfileFileDurationError(durationMillis)
             }
                 .onFailure { error ->
@@ -230,6 +238,17 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    fun cleanupDraftsAsync(draftIds: Collection<String>) {
+        if (draftIds.isEmpty()) return
+        // viewModelScope 가 아닌 dialog scope 라 다이얼로그가 사라져도 작업이 끝까지 가도록
+        // application context coroutine 으로 분리하지는 않는다. 짧은 시간 내에 완료된다고 가정.
+        draftIds.forEach { draftId ->
+            scope.launch {
+                runCatching { onDeleteDraftVoice(draftId) }
+            }
+        }
+    }
+
     fun closeCreateDialog() {
         if (recorder.isRecording) recorder.cancel()
         isRecording = false
@@ -242,9 +261,12 @@ internal fun VoiceProfileManagementPanel(
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
         speakerCount = 1
         detectedSpeakers = emptyList()
-        selectedSpeakerIds = emptySet()
-        removedSpeakerIds = emptySet()
+        // 다이얼로그 닫힐 때 현재 화면에 남은 draft 가 있으면 모두 삭제 (선택되지 않은 채 닫힘)
+        cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
+        speakerDraftStates = emptyMap()
+        activePlayingSpeakerId = null
         separatingBusy = false
+        promotingBusy = false
         profileName = ""
         shareVoice = false
         selectedAudio = null
@@ -311,23 +333,96 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    suspend fun prepareSpeakerDraft(
+        speaker: VoiceSpeakerSegment,
+        index: Int,
+        baseName: String,
+        uri: Uri,
+    ) {
+        val duration = (speaker.endMs - speaker.startMs)
+            .coerceIn(VoiceProfileAudioLimits.MIN_DURATION_MILLIS, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
+        runCatching {
+            val audio = withContext(Dispatchers.IO) {
+                audioStore.cacheFromUri(
+                    sourceUri = uri,
+                    maxDurationMillis = duration,
+                    startMillis = cropStartMillis + speaker.startMs,
+                )
+            }
+            val draftName = "${baseName.ifBlank { voiceProfilePlaceholder() }} ${index + 1}"
+            val profile = onCloneSpeakerDraft(draftName, audio)
+            speakerDraftStates = speakerDraftStates.toMutableMap().also {
+                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+                    profileId = profile.id,
+                    status = SpeakerDraftStatus.Synthesizing,
+                )
+            }
+            val ttsResponse = onGenerateTts(
+                TtsGenerateRequest(
+                    voiceProfileId = profile.id,
+                    text = "제 목소리를 선택하시는건가요?",
+                    category = "custom",
+                    language = "ko",
+                    random = false,
+                ),
+            )
+            val audioBytes = Base64.decode(ttsResponse.audioBase64, Base64.DEFAULT)
+            val cached = withContext(Dispatchers.IO) {
+                audioStore.cacheGeneratedAudio(
+                    bytes = audioBytes,
+                    format = ttsResponse.audioFormat,
+                    rawAudioUri = null,
+                    displayName = "speaker_preview_${profile.id}",
+                    cacheKey = "draft_preview_${profile.id}",
+                    messageId = ttsResponse.messageId,
+                )
+            }
+            speakerDraftStates = speakerDraftStates.toMutableMap().also {
+                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+                    profileId = profile.id,
+                    previewUri = cached.localAudioUri,
+                    status = SpeakerDraftStatus.Ready,
+                )
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to prepare speaker draft id=${speaker.id}", error)
+            speakerDraftStates = speakerDraftStates.toMutableMap().also {
+                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+                    status = SpeakerDraftStatus.Failed,
+                    errorMessage = userFacingError(error, "화자 미리듣기 준비에 실패했어요."),
+                )
+            }
+        }
+    }
+
     fun separateSpeakers() {
         if (!canCreateVoice) {
             localMessage = paidVoiceRequiredMessage
             return
         }
         if (speakerCount <= 1) return
+        val uri = selectedFileUri ?: return
         scope.launch {
             separatingBusy = true
             localMessage = null
+            // 기존에 만들어둔 draft 가 있으면 먼저 정리.
+            cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
+            speakerDraftStates = emptyMap()
+            activePlayingSpeakerId = null
             runCatching {
                 val audio = croppedFileAudio()
                 onSeparateVoiceSpeakers(audio)
             }.onSuccess { speakers ->
-                detectedSpeakers = speakers.filter { it.endMs > it.startMs }.take(3)
-                selectedSpeakerIds = emptySet()
-                removedSpeakerIds = emptySet()
-                localMessage = if (detectedSpeakers.isEmpty()) "분리할 화자를 찾지 못했어요." else null
+                val visible = speakers.filter { it.endMs > it.startMs }.take(3)
+                detectedSpeakers = visible
+                speakerDraftStates = visible.associate { s ->
+                    s.id to SpeakerDraftState(status = SpeakerDraftStatus.Cloning)
+                }
+                localMessage = if (visible.isEmpty()) "분리할 화자를 찾지 못했어요." else null
+                val baseName = profileName.trim()
+                visible.forEachIndexed { index, speaker ->
+                    scope.launch { prepareSpeakerDraft(speaker, index, baseName, uri) }
+                }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to separate speakers", error)
                 localMessage = userFacingError(error, "화자 분리에 실패했어요.")
@@ -337,39 +432,69 @@ internal fun VoiceProfileManagementPanel(
     }
 
     fun resetSpeakers() {
+        cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
         detectedSpeakers = emptyList()
-        selectedSpeakerIds = emptySet()
-        removedSpeakerIds = emptySet()
+        speakerDraftStates = emptyMap()
+        activePlayingSpeakerId = null
         stopMediaPreview()
         localMessage = null
     }
 
-    fun playSpeakerPreview(speaker: VoiceSpeakerSegment) {
-        val uri = selectedFileUri ?: return
-        scope.launch {
+    fun playSpeakerDraftPreview(speaker: VoiceSpeakerSegment) {
+        val state = speakerDraftStates[speaker.id] ?: return
+        val previewUri = state.previewUri ?: return
+        // 이미 같은 화자가 재생 중이면 정지
+        if (activePlayingSpeakerId == speaker.id) {
             stopMediaPreview()
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    audioStore.cacheFromUri(
-                        sourceUri = uri,
-                        maxDurationMillis = (speaker.endMs - speaker.startMs)
-                            .coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS),
-                        startMillis = cropStartMillis + speaker.startMs,
-                    )
+            activePlayingSpeakerId = null
+            return
+        }
+        stopMediaPreview()
+        runCatching {
+            val player = MediaPlayer.create(context, Uri.parse(previewUri)) ?: return@runCatching
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                    activePlayingSpeakerId = null
                 }
-            }.onSuccess { audio ->
-                mediaPlayer?.release()
-                mediaPlayer = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))?.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                    }
-                    start()
-                }
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to play speaker preview", error)
-                localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+                start()
             }
+            activePlayingSpeakerId = speaker.id
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to play speaker draft preview", error)
+            localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+        }
+    }
+
+    fun selectSpeakerDraft(speaker: VoiceSpeakerSegment) {
+        val state = speakerDraftStates[speaker.id] ?: return
+        val selectedDraftId = state.profileId ?: return
+        scope.launch {
+            promotingBusy = true
+            stopMediaPreview()
+            activePlayingSpeakerId = null
+            runCatching {
+                onPromoteDraftVoice(selectedDraftId)
+                speakerDraftStates
+                    .filterKeys { it != speaker.id }
+                    .values
+                    .mapNotNull { it.profileId }
+                    .forEach { otherId ->
+                        runCatching { onDeleteDraftVoice(otherId) }
+                    }
+            }.onSuccess {
+                // draft 정리 완료. 다이얼로그 닫을 때 잔여 draft 가 또 cleanupDrafts 로 가지 않도록
+                // state 비우기.
+                speakerDraftStates = emptyMap()
+                detectedSpeakers = emptyList()
+                closeCreateDialog()
+                localMessage = "알람 음성으로 등록했어요"
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to promote draft voice id=$selectedDraftId", error)
+                localMessage = userFacingError(error, "알람 음성으로 등록하지 못했어요.")
+            }
+            promotingBusy = false
         }
     }
 
@@ -437,41 +562,7 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (speakerCount > 1) {
-            val selectedSpeakers = detectedSpeakers.filter { it.id in selectedSpeakerIds }
-            if (selectedSpeakers.isEmpty()) {
-                localMessage = "등록할 화자를 선택해 주세요."
-                return
-            }
-            if (selectedSpeakers.any { (it.endMs - it.startMs) < VoiceProfileAudioLimits.MIN_DURATION_MILLIS }) {
-                localMessage = "알람 음성으로 만들 화자 구간은 1분 이상이어야 해요."
-                return
-            }
-            scope.launch {
-                runCatching {
-                    selectedSpeakers.mapIndexed { index, speaker ->
-                        val duration = speaker.endMs - speaker.startMs
-                        val audio = withContext(Dispatchers.IO) {
-                            audioStore.cacheFromUri(
-                                sourceUri = uri,
-                                maxDurationMillis = duration.coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS),
-                                startMillis = cropStartMillis + speaker.startMs,
-                            )
-                        }
-                        val resolvedName = if (selectedSpeakers.size == 1) {
-                            name
-                        } else {
-                            "$name ${index + 1}"
-                        }
-                        Triple(resolvedName, audio, shareVoice)
-                    }
-                }.onSuccess { drafts ->
-                    onCreateVoiceProfiles(drafts)
-                    closeCreateDialog()
-                }.onFailure { error ->
-                    Log.e(TAG, "Failed to prepare selected speaker audio", error)
-                    localMessage = userFacingError(error, "선택한 화자 음성을 준비하지 못했어요.")
-                }
-            }
+            // 화자 분리 모드에서는 카드의 "선택" 버튼으로 등록한다. (등록 버튼 비활성)
             return
         }
         scope.launch {
@@ -586,7 +677,8 @@ internal fun VoiceProfileManagementPanel(
         val canRegister = if (inputMode == VoiceCaptureMode.Record) {
             audio != null && durationError == null
         } else if (speakerCount > 1) {
-            selectedSpeakerIds.isNotEmpty() && selectedSpeakerIds.size <= remainingProfileSlots
+            // 화자 분리 모드에서는 카드의 "선택" 버튼으로 등록한다.
+            false
         } else {
             selectedFileUri != null && durationError == null
         }
@@ -695,7 +787,7 @@ internal fun VoiceProfileManagementPanel(
                                     ) {
                                         Button(
                                             onClick = { separateSpeakers() },
-                                            enabled = !separatingBusy,
+                                            enabled = !separatingBusy && !promotingBusy,
                                             modifier = Modifier.weight(1f),
                                             shape = VocaWakeButtonShape,
                                         ) {
@@ -703,7 +795,7 @@ internal fun VoiceProfileManagementPanel(
                                         }
                                         OutlinedButton(
                                             onClick = { resetSpeakers() },
-                                            enabled = detectedSpeakers.isNotEmpty() || removedSpeakerIds.isNotEmpty(),
+                                            enabled = detectedSpeakers.isNotEmpty() && !promotingBusy,
                                             modifier = Modifier.weight(1f),
                                             shape = VocaWakeButtonShape,
                                             border = vocaWakeCardBorder(),
@@ -712,27 +804,16 @@ internal fun VoiceProfileManagementPanel(
                                             Text("초기화")
                                         }
                                     }
-                                    val visibleSpeakers = detectedSpeakers.filterNot { it.id in removedSpeakerIds }
-                                    visibleSpeakers.forEachIndexed { index, speaker ->
-                                        SpeakerCandidateRow(
+                                    detectedSpeakers.forEachIndexed { index, speaker ->
+                                        val draftState = speakerDraftStates[speaker.id] ?: SpeakerDraftState()
+                                        SpeakerDraftRow(
                                             speaker = speaker,
                                             index = index,
-                                            selected = speaker.id in selectedSpeakerIds,
-                                            canSelectMore = selectedSpeakerIds.size < remainingProfileSlots,
-                                            onToggle = {
-                                                selectedSpeakerIds = if (speaker.id in selectedSpeakerIds) {
-                                                    selectedSpeakerIds - speaker.id
-                                                } else if (selectedSpeakerIds.size < remainingProfileSlots) {
-                                                    selectedSpeakerIds + speaker.id
-                                                } else {
-                                                    selectedSpeakerIds
-                                                }
-                                            },
-                                            onPreview = { playSpeakerPreview(speaker) },
-                                            onRemove = {
-                                                removedSpeakerIds = removedSpeakerIds + speaker.id
-                                                selectedSpeakerIds = selectedSpeakerIds - speaker.id
-                                            },
+                                            state = draftState,
+                                            isPlaying = activePlayingSpeakerId == speaker.id,
+                                            promotingBusy = promotingBusy,
+                                            onTogglePlay = { playSpeakerDraftPreview(speaker) },
+                                            onSelect = { selectSpeakerDraft(speaker) },
                                         )
                                     }
                                 }
@@ -986,16 +1067,38 @@ private fun SpeakerCountSelector(
     }
 }
 
+internal enum class SpeakerDraftStatus {
+    Cloning,
+    Synthesizing,
+    Ready,
+    Failed,
+}
+
+internal data class SpeakerDraftState(
+    val profileId: String? = null,
+    val previewUri: String? = null,
+    val status: SpeakerDraftStatus = SpeakerDraftStatus.Cloning,
+    val errorMessage: String? = null,
+)
+
+private fun draftStatusLabel(status: SpeakerDraftStatus, errorMessage: String?): String = when (status) {
+    SpeakerDraftStatus.Cloning -> "목소리 학습 중"
+    SpeakerDraftStatus.Synthesizing -> "미리듣기 음성 만드는 중"
+    SpeakerDraftStatus.Ready -> "준비 완료"
+    SpeakerDraftStatus.Failed -> errorMessage ?: "미리듣기를 준비하지 못했어요"
+}
+
 @Composable
-private fun SpeakerCandidateRow(
+private fun SpeakerDraftRow(
     speaker: VoiceSpeakerSegment,
     index: Int,
-    selected: Boolean,
-    canSelectMore: Boolean,
-    onToggle: () -> Unit,
-    onPreview: () -> Unit,
-    onRemove: () -> Unit,
+    state: SpeakerDraftState,
+    isPlaying: Boolean,
+    promotingBusy: Boolean,
+    onTogglePlay: () -> Unit,
+    onSelect: () -> Unit,
 ) {
+    val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
     OutlinedCard {
         Row(
             modifier = Modifier
@@ -1009,26 +1112,23 @@ private fun SpeakerCandidateRow(
                     text = "목소리 ${index + 1}",
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText(speakerDurationLabel(speaker))
+                MutedText(draftStatusLabel(state.status, state.errorMessage))
             }
-            IconButton(onClick = onPreview) {
-                Icon(Icons.Outlined.PlayArrow, contentDescription = "미리듣기")
+            IconButton(
+                onClick = onTogglePlay,
+                enabled = ready,
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = if (isPlaying) "일시정지" else "미리듣기",
+                )
             }
-            if (selected) {
-                Button(onClick = onToggle, shape = RoundedCornerShape(999.dp)) {
-                    Text("선택됨")
-                }
-            } else {
-                OutlinedButton(
-                    onClick = onToggle,
-                    enabled = canSelectMore,
-                    shape = RoundedCornerShape(999.dp),
-                ) {
-                    Text("선택")
-                }
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Outlined.Delete, contentDescription = "제거")
+            Button(
+                onClick = onSelect,
+                enabled = ready && !promotingBusy,
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                Text("선택")
             }
         }
     }

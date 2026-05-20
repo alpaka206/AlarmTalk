@@ -759,6 +759,16 @@ export const migrations: Migration[] = [
       `ALTER TABLE generated_audio_assets ADD COLUMN delivery_tags_json TEXT NOT NULL DEFAULT '[]'`,
     ],
   },
+  {
+    // 화자 분리 후 미리듣기/선택 흐름용 임시 보이스 프로파일.
+    // is_draft=1 은 카운트/리스트에서 제외하고 promote 시 0 으로 변경.
+    id: 39,
+    name: 'voice-profile-draft-flag',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profiles_is_draft ON voice_profiles(is_draft, user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

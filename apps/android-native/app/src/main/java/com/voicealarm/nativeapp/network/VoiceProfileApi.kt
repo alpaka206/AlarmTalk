@@ -53,6 +53,7 @@ data class VoiceSpeakerSegment(
 data class VoiceProfileUpdateRequest(
     val name: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
+    @SerializedName("is_draft") val isDraft: Boolean? = null,
 )
 
 data class VoiceProfile(
@@ -61,6 +62,7 @@ data class VoiceProfile(
     val status: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
+    @SerializedName("is_draft") val isDraft: Boolean? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -89,6 +91,7 @@ interface VoiceProfileApi {
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
+        @Part("isDraft") isDraft: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart

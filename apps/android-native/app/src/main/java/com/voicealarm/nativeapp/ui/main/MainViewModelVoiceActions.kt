@@ -120,6 +120,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
                         name = name.toRequestBody("text/plain".toMediaType()),
                         isShared = shared.toString().toRequestBody("text/plain".toMediaType()),
                         durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
+                        isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -174,6 +175,61 @@ internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio
             authorization = VoiceAlarmApiClient.bearer(session.token),
             uploadId = upload.id,
         ).speakers
+    }
+}
+
+/**
+ * 화자 미리듣기용 임시(draft) 보이스 프로파일을 만든다.
+ * MAX_VOICE_PROFILES 카운트에서 제외되고, 사용자가 "선택" 하면 promote 로 정식 등록한다.
+ */
+internal suspend fun MainViewModel.cloneSpeakerDraft(
+    name: String,
+    audio: CachedAlarmAudio,
+): VoiceProfile {
+    val session = authSession ?: throw IllegalStateException("화자 음성을 미리듣기 하려면 먼저 로그인해 주세요")
+    check(hasPaidVoiceAccess(subscriptionResponse)) {
+        "유료 요금제를 사용해야 목소리를 만들 수 있어요."
+    }
+    return withContext(Dispatchers.IO) {
+        api.createVoiceClone(
+            authorization = VoiceAlarmApiClient.bearer(session.token),
+            audio = voiceUploadPart(audio),
+            name = name.toRequestBody("text/plain".toMediaType()),
+            isShared = false.toString().toRequestBody("text/plain".toMediaType()),
+            durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
+            isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
+        ).profile
+    }
+}
+
+/**
+ * draft=true 프로파일을 promote 해 정식 보이스로 등록한다.
+ * 사용자의 기존 non-draft 음성이 있으면 서버가 409 VOICE_LIMIT_REACHED 를 반환한다.
+ */
+internal suspend fun MainViewModel.promoteDraftVoice(profileId: String): VoiceProfile {
+    val session = authSession ?: throw IllegalStateException("음성을 등록하려면 먼저 로그인해 주세요")
+    return withContext(Dispatchers.IO) {
+        api.updateVoiceProfile(
+            authorization = VoiceAlarmApiClient.bearer(session.token),
+            id = profileId,
+            request = VoiceProfileUpdateRequest(isDraft = false),
+        ).profile
+    }
+}
+
+/** draft 보이스 정리용. 기존 deleteVoiceProfile 과 동일하게 force=true 로 삭제. */
+internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
+    val session = authSession ?: return
+    withContext(Dispatchers.IO) {
+        runCatching {
+            api.deleteVoiceProfile(
+                authorization = VoiceAlarmApiClient.bearer(session.token),
+                id = profileId,
+                force = true,
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to delete draft voice id=$profileId", error)
+        }
     }
 }
 
