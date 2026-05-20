@@ -453,26 +453,13 @@ html, body {
     // sectionIndex 는 그대로 유지 (4 상태 유지)
   }
 
-  stage.addEventListener('click', (e) => {
-    // 클릭한 분면 찾기
-    const clickedQuad = e.target.closest('.quad');
-    if (clickedQuad) {
-      const clickedIndex = parseInt(clickedQuad.getAttribute('data-index'), 10);
-      if (!isNaN(clickedIndex)) {
-        // 아직 펼쳐지지 않은 분면 클릭 → 그 분면까지 펼치기
-        if (clickedIndex > sectionIndex) {
-          sectionIndex = Math.min(TOTAL, clickedIndex);
-          updateCovers();
-          return;
-        }
-      }
-    }
-    // 모두 펼쳐진 상태면 어디든 클릭 시 모달 오픈
+  stage.addEventListener('click', () => {
+    // 클릭한 위치와 무관하게 항상 한 단계만 진행.
+    // 1 → 2 → 3 → 4 → (다시 클릭) 영상 모달.
     if (sectionIndex >= TOTAL) {
       openModal();
       return;
     }
-    // 그 외(이미 펼쳐진 분면을 클릭) → 다음 분면 펼치기
     const reachedEnd = advance();
     if (reachedEnd) openModal();
   });
