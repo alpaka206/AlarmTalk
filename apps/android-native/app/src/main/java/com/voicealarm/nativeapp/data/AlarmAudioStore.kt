@@ -17,6 +17,9 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.Properties
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.math.abs
 
 object AlarmAudioLimits {
@@ -89,6 +92,43 @@ class AlarmAudioStore(
             startMillis = resolvedStartMillis,
             maxDurationMillis = maxDurationMillis,
         )
+        // 동일 cacheKey 로 동시에 trim/copy 가 두 번 일어나면 중복 파일 쓰기와 망가진 캐시가 생긴다.
+        // cacheKey 별 lock 으로 첫 번째 호출이 끝날 때까지 두 번째 호출이 기다리도록 한다.
+        return cacheKeyLock(cacheKey).withLock {
+            try {
+                cacheFromUriLocked(
+                    sourceUri = sourceUri,
+                    maxDurationMillis = maxDurationMillis,
+                    durationMillis = durationMillis,
+                    displayName = displayName,
+                    extension = extension,
+                    sourceMimeType = sourceMimeType,
+                    trackMimeType = trackMimeType,
+                    forceExtractAudio = forceExtractAudio,
+                    trimAsMp3 = trimAsMp3,
+                    resolvedStartMillis = resolvedStartMillis,
+                    cacheKey = cacheKey,
+                )
+            } finally {
+                releaseCacheKeyLockIfUnused(cacheKey)
+            }
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private fun cacheFromUriLocked(
+        sourceUri: Uri,
+        maxDurationMillis: Long,
+        durationMillis: Long,
+        displayName: String,
+        extension: String,
+        sourceMimeType: String?,
+        trackMimeType: String?,
+        forceExtractAudio: Boolean,
+        trimAsMp3: Boolean,
+        resolvedStartMillis: Long,
+        cacheKey: String,
+    ): CachedAlarmAudio {
         findCachedFile(cacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
             val rawDuration = readDurationMillis(cachedUri)
@@ -657,6 +697,24 @@ class AlarmAudioStore(
         private const val DECODE_TIMEOUT_US = 10_000L
         private const val MAX_IDLE_OUTPUT_DEQUEUE_COUNT = 20
         private const val PCM_16BIT_MAX_LEVEL = 32768.0
+
+        // cacheKey 별 in-flight 작업 중복 방지용 lock.
+        // 프로세스 전역으로 공유하지 않으면 같은 입력에 대해 두 번 호출 시 두 번째가 첫 번째와
+        // 동시에 trim/copy 를 수행해 캐시 파일을 덮어쓸 수 있다.
+        private val cacheKeyLocks = ConcurrentHashMap<String, ReentrantLock>()
+
+        private fun cacheKeyLock(cacheKey: String): ReentrantLock =
+            cacheKeyLocks.computeIfAbsent(cacheKey) { ReentrantLock() }
+
+        private fun releaseCacheKeyLockIfUnused(cacheKey: String) {
+            val lock = cacheKeyLocks[cacheKey] ?: return
+            // hold 중인 호출은 위 withLock 안에서 unlock 된 직후이며,
+            // 다른 호출이 lock 을 잡고 있다면 isLocked 가 true 이므로 그대로 둔다.
+            if (!lock.isLocked) {
+                // 동일 키로 새 호출이 막 들어왔을 가능성을 고려, atomic remove 만 시도.
+                cacheKeyLocks.remove(cacheKey, lock)
+            }
+        }
 
         fun ttsCacheKey(
             profileId: String,
