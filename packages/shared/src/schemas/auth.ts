@@ -39,6 +39,16 @@ export const GoogleLoginRequestSchema = z.object({
 });
 export type GoogleLoginRequest = z.infer<typeof GoogleLoginRequestSchema>;
 
+export const AppleLoginRequestSchema = z.object({
+  id_token: z.string().min(1),
+  email: z.string().email().optional(),
+  name: z.string().min(1).max(64).optional(),
+  // 클라이언트가 SecRandomCopyBytes 로 생성한 raw nonce.
+  // 서버는 이 값을 SHA256 해싱해 id_token.nonce 와 비교한다.
+  nonce: z.string().min(16).max(128).optional(),
+});
+export type AppleLoginRequest = z.infer<typeof AppleLoginRequestSchema>;
+
 export const AuthResponseSchema = z.object({
   token: z.string().min(1),
   user: z.object({
@@ -46,6 +56,7 @@ export const AuthResponseSchema = z.object({
     email: z.string().email(),
     name: z.string(),
     plan: z.enum(['free', 'plus', 'family']),
+    apple_user_id: z.string().nullable().optional(),
   }),
 });
 export type AuthResponse = z.infer<typeof AuthResponseSchema>;

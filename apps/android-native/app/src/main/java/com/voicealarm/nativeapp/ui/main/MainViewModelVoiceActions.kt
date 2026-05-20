@@ -17,6 +17,7 @@ import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.CharacterEventEntity
+import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
 import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
@@ -36,10 +37,12 @@ import com.voicealarm.nativeapp.network.TtsMessage
 import com.voicealarm.nativeapp.network.TtsMessageAudioResponse
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.VoiceProfileRelationshipUpdateRequest
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import com.voicealarm.nativeapp.network.VoucherItem
 import java.time.Instant
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -84,11 +87,27 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     }
 }
 
-internal fun MainViewModel.createVoiceProfile(name: String, audio: CachedAlarmAudio, shared: Boolean) {
-    createVoiceProfiles(listOf(Triple(name, audio, shared)))
+internal fun MainViewModel.createVoiceProfile(
+    name: String,
+    audio: CachedAlarmAudio,
+    shared: Boolean,
+    relationshipLabel: String,
+    listenerTitle: String,
+) {
+    createVoiceProfiles(
+        listOf(
+            VoiceProfileCreationDraft(
+                name = name,
+                audio = audio,
+                shared = shared,
+                relationshipLabel = relationshipLabel,
+                listenerTitle = listenerTitle,
+            ),
+        ),
+    )
 }
 
-internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, CachedAlarmAudio, Boolean>>) {
+internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>) {
     val session = authSession
     if (session == null) {
         message = "알람 음성을 만들려면 먼저 로그인해 주세요"
@@ -98,9 +117,23 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
         message = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
         return
     }
-    val drafts = items.map { (name, audio, shared) -> Triple(name.trim(), audio, shared) }
-    if (drafts.isEmpty() || drafts.any { it.first.isBlank() }) {
+    val drafts = items.map {
+        it.copy(
+            name = it.name.trim(),
+            relationshipLabel = it.relationshipLabel.trim(),
+            listenerTitle = it.listenerTitle.trim(),
+        )
+    }
+    if (drafts.isEmpty() || drafts.any { it.name.isBlank() }) {
         message = "알람 음성 이름을 입력해 주세요"
+        return
+    }
+    if (drafts.any { it.relationshipLabel.isBlank() }) {
+        message = "나와의 관계를 입력해 주세요"
+        return
+    }
+    if (drafts.any { it.listenerTitle.isBlank() }) {
+        message = "이 목소리가 나를 부를 호칭을 입력해 주세요"
         return
     }
     if (voiceProfiles.size + drafts.size > MAX_VOICE_PROFILES) {
@@ -111,28 +144,43 @@ internal fun MainViewModel.createVoiceProfiles(items: List<Triple<String, Cached
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
+        val pendingProfiles = drafts.map { draft ->
+            VoiceProfile(
+                id = "local-pending-${UUID.randomUUID()}",
+                name = draft.name,
+                status = "processing",
+                isShared = draft.shared,
+                relationshipLabel = draft.relationshipLabel,
+                listenerTitle = draft.listenerTitle,
+            )
+        }
+        val pendingIds = pendingProfiles.map { it.id }.toSet()
+        voiceProfiles = pendingProfiles + voiceProfiles
         runCatching {
             withContext(Dispatchers.IO) {
-                drafts.map { (name, audio, shared) ->
+                drafts.map { draft ->
                     api.createVoiceClone(
                         authorization = VoiceAlarmApiClient.bearer(session.token),
-                        audio = voiceUploadPart(audio),
-                        name = name.toRequestBody("text/plain".toMediaType()),
-                        isShared = shared.toString().toRequestBody("text/plain".toMediaType()),
-                        durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
+                        audio = voiceUploadPart(draft.audio),
+                        name = draft.name.toRequestBody("text/plain".toMediaType()),
+                        isShared = draft.shared.toString().toRequestBody("text/plain".toMediaType()),
+                        relationshipLabel = draft.relationshipLabel.toRequestBody("text/plain".toMediaType()),
+                        listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
+                        durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
         }.onSuccess { profiles ->
             val newIds = profiles.map { it.id }.toSet()
-            voiceProfiles = profiles + voiceProfiles.filterNot { it.id in newIds }
+            voiceProfiles = profiles + voiceProfiles.filterNot { it.id in pendingIds || it.id in newIds }
             message = if (profiles.size == 1) {
                 "알람 음성 '${profiles.first().name}'을 만들었어요"
             } else {
                 "알람 음성 ${profiles.size}개를 만들었어요"
             }
         }.onFailure { error ->
+            voiceProfiles = voiceProfiles.filterNot { it.id in pendingIds }
             Log.e(TAG, "Failed to create voice profile", error)
             message = when (voiceErrorCode(error)) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> "학습 음성은 1분 이상이어야 해요."
@@ -196,6 +244,8 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
             audio = voiceUploadPart(audio),
             name = name.toRequestBody("text/plain".toMediaType()),
             isShared = false.toString().toRequestBody("text/plain".toMediaType()),
+            relationshipLabel = "".toRequestBody("text/plain".toMediaType()),
+            listenerTitle = "".toRequestBody("text/plain".toMediaType()),
             durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
             isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
         ).profile
@@ -233,15 +283,30 @@ internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
     }
 }
 
-internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
+internal fun MainViewModel.renameVoiceProfile(
+    profileId: String,
+    name: String,
+    relationshipLabel: String,
+    listenerTitle: String,
+) {
     val session = authSession
     if (session == null) {
         message = "알람 음성을 수정하려면 먼저 로그인해 주세요"
         return
     }
     val trimmedName = name.trim()
+    val trimmedRelationship = relationshipLabel.trim()
+    val trimmedListener = listenerTitle.trim()
     if (trimmedName.isBlank()) {
         message = "알람 음성 이름을 입력해 주세요"
+        return
+    }
+    if (trimmedRelationship.isBlank()) {
+        message = "나와의 관계를 입력해 주세요"
+        return
+    }
+    if (trimmedListener.isBlank()) {
+        message = "이 목소리가 나를 부를 호칭을 입력해 주세요"
         return
     }
 
@@ -253,17 +318,87 @@ internal fun MainViewModel.renameVoiceProfile(profileId: String, name: String) {
                 api.updateVoiceProfile(
                     authorization = VoiceAlarmApiClient.bearer(session.token),
                     id = profileId,
-                    request = VoiceProfileUpdateRequest(name = trimmedName),
+                    request = VoiceProfileUpdateRequest(
+                        name = trimmedName,
+                        relationshipLabel = trimmedRelationship,
+                        listenerTitle = trimmedListener,
+                    ),
                 ).profile
             }
         }.onSuccess { profile ->
             voiceProfiles = voiceProfiles.map {
-                if (it.id == profile.id) it.copy(name = profile.name, isShared = profile.isShared ?: it.isShared) else it
+                if (it.id == profile.id) {
+                    it.copy(
+                        name = profile.name,
+                        isShared = profile.isShared ?: it.isShared,
+                        relationshipLabel = profile.relationshipLabel ?: it.relationshipLabel,
+                        listenerTitle = profile.listenerTitle ?: it.listenerTitle,
+                    )
+                } else {
+                    it
+                }
             }
-            message = "알람 음성 이름을 바꿨어요"
+            message = "알람 음성 정보를 수정했어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
-            message = userFacingError(error, "알람 음성 이름 변경에 실패했어요")
+            message = userFacingError(error, "알람 음성 정보 수정에 실패했어요")
+        }
+        voiceProfileBusy = false
+    }
+}
+
+internal fun MainViewModel.updateSharedVoiceViewerInfo(
+    profileId: String,
+    relationshipLabel: String,
+    listenerTitle: String,
+    onSuccess: () -> Unit = {},
+) {
+    val session = authSession
+    if (session == null) {
+        message = "공유 음성을 설정하려면 먼저 로그인해 주세요"
+        return
+    }
+    val trimmedRelationship = relationshipLabel.trim()
+    val trimmedListener = listenerTitle.trim()
+    if (trimmedRelationship.isBlank()) {
+        message = "나와의 관계를 입력해 주세요"
+        return
+    }
+    if (trimmedListener.isBlank()) {
+        message = "이 목소리가 나를 부를 호칭을 입력해 주세요"
+        return
+    }
+
+    viewModelScope.launch {
+        if (voiceProfileBusy) return@launch
+        voiceProfileBusy = true
+        runCatching {
+            withContext(Dispatchers.IO) {
+                api.updateVoiceProfileRelationship(
+                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    id = profileId,
+                    request = VoiceProfileRelationshipUpdateRequest(
+                        relationshipLabel = trimmedRelationship,
+                        listenerTitle = trimmedListener,
+                    ),
+                ).profile
+            }
+        }.onSuccess { profile ->
+            familyVoices = familyVoices.map {
+                if (it.id == profile.id) {
+                    it.copy(
+                        relationshipLabel = profile.relationshipLabel ?: trimmedRelationship,
+                        listenerTitle = profile.listenerTitle ?: trimmedListener,
+                    )
+                } else {
+                    it
+                }
+            }
+            message = "공유 음성 정보를 저장했어요"
+            onSuccess()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update shared voice viewer info id=$profileId", error)
+            message = userFacingError(error, "공유 음성 정보 저장에 실패했어요")
         }
         voiceProfileBusy = false
     }
@@ -319,6 +454,12 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
+        val originalProfile = voiceProfiles.firstOrNull { it.id == profileId }
+        if (originalProfile != null) {
+            voiceProfiles = voiceProfiles.map {
+                if (it.id == profileId) it.copy(status = "deleting") else it
+            }
+        }
         runCatching {
             withContext(Dispatchers.IO) {
                 api.deleteVoiceProfile(
@@ -335,6 +476,11 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
                 message = "이미 삭제된 알람 음성이에요"
             } else {
+                if (originalProfile != null) {
+                    voiceProfiles = voiceProfiles.map {
+                        if (it.id == profileId) originalProfile else it
+                    }
+                }
                 Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
                 message = userFacingError(error, "알람 음성 삭제에 실패했어요")
             }

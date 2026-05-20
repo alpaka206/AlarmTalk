@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
+  generateDynamicAlarmTextWithVertex,
   prepareAlarmTextWithVertex,
 } from '../src/lib/vertex-translate';
 
@@ -86,5 +87,44 @@ describe('prepareAlarmTextWithVertex', () => {
         autoTag: true,
       }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
+  });
+});
+
+describe('generateDynamicAlarmTextWithVertex', () => {
+  it('falls back to readable dynamic text when Gemini returns helper text only', async () => {
+    mockFetch.mockResolvedValueOnce(geminiText('Here Is the json requested:'));
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '손녀',
+      weatherSummary: '서울 날씨는 비, 강수 확률 70%, 우산을 챙기면 좋아요.',
+    });
+
+    expect(generated.text).toContain('손녀 목소리');
+    expect(generated.text).toContain('서울 날씨는 비');
+    expect(generated.text).not.toContain('json requested');
+  });
+
+  it('falls back when Gemini guesses a listener family title from the speaker relationship', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"할머니, 5월 20일 수요일이에요. 서울엔 비가 오니 우산 챙기세요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '손녀',
+      weatherSummary: '서울 날씨는 비, 강수 확률 70%, 우산을 챙기면 좋아요.',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('손녀 목소리');
+    expect(generated.text).toContain('서울 날씨는 비');
+    expect(generated.text).not.toContain('할머니');
   });
 });

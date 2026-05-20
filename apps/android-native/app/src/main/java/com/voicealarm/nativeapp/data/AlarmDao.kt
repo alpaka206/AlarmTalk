@@ -31,6 +31,19 @@ interface AlarmDao {
 
     @Query(
         """
+        SELECT * FROM alarms
+        WHERE enabled = 1
+          AND repeatDaysMask != 0
+          AND voiceRandomPrompt = 1
+          AND playMode != 'alarm_only'
+          AND voiceProfileId IS NOT NULL
+        ORDER BY fireAtMillis ASC
+        """,
+    )
+    suspend fun getRepeatingDynamicVoiceAlarms(): List<AlarmEntity>
+
+    @Query(
+        """
         SELECT COUNT(*) FROM alarms
         WHERE hour = :hour
           AND minute = :minute
@@ -95,6 +108,30 @@ interface AlarmDao {
         remoteAlarmId: String?,
         lastSyncedAtMillis: Long?,
         syncState: String,
+        updatedAtMillis: Long,
+    )
+
+    @Query(
+        """
+        UPDATE alarms
+        SET localAudioUri = :localAudioUri,
+            audioCacheKey = :audioCacheKey,
+            rawAudioUri = :rawAudioUri,
+            voiceText = :voiceText,
+            ttsMessageId = :ttsMessageId,
+            dynamicVoicePreparedForFireAtMillis = :preparedForFireAtMillis,
+            updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateDynamicVoiceAudio(
+        id: String,
+        localAudioUri: String,
+        audioCacheKey: String?,
+        rawAudioUri: String?,
+        voiceText: String,
+        ttsMessageId: String?,
+        preparedForFireAtMillis: Long,
         updatedAtMillis: Long,
     )
 }

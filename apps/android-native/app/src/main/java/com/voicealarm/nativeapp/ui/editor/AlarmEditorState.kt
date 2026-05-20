@@ -68,6 +68,14 @@ internal class AlarmEditorState(
     voiceCategory: String?,
     voiceLanguage: String?,
     voiceRandomPrompt: Boolean,
+    voiceRandomContext: String?,
+    voiceWeatherCountry: String?,
+    voiceWeatherCity: String?,
+    voiceWeatherLatitude: Double? = null,
+    voiceWeatherLongitude: Double? = null,
+    voiceFortuneGender: String?,
+    voiceFortuneBirthDate: String?,
+    voiceFortuneBirthTime: String?,
     voiceRepeat: Boolean,
     ttsMessageId: String?,
     alarmVolumePercent: Int,
@@ -93,6 +101,14 @@ internal class AlarmEditorState(
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
     var voiceRandomPrompt by mutableStateOf(voiceRandomPrompt)
+    var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
+    var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
+    var voiceWeatherCity by mutableStateOf(voiceWeatherCity ?: "")
+    var voiceWeatherLatitude by mutableStateOf(voiceWeatherLatitude)
+    var voiceWeatherLongitude by mutableStateOf(voiceWeatherLongitude)
+    var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
+    var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
+    var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
     var voiceTranslationEnabled by mutableStateOf(!voiceRandomPrompt && (voiceLanguage ?: "ko") != "ko")
     var voiceRepeat by mutableStateOf(voiceRepeat)
     var ttsMessageId by mutableStateOf(ttsMessageId)
@@ -104,7 +120,7 @@ internal class AlarmEditorState(
             buildTtsKey(
                 profileId = voiceProfileId.orEmpty(),
                 text = voiceText.orEmpty(),
-                category = if (voiceRandomPrompt) normalizedTtsCategory(voiceCategory ?: "morning") else "custom",
+                category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
                 language = voiceLanguage ?: "ko",
             )
         },
@@ -132,6 +148,40 @@ internal class AlarmEditorState(
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceCategory(),
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceLanguage(),
             voiceRandomPrompt = !alarmOnly && voiceSource != VoiceSources.LOCAL_AUDIO && voiceRandomPrompt,
+            voiceRandomContext = if (
+                alarmOnly ||
+                voiceSource == VoiceSources.LOCAL_AUDIO ||
+                !voiceRandomPrompt
+            ) {
+                null
+            } else {
+                normalizedRandomPromptContext(voiceRandomContext)
+            },
+            voiceWeatherCountry = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+                voiceWeatherCountry.trim().takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
+            voiceWeatherCity = if (voiceRandomPrompt && randomContextUsesWeather(voiceRandomContext)) {
+                voiceWeatherCity.trim().takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
+            voiceFortuneGender = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+                voiceFortuneGender.trim().takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
+            voiceFortuneBirthDate = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+                voiceFortuneBirthDate.trim().takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
+            voiceFortuneBirthTime = if (voiceRandomPrompt && normalizedRandomPromptContext(voiceRandomContext) == "wake_fortune") {
+                voiceFortuneBirthTime.trim().takeIf { it.isNotBlank() }
+            } else {
+                null
+            },
             voiceRepeat = if (alarmOnly) true else voiceRepeat,
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
@@ -188,7 +238,7 @@ internal class AlarmEditorState(
         if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 
     fun activeVoiceCategory(): String =
-        if (voiceRandomPrompt) normalizedTtsCategory(voiceCategory) else "custom"
+        if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
 
     fun shouldTranslateVoiceText(): Boolean =
         !voiceRandomPrompt && voiceTranslationEnabled && voiceLanguage != "ko"
@@ -251,6 +301,12 @@ internal class AlarmEditorState(
                 voiceRandomPrompt = alarm?.voiceRandomPrompt ?: alarm?.let {
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
                 } ?: false,
+                voiceRandomContext = alarm?.voiceRandomContext ?: DefaultRandomPromptContext,
+                voiceWeatherCountry = alarm?.voiceWeatherCountry,
+                voiceWeatherCity = alarm?.voiceWeatherCity,
+                voiceFortuneGender = alarm?.voiceFortuneGender,
+                voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
+                voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
                 voiceRepeat = alarm?.voiceRepeat ?: true,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
@@ -274,4 +330,27 @@ internal fun normalizedTtsCategory(category: String): String {
     return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory
 }
 
+internal fun normalizedRandomPromptContext(context: String): String =
+    when (context) {
+        "daily", "weather" -> "wake_weather"
+        "fortune" -> "wake_fortune"
+        else -> if (RandomPromptContexts.any { (key, _) -> key == context }) context else DefaultRandomPromptContext
+    }
+
+internal fun ttsCategoryForRandomContext(context: String?): String =
+    when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
+        "meal" -> "lunch"
+        "sleep" -> "night"
+        "exercise" -> "health"
+        "love" -> "love"
+        else -> "morning"
+    }
+
+internal fun randomContextUsesWeather(context: String?): Boolean =
+    when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
+        "wake_weather", "meal", "exercise" -> true
+        else -> false
+    }
+
 private const val DefaultRandomTtsCategory = "morning"
+internal const val DefaultRandomPromptContext = "wake_weather"

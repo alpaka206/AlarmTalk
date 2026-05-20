@@ -760,6 +760,66 @@ export const migrations: Migration[] = [
     ],
   },
   {
+    id: 35,
+    name: 'apple-login-users',
+    statements: [
+      `ALTER TABLE users ADD COLUMN apple_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_apple_id
+        ON users(apple_id)
+        WHERE apple_id IS NOT NULL`,
+    ],
+  },
+  {
+    // Apple StoreKit2 IAP 트랜잭션 추적 컬럼.
+    //   - apple_transaction_id: 결제 단위 ID. 멱등 lookup 키.
+    //   - apple_original_transaction_id: 자동 갱신 구독의 원본 구매 ID.
+    //   - apple_product_id: SKU (com.voicealarm.nativeapp.ios.personal_monthly 등)
+    // 유니크 인덱스로 동일 transaction_id 의 중복 INSERT 를 방지 (POST /billing/apple/confirm 멱등성).
+    id: 36,
+    name: 'subscriptions-apple-fields',
+    statements: [
+      `ALTER TABLE subscriptions ADD COLUMN apple_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_original_transaction_id TEXT`,
+      `ALTER TABLE subscriptions ADD COLUMN apple_product_id TEXT`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_apple_transaction
+        ON subscriptions(apple_transaction_id)
+        WHERE apple_transaction_id IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_subscriptions_apple_original
+        ON subscriptions(apple_original_transaction_id)
+        WHERE apple_original_transaction_id IS NOT NULL`,
+    ],
+  },
+  {
+    id: 37,
+    name: 'voice-profile-relationship-labels',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN relationship_label TEXT`,
+      `CREATE TABLE IF NOT EXISTS voice_profile_relationships (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        voice_profile_id TEXT NOT NULL REFERENCES voice_profiles(id),
+        relationship_label TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, voice_profile_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profile_relationships_user
+        ON voice_profile_relationships(user_id, voice_profile_id)`,
+    ],
+  },
+  {
+    // 호칭(listener title): 음성이 청자(=알람 사용자)를 어떻게 부를지 라벨.
+    //   - voice_profiles.listener_title: 소유자가 설정한 기본 호칭.
+    //   - voice_profile_relationships.listener_title: 공유 음성의 viewer 관점 호칭.
+    // 동적 음성 프롬프트에 주입되어 청자 호칭을 그대로 사용하도록 모델을 가이드한다.
+    id: 38,
+    name: 'voice-profile-listener-title',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN listener_title TEXT`,
+      `ALTER TABLE voice_profile_relationships ADD COLUMN listener_title TEXT NOT NULL DEFAULT ''`,
+    ],
+  },
+  {
     // 화자 분리 후 미리듣기/선택 흐름용 임시 보이스 프로파일.
     // is_draft=1 은 카운트/리스트에서 제외하고 promote 시 0 으로 변경.
     id: 39,

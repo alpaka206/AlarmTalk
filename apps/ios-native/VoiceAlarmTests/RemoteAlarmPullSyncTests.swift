@@ -1,0 +1,149 @@
+import XCTest
+@testable import VoiceAlarm
+
+/// `RemoteAlarmPullSync` 의 충돌 정책 / 머지 / cascade 정책을 단위 검증.
+///
+/// 네트워크 layer 는 `VoiceAlarmAPI` final class 의 직접 mock 이 까다로워
+/// 본 테스트는 store 기반 정책 메서드에 집중한다. 통합 흐름은 simulator 의
+/// end-to-end 빌드로 별도 검증한다.
+@MainActor
+final class RemoteAlarmPullSyncTests: XCTestCase {
+
+    // MARK: - shouldApplyRemote
+
+    func test_shouldApplyRemote_localDirty_returnsFalse() {
+        var existing = makeLocalOwned(remoteID: "r1")
+        existing.syncState = AlarmSyncState.dirty.rawValue
+        existing.lastSyncedAtMillis = 100
+
+        var mapped = existing
+        mapped.lastSyncedAtMillis = 200  // 서버가 더 최신이라도
+
+        XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
+    }
+
+    func test_shouldApplyRemote_serverFresher_returnsTrue() {
+        var existing = makeLocalOwned(remoteID: "r1")
+        existing.syncState = AlarmSyncState.synced.rawValue
+        existing.lastSyncedAtMillis = 100
+
+        var mapped = existing
+        mapped.lastSyncedAtMillis = 200
+
+        XCTAssertTrue(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
+    }
+
+    func test_shouldApplyRemote_localFresher_returnsFalse() {
+        var existing = makeLocalOwned(remoteID: "r1")
+        existing.syncState = AlarmSyncState.synced.rawValue
+        existing.lastSyncedAtMillis = 500
+
+        var mapped = existing
+        mapped.lastSyncedAtMillis = 100
+
+        XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
+    }
+
+    // MARK: - merge
+
+    func test_merge_preservesLocalIdentityAndCounters() {
+        var existing = makeLocalOwned(remoteID: "r1")
+        existing.id = "local-id"
+        existing.alarmKitID = "kit-id"
+        existing.snoozeCount = 3
+        existing.snoozeRepeatLimit = SnoozeRepeatLimit.five.rawValue
+        existing.holidayOff = true
+        existing.alarmVolumePercent = 70
+        existing.alarmSoundUri = "file:///x.wav"
+        existing.alarmSoundLabel = "custom"
+        existing.createdAtMillis = 12345
+
+        var mapped = makeLocalOwned(remoteID: "r1")
+        mapped.id = "another-id"
+        mapped.alarmKitID = nil
+        mapped.snoozeCount = 0
+        mapped.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
+        mapped.holidayOff = false
+        mapped.alarmVolumePercent = 80
+        mapped.alarmSoundUri = nil
+        mapped.alarmSoundLabel = nil
+        mapped.createdAtMillis = 99999
+        mapped.label = "remote-label"
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        XCTAssertEqual(merged.id, "local-id")
+        XCTAssertEqual(merged.alarmKitID, "kit-id")
+        XCTAssertEqual(merged.snoozeCount, 3)
+        XCTAssertEqual(merged.snoozeRepeatLimit, SnoozeRepeatLimit.five.rawValue)
+        XCTAssertTrue(merged.holidayOff)
+        XCTAssertEqual(merged.alarmVolumePercent, 70)
+        XCTAssertEqual(merged.alarmSoundUri, "file:///x.wav")
+        XCTAssertEqual(merged.alarmSoundLabel, "custom")
+        XCTAssertEqual(merged.createdAtMillis, 12345)
+        // 서버 권위 필드는 mapped 가 이긴다.
+        XCTAssertEqual(merged.label, "remote-label")
+    }
+
+    func test_merge_receivedRemote_respectsLocalDisabledIntent() {
+        var existing = makeReceivedRemote(remoteID: "r1")
+        existing.enabled = false  // 사용자가 끔
+
+        var mapped = makeReceivedRemote(remoteID: "r1")
+        mapped.enabled = true     // 서버는 active
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        XCTAssertFalse(merged.enabled)
+        XCTAssertEqual(merged.runtimeStateEnum, .disabled)
+    }
+
+    func test_merge_localOwned_doesNotForceDisabled() {
+        var existing = makeLocalOwned(remoteID: "r1")
+        existing.enabled = false
+
+        var mapped = makeLocalOwned(remoteID: "r1")
+        mapped.enabled = true
+
+        let merged = RemoteAlarmPullSync.merge(existing: existing, mapped: mapped)
+
+        // localOwned 는 사용자 disable 의도 보존 규칙이 적용되지 않으므로 서버 응답을 그대로.
+        XCTAssertTrue(merged.enabled)
+    }
+
+    // MARK: - Helpers
+
+    private func makeLocalOwned(remoteID: String) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        return LocalAlarmRecord(
+            id: UUID().uuidString,
+            label: "owned",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: now + 60_000,
+            remoteAlarmId: remoteID,
+            lastSyncedAtMillis: now,
+            syncState: AlarmSyncState.synced.rawValue,
+            origin: AlarmOrigin.localOwned.rawValue,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+    }
+
+    private func makeReceivedRemote(remoteID: String) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        return LocalAlarmRecord(
+            id: UUID().uuidString,
+            label: "received",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: now + 60_000,
+            remoteAlarmId: remoteID,
+            lastSyncedAtMillis: now,
+            syncState: AlarmSyncState.synced.rawValue,
+            origin: AlarmOrigin.receivedRemote.rawValue,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+    }
+}

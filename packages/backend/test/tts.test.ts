@@ -32,7 +32,10 @@ const ENV: Env = {
 };
 
 function createMockR2Bucket(initial: Record<string, Uint8Array> = {}) {
-  const store = new Map<string, { body: ArrayBuffer; contentType?: string; meta: Record<string, string> }>();
+  const store = new Map<
+    string,
+    { body: ArrayBuffer; contentType?: string; meta: Record<string, string> }
+  >();
   for (const [key, bytes] of Object.entries(initial)) {
     store.set(key, {
       body: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
@@ -44,11 +47,13 @@ function createMockR2Bucket(initial: Record<string, Uint8Array> = {}) {
     put: async (
       key: string,
       value: ArrayBufferLike,
-      options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> },
+      options?: {
+        httpMetadata?: { contentType?: string };
+        customMetadata?: Record<string, string>;
+      },
     ) => {
-      const body = value instanceof ArrayBuffer
-        ? value
-        : new Uint8Array(value as ArrayBufferLike).buffer;
+      const body =
+        value instanceof ArrayBuffer ? value : new Uint8Array(value as ArrayBufferLike).buffer;
       store.set(key, {
         body,
         contentType: options?.httpMetadata?.contentType,
@@ -132,7 +137,8 @@ describe('POST /tts/generate — TTS 생성', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(429);
@@ -152,7 +158,9 @@ describe('POST /tts/generate — TTS 생성', () => {
   it('음성 프로필 ready 아니면 400', async () => {
     const today = new Date().toISOString().split('T')[0];
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today }]);
-    mockDB.pushResult([{ id: V1, status: 'processing', perso_voice_id: null, elevenlabs_voice_id: null }]);
+    mockDB.pushResult([
+      { id: V1, status: 'processing', perso_voice_id: null, elevenlabs_voice_id: null },
+    ]);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -271,12 +279,14 @@ describe('GET /tts/presets — 프리셋 메시지', () => {
   });
 
   it('DB tts_presets row가 있으면 서버 프리셋으로 반환', async () => {
-    mockDB.pushResult([{
-      category: 'morning',
-      label: '아침',
-      emoji: 'sun',
-      messages_json: JSON.stringify(['서버 아침 문구']),
-    }]);
+    mockDB.pushResult([
+      {
+        category: 'morning',
+        label: '아침',
+        emoji: 'sun',
+        messages_json: JSON.stringify(['서버 아침 문구']),
+      },
+    ]);
     const app = buildApp();
     const res = await reqWithEnv(app, jsonReq('GET', '/tts/presets'));
     expect(res.status).toBe(200);
@@ -293,8 +303,8 @@ describe('POST /tts/generate — edge cases', () => {
   const today = () => new Date().toISOString().split('T')[0]!;
 
   it('user 미존재 시 사용량 체크 건너뛰고 voice profile 조회로 진행', async () => {
-    mockDB.pushResult([]);          // users: empty
-    mockDB.pushResult([]);          // voice_profiles: empty
+    mockDB.pushResult([]); // users: empty
+    mockDB.pushResult([]); // voice_profiles: empty
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -305,8 +315,8 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('daily_tts_reset_at가 오늘이 아니면 카운트 리셋 후 진행', async () => {
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 99, daily_tts_reset_at: '2020-01-01' }]);
-    mockDB.pushResult([], 1);       // UPDATE daily_tts_count = 0
-    mockDB.pushResult([]);          // voice_profiles: empty
+    mockDB.pushResult([], 1); // UPDATE daily_tts_count = 0
+    mockDB.pushResult([]); // voice_profiles: empty
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -320,7 +330,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(429);
@@ -331,7 +342,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: null }]);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(400);
@@ -343,7 +355,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockRejectedValue(new Error('ElevenLabs quota exceeded'));
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(500);
@@ -357,7 +370,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockRejectedValue('raw string error');
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(500);
@@ -368,11 +382,12 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
-    mockDB.pushResult([], 1);       // INSERT messages
-    mockDB.pushResult([], 1);       // UPDATE daily_tts_count
-    mockDB.pushResult([], 1);       // INSERT message_library
+    mockDB.pushResult([], 1); // INSERT messages
+    mockDB.pushResult([], 1); // UPDATE daily_tts_count
+    mockDB.pushResult([], 1); // INSERT message_library
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
     );
     expect(res.status).toBe(201);
@@ -382,7 +397,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.audio_format).toBe('mp3');
     expect(body.voice_profile_id).toBe(V1);
     // category defaults to 'custom'
-    const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    const insertSql = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(insertSql!.args[6]).toBe('custom');
   });
 
@@ -406,7 +421,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect([...r2.store.keys()][0]).toBe(body.audio_object_key);
     expect(mockTextToSpeech).toHaveBeenCalledOnce();
 
-    const cacheInsert = mockDB.calls.find(c => c.sql.includes('INSERT OR IGNORE INTO generated_audio_assets'));
+    const cacheInsert = mockDB.calls.find((c) =>
+      c.sql.includes('INSERT OR IGNORE INTO generated_audio_assets'),
+    );
     expect(cacheInsert).toBeDefined();
     expect(cacheInsert!.args).toContain(body.cache_key);
   });
@@ -416,14 +433,16 @@ describe('POST /tts/generate — edge cases', () => {
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([67, 72]) });
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
-    mockDB.pushResult([{
-      message_id: M1,
-      provider: 'elevenlabs',
-      text: 'hello',
-      audio_url: `r2://${objectKey}`,
-      audio_object_key: objectKey,
-      audio_format: 'mp3',
-    }]);
+    mockDB.pushResult([
+      {
+        message_id: M1,
+        provider: 'elevenlabs',
+        text: 'hello',
+        audio_url: `r2://${objectKey}`,
+        audio_object_key: objectKey,
+        audio_format: 'mp3',
+      },
+    ]);
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -437,29 +456,35 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.message_id).toBe(M1);
     expect(body.audio_base64).toBe('Q0g=');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
-    expect(mockDB.calls.some(c => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(false);
-    expect(mockDB.calls.some(c => c.sql.includes('INSERT INTO messages'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(
+      false,
+    );
+    expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
   });
 
   it('checks all provider cache keys before enforcing the daily generation limit', async () => {
     const objectKey = 'generated-tts/user-1/eleven-cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([69, 76]) });
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today() }]);
-    mockDB.pushResult([{
-      id: V1,
-      status: 'ready',
-      perso_voice_id: 'perso-voice-1',
-      elevenlabs_voice_id: 'el-voice-1',
-    }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        status: 'ready',
+        perso_voice_id: 'perso-voice-1',
+        elevenlabs_voice_id: 'el-voice-1',
+      },
+    ]);
     mockDB.pushResult([]); // Perso cache miss.
-    mockDB.pushResult([{
-      message_id: M1,
-      provider: 'elevenlabs',
-      text: 'hello',
-      audio_url: `r2://${objectKey}`,
-      audio_object_key: objectKey,
-      audio_format: 'mp3',
-    }]);
+    mockDB.pushResult([
+      {
+        message_id: M1,
+        provider: 'elevenlabs',
+        text: 'hello',
+        audio_url: `r2://${objectKey}`,
+        audio_object_key: objectKey,
+        audio_format: 'mp3',
+      },
+    ]);
 
     const app = buildApp();
     const res = await app.request(
@@ -474,7 +499,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.provider).toBe('elevenlabs');
     expect(body.audio_base64).toBe('RUw=');
     expect(mockTextToSpeech).not.toHaveBeenCalled();
-    expect(mockDB.calls.some(c => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(false);
+    expect(mockDB.calls.some((c) => c.sql.includes('daily_tts_count = daily_tts_count + 1'))).toBe(
+      false,
+    );
   });
 
   it('성공 시 category 명시하면 해당 category 저장', async () => {
@@ -485,11 +512,12 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'test', category: 'morning' }),
     );
     expect(res.status).toBe(201);
-    const insertSql = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    const insertSql = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(insertSql!.args[6]).toBe('morning');
   });
 
@@ -502,7 +530,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text, category: 'custom' }),
     );
 
@@ -512,17 +541,23 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(text);
     expect(body.tags).toEqual([]);
-    const inserted = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(text);
     expect(inserted!.args[4]).toBe(text);
     expect(inserted!.args[5]).toBe('[]');
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
-      language_code: 'ko',
-      stability: 0.45,
-      similarity_boost: 0.82,
-      style: 0.28,
-      speed: 0.96,
-    }));
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      text,
+      expect.objectContaining({
+        model_id: 'eleven_v3',
+        language_code: 'ko',
+      }),
+    );
+    const ttsOptions = mockTextToSpeech.mock.calls[0][2];
+    expect(ttsOptions).not.toHaveProperty('stability');
+    expect(ttsOptions).not.toHaveProperty('similarity_boost');
+    expect(ttsOptions).not.toHaveProperty('style');
+    expect(ttsOptions).not.toHaveProperty('speed');
   });
 
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
@@ -534,7 +569,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
         text,
@@ -549,16 +585,21 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(text);
     expect(body.language).toBe('en');
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', text, expect.objectContaining({
-      language_code: 'en',
-    }));
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      text,
+      expect.objectContaining({
+        language_code: 'en',
+      }),
+    );
   });
 
   it('번역 요청인데 번역 설정이 없으면 원문 언어로 잘못 합성하지 않고 실패한다', async () => {
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
         text: '좋은 아침이에요!',
@@ -574,12 +615,14 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('random=true 면 서버 프리셋 문구를 골라 TTS를 생성한다', async () => {
-    mockDB.pushResult([{
-      category: 'morning',
-      label: '아침',
-      emoji: 'sun',
-      messages_json: JSON.stringify(['서버가 고른 아침 문구']),
-    }]);
+    mockDB.pushResult([
+      {
+        category: 'morning',
+        label: '아침',
+        emoji: 'sun',
+        messages_json: JSON.stringify(['서버가 고른 아침 문구']),
+      },
+    ]);
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([7]).buffer);
@@ -589,7 +632,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([], 1);
 
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', {
         voice_profile_id: V1,
         category: 'morning',
@@ -603,12 +647,60 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(body.original_text);
     expect(body.synthesis_text).toContain(body.original_text);
     expect(body.tags).toContain('warmly');
-    expect(mockTextToSpeech).toHaveBeenCalledWith('el-voice-1', body.synthesis_text, expect.any(Object));
-    const inserted = mockDB.calls.find(c => c.sql.includes('INSERT INTO messages'));
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      body.synthesis_text,
+      expect.any(Object),
+    );
+    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(body.original_text);
     expect(inserted!.args[4]).toBe(body.synthesis_text);
     expect(inserted!.args[5]).toBe(JSON.stringify(body.tags));
     expect(inserted!.args[6]).toBe('morning');
+  });
+
+  it('random_context=wake_fortune creates a dynamic relationship-aware prompt', async () => {
+    mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        status: 'ready',
+        elevenlabs_voice_id: 'el-voice-1',
+        relationship_label: '손녀',
+      },
+    ]);
+    mockDB.pushResult([]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([8]).buffer);
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        category: 'morning',
+        random: true,
+        random_context: 'wake_fortune',
+        fortune_gender: '여성',
+        fortune_birth_date: '1950-05-19',
+        fortune_birth_time: '07:30',
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.random_context).toBe('wake_fortune');
+    expect(body.original_text).toContain('손녀');
+    expect(body.original_text).toContain('생년월일과 태어난 시간');
+    expect(body.synthesis_text).toContain(body.original_text);
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-voice-1',
+      body.synthesis_text,
+      expect.any(Object),
+    );
   });
 
   it('random=true 에 custom category 면 400', async () => {
@@ -628,7 +720,8 @@ describe('POST /tts/generate — edge cases', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await reqWithEnv(app,
+    const res = await reqWithEnv(
+      app,
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'a'.repeat(200) }),
     );
     expect(res.status).toBe(201);
@@ -636,25 +729,21 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('voice_profile_id 있고 text 없으면 400', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/tts/generate', { voice_profile_id: V1 }),
-    );
+    const res = await app.request(jsonReq('POST', '/tts/generate', { voice_profile_id: V1 }));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('VOICE_AND_TEXT_REQUIRED');
   });
 
   it('text 있고 voice_profile_id 없으면 400', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('POST', '/tts/generate', { text: 'hello' }),
-    );
+    const res = await app.request(jsonReq('POST', '/tts/generate', { text: 'hello' }));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('VOICE_AND_TEXT_REQUIRED');
   });
 
   it('free plan 일일 제한 미달이면 진행', async () => {
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 2, daily_tts_reset_at: today() }]);
-    mockDB.pushResult([]);          // voice_profiles: empty
+    mockDB.pushResult([]); // voice_profiles: empty
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -665,7 +754,7 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('family plan은 사실상 무제한', async () => {
     mockDB.pushResult([{ plan: 'family', daily_tts_count: 9998, daily_tts_reset_at: today() }]);
-    mockDB.pushResult([]);          // voice_profiles: empty
+    mockDB.pushResult([]); // voice_profiles: empty
     const app = buildApp();
     const res = await app.request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
@@ -750,10 +839,10 @@ describe('GET /tts/messages — edge cases', () => {
 /* ------------------------------------------------------------------ */
 describe('DELETE /tts/messages/:id — edge cases', () => {
   it('삭제 시 message_library부터 삭제 후 messages 삭제 (순서 검증)', async () => {
-    mockDB.pushResult([{ cnt: 0 }]);  // alarm check
-    mockDB.pushResult([], 1);         // DELETE message_library
-    mockDB.pushResult([], 1);         // DELETE generated_audio_assets
-    mockDB.pushResult([], 1);         // DELETE messages
+    mockDB.pushResult([{ cnt: 0 }]); // alarm check
+    mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([], 1); // DELETE generated_audio_assets
+    mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(mockDB.calls[1].sql).toContain('DELETE FROM message_library');

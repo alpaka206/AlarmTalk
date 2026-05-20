@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Waker · 핵심 기능</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+:root {
+  --mustard:        #D7A24A;
+  --mustard-bg:     #F7E8C8;
+  --mustard-deep:   #6B4109;
+  --navy:           #3F6F9E;
+  --navy-bg:        #DCEEFF;
+  --navy-deep:      #07223A;
+  --green:          #5E7D70;
+  --green-bg:       #E2F2EA;
+  --green-deep:     #122922;
+  --terra:          #C97A5C;
+  --terra-bg:       #F5DCD0;
+  --terra-deep:     #5A2412;
+  --ink:            #14161E;
+
+  /* 모든 사이즈가 vmin (가로·세로 중 작은 축) 기준 — 어떤 비율에서도 잘리지 않음 */
+  --pad:        clamp(26px, 3.8vmin, 64px);
+  --gap-eb:     clamp(18px, 2.4vmin, 36px);
+  --gap-tt:     clamp(18px, 2.4vmin, 36px);
+  --gap-tg:     clamp(18px, 2.4vmin, 36px);
+  --fs-eyebrow: clamp(11px, 1.1vmin, 15px);
+  --fs-num:     clamp(10px, 0.95vmin, 13px);
+  --fs-title:   clamp(28px, 4.6vmin, 64px);
+  --fs-copy:    clamp(12px, 1.4vmin, 17px);
+  --fs-tag:     clamp(11px, 1.05vmin, 14px);
+  --sz-num:     clamp(20px, 2vmin, 28px);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+html, body {
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  background: #060810;
+}
+
+.stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  cursor: pointer;
+}
+
+/* ==== Quadrant base ==== */
+.quad {
+  position: relative;
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}
+.quad::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.quad > * { position: relative; z-index: 1; }
+
+/* ==== Sequential reveal cover ==== */
+.quad-cover {
+  position: absolute;
+  inset: 0;
+  background: #060810;
+  z-index: 5;
+  opacity: 1;
+  transition: opacity 0.4s ease;
+  pointer-events: auto;
+}
+.quad-cover.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ==== Step indicator ==== */
+.step-indicator {
+  position: fixed;
+  right: clamp(14px, 1.8vmin, 28px);
+  bottom: clamp(12px, 1.6vmin, 24px);
+  z-index: 50;
+  font-size: clamp(11px, 1.05vmin, 14px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.q-tl {
+  background: var(--mustard-bg);
+  color: var(--mustard-deep);
+  align-items: flex-start;
+  text-align: left;
+}
+.q-tl::before {
+  background:
+    radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.45), transparent 60%),
+    radial-gradient(circle at 0% 0%, rgba(215, 162, 74, 0.25), transparent 55%);
+}
+
+.q-tr {
+  background: var(--navy-bg);
+  color: var(--navy-deep);
+  align-items: flex-end;
+  text-align: right;
+}
+.q-tr::before {
+  background:
+    radial-gradient(circle at 0% 100%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(circle at 100% 0%, rgba(63, 111, 158, 0.22), transparent 55%);
+}
+
+.q-bl {
+  background: var(--green-bg);
+  color: var(--green-deep);
+  align-items: flex-start;
+  text-align: left;
+}
+.q-bl::before {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(circle at 0% 100%, rgba(94, 125, 112, 0.22), transparent 55%);
+}
+
+.q-br {
+  background: var(--terra-bg);
+  color: var(--terra-deep);
+  align-items: flex-end;
+  text-align: right;
+}
+.q-br::before {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(circle at 100% 100%, rgba(201, 122, 92, 0.24), transparent 55%);
+}
+
+/* ==== Typography ==== */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: var(--gap-eb);
+}
+.eyebrow .num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--sz-num);
+  height: var(--sz-num);
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: var(--fs-num);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.title {
+  font-size: var(--fs-title);
+  font-weight: 900;
+  letter-spacing: -0.028em;
+  line-height: 1.14;
+  margin: 0;
+  max-width: 18ch;
+}
+.title .accent {
+  background: linear-gradient(135deg, currentColor 0%, rgba(0,0,0,0.42) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.title .br { display: block; }
+.q-tr .title, .q-br .title { margin-left: auto; }
+
+.copy {
+  font-size: var(--fs-copy);
+  font-weight: 500;
+  line-height: 1.55;
+  opacity: 0.78;
+  max-width: 100%;
+  margin: var(--gap-tt) 0 0;
+}
+.q-tr .copy, .q-br .copy { margin-left: auto; }
+
+.row-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--fs-tag);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  width: fit-content;
+  margin-top: var(--gap-tg);
+}
+.row-tag .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dotBlink 1.6s ease-in-out infinite;
+}
+@keyframes dotBlink {
+  0%, 100% { opacity: 0.42; }
+  50% { opacity: 1; }
+}
+
+/* ==== Demo modal ==== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 16, 0.94);
+  backdrop-filter: blur(12px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  cursor: pointer;
+}
+.modal-backdrop.open { display: flex; opacity: 1; }
+.modal-content {
+  width: min(92vw, 1280px);
+  aspect-ratio: 16 / 9;
+  max-height: 88vh;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
+  position: relative;
+  cursor: default;
+}
+.modal-content video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+.modal-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+  z-index: 5;
+  transition: background 0.15s ease;
+}
+.modal-close:hover { background: rgba(255, 255, 255, 0.22); }
+.video-fallback {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: #fff;
+  text-align: center;
+  padding: 40px;
+  font-weight: 600;
+}
+.video-fallback.show { display: flex; }
+.video-fallback .vf-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+.video-fallback .vf-sub { font-size: 14px; opacity: 0.6; line-height: 1.6; max-width: 460px; }
+.video-fallback .vf-code {
+  font-family: 'IBM Plex Mono', 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+}
+
+/* Mobile fallback */
+@media (max-width: 720px) {
+  .stage { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
+  .q-tr, .q-br { align-items: flex-start; text-align: left; }
+  .q-tr .title, .q-br .title, .q-tr .copy, .q-br .copy { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage" role="button" tabindex="0" aria-label="데모 영상 재생">
+
+  <!-- 좌상: 보이스 클로닝 -->
+  <section class="quad q-tl" data-index="1">
+    <div class="eyebrow"><span class="num">1</span>Voice Cloning</div>
+    <h2 class="title">좋아하는 목소리가<span class="br"></span><span class="accent">나를 깨운다</span></h2>
+    <p class="copy">60초 녹음만으로 누구든 학습.<br>좋아하는 연예인의 한마디로 시작하는 아침을 상상해보세요.</p>
+    <div class="row-tag"><span class="dot"></span>녹음 60초 · 평생 사용</div>
+    <div class="quad-cover" aria-hidden="true"></div>
+  </section>
+
+  <!-- 우상: TTS -->
+  <section class="quad q-tr" data-index="2">
+    <div class="eyebrow"><span class="num">2</span>Text to Voice</div>
+    <h2 class="title">텍스트 한 줄로<span class="br"></span><span class="accent">매일 새로운 알람</span></h2>
+    <p class="copy">"좋은 아침이에요. 오늘 하루도 힘내세요."<br>입력만 하면 설정한 목소리로 읽어줍니다.</p>
+    <div class="row-tag"><span class="dot"></span>매일 다른 한마디</div>
+    <div class="quad-cover" aria-hidden="true"></div>
+  </section>
+
+  <!-- 좌하: 가족/커플 알람 -->
+  <section class="quad q-bl" data-index="3">
+    <div class="eyebrow"><span class="num">3</span>Family · Couple</div>
+    <h2 class="title">가족의 목소리로<span class="br"></span><span class="accent">서로를 깨운다</span></h2>
+    <p class="copy">자식의 응원, 부모님의 따스한 한마디.<br>커플·가족 플랜에서 서로의 알람을 맞춰주고 목소리를 공유할 수 있습니다.</p>
+    <div class="row-tag"><span class="dot"></span>커플·가족 플랜 · 6명까지</div>
+    <div class="quad-cover" aria-hidden="true"></div>
+  </section>
+
+  <!-- 우하: 음성 메시지 -->
+  <section class="quad q-br" data-index="4">
+    <div class="eyebrow"><span class="num">4</span>Voice Notes</div>
+    <h2 class="title">알람을 넘어<span class="br"></span><span class="accent">매일 닿는 한마디</span></h2>
+    <p class="copy">알람을 맞추는 것을 넘어 일상 속 한마디를 음성으로.<br>서로에게 따뜻한 메시지를 남기세요.</p>
+    <div class="row-tag"><span class="dot"></span>커플·가족 플랜 전용</div>
+    <div class="quad-cover" aria-hidden="true"></div>
+  </section>
+
+</div>
+
+<div class="step-indicator" id="stepIndicator" aria-live="polite">1 / 4</div>
+
+<!-- Demo modal -->
+<div class="modal-backdrop" id="modal" aria-hidden="true">
+  <div class="modal-content" id="modalContent">
+    <button class="modal-close" id="modalClose" aria-label="닫기">×</button>
+    <video id="demoVideo" controls playsinline preload="metadata">
+      <source src="waker_demo.mp4" type="video/mp4">
+      <source src="waker_demo.webm" type="video/webm">
+      <source src="waker_demo.mov" type="video/quicktime">
+    </video>
+    <div class="video-fallback" id="videoFallback">
+      <div class="vf-title">데모 영상이 준비되지 않았습니다</div>
+      <div class="vf-sub">같은 폴더에 아래 파일명으로 영상을 두면 자동으로 재생됩니다.</div>
+      <div class="vf-code">articles/waker_demo.mp4</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const stage = document.getElementById('stage');
+  const modal = document.getElementById('modal');
+  const modalContent = document.getElementById('modalContent');
+  const modalClose = document.getElementById('modalClose');
+  const video = document.getElementById('demoVideo');
+  const fallback = document.getElementById('videoFallback');
+  const indicator = document.getElementById('stepIndicator');
+  const quads = Array.from(document.querySelectorAll('.quad'));
+  const TOTAL = 4;
+
+  // 현재 노출된 분면 수 (1~4). 초기에는 1번만 보임.
+  let sectionIndex = 1;
+
+  function updateCovers() {
+    quads.forEach((quad) => {
+      const idx = parseInt(quad.getAttribute('data-index'), 10);
+      const cover = quad.querySelector('.quad-cover');
+      if (!cover) return;
+      if (idx <= sectionIndex) {
+        cover.classList.add('hidden');
+      } else {
+        cover.classList.remove('hidden');
+      }
+    });
+    if (indicator) {
+      if (sectionIndex >= TOTAL) {
+        indicator.textContent = 'Space 또는 클릭으로 영상 보기';
+      } else {
+        indicator.textContent = sectionIndex + ' / ' + TOTAL;
+      }
+    }
+  }
+
+  function advance() {
+    if (sectionIndex < TOTAL) {
+      sectionIndex += 1;
+      updateCovers();
+      return false;
+    }
+    return true; // 더 펼칠 게 없으면 모달 진입 신호
+  }
+
+  let videoFailed = false;
+  video.addEventListener('error', () => {
+    videoFailed = true;
+    fallback.classList.add('show');
+  });
+  video.addEventListener('loadedmetadata', () => {
+    videoFailed = false;
+    fallback.classList.remove('show');
+  });
+
+  function openModal() {
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
+      setTimeout(() => {
+        if (video.readyState === 0 && !videoFailed) {
+          fallback.classList.add('show');
+        }
+      }, 800);
+    }, 80);
+  }
+  function closeModal() {
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+    try { video.pause(); video.currentTime = 0; } catch (_) {}
+    // sectionIndex 는 그대로 유지 (4 상태 유지)
+  }
+
+  stage.addEventListener('click', (e) => {
+    // 클릭한 분면 찾기
+    const clickedQuad = e.target.closest('.quad');
+    if (clickedQuad) {
+      const clickedIndex = parseInt(clickedQuad.getAttribute('data-index'), 10);
+      if (!isNaN(clickedIndex)) {
+        // 아직 펼쳐지지 않은 분면 클릭 → 그 분면까지 펼치기
+        if (clickedIndex > sectionIndex) {
+          sectionIndex = Math.min(TOTAL, clickedIndex);
+          updateCovers();
+          return;
+        }
+      }
+    }
+    // 모두 펼쳐진 상태면 어디든 클릭 시 모달 오픈
+    if (sectionIndex >= TOTAL) {
+      openModal();
+      return;
+    }
+    // 그 외(이미 펼쳐진 분면을 클릭) → 다음 분면 펼치기
+    const reachedEnd = advance();
+    if (reachedEnd) openModal();
+  });
+
+  stage.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (sectionIndex >= TOTAL) {
+        openModal();
+      } else {
+        const reachedEnd = advance();
+        if (reachedEnd) openModal();
+      }
+    }
+  });
+
+  modalClose.addEventListener('click', (e) => { e.stopPropagation(); closeModal(); });
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+  modalContent.addEventListener('click', (e) => { e.stopPropagation(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+  });
+
+  // 초기 상태 반영
+  updateCovers();
+})();
+</script>
+</body>
+</html>

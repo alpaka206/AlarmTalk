@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,11 +15,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +60,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -64,6 +71,7 @@ import com.voicealarm.nativeapp.data.AlarmAudioStore
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
+import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -77,10 +85,23 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private fun voiceProfilePlaceholder(): String = "알람 음성"
-
 private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
     audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
+
+private fun voiceProfilePlaceholder(): String = "알람 음성"
+
+private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
+
+@Composable
+private fun androidNavigationBarHeightPadding(): Dp {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val navigationBarHeightPx = remember(context) {
+        val resourceId = context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        if (resourceId > 0) context.resources.getDimensionPixelSize(resourceId) else 0
+    }
+    return with(density) { navigationBarHeightPx.toDp() }
+}
 
 private fun voiceProfileDurationError(durationMillis: Long?): String? = when {
     durationMillis == null -> "오디오 길이를 확인할 수 없어요."
@@ -119,15 +140,16 @@ internal fun VoiceProfileManagementPanel(
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean) -> Unit,
-    onCreateVoiceProfiles: (List<Triple<String, CachedAlarmAudio, Boolean>>) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
     onPromoteDraftVoice: suspend (String) -> Unit,
     onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
-    onRenameVoiceProfile: (String, String) -> Unit,
+    onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
+    onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onOpenBilling: () -> Unit,
 ) {
@@ -137,6 +159,8 @@ internal fun VoiceProfileManagementPanel(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
+    var profileRelationship by remember { mutableStateOf("") }
+    var profileListenerTitle by remember { mutableStateOf("") }
     var shareVoice by remember { mutableStateOf(false) }
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
@@ -148,16 +172,23 @@ internal fun VoiceProfileManagementPanel(
     var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
     var cropStartMillis by remember { mutableStateOf(0L) }
     var cropEndMillis by remember { mutableStateOf(VoiceProfileAudioLimits.MAX_DURATION_MILLIS) }
-    var speakerCount by remember { mutableStateOf(1) }
+    var fileWaveformLevels by remember { mutableStateOf<List<Float>>(emptyList()) }
+    var fileWaveformLoading by remember { mutableStateOf(false) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
     var speakerDraftStates by remember { mutableStateOf<Map<String, SpeakerDraftState>>(emptyMap()) }
     var activePlayingSpeakerId by remember { mutableStateOf<String?>(null) }
     var separatingBusy by remember { mutableStateOf(false) }
     var promotingBusy by remember { mutableStateOf(false) }
+    var createPreparing by remember { mutableStateOf(false) }
+    var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
+    var renameRelationship by remember { mutableStateOf("") }
+    var renameListenerTitle by remember { mutableStateOf("") }
+    var renameSubmitAttempted by remember { mutableStateOf(false) }
+    var sharedInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     var deleteTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
@@ -180,6 +211,27 @@ internal fun VoiceProfileManagementPanel(
         localMessage = voiceProfileDurationError(audio.durationMillis)
     }
 
+    fun loadSelectedFileWaveform(uri: Uri) {
+        fileWaveformLevels = emptyList()
+        fileWaveformLoading = true
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    audioStore.readWaveformLevels(uri, bins = 48)
+                }
+            }.onSuccess { levels ->
+                if (selectedFileUri == uri) {
+                    fileWaveformLevels = levels
+                }
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to read selected audio waveform", error)
+            }
+            if (selectedFileUri == uri) {
+                fileWaveformLoading = false
+            }
+        }
+    }
+
     fun prepareSelectedFile(uri: Uri) {
         stopMediaPreview()
         scope.launch {
@@ -190,15 +242,18 @@ internal fun VoiceProfileManagementPanel(
                 selectedAudio = null
                 selectedFileUri = uri
                 selectedFileDurationMillis = durationMillis
+                fileWaveformLevels = emptyList()
                 cropStartMillis = 0L
                 cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 detectedSpeakers = emptyList()
                 speakerDraftStates = emptyMap()
                 activePlayingSpeakerId = null
                 localMessage = voiceProfileFileDurationError(durationMillis)
+                loadSelectedFileWaveform(uri)
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache voice profile audio", error)
+                    fileWaveformLoading = false
                     localMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요.")
                 }
         }
@@ -257,9 +312,10 @@ internal fun VoiceProfileManagementPanel(
         stopMediaPreview()
         selectedFileUri = null
         selectedFileDurationMillis = null
+        fileWaveformLevels = emptyList()
+        fileWaveformLoading = false
         cropStartMillis = 0L
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
-        speakerCount = 1
         detectedSpeakers = emptyList()
         // 다이얼로그 닫힐 때 현재 화면에 남은 draft 가 있으면 모두 삭제 (선택되지 않은 채 닫힘)
         cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
@@ -267,7 +323,11 @@ internal fun VoiceProfileManagementPanel(
         activePlayingSpeakerId = null
         separatingBusy = false
         promotingBusy = false
+        createPreparing = false
+        createSubmitAttempted = false
         profileName = ""
+        profileRelationship = ""
+        profileListenerTitle = ""
         shareVoice = false
         selectedAudio = null
         mediaPlayer?.release()
@@ -400,11 +460,11 @@ internal fun VoiceProfileManagementPanel(
             localMessage = paidVoiceRequiredMessage
             return
         }
-        if (speakerCount <= 1) return
         val uri = selectedFileUri ?: return
         scope.launch {
             separatingBusy = true
             localMessage = null
+            detectedSpeakers = emptyList()
             // 기존에 만들어둔 draft 가 있으면 먼저 정리.
             cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
             speakerDraftStates = emptyMap()
@@ -540,51 +600,38 @@ internal fun VoiceProfileManagementPanel(
     }
 
     fun submitCreateProfile(name: String) {
+        createSubmitAttempted = true
+        val trimmedName = name.trim()
+        val trimmedRelationship = profileRelationship.trim()
+        val trimmedListener = profileListenerTitle.trim()
+        if (trimmedName.isBlank()) {
+            localMessage = null
+            return
+        }
+        if (trimmedRelationship.isBlank()) {
+            localMessage = null
+            return
+        }
+        if (trimmedListener.isBlank()) {
+            localMessage = null
+            return
+        }
         if (!canCreateVoice) {
             localMessage = paidVoiceRequiredMessage
             return
         }
+        if (createPreparing) return
         if (inputMode == VoiceCaptureMode.Record) {
-            val audio = selectedAudio ?: return
+            val audio = selectedAudio ?: run {
+                localMessage = "녹음한 음성을 먼저 준비해 주세요."
+                return
+            }
             if (voiceProfileDurationError(audio.durationMillis) != null) return
-            onCreateVoiceProfile(name, audio, shareVoice)
+            onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
             closeCreateDialog()
             return
         }
-
-        val uri = selectedFileUri ?: return
-        val durationMillis = selectedFileDurationMillis ?: return
-        if (voiceProfileFileDurationError(durationMillis) != null) return
-        val selectedDurationMillis = cropEndMillis - cropStartMillis
-        val selectedDurationError = voiceProfileDurationError(selectedDurationMillis)
-        if (selectedDurationError != null) {
-            localMessage = selectedDurationError
-            return
-        }
-        if (speakerCount > 1) {
-            // 화자 분리 모드에서는 카드의 "선택" 버튼으로 등록한다. (등록 버튼 비활성)
-            return
-        }
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    audioStore.cacheFromUri(
-                        sourceUri = uri,
-                        maxDurationMillis = selectedDurationMillis.coerceIn(
-                            VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
-                            VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                        ),
-                        startMillis = cropStartMillis,
-                    )
-                }
-            }.onSuccess { audio ->
-                onCreateVoiceProfile(name, audio, shareVoice)
-                closeCreateDialog()
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to prepare cropped voice profile audio", error)
-                localMessage = userFacingError(error, "선택한 구간을 준비하지 못했어요.")
-            }
-        }
+        // 파일 모드에서는 화자 분리 후 카드의 "선택" 버튼으로 등록한다. (등록 버튼 비활성)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -635,6 +682,9 @@ internal fun VoiceProfileManagementPanel(
                     onRename = {
                         renameTarget = profile
                         renameName = profile.name
+                        renameRelationship = profile.relationshipLabel.orEmpty()
+                        renameListenerTitle = profile.listenerTitle.orEmpty()
+                        renameSubmitAttempted = false
                     },
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
@@ -649,7 +699,10 @@ internal fun VoiceProfileManagementPanel(
                 fontWeight = FontWeight.SemiBold,
             )
             familyVoices.forEach { profile ->
-                SharedVoiceProfileRow(profile = profile)
+                SharedVoiceProfileRow(
+                    profile = profile,
+                    onEdit = { sharedInfoTarget = profile },
+                )
             }
         }
     }
@@ -666,136 +719,223 @@ internal fun VoiceProfileManagementPanel(
     }
 
     if (showCreateForm && !isLimitReached && canCreateVoice) {
-        val audio = selectedAudio
-        val durationError = if (inputMode == VoiceCaptureMode.Record) {
-            voiceProfileDurationError(audio?.durationMillis)
+        val useManualSystemInsets = Build.VERSION.SDK_INT >= 35
+        val actionBottomPadding = 10.dp + if (useManualSystemInsets) {
+            androidNavigationBarHeightPadding() + AndroidEdgeToEdgeNavigationExtraPadding
         } else {
-            voiceProfileFileDurationError(selectedFileDurationMillis)
-                ?: voiceProfileDurationError(cropEndMillis - cropStartMillis)
+            0.dp
         }
-        val resolvedProfileName = profileName.trim().ifBlank { voiceProfilePlaceholder() }
-        val canRegister = if (inputMode == VoiceCaptureMode.Record) {
-            audio != null && durationError == null
-        } else if (speakerCount > 1) {
-            // 화자 분리 모드에서는 카드의 "선택" 버튼으로 등록한다.
-            false
+        val dialogSurfaceModifier = if (useManualSystemInsets) {
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
         } else {
-            selectedFileUri != null && durationError == null
+            Modifier.fillMaxSize()
         }
-        AlertDialog(
-            onDismissRequest = ::closeCreateDialog,
-            title = { Text("알람 음성 만들기") },
-            text = {
+        val resolvedProfileName = profileName.trim()
+        val resolvedRelationship = profileRelationship.trim()
+        val resolvedListener = profileListenerTitle.trim()
+        val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
+        val relationshipRequiredError = createSubmitAttempted && resolvedRelationship.isBlank()
+        val listenerRequiredError = createSubmitAttempted && resolvedListener.isBlank()
+        val hasSeparatedSpeakers = detectedSpeakers.isNotEmpty()
+        val fileInputLocked = separatingBusy || hasSeparatedSpeakers
+        Dialog(
+            onDismissRequest = {
+                if (!voiceProfileBusy && !separatingBusy) closeCreateDialog()
+            },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = !useManualSystemInsets,
+            ),
+        ) {
+            Surface(
+                modifier = dialogSurfaceModifier,
+                color = MaterialTheme.colorScheme.background,
+            ) {
                 Column(
                     modifier = Modifier
-                        .heightIn(max = 560.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .fillMaxSize()
+                        .imePadding(),
                 ) {
-                    OutlinedTextField(
-                        value = profileName,
-                        onValueChange = { profileName = it.take(50) },
-                        label = { Text("알람 음성 이름") },
-                        placeholder = { Text(voiceProfilePlaceholder()) },
-                        singleLine = true,
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    if (canShareVoice) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("알람 음성 공유", fontWeight = FontWeight.SemiBold)
-                                MutedText(if (shareVoice) "상대가 선택할 수 있어요" else "나만 사용")
-                            }
-                            VoiceAlarmSwitch(
-                                checked = shareVoice,
-                                onCheckedChange = { shareVoice = it },
+                            Text(
+                                text = "알람 음성 만들기",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
                             )
                         }
+                        IconButton(
+                            onClick = ::closeCreateDialog,
+                            enabled = !voiceProfileBusy && !separatingBusy,
+                            modifier = Modifier.size(42.dp),
+                        ) {
+                            Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                        }
                     }
-                    VoiceCaptureModeSelector(
-                        selected = inputMode,
-                        enabled = !isRecording,
-                        onSelect = {
-                            if (inputMode != it) stopMediaPreview()
-                            inputMode = it
-                        },
-                    )
 
-                    if (inputMode == VoiceCaptureMode.Record) {
-                        VoiceCloneScriptExamples()
-                        VoiceRecordControls(
-                            isRecording = isRecording,
-                            elapsedMillis = recordingElapsedMillis,
-                            maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                            levels = recordingLevels,
-                            enabled = !voiceProfileBusy,
-                            notice = "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.",
-                            onRecordClick = {
-                                if (isRecording) {
-                                    stopRecording()
-                                } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                    PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    startRecording()
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = profileName,
+                            onValueChange = { profileName = it.take(50) },
+                            label = { Text("알람 음성 이름 (필수)") },
+                            placeholder = { Text("예: 지우 목소리") },
+                            singleLine = true,
+                            isError = nameRequiredError,
+                            supportingText = {
+                                if (nameRequiredError) Text("필수 입력 값입니다.")
+                            },
+                            shape = VocaWakeInputShape,
+                            colors = vocaWakeOutlinedTextFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = profileRelationship,
+                            onValueChange = { profileRelationship = it.take(30) },
+                            label = { Text("나와의 관계 (필수)") },
+                            placeholder = { Text("예: 손녀, 엄마, 연인") },
+                            singleLine = true,
+                            isError = relationshipRequiredError,
+                            supportingText = {
+                                if (relationshipRequiredError) Text("필수 입력 값입니다.")
+                            },
+                            shape = VocaWakeInputShape,
+                            colors = vocaWakeOutlinedTextFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = profileListenerTitle,
+                            onValueChange = { profileListenerTitle = it.take(30) },
+                            label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
+                            placeholder = { Text("예: 민지야, 여보, 우리 손주") },
+                            singleLine = true,
+                            isError = listenerRequiredError,
+                            supportingText = {
+                                if (listenerRequiredError) {
+                                    Text("필수 입력 값입니다.")
                                 } else {
-                                    recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
                                 }
                             },
+                            shape = VocaWakeInputShape,
+                            colors = vocaWakeOutlinedTextFieldColors(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            VoiceFileControls(
-                                durationMillis = selectedFileDurationMillis,
-                                cropStartMillis = cropStartMillis,
-                                cropEndMillis = cropEndMillis,
-                                minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                        if (canShareVoice) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(18.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("알람 음성 공유", fontWeight = FontWeight.SemiBold)
+                                        MutedText(if (shareVoice) "상대가 선택할 수 있어요" else "나만 사용")
+                                    }
+                                    VoiceAlarmSwitch(
+                                        checked = shareVoice,
+                                        onCheckedChange = { shareVoice = it },
+                                    )
+                                }
+                            }
+                        }
+                        VoiceCaptureModeSelector(
+                            selected = inputMode,
+                            enabled = !isRecording && !createPreparing,
+                            onSelect = {
+                                if (inputMode != it) stopMediaPreview()
+                                inputMode = it
+                            },
+                        )
+
+                        if (inputMode == VoiceCaptureMode.Record) {
+                            VoiceRecordControls(
+                                isRecording = isRecording,
+                                elapsedMillis = recordingElapsedMillis,
                                 maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                                enabled = !voiceProfileBusy && !isRecording,
-                                uploadLabel = "파일/영상 업로드",
-                                notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
-                                isPreviewActive = filePreviewPlaying,
-                                isPreviewPreparing = filePreviewPreparing,
-                                onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
-                                onCropChange = { start, end ->
-                                    if (start != cropStartMillis || end != cropEndMillis) {
-                                        stopMediaPreview()
-                                        cropStartMillis = start
-                                        cropEndMillis = end
-                                        resetSpeakers()
+                                levels = recordingLevels,
+                                enabled = !voiceProfileBusy && !createPreparing,
+                                notice = "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.",
+                                onRecordClick = {
+                                    if (isRecording) {
+                                        stopRecording()
+                                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                        PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        startRecording()
+                                    } else {
+                                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 },
-                                onPreviewCrop = { playFileCropPreview() },
                             )
-                            selectedFileDurationMillis?.let {
-                                SpeakerCountSelector(
-                                    selected = speakerCount,
-                                    onSelect = {
-                                        speakerCount = it
-                                        resetSpeakers()
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                VoiceFileControls(
+                                    durationMillis = selectedFileDurationMillis,
+                                    cropStartMillis = cropStartMillis,
+                                    cropEndMillis = cropEndMillis,
+                                    minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                                    maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
+                                    uploadLabel = "파일/영상 업로드",
+                                    notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
+                                    isPreviewActive = filePreviewPlaying,
+                                    isPreviewPreparing = filePreviewPreparing,
+                                    waveformLevels = fileWaveformLevels,
+                                    waveformLoading = fileWaveformLoading,
+                                    onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
+                                    onCropChange = { start, end ->
+                                        if (start != cropStartMillis || end != cropEndMillis) {
+                                            stopMediaPreview()
+                                            cropStartMillis = start
+                                            cropEndMillis = end
+                                            resetSpeakers()
+                                        }
                                     },
+                                    onPreviewCrop = { playFileCropPreview() },
                                 )
-                                if (speakerCount > 1) {
+                                selectedFileDurationMillis?.let {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Button(
                                             onClick = { separateSpeakers() },
-                                            enabled = !separatingBusy && !promotingBusy,
+                                            enabled = !separatingBusy && !promotingBusy && !createPreparing && !hasSeparatedSpeakers,
                                             modifier = Modifier.weight(1f),
                                             shape = VocaWakeButtonShape,
                                         ) {
-                                            Text(if (separatingBusy) "분리 중" else "화자 분리")
+                                            Text(
+                                                when {
+                                                    separatingBusy -> "분리 중"
+                                                    hasSeparatedSpeakers -> "분리 완료"
+                                                    else -> "화자 분리"
+                                                },
+                                            )
                                         }
                                         OutlinedButton(
                                             onClick = { resetSpeakers() },
-                                            enabled = detectedSpeakers.isNotEmpty() && !promotingBusy,
+                                            enabled = hasSeparatedSpeakers && !promotingBusy && !createPreparing,
                                             modifier = Modifier.weight(1f),
                                             shape = VocaWakeButtonShape,
                                             border = vocaWakeCardBorder(),
@@ -819,53 +959,116 @@ internal fun VoiceProfileManagementPanel(
                                 }
                             }
                         }
+
+                        if (createPreparing) {
+                            VoiceProgressMessage("음성을 준비하고 있어요.")
+                        }
+                        if (localMessage != null) {
+                            MutedText(localMessage.orEmpty())
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
                     }
 
-                    if (localMessage != null) {
-                        MutedText(localMessage.orEmpty())
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = 16.dp,
+                                top = 10.dp,
+                                end = 16.dp,
+                                bottom = actionBottomPadding,
+                            ),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = { submitCreateProfile(resolvedProfileName) },
+                            enabled = !voiceProfileBusy && !isRecording && !createPreparing && !promotingBusy &&
+                                inputMode == VoiceCaptureMode.Record,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = VocaWakeButtonShape,
+                        ) {
+                            Text(if (createPreparing) "준비 중" else "등록")
+                        }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        submitCreateProfile(resolvedProfileName)
-                    },
-                    enabled = canRegister && !voiceProfileBusy && !isRecording,
-                ) {
-                    Text("등록")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = ::closeCreateDialog) {
-                    Text("취소")
-                }
-            },
-        )
+            }
+        }
     }
 
     renameTarget?.let { profile ->
+        val resolvedRenameName = renameName.trim()
+        val resolvedRenameRelationship = renameRelationship.trim()
+        val resolvedRenameListener = renameListenerTitle.trim()
+        val renameNameError = renameSubmitAttempted && resolvedRenameName.isBlank()
+        val renameRelationshipError = renameSubmitAttempted && resolvedRenameRelationship.isBlank()
+        val renameListenerError = renameSubmitAttempted && resolvedRenameListener.isBlank()
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("알람 음성 이름 변경") },
+            title = { Text("알람 음성 수정") },
             text = {
-                OutlinedTextField(
-                    value = renameName,
-                    onValueChange = { renameName = it.take(50) },
-                    label = { Text("알람 음성 이름") },
-                    singleLine = true,
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = renameName,
+                        onValueChange = { renameName = it.take(50) },
+                        label = { Text("알람 음성 이름") },
+                        singleLine = true,
+                        isError = renameNameError,
+                        supportingText = {
+                            if (renameNameError) Text("필수 입력 값입니다.")
+                        },
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = renameRelationship,
+                        onValueChange = { renameRelationship = it.take(30) },
+                        label = { Text("나와의 관계") },
+                        placeholder = { Text("예: 손녀, 엄마, 연인") },
+                        singleLine = true,
+                        isError = renameRelationshipError,
+                        supportingText = {
+                            if (renameRelationshipError) Text("필수 입력 값입니다.")
+                        },
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = renameListenerTitle,
+                        onValueChange = { renameListenerTitle = it.take(30) },
+                        label = { Text("나를 부를 호칭") },
+                        placeholder = { Text("예: 민지야, 여보") },
+                        singleLine = true,
+                        isError = renameListenerError,
+                        supportingText = {
+                            if (renameListenerError) Text("필수 입력 값입니다.")
+                        },
+                        shape = VocaWakeInputShape,
+                        colors = vocaWakeOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onRenameVoiceProfile(profile.id, renameName)
-                        renameTarget = null
+                        renameSubmitAttempted = true
+                        if (
+                            resolvedRenameName.isNotBlank() &&
+                            resolvedRenameRelationship.isNotBlank() &&
+                            resolvedRenameListener.isNotBlank()
+                        ) {
+                            onRenameVoiceProfile(
+                                profile.id,
+                                resolvedRenameName,
+                                resolvedRenameRelationship,
+                                resolvedRenameListener,
+                            )
+                            renameTarget = null
+                        }
                     },
-                    enabled = renameName.isNotBlank(),
                 ) {
                     Text("저장")
                 }
@@ -874,6 +1077,19 @@ internal fun VoiceProfileManagementPanel(
                 TextButton(onClick = { renameTarget = null }) {
                     Text("취소")
                 }
+            },
+        )
+    }
+
+    sharedInfoTarget?.let { profile ->
+        SharedVoiceViewerInfoDialog(
+            profileName = profile.name,
+            initialRelationship = profile.relationshipLabel.orEmpty(),
+            initialListenerTitle = profile.listenerTitle.orEmpty(),
+            onDismiss = { sharedInfoTarget = null },
+            onConfirm = { relationship, listener ->
+                onUpdateSharedVoiceInfo(profile.id, relationship, listener)
+                sharedInfoTarget = null
             },
         )
     }
@@ -891,16 +1107,27 @@ internal fun VoiceProfileManagementPanel(
 }
 
 @Composable
-private fun VoiceCloneScriptExamples() {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("녹음 예시", fontWeight = FontWeight.SemiBold)
-        MutedText("아래 문장을 자연스럽게 읽고, 중간중간 쉬면서 평소 목소리를 유지해 주세요.")
-        listOf(
-            "좋은 아침이야. 이제 천천히 일어날 시간이야. 오늘도 무리하지 말고 같이 시작해 보자.",
-            "오늘 하루도 정말 고생했어. 잠깐 숨을 고르고, 따뜻한 물 한 모금 마시면서 쉬어도 돼.",
-            "내 목소리가 알람으로 들린다면 어떤 말이 가장 힘이 될지 생각하면서 편하게 말해볼게.",
-        ).forEach { script ->
-            MutedText("- $script")
+private fun VoiceProgressMessage(text: String) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
         }
     }
 }
@@ -1043,30 +1270,6 @@ private fun RecordingLevelBars(
     }
 }
 
-@Composable
-private fun SpeakerCountSelector(
-    selected: Int,
-    onSelect: (Int) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "화자 수",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            (1..3).forEach { count ->
-                VoiceInputModeButton(
-                    label = "${count}명",
-                    selected = selected == count,
-                    onClick = { onSelect(count) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
 internal enum class SpeakerDraftStatus {
     Cloning,
     Synthesizing,
@@ -1143,6 +1346,9 @@ internal fun VoiceProfileRow(
     onShareChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
+    val isProcessing = profile.status == "processing"
+    val isDeleting = profile.status == "deleting"
+    val rowEnabled = enabled && !isProcessing && !isDeleting
     OutlinedCard(
         shape = VocaWakeCardShape,
         border = vocaWakeCardBorder(),
@@ -1160,7 +1366,14 @@ internal fun VoiceProfileRow(
                 Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                        .background(
+                            if (isDeleting) {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            },
+                            CircleShape,
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -1177,17 +1390,26 @@ internal fun VoiceProfileRow(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    profile.relationshipLabel
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { MutedText("관계 · $it") }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    IconButton(onClick = onRename, enabled = enabled) {
-                        Icon(Icons.Outlined.Edit, contentDescription = "수정")
-                    }
-                    IconButton(onClick = onDelete, enabled = enabled) {
-                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
+                when {
+                    isProcessing -> VoiceProgressMessage("생성 중")
+                    isDeleting -> VoiceProgressMessage("삭제 중")
+                    else -> {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            IconButton(onClick = onRename, enabled = rowEnabled) {
+                                Icon(Icons.Outlined.Edit, contentDescription = "수정")
+                            }
+                            IconButton(onClick = onDelete, enabled = rowEnabled) {
+                                Icon(Icons.Outlined.Delete, contentDescription = "삭제")
+                            }
+                        }
                     }
                 }
             }
-            if (canShareVoice) {
+            if (canShareVoice && !isProcessing && !isDeleting) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
@@ -1211,7 +1433,7 @@ internal fun VoiceProfileRow(
                         VoiceAlarmSwitch(
                             checked = profile.isShared == true,
                             onCheckedChange = onShareChange,
-                            enabled = enabled,
+                            enabled = rowEnabled,
                         )
                     }
                 }
@@ -1221,38 +1443,139 @@ internal fun VoiceProfileRow(
 }
 
 @Composable
-private fun SharedVoiceProfileRow(profile: FamilyVoiceProfile) {
+private fun SharedVoiceProfileRow(
+    profile: FamilyVoiceProfile,
+    onEdit: () -> Unit,
+) {
+    val needsViewerInfo = profile.relationshipLabel.isNullOrBlank() ||
+        profile.listenerTitle.isNullOrBlank()
     OutlinedCard(
         shape = VocaWakeCardShape,
         border = vocaWakeCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Mic,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    Text(profile.name, fontWeight = FontWeight.SemiBold)
+                    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
+                    val listener = profile.listenerTitle?.takeIf { it.isNotBlank() }
+                    val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
+                        ?.let { "$it 님의 알람 음성" } ?: "공유받은 알람 음성"
+                    val detail = buildList {
+                        add(ownerText)
+                        relation?.let { add("관계 $it") }
+                        listener?.let { add("호칭 $it") }
+                    }.joinToString(" · ")
+                    MutedText(detail)
+                }
+                IconButton(onClick = onEdit) {
+                    Icon(Icons.Outlined.Edit, contentDescription = "내 정보 수정")
+                }
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold)
-                MutedText(profile.ownerName?.takeIf { it.isNotBlank() }?.let { "$it 님의 알람 음성" } ?: "공유받은 알람 음성")
+            if (needsViewerInfo) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = VocaWakeButtonShape,
+                    border = vocaWakeCardBorder(),
+                    colors = vocaWakeOutlinedButtonColors(),
+                ) {
+                    Text("이 음성이 나를 부를 호칭 설정하기")
+                }
             }
         }
     }
+}
+
+@Composable
+private fun SharedVoiceViewerInfoDialog(
+    profileName: String,
+    initialRelationship: String,
+    initialListenerTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
+    var draftListener by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
+    var submitted by remember { mutableStateOf(false) }
+    val relationshipError = submitted && draftRelationship.isBlank()
+    val listenerError = submitted && draftListener.isBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("공유 음성 설정") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                MutedText("'$profileName' 가 내게 어떻게 말할지 알려주세요.")
+                OutlinedTextField(
+                    value = draftRelationship,
+                    onValueChange = { draftRelationship = it.take(30) },
+                    label = { Text("나와의 관계") },
+                    placeholder = { Text("예: 손주, 자식, 형제") },
+                    singleLine = true,
+                    isError = relationshipError,
+                    supportingText = {
+                        if (relationshipError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftListener,
+                    onValueChange = { draftListener = it.take(30) },
+                    label = { Text("이 목소리가 나를 부를 호칭") },
+                    placeholder = { Text("예: 지호야, 우리 강아지") },
+                    singleLine = true,
+                    isError = listenerError,
+                    supportingText = {
+                        if (listenerError) Text("필수 입력 값입니다.")
+                    },
+                    shape = VocaWakeInputShape,
+                    colors = vocaWakeOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    submitted = true
+                    if (draftRelationship.isNotBlank() && draftListener.isNotBlank()) {
+                        onConfirm(draftRelationship.trim(), draftListener.trim())
+                    }
+                },
+            ) {
+                Text("저장")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("취소") }
+        },
+    )
 }

@@ -1,11 +1,15 @@
 package com.voicealarm.nativeapp.data
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.voicealarm.nativeapp.alarm.AlarmScheduler
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
+import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
+import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +72,13 @@ class AlarmRepository(
             voiceCategory = null,
             voiceLanguage = null,
             voiceRandomPrompt = false,
+            voiceRandomContext = null,
+            voiceWeatherCountry = null,
+            voiceWeatherCity = null,
+            voiceFortuneGender = null,
+            voiceFortuneBirthDate = null,
+            voiceFortuneBirthTime = null,
+            dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
             ttsMessageId = null,
             remoteAlarmId = null,
@@ -95,19 +106,20 @@ class AlarmRepository(
 
         val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
+            hour = draft.hour,
+            minute = draft.minute,
+            repeatDaysMask = draft.repeatDaysMask,
+            holidayOff = draft.holidayOff,
+            nowMillis = now,
+            isHoliday = holidayPredicate,
+        )
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = draft.label.trim().ifBlank { "알람" },
             hour = draft.hour,
             minute = draft.minute,
-            fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
-                hour = draft.hour,
-                minute = draft.minute,
-                repeatDaysMask = draft.repeatDaysMask,
-                holidayOff = draft.holidayOff,
-                nowMillis = now,
-                isHoliday = holidayPredicate,
-            ),
+            fireAtMillis = fireAtMillis,
             repeatDaysMask = draft.repeatDaysMask,
             holidayOff = draft.holidayOff,
             snoozeEnabled = draft.snoozeEnabled,
@@ -126,6 +138,14 @@ class AlarmRepository(
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
             voiceRandomPrompt = draft.voiceRandomPrompt,
+            voiceRandomContext = draft.voiceRandomContext,
+            voiceWeatherCountry = draft.voiceWeatherCountry,
+            voiceWeatherCity = draft.voiceWeatherCity,
+            voiceFortuneGender = draft.voiceFortuneGender,
+            voiceFortuneBirthDate = draft.voiceFortuneBirthDate,
+            voiceFortuneBirthTime = draft.voiceFortuneBirthTime,
+            dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
+                ?: fireAtMillis.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
             ttsMessageId = draft.ttsMessageId,
             remoteAlarmId = null,
@@ -186,6 +206,14 @@ class AlarmRepository(
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
             voiceRandomPrompt = draft.voiceRandomPrompt,
+            voiceRandomContext = draft.voiceRandomContext,
+            voiceWeatherCountry = draft.voiceWeatherCountry,
+            voiceWeatherCity = draft.voiceWeatherCity,
+            voiceFortuneGender = draft.voiceFortuneGender,
+            voiceFortuneBirthDate = draft.voiceFortuneBirthDate,
+            voiceFortuneBirthTime = draft.voiceFortuneBirthTime,
+            dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
+                ?: nextFireAt.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
@@ -468,6 +496,78 @@ class AlarmRepository(
     suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
         characterEventSyncService.sync(api, token)
 
+    suspend fun refreshDueDynamicVoiceAlarms(
+        api: VoiceAlarmApi,
+        token: String,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Int {
+        val alarms = alarmDao.getRepeatingDynamicVoiceAlarms()
+        var refreshed = 0
+        alarms.forEach { alarm ->
+            if (!shouldRefreshDynamicVoice(alarm, nowMillis)) return@forEach
+            val profileId = alarm.voiceProfileId?.takeIf { it.isNotBlank() } ?: return@forEach
+            runCatching {
+                val response = api.generateTts(
+                    authorization = VoiceAlarmApiClient.bearer(token),
+                    request = TtsGenerateRequest(
+                        voiceProfileId = profileId,
+                        text = "",
+                        category = alarm.voiceCategory ?: randomTtsCategoryForContext(alarm.voiceRandomContext),
+                        language = alarm.voiceLanguage ?: "ko",
+                        random = true,
+                        randomContext = alarm.voiceRandomContext ?: DefaultDynamicVoiceContext,
+                        alarmHour = alarm.hour,
+                        alarmMinute = alarm.minute,
+                        weatherCountry = alarm.voiceWeatherCountry,
+                        weatherCity = alarm.voiceWeatherCity,
+                        fortuneGender = alarm.voiceFortuneGender,
+                        fortuneBirthDate = alarm.voiceFortuneBirthDate,
+                        fortuneBirthTime = alarm.voiceFortuneBirthTime,
+                    ),
+                )
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
+                val cacheKey = AlarmAudioStore.ttsCacheKey(
+                    profileId = profileId,
+                    text = response.text,
+                    category = alarm.voiceCategory ?: randomTtsCategoryForContext(response.randomContext),
+                    language = alarm.voiceLanguage ?: "ko",
+                    serverCacheKey = response.cacheKey,
+                )
+                val cachedAudio = alarmAudioStore.cacheGeneratedAudio(
+                    bytes = audioBytes,
+                    format = response.audioFormat,
+                    rawAudioUri = rawAudioUri,
+                    cacheKey = cacheKey,
+                    messageId = response.messageId,
+                )
+                val oldCacheKey = alarm.audioCacheKey
+                alarmDao.updateDynamicVoiceAudio(
+                    id = alarm.id,
+                    localAudioUri = cachedAudio.localAudioUri,
+                    audioCacheKey = cachedAudio.cacheKey,
+                    rawAudioUri = rawAudioUri,
+                    voiceText = response.text,
+                    ttsMessageId = response.messageId,
+                    preparedForFireAtMillis = alarm.fireAtMillis,
+                    updatedAtMillis = System.currentTimeMillis(),
+                )
+                if (
+                    !oldCacheKey.isNullOrBlank() &&
+                    oldCacheKey != cachedAudio.cacheKey &&
+                    alarmDao.countByAudioCacheKey(oldCacheKey) == 0
+                ) {
+                    alarmAudioStore.deleteCachedAudio(oldCacheKey)
+                }
+                refreshed += 1
+                Log.i(TAG, "Refreshed dynamic voice alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to refresh dynamic voice alarm id=${alarm.id}", error)
+            }
+        }
+        return refreshed
+    }
+
     private fun validateDraft(draft: AlarmDraft) {
         require(draft.hour in 0..23) { "Hour must be between 0 and 23." }
         require(draft.minute in 0..59) { "Minute must be between 0 and 59." }
@@ -497,6 +597,30 @@ class AlarmRepository(
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
 
+    private fun shouldRefreshDynamicVoice(alarm: AlarmEntity, nowMillis: Long): Boolean {
+        if (alarm.dynamicVoicePreparedForFireAtMillis == alarm.fireAtMillis) return false
+        val zoneId = ZoneId.systemDefault()
+        val fireAt = Instant.ofEpochMilli(alarm.fireAtMillis).atZone(zoneId)
+        val prepareAtMillis = fireAt
+            .toLocalDate()
+            .minusDays(1)
+            .atTime(DynamicVoicePrepareTime)
+            .atZone(zoneId)
+            .toInstant()
+            .toEpochMilli()
+        val latestPrepareMillis = alarm.fireAtMillis - 60_000L
+        return nowMillis >= prepareAtMillis && nowMillis < latestPrepareMillis
+    }
+
+    private fun randomTtsCategoryForContext(context: String?): String =
+        when (context) {
+            "meal" -> "lunch"
+            "sleep" -> "night"
+            "exercise" -> "health"
+            "love" -> "love"
+            else -> "morning"
+        }
+
     private fun requireExactAlarmPermission() {
         require(alarmScheduler.canScheduleExactAlarms()) {
             "정확한 알람 권한을 허용한 뒤 다시 시도해 주세요."
@@ -509,4 +633,9 @@ class AlarmRepository(
             remoteAlarmId == null -> AlarmSyncStates.LOCAL_ONLY
             else -> AlarmSyncStates.DIRTY
         }
+
+    private companion object {
+        const val DefaultDynamicVoiceContext = "wake_weather"
+        val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
+    }
 }

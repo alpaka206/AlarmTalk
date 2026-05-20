@@ -21,13 +21,47 @@
   <key>LSRequiresIPhoneOS</key>
   <true/>
   <key>NSAlarmKitUsageDescription</key>
-  <string>Voice Alarm needs permission to schedule prominent local alarms.</string>
+  <string>Naro needs permission to schedule real local alarms that appear on the Lock Screen.</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Naro needs microphone access to record voice samples for voice alarms.</string>
   <key>NSSupportsLiveActivities</key>
   <true/>
+  <key>VOICE_ALARM_API_BASE_URL</key>
+  <string>https://voice-alarm-api.voicealarm.workers.dev/api</string>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>
     <false/>
   </dict>
+  <key>UILaunchScreen</key>
+  <dict>
+    <key>UIColorName</key>
+    <string>BrandPrimary</string>
+  </dict>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>audio</string>
+    <string>processing</string>
+    <string>fetch</string>
+  </array>
+  <key>UIRequiredDeviceCapabilities</key>
+  <array>
+    <string>arm64</string>
+  </array>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>com.voicealarm.nativeapp.ios.refresh</string>
+  </array>
+  <key>UIAppFonts</key>
+  <array>
+    <string>pretendard_regular.otf</string>
+    <string>pretendard_medium.otf</string>
+    <string>pretendard_semibold.otf</string>
+    <string>pretendard_bold.otf</string>
+  </array>
 </dict>
 </plist>

@@ -389,6 +389,15 @@ internal val TtsCategories = listOf(
     "love" to "사랑",
 )
 
+internal val RandomPromptContexts = listOf(
+    "wake_weather" to "기상 + 날씨",
+    "wake_fortune" to "기상 + 운세",
+    "meal" to "식사",
+    "sleep" to "취침",
+    "exercise" to "운동",
+    "love" to "사랑",
+)
+
 internal val TtsLanguages = listOf(
     "ko" to "한국어",
     "en" to "영어",

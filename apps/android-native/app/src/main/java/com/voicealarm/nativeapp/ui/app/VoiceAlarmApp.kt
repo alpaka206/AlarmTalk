@@ -544,6 +544,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onGenerateTts = viewModel::generateTtsAudio,
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
+                          onUpdateSharedVoiceInfo = { id, relationship, listener ->
+                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
+                          },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
@@ -617,6 +620,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       voiceProfileBusy = voiceProfileBusy,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
+                      onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
@@ -650,6 +654,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           voiceProfileBusy = voiceProfileBusy,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
+                          onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {

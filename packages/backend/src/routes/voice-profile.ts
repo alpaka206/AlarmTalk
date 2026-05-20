@@ -7,12 +7,56 @@ import { UUID_RE } from '../lib/validate';
 import { logRouteError } from '../lib/logger';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
+import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
+const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
+const MAX_LISTENER_TITLE_LENGTH = 30;
+
+function normalizeRelationshipLabel(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return '';
+  return String(value).trim();
+}
+
+function validateRelationshipLabel(label: string | undefined): boolean {
+  return label === undefined || label.length <= MAX_RELATIONSHIP_LABEL_LENGTH;
+}
+
+function normalizeListenerTitle(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return '';
+  return String(value).trim();
+}
+
+function validateListenerTitle(label: string | undefined): boolean {
+  return label === undefined || label.length <= MAX_LISTENER_TITLE_LENGTH;
+}
+
+async function canUseSharedVoiceProfile(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  voiceProfileId: string,
+): Promise<boolean> {
+  const shared = await db.execute({
+    sql: `SELECT vp.user_id, u.id AS owner_pk
+          FROM voice_profiles vp
+          LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
+          WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND vp.deleted_at IS NULL
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (shared.rows.length === 0) return false;
+  const row = typedRow<{ owner_pk?: string | null; user_id?: string }>(shared.rows[0]!);
+  const ownerPk = row.owner_pk || row.user_id || null;
+  if (!ownerPk || ownerPk === userPk) return false;
+  return assertSameGroup(db, userPk, ownerPk);
+}
 
 /**
  * Dev/cleanup helper: delete every voice profile (and its dependent
@@ -59,6 +103,12 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR message_id IN (SELECT id FROM messages WHERE user_id IN (${ph}))
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids, ...ids],
+  );
+  await tryDel(
+    'voice_profile_relationships',
+    `DELETE FROM voice_profile_relationships WHERE user_id IN (${ph})
+     OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
+    [...ids, ...ids],
   );
   await tryDel(
     'dub_jobs',
@@ -166,6 +216,7 @@ voiceProfile.get('/', async (c) => {
 
 voiceProfile.get('/family', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
   const db = getDB(c.env);
 
   const memberRes = await db.execute({
@@ -203,16 +254,21 @@ voiceProfile.get('/family', async (c) => {
 
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
-    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared, u.name as owner_name
+    sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
+                 COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
+                 COALESCE(NULLIF(vpr.listener_title, ''), vp.listener_title) AS listener_title,
+                 u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
+          LEFT JOIN voice_profile_relationships vpr
+            ON vpr.voice_profile_id = vp.id AND vpr.user_id IN (?, ?)
           WHERE vp.user_id IN (${placeholders})
             AND vp.deleted_at IS NULL
             AND vp.status = 'ready'
             AND COALESCE(vp.is_shared, 0) = 1
             AND COALESCE(vp.is_draft, 0) = 0
           ORDER BY vp.created_at DESC`,
-    args: memberIds,
+    args: [userPk, userId, ...memberIds],
   });
 
   return c.json({
@@ -266,6 +322,10 @@ voiceProfile.patch('/:id', async (c) => {
     isShared?: unknown;
     is_draft?: unknown;
     isDraft?: unknown;
+    relationship_label?: unknown;
+    relationshipLabel?: unknown;
+    listener_title?: unknown;
+    listenerTitle?: unknown;
   };
   try {
     body = await c.req.json();
@@ -281,11 +341,35 @@ voiceProfile.patch('/:id', async (c) => {
   const draftValue = body.is_draft ?? body.isDraft;
   const isDraftUpdate = typeof draftValue === 'boolean' ? draftValue : undefined;
   const hasDraft = isDraftUpdate !== undefined;
-  if (!hasName && !hasShared && !hasDraft) {
+  const hasRelationship =
+    body.relationship_label !== undefined || body.relationshipLabel !== undefined;
+  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
+  const hasListenerTitle =
+    body.listener_title !== undefined || body.listenerTitle !== undefined;
+  const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
   if (hasName && (name.length === 0 || name.length > 50)) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
+  }
+  if (!validateRelationshipLabel(relationshipLabel)) {
+    return c.json(
+      {
+        error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+        error_code: 'INVALID_RELATIONSHIP_LABEL',
+      },
+      400,
+    );
+  }
+  if (!validateListenerTitle(listenerTitle)) {
+    return c.json(
+      {
+        error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+        error_code: 'INVALID_LISTENER_TITLE',
+      },
+      400,
+    );
   }
 
   const existing = await db.execute({
@@ -330,6 +414,14 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('is_draft = ?');
     args.push(isDraftUpdate ? 1 : 0);
   }
+  if (hasRelationship) {
+    updates.push('relationship_label = ?');
+    args.push(relationshipLabel ?? '');
+  }
+  if (hasListenerTitle) {
+    updates.push('listener_title = ?');
+    args.push(listenerTitle ?? '');
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -344,6 +436,90 @@ voiceProfile.patch('/:id', async (c) => {
       ...(hasName ? { name } : {}),
       ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
       ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
+      ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
+      ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
+    },
+  });
+});
+
+voiceProfile.patch('/:id/relationship', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const id = c.req.param('id');
+  const userPk = c.get('userIdPK') || (await resolveUserPk(db, userId)) || userId;
+
+  if (!UUID_RE.test(id)) {
+    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+  }
+
+  let body: {
+    relationship_label?: unknown;
+    relationshipLabel?: unknown;
+    listener_title?: unknown;
+    listenerTitle?: unknown;
+  };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
+  }
+
+  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
+  if (relationshipLabel === undefined || !validateRelationshipLabel(relationshipLabel)) {
+    return c.json(
+      {
+        error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+        error_code: 'INVALID_RELATIONSHIP_LABEL',
+      },
+      400,
+    );
+  }
+  const listenerTitleRaw = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  const listenerTitle = listenerTitleRaw ?? '';
+  if (!validateListenerTitle(listenerTitle)) {
+    return c.json(
+      {
+        error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+        error_code: 'INVALID_LISTENER_TITLE',
+      },
+      400,
+    );
+  }
+
+  const owned = await db.execute({
+    sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
+    args: [id, userPk, userId],
+  });
+
+  if (owned.rows.length > 0) {
+    await db.execute({
+      sql: `UPDATE voice_profiles
+            SET relationship_label = ?, listener_title = ?, updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [relationshipLabel, listenerTitle, id],
+    });
+  } else {
+    const canUse = await canUseSharedVoiceProfile(db, userPk, id);
+    if (!canUse) {
+      return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+    }
+    await db.execute({
+      sql: `INSERT INTO voice_profile_relationships
+              (id, user_id, voice_profile_id, relationship_label, listener_title)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, voice_profile_id) DO UPDATE SET
+              relationship_label = excluded.relationship_label,
+              listener_title = excluded.listener_title,
+              updated_at = datetime('now')`,
+      args: [crypto.randomUUID(), userPk, id, relationshipLabel, listenerTitle],
+    });
+  }
+
+  return c.json({
+    profile: {
+      id,
+      relationship_label: relationshipLabel,
+      listener_title: listenerTitle,
     },
   });
 });
@@ -376,6 +552,12 @@ voiceProfile.post('/clone', async (c) => {
     const name = formData.get('name') as string | null;
     const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
     const isDraft = ['true', '1', 'yes'].includes(String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'));
+    const relationshipLabel = normalizeRelationshipLabel(
+      formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
+    ) ?? '';
+    const listenerTitle = normalizeListenerTitle(
+      formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
+    ) ?? '';
 
     // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
     if (!isDraft) {
@@ -406,14 +588,32 @@ voiceProfile.post('/clone', async (c) => {
     if (name.length > 50) {
       return c.json({ error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' }, 400);
     }
+    if (!validateRelationshipLabel(relationshipLabel)) {
+      return c.json(
+        {
+          error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
+          error_code: 'INVALID_RELATIONSHIP_LABEL',
+        },
+        400,
+      );
+    }
+    if (!validateListenerTitle(listenerTitle)) {
+      return c.json(
+        {
+          error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+          error_code: 'INVALID_LISTENER_TITLE',
+        },
+        400,
+      );
+    }
 
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft)
-            VALUES (?, ?, ?, 'processing', ?, ?)`,
-      args: [profileId, userId, name, isShared ? 1 : 0, isDraft ? 1 : 0],
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
+            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+      args: [profileId, userId, name, isShared ? 1 : 0, isDraft ? 1 : 0, relationshipLabel, listenerTitle],
     });
 
     const attempts = createEnrollmentAttempts({
@@ -462,6 +662,8 @@ voiceProfile.post('/clone', async (c) => {
           status: 'ready',
           is_shared: isShared,
           is_draft: isDraft,
+          relationship_label: relationshipLabel,
+          listener_title: listenerTitle,
         },
       },
       201,

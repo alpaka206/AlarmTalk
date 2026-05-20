@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types';
 import { verifyAppJwt, APP_JWT_ISSUER } from '../lib/jwt';
-import { decodeJwtPayload, verifyGoogleIdToken } from '../lib/oauth';
+import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 
 interface TokenPayload {
   sub: string;
@@ -51,8 +51,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         exp: app.exp,
       };
     } else if (payload.iss === 'https://appleid.apple.com') {
-      verified = await verifyAppleToken(token);
-    } else if (payload.iss === 'accounts.google.com' || payload.iss === 'https://accounts.google.com') {
+      if (!c.env.APPLE_CLIENT_ID) {
+        throw new Error('Apple client ID is not configured');
+      }
+      verified = await verifyAppleIdToken(token, c.env.APPLE_CLIENT_ID);
+    } else if (
+      payload.iss === 'accounts.google.com' ||
+      payload.iss === 'https://accounts.google.com'
+    ) {
       verified = await verifyGoogleIdToken(token, c.env.GOOGLE_CLIENT_ID);
     } else {
       throw new Error('Invalid token issuer');
@@ -71,20 +77,22 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     try {
       const { getDB } = await import('../lib/db');
       const db = getDB(c.env);
+      const isApple = verified.iss === 'https://appleid.apple.com';
       const found = await db.execute({
-        sql: 'SELECT id FROM users WHERE google_id = ?',
-        args: [verified.sub],
+        sql: 'SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
+        args: [verified.sub, isApple ? verified.sub : null, verified.sub],
       });
       let pk: string;
       if (found.rows.length > 0) {
         pk = String(found.rows[0]!.id);
       } else {
         await db.execute({
-          sql: `INSERT INTO users (id, google_id, email, name, picture)
-                VALUES (?, ?, ?, ?, ?)`,
+          sql: `INSERT INTO users (id, google_id, apple_id, email, name, picture)
+                VALUES (?, ?, ?, ?, ?, ?)`,
           args: [
             verified.sub,
             verified.sub,
+            isApple ? verified.sub : null,
             verified.email || `${verified.sub}@unknown`,
             verified.name || null,
             verified.picture || null,
@@ -114,31 +122,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
             ? 'AUTH_MALFORMED_TOKEN'
             : 'AUTH_VERIFICATION_FAILED';
     // eslint-disable-next-line no-console
-    console.log('[AUTH 401]', code, '|', message, '| GOOGLE_CLIENT_ID set:', !!c.env.GOOGLE_CLIENT_ID);
+    console.log(
+      '[AUTH 401]',
+      code,
+      '|',
+      message,
+      '| GOOGLE_CLIENT_ID set:',
+      !!c.env.GOOGLE_CLIENT_ID,
+    );
     return c.json({ error: message, error_code: code }, 401);
   }
-}
-
-async function verifyAppleToken(idToken: string): Promise<TokenPayload> {
-  // Apple의 공개 키로 검증
-  // 간이 검증: Apple의 tokeninfo는 없으므로 JWT payload 디코딩 + 만료 체크
-  // 프로덕션에서는 Apple의 JWKS로 서명 검증 필요
-  const payload = decodeJwtPayload(idToken);
-
-  if (payload.iss !== 'https://appleid.apple.com') {
-    throw new Error('Invalid Apple token issuer');
-  }
-  if (Number(payload.exp) < Date.now() / 1000) {
-    throw new Error('Token expired');
-  }
-
-  return {
-    sub: payload.sub,
-    email: payload.email,
-    name: undefined,
-    picture: undefined,
-    iss: payload.iss,
-    aud: payload.aud,
-    exp: payload.exp,
-  };
 }

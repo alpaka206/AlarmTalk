@@ -4,6 +4,13 @@ export interface Env {
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
   GOOGLE_CLIENT_ID: string;
+  APPLE_CLIENT_ID?: string;
+  /**
+   * App Store Connect 의 "Apple shared secret".
+   * 현재 /billing/apple/confirm 은 이 secret 이 있어도 fail-closed 로 동작하며,
+   * 후속 PR 에서 Apple App Store Server API v2 의 JWS 검증으로 entitlement 갱신을 열 예정.
+   */
+  APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
   GOOGLE_VERTEX_API_KEY?: string;
   GEMINI_API_KEY?: string;
