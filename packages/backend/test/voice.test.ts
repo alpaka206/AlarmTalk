@@ -197,9 +197,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
 
   it('이름이 51자 이상이면 400', async () => {
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('PATCH', `/voice/${V1}`, { name: '가'.repeat(51) }),
-    );
+    const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { name: '가'.repeat(51) }));
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error_code).toBe('INVALID_NAME_LENGTH');
@@ -208,9 +206,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
   it('존재하지 않거나 소유자가 아니면 404', async () => {
     mockDB.pushResult([]);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('PATCH', `/voice/${V404}`, { name: '새 이름' }),
-    );
+    const res = await app.request(jsonReq('PATCH', `/voice/${V404}`, { name: '새 이름' }));
     expect(res.status).toBe(404);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_PROFILE_NOT_FOUND');
@@ -220,9 +216,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
     mockDB.pushResult([{ id: V1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('PATCH', `/voice/${V1}`, { name: '  엄마 목소리  ' }),
-    );
+    const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { name: '  엄마 목소리  ' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.profile.id).toBe(V1);
@@ -239,9 +233,7 @@ describe('PATCH /voice/:id — 음성 프로필 이름 변경', () => {
     mockDB.pushResult([{ id: V1 }]);
     mockDB.pushResult([], 1);
     const app = buildApp();
-    const res = await app.request(
-      jsonReq('PATCH', `/voice/${V1}`, { relationship_label: '손녀' }),
-    );
+    const res = await app.request(jsonReq('PATCH', `/voice/${V1}`, { relationship_label: '손녀' }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.profile.relationship_label).toBe('손녀');
@@ -672,7 +664,11 @@ describe('GET /voice/family — 가족 음성 프로필', () => {
 });
 
 describe('POST /voice/clone — 음성 클론', () => {
-  function cloneRequest(audio: Uint8Array | null, name: string | null, durationMs = '90000'): Request {
+  function cloneRequest(
+    audio: Uint8Array | null,
+    name: string | null,
+    durationMs = '90000',
+  ): Request {
     const form = new FormData();
     if (audio) {
       form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'sample.wav');
@@ -746,12 +742,20 @@ describe('POST /voice/clone — 음성 클론', () => {
     expect(body.profile.voice_id).toBe('elv-voice-001');
     expect(body.profile.status).toBe('ready');
     expect(mockCreateInstantClone).toHaveBeenCalledOnce();
-    expect(mockCreateInstantClone.mock.calls[0]![2]).toEqual({ removeBackgroundNoise: true });
+    expect(mockCreateInstantClone.mock.calls[0]![2]).toEqual({
+      removeBackgroundNoise: true,
+      mimeType: 'audio/wav',
+      fileName: 'sample.wav',
+    });
   });
 
   it('stores relationship label when cloning a voice', async () => {
     const form = new FormData();
-    form.append('audio', new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }), 'sample.wav');
+    form.append(
+      'audio',
+      new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' }),
+      'sample.wav',
+    );
     form.append('name', 'Child voice');
     form.append('durationMs', '90000');
     form.append('relationshipLabel', '손녀');

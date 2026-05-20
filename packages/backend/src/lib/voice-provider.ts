@@ -56,6 +56,8 @@ export function createEnrollmentAttempts(params: {
   env: Env;
   audioData: ArrayBuffer;
   name: string;
+  audioMimeType?: string | null;
+  audioFileName?: string | null;
 }): VoiceProviderEnrollAttempt[] {
   const attempts: VoiceProviderEnrollAttempt[] = [];
 
@@ -66,7 +68,9 @@ export function createEnrollmentAttempts(params: {
         // The current Perso codepath in this repository targets upload/dubbing
         // projects. Keep Perso first in the chain, but do not call an uncertain
         // paid endpoint until the direct voice cloning API contract is proven.
-        throw new UnsupportedVoiceProviderError('Perso direct voice clone is not available in this backend yet.');
+        throw new UnsupportedVoiceProviderError(
+          'Perso direct voice clone is not available in this backend yet.',
+        );
       },
     });
   }
@@ -78,6 +82,8 @@ export function createEnrollmentAttempts(params: {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
         const result = await client.createInstantClone(params.audioData, params.name, {
           removeBackgroundNoise: true,
+          mimeType: params.audioMimeType,
+          fileName: params.audioFileName,
         });
         return {
           provider: 'elevenlabs',
@@ -111,7 +117,9 @@ export function createSynthesisAttempts(params: {
         // is video dubbing oriented, not direct voice-id TTS. Keep this attempt
         // in the chain so Perso can become primary once that API is available,
         // but fall back without charging a provider request today.
-        throw new UnsupportedVoiceProviderError('Perso direct voice-id TTS is not available in this backend yet.');
+        throw new UnsupportedVoiceProviderError(
+          'Perso direct voice-id TTS is not available in this backend yet.',
+        );
       },
     });
   }
@@ -124,10 +132,14 @@ export function createSynthesisAttempts(params: {
       outputFormat: 'mp3',
       synthesize: async () => {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
-        const audioBuffer = await client.textToSpeech(params.profile.elevenlabs_voice_id!, params.text, {
-          model_id: ELEVENLABS_V3_MODEL_ID,
-          language_code: normalizeLanguageCode(params.language),
-        });
+        const audioBuffer = await client.textToSpeech(
+          params.profile.elevenlabs_voice_id!,
+          params.text,
+          {
+            model_id: ELEVENLABS_V3_MODEL_ID,
+            language_code: normalizeLanguageCode(params.language),
+          },
+        );
         return {
           provider: 'elevenlabs',
           providerVoiceId: params.profile.elevenlabs_voice_id!,
@@ -144,7 +156,9 @@ export function createSynthesisAttempts(params: {
 }
 
 export function noVoiceProviderError(): VoiceProviderUnavailableError {
-  return new VoiceProviderUnavailableError('No usable provider voice ID is available for this profile.');
+  return new VoiceProviderUnavailableError(
+    'No usable provider voice ID is available for this profile.',
+  );
 }
 
 export function normalizeSynthesisLanguage(language: string | null | undefined): string {
