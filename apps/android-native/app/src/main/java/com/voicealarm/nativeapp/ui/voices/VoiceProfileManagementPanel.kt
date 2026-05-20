@@ -72,6 +72,7 @@ import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
 import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
+import com.voicealarm.nativeapp.network.apiErrorCode
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -81,6 +82,7 @@ import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -176,6 +178,9 @@ internal fun VoiceProfileManagementPanel(
     var fileWaveformLoading by remember { mutableStateOf(false) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
     var speakerDraftStates by remember { mutableStateOf<Map<String, SpeakerDraftState>>(emptyMap()) }
+    // 진행 중인 prepareSpeakerDraft 코루틴을 화자 id 별로 추적해
+    // 선택/정리 시 다른 draft 작업이 cleanup 과 동시에 진행되지 않도록 한다.
+    val speakerDraftJobs = remember { mutableMapOf<String, Job>() }
     var activePlayingSpeakerId by remember { mutableStateOf<String?>(null) }
     var separatingBusy by remember { mutableStateOf(false) }
     var promotingBusy by remember { mutableStateOf(false) }
@@ -304,6 +309,20 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    /**
+     * 진행 중인 화자 draft 준비 Job 들을 취소하고, 인자로 받은 화자 id 는 제외한다.
+     * select 시점에 다른 draft 의 clone/synthesize 가 promote 와 동시에 진행되는 race 를 막는다.
+     */
+    fun cancelOtherSpeakerDraftJobs(keepSpeakerId: String?) {
+        val toCancel = speakerDraftJobs.entries
+            .filter { (id, _) -> id != keepSpeakerId }
+            .toList()
+        toCancel.forEach { (id, job) ->
+            runCatching { job.cancel() }
+            speakerDraftJobs.remove(id)
+        }
+    }
+
     fun closeCreateDialog() {
         if (recorder.isRecording) recorder.cancel()
         isRecording = false
@@ -318,6 +337,8 @@ internal fun VoiceProfileManagementPanel(
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
         detectedSpeakers = emptyList()
         // 다이얼로그 닫힐 때 현재 화면에 남은 draft 가 있으면 모두 삭제 (선택되지 않은 채 닫힘)
+        // 진행 중인 prepare Job 도 취소해 닫힌 뒤 server 호출이 이어지지 않게 한다.
+        cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
         cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
         speakerDraftStates = emptyMap()
         activePlayingSpeakerId = null
@@ -446,7 +467,7 @@ internal fun VoiceProfileManagementPanel(
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to prepare speaker draft id=${speaker.id}", error)
-            val code = speakerSeparationErrorCode(error)
+            val code = apiErrorCode(error)
             val cls = error.javaClass.simpleName
             val msg = error.message ?: "(no message)"
             val display = if (code != null) "미리듣기 실패 · $code" else "미리듣기 실패 · $cls: $msg"
@@ -493,12 +514,24 @@ internal fun VoiceProfileManagementPanel(
                 }
                 localMessage = if (visible.isEmpty()) "분리할 화자를 찾지 못했어요." else null
                 val baseName = profileName.trim()
+                // 기존 추적 중인 Job 이 있다면 새 separate 가 일어났으므로 모두 취소.
+                cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
                 visible.forEachIndexed { index, speaker ->
-                    scope.launch { prepareSpeakerDraft(speaker, index, baseName, uri) }
+                    val job = scope.launch {
+                        try {
+                            prepareSpeakerDraft(speaker, index, baseName, uri)
+                        } finally {
+                            // 자신이 등록한 Job 만 정리.
+                            if (speakerDraftJobs[speaker.id] === coroutineContext[Job]) {
+                                speakerDraftJobs.remove(speaker.id)
+                            }
+                        }
+                    }
+                    speakerDraftJobs[speaker.id] = job
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to separate speakers", error)
-                val code = speakerSeparationErrorCode(error)
+                val code = apiErrorCode(error)
                 localMessage = when (code) {
                     "AUDIO_DURATION_TOO_SHORT" -> "분리할 구간은 1분 이상이어야 해요."
                     "AUDIO_DURATION_TOO_LONG" -> "분리할 구간은 2분 이하여야 해요."
@@ -519,6 +552,8 @@ internal fun VoiceProfileManagementPanel(
     }
 
     fun resetSpeakers() {
+        // cleanup 보다 먼저 진행 중인 draft Job 을 취소해 cleanup 과 동시 진행을 막는다.
+        cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
         cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
         detectedSpeakers = emptyList()
         speakerDraftStates = emptyMap()
@@ -557,6 +592,11 @@ internal fun VoiceProfileManagementPanel(
     fun selectSpeakerDraft(speaker: VoiceSpeakerSegment) {
         val state = speakerDraftStates[speaker.id] ?: return
         val selectedDraftId = state.profileId ?: return
+        // 아직 ready 가 아닌 draft 는 promote 대상이 아니다.
+        // (prepareSpeakerDraft 가 진행 중에 사용자가 빠르게 탭하는 경우 가드)
+        if (state.status != SpeakerDraftStatus.Ready) return
+        // 선택한 화자를 제외한 다른 draft 의 prepare Job 을 cancel 해 cleanup 과 동시에 진행되지 않게 한다.
+        cancelOtherSpeakerDraftJobs(keepSpeakerId = speaker.id)
         scope.launch {
             promotingBusy = true
             stopMediaPreview()
@@ -1607,14 +1647,3 @@ private fun SharedVoiceViewerInfoDialog(
     )
 }
 
-private fun speakerSeparationErrorCode(error: Throwable): String? {
-    val body = (error as? retrofit2.HttpException)
-        ?.response()
-        ?.errorBody()
-        ?.string()
-        ?.takeIf { it.isNotBlank() }
-        ?: return null
-    return runCatching {
-        org.json.JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
-    }.getOrNull()
-}
