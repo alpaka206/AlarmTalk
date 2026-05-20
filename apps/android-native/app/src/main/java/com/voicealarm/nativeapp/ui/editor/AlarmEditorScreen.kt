@@ -119,6 +119,8 @@ internal fun AlarmEditorScreen(
     var audioMessage by remember { mutableStateOf<String?>(null) }
     var isRecording by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    // 진행 중인 TTS 생성 Job 을 추적해, 사용자가 도중에 시각을 변경하면 취소한다.
+    var generationJob by remember { mutableStateOf<Job?>(null) }
     var localInputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
@@ -504,7 +506,9 @@ internal fun AlarmEditorScreen(
             }
         }
 
-        scope.launch {
+        // 이전에 진행 중이던 generation 이 남아 있다면 취소.
+        generationJob?.cancel()
+        generationJob = scope.launch {
             isSaving = true
             audioMessage = "음성을 생성해서 저장하는 중..."
             showFamilyAlarmToast("음성을 생성하는 중...")
@@ -578,6 +582,7 @@ internal fun AlarmEditorScreen(
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
             }
             isSaving = false
+            generationJob = null
         }
     }
 
@@ -734,10 +739,19 @@ internal fun AlarmEditorScreen(
 
     // 랜덤 문구는 알람 시각이 프롬프트 컨텍스트로 들어가므로,
     // 시각이 바뀌면 기존 캐시 TTS 를 무효화해 저장 시 재생성하게 한다.
+    // 또한 진행 중인 generation 코루틴이 있으면 결과가 stale 한 시각으로 저장되지 않도록 취소한다.
     LaunchedEffect(editor.hour, editor.minute) {
         if (editor.voiceRandomPrompt && !editor.ttsMessageId.isNullOrBlank()) {
             editor.clearTtsMeta()
             editor.clearAudio()
+        }
+        generationJob?.let { current ->
+            if (current.isActive) {
+                current.cancel()
+                isSaving = false
+                audioMessage = "알람 시각이 바뀌어 음성 생성을 중단했어요."
+            }
+            generationJob = null
         }
     }
 
