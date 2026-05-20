@@ -693,8 +693,10 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.random_context).toBe('wake_fortune');
-    expect(body.original_text).toContain('손녀');
-    expect(body.original_text).toContain('생년월일과 태어난 시간');
+    expect(body.original_text).toContain('일어나실 시간');
+    expect(body.original_text).not.toContain('손녀 목소리');
+    expect(body.original_text).not.toContain('생년월일');
+    expect(body.original_text).not.toContain('태어난 시간');
     expect(body.synthesis_text).toContain(body.original_text);
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
