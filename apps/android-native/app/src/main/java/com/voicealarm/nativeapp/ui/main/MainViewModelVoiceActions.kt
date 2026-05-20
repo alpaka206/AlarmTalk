@@ -18,6 +18,7 @@ import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.CharacterEventEntity
 import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
+import com.voicealarm.nativeapp.network.apiErrorCode
 import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
@@ -53,8 +54,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import org.json.JSONObject
-import retrofit2.HttpException
 
 
 internal fun MainViewModel.loadVoiceProfiles() {
@@ -182,7 +181,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         }.onFailure { error ->
             voiceProfiles = voiceProfiles.filterNot { it.id in pendingIds }
             Log.e(TAG, "Failed to create voice profile", error)
-            message = when (voiceErrorCode(error)) {
+            message = when (apiErrorCode(error)) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> "학습 음성은 1분 이상이어야 해요."
                 "VOICE_CLONE_AUDIO_TOO_LONG" -> "학습 음성은 2분 이하로 준비해 주세요."
                 "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
@@ -193,18 +192,6 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         }
         voiceProfileBusy = false
     }
-}
-
-private fun voiceErrorCode(error: Throwable): String? {
-    val body = (error as? HttpException)
-        ?.response()
-        ?.errorBody()
-        ?.string()
-        ?.takeIf { it.isNotBlank() }
-        ?: return null
-    return runCatching {
-        JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
-    }.getOrNull()
 }
 
 internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {

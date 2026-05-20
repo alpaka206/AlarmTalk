@@ -18,6 +18,7 @@ import com.voicealarm.nativeapp.data.AlarmDraft
 import com.voicealarm.nativeapp.data.AlarmEntity
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.CharacterEventEntity
+import com.voicealarm.nativeapp.network.apiErrorCode
 import com.voicealarm.nativeapp.network.AuthTokenResponse
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.AuthSessionStore
@@ -55,8 +56,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import org.json.JSONObject
-import retrofit2.HttpException
 
 
 internal fun MainViewModel.refreshCharacterAndBilling() {
@@ -144,18 +143,6 @@ private suspend fun MainViewModel.refreshCharacterBillingAfterMutation(
     }.onFailure { error ->
         Log.w(TAG, "Failed to refresh character or billing after $reason", error)
     }
-}
-
-private fun billingErrorCode(error: Throwable): String? {
-    val body = (error as? HttpException)
-        ?.response()
-        ?.errorBody()
-        ?.string()
-        ?.takeIf { it.isNotBlank() }
-        ?: return null
-    return runCatching {
-        JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
-    }.getOrNull()
 }
 
 private fun billingFailureMessage(errorCode: String?, fallback: String): String =
@@ -395,7 +382,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
             val fallback = if (gift) "선물하기에 실패했어요" else "이용권 적용에 실패했어요"
-            message = billingFailureMessage(billingErrorCode(error), userFacingError(error, fallback))
+            message = billingFailureMessage(apiErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false
     }
@@ -420,7 +407,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         }.onFailure { error ->
             Log.e(TAG, "Failed to ensure family share code", error)
             message = billingFailureMessage(
-                billingErrorCode(error),
+                apiErrorCode(error),
                 userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요"),
             )
         }
@@ -446,7 +433,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to cancel subscription mode=$mode", error)
-            message = billingFailureMessage(billingErrorCode(error), userFacingError(error, "해지에 실패했어요"))
+            message = billingFailureMessage(apiErrorCode(error), userFacingError(error, "해지에 실패했어요"))
         }
         billingBusy = false
     }
@@ -494,7 +481,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
-            val errorCode = billingErrorCode(error)
+            val errorCode = apiErrorCode(error)
             if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
                 message = billingFailureMessage(errorCode, "현재 적용된 이용권이 없어 새 이용권으로 적용할게요")
                 billingBusy = false
