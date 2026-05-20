@@ -36,6 +36,10 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var ttsLanguage = "ko"
     @Published var translateText = false
     @Published var randomPrompt = false
+    /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
+    /// 허용 값: preset / wake_weather / wake_fortune / meal / sleep / exercise / love.
+    /// randomPrompt 가 true 일 때만 의미가 있다.
+    @Published var randomContext: String = "preset"
     @Published var cloneName = "내 목소리"
     @Published var isBusy = false
     @Published var statusMessage: String?
@@ -357,7 +361,8 @@ final class VoiceStudioViewModel: ObservableObject {
                     category: ttsCategory,
                     language: ttsLanguage,
                     translate: translateText,
-                    random: randomPrompt
+                    random: randomPrompt,
+                    randomContext: randomPrompt ? randomContext : nil
                 ),
                 token: token
             )
