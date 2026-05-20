@@ -446,10 +446,14 @@ internal fun VoiceProfileManagementPanel(
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to prepare speaker draft id=${speaker.id}", error)
+            val code = speakerSeparationErrorCode(error)
+            val cls = error.javaClass.simpleName
+            val msg = error.message ?: "(no message)"
+            val display = if (code != null) "미리듣기 실패 · $code" else "미리듣기 실패 · $cls: $msg"
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
                     status = SpeakerDraftStatus.Failed,
-                    errorMessage = userFacingError(error, "화자 미리듣기 준비에 실패했어요."),
+                    errorMessage = display,
                 )
             }
         }
@@ -494,14 +498,20 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to separate speakers", error)
-                localMessage = when (speakerSeparationErrorCode(error)) {
+                val code = speakerSeparationErrorCode(error)
+                localMessage = when (code) {
                     "AUDIO_DURATION_TOO_SHORT" -> "분리할 구간은 1분 이상이어야 해요."
                     "AUDIO_DURATION_TOO_LONG" -> "분리할 구간은 2분 이하여야 해요."
                     "AUDIO_FILE_EMPTY" -> "선택한 음성 파일이 비어 있어요."
                     "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
                     "INVALID_AUDIO_MIME_TYPE" -> "지원하지 않는 오디오 형식이에요."
                     "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 요금제를 사용해야 화자 분리를 할 수 있어요."
-                    else -> userFacingError(error, "화자 분리에 실패했어요.")
+                    else -> {
+                        // 진단용: 어떤 예외가 어디서 났는지 화면에 그대로 보여준다.
+                        val cls = error.javaClass.simpleName
+                        val msg = error.message ?: "(no message)"
+                        "화자 분리 실패 · $cls: $msg"
+                    }
                 }
             }
             separatingBusy = false
