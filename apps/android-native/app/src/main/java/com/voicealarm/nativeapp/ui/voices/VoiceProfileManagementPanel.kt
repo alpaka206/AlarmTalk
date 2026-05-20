@@ -461,6 +461,15 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         val uri = selectedFileUri ?: return
+        val cropDuration = cropEndMillis - cropStartMillis
+        if (cropDuration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+            localMessage = "분리할 구간은 1분 이상이어야 해요. 자르기 범위를 늘려 주세요."
+            return
+        }
+        if (cropDuration > VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
+            localMessage = "분리할 구간은 2분 이하여야 해요. 자르기 범위를 줄여 주세요."
+            return
+        }
         scope.launch {
             separatingBusy = true
             localMessage = null
@@ -485,7 +494,15 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to separate speakers", error)
-                localMessage = userFacingError(error, "화자 분리에 실패했어요.")
+                localMessage = when (speakerSeparationErrorCode(error)) {
+                    "AUDIO_DURATION_TOO_SHORT" -> "분리할 구간은 1분 이상이어야 해요."
+                    "AUDIO_DURATION_TOO_LONG" -> "분리할 구간은 2분 이하여야 해요."
+                    "AUDIO_FILE_EMPTY" -> "선택한 음성 파일이 비어 있어요."
+                    "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
+                    "INVALID_AUDIO_MIME_TYPE" -> "지원하지 않는 오디오 형식이에요."
+                    "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 요금제를 사용해야 화자 분리를 할 수 있어요."
+                    else -> userFacingError(error, "화자 분리에 실패했어요.")
+                }
             }
             separatingBusy = false
         }
@@ -1578,4 +1595,16 @@ private fun SharedVoiceViewerInfoDialog(
             TextButton(onClick = onDismiss) { Text("취소") }
         },
     )
+}
+
+private fun speakerSeparationErrorCode(error: Throwable): String? {
+    val body = (error as? retrofit2.HttpException)
+        ?.response()
+        ?.errorBody()
+        ?.string()
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    return runCatching {
+        org.json.JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
+    }.getOrNull()
 }
