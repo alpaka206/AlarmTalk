@@ -108,7 +108,8 @@ private fun androidNavigationBarHeightPadding(): Dp {
 private fun voiceProfileDurationError(durationMillis: Long?): String? = when {
     durationMillis == null -> "오디오 길이를 확인할 수 없어요."
     durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 녹음해 주세요."
-    durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS -> "2분 이하 음성으로 등록할 수 있어요."
+    durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS +
+        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS -> "2분 이하 음성으로 등록할 수 있어요."
     else -> null
 }
 
@@ -167,6 +168,7 @@ internal fun VoiceProfileManagementPanel(
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
+    var fileSpeakerMode by remember { mutableStateOf(FileSpeakerMode.Single) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
     var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
@@ -335,6 +337,7 @@ internal fun VoiceProfileManagementPanel(
         fileWaveformLoading = false
         cropStartMillis = 0L
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
+        fileSpeakerMode = FileSpeakerMode.Single
         detectedSpeakers = emptyList()
         // 다이얼로그 닫힐 때 현재 화면에 남은 draft 가 있으면 모두 삭제 (선택되지 않은 채 닫힘)
         // 진행 중인 prepare Job 도 취소해 닫힌 뒤 server 호출이 이어지지 않게 한다.
@@ -404,7 +407,8 @@ internal fun VoiceProfileManagementPanel(
 
     suspend fun croppedFileAudio(): CachedAlarmAudio {
         val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요.")
-        val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
+        val cropDurationMillis = (cropEndMillis - cropStartMillis)
+            .coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {
             audioStore.cacheFromUri(
                 sourceUri = uri,
@@ -416,12 +420,14 @@ internal fun VoiceProfileManagementPanel(
 
     suspend fun prepareSpeakerDraft(
         speaker: VoiceSpeakerSegment,
-        index: Int,
         baseName: String,
         uri: Uri,
     ) {
         val duration = (speaker.endMs - speaker.startMs)
-            .coerceIn(VoiceProfileAudioLimits.MIN_DURATION_MILLIS, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
+            .coerceIn(
+                VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+            )
         runCatching {
             val audio = withContext(Dispatchers.IO) {
                 audioStore.cacheFromUri(
@@ -430,7 +436,7 @@ internal fun VoiceProfileManagementPanel(
                     startMillis = cropStartMillis + speaker.startMs,
                 )
             }
-            val draftName = "${baseName.ifBlank { voiceProfilePlaceholder() }} ${index + 1}"
+            val draftName = baseName.ifBlank { voiceProfilePlaceholder() }
             val profile = onCloneSpeakerDraft(draftName, audio)
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
@@ -516,10 +522,10 @@ internal fun VoiceProfileManagementPanel(
                 val baseName = profileName.trim()
                 // 기존 추적 중인 Job 이 있다면 새 separate 가 일어났으므로 모두 취소.
                 cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
-                visible.forEachIndexed { index, speaker ->
+                visible.forEach { speaker ->
                     val job = scope.launch {
                         try {
-                            prepareSpeakerDraft(speaker, index, baseName, uri)
+                            prepareSpeakerDraft(speaker, baseName, uri)
                         } finally {
                             // 자신이 등록한 Job 만 정리.
                             if (speakerDraftJobs[speaker.id] === coroutineContext[Job]) {
@@ -560,6 +566,12 @@ internal fun VoiceProfileManagementPanel(
         activePlayingSpeakerId = null
         stopMediaPreview()
         localMessage = null
+    }
+
+    fun setFileSpeakerMode(mode: FileSpeakerMode) {
+        if (fileSpeakerMode == mode) return
+        fileSpeakerMode = mode
+        resetSpeakers()
     }
 
     fun playSpeakerDraftPreview(speaker: VoiceSpeakerSegment) {
@@ -698,7 +710,29 @@ internal fun VoiceProfileManagementPanel(
             closeCreateDialog()
             return
         }
-        // 파일 모드에서는 화자 분리 후 카드의 "선택" 버튼으로 등록한다. (등록 버튼 비활성)
+        if (fileSpeakerMode == FileSpeakerMode.Multiple) {
+            localMessage = "화자 분리 후 사용할 목소리를 선택해 주세요."
+            return
+        }
+        scope.launch {
+            createPreparing = true
+            localMessage = null
+            runCatching {
+                croppedFileAudio()
+            }.onSuccess { audio ->
+                val error = voiceProfileDurationError(audio.durationMillis)
+                if (error != null) {
+                    localMessage = error
+                } else {
+                    onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
+                    closeCreateDialog()
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to prepare selected voice file", error)
+                localMessage = userFacingError(error, "선택한 음성을 준비하지 못했어요.")
+            }
+            createPreparing = false
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -807,6 +841,10 @@ internal fun VoiceProfileManagementPanel(
         val listenerRequiredError = createSubmitAttempted && resolvedListener.isBlank()
         val hasSeparatedSpeakers = detectedSpeakers.isNotEmpty()
         val fileInputLocked = separatingBusy || hasSeparatedSpeakers
+        val canSubmitRecord = inputMode == VoiceCaptureMode.Record
+        val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
+            fileSpeakerMode == FileSpeakerMode.Single &&
+            selectedFileUri != null
         Dialog(
             onDismissRequest = {
                 if (!voiceProfileBusy && !separatingBusy) closeCreateDialog()
@@ -957,6 +995,11 @@ internal fun VoiceProfileManagementPanel(
                             )
                         } else {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                FileSpeakerModeSelector(
+                                    selected = fileSpeakerMode,
+                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
+                                    onSelect = ::setFileSpeakerMode,
+                                )
                                 VoiceFileControls(
                                     durationMillis = selectedFileDurationMillis,
                                     cropStartMillis = cropStartMillis,
@@ -981,7 +1024,8 @@ internal fun VoiceProfileManagementPanel(
                                     },
                                     onPreviewCrop = { playFileCropPreview() },
                                 )
-                                selectedFileDurationMillis?.let {
+                                if (fileSpeakerMode == FileSpeakerMode.Multiple) {
+                                    selectedFileDurationMillis?.let {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1023,6 +1067,7 @@ internal fun VoiceProfileManagementPanel(
                                             onSelect = { selectSpeakerDraft(speaker) },
                                         )
                                     }
+                                    }
                                 }
                             }
                         }
@@ -1051,11 +1096,18 @@ internal fun VoiceProfileManagementPanel(
                         Button(
                             onClick = { submitCreateProfile(resolvedProfileName) },
                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !promotingBusy &&
-                                inputMode == VoiceCaptureMode.Record,
+                                (canSubmitRecord || canSubmitSingleFile),
                             modifier = Modifier.fillMaxWidth(),
                             shape = VocaWakeButtonShape,
                         ) {
-                            Text(if (createPreparing) "준비 중" else "등록")
+                            Text(
+                                when {
+                                    createPreparing -> "준비 중"
+                                    inputMode == VoiceCaptureMode.File &&
+                                        fileSpeakerMode == FileSpeakerMode.Multiple -> "화자 선택"
+                                    else -> "등록"
+                                },
+                            )
                         }
                     }
                 }
@@ -1280,15 +1332,47 @@ private fun VoiceProfileDeleteDialog(
 }
 
 @Composable
-private fun VoiceInputModeButton(
+private fun FileSpeakerModeSelector(
+    selected: FileSpeakerMode,
+    enabled: Boolean,
+    onSelect: (FileSpeakerMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("파일 속 목소리", fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FileSpeakerModeButton(
+                label = "1명",
+                selected = selected == FileSpeakerMode.Single,
+                enabled = enabled,
+                onClick = { onSelect(FileSpeakerMode.Single) },
+                modifier = Modifier.weight(1f),
+            )
+            FileSpeakerModeButton(
+                label = "2명 이상",
+                selected = selected == FileSpeakerMode.Multiple,
+                enabled = enabled,
+                onClick = { onSelect(FileSpeakerMode.Multiple) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileSpeakerModeButton(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     if (selected) {
         Button(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier,
             shape = RoundedCornerShape(999.dp),
             colors = ButtonDefaults.buttonColors(
@@ -1301,6 +1385,7 @@ private fun VoiceInputModeButton(
     } else {
         OutlinedButton(
             onClick = onClick,
+            enabled = enabled,
             modifier = modifier,
             shape = RoundedCornerShape(999.dp),
         ) {
@@ -1335,6 +1420,11 @@ private fun RecordingLevelBars(
             )
         }
     }
+}
+
+internal enum class FileSpeakerMode {
+    Single,
+    Multiple,
 }
 
 internal enum class SpeakerDraftStatus {
