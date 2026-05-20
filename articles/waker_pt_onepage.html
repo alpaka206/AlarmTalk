@@ -60,9 +60,10 @@ html, body {
 .quad {
   position: relative;
   padding: var(--pad);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  display: grid;
+  /* 위·내용·아래에 1fr 씩 배치 → 컨텐츠 블록이 항상 시각적 정중앙 */
+  grid-template-rows: 1fr auto 1fr;
+  align-items: start;
   overflow: hidden;
   min-height: 0;
   min-width: 0;
@@ -74,6 +75,12 @@ html, body {
   z-index: 0;
 }
 .quad > * { position: relative; z-index: 1; }
+.quad-content {
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
 
 /* ==== Sequential reveal cover ==== */
 .quad-cover {
@@ -108,9 +115,10 @@ html, body {
 .q-tl {
   background: var(--mustard-bg);
   color: var(--mustard-deep);
-  align-items: flex-start;
+  justify-items: start;
   text-align: left;
 }
+.q-tl .quad-content { align-items: flex-start; }
 .q-tl::before {
   background:
     radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.45), transparent 60%),
@@ -120,9 +128,10 @@ html, body {
 .q-tr {
   background: var(--navy-bg);
   color: var(--navy-deep);
-  align-items: flex-end;
+  justify-items: end;
   text-align: right;
 }
+.q-tr .quad-content { align-items: flex-end; }
 .q-tr::before {
   background:
     radial-gradient(circle at 0% 100%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -132,9 +141,10 @@ html, body {
 .q-bl {
   background: var(--green-bg);
   color: var(--green-deep);
-  align-items: flex-start;
+  justify-items: start;
   text-align: left;
 }
+.q-bl .quad-content { align-items: flex-start; }
 .q-bl::before {
   background:
     radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -144,9 +154,10 @@ html, body {
 .q-br {
   background: var(--terra-bg);
   color: var(--terra-deep);
-  align-items: flex-end;
+  justify-items: end;
   text-align: right;
 }
+.q-br .quad-content { align-items: flex-end; }
 .q-br::before {
   background:
     radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.5), transparent 60%),
@@ -311,7 +322,8 @@ html, body {
 /* Mobile fallback */
 @media (max-width: 720px) {
   .stage { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
-  .q-tr, .q-br { align-items: flex-start; text-align: left; }
+  .q-tr, .q-br { justify-items: start; text-align: left; }
+  .q-tr .quad-content, .q-br .quad-content { align-items: flex-start; }
   .q-tr .title, .q-br .title, .q-tr .copy, .q-br .copy { margin-left: 0; }
 }
 </style>
@@ -322,37 +334,45 @@ html, body {
 
   <!-- 좌상: 보이스 클로닝 -->
   <section class="quad q-tl" data-index="1">
-    <div class="eyebrow"><span class="num">1</span>Voice Cloning</div>
-    <h2 class="title">좋아하는 목소리가<span class="br"></span><span class="accent">나를 깨운다</span></h2>
-    <p class="copy">60초 녹음만으로 누구든 학습.<br>좋아하는 연예인의 한마디로 시작하는 아침을 상상해보세요.</p>
-    <div class="row-tag"><span class="dot"></span>녹음 60초 · 평생 사용</div>
+    <div class="quad-content">
+      <div class="eyebrow"><span class="num">1</span>Voice Cloning</div>
+      <h2 class="title">좋아하는 목소리가<span class="br"></span><span class="accent">나를 깨운다</span></h2>
+      <p class="copy">60초 녹음만으로 누구든 학습.<br>좋아하는 연예인의 한마디로 시작하는 아침을 상상해보세요.</p>
+      <div class="row-tag"><span class="dot"></span>녹음 60초 · 평생 사용</div>
+    </div>
     <div class="quad-cover" aria-hidden="true"></div>
   </section>
 
   <!-- 우상: TTS -->
   <section class="quad q-tr" data-index="2">
-    <div class="eyebrow"><span class="num">2</span>Text to Voice</div>
-    <h2 class="title">텍스트 한 줄로<span class="br"></span><span class="accent">매일 새로운 알람</span></h2>
-    <p class="copy">"좋은 아침이에요. 오늘 하루도 힘내세요."<br>입력만 하면 설정한 목소리로 읽어줍니다.</p>
-    <div class="row-tag"><span class="dot"></span>매일 다른 한마디</div>
+    <div class="quad-content">
+      <div class="eyebrow"><span class="num">2</span>Text to Voice</div>
+      <h2 class="title">텍스트 한 줄로<span class="br"></span><span class="accent">매일 새로운 알람</span></h2>
+      <p class="copy">"좋은 아침이에요. 오늘 하루도 힘내세요."<br>입력만 하면 설정한 목소리로 읽어줍니다.</p>
+      <div class="row-tag"><span class="dot"></span>매일 다른 한마디</div>
+    </div>
     <div class="quad-cover" aria-hidden="true"></div>
   </section>
 
   <!-- 좌하: 가족/커플 알람 -->
   <section class="quad q-bl" data-index="3">
-    <div class="eyebrow"><span class="num">3</span>Family · Couple</div>
-    <h2 class="title">가족의 목소리로<span class="br"></span><span class="accent">서로를 깨운다</span></h2>
-    <p class="copy">자식의 응원, 부모님의 따스한 한마디.<br>커플·가족 플랜에서 서로의 알람을 맞춰주고 목소리를 공유할 수 있습니다.</p>
-    <div class="row-tag"><span class="dot"></span>커플·가족 플랜 · 6명까지</div>
+    <div class="quad-content">
+      <div class="eyebrow"><span class="num">3</span>Family · Couple</div>
+      <h2 class="title">가족의 목소리로<span class="br"></span><span class="accent">서로를 깨운다</span></h2>
+      <p class="copy">자식의 응원, 부모님의 따스한 한마디.<br>커플·가족 플랜에서 서로의 알람을 맞춰주고 목소리를 공유할 수 있습니다.</p>
+      <div class="row-tag"><span class="dot"></span>커플·가족 플랜 · 6명까지</div>
+    </div>
     <div class="quad-cover" aria-hidden="true"></div>
   </section>
 
   <!-- 우하: 음성 메시지 -->
   <section class="quad q-br" data-index="4">
-    <div class="eyebrow"><span class="num">4</span>Voice Notes</div>
-    <h2 class="title">알람을 넘어<span class="br"></span><span class="accent">매일 닿는 한마디</span></h2>
-    <p class="copy">알람을 맞추는 것을 넘어 일상 속 한마디를 음성으로.<br>서로에게 따뜻한 메시지를 남기세요.</p>
-    <div class="row-tag"><span class="dot"></span>커플·가족 플랜 전용</div>
+    <div class="quad-content">
+      <div class="eyebrow"><span class="num">4</span>Voice Notes</div>
+      <h2 class="title">알람을 넘어<span class="br"></span><span class="accent">매일 닿는 한마디</span></h2>
+      <p class="copy">알람을 맞추는 것을 넘어 일상 속 한마디를 음성으로.<br>서로에게 따뜻한 메시지를 남기세요.</p>
+      <div class="row-tag"><span class="dot"></span>커플·가족 플랜 전용</div>
+    </div>
     <div class="quad-cover" aria-hidden="true"></div>
   </section>
 
