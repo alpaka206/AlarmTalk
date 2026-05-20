@@ -26,6 +26,8 @@ import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
+import com.voicealarm.nativeapp.network.TtsGenerateRequest
+import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import com.voicealarm.nativeapp.network.VoucherItem
@@ -60,6 +62,10 @@ internal fun AlarmListScreen(
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
+    onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
+    onPromoteDraftVoice: suspend (String) -> Unit,
+    onDeleteDraftVoice: suspend (String) -> Unit,
+    onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
@@ -165,6 +171,10 @@ internal fun AlarmListScreen(
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
                         onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
+                        onCloneSpeakerDraft = onCloneSpeakerDraft,
+                        onPromoteDraftVoice = onPromoteDraftVoice,
+                        onDeleteDraftVoice = onDeleteDraftVoice,
+                        onGenerateTts = onGenerateTts,
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,
                         onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,

@@ -192,11 +192,11 @@ voiceProfile.get('/', async (c) => {
 
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -206,6 +206,7 @@ voiceProfile.get('/', async (c) => {
     profiles: result.rows.map((row) => ({
       ...row,
       is_shared: Boolean(Number(row.is_shared ?? 0)),
+      is_draft: Boolean(Number(row.is_draft ?? 0)),
     })),
     total,
     limit,
@@ -265,6 +266,7 @@ voiceProfile.get('/family', async (c) => {
             AND vp.deleted_at IS NULL
             AND vp.status = 'ready'
             AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
           ORDER BY vp.created_at DESC`,
     args: [userPk, userId, ...memberIds],
   });
@@ -296,7 +298,13 @@ voiceProfile.get('/:id', async (c) => {
   }
 
   const row = result.rows[0]!;
-  return c.json({ profile: { ...row, is_shared: Boolean(Number(row.is_shared ?? 0)) } });
+  return c.json({
+    profile: {
+      ...row,
+      is_shared: Boolean(Number(row.is_shared ?? 0)),
+      is_draft: Boolean(Number(row.is_draft ?? 0)),
+    },
+  });
 });
 
 voiceProfile.patch('/:id', async (c) => {
@@ -312,6 +320,8 @@ voiceProfile.patch('/:id', async (c) => {
     name?: unknown;
     is_shared?: unknown;
     isShared?: unknown;
+    is_draft?: unknown;
+    isDraft?: unknown;
     relationship_label?: unknown;
     relationshipLabel?: unknown;
     listener_title?: unknown;
@@ -328,13 +338,16 @@ voiceProfile.patch('/:id', async (c) => {
   const sharedValue = body.is_shared ?? body.isShared;
   const isSharedUpdate = typeof sharedValue === 'boolean' ? sharedValue : undefined;
   const hasShared = isSharedUpdate !== undefined;
+  const draftValue = body.is_draft ?? body.isDraft;
+  const isDraftUpdate = typeof draftValue === 'boolean' ? draftValue : undefined;
+  const hasDraft = isDraftUpdate !== undefined;
   const hasRelationship =
     body.relationship_label !== undefined || body.relationshipLabel !== undefined;
   const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
   const hasListenerTitle =
     body.listener_title !== undefined || body.listenerTitle !== undefined;
   const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
-  if (!hasName && !hasShared && !hasRelationship && !hasListenerTitle) {
+  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
   if (hasName && (name.length === 0 || name.length > 50)) {
@@ -367,6 +380,26 @@ voiceProfile.patch('/:id', async (c) => {
     return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
   }
 
+  // promote(draft=false) 시: 다른 non-draft 음성이 1개 이상이면 한도 초과.
+  if (hasDraft && isDraftUpdate === false) {
+    const nonDraftCount = await db.execute({
+      sql: `SELECT COUNT(*) as count FROM voice_profiles
+            WHERE user_id = ? AND deleted_at IS NULL
+              AND COALESCE(is_draft, 0) = 0 AND id != ?`,
+      args: [userId, id],
+    });
+    const existingCount = Number(nonDraftCount.rows[0]!.count);
+    if (existingCount >= MAX_VOICE_PROFILES) {
+      return c.json(
+        {
+          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+          error_code: 'VOICE_LIMIT_REACHED',
+        },
+        409,
+      );
+    }
+  }
+
   const updates: string[] = [];
   const args: (string | number)[] = [];
   if (hasName) {
@@ -376,6 +409,10 @@ voiceProfile.patch('/:id', async (c) => {
   if (hasShared) {
     updates.push('is_shared = ?');
     args.push(isSharedUpdate ? 1 : 0);
+  }
+  if (hasDraft) {
+    updates.push('is_draft = ?');
+    args.push(isDraftUpdate ? 1 : 0);
   }
   if (hasRelationship) {
     updates.push('relationship_label = ?');
@@ -398,6 +435,7 @@ voiceProfile.patch('/:id', async (c) => {
       id,
       ...(hasName ? { name } : {}),
       ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
+      ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
       ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
     },
@@ -509,31 +547,37 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
-    const profileCount = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
-      args: [userId],
-    });
-    const count = Number(profileCount.rows[0]!.count);
-    if (count >= MAX_VOICE_PROFILES) {
-      return c.json(
-        {
-          error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
-          error_code: 'VOICE_LIMIT_REACHED',
-        },
-        403,
-      );
-    }
-
     const formData = await c.req.formData();
     const audioFile = getFormFile(formData, 'audio');
     const name = formData.get('name') as string | null;
     const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
+    const isDraft = ['true', '1', 'yes'].includes(String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'));
     const relationshipLabel = normalizeRelationshipLabel(
       formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
     ) ?? '';
     const listenerTitle = normalizeListenerTitle(
       formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
     ) ?? '';
+
+    // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
+    if (!isDraft) {
+      const profileCount = await db.execute({
+        sql: `SELECT COUNT(*) as count FROM voice_profiles
+              WHERE user_id = ? AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0`,
+        args: [userId],
+      });
+      const count = Number(profileCount.rows[0]!.count);
+      if (count >= MAX_VOICE_PROFILES) {
+        return c.json(
+          {
+            error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+            error_code: 'VOICE_LIMIT_REACHED',
+          },
+          403,
+        );
+      }
+    }
+
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
@@ -567,9 +611,9 @@ voiceProfile.post('/clone', async (c) => {
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, relationship_label, listener_title)
-            VALUES (?, ?, ?, 'processing', ?, ?, ?)`,
-      args: [profileId, userId, name, isShared ? 1 : 0, relationshipLabel, listenerTitle],
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
+            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+      args: [profileId, userId, name, isShared ? 1 : 0, isDraft ? 1 : 0, relationshipLabel, listenerTitle],
     });
 
     const attempts = createEnrollmentAttempts({
@@ -617,6 +661,7 @@ voiceProfile.post('/clone', async (c) => {
           provider,
           status: 'ready',
           is_shared: isShared,
+          is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
         },
