@@ -130,11 +130,6 @@ button { font: inherit; }
   opacity: 0.78;
 }
 .nowrap { white-space: nowrap; }
-.fit-line {
-  display: inline-block;
-  max-width: 100%;
-  font-size: 0.88em;
-}
 
 .brand-lockup {
   position: absolute;
@@ -467,13 +462,25 @@ button { font: inherit; }
   z-index: 0;
 }
 .feature-cell > * { position: relative; z-index: 1; }
+.feature-content {
+  width: min(100%, 34rem);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.feature-tr .feature-content,
+.feature-br .feature-content {
+  align-items: flex-end;
+  text-align: right;
+}
 .feature-copy {
   margin-top: 22px;
   font-size: 0.98rem;
   line-height: 1.58;
   font-weight: 560;
   opacity: 0.76;
-  max-width: 37ch;
+  width: max-content;
+  max-width: 100%;
 }
 .feature-tag {
   display: inline-flex;
@@ -782,7 +789,7 @@ button { font: inherit; }
     <div class="slide-no">07 / FEATURE DEMO</div>
     <div class="feature-stage" id="featureStage" role="button" tabindex="0" aria-label="핵심 기능을 순서대로 보기">
       <article class="feature-cell feature-tl" data-feature-index="1">
-        <div>
+        <div class="feature-content">
           <div class="kicker eyebrow"><span class="num">1</span>Voice Cloning</div>
           <h2 class="headline">좋아하는 목소리가<span class="line accent">나를 깨운다</span></h2>
           <p class="feature-copy"><span class="nowrap">녹음이나 업로드만으로 누구든지 좋아하는 목소리로 알람을 만듭니다.</span></p>
@@ -791,16 +798,16 @@ button { font: inherit; }
         <div class="feature-cover" aria-hidden="true"></div>
       </article>
       <article class="feature-cell feature-tr" data-feature-index="2">
-        <div>
+        <div class="feature-content">
           <div class="kicker eyebrow"><span class="num">2</span>Text to Voice</div>
           <h2 class="headline">텍스트 한 줄로<span class="line accent">매일 새로운 알람</span></h2>
-          <p class="feature-copy"><span class="nowrap fit-line">입력한 문장이나 랜덤한 문장을 원하는 목소리로 읽어주는 TTS 알람입니다.</span></p>
+          <p class="feature-copy"><span class="nowrap">입력한 문장이나 랜덤한 문장을 원하는 목소리로 읽어주는 TTS 알람입니다.</span></p>
           <div class="feature-tag">매일 다른 한마디</div>
         </div>
         <div class="feature-cover" aria-hidden="true"></div>
       </article>
       <article class="feature-cell feature-bl" data-feature-index="3">
-        <div>
+        <div class="feature-content">
           <div class="kicker eyebrow"><span class="num">3</span>Family · Couple</div>
           <h2 class="headline">소중한 사람들의 목소리로<span class="line accent">서로를 깨운다</span></h2>
           <p class="feature-copy"><span class="nowrap">연인의 응원, 부모님의 따스한 한마디를 공유 알람으로 전달합니다.</span></p>
@@ -809,7 +816,7 @@ button { font: inherit; }
         <div class="feature-cover" aria-hidden="true"></div>
       </article>
       <article class="feature-cell feature-br" data-feature-index="4">
-        <div>
+        <div class="feature-content">
           <div class="kicker eyebrow"><span class="num">4</span>Voice Notes</div>
           <h2 class="headline">알람을 넘어<span class="line accent">매일 닿는 한마디</span></h2>
           <p class="feature-copy"><span class="nowrap">알람을 맞추는 것을 넘어 일상 속 메시지를 음성으로 남깁니다.</span></p>
