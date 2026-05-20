@@ -91,19 +91,34 @@ class AlarmAudioStore(
         )
         findCachedFile(cacheKey)?.let { cached ->
             val cachedUri = cached.toUri()
-            val metadata = readMetadata(cacheKey)
-            val cachedDurationMillis = normalizeDurationWithinLimit(
-                durationMillis = readDurationMillis(cachedUri) ?: durationMillis,
-                maxDurationMillis = maxDurationMillis,
-            )
-            return CachedAlarmAudio(
-                localAudioUri = cachedUri.toString(),
-                rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
-                displayName = cached.name,
-                durationMillis = cachedDurationMillis,
-                cacheKey = cacheKey,
-                messageId = metadata.messageId,
-            )
+            val rawDuration = readDurationMillis(cachedUri)
+            // 과거 잘못 만들어진 캐시(.m4a 헤더만 있고 실제 오디오 없음) 를 걸러낸다.
+            //   - 파일 크기가 비정상적으로 작음 (헤더만 있는 수백 바이트)
+            //   - 또는 duration 을 읽지 못함
+            // 이런 캐시는 무효로 보고 삭제 후 다시 trim 한다.
+            val cachedSize = cached.length()
+            if (rawDuration == null || rawDuration <= 0L || cachedSize < 4 * 1024) {
+                Log.w(
+                    TAG,
+                    "Discarding corrupt voice audio cache path=${cached.absolutePath} size=$cachedSize duration=$rawDuration",
+                )
+                runCatching { cached.delete() }
+                runCatching { metadataFile(cacheKey).delete() }
+            } else {
+                val metadata = readMetadata(cacheKey)
+                val cachedDurationMillis = normalizeDurationWithinLimit(
+                    durationMillis = rawDuration,
+                    maxDurationMillis = maxDurationMillis,
+                )
+                return CachedAlarmAudio(
+                    localAudioUri = cachedUri.toString(),
+                    rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
+                    displayName = cached.name,
+                    durationMillis = cachedDurationMillis,
+                    cacheKey = cacheKey,
+                    messageId = metadata.messageId,
+                )
+            }
         }
         val target = if (forceExtractAudio || resolvedStartMillis > 0 || durationMillis > maxDurationMillis) {
             val trimExtension = if (trimAsMp3) "mp3" else "m4a"
@@ -125,7 +140,17 @@ class AlarmAudioStore(
             }
         }
 
-        val cachedDurationMillis = readDurationMillis(target.toUri()) ?: durationMillis
+        val trimmedDuration = readDurationMillis(target.toUri())
+        if (trimmedDuration == null || trimmedDuration <= 0L || target.length() < 4 * 1024) {
+            // trim/copy 가 사실상 빈 파일을 만들었음 (대부분 비호환 코덱). 캐시 남기지 않고 명확히 실패.
+            Log.e(
+                TAG,
+                "Trim produced empty audio path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
+            )
+            runCatching { target.delete() }
+            throw IllegalArgumentException("선택한 파일에서 오디오를 추출하지 못했어요. m4a/mp3/wav 형식으로 다시 시도해 주세요.")
+        }
+        val cachedDurationMillis = trimmedDuration
         val normalizedDurationMillis = normalizeDurationWithinLimit(cachedDurationMillis, maxDurationMillis)
 
         Log.i(TAG, "Cached local voice audio path=${target.absolutePath} durationMillis=$normalizedDurationMillis")
