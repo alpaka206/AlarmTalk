@@ -15,6 +15,7 @@ const MAX_VOICE_PROFILES = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
+const MAX_LISTENER_TITLE_LENGTH = 30;
 
 function normalizeRelationshipLabel(value: unknown): string | undefined {
   if (value === undefined) return undefined;
@@ -24,6 +25,16 @@ function normalizeRelationshipLabel(value: unknown): string | undefined {
 
 function validateRelationshipLabel(label: string | undefined): boolean {
   return label === undefined || label.length <= MAX_RELATIONSHIP_LABEL_LENGTH;
+}
+
+function normalizeListenerTitle(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return '';
+  return String(value).trim();
+}
+
+function validateListenerTitle(label: string | undefined): boolean {
+  return label === undefined || label.length <= MAX_LISTENER_TITLE_LENGTH;
 }
 
 async function canUseSharedVoiceProfile(
@@ -244,6 +255,7 @@ voiceProfile.get('/family', async (c) => {
   const voicesRes = await db.execute({
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
                  COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
+                 COALESCE(NULLIF(vpr.listener_title, ''), vp.listener_title) AS listener_title,
                  u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
@@ -302,6 +314,8 @@ voiceProfile.patch('/:id', async (c) => {
     isShared?: unknown;
     relationship_label?: unknown;
     relationshipLabel?: unknown;
+    listener_title?: unknown;
+    listenerTitle?: unknown;
   };
   try {
     body = await c.req.json();
@@ -317,7 +331,10 @@ voiceProfile.patch('/:id', async (c) => {
   const hasRelationship =
     body.relationship_label !== undefined || body.relationshipLabel !== undefined;
   const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
-  if (!hasName && !hasShared && !hasRelationship) {
+  const hasListenerTitle =
+    body.listener_title !== undefined || body.listenerTitle !== undefined;
+  const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  if (!hasName && !hasShared && !hasRelationship && !hasListenerTitle) {
     return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
   }
   if (hasName && (name.length === 0 || name.length > 50)) {
@@ -328,6 +345,15 @@ voiceProfile.patch('/:id', async (c) => {
       {
         error: `relationship_label must be ${MAX_RELATIONSHIP_LABEL_LENGTH} characters or less`,
         error_code: 'INVALID_RELATIONSHIP_LABEL',
+      },
+      400,
+    );
+  }
+  if (!validateListenerTitle(listenerTitle)) {
+    return c.json(
+      {
+        error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+        error_code: 'INVALID_LISTENER_TITLE',
       },
       400,
     );
@@ -355,6 +381,10 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('relationship_label = ?');
     args.push(relationshipLabel ?? '');
   }
+  if (hasListenerTitle) {
+    updates.push('listener_title = ?');
+    args.push(listenerTitle ?? '');
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -369,6 +399,7 @@ voiceProfile.patch('/:id', async (c) => {
       ...(hasName ? { name } : {}),
       ...(hasShared ? { is_shared: Boolean(isSharedUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
+      ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
     },
   });
 });
@@ -383,7 +414,12 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
   }
 
-  let body: { relationship_label?: unknown; relationshipLabel?: unknown };
+  let body: {
+    relationship_label?: unknown;
+    relationshipLabel?: unknown;
+    listener_title?: unknown;
+    listenerTitle?: unknown;
+  };
   try {
     body = await c.req.json();
   } catch {
@@ -400,6 +436,17 @@ voiceProfile.patch('/:id/relationship', async (c) => {
       400,
     );
   }
+  const listenerTitleRaw = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
+  const listenerTitle = listenerTitleRaw ?? '';
+  if (!validateListenerTitle(listenerTitle)) {
+    return c.json(
+      {
+        error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+        error_code: 'INVALID_LISTENER_TITLE',
+      },
+      400,
+    );
+  }
 
   const owned = await db.execute({
     sql: 'SELECT id FROM voice_profiles WHERE id = ? AND user_id IN (?, ?) AND deleted_at IS NULL',
@@ -409,9 +456,9 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   if (owned.rows.length > 0) {
     await db.execute({
       sql: `UPDATE voice_profiles
-            SET relationship_label = ?, updated_at = datetime('now')
+            SET relationship_label = ?, listener_title = ?, updated_at = datetime('now')
             WHERE id = ?`,
-      args: [relationshipLabel, id],
+      args: [relationshipLabel, listenerTitle, id],
     });
   } else {
     const canUse = await canUseSharedVoiceProfile(db, userPk, id);
@@ -420,12 +467,13 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     }
     await db.execute({
       sql: `INSERT INTO voice_profile_relationships
-              (id, user_id, voice_profile_id, relationship_label)
-            VALUES (?, ?, ?, ?)
+              (id, user_id, voice_profile_id, relationship_label, listener_title)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id, voice_profile_id) DO UPDATE SET
               relationship_label = excluded.relationship_label,
+              listener_title = excluded.listener_title,
               updated_at = datetime('now')`,
-      args: [crypto.randomUUID(), userPk, id, relationshipLabel],
+      args: [crypto.randomUUID(), userPk, id, relationshipLabel, listenerTitle],
     });
   }
 
@@ -433,6 +481,7 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     profile: {
       id,
       relationship_label: relationshipLabel,
+      listener_title: listenerTitle,
     },
   });
 });
@@ -482,6 +531,9 @@ voiceProfile.post('/clone', async (c) => {
     const relationshipLabel = normalizeRelationshipLabel(
       formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
     ) ?? '';
+    const listenerTitle = normalizeListenerTitle(
+      formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
+    ) ?? '';
     if (!audioFile || !name) {
       return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
     }
@@ -501,14 +553,23 @@ voiceProfile.post('/clone', async (c) => {
         400,
       );
     }
+    if (!validateListenerTitle(listenerTitle)) {
+      return c.json(
+        {
+          error: `listener_title must be ${MAX_LISTENER_TITLE_LENGTH} characters or less`,
+          error_code: 'INVALID_LISTENER_TITLE',
+        },
+        400,
+      );
+    }
 
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, relationship_label)
-            VALUES (?, ?, ?, 'processing', ?, ?)`,
-      args: [profileId, userId, name, isShared ? 1 : 0, relationshipLabel],
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, relationship_label, listener_title)
+            VALUES (?, ?, ?, 'processing', ?, ?, ?)`,
+      args: [profileId, userId, name, isShared ? 1 : 0, relationshipLabel, listenerTitle],
     });
 
     const attempts = createEnrollmentAttempts({
@@ -557,6 +618,7 @@ voiceProfile.post('/clone', async (c) => {
           status: 'ready',
           is_shared: isShared,
           relationship_label: relationshipLabel,
+          listener_title: listenerTitle,
         },
       },
       201,

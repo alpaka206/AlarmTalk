@@ -537,6 +537,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
+                          onUpdateSharedVoiceInfo = { id, relationship, listener ->
+                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
+                          },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,

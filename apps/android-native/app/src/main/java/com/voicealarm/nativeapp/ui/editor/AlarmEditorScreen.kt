@@ -539,6 +539,11 @@ internal fun AlarmEditorScreen(
                         fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
                             editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
                         },
+                        listenerTitle = resolveListenerTitle(
+                            profileId = profileId,
+                            voiceProfiles = voiceProfiles,
+                            familyVoices = familyVoices,
+                        ),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -724,6 +729,15 @@ internal fun AlarmEditorScreen(
             settingsDetailPanel == "voice_translation"
         ) {
             settingsDetailPanel = null
+        }
+    }
+
+    // 랜덤 문구는 알람 시각이 프롬프트 컨텍스트로 들어가므로,
+    // 시각이 바뀌면 기존 캐시 TTS 를 무효화해 저장 시 재생성하게 한다.
+    LaunchedEffect(editor.hour, editor.minute) {
+        if (editor.voiceRandomPrompt && !editor.ttsMessageId.isNullOrBlank()) {
+            editor.clearTtsMeta()
+            editor.clearAudio()
         }
     }
 
@@ -1020,6 +1034,17 @@ internal fun AlarmEditorScreen(
     }
 }
 
+
+internal fun resolveListenerTitle(
+    profileId: String,
+    voiceProfiles: List<VoiceProfile>,
+    familyVoices: List<FamilyVoiceProfile>,
+): String? {
+    val own = voiceProfiles.firstOrNull { it.id == profileId }?.listenerTitle
+    if (!own.isNullOrBlank()) return own
+    val shared = familyVoices.firstOrNull { it.id == profileId }?.listenerTitle
+    return shared?.takeIf { it.isNotBlank() }
+}
 
 @Composable
 private fun AlarmEditorTopBar(

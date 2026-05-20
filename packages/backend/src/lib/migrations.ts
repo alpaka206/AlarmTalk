@@ -807,6 +807,18 @@ export const migrations: Migration[] = [
         ON voice_profile_relationships(user_id, voice_profile_id)`,
     ],
   },
+  {
+    // 호칭(listener title): 음성이 청자(=알람 사용자)를 어떻게 부를지 라벨.
+    //   - voice_profiles.listener_title: 소유자가 설정한 기본 호칭.
+    //   - voice_profile_relationships.listener_title: 공유 음성의 viewer 관점 호칭.
+    // 동적 음성 프롬프트에 주입되어 청자 호칭을 그대로 사용하도록 모델을 가이드한다.
+    id: 38,
+    name: 'voice-profile-listener-title',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN listener_title TEXT`,
+      `ALTER TABLE voice_profile_relationships ADD COLUMN listener_title TEXT NOT NULL DEFAULT ''`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
