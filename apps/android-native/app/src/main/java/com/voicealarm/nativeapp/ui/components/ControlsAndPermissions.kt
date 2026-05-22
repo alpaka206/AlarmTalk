@@ -82,8 +82,8 @@ internal fun PermissionPanel(
     onRequestAllPermissions: () -> Unit,
 ) {
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -98,7 +98,7 @@ internal fun PermissionPanel(
                 Button(
                     onClick = onRequestAllPermissions,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
+                    shape = WakerButtonShape,
                 ) {
                     Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
@@ -188,7 +188,7 @@ internal fun PermissionRow(
         if (granted) {
             Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         } else {
-            TextButton(onClick = onAction, shape = VocaWakeButtonShape) {
+            TextButton(onClick = onAction, shape = WakerButtonShape) {
                 Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text(actionLabel)
@@ -267,7 +267,7 @@ internal fun AlarmRow(
                 ),
             shape = alarmCardShape,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = vocaWakeCardBorder(),
+            border = wakerCardBorder(),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Column(
@@ -345,7 +345,7 @@ private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
 @Composable
 internal fun DeleteRevealButton(
     modifier: Modifier,
-    shape: RoundedCornerShape = VocaWakeCardShape,
+    shape: RoundedCornerShape = WakerCardShape,
     onDelete: () -> Unit,
 ) {
     Surface(

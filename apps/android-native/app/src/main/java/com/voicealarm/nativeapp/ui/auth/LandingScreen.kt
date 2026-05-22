@@ -77,7 +77,7 @@ internal fun LandingScreen(
                 .padding(horizontal = 22.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.Top,
         ) {
-            VocaWakeBrandHeader()
+            WakerBrandHeader()
             Spacer(Modifier.height(48.dp))
             Column(
                 modifier = Modifier
@@ -105,7 +105,7 @@ internal fun LandingScreen(
 }
 
 @Composable
-private fun VocaWakeBrandHeader() {
+private fun WakerBrandHeader() {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -121,7 +121,7 @@ private fun VocaWakeBrandHeader() {
         Spacer(Modifier.width(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
-                text = "VocaWake",
+                text = "Waker",
                 style = MaterialTheme.typography.titleLarge,
                 color = LandingText,
                 fontWeight = FontWeight.Bold,
@@ -314,7 +314,7 @@ private fun LandingAuthPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
-                    shape = VocaWakeButtonShape,
+                    shape = WakerButtonShape,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = LandingAccent,
                         contentColor = LandingAccentText,
@@ -341,7 +341,7 @@ private fun LandingAuthPanel(
                 OutlinedButton(
                     onClick = onGoToRegister,
                     enabled = !busy,
-                    shape = VocaWakeButtonShape,
+                    shape = WakerButtonShape,
                     border = BorderStroke(1.dp, LandingLine),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = LandingText,

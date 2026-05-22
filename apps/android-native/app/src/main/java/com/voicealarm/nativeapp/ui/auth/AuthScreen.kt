@@ -123,8 +123,8 @@ internal fun AuthScreen(
                 label = { Text("이름") },
                 singleLine = true,
                 enabled = !busy,
-                shape = VocaWakeInputShape,
-                colors = vocaWakeOutlinedTextFieldColors(),
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Text,
                     imeAction = ImeAction.Next,
@@ -139,8 +139,8 @@ internal fun AuthScreen(
             label = { Text("이메일") },
             singleLine = true,
             enabled = !busy,
-            shape = VocaWakeInputShape,
-            colors = vocaWakeOutlinedTextFieldColors(),
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
                 imeAction = ImeAction.Next,
@@ -155,9 +155,9 @@ internal fun AuthScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp),
-                shape = VocaWakeButtonShape,
-                border = vocaWakeCardBorder(),
-                colors = vocaWakeOutlinedButtonColors(),
+                shape = WakerButtonShape,
+                border = wakerCardBorder(),
+                colors = wakerOutlinedButtonColors(),
             ) {
                 Text(
                     when {
@@ -180,8 +180,8 @@ internal fun AuthScreen(
                         label = { Text("인증 코드") },
                         singleLine = true,
                         enabled = !busy,
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.NumberPassword,
                             imeAction = ImeAction.Next,
@@ -192,9 +192,9 @@ internal fun AuthScreen(
                         onClick = { onConfirmEmailVerification(email, emailCode) },
                         enabled = !busy && emailCode.length == 6,
                         modifier = Modifier.height(56.dp),
-                        shape = VocaWakeButtonShape,
-                        border = vocaWakeCardBorder(),
-                        colors = vocaWakeOutlinedButtonColors(),
+                        shape = WakerButtonShape,
+                        border = wakerCardBorder(),
+                        colors = wakerOutlinedButtonColors(),
                     ) {
                         Text("확인")
                     }
@@ -215,8 +215,8 @@ internal fun AuthScreen(
             label = { Text("비밀번호") },
             singleLine = true,
             enabled = !busy,
-            shape = VocaWakeInputShape,
-            colors = vocaWakeOutlinedTextFieldColors(),
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             trailingIcon = {
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -246,8 +246,8 @@ internal fun AuthScreen(
                 label = { Text("비밀번호 확인") },
                 singleLine = true,
                 enabled = !busy,
-                shape = VocaWakeInputShape,
-                colors = vocaWakeOutlinedTextFieldColors(),
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
                 isError = confirmPassword.isNotBlank() && !passwordMatches,
                 visualTransformation = if (confirmPasswordVisible) {
                     VisualTransformation.None
@@ -292,7 +292,7 @@ internal fun AuthScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp),
-            shape = VocaWakeButtonShape,
+            shape = WakerButtonShape,
         ) {
             Text(
                 when {

@@ -1,6 +1,6 @@
-import type { MetadataRoute } from "next";
+﻿import type { MetadataRoute } from "next";
 
-const SITE_URL = "https://vocawake.com";
+const SITE_URL = "https://waker.com";
 
 export const dynamic = "force-static";
 

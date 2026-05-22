@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import android.content.Intent
 import android.media.MediaPlayer
@@ -172,8 +172,8 @@ internal fun FamilyConnectionPanel(
                         },
                         placeholder = { Text("INV-XXXX-XXXX-XXXX") },
                         singleLine = true,
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.weight(1f),
                     )
                     Button(
@@ -199,8 +199,8 @@ internal fun FamilyConnectionPanel(
                         },
                         placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
                         singleLine = true,
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.weight(1f),
                     )
                     Button(
@@ -543,8 +543,8 @@ internal fun VoiceMessagePanel(
                         placeholder = { Text("전하고 싶은 말을 입력하세요") },
                         minLines = 3,
                         maxLines = 5,
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
