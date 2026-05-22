@@ -521,8 +521,9 @@ describe('POST /tts/generate — edge cases', () => {
     expect(insertSql!.args[6]).toBe('morning');
   });
 
-  it('수동 입력 문구는 delivery tag를 자동 삽입하지 않는다', async () => {
+  it('수동 입력 문구에도 delivery tag가 자동 삽입된다', async () => {
     const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
+    const taggedText = `[encouraging] ${text}`;
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
@@ -539,15 +540,15 @@ describe('POST /tts/generate — edge cases', () => {
     const body = await res.json();
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
-    expect(body.synthesis_text).toBe(text);
-    expect(body.tags).toEqual([]);
+    expect(body.synthesis_text).toBe(taggedText);
+    expect(body.tags).toEqual(['encouraging']);
     const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(text);
-    expect(inserted!.args[4]).toBe(text);
-    expect(inserted!.args[5]).toBe('[]');
+    expect(inserted!.args[4]).toBe(taggedText);
+    expect(inserted!.args[5]).toBe(JSON.stringify(['encouraging']));
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
-      text,
+      taggedText,
       expect.objectContaining({
         model_id: 'eleven_v3',
         language_code: 'ko',
@@ -562,6 +563,7 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
+    const taggedText = `[warmly] ${text}`;
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
@@ -583,11 +585,11 @@ describe('POST /tts/generate — edge cases', () => {
     const body = await res.json();
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
-    expect(body.synthesis_text).toBe(text);
+    expect(body.synthesis_text).toBe(taggedText);
     expect(body.language).toBe('en');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
-      text,
+      taggedText,
       expect.objectContaining({
         language_code: 'en',
       }),
@@ -693,8 +695,10 @@ describe('POST /tts/generate — edge cases', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body.random_context).toBe('wake_fortune');
-    expect(body.original_text).toContain('손녀');
-    expect(body.original_text).toContain('생년월일과 태어난 시간');
+    expect(body.original_text).toContain('일어나실 시간');
+    expect(body.original_text).not.toContain('손녀 목소리');
+    expect(body.original_text).not.toContain('생년월일');
+    expect(body.original_text).not.toContain('태어난 시간');
     expect(body.synthesis_text).toContain(body.original_text);
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',

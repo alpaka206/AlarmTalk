@@ -6,7 +6,11 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.Manifest
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,11 +34,16 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -46,11 +55,18 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,6 +76,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import java.util.TimeZone
 import com.voicealarm.nativeapp.data.SnoozeRepeatLimits
 import com.voicealarm.nativeapp.data.VibrationPatternLibrary
 import com.voicealarm.nativeapp.data.VibrationPatterns
@@ -632,7 +653,7 @@ internal fun RandomPromptSettingsPane(
                     Button(
                         onClick = ::requestRequiredInfoOrSave,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -708,66 +729,165 @@ private fun WeatherLocationDialog(
     var draftCountry by remember(country) { mutableStateOf(country) }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
+    var locationBusy by remember { mutableStateOf(false) }
+    var locationStatus by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    fun startLocationLookup() {
+        if (locationBusy) return
+        scope.launch {
+            locationBusy = true
+            locationStatus = "현재 위치를 가져오는 중..."
+            val fix = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.voicealarm.nativeapp.location.WeatherLocationProvider.resolve(context)
+                }.getOrNull()
+            }
+            if (fix == null) {
+                locationStatus = "위치를 가져오지 못했어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
+            } else {
+                draftCountry = fix.country.ifBlank { draftCountry }
+                draftCity = fix.city.ifBlank { draftCity }
+                locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
+                    "위치를 가져왔지만 주소 정보를 못 찾았어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
+                } else {
+                    "현재 위치로 채웠어요"
+                }
+            }
+            locationBusy = false
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        val granted = results.values.any { it }
+        if (!granted) {
+            locationStatus = "위치 권한이 거부됐어요. 권한과 GPS/위치 서비스를 확인하거나 직접 입력해 주세요."
+            return@rememberLauncherForActivityResult
+        }
+        startLocationLookup()
+    }
     val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
 
-    Dialog(onDismissRequest = onDismissWithoutSave) {
+    Dialog(
+        onDismissRequest = onDismissWithoutSave,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            shadowElevation = 16.dp,
+            shadowElevation = 18.dp,
         ) {
             Column(
                 modifier = Modifier
-                    .padding(20.dp)
-                    .heightIn(max = 560.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(24.dp)
+                    .heightIn(max = 600.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("날씨 위치 저장", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "이 위치는 저장해두고 날씨가 필요한 랜덤 문구에서 다시 사용해요. 이 창에서 저장하지 않으면 랜덤 생성이 적용되지 않아요.",
+                        text = "날씨 위치",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "현재 위치로 자동 입력하거나 직접 입력해 주세요. 위치를 못 찾으면 GPS/위치 서비스가 켜져 있는지 확인해 주세요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(
+                    onClick = {
+                        if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
+                            startLocationLookup()
+                        } else {
+                            locationPermissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                                    Manifest.permission.ACCESS_FINE_LOCATION,
+                                ),
+                            )
+                        }
+                    },
+                    enabled = !locationBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (locationBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("위치 가져오는 중")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.MyLocation,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("현재 위치 사용")
+                        }
+                    }
+                }
+                locationStatus?.let {
+                    Text(
+                        text = it,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedTextField(
-                    value = draftCountry,
-                    onValueChange = { draftCountry = it.take(30) },
-                    label = { Text("나라") },
-                    placeholder = { Text("예: 대한민국") },
-                    singleLine = true,
-                    isError = countryError,
-                    supportingText = {
-                        if (countryError) Text("필수 입력 값입니다.")
-                    },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftCity,
-                    onValueChange = { draftCity = it.take(30) },
-                    label = { Text("도시") },
-                    placeholder = { Text("예: 서울") },
-                    singleLine = true,
-                    isError = cityError,
-                    supportingText = {
-                        if (cityError) Text("필수 입력 값입니다.")
-                    },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = draftCountry,
+                        onValueChange = { draftCountry = it.take(30) },
+                        label = { Text("나라") },
+                        placeholder = { Text("예: 대한민국") },
+                        singleLine = true,
+                        isError = countryError,
+                        supportingText = {
+                            if (countryError) Text("필수 입력 값입니다.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftCity,
+                        onValueChange = { draftCity = it.take(30) },
+                        label = { Text("도시") },
+                        placeholder = { Text("예: 서울") },
+                        singleLine = true,
+                        isError = cityError,
+                        supportingText = {
+                            if (cityError) Text("필수 입력 값입니다.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     OutlinedButton(
                         onClick = onDismissWithoutSave,
-                        shape = VocaWakeButtonShape,
+                        modifier = Modifier.weight(1f),
+                        shape = WakerButtonShape,
                     ) {
                         Text("닫기")
                     }
@@ -778,7 +898,8 @@ private fun WeatherLocationDialog(
                                 onConfirm(draftCountry.trim(), draftCity.trim())
                             }
                         },
-                        shape = VocaWakeButtonShape,
+                        modifier = Modifier.weight(1f),
+                        shape = WakerButtonShape,
                     ) {
                         Text("저장")
                     }
@@ -788,6 +909,7 @@ private fun WeatherLocationDialog(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FortuneInfoDialog(
     gender: String,
@@ -796,85 +918,88 @@ private fun FortuneInfoDialog(
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
-    var draftGender by remember(gender) { mutableStateOf(gender) }
-    var draftBirthDate by remember(birthDate) { mutableStateOf(birthDate) }
-    var draftBirthTime by remember(birthTime) { mutableStateOf(birthTime) }
+    var draftGender by remember(gender) { mutableStateOf(normalizeFortuneGender(gender)) }
+    var draftBirthDate by remember(birthDate) { mutableStateOf(normalizeFortuneBirthDate(birthDate)) }
+    var draftBirthTime by remember(birthTime) { mutableStateOf(normalizeFortuneBirthTime(birthTime)) }
     var submitted by remember { mutableStateOf(false) }
+    var datePickerOpen by remember { mutableStateOf(false) }
+    var timePickerOpen by remember { mutableStateOf(false) }
     val genderError = submitted && draftGender.isBlank()
     val birthDateError = submitted && draftBirthDate.isBlank()
     val birthTimeError = submitted && draftBirthTime.isBlank()
 
-    Dialog(onDismissRequest = onDismissWithoutSave) {
+    Dialog(
+        onDismissRequest = onDismissWithoutSave,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            shadowElevation = 16.dp,
+            shadowElevation = 18.dp,
         ) {
             Column(
                 modifier = Modifier
-                    .padding(20.dp)
-                    .heightIn(max = 620.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                    .padding(24.dp)
+                    .heightIn(max = 640.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("운세 정보", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "입력한 정보는 운세형 문구를 만들 때만 사용돼요. 이 창에서 저장하지 않으면 랜덤 생성이 적용되지 않아요.",
-                        style = MaterialTheme.typography.bodySmall,
+                        text = "운세 정보",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "운세 문구 생성에만 사용해요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                OutlinedTextField(
-                    value = draftGender,
-                    onValueChange = { draftGender = it.take(12) },
-                    label = { Text("성별") },
-                    placeholder = { Text("예: 남성, 여성") },
-                    singleLine = true,
-                    isError = genderError,
-                    supportingText = {
-                        if (genderError) Text("필수 입력 값입니다.")
-                    },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
+                FortuneFieldLabel(text = "성별", error = genderError)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GenderChoice(
+                        label = "남",
+                        selected = draftGender == FortuneGenderMale,
+                        onClick = { draftGender = FortuneGenderMale },
+                        modifier = Modifier.weight(1f),
+                    )
+                    GenderChoice(
+                        label = "여",
+                        selected = draftGender == FortuneGenderFemale,
+                        onClick = { draftGender = FortuneGenderFemale },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                FortuneFieldLabel(text = "생년월일", error = birthDateError)
+                FortuneSelectorRow(
+                    value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
+                    placeholderActive = draftBirthDate.isBlank(),
+                    error = birthDateError,
+                    onClick = { datePickerOpen = true },
                 )
-                OutlinedTextField(
-                    value = draftBirthDate,
-                    onValueChange = { draftBirthDate = it.take(10) },
-                    label = { Text("생년월일") },
-                    placeholder = { Text("예: 1950-05-19") },
-                    singleLine = true,
-                    isError = birthDateError,
-                    supportingText = {
-                        if (birthDateError) Text("필수 입력 값입니다.")
-                    },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
+
+                FortuneFieldLabel(text = "태어난 시간", error = birthTimeError)
+                FortuneSelectorRow(
+                    value = if (draftBirthTime.isBlank()) "탭하여 시간 선택" else formatBirthTimeDisplay(draftBirthTime),
+                    placeholderActive = draftBirthTime.isBlank(),
+                    error = birthTimeError,
+                    onClick = { timePickerOpen = true },
                 )
-                OutlinedTextField(
-                    value = draftBirthTime,
-                    onValueChange = { draftBirthTime = it.take(5) },
-                    label = { Text("태어난 시간") },
-                    placeholder = { Text("예: 07:30") },
-                    singleLine = true,
-                    isError = birthTimeError,
-                    supportingText = {
-                        if (birthTimeError) Text("필수 입력 값입니다.")
-                    },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     OutlinedButton(
                         onClick = onDismissWithoutSave,
-                        shape = VocaWakeButtonShape,
+                        modifier = Modifier.weight(1f),
+                        shape = WakerButtonShape,
                     ) {
                         Text("닫기")
                     }
@@ -893,12 +1018,248 @@ private fun FortuneInfoDialog(
                                 )
                             }
                         },
-                        shape = VocaWakeButtonShape,
+                        modifier = Modifier.weight(1f),
+                        shape = WakerButtonShape,
                     ) {
                         Text("저장")
                     }
                 }
             }
+        }
+    }
+
+    if (datePickerOpen) {
+        val initialMillis = parseBirthDateMillis(draftBirthDate)
+        val state = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { datePickerOpen = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        state.selectedDateMillis?.let { millis ->
+                            draftBirthDate = formatBirthDateIso(millis)
+                        }
+                        datePickerOpen = false
+                    },
+                ) { Text("확인") }
+            },
+            dismissButton = {
+                TextButton(onClick = { datePickerOpen = false }) { Text("취소") }
+            },
+        ) {
+            DatePicker(state = state)
+        }
+    }
+
+    if (timePickerOpen) {
+        val (hourInit, minuteInit) = parseBirthTimeParts(draftBirthTime)
+        val state = rememberTimePickerState(
+            initialHour = hourInit,
+            initialMinute = minuteInit,
+            is24Hour = true,
+        )
+        Dialog(onDismissRequest = { timePickerOpen = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                shadowElevation = 18.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "태어난 시간",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    TimePicker(state = state)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    ) {
+                        TextButton(onClick = { timePickerOpen = false }) { Text("취소") }
+                        TextButton(
+                            onClick = {
+                                draftBirthTime = String.format(
+                                    Locale.US,
+                                    "%02d:%02d",
+                                    state.hour,
+                                    state.minute,
+                                )
+                                timePickerOpen = false
+                            },
+                        ) { Text("확인") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val FortuneGenderMale = "남성"
+private const val FortuneGenderFemale = "여성"
+
+private fun normalizeFortuneGender(value: String): String =
+    when (value.trim()) {
+        "남", "남자", "M", "male", "Male", "MALE", FortuneGenderMale -> FortuneGenderMale
+        "여", "여자", "F", "female", "Female", "FEMALE", FortuneGenderFemale -> FortuneGenderFemale
+        else -> ""
+    }
+
+private fun normalizeFortuneBirthDate(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return ""
+    val digits = trimmed.filter { it.isDigit() }
+    return if (digits.length == 8) {
+        "${digits.substring(0, 4)}-${digits.substring(4, 6)}-${digits.substring(6, 8)}"
+    } else {
+        trimmed
+    }
+}
+
+private fun normalizeFortuneBirthTime(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return ""
+    val digits = trimmed.filter { it.isDigit() }
+    return when (digits.length) {
+        4 -> "${digits.substring(0, 2)}:${digits.substring(2, 4)}"
+        3 -> "0${digits.substring(0, 1)}:${digits.substring(1, 3)}"
+        else -> trimmed
+    }
+}
+
+private fun parseBirthDateMillis(value: String): Long? {
+    val digits = value.filter { it.isDigit() }
+    if (digits.length != 8) return null
+    val year = digits.substring(0, 4).toIntOrNull() ?: return null
+    val month = digits.substring(4, 6).toIntOrNull() ?: return null
+    val day = digits.substring(6, 8).toIntOrNull() ?: return null
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        clear()
+        set(year, month - 1, day)
+    }
+    return calendar.timeInMillis
+}
+
+private fun parseBirthTimeParts(value: String): Pair<Int, Int> {
+    val parts = value.split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
+    return hour to minute
+}
+
+private fun formatBirthDateIso(millis: Long): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    formatter.timeZone = TimeZone.getTimeZone("UTC")
+    return formatter.format(java.util.Date(millis))
+}
+
+private fun formatBirthDateDisplay(value: String): String {
+    val digits = value.filter { it.isDigit() }
+    if (digits.length != 8) return value
+    return "${digits.substring(0, 4)}년 ${digits.substring(4, 6).trimStart('0')}월 ${digits.substring(6, 8).trimStart('0')}일"
+}
+
+private fun formatBirthTimeDisplay(value: String): String {
+    val parts = value.split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
+    val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
+    val suffix = if (hour < 12) "오전" else "오후"
+    val display = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
+    return "$suffix ${display}시 ${String.format(Locale.US, "%02d", minute)}분"
+}
+
+@Composable
+private fun FortuneFieldLabel(text: String, error: Boolean) {
+    Text(
+        text = if (error) "$text · 필수 입력" else text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+    )
+}
+
+@Composable
+private fun FortuneSelectorRow(
+    value: String,
+    placeholderActive: Boolean,
+    error: Boolean,
+    onClick: () -> Unit,
+) {
+    val borderColor = when {
+        error -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.outline
+    }
+    Surface(
+        onClick = onClick,
+        shape = WakerInputShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (placeholderActive) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenderChoice(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+        modifier = modifier,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
         }
     }
 }
@@ -1183,8 +1544,8 @@ internal fun SnoozeSettingsPane(
                     label = { Text("분") },
                     singleLine = true,
                     isError = customMinutesText.isNotBlank() && customMinutes !in 1..60,
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                 )
             },
             confirmButton = {
@@ -1312,7 +1673,7 @@ internal fun EditorActionButtons(
         onClick = onSave,
         enabled = canSave && !isSaving,
         modifier = Modifier.fillMaxWidth(),
-        shape = VocaWakeButtonShape,
+        shape = WakerButtonShape,
     ) {
         Icon(Icons.Outlined.Save, contentDescription = null)
         Spacer(Modifier.width(8.dp))

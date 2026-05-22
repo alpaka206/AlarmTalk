@@ -1,8 +1,8 @@
-import SwiftUI
+﻿import SwiftUI
 
 /// Corner-radius tokens mirroring the Android Material 3 `Shapes` block in
 /// `apps/android-native/.../ui/theme/VoiceAlarmTheme.kt:102-108` plus the
-/// VocaWake-specific shapes from `ui/components/VocaWakeDesign.kt:12-14`.
+/// Waker-specific shapes from `ui/components/WakerDesign.kt:12-14`.
 struct VoiceAlarmShapes: Equatable {
     let extraSmall: CGFloat
     let small: CGFloat
@@ -10,9 +10,9 @@ struct VoiceAlarmShapes: Equatable {
     let large: CGFloat
     let extraLarge: CGFloat
 
-    /// `VocaWakeCardShape` — 22.dp on Android.
+    /// `WakerCardShape` — 22.dp on Android.
     let vocaCard: CGFloat
-    /// `VocaWakeButtonShape` / `VocaWakeInputShape` — 18.dp on Android.
+    /// `WakerButtonShape` / `WakerInputShape` — 18.dp on Android.
     let vocaButton: CGFloat
     /// Capsule-styled chip (effectively `999.dp` on Android).
     let vocaChip: CGFloat
@@ -33,7 +33,7 @@ extension VoiceAlarmShapes {
 
 extension View {
     /// Applies the Voca card corner radius via a `RoundedRectangle` clip shape.
-    /// Matches `VocaWakeCardShape` (22.dp) from Android.
+    /// Matches `WakerCardShape` (22.dp) from Android.
     func vocaCardShape() -> some View {
         clipShape(RoundedRectangle(cornerRadius: VoiceAlarmShapes.default.vocaCard, style: .continuous))
     }

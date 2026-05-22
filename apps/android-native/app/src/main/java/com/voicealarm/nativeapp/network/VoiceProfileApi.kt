@@ -53,16 +53,27 @@ data class VoiceSpeakerSegment(
 data class VoiceProfileUpdateRequest(
     val name: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
+    @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
+)
+
+data class VoiceProfileRelationshipUpdateRequest(
+    @SerializedName("relationship_label") val relationshipLabel: String,
+    @SerializedName("listener_title") val listenerTitle: String,
 )
 
 data class VoiceProfile(
     val id: String,
-    val name: String,
+    // Gson 은 JSON 에 name 이 누락되거나 null 이어도 기본값을 통하지 않고 그대로 null 을 주입할 수 있어
+    // 추후 NPE 를 막기 위해 기본값을 부여한다.
+    val name: String = "",
     val status: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
+    @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
 )
 
 data class FamilyVoiceProfile(
@@ -74,6 +85,8 @@ data class FamilyVoiceProfile(
     @SerializedName("owner_name") val ownerName: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
+    @SerializedName("listener_title") val listenerTitle: String? = null,
+    @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
 )
 
 data class FamilyVoiceProfileListResponse(
@@ -92,7 +105,9 @@ interface VoiceProfileApi {
         @Part("name") name: RequestBody,
         @Part("isShared") isShared: RequestBody,
         @Part("relationshipLabel") relationshipLabel: RequestBody,
+        @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
+        @Part("isDraft") isDraft: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart
@@ -115,6 +130,13 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Body request: VoiceProfileUpdateRequest,
+    ): VoiceProfileResponse
+
+    @PATCH("voice/{id}/relationship")
+    suspend fun updateVoiceProfileRelationship(
+        @Header("Authorization") authorization: String,
+        @Path("id") id: String,
+        @Body request: VoiceProfileRelationshipUpdateRequest,
     ): VoiceProfileResponse
 
     @DELETE("voice/{id}")

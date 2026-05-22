@@ -5,4 +5,5 @@ data class VoiceProfileCreationDraft(
     val audio: CachedAlarmAudio,
     val shared: Boolean,
     val relationshipLabel: String,
+    val listenerTitle: String,
 )

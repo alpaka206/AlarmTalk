@@ -1,11 +1,11 @@
-import AuthenticationServices
+﻿import AuthenticationServices
 import SwiftUI
 
 /// 비로그인 사용자가 처음 만나는 진입 화면.
 ///
 /// Android `apps/android-native/.../ui/auth/LandingScreen.kt:60-105` 를 1:1 포팅했다.
 /// 구성 요소
-///   1. VocaWake 브랜드 헤더 (로고 + 슬로건)
+///   1. Waker 브랜드 헤더 (로고 + 슬로건)
 ///   2. 큰 카피 ("좋아하는 목소리로\n깨어나는 알람")
 ///   3. 알람 미리듣기 카드 — 32-bar 파형 + 재생 버튼. 번들 mp3 가 없을 때는
 ///      시각 시뮬레이션(5초 동안 progress 가 0→1) 으로 동작한다.
@@ -26,7 +26,7 @@ struct LandingView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    VocaWakeBrandHeader()
+                    WakerBrandHeader()
                         .padding(.top, 22)
 
                     Color.clear.frame(height: 48)
@@ -59,8 +59,8 @@ struct LandingView: View {
     }
 }
 
-/// 상단 좌측 브랜드 표식. Android `VocaWakeBrandHeader:108-136` 1:1 대응.
-private struct VocaWakeBrandHeader: View {
+/// 상단 좌측 브랜드 표식. Android `WakerBrandHeader:108-136` 1:1 대응.
+private struct WakerBrandHeader: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
@@ -81,7 +81,7 @@ private struct VocaWakeBrandHeader: View {
                 .frame(width: 42, height: 42)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("VocaWake")
+                Text("Waker")
                     .font(theme.typography.titleLarge)
                     .foregroundStyle(theme.palette.onBackground)
                 Text("Voice alarm")

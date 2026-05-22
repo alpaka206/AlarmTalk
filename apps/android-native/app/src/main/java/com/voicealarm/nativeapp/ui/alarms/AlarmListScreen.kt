@@ -26,6 +26,8 @@ import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.NoteAudioResponse
 import com.voicealarm.nativeapp.network.ReceivedNote
+import com.voicealarm.nativeapp.network.TtsGenerateRequest
+import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceSpeakerSegment
 import com.voicealarm.nativeapp.network.VoucherItem
@@ -57,11 +59,16 @@ internal fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
-    onRenameVoiceProfile: (String, String, String) -> Unit,
+    onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
+    onPromoteDraftVoice: suspend (String) -> Unit,
+    onDeleteDraftVoice: suspend (String) -> Unit,
+    onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
+    onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
@@ -161,11 +168,17 @@ internal fun AlarmListScreen(
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
                         familyGroup = familyGroup,
+                        authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
                         onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,
+                        onCloneSpeakerDraft = onCloneSpeakerDraft,
+                        onPromoteDraftVoice = onPromoteDraftVoice,
+                        onDeleteDraftVoice = onDeleteDraftVoice,
+                        onGenerateTts = onGenerateTts,
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,
+                        onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                     )

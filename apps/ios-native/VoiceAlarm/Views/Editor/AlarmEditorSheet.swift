@@ -86,6 +86,24 @@ struct AlarmEditorSheet: View {
                         }
                         .buttonStyle(.bordered)
                     }
+
+                    // Android `TtsApi.randomContext` 와 매칭되는 랜덤 프롬프트 토글.
+                    // 토글 ON 이면 카테고리 picker 가 노출되며, generateTTS 호출 시
+                    // VoiceStudioViewModel 의 randomPrompt/randomContext 가 함께 전달된다.
+                    // 날씨/운세 컨텍스트의 추가 입력(country/city/birthday 등) 은 추후 PR.
+                    Toggle("랜덤 깨움말 생성", isOn: $voiceStudio.randomPrompt)
+                        .tint(theme.palette.primary)
+                    if voiceStudio.randomPrompt {
+                        Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
+                            ForEach(RandomPromptContext.allCases, id: \.rawValue) { context in
+                                Text(context.label).tag(context.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Text("선택한 컨텍스트에 어울리는 깨움말이 자동 생성돼요.")
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    }
                 }
             }
 

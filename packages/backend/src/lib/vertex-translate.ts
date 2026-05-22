@@ -44,6 +44,7 @@ export type DynamicAlarmTextContext = {
   targetLanguage: string;
   dateLabel: string;
   relationshipLabel?: string | null;
+  listenerTitle?: string | null;
   weatherSummary?: string | null;
   fortuneProfile?: string | null;
   mealLabel?: string | null;
@@ -166,6 +167,11 @@ export async function prepareAlarmTextWithVertex(
     preparedText = fallbackText;
   }
 
+  if (shouldTag && !shouldTranslate) {
+    preparedText =
+      normalizeSameLanguageTaggedText(preparedText, trimmed, parsed.tags) ?? fallbackText;
+  }
+
   const tags = extractTags(preparedText);
 
   return {
@@ -204,7 +210,8 @@ export async function generateDynamicAlarmTextWithVertex(
     !text ||
     isMetaJsonResponse(text) ||
     text.length > 200 ||
-    hasUnsupportedListenerAddress(text)
+    hasUnsupportedListenerAddress(text) ||
+    (context.mode === 'wake_fortune' && hasFortuneProfileEcho(text, context.fortuneProfile))
   ) {
     return fallback;
   }
@@ -435,7 +442,7 @@ function alarmTextPrompt(args: {
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
   const tagInstruction = args.shouldTag
-    ? `Add one or two ElevenLabs v3 delivery tags from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put tags inline before the phrase they affect.`
+    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the very beginning of the text. Pick the tag that best matches the meaning and intended mood of the user text — use [warmly]/[encouraging]/[gentle]/[comforting] for affectionate or soft lines, [calmly]/[softly]/[sleepily] for night or quiet lines, [happily]/[brightly]/[proudly] for cheerful or celebratory lines. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -450,17 +457,47 @@ function alarmTextPrompt(args: {
   ].join('\n');
 }
 
+// 한국어일 때 관계 라벨에 맞는 어체(반말/해요체/합니다체) 가이드를 추가한다.
+// 알람 청자는 보통 부모/조부모 (어른) 이라는 가정을 기본으로 깔고, speaker(말하는 사람)
+// 가 어떤 관계냐에 따라 자연스러운 한국어 화법을 매핑한다.
+function koreanRegisterGuidance(relationshipLabel: string | null | undefined): string {
+  if (!relationshipLabel) return '';
+  const label = relationshipLabel.trim();
+  if (!label) return '';
+  const youngerToElder = ['손녀', '손자', '손주', '딸', '아들', '자식', '며느리', '사위', '조카'];
+  const elderToYounger = ['할머니', '할아버지', '엄마', '어머니', '아빠', '아버지', '부모', '이모', '고모', '삼촌', '외할머니', '외할아버지'];
+  const peerOrIntimate = ['친구', '연인', '여자친구', '남자친구', '애인', '여보', '자기', '동생'];
+
+  if (youngerToElder.some((k) => label.includes(k))) {
+    return ' Speaker is younger than the listener: write in warm 해요체 (e.g. "할머니, 일어나셨어요?", "오늘은 ~해요"). Do NOT use stiff 합니다체 like "~합니다", "~하십시오". Sound like family talking, not a TV news anchor.';
+  }
+  if (elderToYounger.some((k) => label.includes(k))) {
+    return ' Speaker is older than the listener: write in caring 반말 or 해요체 mixed style (e.g. "우리 딸, 잘 잤어?", "오늘도 화이팅이야"). Avoid 합니다체.';
+  }
+  if (peerOrIntimate.some((k) => label.includes(k))) {
+    return ' Speaker and listener are peers/intimate: write in 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). Never use 합니다체.';
+  }
+  return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
+}
+
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   const targetName = LANGUAGE_NAMES[context.targetLanguage] || context.targetLanguage;
+  const listenerTitle = context.listenerTitle?.trim();
+  const listenerInstruction = listenerTitle
+    ? `When addressing the listener, call them "${listenerTitle}" exactly (use this label naturally, do not translate it, and never replace it with grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter).`
+    : 'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter. Use a neutral greeting instead.';
+  const koreanRegisterInstruction = context.targetLanguage === 'ko'
+    ? koreanRegisterGuidance(context.relationshipLabel?.trim())
+    : '';
   const relationship = context.relationshipLabel?.trim()
-    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. This label describes the speaker's relationship to the user, not the listener's title. Use it for warmth and tone only. Never address the listener as grandmother, grandfather, mom, dad, or another family title unless that exact listener title is explicitly provided. Do not invent names or private facts.`
-    : 'No relationship label is available, so keep the line generally warm.';
+    ? `The selected voice belongs to the user's "${context.relationshipLabel}" relationship. Use this only to choose a natural speech register and warmth. Never mention the relationship label in the text, and never write phrases like "${context.relationshipLabel} voice", "in your ${context.relationshipLabel}'s voice", or "speaking as your ${context.relationshipLabel}". ${listenerInstruction} Do not invent names or private facts.${koreanRegisterInstruction}`
+    : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
-      return `Use this weather context if available: ${context.weatherSummary || 'weather information is unavailable'}. Give one practical morning tip when it fits.`;
+      return `Create a wake-up message. Start naturally like "일어나실 시간이에요" or "좋은 아침이에요" rather than describing whose voice it is. Use only actionable weather facts from this context: ${context.weatherSummary || 'weather information is unavailable'}. Prioritize temperature, precipitation probability, umbrella advice when rain risk is high, and fine-dust/mask advice only when the context says it is bad. Do not mention location names, city/country names, the exact date, or weekday. Do not say vague weather labels like "the weather is rain" by themselves. Ending is optional; if you add one, keep it short like "오늘도 화이팅!"`;
     }
     if (context.mode === 'wake_fortune') {
-      return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer a gentle saju-style daily tone from gender, birth date, and birth time, but do not repeat the raw birth data. Fortune input: ${context.fortuneProfile || 'fortune profile is unavailable'}. Do not sound like a real prediction or guarantee.`;
+      return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee.`;
     }
     if (context.mode === 'meal') {
       return `Create a ${context.mealLabel || 'meal'} reminder. Ask naturally whether they have eaten and recommend one menu idea. Consider this weather if available: ${context.weatherSummary || 'weather information is unavailable'}.`;
@@ -477,14 +514,24 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
   return [
     'You write one short, natural voice-alarm sentence for text-to-speech.',
     `Write in ${targetName}.`,
-    `Date context: ${context.dateLabel}.`,
+    `Internal date context for freshness only, do not mention it in the final text: ${context.dateLabel}.`,
     context.alarmTimeLabel ? `Alarm time context: ${context.alarmTimeLabel}.` : '',
     `Alarm category: ${context.category}.`,
     relationship,
     modeInstruction,
-    'Do not address the listener by guessed family titles such as grandmother, grandfather, mom, dad, son, daughter, grandson, or granddaughter.',
-    'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
+    listenerTitle
+      ? `Address the listener as "${listenerTitle}" rather than guessing a family title.`
+      : 'For example, if the relationship label is "손녀", do not write "할머니" or "할아버지"; use a neutral greeting instead.',
+    'Do not announce the relationship or source of the voice. Avoid phrases like "손녀 목소리로 전해요"; the alarm should sound like a natural alarm line.',
+    'Do not mention the exact date, weekday, country, city, district, or saved location label unless the user explicitly wrote it as part of the alarm text.',
+    context.targetLanguage === 'ko'
+      ? '한국어 어체 규칙: 가족·친구·연인 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀→조부모, 자식→부모 등 손아랫사람이 손윗사람에게 말할 때는 친근한 해요체 ("~해요", "~예요"). 부모→자식, 형/누나→동생 등은 다정한 반말 또는 해요체 혼용. 친구·연인 사이는 반말. 뉴스 앵커처럼 들리지 않게 진짜 가족이 옆에서 말하는 톤으로.'
+      : '',
+    context.targetLanguage === 'ko'
+      ? '문장 구조 예시 (wake_weather): "일어나실 시간이에요. 최저 12도, 최고 19도고 강수확률이 70%예요. 우산 챙겨가세요. 오늘도 화이팅!" — 위치/날짜/관계 설명 없이 시작, 필요한 날씨 정보만 말하고 짧게 마무리. 이 패턴을 따르되 내용은 컨텍스트에 맞게 새로 작성.'
+      : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
+    'Do not include any brackets, delivery tags, [tag] markers, or stage directions in your output. A single delivery tag will be added in a later step.',
     'No markdown, no emojis, no quotes, no explanations, no extra fields.',
     'Keep the final text spoken, kind, and 200 characters or fewer.',
     'Return strict JSON: {"text":"final alarm line"}.',
@@ -492,43 +539,48 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
 }
 
 function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): string {
-  const relationship = context.relationshipLabel?.trim();
-  const opener = relationship ? `${relationship} 목소리로 전해요.` : '좋은 아침이에요.';
+  const listener = context.listenerTitle?.trim();
+  const address = listener ? `${listener}, ` : '';
+  const wakeOpener = `${address}일어나실 시간이에요.`;
+  const opener = listener ? `${listener}, ` : '';
   if (context.mode === 'wake_weather' && context.weatherSummary) {
-    return `${opener} ${context.dateLabel}, ${context.weatherSummary} 오늘 필요한 것만 챙기고 가볍게 시작해요.`
+    return `${wakeOpener} ${stripTrailingPunctuation(context.weatherSummary)}. 오늘도 화이팅!`
       .slice(0, 200)
       .trim();
   }
   if (context.mode === 'wake_fortune') {
-    const profileText = context.fortuneProfile ? ' 입력한 생년월일과 태어난 시간 기준으로' : '';
-    return `${opener} ${context.dateLabel}${profileText} 오늘은 작은 선택에 좋은 기운이 따르는 날이에요. 차근차근 시작해 봐요.`
+    return `${wakeOpener} 오늘은 작은 선택에 좋은 기운이 따르는 날이에요. 오늘도 화이팅!`
       .slice(0, 200)
       .trim();
   }
   if (context.mode === 'meal') {
     const weatherTip = context.weatherSummary ? ` ${context.weatherSummary}` : '';
-    return `${opener} ${context.mealLabel || '식사'} 챙길 시간이에요.${weatherTip} 오늘은 부담 없는 따뜻한 메뉴로 에너지를 채워 봐요.`
+    return `${opener}${context.mealLabel || '식사'} 챙길 시간이에요.${weatherTip} 오늘도 화이팅!`
       .slice(0, 200)
       .trim();
   }
   if (context.mode === 'sleep') {
-    return `${opener} 이제 쉬어갈 시간이에요. 화면은 잠시 내려놓고, 편안한 숨으로 하루를 마무리해요.`
+    return `${opener}이제 쉬어갈 시간이에요. 화면은 잠시 내려놓고 편하게 쉬어요.`
       .slice(0, 200)
       .trim();
   }
   if (context.mode === 'exercise') {
-    return `${opener} 운동 갈 시간이에요. 오늘도 무리하지 말고 한 세트씩, 몸이 깨어나는 느낌으로 시작해 봐요.`
+    return `${opener}운동할 시간이에요. 무리하지 말고 가볍게 시작해요. 오늘도 화이팅!`
       .slice(0, 200)
       .trim();
   }
   if (context.mode === 'love') {
-    return `${opener} 잠깐이라도 네 생각이 났어. 오늘도 마음은 네 편이니까 천천히 다녀와.`
+    return `${opener}좋은 아침이에요. 오늘도 옆에서 응원하고 있어요.`
       .slice(0, 200)
       .trim();
   }
-  return `${opener} ${context.dateLabel} 오늘은 새로운 하루가 시작됐어요. 천천히 일어나서 좋은 리듬을 만들어 봐요.`
+  return `${address}일어나실 시간이에요. 오늘도 화이팅!`
     .slice(0, 200)
     .trim();
+}
+
+function stripTrailingPunctuation(text: string): string {
+  return text.trim().replace(/[.!?。]+$/g, '');
 }
 
 function dynamicAlarmTextPreparationFallback(
@@ -547,6 +599,57 @@ function hasUnsupportedListenerAddress(text: string): boolean {
   return /(^|[\s"'“”‘’(（])(?:할머니|할머님|할아버지|할아버님|엄마|어머니|어머님|아빠|아버지|아버님|부모님|할미|할배|손녀|손자|딸|아들)(?:님)?(?=[\s,，.!！?？~]|$)/.test(
     text,
   );
+}
+
+function hasFortuneProfileEcho(text: string, fortuneProfile: string | null | undefined): boolean {
+  const normalized = text.trim();
+  if (!normalized) return false;
+  if (/(생년월일|태어난\s*(?:시간|시각)|출생|몇\s*월\s*며칠\s*생|몇월\s*며칠\s*생|birth\s*date|born\s*on)/i.test(normalized)) {
+    return true;
+  }
+
+  const birthDate = fortuneProfileValue(fortuneProfile, 'birth date');
+  if (birthDate) {
+    if (containsNormalized(normalized, birthDate)) return true;
+    const match = birthDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const datePatterns = [
+        new RegExp(`${year}\\s*년\\s*${month}\\s*월\\s*${day}\\s*일`),
+        new RegExp(`${month}\\s*월\\s*${day}\\s*일\\s*(?:생|출생|태어)`, 'i'),
+        new RegExp(`${month}\\s*월\\s*${day}\\s*일에\\s*(?:태어난|출생한)`, 'i'),
+      ];
+      if (datePatterns.some((pattern) => pattern.test(normalized))) return true;
+    }
+  }
+
+  const birthTime = fortuneProfileValue(fortuneProfile, 'birth time');
+  if (birthTime) {
+    if (containsNormalized(normalized, birthTime)) return true;
+    const match = birthTime.match(/^(\d{1,2}):(\d{2})$/);
+    if (match) {
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      const timePattern = new RegExp(`${hour}\\s*시\\s*${minute}\\s*분`);
+      if (timePattern.test(normalized)) return true;
+    }
+  }
+
+  return false;
+}
+
+function fortuneProfileValue(profile: string | null | undefined, key: string): string | null {
+  if (!profile) return null;
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = profile.match(new RegExp(`(?:^|,\\s*)${escapedKey}=([^,]+)`));
+  return match?.[1]?.trim() || null;
+}
+
+function containsNormalized(text: string, needle: string): boolean {
+  const normalize = (value: string) => value.replace(/\s+/g, '').toLowerCase();
+  return normalize(text).includes(normalize(needle));
 }
 
 function parseAlarmTextPreparation(raw: string): {
@@ -618,6 +721,35 @@ function stripWrappingQuotes(text: string): string {
     .trim()
     .replace(/^["'“”]+|["'“”]+$/g, '')
     .trim();
+}
+
+function normalizeSameLanguageTaggedText(
+  preparedText: string,
+  originalText: string,
+  candidateTags: string[],
+): string | null {
+  if (normalizeAlarmTextWithoutTags(preparedText) !== normalizeAlarmTextWithoutTags(originalText)) {
+    return null;
+  }
+  const tag = pickApprovedTag([...extractTags(preparedText), ...candidateTags]);
+  if (!tag) return null;
+  const tagged = `[${tag}] ${originalText}`;
+  return tagged.length <= 200 ? tagged : originalText;
+}
+
+function normalizeAlarmTextWithoutTags(text: string): string {
+  return text
+    .replace(/\s*\[[a-z][a-z -]{1,32}\]\s*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function pickApprovedTag(tags: string[]): string | null {
+  for (const tag of tags) {
+    const normalized = normalizeTag(tag);
+    if (APPROVED_TAGS.includes(normalized)) return normalized;
+  }
+  return null;
 }
 
 function tagAlarmTextLocally(text: string): string {

@@ -71,6 +71,8 @@ internal class AlarmEditorState(
     voiceRandomContext: String?,
     voiceWeatherCountry: String?,
     voiceWeatherCity: String?,
+    voiceWeatherLatitude: Double? = null,
+    voiceWeatherLongitude: Double? = null,
     voiceFortuneGender: String?,
     voiceFortuneBirthDate: String?,
     voiceFortuneBirthTime: String?,
@@ -102,6 +104,8 @@ internal class AlarmEditorState(
     var voiceRandomContext by mutableStateOf(normalizedRandomPromptContext(voiceRandomContext ?: DefaultRandomPromptContext))
     var voiceWeatherCountry by mutableStateOf(voiceWeatherCountry ?: "")
     var voiceWeatherCity by mutableStateOf(voiceWeatherCity ?: "")
+    var voiceWeatherLatitude by mutableStateOf(voiceWeatherLatitude)
+    var voiceWeatherLongitude by mutableStateOf(voiceWeatherLongitude)
     var voiceFortuneGender by mutableStateOf(voiceFortuneGender ?: "")
     var voiceFortuneBirthDate by mutableStateOf(voiceFortuneBirthDate ?: "")
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")

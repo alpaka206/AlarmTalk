@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import android.content.Intent
 import androidx.compose.foundation.background
@@ -181,9 +181,9 @@ internal fun SubscriptionPanel(
                 },
                 enabled = !billingBusy,
                 modifier = Modifier.fillMaxWidth(),
-                shape = VocaWakeButtonShape,
-                border = vocaWakeCardBorder(),
-                colors = vocaWakeOutlinedButtonColors(),
+                shape = WakerButtonShape,
+                border = wakerCardBorder(),
+                colors = wakerOutlinedButtonColors(),
             ) {
                 Text(
                     text = if (isSharedMember) "공유 이용권에서 나가기" else "이용권 해지",
@@ -300,11 +300,11 @@ private fun BillingActionDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = VocaWakeCardShape,
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
-            border = vocaWakeCardBorder(),
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
@@ -356,7 +356,7 @@ private fun BillingDialogButton(
         Button(
             onClick = onClick,
             modifier = modifier,
-            shape = VocaWakeButtonShape,
+            shape = WakerButtonShape,
             colors = if (destructive) {
                 ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
@@ -372,9 +372,9 @@ private fun BillingDialogButton(
         OutlinedButton(
             onClick = onClick,
             modifier = modifier,
-            shape = VocaWakeButtonShape,
-            border = vocaWakeCardBorder(),
-            colors = vocaWakeOutlinedButtonColors(),
+            shape = WakerButtonShape,
+            border = wakerCardBorder(),
+            colors = wakerOutlinedButtonColors(),
         ) {
             Text(label)
         }
@@ -420,8 +420,8 @@ private fun CurrentPassSummaryCard(
     val capacityText = currentPlan?.maxMembers?.takeIf { it > 1 }?.let { "최대 ${it}명" } ?: "개인 사용"
 
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.36f),
         ),
@@ -507,7 +507,7 @@ internal fun SubscriptionPlanCard(
     onShareVouchers: (List<VoucherItem>) -> Unit,
 ) {
     OutlinedCard(
-        shape = VocaWakeCardShape,
+        shape = WakerCardShape,
         border = BorderStroke(
             width = 1.dp,
             color = if (isCurrent) {
@@ -585,7 +585,7 @@ internal fun SubscriptionPlanCard(
                         onClick = if (hasActiveSubscription) onChange else onPurchase,
                         enabled = !busy,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text(if (hasActiveSubscription) "이용권 변경" else "선택하기")
                     }
@@ -594,9 +594,9 @@ internal fun SubscriptionPlanCard(
                             onClick = onGift,
                             enabled = !busy,
                             modifier = Modifier.weight(1f),
-                            shape = VocaWakeButtonShape,
-                            border = vocaWakeCardBorder(),
-                            colors = vocaWakeOutlinedButtonColors(),
+                            shape = WakerButtonShape,
+                            border = wakerCardBorder(),
+                            colors = wakerOutlinedButtonColors(),
                         ) {
                             Text("선물하기")
                         }
@@ -608,9 +608,9 @@ internal fun SubscriptionPlanCard(
                     onClick = onGift,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
-                    border = vocaWakeCardBorder(),
-                    colors = vocaWakeOutlinedButtonColors(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
                 ) {
                     Text("개인 이용권 선물하기")
                 }
@@ -620,9 +620,9 @@ internal fun SubscriptionPlanCard(
                     onClick = { onShareVouchers(vouchers) },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
-                    border = vocaWakeCardBorder(),
-                    colors = vocaWakeOutlinedButtonColors(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
                 ) {
                     Text("이용권 코드 공유")
                 }
@@ -725,8 +725,8 @@ internal fun CharacterBillingPanel(
     val busy = characterBusy || billingBusy
 
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
     ) {
         Column(
             modifier = Modifier.padding(20.dp),

@@ -807,6 +807,28 @@ export const migrations: Migration[] = [
         ON voice_profile_relationships(user_id, voice_profile_id)`,
     ],
   },
+  {
+    // 호칭(listener title): 음성이 청자(=알람 사용자)를 어떻게 부를지 라벨.
+    //   - voice_profiles.listener_title: 소유자가 설정한 기본 호칭.
+    //   - voice_profile_relationships.listener_title: 공유 음성의 viewer 관점 호칭.
+    // 동적 음성 프롬프트에 주입되어 청자 호칭을 그대로 사용하도록 모델을 가이드한다.
+    id: 38,
+    name: 'voice-profile-listener-title',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN listener_title TEXT`,
+      `ALTER TABLE voice_profile_relationships ADD COLUMN listener_title TEXT NOT NULL DEFAULT ''`,
+    ],
+  },
+  {
+    // 화자 분리 후 미리듣기/선택 흐름용 임시 보이스 프로파일.
+    // is_draft=1 은 카운트/리스트에서 제외하고 promote 시 0 으로 변경.
+    id: 39,
+    name: 'voice-profile-draft-flag',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0`,
+      `CREATE INDEX IF NOT EXISTS idx_voice_profiles_is_draft ON voice_profiles(is_draft, user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
@@ -878,8 +900,16 @@ export async function runMigrations(db: Client): Promise<string[]> {
   for (const migration of migrations) {
     if (appliedIds.has(migration.id)) continue;
 
+    // 마이그레이션 #5 와 #17 처럼 동일 컬럼(alarms.voice_profile_id)을
+    // 중복 ALTER 하는 케이스가 있으므로, idempotent DDL 에러는 무시한다.
+    // runMigrationsRange 와 동일한 정책을 적용해 두 진입점이 동일하게 동작.
     for (const stmt of migration.statements) {
-      await db.execute(stmt);
+      try {
+        await db.execute(stmt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!isIdempotentDDLError(msg)) throw err;
+      }
     }
 
     await db.execute({

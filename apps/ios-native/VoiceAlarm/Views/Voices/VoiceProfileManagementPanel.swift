@@ -31,6 +31,10 @@ struct VoiceProfileManagementPanel: View {
     /// 슬롯 가득 시 노출하는 플랜 안내 시트.
     @State private var planGateOpen: Bool = false
 
+    /// 공유받은 음성에 viewer 가 자신의 관계/호칭을 등록할 때 사용하는 다이얼로그 타깃.
+    /// Android `SharedVoiceViewerInfoDialog` (VoiceProfileManagementPanel.kt:1543) 와 동일한 의도.
+    @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScreenHeader(title: "음성", subtitle: nil)
@@ -107,6 +111,27 @@ struct VoiceProfileManagementPanel: View {
                     onRequestBilling?()
                 },
                 onClose: { planGateOpen = false }
+            )
+            .presentationDetents([.medium])
+        }
+        .sheet(item: $sharedViewerInfoTarget) { profile in
+            SharedVoiceViewerInfoDialog(
+                profileName: profile.name,
+                initialRelationship: profile.relationshipLabel ?? "",
+                initialListenerTitle: profile.listenerTitle ?? "",
+                onCancel: { sharedViewerInfoTarget = nil },
+                onConfirm: { relation, listener in
+                    let target = profile
+                    sharedViewerInfoTarget = nil
+                    Task {
+                        await voice.updateSharedVoiceViewerInfo(
+                            profileId: target.id,
+                            relationshipLabel: relation,
+                            listenerTitle: listener,
+                            session: auth.session
+                        )
+                    }
+                }
             )
             .presentationDetents([.medium])
         }
@@ -225,7 +250,10 @@ struct VoiceProfileManagementPanel: View {
                 Text("공유받은 보이스")
                     .font(.subheadline.weight(.semibold))
                 ForEach(voice.familyVoices) { family in
-                    FamilyVoiceProfileRow(profile: family)
+                    FamilyVoiceProfileRow(
+                        profile: family,
+                        onEdit: { sharedViewerInfoTarget = family }
+                    )
                 }
             }
         }
@@ -389,22 +417,49 @@ private extension ISO8601DateFormatter {
 
 private struct FamilyVoiceProfileRow: View {
     let profile: FamilyVoiceProfile
+    let onEdit: () -> Void
+
+    /// Android `SharedVoiceProfileRow.needsViewerInfo` (VoiceProfileManagementPanel.kt:1477) 와 동일.
+    /// 관계/호칭 중 하나라도 비어 있으면 "설정하기" CTA 버튼을 노출.
+    private var needsViewerInfo: Bool {
+        (profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            (profile.listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(VoiceAlarmTheme.secondary.opacity(0.18))
-                Image(systemName: "person.wave.2")
-                    .foregroundStyle(VoiceAlarmTheme.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(VoiceAlarmTheme.secondary.opacity(0.18))
+                    Image(systemName: "person.wave.2")
+                        .foregroundStyle(VoiceAlarmTheme.secondary)
+                }
+                .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.name).font(.subheadline.weight(.semibold))
+                    Text(detailLine)
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer()
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.callout)
+                        .foregroundStyle(VoiceAlarmTheme.primary)
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("내 정보 수정")
             }
-            .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(profile.name).font(.subheadline.weight(.semibold))
-                Text(profile.ownerName?.isEmpty == false ? "\(profile.ownerName!) 님의 보이스" : "공유받은 보이스")
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            if needsViewerInfo {
+                Button(action: onEdit) {
+                    Text("이 음성이 나를 부를 호칭 설정하기")
+                        .font(.footnote.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(VoiceAlarmTheme.primary)
             }
-            Spacer()
         }
         .padding(12)
         .background(VoiceAlarmTheme.surface)
@@ -412,6 +467,23 @@ private struct FamilyVoiceProfileRow: View {
             RoundedRectangle(cornerRadius: 12).stroke(VoiceAlarmTheme.outline, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// 소유자명 + (관계, 호칭) 정보를 한 줄로 조립.
+    private var detailLine: String {
+        var parts: [String] = []
+        if let owner = profile.ownerName, !owner.isEmpty {
+            parts.append("\(owner) 님의 보이스")
+        } else {
+            parts.append("공유받은 보이스")
+        }
+        if let relation = profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !relation.isEmpty {
+            parts.append("관계 \(relation)")
+        }
+        if let listener = profile.listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !listener.isEmpty {
+            parts.append("호칭 \(listener)")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -521,6 +593,109 @@ private struct VoiceProfileDeleteDialog: View {
             Spacer(minLength: 0)
         }
         .padding(20)
+    }
+}
+
+// MARK: - Shared voice viewer info dialog
+
+/// 공유받은 음성에 대해 viewer 가 자신과의 관계와 호칭을 설정하는 다이얼로그.
+///
+/// Android `SharedVoiceViewerInfoDialog`
+/// (`VoiceProfileManagementPanel.kt:1543`) 와 1:1 대응. 둘 다 필수이며, 비어 있으면
+/// 인라인 오류 메시지를 띄우고 저장을 막는다.
+private struct SharedVoiceViewerInfoDialog: View {
+    let profileName: String
+    let initialRelationship: String
+    let initialListenerTitle: String
+    let onCancel: () -> Void
+    let onConfirm: (String, String) -> Void
+
+    @State private var relationship: String = ""
+    @State private var listenerTitle: String = ""
+    @State private var submitted: Bool = false
+
+    private var trimmedRelationship: String {
+        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var trimmedListener: String {
+        listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    private var relationshipError: Bool { submitted && trimmedRelationship.isEmpty }
+    private var listenerError: Bool { submitted && trimmedListener.isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                Text("공유 음성 설정")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            Text("'\(profileName)' 가 내게 어떻게 말할지 알려주세요.")
+                .font(.subheadline)
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("나와의 관계")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("예: 손주, 자식, 형제", text: $relationship)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: relationship) { _, newValue in
+                        if newValue.count > 30 {
+                            relationship = String(newValue.prefix(30))
+                        }
+                    }
+                if relationshipError {
+                    Text("필수 입력 값입니다.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("이 목소리가 나를 부를 호칭")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: listenerTitle) { _, newValue in
+                        if newValue.count > 30 {
+                            listenerTitle = String(newValue.prefix(30))
+                        }
+                    }
+                if listenerError {
+                    Text("필수 입력 값입니다.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+
+            HStack {
+                Button("취소", action: onCancel)
+                    .buttonStyle(.bordered)
+                    .frame(maxWidth: .infinity)
+                Button("저장") {
+                    submitted = true
+                    if !trimmedRelationship.isEmpty && !trimmedListener.isEmpty {
+                        onConfirm(trimmedRelationship, trimmedListener)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(VoiceAlarmTheme.primary)
+                .frame(maxWidth: .infinity)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .onAppear {
+            relationship = initialRelationship
+            listenerTitle = initialListenerTitle
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-# Legal / Privacy Release Pack
+﻿# Legal / Privacy Release Pack
 
 This folder contains launch-review drafts for Naro's legal and privacy surfaces.
 They are written for Korean launch first, with Android first and iOS later.
@@ -29,7 +29,7 @@ business registration, payment, and processor details.
 
 ## Release Blockers
 
-- Confirm the final public brand: `Naro`, `VocaWake`, or both.
+- Confirm the final public brand: `Naro`, `Waker`, or both.
 - Confirm operator entity, representative, address, business registration number,
   mail-order business registration if paid plans are sold directly.
 - Confirm support/privacy email domains are live.

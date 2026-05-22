@@ -535,8 +535,18 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCreateVoiceProfile = viewModel::createVoiceProfile,
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                           onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
+                          onCloneSpeakerDraft = viewModel::cloneSpeakerDraft,
+                          onPromoteDraftVoice = { profileId ->
+                              viewModel.promoteDraftVoice(profileId)
+                              viewModel.loadVoiceProfiles()
+                          },
+                          onDeleteDraftVoice = viewModel::deleteDraftVoice,
+                          onGenerateTts = viewModel::generateTtsAudio,
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
+                          onUpdateSharedVoiceInfo = { id, relationship, listener ->
+                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
+                          },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,

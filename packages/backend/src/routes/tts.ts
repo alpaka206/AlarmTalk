@@ -70,6 +70,14 @@ type WeatherForecastResponse = {
   };
 };
 
+type AirQualityForecastResponse = {
+  hourly?: {
+    time?: unknown[];
+    pm10?: unknown[];
+    pm2_5?: unknown[];
+  };
+};
+
 type WeatherGeocodingResponse = {
   results?: Array<{
     name?: unknown;
@@ -199,6 +207,7 @@ async function findUsableVoiceProfile(
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
             AND vp.deleted_at IS NULL
           LIMIT 1`,
     args: [voiceProfileId],
@@ -229,6 +238,23 @@ async function findViewerRelationshipLabel(
     args: [voiceProfileId, userPk, userId],
   });
   return normalizeRelationshipLabel(result.rows[0]?.relationship_label);
+}
+
+async function findViewerListenerTitle(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  userId: string,
+  voiceProfileId: string,
+): Promise<string | null> {
+  const result = await db.execute({
+    sql: `SELECT listener_title
+          FROM voice_profile_relationships
+          WHERE voice_profile_id = ? AND user_id IN (?, ?)
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+    args: [voiceProfileId, userPk, userId],
+  });
+  return normalizeRelationshipLabel(result.rows[0]?.listener_title);
 }
 
 async function loadWeatherSummary(args: {
@@ -268,7 +294,6 @@ async function loadWeatherSummary(args: {
     const minTemp = Number(json.daily.temperature_2m_min?.[0]);
     const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
     const precipitation = Number(json.daily.precipitation_sum?.[0]);
-    const weather = weatherCodeLabel(code);
     const temperatureText =
       Number.isFinite(maxTemp) && Number.isFinite(minTemp)
         ? `최저 ${Math.round(minTemp)}도, 최고 ${Math.round(maxTemp)}도`
@@ -282,14 +307,52 @@ async function loadWeatherSummary(args: {
       (Number.isFinite(rainProbability) && rainProbability >= 50) ||
       (Number.isFinite(precipitation) && precipitation > 0.5) ||
       [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code)
-        ? '우산을 챙기면 좋아요.'
-        : '가볍게 나서기 좋아요.';
-    return [`${location.label} 날씨는 ${weather}`, temperatureText, rainText, umbrella]
-      .filter(Boolean)
-      .join(', ');
+        ? '우산을 챙기면 좋아요'
+        : null;
+    const dustText = await loadAirQualitySummary(location);
+    const parts = [temperatureText, rainText, umbrella, dustText].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : null;
   } catch {
     return null;
   }
+}
+
+async function loadAirQualitySummary(location: {
+  latitude: number;
+  longitude: number;
+}): Promise<string | null> {
+  const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
+  url.searchParams.set('latitude', String(location.latitude));
+  url.searchParams.set('longitude', String(location.longitude));
+  url.searchParams.set('hourly', ['pm10', 'pm2_5'].join(','));
+  url.searchParams.set('timezone', 'Asia/Seoul');
+  url.searchParams.set('forecast_days', '1');
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { accept: 'application/json' },
+    });
+    const json = await response
+      .json<AirQualityForecastResponse>()
+      .catch(() => ({}) as AirQualityForecastResponse);
+    if (!response.ok || !json.hourly) return null;
+    const pm10Max = maxFinite(json.hourly.pm10);
+    const pm25Max = maxFinite(json.hourly.pm2_5);
+    const pm10Bad = pm10Max != null && pm10Max > 80;
+    const pm25Bad = pm25Max != null && pm25Max > 35;
+    if (!pm10Bad && !pm25Bad) return null;
+    const dustLevel = pm10Bad || pm25Bad ? '나쁨' : null;
+    return dustLevel ? `미세먼지 ${dustLevel}, 마스크를 챙기면 좋아요` : null;
+  } catch {
+    return null;
+  }
+}
+
+function maxFinite(values: unknown[] | undefined): number | null {
+  const numbers = (values ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+  return numbers.length > 0 ? Math.max(...numbers) : null;
 }
 
 async function resolveWeatherLocation(args: {
@@ -310,6 +373,9 @@ async function resolveWeatherLocation(args: {
     fallback.label;
   if (latitude != null && longitude != null) {
     return { latitude, longitude, label };
+  }
+  if (!city && label !== fallback.label) {
+    return { ...fallback, label: fallback.label };
   }
   if (!city) {
     return { ...fallback, label };
@@ -348,19 +414,6 @@ async function resolveWeatherLocation(args: {
   }
 }
 
-function weatherCodeLabel(code: number): string {
-  if (code === 0) return '맑음';
-  if ([1, 2, 3].includes(code)) return '구름 많음';
-  if ([45, 48].includes(code)) return '안개';
-  if ([51, 53, 55, 56, 57].includes(code)) return '이슬비';
-  if ([61, 63, 65, 66, 67].includes(code)) return '비';
-  if ([71, 73, 75, 77].includes(code)) return '눈';
-  if ([80, 81, 82].includes(code)) return '소나기';
-  if ([85, 86].includes(code)) return '눈 소나기';
-  if ([95, 96, 99].includes(code)) return '뇌우';
-  return '변동 있음';
-}
-
 tts.post('/generate', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -381,6 +434,8 @@ tts.post('/generate', async (c) => {
     randomMode?: string;
     relationship_label?: string;
     relationshipLabel?: string;
+    listener_title?: string;
+    listenerTitle?: string;
     weather_location_label?: string;
     weatherLocationLabel?: string;
     weather_latitude?: number;
@@ -523,6 +578,16 @@ tts.post('/generate', async (c) => {
     );
   }
 
+  if (dailyLimitExceeded && (randomRequested || body.translate === true)) {
+    return c.json(
+      {
+        error: 'Daily TTS generation limit exceeded.',
+        error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
+      },
+      429,
+    );
+  }
+
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
     if (randomRequested && randomContext !== 'preset') {
@@ -532,6 +597,10 @@ tts.post('/generate', async (c) => {
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
         (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
         normalizeRelationshipLabel(vp.relationship_label);
+      const listenerTitle =
+        normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
+        (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
+        normalizeRelationshipLabel(vp.listener_title);
       const weatherSummary = randomContextUsesWeather(randomContext)
         ? await loadWeatherSummary({
             latitude: body.weather_latitude ?? body.weatherLatitude,
@@ -547,6 +616,7 @@ tts.post('/generate', async (c) => {
         targetLanguage: requestedLanguage,
         dateLabel: todayKoreaLabel(),
         relationshipLabel,
+        listenerTitle,
         weatherSummary,
         fortuneProfile:
           randomContext === 'wake_fortune'
@@ -582,7 +652,7 @@ tts.post('/generate', async (c) => {
       targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
       sourceLanguage,
       translate: shouldTranslate,
-      autoTag: randomRequested,
+      autoTag: true,
     });
     const synthesisText = prepared.text;
     const messageText = requestText;
@@ -777,6 +847,10 @@ tts.post('/generate', async (c) => {
 
     throw lastError;
   } catch (err) {
+    console.error(
+      '[tts/generate] failed',
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack}` : err,
+    );
     if (err instanceof AlarmTextTranslationUnavailableError) {
       return c.json(
         {

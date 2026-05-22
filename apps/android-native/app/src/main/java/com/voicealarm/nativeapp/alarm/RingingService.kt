@@ -36,8 +36,10 @@ import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.ringing.RingingActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class RingingService : Service() {
@@ -47,6 +49,8 @@ class RingingService : Service() {
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var audioSequenceActive = false
+    private var voiceLoopActive = false
+    private var voiceRepeatJob: Job? = null
     private var currentAlarm: AlarmEntity? = null
     private var voiceAfterAlarmStarted = false
 
@@ -163,6 +167,8 @@ class RingingService : Service() {
 
     private fun startAlarmToneLoop(alarm: AlarmEntity?) {
         audioSequenceActive = false
+        voiceLoopActive = false
+        cancelVoiceRepeatJob()
         mediaPlayer?.release()
         mediaPlayer = createAlarmTonePlayer(alarm, looping = true)?.apply {
             applyAlarmVolume(alarm)
@@ -177,15 +183,18 @@ class RingingService : Service() {
 
     private fun startVoiceLoop(voiceUri: Uri, alarm: AlarmEntity?) {
         audioSequenceActive = false
+        voiceLoopActive = true
+        cancelVoiceRepeatJob()
         mediaPlayer?.release()
         val repeatVoice = alarm?.voiceRepeat != false
         mediaPlayer = createVoicePlayer(voiceUri)?.apply {
             applyAlarmVolume(alarm)
-            isLooping = repeatVoice
-            if (!repeatVoice) {
-                setOnCompletionListener { completed ->
-                    completed.release()
-                    if (mediaPlayer === completed) mediaPlayer = null
+            isLooping = false
+            setOnCompletionListener { completed ->
+                completed.release()
+                if (mediaPlayer === completed) mediaPlayer = null
+                if (repeatVoice && voiceLoopActive) {
+                    scheduleVoiceRepeat(voiceUri, alarm)
                 }
             }
             start()
@@ -196,7 +205,26 @@ class RingingService : Service() {
         }
     }
 
+    private fun scheduleVoiceRepeat(voiceUri: Uri, alarm: AlarmEntity?) {
+        cancelVoiceRepeatJob()
+        voiceRepeatJob = serviceScope.launch {
+            delay(VOICE_REPEAT_GAP_MS)
+            voiceRepeatJob = null
+            if (!voiceLoopActive) return@launch
+            val alarmId = alarm?.id
+            if (alarmId != null && currentAlarm?.id != alarmId) return@launch
+            startVoiceLoop(voiceUri, alarm)
+        }
+    }
+
+    private fun cancelVoiceRepeatJob() {
+        voiceRepeatJob?.cancel()
+        voiceRepeatJob = null
+    }
+
     private fun startAlarmVoiceSequence(voiceUri: Uri, alarm: AlarmEntity?) {
+        voiceLoopActive = false
+        cancelVoiceRepeatJob()
         audioSequenceActive = true
         mediaPlayer?.release()
         playSequenceStep(voiceUri = voiceUri, alarm = alarm, playAlarmTone = true)
@@ -388,6 +416,8 @@ class RingingService : Service() {
 
     private fun stopMediaAndVibration() {
         audioSequenceActive = false
+        voiceLoopActive = false
+        cancelVoiceRepeatJob()
         mediaPlayer?.run {
             runCatching {
                 if (isPlaying) stop()
@@ -438,6 +468,7 @@ class RingingService : Service() {
 
     companion object {
         private const val RINGING_NOTIFICATION_ID = 1001
+        private const val VOICE_REPEAT_GAP_MS = 900L
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {

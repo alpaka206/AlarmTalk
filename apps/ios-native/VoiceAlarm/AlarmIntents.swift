@@ -92,16 +92,13 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
-        if let ctx = AlarmAppContext.shared,
-           !ctx.canSnooze(alarmKitIDString: uuid.uuidString) {
-            return .result()
-        }
         do {
             try AlarmManager.shared.countdown(id: uuid)
         } catch {
             // ignored
         }
-        if let ctx = AlarmAppContext.shared {
+        if let ctx = AlarmAppContext.shared,
+           ctx.canSnooze(alarmKitIDString: uuid.uuidString) {
             await ctx.handleAlarmSnoozed(
                 alarmKitIDString: uuid.uuidString,
                 snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil

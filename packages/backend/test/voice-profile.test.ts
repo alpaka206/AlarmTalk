@@ -46,9 +46,15 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
-function cloneForm(audio: Uint8Array | null, name: string | null, durationMs = '90000'): Request {
+function cloneForm(
+  audio: Uint8Array | null,
+  name: string | null,
+  durationMs = '90000',
+  audioType = 'audio/wav',
+  audioName = 'sample.wav',
+): Request {
   const form = new FormData();
-  if (audio) form.append('audio', new Blob([audio], { type: 'audio/wav' }), 'sample.wav');
+  if (audio) form.append('audio', new Blob([audio], { type: audioType }), audioName);
   if (name) form.append('name', name);
   if (durationMs) form.append('durationMs', durationMs);
   return new Request('http://localhost/vp/clone', { method: 'POST', body: form });
@@ -344,6 +350,22 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect((await res.json()).error_code).toBe('VOICE_CLONE_AUDIO_TOO_SHORT');
   });
 
+  it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-ok' });
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '125000'));
+    expect(res.status).toBe(201);
+  });
+
+  it('2분 5초를 넘는 durationMs 는 400', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name', '125001'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('VOICE_CLONE_AUDIO_TOO_LONG');
+  });
+
   it('name 50자 정확히 → 통과', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
@@ -395,18 +417,48 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     const [audioArg, nameArg, optionsArg] = mockCreateInstantClone.mock.calls[0]! as [
       ArrayBuffer,
       string,
-      { removeBackgroundNoise?: boolean },
+      { removeBackgroundNoise?: boolean; mimeType?: string; fileName?: string },
     ];
     expect(new Uint8Array(audioArg)).toEqual(new Uint8Array([10, 20, 30]));
     expect(nameArg).toBe('이름');
-    expect(optionsArg).toEqual({ removeBackgroundNoise: true });
+    expect(optionsArg).toEqual({
+      removeBackgroundNoise: true,
+      mimeType: 'audio/wav',
+      fileName: 'sample.wav',
+    });
+  });
+
+  it('mp3 clone 업로드 MIME 과 파일명을 ElevenLabs 로 전달', async () => {
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-x' });
+
+    const res = await req(
+      buildApp(),
+      cloneForm(new Uint8Array([10, 20, 30]), '이름', '90000', 'audio/mpeg', 'voice.mp3'),
+    );
+
+    expect(res.status).toBe(201);
+    expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+    const [, , optionsArg] = mockCreateInstantClone.mock.calls[0]! as [
+      ArrayBuffer,
+      string,
+      { removeBackgroundNoise?: boolean; mimeType?: string; fileName?: string },
+    ];
+    expect(optionsArg).toMatchObject({
+      mimeType: 'audio/mpeg',
+      fileName: 'voice.mp3',
+    });
   });
 
   it('ElevenLabs 슬롯 부족 시 503 + VOICE_SLOT_EXHAUSTED', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue(
-      new Error('ElevenLabs clone error 400: {"detail":{"status":"voice_limit_reached","message":"You have reached your maximum voice limit."}}'),
+      new Error(
+        'ElevenLabs clone error 400: {"detail":{"status":"voice_limit_reached","message":"You have reached your maximum voice limit."}}',
+      ),
     );
     const res = await req(buildApp(), cloneForm(new Uint8Array([1]), 'name'));
     expect(res.status).toBe(503);

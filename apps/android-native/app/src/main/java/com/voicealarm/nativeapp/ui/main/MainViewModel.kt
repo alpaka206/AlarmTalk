@@ -53,8 +53,29 @@ import androidx.compose.runtime.setValue
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
-    internal val api = VoiceAlarmApiClient.create()
     internal val authSessionStore = AuthSessionStore(application)
+    internal val api = VoiceAlarmApiClient.create(
+        unauthorizedHandler = object : VoiceAlarmApiClient.UnauthorizedHandler {
+            override fun onUnauthorized() {
+                // 백엔드에 refresh 엔드포인트가 없어 같은 토큰으로 재시도해도 의미가 없다.
+                // 세션을 비우고 화면에 재로그인을 안내한다.
+                handleUnauthorized()
+            }
+        },
+    )
+
+    /**
+     * okhttp Authenticator 에서 호출되는 401 처리.
+     * 다른 스레드(non-main) 에서 호출될 수 있어 UI 스레드로 옮긴 뒤 세션을 클리어한다.
+     */
+    private fun handleUnauthorized() {
+        viewModelScope.launch {
+            if (authSession == null) return@launch
+            runCatching { authSessionStore.clear() }
+            authSession = null
+            message = "로그인이 만료되었어요. 다시 로그인해 주세요."
+        }
+    }
 
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
