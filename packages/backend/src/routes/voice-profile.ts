@@ -262,6 +262,8 @@ voiceProfile.get('/family', async (c) => {
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
                  COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
                  COALESCE(NULLIF(vpr.listener_title, ''), vp.listener_title) AS listener_title,
+                 vpr.relationship_label AS viewer_relationship_raw,
+                 vpr.listener_title AS viewer_listener_raw,
                  u.name as owner_name
           FROM voice_profiles vp
           LEFT JOIN users u ON vp.user_id = u.google_id OR vp.user_id = u.id
@@ -277,10 +279,26 @@ voiceProfile.get('/family', async (c) => {
   });
 
   return c.json({
-    profiles: voicesRes.rows.map((row) => ({
-      ...row,
-      is_shared: Boolean(Number(row.is_shared ?? 0)),
-    })),
+    profiles: voicesRes.rows.map((row) => {
+      const viewerRelationshipRaw = row.viewer_relationship_raw;
+      const viewerListenerRaw = row.viewer_listener_raw;
+      const needsViewerInfo =
+        typeof viewerRelationshipRaw !== 'string' ||
+        viewerRelationshipRaw.trim() === '' ||
+        typeof viewerListenerRaw !== 'string' ||
+        viewerListenerRaw.trim() === '';
+      // viewer raw 필드는 응답에서 제외
+      const {
+        viewer_relationship_raw: _r,
+        viewer_listener_raw: _l,
+        ...rest
+      } = row as Record<string, unknown>;
+      return {
+        ...rest,
+        is_shared: Boolean(Number(row.is_shared ?? 0)),
+        needs_viewer_info: needsViewerInfo,
+      };
+    }),
   });
 });
 
