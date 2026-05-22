@@ -603,6 +603,46 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 공유받은 음성에 viewer 라벨을 막 입력했을 때 그 음성을 한 번 들려준다.
+    // 같은 입력이면 백엔드 캐시 hit, 처음이면 새로 합성. 둘 다 MediaPlayer 로 재생.
+    suspend fun playSharedVoicePreview(profileId: String) {
+        runCatching {
+            val response = onGenerateTts(
+                TtsGenerateRequest(
+                    voiceProfileId = profileId,
+                    text = "[gentle] 이 목소리로 깨워드릴까요?",
+                    category = "custom",
+                    language = "ko",
+                    random = false,
+                ),
+            )
+            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+            val cached = withContext(Dispatchers.IO) {
+                audioStore.cacheGeneratedAudio(
+                    bytes = bytes,
+                    format = response.audioFormat,
+                    rawAudioUri = null,
+                    displayName = "shared_voice_preview_${profileId}",
+                    cacheKey = "shared_preview_${profileId}",
+                    messageId = response.messageId,
+                )
+            }
+            stopMediaPreview()
+            val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                ?: return@runCatching
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                }
+                start()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to preview shared voice", error)
+            localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+        }
+    }
+
     fun selectSpeakerDraft(speaker: VoiceSpeakerSegment) {
         val state = speakerDraftStates[speaker.id] ?: return
         val selectedDraftId = state.profileId ?: return
@@ -1215,6 +1255,7 @@ internal fun VoiceProfileManagementPanel(
             onConfirm = { relationship, listener ->
                 onUpdateSharedVoiceInfo(profile.id, relationship, listener)
                 sharedInfoTarget = null
+                scope.launch { playSharedVoicePreview(profile.id) }
             },
         )
     }
