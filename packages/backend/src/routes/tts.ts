@@ -257,6 +257,9 @@ async function findViewerListenerTitle(
   return normalizeRelationshipLabel(result.rows[0]?.listener_title);
 }
 
+const RAIN_WMO_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
+const SNOW_WMO_CODES = [71, 73, 75, 77, 85, 86];
+
 async function loadWeatherSummary(args: {
   latitude?: unknown;
   longitude?: unknown;
@@ -294,27 +297,73 @@ async function loadWeatherSummary(args: {
     const minTemp = Number(json.daily.temperature_2m_min?.[0]);
     const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
     const precipitation = Number(json.daily.precipitation_sum?.[0]);
-    const temperatureText =
-      Number.isFinite(maxTemp) && Number.isFinite(minTemp)
-        ? `최저 ${Math.round(minTemp)}도, 최고 ${Math.round(maxTemp)}도`
-        : '';
-    const rainText = Number.isFinite(rainProbability)
-      ? `강수 확률 ${Math.round(rainProbability)}%`
-      : Number.isFinite(precipitation) && precipitation > 0
-        ? `예상 강수량 ${Math.round(precipitation)}mm`
-        : '';
-    const umbrella =
-      (Number.isFinite(rainProbability) && rainProbability >= 50) ||
-      (Number.isFinite(precipitation) && precipitation > 0.5) ||
-      [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99].includes(code)
-        ? '우산을 챙기면 좋아요'
-        : null;
-    const dustText = await loadAirQualitySummary(location);
-    const parts = [temperatureText, rainText, umbrella, dustText].filter(Boolean);
-    return parts.length > 0 ? parts.join(', ') : null;
+    const dustAdvice = await loadAirQualitySummary(location);
+    return buildWeatherAdvice({
+      code,
+      maxTemp,
+      minTemp,
+      rainProbability,
+      precipitation,
+      dustAdvice,
+    });
   } catch {
     return null;
   }
+}
+
+interface WeatherAdviceInput {
+  code: number;
+  maxTemp: number;
+  minTemp: number;
+  rainProbability: number;
+  precipitation: number;
+  dustAdvice: string | null;
+}
+
+function buildWeatherAdvice(input: WeatherAdviceInput): string | null {
+  const { code, maxTemp, minTemp, rainProbability, precipitation, dustAdvice } = input;
+  const heavyRain =
+    (Number.isFinite(rainProbability) && rainProbability >= 60) ||
+    (Number.isFinite(precipitation) && precipitation > 1) ||
+    RAIN_WMO_CODES.includes(code);
+  const lightRain =
+    !heavyRain &&
+    ((Number.isFinite(rainProbability) && rainProbability >= 30) ||
+      (Number.isFinite(precipitation) && precipitation > 0));
+  const snowy = SNOW_WMO_CODES.includes(code);
+
+  const advices: string[] = [];
+  if (snowy) {
+    advices.push('눈이 올 수 있어요. 미끄럽지 않게 조심하세요');
+  } else if (heavyRain) {
+    advices.push('비가 올 수 있어요. 우산 꼭 챙기세요');
+  } else if (lightRain) {
+    advices.push('비가 살짝 올 수 있어요. 우산을 챙기면 안심돼요');
+  }
+
+  if (dustAdvice) {
+    advices.push(dustAdvice);
+  }
+
+  if (advices.length === 0) {
+    if (Number.isFinite(maxTemp) && maxTemp >= 30) {
+      advices.push('낮에 무더울 거예요. 시원하게 입고 물도 자주 드세요');
+    } else if (Number.isFinite(maxTemp) && maxTemp >= 25) {
+      advices.push('낮엔 따뜻해요. 가볍게 입고 나가도 좋겠어요');
+    } else if (
+      (Number.isFinite(minTemp) && minTemp <= 0) ||
+      (Number.isFinite(maxTemp) && maxTemp <= 5)
+    ) {
+      advices.push('많이 쌀쌀해요. 따뜻하게 입고 나가세요');
+    } else if (Number.isFinite(maxTemp) && maxTemp <= 12) {
+      advices.push('쌀쌀해요. 겉옷 하나 챙기세요');
+    } else if (Number.isFinite(maxTemp) && maxTemp >= 15 && maxTemp <= 24) {
+      advices.push('날씨가 좋아요. 잠깐 산책 가기에도 딱이에요');
+    }
+  }
+
+  if (advices.length === 0) return null;
+  return advices.slice(0, 2).join(' ');
 }
 
 async function loadAirQualitySummary(location: {
@@ -341,8 +390,7 @@ async function loadAirQualitySummary(location: {
     const pm10Bad = pm10Max != null && pm10Max > 80;
     const pm25Bad = pm25Max != null && pm25Max > 35;
     if (!pm10Bad && !pm25Bad) return null;
-    const dustLevel = pm10Bad || pm25Bad ? '나쁨' : null;
-    return dustLevel ? `미세먼지 ${dustLevel}, 마스크를 챙기면 좋아요` : null;
+    return '미세먼지가 많아요. 외출할 땐 마스크 챙기세요';
   } catch {
     return null;
   }
