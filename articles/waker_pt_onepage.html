@@ -312,29 +312,38 @@ button { font: inherit; }
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 .metric {
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 22px;
+  padding: 20px 18px;
   background: rgba(255, 255, 255, 0.5);
-  min-height: 168px;
+  min-height: 156px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
 }
 .metric strong {
   display: block;
-  font-size: 2.85rem;
-  line-height: 1;
+  font-size: clamp(1.75rem, 2.1vw, 2.25rem);
+  line-height: 1.05;
   font-weight: 950;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  word-break: keep-all;
+  text-wrap: balance;
 }
 .metric span {
   display: block;
-  margin-top: 14px;
-  font-size: 0.94rem;
-  line-height: 1.48;
+  font-size: 0.9rem;
+  line-height: 1.5;
   font-weight: 720;
-  opacity: 0.72;
+  opacity: 0.74;
+  text-wrap: balance;
+  word-break: keep-all;
 }
 
 .table {
@@ -360,6 +369,8 @@ button { font: inherit; }
 .table td {
   line-height: 1.48;
   font-weight: 620;
+  word-break: keep-all;
+  text-wrap: pretty;
 }
 .table td:last-child {
   color: rgba(20, 22, 30, 0.62);
