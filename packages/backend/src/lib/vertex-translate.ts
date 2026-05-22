@@ -442,7 +442,7 @@ function alarmTextPrompt(args: {
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
   const tagInstruction = args.shouldTag
-    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the beginning of the text. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
+    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the very beginning of the text. Pick the tag that best matches the meaning and intended mood of the user text — use [warmly]/[encouraging]/[gentle]/[comforting] for affectionate or soft lines, [calmly]/[softly]/[sleepily] for night or quiet lines, [happily]/[brightly]/[proudly] for cheerful or celebratory lines. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -531,6 +531,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       ? '문장 구조 예시 (wake_weather): "일어나실 시간이에요. 최저 12도, 최고 19도고 강수확률이 70%예요. 우산 챙겨가세요. 오늘도 화이팅!" — 위치/날짜/관계 설명 없이 시작, 필요한 날씨 정보만 말하고 짧게 마무리. 이 패턴을 따르되 내용은 컨텍스트에 맞게 새로 작성.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
+    'Do not include any brackets, delivery tags, [tag] markers, or stage directions in your output. A single delivery tag will be added in a later step.',
     'No markdown, no emojis, no quotes, no explanations, no extra fields.',
     'Keep the final text spoken, kind, and 200 characters or fewer.',
     'Return strict JSON: {"text":"final alarm line"}.',

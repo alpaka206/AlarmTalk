@@ -652,7 +652,7 @@ tts.post('/generate', async (c) => {
       targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
       sourceLanguage,
       translate: shouldTranslate,
-      autoTag: randomRequested,
+      autoTag: true,
     });
     const synthesisText = prepared.text;
     const messageText = requestText;
