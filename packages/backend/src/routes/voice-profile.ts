@@ -14,6 +14,7 @@ const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
+const CLONE_DURATION_TOLERANCE_MS = 5_000;
 const MAX_RELATIONSHIP_LABEL_LENGTH = 30;
 const MAX_LISTENER_TITLE_LENGTH = 30;
 
@@ -47,6 +48,7 @@ async function canUseSharedVoiceProfile(
           FROM voice_profiles vp
           LEFT JOIN users u ON u.google_id = vp.user_id OR u.id = vp.user_id
           WHERE vp.id = ? AND COALESCE(vp.is_shared, 0) = 1
+            AND COALESCE(vp.is_draft, 0) = 0
             AND vp.deleted_at IS NULL
           LIMIT 1`,
     args: [voiceProfileId],
@@ -126,16 +128,11 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids],
   );
-  await tryDel(
-    'dub_jobs',
-    `DELETE FROM dub_jobs WHERE user_id IN (${ph})`,
-    ids,
-  );
-  await tryDel(
-    'notes',
-    `DELETE FROM notes WHERE sender_id IN (${ph}) OR receiver_id IN (${ph})`,
-    [...ids, ...ids],
-  );
+  await tryDel('dub_jobs', `DELETE FROM dub_jobs WHERE user_id IN (${ph})`, ids);
+  await tryDel('notes', `DELETE FROM notes WHERE sender_id IN (${ph}) OR receiver_id IN (${ph})`, [
+    ...ids,
+    ...ids,
+  ]);
   await tryDel(
     'alarms',
     `DELETE FROM alarms WHERE user_id IN (${ph}) OR target_user_id IN (${ph})
@@ -151,11 +148,7 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
      OR voice_profile_id IN (SELECT id FROM voice_profiles WHERE user_id IN (${ph}))`,
     [...ids, ...ids],
   );
-  await tryDel(
-    'voice_profiles',
-    `DELETE FROM voice_profiles WHERE user_id IN (${ph})`,
-    ids,
-  );
+  await tryDel('voice_profiles', `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, ids);
 
   // 3) Per-user satellite tables.
   await tryDel('characters', `DELETE FROM characters WHERE user_id IN (${ph})`, ids);
@@ -179,11 +172,7 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
   await tryDel('voice_uploads', `DELETE FROM voice_uploads WHERE user_id IN (${ph})`, ids);
 
   // 4) Finally the users row(s).
-  await tryDel(
-    'users',
-    `DELETE FROM users WHERE google_id = ? OR id IN (${ph})`,
-    [subId, ...ids],
-  );
+  await tryDel('users', `DELETE FROM users WHERE google_id = ? OR id IN (${ph})`, [subId, ...ids]);
 
   return c.json({
     deleted: counts,
@@ -258,10 +247,9 @@ voiceProfile.get('/family', async (c) => {
           member_google_id?: string | null;
           user_id?: string;
         }>(r);
-        return [
-          row.member_user_id ?? row.user_id,
-          row.member_google_id,
-        ].filter((value): value is string => Boolean(value));
+        return [row.member_user_id ?? row.user_id, row.member_google_id].filter(
+          (value): value is string => Boolean(value),
+        );
       }),
     ),
   );
@@ -302,7 +290,10 @@ voiceProfile.get('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   const ph = ids.map(() => '?').join(',');
@@ -331,7 +322,10 @@ voiceProfile.patch('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   let body: {
@@ -361,15 +355,22 @@ voiceProfile.patch('/:id', async (c) => {
   const hasDraft = isDraftUpdate !== undefined;
   const hasRelationship =
     body.relationship_label !== undefined || body.relationshipLabel !== undefined;
-  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
-  const hasListenerTitle =
-    body.listener_title !== undefined || body.listenerTitle !== undefined;
+  const relationshipLabel = normalizeRelationshipLabel(
+    body.relationship_label ?? body.relationshipLabel,
+  );
+  const hasListenerTitle = body.listener_title !== undefined || body.listenerTitle !== undefined;
   const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
   if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
-    return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
+    return c.json(
+      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      400,
+    );
   }
   if (hasName && (name.length === 0 || name.length > 50)) {
-    return c.json({ error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' }, 400);
+    return c.json(
+      { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      400,
+    );
   }
   if (!validateRelationshipLabel(relationshipLabel)) {
     return c.json(
@@ -468,7 +469,10 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   const userPk = c.get('userIdPK') || (await resolveUserPk(db, userId)) || userId;
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   let body: {
@@ -483,7 +487,9 @@ voiceProfile.patch('/:id/relationship', async (c) => {
     return c.json({ error: 'JSON body required', error_code: 'JSON_BODY_REQUIRED' }, 400);
   }
 
-  const relationshipLabel = normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel);
+  const relationshipLabel = normalizeRelationshipLabel(
+    body.relationship_label ?? body.relationshipLabel,
+  );
   if (relationshipLabel === undefined || !validateRelationshipLabel(relationshipLabel)) {
     return c.json(
       {
@@ -520,7 +526,10 @@ voiceProfile.patch('/:id/relationship', async (c) => {
   } else {
     const canUse = await canUseSharedVoiceProfile(db, userPk, id);
     if (!canUse) {
-      return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+      return c.json(
+        { error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
+        404,
+      );
     }
     await db.execute({
       sql: `INSERT INTO voice_profile_relationships
@@ -570,14 +579,20 @@ voiceProfile.post('/clone', async (c) => {
     const audioFile = getFormFile(formData, 'audio');
     const rawName = formData.get('name');
     const name = typeof rawName === 'string' ? rawName.trim() : '';
-    const isShared = ['true', '1', 'yes'].includes(String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'));
-    const isDraft = ['true', '1', 'yes'].includes(String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'));
-    const relationshipLabel = normalizeRelationshipLabel(
-      formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
-    ) ?? '';
-    const listenerTitle = normalizeListenerTitle(
-      formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
-    ) ?? '';
+    const isShared = ['true', '1', 'yes'].includes(
+      String(formData.get('isShared') ?? formData.get('is_shared') ?? 'false'),
+    );
+    const isDraft = ['true', '1', 'yes'].includes(
+      String(formData.get('isDraft') ?? formData.get('is_draft') ?? 'false'),
+    );
+    const relationshipLabel =
+      normalizeRelationshipLabel(
+        formData.get('relationshipLabel') ?? formData.get('relationship_label') ?? undefined,
+      ) ?? '';
+    const listenerTitle =
+      normalizeListenerTitle(
+        formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
+      ) ?? '';
 
     // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
     if (!isDraft) {
@@ -602,14 +617,28 @@ voiceProfile.post('/clone', async (c) => {
 
     if (!audioFile || !name) {
       // trim 후 공백만 남는 이름도 거부 — 빈 라벨 저장 방지
-      return c.json({ error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' }, 400);
+      return c.json(
+        { error: 'audio file and name are required', error_code: 'AUDIO_AND_NAME_REQUIRED' },
+        400,
+      );
+    }
+
+    const audioMimeType = audioFile.type || 'application/octet-stream';
+    if (!audioMimeType.startsWith('audio/')) {
+      return c.json(
+        { error: 'audio/* MIME type required', error_code: 'INVALID_AUDIO_MIME_TYPE' },
+        415,
+      );
     }
 
     const durationCheck = validateCloneDuration(formData.get('durationMs'));
     if (durationCheck) return c.json(durationCheck.body, durationCheck.status);
 
     if (name.length > 50) {
-      return c.json({ error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' }, 400);
+      return c.json(
+        { error: 'Name must be 50 characters or less', error_code: 'NAME_TOO_LONG' },
+        400,
+      );
     }
     if (!validateRelationshipLabel(relationshipLabel)) {
       return c.json(
@@ -636,13 +665,23 @@ voiceProfile.post('/clone', async (c) => {
     await db.execute({
       sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
             VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
-      args: [profileId, userId, name, isShared ? 1 : 0, isDraft ? 1 : 0, relationshipLabel, listenerTitle],
+      args: [
+        profileId,
+        userId,
+        name,
+        isShared ? 1 : 0,
+        isDraft ? 1 : 0,
+        relationshipLabel,
+        listenerTitle,
+      ],
     });
 
     const attempts = createEnrollmentAttempts({
       env: c.env,
       audioData: audioBuffer,
       name,
+      audioMimeType,
+      audioFileName: audioFile.name || undefined,
     });
     let lastError: unknown = new Error('No voice provider is configured.');
     let provider = '';
@@ -760,7 +799,7 @@ function validateCloneDuration(value: unknown): {
       },
     };
   }
-  if (durationMs > MAX_CLONE_DURATION_MS) {
+  if (durationMs > MAX_CLONE_DURATION_MS + CLONE_DURATION_TOLERANCE_MS) {
     return {
       status: 400,
       body: {
@@ -779,7 +818,10 @@ voiceProfile.get('/:id/stats', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   const ph = ids.map(() => '?').join(',');
@@ -817,7 +859,10 @@ voiceProfile.delete('/:id', async (c) => {
   const id = c.req.param('id');
 
   if (!UUID_RE.test(id)) {
-    return c.json({ error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' }, 400);
+    return c.json(
+      { error: 'Invalid voice profile ID format', error_code: 'INVALID_VOICE_PROFILE_ID' },
+      400,
+    );
   }
 
   const ph = ids.map(() => '?').join(',');

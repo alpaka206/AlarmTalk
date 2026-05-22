@@ -740,7 +740,12 @@ internal fun AlarmEditorScreen(
     // 랜덤 문구는 알람 시각이 프롬프트 컨텍스트로 들어가므로,
     // 시각이 바뀌면 기존 캐시 TTS 를 무효화해 저장 시 재생성하게 한다.
     // 또한 진행 중인 generation 코루틴이 있으면 결과가 stale 한 시각으로 저장되지 않도록 취소한다.
+    var observedInitialTime by remember { mutableStateOf(false) }
     LaunchedEffect(editor.hour, editor.minute) {
+        if (!observedInitialTime) {
+            observedInitialTime = true
+            return@LaunchedEffect
+        }
         if (editor.voiceRandomPrompt && !editor.ttsMessageId.isNullOrBlank()) {
             editor.clearTtsMeta()
             editor.clearAudio()

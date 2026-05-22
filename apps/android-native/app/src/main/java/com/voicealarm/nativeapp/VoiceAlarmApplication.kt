@@ -5,7 +5,6 @@ import android.util.Log
 import com.voicealarm.nativeapp.alarm.NotificationChannels
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.AuthSessionStore
-import com.voicealarm.nativeapp.sync.DynamicVoiceRefreshScheduler
 import com.voicealarm.nativeapp.sync.RemoteAlarmSyncScheduler
 
 class VoiceAlarmApplication : Application() {
@@ -13,10 +12,8 @@ class VoiceAlarmApplication : Application() {
         super.onCreate()
         NotificationChannels.ensure(this)
         RemoteAlarmSyncScheduler.ensurePeriodic(this)
-        DynamicVoiceRefreshScheduler.ensurePeriodic(this)
         if (AuthSessionStore(this).read() != null) {
             RemoteAlarmSyncScheduler.runOnce(this)
-            DynamicVoiceRefreshScheduler.runOnce(this)
         }
         Log.i(TAG, "Voice Alarm native application started")
     }

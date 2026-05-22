@@ -14,7 +14,10 @@ afterEach(() => {
 });
 
 function okJson(data: unknown) {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 function okArrayBuffer() {
@@ -144,6 +147,18 @@ describe('ElevenLabsClient', () => {
       expect(body.get('remove_background_noise')).toBe('true');
     });
 
+    it('clone 업로드에서 mp3 MIME 과 파일명을 보존', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ voice_id: 'v' }));
+      await client.createInstantClone(new ArrayBuffer(10), 'n', {
+        mimeType: 'audio/mpeg',
+        fileName: 'voice.mp3',
+      });
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      const file = body.get('files') as Blob & { name?: string };
+      expect(file.type).toBe('audio/mpeg');
+      expect(file.name).toBe('voice.mp3');
+    });
+
     it('API 에러 시 예외', async () => {
       mockFetch.mockResolvedValueOnce(errorResponse(400, 'Bad audio'));
 
@@ -176,6 +191,20 @@ describe('ElevenLabsClient', () => {
       expect(result.speakers).toHaveLength(2);
       expect(result.speakers[0].speaker_id).toBe('speaker_1');
       expect(result.speakers[0].segments).toEqual([{ start: 0, end: 0.8 }]);
+    });
+
+    it('diarize 업로드에서 mp3 MIME 과 파일명을 보존', async () => {
+      mockFetch.mockResolvedValueOnce(okJson({ words: [] }));
+
+      await client.diarize(new ArrayBuffer(500), {
+        mimeType: 'audio/mpeg',
+        fileName: 'recording.mp3',
+      });
+
+      const body = mockFetch.mock.calls[0][1].body as FormData;
+      const file = body.get('file') as Blob & { name?: string };
+      expect(file.type).toBe('audio/mpeg');
+      expect(file.name).toBe('recording.mp3');
     });
 
     it('API 에러 시 예외', async () => {

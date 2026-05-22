@@ -34,11 +34,13 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -731,33 +733,41 @@ private fun WeatherLocationDialog(
     var locationStatus by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { results ->
-        val granted = results.values.any { it }
-        if (!granted) {
-            locationStatus = "위치 권한이 거부됐어요. 직접 입력해 주세요."
-            return@rememberLauncherForActivityResult
-        }
+
+    fun startLocationLookup() {
+        if (locationBusy) return
         scope.launch {
             locationBusy = true
             locationStatus = "현재 위치를 가져오는 중..."
             val fix = withContext(Dispatchers.IO) {
-                com.voicealarm.nativeapp.location.WeatherLocationProvider.resolve(context)
+                runCatching {
+                    com.voicealarm.nativeapp.location.WeatherLocationProvider.resolve(context)
+                }.getOrNull()
             }
             if (fix == null) {
-                locationStatus = "위치를 가져오지 못했어요. 직접 입력해 주세요."
+                locationStatus = "위치를 가져오지 못했어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
             } else {
                 draftCountry = fix.country.ifBlank { draftCountry }
                 draftCity = fix.city.ifBlank { draftCity }
                 locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
-                    "위치를 가져왔지만 주소 정보를 못 찾았어요. 직접 입력해 주세요."
+                    "위치를 가져왔지만 주소 정보를 못 찾았어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
                 } else {
                     "현재 위치로 채웠어요"
                 }
             }
             locationBusy = false
         }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { results ->
+        val granted = results.values.any { it }
+        if (!granted) {
+            locationStatus = "위치 권한이 거부됐어요. 권한과 GPS/위치 서비스를 확인하거나 직접 입력해 주세요."
+            return@rememberLauncherForActivityResult
+        }
+        startLocationLookup()
     }
     val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
@@ -788,7 +798,7 @@ private fun WeatherLocationDialog(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "현재 위치로 자동 입력하거나 직접 입력해 주세요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+                        text = "현재 위치로 자동 입력하거나 직접 입력해 주세요. 위치를 못 찾으면 GPS/위치 서비스가 켜져 있는지 확인해 주세요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -796,25 +806,7 @@ private fun WeatherLocationDialog(
                 OutlinedButton(
                     onClick = {
                         if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
-                            scope.launch {
-                                locationBusy = true
-                                locationStatus = "현재 위치를 가져오는 중..."
-                                val fix = withContext(Dispatchers.IO) {
-                                    com.voicealarm.nativeapp.location.WeatherLocationProvider.resolve(context)
-                                }
-                                if (fix == null) {
-                                    locationStatus = "위치를 가져오지 못했어요. 직접 입력해 주세요."
-                                } else {
-                                    draftCountry = fix.country.ifBlank { draftCountry }
-                                    draftCity = fix.city.ifBlank { draftCity }
-                                    locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
-                                        "위치를 가져왔지만 주소 정보를 못 찾았어요. 직접 입력해 주세요."
-                                    } else {
-                                        "현재 위치로 채웠어요"
-                                    }
-                                }
-                                locationBusy = false
-                            }
+                            startLocationLookup()
                         } else {
                             locationPermissionLauncher.launch(
                                 arrayOf(
@@ -828,7 +820,28 @@ private fun WeatherLocationDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = VocaWakeButtonShape,
                 ) {
-                    Text(if (locationBusy) "위치 가져오는 중..." else "📍 현재 위치 사용")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (locationBusy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("위치 가져오는 중")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.MyLocation,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("현재 위치 사용")
+                        }
+                    }
                 }
                 locationStatus?.let {
                     Text(

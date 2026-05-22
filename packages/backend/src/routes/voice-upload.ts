@@ -18,6 +18,7 @@ const voiceUpload = new Hono<AppEnv>();
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MiB for up to 2 minutes of voice audio.
 const MIN_UPLOAD_DURATION_MS = 60_000;
 const MAX_UPLOAD_DURATION_MS = 120_000;
+const UPLOAD_DURATION_TOLERANCE_MS = 5_000;
 const MAX_SPEAKERS = 3;
 
 async function hasPaidVoiceAccess(c: Context<AppEnv>): Promise<boolean> {
@@ -50,57 +51,56 @@ voiceUpload.post('/upload', async (c) => {
   let formData: FormData;
   try {
     formData = await c.req.formData();
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] formData parse failed', err);
-    return c.json({ error: 'multipart/form-data body required', error_code: 'MULTIPART_BODY_REQUIRED' }, 400);
+  } catch {
+    return c.json(
+      { error: 'multipart/form-data body required', error_code: 'MULTIPART_BODY_REQUIRED' },
+      400,
+    );
   }
 
   const audioFile = getFormFile(formData, 'audio');
-  // eslint-disable-next-line no-console
-  console.log('[voice/upload] keys', Array.from(formData.keys()).join(','), 'audio?', !!audioFile, 'type=', (audioFile as File | null)?.type, 'name=', (audioFile as File | null)?.name, 'size=', (audioFile as File | null)?.size, 'durationMs=', formData.get('durationMs'));
 
   if (!audioFile || typeof audioFile === 'string') {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] AUDIO_FILE_REQUIRED');
     return c.json({ error: 'audio file is required', error_code: 'AUDIO_FILE_REQUIRED' }, 400);
   }
 
   const mimeType = audioFile.type || 'application/octet-stream';
   if (!mimeType.startsWith('audio/')) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] INVALID_AUDIO_MIME_TYPE', mimeType);
-    return c.json({ error: 'audio/* MIME type required', error_code: 'INVALID_AUDIO_MIME_TYPE' }, 415);
+    return c.json(
+      { error: 'audio/* MIME type required', error_code: 'INVALID_AUDIO_MIME_TYPE' },
+      415,
+    );
   }
 
   const buffer = await audioFile.arrayBuffer();
   if (buffer.byteLength === 0) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] AUDIO_FILE_EMPTY');
     return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
   }
   if (buffer.byteLength > MAX_UPLOAD_BYTES) {
     return c.json(
-      { error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${buffer.byteLength})`, error_code: 'AUDIO_FILE_TOO_LARGE' },
+      {
+        error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${buffer.byteLength})`,
+        error_code: 'AUDIO_FILE_TOO_LARGE',
+      },
       413,
     );
   }
 
   const durationRaw = formData.get('durationMs');
   if (typeof durationRaw !== 'string' || durationRaw.length === 0) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] INVALID_DURATION raw=', durationRaw);
-    return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
+    return c.json(
+      { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
+      400,
+    );
   }
   const durationMs = Number.parseInt(durationRaw, 10);
   if (!Number.isFinite(durationMs) || durationMs <= 0) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] INVALID_DURATION parsed=', durationMs);
-    return c.json({ error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' }, 400);
+    return c.json(
+      { error: 'durationMs must be a positive integer', error_code: 'INVALID_DURATION' },
+      400,
+    );
   }
   if (durationMs < MIN_UPLOAD_DURATION_MS) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] AUDIO_DURATION_TOO_SHORT', durationMs);
     return c.json(
       {
         error: `audio file must be at least ${MIN_UPLOAD_DURATION_MS / 1000} seconds`,
@@ -109,9 +109,7 @@ voiceUpload.post('/upload', async (c) => {
       400,
     );
   }
-  if (durationMs > MAX_UPLOAD_DURATION_MS) {
-    // eslint-disable-next-line no-console
-    console.error('[voice/upload] AUDIO_DURATION_TOO_LONG', durationMs);
+  if (durationMs > MAX_UPLOAD_DURATION_MS + UPLOAD_DURATION_TOLERANCE_MS) {
     return c.json(
       {
         error: `audio file exceeds ${MAX_UPLOAD_DURATION_MS / 1000} seconds`,
@@ -211,7 +209,10 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
   };
   try {
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-    const diarized = await client.diarize(toArrayBuffer(stored.bytes));
+    const diarized = await client.diarize(toArrayBuffer(stored.bytes), {
+      mimeType: stored.meta.mimeType,
+      fileName: stored.meta.originalName ?? upload.object_key,
+    });
     result = {
       provider: 'elevenlabs',
       speakers: diarized.speakers
@@ -302,7 +303,10 @@ voiceUpload.patch('/uploads/:uploadId/speakers/:speakerId', async (c) => {
   }
   const label = typeof body.label === 'string' ? body.label.trim() : '';
   if (label.length === 0 || label.length > 50) {
-    return c.json({ error: 'label must be 1-50 characters', error_code: 'INVALID_LABEL_LENGTH' }, 400);
+    return c.json(
+      { error: 'label must be 1-50 characters', error_code: 'INVALID_LABEL_LENGTH' },
+      400,
+    );
   }
 
   const uploadRes = await db.execute({
@@ -348,7 +352,10 @@ voiceUpload.post('/diarize', async (c) => {
 
   try {
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
-    const result = await client.diarize(audioBuffer);
+    const result = await client.diarize(audioBuffer, {
+      mimeType: audioFile.type,
+      fileName: audioFile.name,
+    });
 
     return c.json({
       speakers: result.speakers.map((s, i) => ({
@@ -370,9 +377,11 @@ voiceUpload.post('/diarize', async (c) => {
   }
 });
 
-function toSpeakerSpan(speaker: {
-  segments: Array<{ start: number; end: number }>;
-}): { startMs: number; endMs: number; confidence: number } {
+function toSpeakerSpan(speaker: { segments: Array<{ start: number; end: number }> }): {
+  startMs: number;
+  endMs: number;
+  confidence: number;
+} {
   const segments = speaker.segments.filter((segment) => segment.end > segment.start);
   if (segments.length === 0) return { startMs: 0, endMs: 0, confidence: 0 };
   return {

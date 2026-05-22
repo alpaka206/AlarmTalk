@@ -1,6 +1,7 @@
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
 const DIARIZATION_MERGE_GAP_SECONDS = 0.35;
+const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
 
 type TranscriptWord = {
   start?: number;
@@ -22,6 +23,11 @@ type DiarizedSpeaker = {
     start: number;
     end: number;
   }>;
+};
+
+type AudioUploadOptions = {
+  mimeType?: string | null;
+  fileName?: string | null;
 };
 
 export class ElevenLabsClient {
@@ -49,10 +55,15 @@ export class ElevenLabsClient {
   async createInstantClone(
     audioData: ArrayBuffer,
     name: string,
-    options?: { removeBackgroundNoise?: boolean },
+    options?: AudioUploadOptions & { removeBackgroundNoise?: boolean },
   ): Promise<{ voice_id: string }> {
     const formData = new FormData();
-    formData.append('files', new Blob([audioData], { type: 'audio/wav' }), 'sample.wav');
+    const mimeType = normalizeAudioMimeType(options?.mimeType);
+    formData.append(
+      'files',
+      new Blob([audioData], { type: mimeType }),
+      normalizeAudioFileName(options?.fileName, 'sample', mimeType),
+    );
     formData.append('name', name);
     if (options?.removeBackgroundNoise) {
       formData.append('remove_background_noise', 'true');
@@ -123,11 +134,19 @@ export class ElevenLabsClient {
   }
 
   /** Speaker Diarization - 화자 분리 */
-  async diarize(audioData: ArrayBuffer): Promise<{
+  async diarize(
+    audioData: ArrayBuffer,
+    options?: AudioUploadOptions,
+  ): Promise<{
     speakers: DiarizedSpeaker[];
   }> {
     const formData = new FormData();
-    formData.append('file', new Blob([audioData], { type: 'audio/wav' }), 'recording.wav');
+    const mimeType = normalizeAudioMimeType(options?.mimeType);
+    formData.append(
+      'file',
+      new Blob([audioData], { type: mimeType }),
+      normalizeAudioFileName(options?.fileName, 'recording', mimeType),
+    );
     formData.append('model_id', 'scribe_v2');
     formData.append('diarize', 'true');
     formData.append('timestamps_granularity', 'word');
@@ -162,10 +181,35 @@ export class ElevenLabsClient {
   }
 }
 
+function normalizeAudioMimeType(mimeType: string | null | undefined): string {
+  const normalized = mimeType?.split(';')[0]?.trim().toLowerCase();
+  return normalized?.startsWith('audio/') ? normalized : DEFAULT_AUDIO_MIME_TYPE;
+}
+
+function normalizeAudioFileName(
+  fileName: string | null | undefined,
+  fallbackBaseName: string,
+  mimeType: string,
+): string {
+  const normalized = fileName?.trim().replace(/[\\/]/g, '_');
+  if (normalized) return normalized.slice(0, 200);
+  return `${fallbackBaseName}.${extensionForAudioMimeType(mimeType)}`;
+}
+
+function extensionForAudioMimeType(mimeType: string): string {
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) return 'mp3';
+  if (mimeType.includes('mp4') || mimeType.includes('aac') || mimeType.includes('m4a'))
+    return 'm4a';
+  if (mimeType.includes('ogg')) return 'ogg';
+  if (mimeType.includes('webm')) return 'webm';
+  if (mimeType.includes('flac')) return 'flac';
+  return 'wav';
+}
+
 function diarizedSpeakersFromTranscript(transcript: SpeechToTextResponse): DiarizedSpeaker[] {
   const words = [
     ...(transcript.words ?? []),
-    ...((transcript.transcripts ?? []).flatMap((item) => item.words ?? [])),
+    ...(transcript.transcripts ?? []).flatMap((item) => item.words ?? []),
   ];
   const bySpeaker = new Map<string, Array<{ start: number; end: number }>>();
 

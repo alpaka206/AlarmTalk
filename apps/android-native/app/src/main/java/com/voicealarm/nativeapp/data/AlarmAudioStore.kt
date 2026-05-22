@@ -19,7 +19,6 @@ import java.util.Locale
 import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlin.math.abs
 
 object AlarmAudioLimits {
@@ -30,6 +29,7 @@ object VoiceProfileAudioLimits {
     const val MIN_DURATION_MILLIS = 60_000L
     const val RECOMMENDED_DURATION_MILLIS = 90_000L
     const val MAX_DURATION_MILLIS = 120_000L
+    const val MAX_DURATION_TOLERANCE_MILLIS = 5_000L
 }
 
 data class CachedAlarmAudio(
@@ -94,24 +94,25 @@ class AlarmAudioStore(
         )
         // 동일 cacheKey 로 동시에 trim/copy 가 두 번 일어나면 중복 파일 쓰기와 망가진 캐시가 생긴다.
         // cacheKey 별 lock 으로 첫 번째 호출이 끝날 때까지 두 번째 호출이 기다리도록 한다.
-        return cacheKeyLock(cacheKey).withLock {
-            try {
-                cacheFromUriLocked(
-                    sourceUri = sourceUri,
-                    maxDurationMillis = maxDurationMillis,
-                    durationMillis = durationMillis,
-                    displayName = displayName,
-                    extension = extension,
-                    sourceMimeType = sourceMimeType,
-                    trackMimeType = trackMimeType,
-                    forceExtractAudio = forceExtractAudio,
-                    trimAsMp3 = trimAsMp3,
-                    resolvedStartMillis = resolvedStartMillis,
-                    cacheKey = cacheKey,
-                )
-            } finally {
-                releaseCacheKeyLockIfUnused(cacheKey)
-            }
+        val lock = cacheKeyLock(cacheKey)
+        lock.lock()
+        return try {
+            cacheFromUriLocked(
+                sourceUri = sourceUri,
+                maxDurationMillis = maxDurationMillis,
+                durationMillis = durationMillis,
+                displayName = displayName,
+                extension = extension,
+                sourceMimeType = sourceMimeType,
+                trackMimeType = trackMimeType,
+                forceExtractAudio = forceExtractAudio,
+                trimAsMp3 = trimAsMp3,
+                resolvedStartMillis = resolvedStartMillis,
+                cacheKey = cacheKey,
+            )
+        } finally {
+            lock.unlock()
+            releaseCacheKeyLockIfUnused(cacheKey, lock)
         }
     }
 
@@ -146,18 +147,32 @@ class AlarmAudioStore(
                 runCatching { metadataFile(cacheKey).delete() }
             } else {
                 val metadata = readMetadata(cacheKey)
-                val cachedDurationMillis = normalizeDurationWithinLimit(
-                    durationMillis = rawDuration,
-                    maxDurationMillis = maxDurationMillis,
-                )
-                return CachedAlarmAudio(
-                    localAudioUri = cachedUri.toString(),
-                    rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
-                    displayName = cached.name,
-                    durationMillis = cachedDurationMillis,
-                    cacheKey = cacheKey,
-                    messageId = metadata.messageId,
-                )
+                val cachedDurationMillis: Long? = runCatching {
+                    normalizeDurationWithinLimit(
+                        durationMillis = rawDuration,
+                        maxDurationMillis = maxDurationMillis,
+                        toleranceMillis = toleranceForLimit(maxDurationMillis),
+                    )
+                }.getOrElse { error ->
+                    Log.w(
+                        TAG,
+                        "Discarding over-limit voice audio cache path=${cached.absolutePath} duration=$rawDuration max=$maxDurationMillis",
+                        error,
+                    )
+                    runCatching { cached.delete() }
+                    runCatching { metadataFile(cacheKey).delete() }
+                    null
+                }
+                if (cachedDurationMillis != null) {
+                    return CachedAlarmAudio(
+                        localAudioUri = cachedUri.toString(),
+                        rawAudioUri = metadata.rawAudioUri ?: sourceUri.toString(),
+                        displayName = cached.name,
+                        durationMillis = cachedDurationMillis,
+                        cacheKey = cacheKey,
+                        messageId = metadata.messageId,
+                    )
+                }
             }
         }
         val needsTrim = forceExtractAudio || resolvedStartMillis > 0 || durationMillis > maxDurationMillis
@@ -177,26 +192,26 @@ class AlarmAudioStore(
                     forceMp3 = trimAsMp3,
                 )
             }.onFailure { error ->
-                Log.w(TAG, "trimToMaxDuration threw, will try direct copy as fallback", error)
+                Log.e(TAG, "trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
-            }
-            // trim 이 성공했어도 결과가 빈 파일이면 직접 복사로 폴백.
+                throw IllegalArgumentException(
+                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                    error,
+                )
+            }.getOrThrow()
+            // trim 이 실패한 상태에서 원본을 올리면 2분 제한을 다시 넘기므로, 빈 결과는 명확한 실패로 처리한다.
             val trimDuration = if (trimTarget.exists()) readDurationMillis(trimTarget.toUri()) else null
             if (trimTarget.exists() && trimTarget.length() >= 4 * 1024 && trimDuration != null && trimDuration > 0L) {
                 trimTarget
             } else {
-                Log.w(
+                Log.e(
                     TAG,
-                    "trim output empty (size=${trimTarget.length()} duration=$trimDuration), falling back to direct copy",
+                    "trim output empty path=${trimTarget.absolutePath} size=${trimTarget.length()} duration=$trimDuration",
                 )
                 runCatching { trimTarget.delete() }
-                // 원본을 그대로 캐시 디렉토리에 복사. duration 이 maxDuration 보다 길면 이후 단계에서 거부됨.
-                File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
-                    context.contentResolver.openInputStream(sourceUri).use { input ->
-                        requireNotNull(input) { "선택한 오디오 파일을 열 수 없어요." }
-                        file.outputStream().use { output -> input.copyTo(output) }
-                    }
-                }
+                throw IllegalArgumentException(
+                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
@@ -222,7 +237,11 @@ class AlarmAudioStore(
             throw IllegalArgumentException("선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.")
         }
         val cachedDurationMillis = trimmedDuration
-        val normalizedDurationMillis = normalizeDurationWithinLimit(cachedDurationMillis, maxDurationMillis)
+        val normalizedDurationMillis = normalizeDurationWithinLimit(
+            durationMillis = cachedDurationMillis,
+            maxDurationMillis = maxDurationMillis,
+            toleranceMillis = toleranceForLimit(maxDurationMillis),
+        )
 
         Log.i(TAG, "Cached local voice audio path=${target.absolutePath} durationMillis=$normalizedDurationMillis")
         return CachedAlarmAudio(
@@ -433,20 +452,29 @@ class AlarmAudioStore(
     private fun normalizeDurationWithinLimit(
         durationMillis: Long?,
         maxDurationMillis: Long,
+        toleranceMillis: Long = DURATION_METADATA_TOLERANCE_MILLIS,
     ): Long? {
-        requireWithinLimit(durationMillis, maxDurationMillis)
+        requireWithinLimit(durationMillis, maxDurationMillis, toleranceMillis)
         return durationMillis?.coerceAtMost(maxDurationMillis)
     }
 
     private fun requireWithinLimit(
         durationMillis: Long?,
         maxDurationMillis: Long = AlarmAudioLimits.MAX_DURATION_MILLIS,
+        toleranceMillis: Long = DURATION_METADATA_TOLERANCE_MILLIS,
     ) {
-        val toleratedLimit = maxDurationMillis + DURATION_METADATA_TOLERANCE_MILLIS
+        val toleratedLimit = maxDurationMillis + toleranceMillis
         require(durationMillis == null || durationMillis <= toleratedLimit) {
             "Voice audio must be ${maxDurationMillis / 1000} seconds or shorter."
         }
     }
+
+    private fun toleranceForLimit(maxDurationMillis: Long): Long =
+        if (maxDurationMillis >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
+            VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS
+        } else {
+            DURATION_METADATA_TOLERANCE_MILLIS
+        }
 
     private fun trimToMaxDuration(
         sourceUri: Uri,
@@ -480,11 +508,10 @@ class AlarmAudioStore(
                 val buffer = ByteBuffer.allocate(maxInputSize)
                 val bufferInfo = MediaCodec.BufferInfo()
                 muxer.start()
-                val startUs = startMillis * 1_000
-                val endUs = startUs + maxDurationMillis * 1_000
-                if (startUs > 0) {
-                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                }
+                val requestedStartUs = startMillis * 1_000
+                extractor.seekTo(requestedStartUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                val trimStartUs = extractor.sampleTime.takeIf { it >= 0L } ?: requestedStartUs
+                val endUs = trimStartUs + maxDurationMillis * 1_000
 
                 while (true) {
                     val sampleTimeUs = extractor.sampleTime
@@ -495,7 +522,7 @@ class AlarmAudioStore(
                     bufferInfo.set(
                         0,
                         sampleSize,
-                        (sampleTimeUs - startUs).coerceAtLeast(0L),
+                        (sampleTimeUs - trimStartUs).coerceAtLeast(0L),
                         codecBufferFlags(extractor.sampleFlags),
                     )
                     muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
@@ -536,11 +563,10 @@ class AlarmAudioStore(
                     256 * 1024
                 }.coerceAtLeast(64 * 1024)
                 val buffer = ByteBuffer.allocate(maxInputSize)
-                val startUs = startMillis * 1_000
-                val endUs = startUs + maxDurationMillis * 1_000
-                if (startUs > 0) {
-                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                }
+                val requestedStartUs = startMillis * 1_000
+                extractor.seekTo(requestedStartUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                val trimStartUs = extractor.sampleTime.takeIf { it >= 0L } ?: requestedStartUs
+                val endUs = trimStartUs + maxDurationMillis * 1_000
 
                 target.outputStream().use { output ->
                     while (true) {
@@ -575,6 +601,10 @@ class AlarmAudioStore(
         val safeSampleRate = sampleRate.coerceAtLeast(1)
         val safeChannelCount = channelCount.coerceAtLeast(1)
         val bytesPerFrame = safeChannelCount * 2
+        val totalFrames = safeSampleRate * durationMillis / 1_000L
+        val sampleStrideFrames = (totalFrames / (sums.size * WAVEFORM_TARGET_SAMPLES_PER_BIN))
+            .coerceAtLeast(1L)
+            .coerceAtMost(WAVEFORM_MAX_SAMPLE_STRIDE_FRAMES)
         var frameIndex = 0L
         while (buffer.remaining() >= bytesPerFrame) {
             var frameLevel = 0.0
@@ -590,7 +620,13 @@ class AlarmAudioStore(
                 .coerceIn(0, sums.lastIndex)
             sums[bin] += frameLevel / safeChannelCount
             counts[bin] += 1
-            frameIndex += 1
+
+            val skipFrames = (sampleStrideFrames - 1L)
+                .coerceAtMost(buffer.remaining() / bytesPerFrame.toLong())
+            if (skipFrames > 0L) {
+                buffer.position(buffer.position() + (skipFrames * bytesPerFrame).toInt())
+            }
+            frameIndex += skipFrames + 1L
         }
     }
 
@@ -697,6 +733,8 @@ class AlarmAudioStore(
         private const val DECODE_TIMEOUT_US = 10_000L
         private const val MAX_IDLE_OUTPUT_DEQUEUE_COUNT = 20
         private const val PCM_16BIT_MAX_LEVEL = 32768.0
+        private const val WAVEFORM_TARGET_SAMPLES_PER_BIN = 180L
+        private const val WAVEFORM_MAX_SAMPLE_STRIDE_FRAMES = 2_048L
 
         // cacheKey 별 in-flight 작업 중복 방지용 lock.
         // 프로세스 전역으로 공유하지 않으면 같은 입력에 대해 두 번 호출 시 두 번째가 첫 번째와
@@ -706,13 +744,18 @@ class AlarmAudioStore(
         private fun cacheKeyLock(cacheKey: String): ReentrantLock =
             cacheKeyLocks.computeIfAbsent(cacheKey) { ReentrantLock() }
 
-        private fun releaseCacheKeyLockIfUnused(cacheKey: String) {
-            val lock = cacheKeyLocks[cacheKey] ?: return
+        private fun releaseCacheKeyLockIfUnused(cacheKey: String, lock: ReentrantLock) {
             // hold 중인 호출은 위 withLock 안에서 unlock 된 직후이며,
             // 다른 호출이 lock 을 잡고 있다면 isLocked 가 true 이므로 그대로 둔다.
-            if (!lock.isLocked) {
+            if (lock.tryLock()) {
+                try {
+                    if (!lock.hasQueuedThreads()) {
                 // 동일 키로 새 호출이 막 들어왔을 가능성을 고려, atomic remove 만 시도.
-                cacheKeyLocks.remove(cacheKey, lock)
+                        cacheKeyLocks.remove(cacheKey, lock)
+                    }
+                } finally {
+                    lock.unlock()
+                }
             }
         }
 

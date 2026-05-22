@@ -45,13 +45,17 @@ function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
-async function storeTestVoiceObject(userId = 'user-1'): Promise<string> {
+async function storeTestVoiceObject(
+  userId = 'user-1',
+  mimeType = 'audio/wav',
+  originalName = 'sample.wav',
+): Promise<string> {
   const meta = await getSharedInMemoryVoiceStorage().store({
     userId,
     bytes: new Uint8Array([1, 2, 3, 4]),
-    mimeType: 'audio/wav',
+    mimeType,
     durationMs: 90_000,
-    originalName: 'sample.wav',
+    originalName,
   });
   return meta.objectKey;
 }
@@ -88,6 +92,29 @@ beforeEach(() => {
   mockDB.reset();
   resetSharedInMemoryVoiceStorage();
   mockDiarize.mockReset();
+});
+
+it('저장된 mp3 MIME 과 파일명을 ElevenLabs diarize 로 전달', async () => {
+  const objectKey = await storeTestVoiceObject('user-1', 'audio/mpeg', 'voice.mp3');
+  mockDiarize.mockResolvedValueOnce(diarizationResult());
+  mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
+  mockDB.pushResult([], 0);
+  mockDB.pushResult([], 1);
+  mockDB.pushResult([], 1);
+  mockDB.pushResult([], 1);
+
+  const res = await req(
+    buildApp(),
+    new Request(`http://localhost/vu/uploads/${UPLOAD_ID}/separate`, { method: 'POST' }),
+  );
+
+  expect(res.status).toBe(201);
+  expect(mockDiarize).toHaveBeenCalledOnce();
+  const [, optionsArg] = mockDiarize.mock.calls[0]! as [
+    ArrayBuffer,
+    { mimeType?: string; fileName?: string },
+  ];
+  expect(optionsArg).toEqual({ mimeType: 'audio/mpeg', fileName: 'voice.mp3' });
 });
 
 /* ------------------------------------------------------------------ */
@@ -142,10 +169,7 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
 
   it('25 MiB 초과 → 413', async () => {
     const big = new Uint8Array(25 * 1024 * 1024 + 1);
-    const res = await req(
-      buildApp(),
-      uploadForm({ audio: { bytes: big, type: 'audio/wav' } }),
-    );
+    const res = await req(buildApp(), uploadForm({ audio: { bytes: big, type: 'audio/wav' } }));
     expect(res.status).toBe(413);
     expect((await res.json()).error_code).toBe('AUDIO_FILE_TOO_LARGE');
   });
@@ -219,6 +243,30 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('AUDIO_DURATION_TOO_SHORT');
+  });
+
+  it('2분에서 5초 이내 durationMs 오차는 허용', async () => {
+    mockDB.pushResult([], 1);
+    const res = await req(
+      buildApp(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2]), type: 'audio/wav' },
+        fields: { durationMs: '125000' },
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('2분 5초를 넘는 durationMs 는 400', async () => {
+    const res = await req(
+      buildApp(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2]), type: 'audio/wav' },
+        fields: { durationMs: '125001' },
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUDIO_DURATION_TOO_LONG');
   });
 
   it('originalName 200자 초과 시 잘림', async () => {
@@ -371,8 +419,24 @@ describe('GET /uploads/:id/speakers — 화자 목록 (voice-upload)', () => {
   it('자기 업로드의 화자 목록 반환 (start_ms 정렬)', async () => {
     mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1' }]);
     mockDB.pushResult([
-      { id: 's1', upload_id: UPLOAD_ID, label: '화자 1', start_ms: 0, end_ms: 5000, confidence: 0.9, created_at: '2026-01-01' },
-      { id: 's2', upload_id: UPLOAD_ID, label: '화자 2', start_ms: 5000, end_ms: 10000, confidence: 0.85, created_at: '2026-01-01' },
+      {
+        id: 's1',
+        upload_id: UPLOAD_ID,
+        label: '화자 1',
+        start_ms: 0,
+        end_ms: 5000,
+        confidence: 0.9,
+        created_at: '2026-01-01',
+      },
+      {
+        id: 's2',
+        upload_id: UPLOAD_ID,
+        label: '화자 2',
+        start_ms: 5000,
+        end_ms: 10000,
+        confidence: 0.85,
+        created_at: '2026-01-01',
+      },
     ]);
     const res = await req(
       buildApp(),
@@ -536,7 +600,13 @@ describe('POST /diarize — ElevenLabs 화자 분리 (voice-upload)', () => {
   it('성공 시 화자 목록 + 자동 라벨 + duration 계산', async () => {
     mockDiarize.mockResolvedValue({
       speakers: [
-        { speaker_id: 'spk-1', segments: [{ start: 0, end: 5.2 }, { start: 8.0, end: 10.0 }] },
+        {
+          speaker_id: 'spk-1',
+          segments: [
+            { start: 0, end: 5.2 },
+            { start: 8.0, end: 10.0 },
+          ],
+        },
         { speaker_id: 'spk-2', segments: [{ start: 5.5, end: 7.5 }] },
       ],
     });
