@@ -168,6 +168,7 @@ internal fun AlarmListScreen(
                         voiceProfileBusy = voiceProfileBusy,
                         subscriptionResponse = subscriptionResponse,
                         familyGroup = familyGroup,
+                        authSession = authSession,
                         onCreateVoiceProfile = onCreateVoiceProfile,
                         onCreateVoiceProfiles = onCreateVoiceProfiles,
                         onSeparateVoiceSpeakers = onSeparateVoiceSpeakers,

@@ -187,6 +187,26 @@ internal fun hasCoupleOrFamilyAccess(
         plan?.planType == "couple"
 }
 
+// 음성 공유 토글을 노출할지 판단한다. 개인 플랜이고 가족·커플 그룹에 본인 외 멤버가
+// 0명이면 공유 대상이 없으므로 토글을 숨긴다. family/couple 플랜이거나 그룹에
+// 다른 멤버가 1명이라도 있으면 노출한다.
+internal fun canShareVoiceWithOthers(
+    subscriptionResponse: BillingSubscriptionResponse?,
+    familyGroup: FamilyGroupCurrentResponse?,
+    authSession: AuthSession?,
+): Boolean {
+    val plan = subscriptionResponse?.plan
+    val isFamilyOrCouplePlan = plan?.key == "family" || plan?.key == "couple" ||
+        plan?.planType == "family" || plan?.planType == "couple"
+    if (isFamilyOrCouplePlan) return true
+    val currentUserId = authSession?.user?.id
+    val currentEmail = authSession?.user?.email
+    val membersExceptSelf = familyGroup?.members.orEmpty().count { member ->
+        member.userId != currentUserId && member.email != currentEmail
+    }
+    return membersExceptSelf > 0
+}
+
 internal fun hasPaidVoiceAccess(subscriptionResponse: BillingSubscriptionResponse?): Boolean {
     val subscription = subscriptionResponse?.subscription ?: return false
     if (subscription.status != "active") return false
