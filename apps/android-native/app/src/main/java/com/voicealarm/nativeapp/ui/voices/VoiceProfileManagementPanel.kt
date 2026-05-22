@@ -73,6 +73,7 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
 import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
 import com.voicealarm.nativeapp.network.apiErrorCode
+import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -143,6 +144,7 @@ internal fun VoiceProfileManagementPanel(
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
+    authSession: AuthSession?,
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
@@ -202,7 +204,7 @@ internal fun VoiceProfileManagementPanel(
     var filePreviewPlaying by remember { mutableStateOf(false) }
     val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
-    val canShareVoice = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
 
     fun stopMediaPreview() {
@@ -447,7 +449,7 @@ internal fun VoiceProfileManagementPanel(
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profile.id,
-                    text = "제 목소리를 선택하시는건가요?",
+                    text = "[gentle] 이 목소리로 깨워드릴까요?",
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -896,74 +898,6 @@ internal fun VoiceProfileManagementPanel(
                             .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        OutlinedTextField(
-                            value = profileName,
-                            onValueChange = { profileName = it.take(50) },
-                            label = { Text("알람 음성 이름 (필수)") },
-                            placeholder = { Text("예: 지우 목소리") },
-                            singleLine = true,
-                            isError = nameRequiredError,
-                            supportingText = {
-                                if (nameRequiredError) Text("필수 입력 값입니다.")
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = profileRelationship,
-                            onValueChange = { profileRelationship = it.take(30) },
-                            label = { Text("나와의 관계 (필수)") },
-                            placeholder = { Text("예: 손녀, 엄마, 연인") },
-                            singleLine = true,
-                            isError = relationshipRequiredError,
-                            supportingText = {
-                                if (relationshipRequiredError) Text("필수 입력 값입니다.")
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = profileListenerTitle,
-                            onValueChange = { profileListenerTitle = it.take(30) },
-                            label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
-                            placeholder = { Text("예: 민지야, 여보, 우리 손주") },
-                            singleLine = true,
-                            isError = listenerRequiredError,
-                            supportingText = {
-                                if (listenerRequiredError) {
-                                    Text("필수 입력 값입니다.")
-                                } else {
-                                    Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
-                                }
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        if (canShareVoice) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("알람 음성 공유", fontWeight = FontWeight.SemiBold)
-                                        MutedText(if (shareVoice) "상대가 선택할 수 있어요" else "나만 사용")
-                                    }
-                                    VoiceAlarmSwitch(
-                                        checked = shareVoice,
-                                        onCheckedChange = { shareVoice = it },
-                                    )
-                                }
-                            }
-                        }
                         VoiceCaptureModeSelector(
                             selected = inputMode,
                             enabled = !isRecording && !createPreparing,
@@ -1067,6 +1001,78 @@ internal fun VoiceProfileManagementPanel(
                                             onSelect = { selectSpeakerDraft(speaker) },
                                         )
                                     }
+                                    }
+                                }
+                            }
+                        }
+
+                        val hasVoiceCapture = selectedAudio != null || selectedFileUri != null
+                        if (hasVoiceCapture) {
+                            OutlinedTextField(
+                                value = profileName,
+                                onValueChange = { profileName = it.take(50) },
+                                label = { Text("알람 음성 이름 (필수)") },
+                                placeholder = { Text("예: 지우 목소리") },
+                                singleLine = true,
+                                isError = nameRequiredError,
+                                supportingText = {
+                                    if (nameRequiredError) Text("필수 입력 값입니다.")
+                                },
+                                shape = VocaWakeInputShape,
+                                colors = vocaWakeOutlinedTextFieldColors(),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = profileRelationship,
+                                onValueChange = { profileRelationship = it.take(30) },
+                                label = { Text("나와의 관계 (필수)") },
+                                placeholder = { Text("예: 손녀, 엄마, 연인") },
+                                singleLine = true,
+                                isError = relationshipRequiredError,
+                                supportingText = {
+                                    if (relationshipRequiredError) Text("필수 입력 값입니다.")
+                                },
+                                shape = VocaWakeInputShape,
+                                colors = vocaWakeOutlinedTextFieldColors(),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = profileListenerTitle,
+                                onValueChange = { profileListenerTitle = it.take(30) },
+                                label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
+                                placeholder = { Text("예: 민지야, 여보, 우리 손주") },
+                                singleLine = true,
+                                isError = listenerRequiredError,
+                                supportingText = {
+                                    if (listenerRequiredError) {
+                                        Text("필수 입력 값입니다.")
+                                    } else {
+                                        Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
+                                    }
+                                },
+                                shape = VocaWakeInputShape,
+                                colors = vocaWakeOutlinedTextFieldColors(),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (canShareVoice) {
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("알람 음성 공유", fontWeight = FontWeight.SemiBold)
+                                            MutedText(if (shareVoice) "상대가 선택할 수 있어요" else "나만 사용")
+                                        }
+                                        VoiceAlarmSwitch(
+                                            checked = shareVoice,
+                                            onCheckedChange = { shareVoice = it },
+                                        )
                                     }
                                 }
                             }
