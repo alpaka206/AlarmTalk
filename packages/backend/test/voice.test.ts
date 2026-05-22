@@ -652,6 +652,51 @@ describe('GET /voice/family — 가족 음성 프로필', () => {
     expect(body.profiles[0].owner_name).toBe('엄마');
   });
 
+  it('viewer 라벨 미설정 시 needs_viewer_info=true', async () => {
+    mockDB.pushResult([{ user_id: 'user-2' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        name: '엄마 목소리',
+        status: 'ready',
+        user_id: 'user-2',
+        owner_name: '엄마',
+        relationship_label: '엄마',
+        listener_title: '딸',
+        viewer_relationship_raw: null,
+        viewer_listener_raw: null,
+      },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/voice/family'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profiles[0].needs_viewer_info).toBe(true);
+    expect(body.profiles[0].viewer_relationship_raw).toBeUndefined();
+  });
+
+  it('viewer 라벨 설정 시 needs_viewer_info=false', async () => {
+    mockDB.pushResult([{ user_id: 'user-2' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        name: '엄마 목소리',
+        status: 'ready',
+        user_id: 'user-2',
+        owner_name: '엄마',
+        relationship_label: '엄마',
+        listener_title: '아들',
+        viewer_relationship_raw: '엄마',
+        viewer_listener_raw: '아들',
+      },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('GET', '/voice/family'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.profiles[0].needs_viewer_info).toBe(false);
+  });
+
   it('가족 멤버는 있지만 음성 없으면 빈 배열', async () => {
     mockDB.pushResult([{ user_id: 'user-2' }]);
     mockDB.pushResult([]);
