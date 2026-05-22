@@ -4,8 +4,8 @@
 
 ## 1. 공개 URL
 
-- Privacy Policy URL: `https://vocawake.com/ko/privacy/` 또는 최종 도메인
-- Terms URL: `https://vocawake.com/ko/terms/` 또는 최종 도메인
+- Privacy Policy URL: `https://waker.com/ko/privacy/` 또는 최종 도메인
+- Terms URL: `https://waker.com/ko/terms/` 또는 최종 도메인
 - Support URL: 출시 전 확정 필수
 - Account deletion URL 또는 앱 내 경로: 앱 설정 > 계정 > 계정 삭제
 

@@ -1008,7 +1008,7 @@ internal fun VoiceProfileManagementPanel(
                                             onClick = { separateSpeakers() },
                                             enabled = !separatingBusy && !promotingBusy && !createPreparing && !hasSeparatedSpeakers,
                                             modifier = Modifier.weight(1f),
-                                            shape = VocaWakeButtonShape,
+                                            shape = WakerButtonShape,
                                         ) {
                                             Text(
                                                 when {
@@ -1022,9 +1022,9 @@ internal fun VoiceProfileManagementPanel(
                                             onClick = { resetSpeakers() },
                                             enabled = hasSeparatedSpeakers && !promotingBusy && !createPreparing,
                                             modifier = Modifier.weight(1f),
-                                            shape = VocaWakeButtonShape,
-                                            border = vocaWakeCardBorder(),
-                                            colors = vocaWakeOutlinedButtonColors(),
+                                            shape = WakerButtonShape,
+                                            border = wakerCardBorder(),
+                                            colors = wakerOutlinedButtonColors(),
                                         ) {
                                             Text("초기화")
                                         }
@@ -1058,8 +1058,8 @@ internal fun VoiceProfileManagementPanel(
                                 supportingText = {
                                     if (nameRequiredError) Text("필수 입력 값입니다.")
                                 },
-                                shape = VocaWakeInputShape,
-                                colors = vocaWakeOutlinedTextFieldColors(),
+                                shape = WakerInputShape,
+                                colors = wakerOutlinedTextFieldColors(),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             OutlinedTextField(
@@ -1072,8 +1072,8 @@ internal fun VoiceProfileManagementPanel(
                                 supportingText = {
                                     if (relationshipRequiredError) Text("필수 입력 값입니다.")
                                 },
-                                shape = VocaWakeInputShape,
-                                colors = vocaWakeOutlinedTextFieldColors(),
+                                shape = WakerInputShape,
+                                colors = wakerOutlinedTextFieldColors(),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             OutlinedTextField(
@@ -1090,8 +1090,8 @@ internal fun VoiceProfileManagementPanel(
                                         Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
                                     }
                                 },
-                                shape = VocaWakeInputShape,
-                                colors = vocaWakeOutlinedTextFieldColors(),
+                                shape = WakerInputShape,
+                                colors = wakerOutlinedTextFieldColors(),
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             if (canShareVoice) {
@@ -1144,7 +1144,7 @@ internal fun VoiceProfileManagementPanel(
                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !promotingBusy &&
                                 (canSubmitRecord || canSubmitSingleFile),
                             modifier = Modifier.fillMaxWidth(),
-                            shape = VocaWakeButtonShape,
+                            shape = WakerButtonShape,
                         ) {
                             Text(
                                 when {
@@ -1182,8 +1182,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameNameError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -1196,8 +1196,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameRelationshipError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -1210,8 +1210,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameListenerError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1312,11 +1312,11 @@ private fun VoiceProfileDeleteDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = VocaWakeCardShape,
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
-            border = vocaWakeCardBorder(),
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
@@ -1355,16 +1355,16 @@ private fun VoiceProfileDeleteDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
-                        border = vocaWakeCardBorder(),
-                        colors = vocaWakeOutlinedButtonColors(),
+                        shape = WakerButtonShape,
+                        border = wakerCardBorder(),
+                        colors = wakerOutlinedButtonColors(),
                     ) {
                         Text("취소")
                     }
                     Button(
                         onClick = onDelete,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError,
@@ -1554,8 +1554,8 @@ internal fun VoiceProfileRow(
     val isDeleting = profile.status == "deleting"
     val rowEnabled = enabled && !isProcessing && !isDeleting
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
@@ -1654,8 +1654,8 @@ private fun SharedVoiceProfileRow(
     val needsViewerInfo = profile.relationshipLabel.isNullOrBlank() ||
         profile.listenerTitle.isNullOrBlank()
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
@@ -1705,9 +1705,9 @@ private fun SharedVoiceProfileRow(
                 OutlinedButton(
                     onClick = onEdit,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
-                    border = vocaWakeCardBorder(),
-                    colors = vocaWakeOutlinedButtonColors(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
                 ) {
                     Text("이 음성이 나를 부를 호칭 설정하기")
                 }
@@ -1746,8 +1746,8 @@ private fun SharedVoiceViewerInfoDialog(
                     supportingText = {
                         if (relationshipError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -1760,8 +1760,8 @@ private fun SharedVoiceViewerInfoDialog(
                     supportingText = {
                         if (listenerError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

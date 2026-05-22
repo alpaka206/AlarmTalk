@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
@@ -24,7 +24,7 @@ export function Waitlist() {
     setStatus("loading");
     window.setTimeout(() => {
       // eslint-disable-next-line no-console
-      console.log("[VocaWake waitlist] mock submit:", trimmed);
+      console.log("[Waker waitlist] mock submit:", trimmed);
       setStatus("success");
       setEmail("");
     }, 700);

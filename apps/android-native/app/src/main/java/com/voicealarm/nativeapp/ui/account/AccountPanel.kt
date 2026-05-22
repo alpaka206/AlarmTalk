@@ -174,7 +174,7 @@ internal fun GoogleSignInButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.height(56.dp),
-        shape = VocaWakeButtonShape,
+        shape = WakerButtonShape,
         color = Color.White,
         contentColor = Color(0xFF1F1F1F),
         border = BorderStroke(1.dp, Color(0xFFD7D9DE)),

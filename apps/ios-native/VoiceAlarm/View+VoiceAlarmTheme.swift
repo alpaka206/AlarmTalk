@@ -1,12 +1,12 @@
-import SwiftUI
+﻿import SwiftUI
 
 /// SwiftUI helpers that translate the most common Compose component styles
-/// from `apps/android-native/.../ui/components/VocaWakeDesign.kt` into
+/// from `apps/android-native/.../ui/components/WakerDesign.kt` into
 /// reusable view modifiers. Call sites mirror the Android API surface:
 ///
-/// - `.vocaCardSurface()`  ↔ `Surface(shape = VocaWakeCardShape, ...)`
+/// - `.vocaCardSurface()`  ↔ `Surface(shape = WakerCardShape, ...)`
 /// - `.vocaButtonPrimary()` ↔ `Button(colors = ButtonDefaults.buttonColors())`
-/// - `.vocaButtonSecondary()` ↔ `OutlinedButton(colors = vocaWakeOutlinedButtonColors())`
+/// - `.vocaButtonSecondary()` ↔ `OutlinedButton(colors = wakerOutlinedButtonColors())`
 /// - `.vocaChip()`         ↔ `AssistChip` with capsule shape
 /// - `.vocaSectionHeader()` ↔ Compose section header pattern used inside
 ///   `VoiceStudioScreen` and friends.

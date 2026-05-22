@@ -1,8 +1,8 @@
-import SwiftUI
+﻿import SwiftUI
 
 /// Spacing tokens used across the Android app. Derived from the `.dp` values
 /// scattered through Compose call sites in
-/// `apps/android-native/.../ui/components/VocaWakeDesign.kt` and the screen
+/// `apps/android-native/.../ui/components/WakerDesign.kt` and the screen
 /// composables that build on `VoiceAlarmTheme`.
 ///
 /// The scale follows a 4-pt grid so iOS layouts can be measured against the

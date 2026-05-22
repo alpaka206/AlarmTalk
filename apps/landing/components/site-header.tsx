@@ -1,4 +1,4 @@
-import { useTranslations } from "next-intl";
+﻿import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 
@@ -11,12 +11,12 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5 md:px-8">
         <Link
           href="/"
-          aria-label="VocaWake"
+          aria-label="Waker"
           className="flex items-center gap-2.5 whitespace-nowrap"
         >
           <BrandMark size={32} className="rounded-[8px]" />
           <span className="text-[17px] font-bold tracking-tight text-text">
-            VocaWake
+            Waker
           </span>
         </Link>
 

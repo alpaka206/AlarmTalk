@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -63,8 +63,8 @@ internal fun ScheduleDetailsCard(
             label = { Text("알람 이름") },
             placeholder = { Text("예: 출근 준비") },
             singleLine = true,
-            shape = VocaWakeInputShape,
-            colors = vocaWakeOutlinedTextFieldColors(),
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
     }

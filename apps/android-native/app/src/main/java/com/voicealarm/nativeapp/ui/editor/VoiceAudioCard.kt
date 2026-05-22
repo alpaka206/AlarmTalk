@@ -351,7 +351,7 @@ private fun NoUsableVoiceProfileCallout(
             )
             Button(
                 onClick = onCreateVoiceProfileClick,
-                shape = VocaWakeButtonShape,
+                shape = WakerButtonShape,
             ) {
                 Text("음성 생성하러 가기")
             }
@@ -455,8 +455,8 @@ private fun ManualVoiceMessageField(
             placeholder = { Text("알람에서 들을 음성 메시지") },
             minLines = 3,
             maxLines = 5,
-            shape = VocaWakeInputShape,
-            colors = vocaWakeOutlinedTextFieldColors(),
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
             modifier = Modifier.fillMaxWidth(),
         )
         ManualTranslationRow(

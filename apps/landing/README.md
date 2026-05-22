@@ -1,6 +1,6 @@
-# VocaWake Landing
+﻿# Waker Landing
 
-VocaWake 마케팅 랜딩 페이지. Next.js 15 (App Router) + TypeScript + Tailwind v4 정적 빌드.
+Waker 마케팅 랜딩 페이지. Next.js 15 (App Router) + TypeScript + Tailwind v4 정적 빌드.
 
 ## 개발
 

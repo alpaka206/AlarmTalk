@@ -343,8 +343,8 @@ private fun WeatherLocationPreferenceDialog(
                     supportingText = {
                         if (countryError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -357,8 +357,8 @@ private fun WeatherLocationPreferenceDialog(
                     supportingText = {
                         if (cityError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -371,7 +371,7 @@ private fun WeatherLocationPreferenceDialog(
                         onConfirm(draftCountry.trim(), draftCity.trim())
                     }
                 },
-                shape = VocaWakeButtonShape,
+                shape = WakerButtonShape,
             ) {
                 Text("저장")
             }
@@ -476,9 +476,9 @@ private fun FamilyAlarmQuietTimeDialog(
                         },
                         enabled = drafts.size < 8,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = VocaWakeButtonShape,
-                        border = vocaWakeCardBorder(),
-                        colors = vocaWakeOutlinedButtonColors(),
+                        shape = WakerButtonShape,
+                        border = wakerCardBorder(),
+                        colors = wakerOutlinedButtonColors(),
                     ) {
                         Text("+ 시간 추가")
                     }
@@ -492,7 +492,7 @@ private fun FamilyAlarmQuietTimeDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("취소")
                     }
@@ -500,7 +500,7 @@ private fun FamilyAlarmQuietTimeDialog(
                         onClick = { onConfirm(drafts.map { it.toWindow() }) },
                         enabled = valid,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("저장")
                     }
@@ -575,8 +575,8 @@ private fun QuietWindowCard(
         selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
     )
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
     ) {
         Column(
             modifier = Modifier.padding(14.dp),

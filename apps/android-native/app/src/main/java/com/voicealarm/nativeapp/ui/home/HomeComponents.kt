@@ -1,4 +1,4 @@
-package com.voicealarm.nativeapp
+﻿package com.voicealarm.nativeapp
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -256,8 +256,8 @@ internal fun NicknameEditDialog(
                 label = { Text("닉네임") },
                 singleLine = true,
                 enabled = !busy,
-                shape = VocaWakeInputShape,
-                colors = vocaWakeOutlinedTextFieldColors(),
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
             )
         },
         confirmButton = {
