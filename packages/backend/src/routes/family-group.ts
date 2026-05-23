@@ -6,6 +6,11 @@ import { PlanGroupCapacityError, repairFamilyPlanGroupForUser } from '../lib/pla
 import { leavePlanGroupMember } from '../lib/billing-cancel';
 import { withWriteTransaction } from '../lib/transactions';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
+import {
+  EMPTY_DYNAMIC_PROMPT_SETTINGS,
+  dynamicPromptSettingsFromRow,
+  dynamicPromptSettingsState,
+} from '../lib/dynamic-prompt-settings';
 
 const familyGroup = new Hono<AppEnv>();
 
@@ -55,7 +60,7 @@ familyGroup.get('/groups/current', async (c) => {
     sql: `SELECT m.id, m.user_id, m.role, m.joined_at,
                  u.email, u.name, u.picture, u.allow_family_alarms,
                  u.family_alarm_quiet_days, u.family_alarm_quiet_start, u.family_alarm_quiet_end,
-                 u.family_alarm_quiet_windows
+                 u.family_alarm_quiet_windows, u.dynamic_prompt_settings_json
           FROM plan_group_members m
           LEFT JOIN users u ON u.id = m.user_id
           WHERE m.plan_group_id = ?
@@ -74,6 +79,8 @@ familyGroup.get('/groups/current', async (c) => {
     role: String(g.my_role),
     members: membersRes.rows.map((r) => {
       const familyAlarmSettings = familyAlarmSettingsFromRow(r as Record<string, unknown>);
+      const dynamicPromptSettings = dynamicPromptSettingsFromRow(r as Record<string, unknown>);
+      const isCurrentUser = String(r.user_id) === userPk;
       return {
         id: String(r.id),
         user_id: String(r.user_id),
@@ -87,6 +94,8 @@ familyGroup.get('/groups/current', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: isCurrentUser ? dynamicPromptSettings : EMPTY_DYNAMIC_PROMPT_SETTINGS,
+        dynamic_prompt_settings_state: dynamicPromptSettingsState(dynamicPromptSettings),
       };
     }),
   });

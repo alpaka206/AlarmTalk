@@ -91,6 +91,24 @@ function reqWithEnv(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
 
+function geminiText(text: string) {
+  return new Response(
+    JSON.stringify({
+      candidates: [
+        {
+          content: {
+            parts: [{ text }],
+          },
+        },
+      ],
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    },
+  );
+}
+
 beforeEach(() => {
   mockDB.reset();
   mockTextToSpeech.mockReset();
@@ -716,6 +734,70 @@ describe('POST /tts/generate — edge cases', () => {
       body.synthesis_text,
       expect.any(Object),
     );
+  });
+
+  it('random_context=wake_fortune can use target user dynamic prompt settings', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce(
+        geminiText('{"text":"자기야, 오늘은 작은 행운이 온대."}'),
+      )
+      .mockResolvedValueOnce(
+        geminiText('{"text":"[warmly] 자기야, 오늘은 작은 행운이 온대.","tags":["warmly"]}'),
+      );
+    vi.stubGlobal('fetch', mockFetch);
+    try {
+      mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
+      mockDB.pushResult([
+        {
+          id: V1,
+          status: 'ready',
+          elevenlabs_voice_id: 'el-voice-1',
+          relationship_label: '여자친구',
+        },
+      ]);
+      mockDB.pushResult([
+        {
+          id: 'user-1',
+          dynamic_prompt_settings_json: JSON.stringify({
+            fortune: { gender: '남성', birth_date: '1995-05-20', birth_time: '07:30' },
+          }),
+        },
+      ]);
+      mockDB.pushResult([]);
+      mockTextToSpeech.mockResolvedValue(new Uint8Array([9]).buffer);
+      mockDB.pushResult([]);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+      mockDB.pushResult([], 1);
+
+      const app = buildApp();
+      const res = await app.request(
+        jsonReq('POST', '/tts/generate', {
+          voice_profile_id: V1,
+          category: 'morning',
+          random: true,
+          random_context: 'wake_fortune',
+          target_user_id: 'user-1',
+          fortune_gender: '   ',
+          fortune_birth_date: '',
+          fortune_birth_time: '   ',
+          listener_title: '자기야',
+        }),
+        undefined,
+        { ...ENV, GOOGLE_VERTEX_API_KEY: 'gemini-key' },
+      );
+
+      expect(res.status).toBe(201);
+      const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+      const prompt = requestBody.contents[0].parts[0].text;
+      expect(prompt).toContain('birth date=1995-05-20');
+      expect(prompt).toContain('birth time=07:30');
+      const body = await res.json();
+      expect(body.original_text).toBe('자기야, 오늘은 작은 행운이 온대.');
+      expect(body.tags).toEqual(['warmly']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('random=true 에 custom category 면 400', async () => {

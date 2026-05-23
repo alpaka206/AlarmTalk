@@ -17,6 +17,10 @@ import {
 import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {
+  EMPTY_DYNAMIC_PROMPT_SETTINGS,
+  dynamicPromptSettingsFromRow,
+} from '../lib/dynamic-prompt-settings';
+import {
   EMAIL_VERIFICATION_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_SECONDS,
   emailVerificationExpiresAt,
@@ -263,6 +267,7 @@ auth.post('/register', async (c) => {
           family_alarm_quiet_start: '09:00',
           family_alarm_quiet_end: '18:30',
           family_alarm_quiet_windows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
+          dynamic_prompt_settings: EMPTY_DYNAMIC_PROMPT_SETTINGS,
         },
       },
       201,
@@ -295,7 +300,7 @@ auth.post('/login', async (c) => {
       sql: `SELECT id, google_id, email, password_hash, name, plan,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE email = ?`,
       args: [normalizedEmail],
     });
@@ -337,6 +342,9 @@ auth.post('/login', async (c) => {
     const familyAlarmSettings = familyAlarmSettingsFromRow(
       row as unknown as Record<string, unknown>,
     );
+    const dynamicPromptSettings = dynamicPromptSettingsFromRow(
+      row as unknown as Record<string, unknown>,
+    );
     return c.json({
       token,
       user: {
@@ -349,6 +357,7 @@ auth.post('/login', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
   } catch (err) {
@@ -382,7 +391,7 @@ auth.post('/google', async (c) => {
       sql: `SELECT id, google_id, email, name, plan,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
             WHERE google_id = ? OR email = ?
             LIMIT 1`,
@@ -429,7 +438,7 @@ auth.post('/google', async (c) => {
     const fresh = await db.execute({
       sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? LIMIT 1`,
       args: [userId, googleId],
     });
@@ -443,6 +452,10 @@ auth.post('/google', async (c) => {
             quietEnd: '18:30',
             quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
           };
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     return c.json({
       token,
@@ -456,6 +469,7 @@ auth.post('/google', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
   } catch (err) {
@@ -532,7 +546,7 @@ auth.post('/apple', async (c) => {
       sql: `SELECT id, google_id, apple_id, email, name, plan,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users
             WHERE apple_id = ? OR google_id = ? OR email = ?
             LIMIT 1`,
@@ -590,7 +604,7 @@ auth.post('/apple', async (c) => {
     const fresh = await db.execute({
       sql: `SELECT allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
       args: [userId, loginSub, appleId],
     });
@@ -604,6 +618,10 @@ auth.post('/apple', async (c) => {
             quietEnd: '18:30',
             quietWindows: [{ days: [1, 2, 3, 4, 5], start: '09:00', end: '18:30' }],
           };
+    const dynamicPromptSettings =
+      fresh.rows.length > 0
+        ? dynamicPromptSettingsFromRow(fresh.rows[0] as Record<string, unknown>)
+        : EMPTY_DYNAMIC_PROMPT_SETTINGS;
 
     return c.json({
       token,
@@ -621,6 +639,7 @@ auth.post('/apple', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
   } catch (err) {
@@ -659,7 +678,7 @@ auth.get('/me', async (c) => {
       sql: `SELECT id, email, name, plan, apple_id,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
-                   family_alarm_quiet_windows
+                   family_alarm_quiet_windows, dynamic_prompt_settings_json
             FROM users WHERE id = ? OR google_id = ? OR apple_id = ? LIMIT 1`,
       args: [payload.sub, payload.sub, payload.sub],
     });
@@ -676,6 +695,7 @@ auth.get('/me', async (c) => {
       } & Record<string, unknown>
     >(result.rows[0]!);
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
+    const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
     return c.json({
       user: {
         id: row.id,
@@ -690,6 +710,7 @@ auth.get('/me', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
       },
     });
   } catch (err) {

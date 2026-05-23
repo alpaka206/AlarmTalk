@@ -251,4 +251,12 @@ describe('migrations', () => {
     expect(all).toContain('CREATE TABLE IF NOT EXISTS voice_profile_relationships');
     expect(all).toContain('UNIQUE(user_id, voice_profile_id)');
   });
+
+  it('migration #40 stores user dynamic prompt settings', () => {
+    const m = migrations.find((x) => x.id === 40);
+    expect(m).toBeDefined();
+    expect(m!.statements.join('\n')).toContain(
+      "ALTER TABLE users ADD COLUMN dynamic_prompt_settings_json TEXT NOT NULL DEFAULT '{}'",
+    );
+  });
 });

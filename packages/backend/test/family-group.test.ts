@@ -70,6 +70,10 @@ describe('GET /family/groups/current', () => {
         name: 'Member',
         picture: 'https://pic.example.com/m.jpg',
         allow_family_alarms: 0,
+        dynamic_prompt_settings_json: JSON.stringify({
+          weather: { country: 'KR', city: 'Busan' },
+          fortune: { gender: '여성', birth_date: '1992-03-04', birth_time: '06:20' },
+        }),
       },
     ]);
 
@@ -90,6 +94,14 @@ describe('GET /family/groups/current', () => {
     expect(data.members[1].user_id).toBe(MEMBER_PK);
     expect(data.members[1].allow_family_alarms).toBe(false);
     expect(data.members[1].picture).toBe('https://pic.example.com/m.jpg');
+    expect(data.members[1].dynamic_prompt_settings).toEqual({
+      weather: { country: null, city: null },
+      fortune: { gender: null, birth_date: null, birth_time: null },
+    });
+    expect(data.members[1].dynamic_prompt_settings_state).toEqual({
+      weather_ready: true,
+      fortune_ready: true,
+    });
   });
 
   it('returns null group when user not found in DB', async () => {

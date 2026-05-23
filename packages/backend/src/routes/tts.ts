@@ -23,6 +23,11 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
+import {
+  type DynamicPromptSettings,
+  EMPTY_DYNAMIC_PROMPT_SETTINGS,
+  dynamicPromptSettingsFromRow,
+} from '../lib/dynamic-prompt-settings';
 
 const tts = new Hono<AppEnv>();
 const TTS_CATEGORIES = [
@@ -137,6 +142,14 @@ function normalizeShortText(value: unknown, maxLength: number): string | null {
   return text ? text.slice(0, maxLength) : null;
 }
 
+function firstNonBlankText(...values: unknown[]): string | null {
+  for (const value of values) {
+    const normalized = normalizeShortText(value, 120);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
 function mealLabelForHour(hour: number | null): string {
   if (hour == null) return '식사';
   if (hour >= 5 && hour < 10) return '아침';
@@ -168,6 +181,32 @@ function fortuneProfile(args: {
 
 function randomContextUsesWeather(context: RandomContext): boolean {
   return context === 'wake_weather' || context === 'meal' || context === 'exercise';
+}
+
+async function loadTargetDynamicPromptSettings(
+  db: ReturnType<typeof getDB>,
+  userPk: string,
+  targetUserId: unknown,
+): Promise<DynamicPromptSettings> {
+  if (typeof targetUserId !== 'string' || targetUserId.trim() === '') {
+    return EMPTY_DYNAMIC_PROMPT_SETTINGS;
+  }
+  const target = targetUserId.trim();
+  const result = await db.execute({
+    sql: `SELECT id, dynamic_prompt_settings_json
+          FROM users
+          WHERE id = ? OR google_id = ?
+          LIMIT 1`,
+    args: [target, target],
+  });
+  if (result.rows.length === 0) return EMPTY_DYNAMIC_PROMPT_SETTINGS;
+
+  const targetPk = String(result.rows[0]!.id);
+  if (targetPk !== userPk && !(await assertSameGroup(db, userPk, targetPk))) {
+    return EMPTY_DYNAMIC_PROMPT_SETTINGS;
+  }
+
+  return dynamicPromptSettingsFromRow(result.rows[0] as Record<string, unknown>);
 }
 
 function todayKoreaLabel(): string {
@@ -484,6 +523,8 @@ tts.post('/generate', async (c) => {
     relationshipLabel?: string;
     listener_title?: string;
     listenerTitle?: string;
+    target_user_id?: string;
+    targetUserId?: string;
     weather_location_label?: string;
     weatherLocationLabel?: string;
     weather_latitude?: number;
@@ -641,6 +682,11 @@ tts.post('/generate', async (c) => {
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
+      const targetDynamicPromptSettings = await loadTargetDynamicPromptSettings(
+        db,
+        userPk,
+        body.target_user_id ?? body.targetUserId,
+      );
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
         (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
@@ -654,8 +700,16 @@ tts.post('/generate', async (c) => {
             latitude: body.weather_latitude ?? body.weatherLatitude,
             longitude: body.weather_longitude ?? body.weatherLongitude,
             locationLabel: body.weather_location_label ?? body.weatherLocationLabel,
-            country: body.weather_country ?? body.weatherCountry,
-            city: body.weather_city ?? body.weatherCity,
+            country: firstNonBlankText(
+              body.weather_country,
+              body.weatherCountry,
+              targetDynamicPromptSettings.weather.country,
+            ),
+            city: firstNonBlankText(
+              body.weather_city,
+              body.weatherCity,
+              targetDynamicPromptSettings.weather.city,
+            ),
           })
         : null;
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
@@ -669,9 +723,24 @@ tts.post('/generate', async (c) => {
         fortuneProfile:
           randomContext === 'wake_fortune'
             ? fortuneProfile({
-                gender: body.fortune_gender ?? body.fortuneGender ?? body.gender,
-                birthDate: body.fortune_birth_date ?? body.fortuneBirthDate ?? body.birthDate,
-                birthTime: body.fortune_birth_time ?? body.fortuneBirthTime ?? body.birthTime,
+                gender: firstNonBlankText(
+                  body.fortune_gender,
+                  body.fortuneGender,
+                  body.gender,
+                  targetDynamicPromptSettings.fortune.gender,
+                ),
+                birthDate: firstNonBlankText(
+                  body.fortune_birth_date,
+                  body.fortuneBirthDate,
+                  body.birthDate,
+                  targetDynamicPromptSettings.fortune.birth_date,
+                ),
+                birthTime: firstNonBlankText(
+                  body.fortune_birth_time,
+                  body.fortuneBirthTime,
+                  body.birthTime,
+                  targetDynamicPromptSettings.fortune.birth_time,
+                ),
               })
             : null,
         mealLabel: randomContext === 'meal' ? mealLabelForHour(alarmHour) : null,
