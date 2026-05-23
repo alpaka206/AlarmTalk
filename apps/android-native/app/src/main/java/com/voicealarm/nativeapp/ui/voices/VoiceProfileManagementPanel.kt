@@ -27,10 +27,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
@@ -38,12 +40,18 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -73,6 +81,7 @@ import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.VoiceProfileAudioLimits
 import com.voicealarm.nativeapp.data.VoiceProfileCreationDraft
 import com.voicealarm.nativeapp.network.apiErrorCode
+import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -143,6 +152,7 @@ internal fun VoiceProfileManagementPanel(
     voiceProfileBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
+    authSession: AuthSession?,
     onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
@@ -163,8 +173,10 @@ internal fun VoiceProfileManagementPanel(
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
     var profileRelationship by remember { mutableStateOf("") }
+    var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
     var shareVoice by remember { mutableStateOf(false) }
+    var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
     var localMessage by remember { mutableStateOf<String?>(null) }
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
@@ -202,7 +214,7 @@ internal fun VoiceProfileManagementPanel(
     var filePreviewPlaying by remember { mutableStateOf(false) }
     val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
-    val canShareVoice = hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
+    val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
 
     fun stopMediaPreview() {
@@ -351,8 +363,10 @@ internal fun VoiceProfileManagementPanel(
         createSubmitAttempted = false
         profileName = ""
         profileRelationship = ""
+        relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
         shareVoice = false
+        currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
         mediaPlayer?.release()
         mediaPlayer = null
@@ -447,7 +461,7 @@ internal fun VoiceProfileManagementPanel(
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profile.id,
-                    text = "제 목소리를 선택하시는건가요?",
+                    text = "[gentle] 이 목소리로 깨워드릴까요?",
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -601,6 +615,46 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 공유받은 음성에 viewer 라벨을 막 입력했을 때 그 음성을 한 번 들려준다.
+    // 같은 입력이면 백엔드 캐시 hit, 처음이면 새로 합성. 둘 다 MediaPlayer 로 재생.
+    suspend fun playSharedVoicePreview(profileId: String) {
+        runCatching {
+            val response = onGenerateTts(
+                TtsGenerateRequest(
+                    voiceProfileId = profileId,
+                    text = "[gentle] 이 목소리로 깨워드릴까요?",
+                    category = "custom",
+                    language = "ko",
+                    random = false,
+                ),
+            )
+            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+            val cached = withContext(Dispatchers.IO) {
+                audioStore.cacheGeneratedAudio(
+                    bytes = bytes,
+                    format = response.audioFormat,
+                    rawAudioUri = null,
+                    displayName = "shared_voice_preview_${profileId}",
+                    cacheKey = "shared_preview_${profileId}",
+                    messageId = response.messageId,
+                )
+            }
+            stopMediaPreview()
+            val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                ?: return@runCatching
+            mediaPlayer = player.apply {
+                setOnCompletionListener {
+                    it.release()
+                    if (mediaPlayer === it) mediaPlayer = null
+                }
+                start()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to preview shared voice", error)
+            localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+        }
+    }
+
     fun selectSpeakerDraft(speaker: VoiceSpeakerSegment) {
         val state = speakerDraftStates[speaker.id] ?: return
         val selectedDraftId = state.profileId ?: return
@@ -681,7 +735,7 @@ internal fun VoiceProfileManagementPanel(
     fun submitCreateProfile(name: String) {
         createSubmitAttempted = true
         val trimmedName = name.trim()
-        val trimmedRelationship = profileRelationship.trim()
+        val trimmedRelationship = relationshipSelection.resolved
         val trimmedListener = profileListenerTitle.trim()
         if (trimmedName.isBlank()) {
             localMessage = null
@@ -879,6 +933,13 @@ internal fun VoiceProfileManagementPanel(
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
+                            val stepIndex = currentStep.ordinal + 1
+                            val stepTitle = when (currentStep) {
+                                VoiceRegistrationStep.Source -> "음성 준비"
+                                VoiceRegistrationStep.Identity -> "누구의 목소리인가요"
+                                VoiceRegistrationStep.Sharing -> "공유 설정"
+                            }
+                            MutedText("$stepIndex / 3 · $stepTitle")
                         }
                         IconButton(
                             onClick = ::closeCreateDialog,
@@ -896,179 +957,181 @@ internal fun VoiceProfileManagementPanel(
                             .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        OutlinedTextField(
-                            value = profileName,
-                            onValueChange = { profileName = it.take(50) },
-                            label = { Text("알람 음성 이름 (필수)") },
-                            placeholder = { Text("예: 지우 목소리") },
-                            singleLine = true,
-                            isError = nameRequiredError,
-                            supportingText = {
-                                if (nameRequiredError) Text("필수 입력 값입니다.")
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = profileRelationship,
-                            onValueChange = { profileRelationship = it.take(30) },
-                            label = { Text("나와의 관계 (필수)") },
-                            placeholder = { Text("예: 손녀, 엄마, 연인") },
-                            singleLine = true,
-                            isError = relationshipRequiredError,
-                            supportingText = {
-                                if (relationshipRequiredError) Text("필수 입력 값입니다.")
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = profileListenerTitle,
-                            onValueChange = { profileListenerTitle = it.take(30) },
-                            label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
-                            placeholder = { Text("예: 민지야, 여보, 우리 손주") },
-                            singleLine = true,
-                            isError = listenerRequiredError,
-                            supportingText = {
-                                if (listenerRequiredError) {
-                                    Text("필수 입력 값입니다.")
-                                } else {
-                                    Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
-                                }
-                            },
-                            shape = VocaWakeInputShape,
-                            colors = vocaWakeOutlinedTextFieldColors(),
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        if (canShareVoice) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(18.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text("알람 음성 공유", fontWeight = FontWeight.SemiBold)
-                                        MutedText(if (shareVoice) "상대가 선택할 수 있어요" else "나만 사용")
-                                    }
-                                    VoiceAlarmSwitch(
-                                        checked = shareVoice,
-                                        onCheckedChange = { shareVoice = it },
+                        when (currentStep) {
+                            VoiceRegistrationStep.Source -> {
+                                VoiceCaptureModeSelector(
+                                    selected = inputMode,
+                                    enabled = !isRecording && !createPreparing,
+                                    onSelect = {
+                                        if (inputMode != it) stopMediaPreview()
+                                        inputMode = it
+                                    },
+                                )
+
+                                if (inputMode == VoiceCaptureMode.Record) {
+                                    VoiceRecordControls(
+                                        isRecording = isRecording,
+                                        elapsedMillis = recordingElapsedMillis,
+                                        maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                                        levels = recordingLevels,
+                                        enabled = !voiceProfileBusy && !createPreparing,
+                                        notice = "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.",
+                                        onRecordClick = {
+                                            if (isRecording) {
+                                                stopRecording()
+                                            } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                                                PackageManager.PERMISSION_GRANTED
+                                            ) {
+                                                startRecording()
+                                            } else {
+                                                recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            }
+                                        },
                                     )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        FileSpeakerModeSelector(
+                                            selected = fileSpeakerMode,
+                                            enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
+                                            onSelect = ::setFileSpeakerMode,
+                                        )
+                                        VoiceFileControls(
+                                            durationMillis = selectedFileDurationMillis,
+                                            cropStartMillis = cropStartMillis,
+                                            cropEndMillis = cropEndMillis,
+                                            minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
+                                            maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
+                                            enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
+                                            uploadLabel = "파일/영상 업로드",
+                                            notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
+                                            isPreviewActive = filePreviewPlaying,
+                                            isPreviewPreparing = filePreviewPreparing,
+                                            waveformLevels = fileWaveformLevels,
+                                            waveformLoading = fileWaveformLoading,
+                                            onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
+                                            onCropChange = { start, end ->
+                                                if (start != cropStartMillis || end != cropEndMillis) {
+                                                    stopMediaPreview()
+                                                    cropStartMillis = start
+                                                    cropEndMillis = end
+                                                    resetSpeakers()
+                                                }
+                                            },
+                                            onPreviewCrop = { playFileCropPreview() },
+                                        )
+                                        if (fileSpeakerMode == FileSpeakerMode.Multiple) {
+                                            selectedFileDurationMillis?.let {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                ) {
+                                                    Button(
+                                                        onClick = { separateSpeakers() },
+                                                        enabled = !separatingBusy && !promotingBusy && !createPreparing && !hasSeparatedSpeakers,
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = WakerButtonShape,
+                                                    ) {
+                                                        Text(
+                                                            when {
+                                                                separatingBusy -> "분리 중"
+                                                                hasSeparatedSpeakers -> "분리 완료"
+                                                                else -> "화자 분리"
+                                                            },
+                                                        )
+                                                    }
+                                                    OutlinedButton(
+                                                        onClick = { resetSpeakers() },
+                                                        enabled = hasSeparatedSpeakers && !promotingBusy && !createPreparing,
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = WakerButtonShape,
+                                                        border = wakerCardBorder(),
+                                                        colors = wakerOutlinedButtonColors(),
+                                                    ) {
+                                                        Text("초기화")
+                                                    }
+                                                }
+                                                detectedSpeakers.forEachIndexed { index, speaker ->
+                                                    val draftState = speakerDraftStates[speaker.id] ?: SpeakerDraftState()
+                                                    SpeakerDraftRow(
+                                                        speaker = speaker,
+                                                        index = index,
+                                                        state = draftState,
+                                                        isPlaying = activePlayingSpeakerId == speaker.id,
+                                                        promotingBusy = promotingBusy,
+                                                        onTogglePlay = { playSpeakerDraftPreview(speaker) },
+                                                        onSelect = { selectSpeakerDraft(speaker) },
+                                                    )
+                                                }
+                                            }
+                                            MutedText("화자 분리는 선택과 동시에 등록돼요. 이름·관계·호칭은 등록 후 목록에서 정리할 수 있어요.")
+                                        }
+                                    }
                                 }
                             }
-                        }
-                        VoiceCaptureModeSelector(
-                            selected = inputMode,
-                            enabled = !isRecording && !createPreparing,
-                            onSelect = {
-                                if (inputMode != it) stopMediaPreview()
-                                inputMode = it
-                            },
-                        )
 
-                        if (inputMode == VoiceCaptureMode.Record) {
-                            VoiceRecordControls(
-                                isRecording = isRecording,
-                                elapsedMillis = recordingElapsedMillis,
-                                maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                                levels = recordingLevels,
-                                enabled = !voiceProfileBusy && !createPreparing,
-                                notice = "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.",
-                                onRecordClick = {
-                                    if (isRecording) {
-                                        stopRecording()
-                                    } else if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
-                                        PackageManager.PERMISSION_GRANTED
-                                    ) {
-                                        startRecording()
-                                    } else {
-                                        recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                },
-                            )
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                FileSpeakerModeSelector(
-                                    selected = fileSpeakerMode,
-                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
-                                    onSelect = ::setFileSpeakerMode,
+                            VoiceRegistrationStep.Identity -> {
+                                OutlinedTextField(
+                                    value = profileName,
+                                    onValueChange = { profileName = it.take(50) },
+                                    label = { Text("알람 음성 이름 (필수)") },
+                                    placeholder = { Text("예: 엄마 목소리") },
+                                    singleLine = true,
+                                    isError = nameRequiredError,
+                                    supportingText = {
+                                        if (nameRequiredError) Text("필수 입력 값입니다.")
+                                    },
+                                    shape = WakerInputShape,
+                                    colors = wakerOutlinedTextFieldColors(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                                VoiceFileControls(
-                                    durationMillis = selectedFileDurationMillis,
-                                    cropStartMillis = cropStartMillis,
-                                    cropEndMillis = cropEndMillis,
-                                    minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
-                                    maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
-                                    uploadLabel = "파일/영상 업로드",
-                                    notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
-                                    isPreviewActive = filePreviewPlaying,
-                                    isPreviewPreparing = filePreviewPreparing,
-                                    waveformLevels = fileWaveformLevels,
-                                    waveformLoading = fileWaveformLoading,
-                                    onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
-                                    onCropChange = { start, end ->
-                                        if (start != cropStartMillis || end != cropEndMillis) {
-                                            stopMediaPreview()
-                                            cropStartMillis = start
-                                            cropEndMillis = end
-                                            resetSpeakers()
+                                RelationshipDropdownField(
+                                    selection = relationshipSelection,
+                                    onSelectionChange = { relationshipSelection = it },
+                                    isError = relationshipRequiredError,
+                                )
+                                OutlinedTextField(
+                                    value = profileListenerTitle,
+                                    onValueChange = { profileListenerTitle = it.take(30) },
+                                    label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
+                                    placeholder = { Text("예: 민지야, 여보, 우리 손주") },
+                                    singleLine = true,
+                                    isError = listenerRequiredError,
+                                    supportingText = {
+                                        if (listenerRequiredError) {
+                                            Text("필수 입력 값입니다.")
+                                        } else {
+                                            Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
                                         }
                                     },
-                                    onPreviewCrop = { playFileCropPreview() },
+                                    shape = WakerInputShape,
+                                    colors = wakerOutlinedTextFieldColors(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                                if (fileSpeakerMode == FileSpeakerMode.Multiple) {
-                                    selectedFileDurationMillis?.let {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    ) {
-                                        Button(
-                                            onClick = { separateSpeakers() },
-                                            enabled = !separatingBusy && !promotingBusy && !createPreparing && !hasSeparatedSpeakers,
-                                            modifier = Modifier.weight(1f),
-                                            shape = VocaWakeButtonShape,
-                                        ) {
-                                            Text(
-                                                when {
-                                                    separatingBusy -> "분리 중"
-                                                    hasSeparatedSpeakers -> "분리 완료"
-                                                    else -> "화자 분리"
-                                                },
-                                            )
-                                        }
-                                        OutlinedButton(
-                                            onClick = { resetSpeakers() },
-                                            enabled = hasSeparatedSpeakers && !promotingBusy && !createPreparing,
-                                            modifier = Modifier.weight(1f),
-                                            shape = VocaWakeButtonShape,
-                                            border = vocaWakeCardBorder(),
-                                            colors = vocaWakeOutlinedButtonColors(),
-                                        ) {
-                                            Text("초기화")
-                                        }
-                                    }
-                                    detectedSpeakers.forEachIndexed { index, speaker ->
-                                        val draftState = speakerDraftStates[speaker.id] ?: SpeakerDraftState()
-                                        SpeakerDraftRow(
-                                            speaker = speaker,
-                                            index = index,
-                                            state = draftState,
-                                            isPlaying = activePlayingSpeakerId == speaker.id,
-                                            promotingBusy = promotingBusy,
-                                            onTogglePlay = { playSpeakerDraftPreview(speaker) },
-                                            onSelect = { selectSpeakerDraft(speaker) },
-                                        )
-                                    }
-                                    }
-                                }
+                                ListenerTitlePreview(
+                                    listenerTitle = profileListenerTitle.trim(),
+                                    relationshipLabel = relationshipSelection.resolved,
+                                )
+                            }
+
+                            VoiceRegistrationStep.Sharing -> {
+                                SharingOptionCard(
+                                    enabled = true,
+                                    title = "나만 사용",
+                                    description = "이 알람 음성은 내 계정에서만 들려요.",
+                                    onClick = { shareVoice = false },
+                                    isChosen = !shareVoice,
+                                )
+                                SharingOptionCard(
+                                    enabled = canShareVoice,
+                                    title = "가족·친구와 공유",
+                                    description = if (canShareVoice) {
+                                        "등록 후 목록에서 공유 코드를 만들어 전달할 수 있어요."
+                                    } else {
+                                        "공유 기능은 가족 그룹이나 유료 요금제에서 사용할 수 있어요."
+                                    },
+                                    onClick = { if (canShareVoice) shareVoice = true },
+                                    isChosen = shareVoice && canShareVoice,
+                                )
                             }
                         }
 
@@ -1081,6 +1144,11 @@ internal fun VoiceProfileManagementPanel(
                         Spacer(modifier = Modifier.height(4.dp))
                     }
 
+                    val canAdvanceFromSource = !voiceProfileBusy && !isRecording && !createPreparing &&
+                        !promotingBusy && (canSubmitRecord || canSubmitSingleFile)
+                    val identityComplete = profileName.trim().isNotBlank() &&
+                        relationshipSelection.isComplete &&
+                        profileListenerTitle.trim().isNotBlank()
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1093,21 +1161,76 @@ internal fun VoiceProfileManagementPanel(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Button(
-                            onClick = { submitCreateProfile(resolvedProfileName) },
-                            enabled = !voiceProfileBusy && !isRecording && !createPreparing && !promotingBusy &&
-                                (canSubmitRecord || canSubmitSingleFile),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = VocaWakeButtonShape,
-                        ) {
-                            Text(
-                                when {
-                                    createPreparing -> "준비 중"
-                                    inputMode == VoiceCaptureMode.File &&
-                                        fileSpeakerMode == FileSpeakerMode.Multiple -> "화자 선택"
-                                    else -> "등록"
+                        if (currentStep != VoiceRegistrationStep.Source) {
+                            OutlinedButton(
+                                onClick = {
+                                    currentStep = when (currentStep) {
+                                        VoiceRegistrationStep.Sharing -> VoiceRegistrationStep.Identity
+                                        VoiceRegistrationStep.Identity -> VoiceRegistrationStep.Source
+                                        VoiceRegistrationStep.Source -> VoiceRegistrationStep.Source
+                                    }
+                                    createSubmitAttempted = false
+                                    localMessage = null
                                 },
-                            )
+                                enabled = !voiceProfileBusy && !createPreparing && !promotingBusy,
+                                modifier = Modifier.weight(1f),
+                                shape = WakerButtonShape,
+                                border = wakerCardBorder(),
+                                colors = wakerOutlinedButtonColors(),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("이전")
+                            }
+                        }
+                        when (currentStep) {
+                            VoiceRegistrationStep.Source -> {
+                                Button(
+                                    onClick = {
+                                        localMessage = null
+                                        currentStep = VoiceRegistrationStep.Identity
+                                    },
+                                    enabled = canAdvanceFromSource,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
+                                ) {
+                                    Text(if (createPreparing) "준비 중" else "다음")
+                                }
+                            }
+
+                            VoiceRegistrationStep.Identity -> {
+                                Button(
+                                    onClick = {
+                                        createSubmitAttempted = true
+                                        if (identityComplete) {
+                                            localMessage = null
+                                            createSubmitAttempted = false
+                                            currentStep = VoiceRegistrationStep.Sharing
+                                        }
+                                    },
+                                    enabled = !voiceProfileBusy && !createPreparing && !promotingBusy,
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
+                                ) {
+                                    Text("다음")
+                                }
+                            }
+
+                            VoiceRegistrationStep.Sharing -> {
+                                Button(
+                                    onClick = { submitCreateProfile(resolvedProfileName) },
+                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
+                                        !promotingBusy && (canSubmitRecord || canSubmitSingleFile),
+                                    modifier = Modifier.weight(1f),
+                                    shape = WakerButtonShape,
+                                ) {
+                                    Text(if (createPreparing) "준비 중" else "등록")
+                                }
+                            }
                         }
                     }
                 }
@@ -1136,8 +1259,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameNameError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -1150,8 +1273,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameRelationshipError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -1164,8 +1287,8 @@ internal fun VoiceProfileManagementPanel(
                         supportingText = {
                             if (renameListenerError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1209,6 +1332,7 @@ internal fun VoiceProfileManagementPanel(
             onConfirm = { relationship, listener ->
                 onUpdateSharedVoiceInfo(profile.id, relationship, listener)
                 sharedInfoTarget = null
+                scope.launch { playSharedVoicePreview(profile.id) }
             },
         )
     }
@@ -1265,11 +1389,11 @@ private fun VoiceProfileDeleteDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = VocaWakeCardShape,
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
-            border = vocaWakeCardBorder(),
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
@@ -1308,16 +1432,16 @@ private fun VoiceProfileDeleteDialog(
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
-                        border = vocaWakeCardBorder(),
-                        colors = vocaWakeOutlinedButtonColors(),
+                        shape = WakerButtonShape,
+                        border = wakerCardBorder(),
+                        colors = wakerOutlinedButtonColors(),
                     ) {
                         Text("취소")
                     }
                     Button(
                         onClick = onDelete,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError,
@@ -1427,6 +1551,204 @@ internal enum class FileSpeakerMode {
     Multiple,
 }
 
+internal enum class VoiceRegistrationStep {
+    Source,
+    Identity,
+    Sharing,
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RelationshipDropdownField(
+    selection: RelationshipSelection,
+    onSelectionChange: (RelationshipSelection) -> Unit,
+    isError: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val presetLabel = selection.preset?.label.orEmpty()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            OutlinedTextField(
+                value = presetLabel,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("나와의 관계 (필수)") },
+                placeholder = { Text("관계를 선택해 주세요") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                isError = isError && !selection.isComplete,
+                supportingText = {
+                    if (isError && !selection.isComplete) Text("필수 입력 값입니다.")
+                },
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                RelationshipPreset.entries.forEach { preset ->
+                    DropdownMenuItem(
+                        text = { Text(preset.label) },
+                        onClick = {
+                            expanded = false
+                            onSelectionChange(
+                                if (preset == RelationshipPreset.Custom) {
+                                    selection.copy(preset = preset)
+                                } else {
+                                    RelationshipSelection(preset = preset, customLabel = "")
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        if (selection.preset == RelationshipPreset.Custom) {
+            OutlinedTextField(
+                value = selection.customLabel,
+                onValueChange = {
+                    onSelectionChange(selection.copy(customLabel = it.take(30)))
+                },
+                label = { Text("관계 직접 입력") },
+                placeholder = { Text("예: 손녀, 연인, 동료") },
+                singleLine = true,
+                isError = isError && !selection.isComplete,
+                supportingText = {
+                    if (isError && !selection.isComplete) Text("필수 입력 값입니다.")
+                },
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ListenerTitlePreview(
+    listenerTitle: String,
+    relationshipLabel: String,
+) {
+    if (listenerTitle.isBlank()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerCardShape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "이 목소리는 이렇게 불러줘요",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Text(
+                text = "\"$listenerTitle, 일어날 시간이에요\"",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            if (relationshipLabel.isNotBlank()) {
+                MutedText("관계 · $relationshipLabel")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SharingOptionCard(
+    enabled: Boolean,
+    title: String,
+    description: String,
+    isChosen: Boolean,
+    onClick: () -> Unit,
+) {
+    val containerColor = if (isChosen) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    OutlinedCard(
+        shape = WakerCardShape,
+        border = wakerCardBorder(if (enabled) 1f else 0.4f),
+        colors = CardDefaults.outlinedCardColors(containerColor = containerColor),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            RadioButton(
+                selected = isChosen,
+                onClick = onClick,
+                enabled = enabled,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                MutedText(description)
+            }
+        }
+    }
+}
+
+internal enum class RelationshipPreset(val label: String) {
+    Mom("엄마"),
+    Dad("아빠"),
+    Grandma("할머니"),
+    Grandpa("할아버지"),
+    Son("아들"),
+    Daughter("딸"),
+    Granddaughter("손녀"),
+    Grandson("손주"),
+    Sibling("형제·자매"),
+    Boyfriend("남자친구"),
+    Girlfriend("여자친구"),
+    Husband("남편"),
+    Wife("아내"),
+    Friend("친구"),
+    Celebrity("연예인"),
+    Custom("직접 입력"),
+}
+
+internal data class RelationshipSelection(
+    val preset: RelationshipPreset? = null,
+    val customLabel: String = "",
+) {
+    val resolved: String
+        get() = when (preset) {
+            null -> ""
+            RelationshipPreset.Custom -> customLabel.trim()
+            else -> preset.label
+        }
+
+    val isComplete: Boolean
+        get() = resolved.isNotBlank()
+}
+
+internal fun parseRelationshipLabel(raw: String?): RelationshipSelection {
+    val trimmed = raw?.trim().orEmpty()
+    if (trimmed.isEmpty()) return RelationshipSelection()
+    val match = RelationshipPreset.entries.firstOrNull {
+        it != RelationshipPreset.Custom && it.label == trimmed
+    }
+    return if (match != null) {
+        RelationshipSelection(preset = match)
+    } else {
+        RelationshipSelection(preset = RelationshipPreset.Custom, customLabel = trimmed)
+    }
+}
+
 internal enum class SpeakerDraftStatus {
     Cloning,
     Synthesizing,
@@ -1506,96 +1828,124 @@ internal fun VoiceProfileRow(
     val isProcessing = profile.status == "processing"
     val isDeleting = profile.status == "deleting"
     val rowEnabled = enabled && !isProcessing && !isDeleting
+    var menuExpanded by remember { mutableStateOf(false) }
+    val isShared = profile.isShared == true
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(
+                        if (isDeleting) {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(
-                            if (isDeleting) {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            },
-                            CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Mic,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = profile.name,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    profile.relationshipLabel
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { MutedText("관계 · $it") }
-                }
-                when {
-                    isProcessing -> VoiceProgressMessage("생성 중")
-                    isDeleting -> VoiceProgressMessage("삭제 중")
-                    else -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            IconButton(onClick = onRename, enabled = rowEnabled) {
-                                Icon(Icons.Outlined.Edit, contentDescription = "수정")
-                            }
-                            IconButton(onClick = onDelete, enabled = rowEnabled) {
-                                Icon(Icons.Outlined.Delete, contentDescription = "삭제")
-                            }
-                        }
+                    if (canShareVoice && isShared && !isProcessing && !isDeleting) {
+                        VoiceSharedBadge()
                     }
                 }
+                val detail = buildList {
+                    profile.relationshipLabel?.takeIf { it.isNotBlank() }?.let { add("관계 $it") }
+                    profile.listenerTitle?.takeIf { it.isNotBlank() }?.let { add("호칭 $it") }
+                }.joinToString(" · ")
+                if (detail.isNotBlank()) MutedText(detail)
             }
-            if (canShareVoice && !isProcessing && !isDeleting) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("공유 허용", fontWeight = FontWeight.SemiBold)
-                            MutedText(
-                                if (profile.isShared == true) {
-                                    "상대가 이 알람 음성을 선택할 수 있어요"
-                                } else {
-                                    "내 계정에서만 사용할게요"
+            when {
+                isProcessing -> VoiceProgressMessage("생성 중")
+                isDeleting -> VoiceProgressMessage("삭제 중")
+                else -> {
+                    Box {
+                        IconButton(
+                            onClick = { menuExpanded = true },
+                            enabled = rowEnabled,
+                        ) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "더보기")
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("이름·관계·호칭 수정") },
+                                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onRename()
+                                },
+                            )
+                            if (canShareVoice) {
+                                DropdownMenuItem(
+                                    text = { Text(if (isShared) "공유 끄기" else "공유 켜기") },
+                                    onClick = {
+                                        menuExpanded = false
+                                        onShareChange(!isShared)
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("삭제") },
+                                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
+                                onClick = {
+                                    menuExpanded = false
+                                    onDelete()
                                 },
                             )
                         }
-                        VoiceAlarmSwitch(
-                            checked = profile.isShared == true,
-                            onCheckedChange = onShareChange,
-                            enabled = rowEnabled,
-                        )
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun VoiceSharedBadge() {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
+    ) {
+        Text(
+            text = "공유 중",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
     }
 }
 
@@ -1607,8 +1957,8 @@ private fun SharedVoiceProfileRow(
     val needsViewerInfo = profile.relationshipLabel.isNullOrBlank() ||
         profile.listenerTitle.isNullOrBlank()
     OutlinedCard(
-        shape = VocaWakeCardShape,
-        border = vocaWakeCardBorder(),
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
@@ -1658,9 +2008,9 @@ private fun SharedVoiceProfileRow(
                 OutlinedButton(
                     onClick = onEdit,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
-                    border = vocaWakeCardBorder(),
-                    colors = vocaWakeOutlinedButtonColors(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
                 ) {
                     Text("이 음성이 나를 부를 호칭 설정하기")
                 }
@@ -1699,8 +2049,8 @@ private fun SharedVoiceViewerInfoDialog(
                     supportingText = {
                         if (relationshipError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
@@ -1713,8 +2063,8 @@ private fun SharedVoiceViewerInfoDialog(
                     supportingText = {
                         if (listenerError) Text("필수 입력 값입니다.")
                     },
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

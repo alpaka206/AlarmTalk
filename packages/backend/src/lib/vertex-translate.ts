@@ -442,7 +442,7 @@ function alarmTextPrompt(args: {
     ? `Translate the user's alarm message from ${sourceName} to ${targetName}.`
     : `Keep the user's alarm message in ${sourceName}.`;
   const tagInstruction = args.shouldTag
-    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the beginning of the text. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
+    ? `Add exactly one ElevenLabs v3 delivery tag from this allowlist: ${APPROVED_TAGS.map((tag) => `[${tag}]`).join(', ')}. Put the single tag at the very beginning of the text. Pick the tag that best matches the meaning and intended mood of the user text — use [warmly]/[encouraging]/[gentle]/[comforting] for affectionate or soft lines, [calmly]/[softly]/[sleepily] for night or quiet lines, [happily]/[brightly]/[proudly] for cheerful or celebratory lines. Do not rewrite, add, remove, or reorder any words unless translation is requested.`
     : 'Do not add or remove delivery tags.';
 
   return [
@@ -494,7 +494,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     : `No relationship label is available, so keep the line generally warm. ${listenerInstruction}`;
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
-      return `Create a wake-up message. Start naturally like "일어나실 시간이에요" or "좋은 아침이에요" rather than describing whose voice it is. Use only actionable weather facts from this context: ${context.weatherSummary || 'weather information is unavailable'}. Prioritize temperature, precipitation probability, umbrella advice when rain risk is high, and fine-dust/mask advice only when the context says it is bad. Do not mention location names, city/country names, the exact date, or weekday. Do not say vague weather labels like "the weather is rain" by themselves. Ending is optional; if you add one, keep it short like "오늘도 화이팅!"`;
+      return `Create a wake-up message. Start naturally like "일어나실 시간이에요" or "좋은 아침이에요" rather than describing whose voice it is. The weather context already comes as one or two short actionable suggestions, e.g. "비가 올 수 있어요. 우산 챙기세요", "미세먼지가 많아요. 외출할 땐 마스크 챙기세요", "날씨가 좋아요. 잠깐 산책 가기에도 딱이에요". Weave at most two of these suggestions into the line naturally. DO NOT recite raw numbers, temperatures, percentages, weather codes, or labels like "강수 확률 70%" or "최저 12도 최고 19도". DO NOT just describe the weather ("비가 와요" alone is not enough) — always pair it with a short action the listener can take (e.g. 우산 챙기기, 마스크 챙기기, 따뜻하게 입기, 산책 추천). Do not mention location names, city/country names, the exact date, or weekday. Ending is optional; if you add one, keep it short like "오늘도 화이팅!". Weather context: ${context.weatherSummary || 'weather information is unavailable'}.`;
     }
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee.`;
@@ -528,9 +528,10 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       ? '한국어 어체 규칙: 가족·친구·연인 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀→조부모, 자식→부모 등 손아랫사람이 손윗사람에게 말할 때는 친근한 해요체 ("~해요", "~예요"). 부모→자식, 형/누나→동생 등은 다정한 반말 또는 해요체 혼용. 친구·연인 사이는 반말. 뉴스 앵커처럼 들리지 않게 진짜 가족이 옆에서 말하는 톤으로.'
       : '',
     context.targetLanguage === 'ko'
-      ? '문장 구조 예시 (wake_weather): "일어나실 시간이에요. 최저 12도, 최고 19도고 강수확률이 70%예요. 우산 챙겨가세요. 오늘도 화이팅!" — 위치/날짜/관계 설명 없이 시작, 필요한 날씨 정보만 말하고 짧게 마무리. 이 패턴을 따르되 내용은 컨텍스트에 맞게 새로 작성.'
+      ? '문장 구조 예시 (wake_weather): "일어나실 시간이에요. 비가 올 수 있대요. 우산 꼭 챙기세요. 오늘도 화이팅!" / "좋은 아침이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." / "일어나실 시간이에요. 미세먼지가 많대요. 마스크 챙겨 나가세요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. 강수확률·기온 숫자를 그대로 읽는 패턴은 금지.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
+    'Do not include any brackets, delivery tags, [tag] markers, or stage directions in your output. A single delivery tag will be added in a later step.',
     'No markdown, no emojis, no quotes, no explanations, no extra fields.',
     'Keep the final text spoken, kind, and 200 characters or fewer.',
     'Return strict JSON: {"text":"final alarm line"}.',

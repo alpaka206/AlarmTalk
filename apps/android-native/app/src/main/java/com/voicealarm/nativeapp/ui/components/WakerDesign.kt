@@ -9,16 +9,16 @@ import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 
-internal val VocaWakeCardShape = RoundedCornerShape(22.dp)
-internal val VocaWakeInputShape = RoundedCornerShape(18.dp)
-internal val VocaWakeButtonShape = RoundedCornerShape(18.dp)
+internal val WakerCardShape = RoundedCornerShape(22.dp)
+internal val WakerInputShape = RoundedCornerShape(18.dp)
+internal val WakerButtonShape = RoundedCornerShape(18.dp)
 
 @Composable
-internal fun vocaWakeCardBorder(alpha: Float = 1f): BorderStroke =
+internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke =
     BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha))
 
 @Composable
-internal fun vocaWakeOutlinedTextFieldColors(): TextFieldColors =
+internal fun wakerOutlinedTextFieldColors(): TextFieldColors =
     OutlinedTextFieldDefaults.colors(
         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.78f),
         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
@@ -33,7 +33,7 @@ internal fun vocaWakeOutlinedTextFieldColors(): TextFieldColors =
     )
 
 @Composable
-internal fun vocaWakeOutlinedButtonColors() =
+internal fun wakerOutlinedButtonColors() =
     ButtonDefaults.outlinedButtonColors(
         contentColor = MaterialTheme.colorScheme.onSurface,
         disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f),

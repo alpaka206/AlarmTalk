@@ -1,7 +1,7 @@
-import SwiftUI
+﻿import SwiftUI
 
 /// Elevation / shadow tokens that approximate the Compose elevation steps used
-/// by `VocaWakeDesign` cards and buttons on Android. SwiftUI does not expose
+/// by `WakerDesign` cards and buttons on Android. SwiftUI does not expose
 /// the same Material elevation model, so each step is expressed as the
 /// `.shadow` parameters required to visually match the Android renderer.
 struct VoiceAlarmElevationStep: Equatable {

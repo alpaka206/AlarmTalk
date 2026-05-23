@@ -126,6 +126,54 @@ describe('prepareAlarmTextWithVertex', () => {
       }),
     ).rejects.toBeInstanceOf(AlarmTextPreparationInvalidError);
   });
+
+  it('tags plain user-typed Korean text when autoTag is true', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"[gentle] 오늘도 화이팅","tags":["gentle"]}'),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toBe('[gentle] 오늘도 화이팅');
+    expect(prepared.tags).toEqual(['gentle']);
+    expect(prepared.provider).not.toBe('local');
+  });
+
+  it('skips Gemini when user already typed a delivery tag', async () => {
+    const prepared = await prepareAlarmTextWithVertex(ENV, '[warmly] 좋은 아침', {
+      targetLanguage: 'ko',
+      sourceLanguage: 'ko',
+      translate: false,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toBe('[warmly] 좋은 아침');
+    expect(prepared.tags).toEqual(['warmly']);
+    expect(prepared.provider).toBe('local');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('tags translated output when both translate and autoTag are true', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"[brightly] Good morning!","tags":["brightly"]}'),
+    );
+
+    const prepared = await prepareAlarmTextWithVertex(ENV, '좋은 아침이에요', {
+      targetLanguage: 'en',
+      sourceLanguage: 'ko',
+      translate: true,
+      autoTag: true,
+    });
+
+    expect(prepared.text).toBe('[brightly] Good morning!');
+    expect(prepared.translated).toBe(true);
+    expect(prepared.tags).toEqual(['brightly']);
+  });
 });
 
 describe('generateDynamicAlarmTextWithVertex', () => {

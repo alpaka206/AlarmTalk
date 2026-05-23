@@ -1,4 +1,4 @@
-import { useTranslations } from "next-intl";
+﻿import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "../brand-mark";
 import { LocaleSwitcher } from "../locale-switcher";
@@ -15,12 +15,12 @@ export function SiteFooter() {
           <div className="max-w-sm">
             <Link
               href="/"
-              aria-label="VocaWake"
+              aria-label="Waker"
               className="flex items-center gap-2.5 whitespace-nowrap"
             >
               <BrandMark size={32} className="rounded-[8px]" />
               <span className="text-[16px] font-bold tracking-tight text-text">
-                VocaWake
+                Waker
               </span>
             </Link>
             <p className="mt-4 text-[14px] leading-[1.65] text-text-muted">
@@ -80,7 +80,7 @@ export function SiteFooter() {
                 </li>
                 <li>
                   <a
-                    href="mailto:hello@vocawake.com"
+                    href="mailto:hello@waker.com"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkContact")}
@@ -116,7 +116,7 @@ export function SiteFooter() {
 
         <div className="mt-14 flex flex-col gap-3 border-t border-line pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="whitespace-nowrap text-[12.5px] text-text-faint">
-            © {year} VocaWake · {t("rights")}
+            © {year} Waker · {t("rights")}
           </p>
           <p className="whitespace-nowrap text-[12.5px] text-text-faint">
             {t("made")}

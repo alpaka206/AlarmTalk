@@ -653,7 +653,7 @@ internal fun RandomPromptSettingsPane(
                     Button(
                         onClick = ::requestRequiredInfoOrSave,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -818,7 +818,7 @@ private fun WeatherLocationDialog(
                     },
                     enabled = !locationBusy,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = VocaWakeButtonShape,
+                    shape = WakerButtonShape,
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -861,8 +861,8 @@ private fun WeatherLocationDialog(
                         supportingText = {
                             if (countryError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -875,8 +875,8 @@ private fun WeatherLocationDialog(
                         supportingText = {
                             if (cityError) Text("필수 입력 값입니다.")
                         },
-                        shape = VocaWakeInputShape,
-                        colors = vocaWakeOutlinedTextFieldColors(),
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -887,7 +887,7 @@ private fun WeatherLocationDialog(
                     OutlinedButton(
                         onClick = onDismissWithoutSave,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("닫기")
                     }
@@ -899,7 +899,7 @@ private fun WeatherLocationDialog(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("저장")
                     }
@@ -999,7 +999,7 @@ private fun FortuneInfoDialog(
                     OutlinedButton(
                         onClick = onDismissWithoutSave,
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("닫기")
                     }
@@ -1019,7 +1019,7 @@ private fun FortuneInfoDialog(
                             }
                         },
                         modifier = Modifier.weight(1f),
-                        shape = VocaWakeButtonShape,
+                        shape = WakerButtonShape,
                     ) {
                         Text("저장")
                     }
@@ -1194,7 +1194,7 @@ private fun FortuneSelectorRow(
     }
     Surface(
         onClick = onClick,
-        shape = VocaWakeInputShape,
+        shape = WakerInputShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, borderColor),
     ) {
@@ -1544,8 +1544,8 @@ internal fun SnoozeSettingsPane(
                     label = { Text("분") },
                     singleLine = true,
                     isError = customMinutesText.isNotBlank() && customMinutes !in 1..60,
-                    shape = VocaWakeInputShape,
-                    colors = vocaWakeOutlinedTextFieldColors(),
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
                 )
             },
             confirmButton = {
@@ -1673,7 +1673,7 @@ internal fun EditorActionButtons(
         onClick = onSave,
         enabled = canSave && !isSaving,
         modifier = Modifier.fillMaxWidth(),
-        shape = VocaWakeButtonShape,
+        shape = WakerButtonShape,
     ) {
         Icon(Icons.Outlined.Save, contentDescription = null)
         Spacer(Modifier.width(8.dp))

@@ -86,6 +86,7 @@ data class FamilyVoiceProfile(
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    @SerializedName("needs_viewer_info") val needsViewerInfo: Boolean? = null,
 )
 
 data class FamilyVoiceProfileListResponse(

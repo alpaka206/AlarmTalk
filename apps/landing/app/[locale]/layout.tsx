@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 
-const SITE_URL = "https://vocawake.com";
-const SITE_NAME = "VocaWake";
+const SITE_URL = "https://waker.com";
+const SITE_NAME = "Waker";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
