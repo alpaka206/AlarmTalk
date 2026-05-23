@@ -114,9 +114,9 @@ internal class RemoteAlarmPullSyncService(
         val now = System.currentTimeMillis()
         val enabled = resolveReceivedRemoteEnabled(existing, remote.isActive)
 
-        val cachedAudio = remote.messageId
-            ?.takeIf { it.isNotBlank() }
-            ?.let { messageId ->
+        val cachedAudio = if (shouldDownloadRemoteMessageAudio(remote)) {
+            val messageId = remote.messageId?.trim().orEmpty()
+            runCatching {
                 val audio = api.getTtsMessageAudio(authorization, messageId)
                 alarmAudioStore.cacheGeneratedAudio(
                     bytes = Base64.decode(audio.audioBase64, Base64.DEFAULT),
@@ -125,7 +125,13 @@ internal class RemoteAlarmPullSyncService(
                     cacheKey = "remote-message-$messageId",
                     messageId = messageId,
                 )
-            }
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to cache remote alarm audio remoteId=${remote.id} messageId=$messageId", error)
+            }.getOrNull()
+        } else {
+            null
+        }
+        val hasVoiceAudio = cachedAudio != null
 
         val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
             hour = time.first,
@@ -161,11 +167,11 @@ internal class RemoteAlarmPullSyncService(
             defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
             localAudioUri = cachedAudio?.localAudioUri,
             audioCacheKey = cachedAudio?.cacheKey,
-            rawAudioUri = cachedAudio?.rawAudioUri ?: remote.rawAudioUrl ?: remote.messageAudioUrl,
-            voiceSource = if (cachedAudio == null) VoiceSources.LOCAL_AUDIO else VoiceSources.SERVER_TTS,
-            voiceProfileId = remote.voiceProfileId,
-            voiceText = remote.messageText,
-            voiceCategory = remote.category,
+            rawAudioUri = cachedAudio?.rawAudioUri,
+            voiceSource = if (hasVoiceAudio) VoiceSources.SERVER_TTS else VoiceSources.LOCAL_AUDIO,
+            voiceProfileId = remote.voiceProfileId.takeIf { hasVoiceAudio },
+            voiceText = remote.messageText.takeIf { hasVoiceAudio },
+            voiceCategory = remote.category.takeIf { hasVoiceAudio },
             voiceLanguage = null,
             voiceRandomPrompt = false,
             voiceRandomContext = null,
@@ -176,7 +182,7 @@ internal class RemoteAlarmPullSyncService(
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = existing?.voiceRepeat ?: true,
-            ttsMessageId = remote.messageId,
+            ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,
             syncState = AlarmSyncStates.SYNCED,
@@ -212,3 +218,7 @@ internal fun resolveReceivedRemoteEnabled(existing: AlarmEntity?, remoteIsActive
         remoteEnabled
     }
 }
+
+internal fun shouldDownloadRemoteMessageAudio(remote: RemoteAlarm): Boolean =
+    !remote.messageId.isNullOrBlank() &&
+        !remote.messageAudioUrl.isNullOrBlank()

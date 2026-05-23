@@ -236,12 +236,22 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}?force=true`));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.alarms_affected).toBe(2);
+    const alarmUpdate = mockDB.calls.find((c) => c.sql.startsWith('UPDATE alarms'));
+    expect(alarmUpdate).toBeDefined();
+    expect(alarmUpdate!.sql).toContain("mode = 'sound-only'");
+    expect(alarmUpdate!.sql).toContain("wake_mode = 'sound_then_voice'");
+    expect(alarmUpdate!.sql).toContain('message_id = NULL');
+    expect(alarmUpdate!.sql).toContain('voice_profile_id = NULL');
+    expect(alarmUpdate!.sql).toContain('speaker_id = NULL');
+    expect(alarmUpdate!.sql).toContain('EXISTS');
+    expect(alarmUpdate!.args).toEqual([M1, M1, 'user-1', 'user-1']);
   });
 
   it('메시지 없으면 404', async () => {
@@ -586,6 +596,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(taggedText);
+    expect(body.tags).toEqual(['warmly']);
     expect(body.language).toBe('en');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',

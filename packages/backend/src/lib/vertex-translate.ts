@@ -148,10 +148,24 @@ export async function prepareAlarmTextWithVertex(
     shouldTag,
   });
   const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
-  const raw = await generateContentText(env, prompt, {
-    temperature: 0.15,
-    maxOutputTokens: 256,
-  });
+  let raw: string;
+  try {
+    raw = await generateContentText(env, prompt, {
+      temperature: 0.15,
+      maxOutputTokens: 256,
+    });
+  } catch {
+    if (shouldTranslate) {
+      throw new AlarmTextPreparationInvalidError();
+    }
+    const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
+    return {
+      text: fallbackText,
+      translated: false,
+      tags: extractTags(fallbackText),
+      provider: 'local',
+    };
+  }
   const parsed = parseAlarmTextPreparation(raw);
   const fallbackText = shouldTag ? tagAlarmTextLocally(trimmed) : trimmed;
   let preparedText = parsed.text;
@@ -699,12 +713,12 @@ function isMetaJsonResponse(text: string): boolean {
   );
 }
 
-function hasGeminiConfiguration(env: Env): boolean {
-  return Boolean(readGeminiApiKey(env) || env.GOOGLE_VERTEX_CREDENTIALS_JSON);
+function hasGeminiConfiguration(env: Env | undefined): boolean {
+  return Boolean(readGeminiApiKey(env) || env?.GOOGLE_VERTEX_CREDENTIALS_JSON);
 }
 
-function readGeminiApiKey(env: Env): string | undefined {
-  return env.GOOGLE_VERTEX_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+function readGeminiApiKey(env: Env | undefined): string | undefined {
+  return env?.GOOGLE_VERTEX_API_KEY || env?.GEMINI_API_KEY || env?.GOOGLE_API_KEY;
 }
 
 function extractTags(text: string): string[] {

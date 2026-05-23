@@ -1,5 +1,6 @@
 package com.voicealarm.nativeapp.data
 
+import com.voicealarm.nativeapp.network.RemoteAlarm
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,6 +32,32 @@ class RemoteAlarmPullSyncServiceTest {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 
         assertTrue(resolveReceivedRemoteEnabled(existing, remoteIsActive = true))
+    }
+
+    @Test
+    fun remoteAlarmDoesNotDownloadMessageAudioWhenAudioUrlWasCleared() {
+        val remote = RemoteAlarm(id = "remote-id", mode = "sound-only", messageId = "message-id")
+
+        assertFalse(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun remoteAlarmWithVoiceMessageAudioDownloadsAudio() {
+        val remote = RemoteAlarm(
+            id = "remote-id",
+            mode = "sound-only",
+            messageId = "message-id",
+            messageAudioUrl = "r2://message-audio.mp3",
+        )
+
+        assertTrue(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun remoteAlarmWithoutMessageIdDoesNotDownloadAudio() {
+        val remote = RemoteAlarm(id = "remote-id", mode = "tts", messageId = " ")
+
+        assertFalse(shouldDownloadRemoteMessageAudio(remote))
     }
 
     private fun alarm(

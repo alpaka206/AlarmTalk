@@ -1084,6 +1084,24 @@ tts.delete('/messages/:id', async (c) => {
     );
   }
 
+  if (alarmCount > 0) {
+    await db.execute({
+      sql: `UPDATE alarms
+            SET mode = 'sound-only',
+                wake_mode = 'sound_then_voice',
+                message_id = NULL,
+                voice_profile_id = NULL,
+                speaker_id = NULL,
+                raw_audio_url = NULL,
+                raw_audio_duration_ms = NULL
+            WHERE message_id = ?
+              AND EXISTS (
+                SELECT 1 FROM messages WHERE id = ? AND user_id IN (?, ?)
+              )`,
+      args: [id, id, ...ownerIds],
+    });
+  }
+
   await db.execute({
     sql: 'DELETE FROM message_library WHERE message_id = ? AND user_id IN (?, ?)',
     args: [id, ...ownerIds],
