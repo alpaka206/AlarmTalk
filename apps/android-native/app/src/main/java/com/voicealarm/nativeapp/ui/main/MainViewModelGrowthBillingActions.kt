@@ -43,6 +43,7 @@ import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -178,10 +179,15 @@ internal fun MainViewModel.syncPendingCharacterEventsSilently() {
 
 internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage("코드를 등록하려면 먼저 로그인해 주세요") ?: return
+    val trimmedCode = code.trim()
+    if (trimmedCode.isBlank()) {
+        message = "코드를 입력해 주세요."
+        return
+    }
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            api.registerCode(authorization, CodeRegisterRequest(code.trim()))
+            api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
             message = "코드를 등록했어요"
             refreshCharacterBillingAfterMutation(authorization, "code registration")
@@ -232,8 +238,9 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
 
 internal fun MainViewModel.sendNote(receiverId: String, text: String) {
     val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val normalizedReceiverId = receiverId.trim()
     val trimmedText = text.trim()
-    if (receiverId.isBlank()) {
+    if (normalizedReceiverId.isBlank()) {
         message = "받는 사람을 선택해 주세요"
         return
     }
@@ -246,7 +253,7 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
         runCatching {
             api.sendNote(
                 authorization = authorization,
-                request = SendNoteRequest(receiverId = receiverId, text = trimmedText),
+                request = SendNoteRequest(receiverId = normalizedReceiverId, text = trimmedText),
             )
         }.onSuccess {
             message = "메시지를 보냈어요"
@@ -261,8 +268,10 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
 
 internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
     val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val normalizedReceiverId = receiverId.trim()
+    val normalizedVoiceProfileId = voiceProfileId.trim()
     val trimmedText = text.trim()
-    if (receiverId.isBlank()) {
+    if (normalizedReceiverId.isBlank()) {
         message = "받는 사람을 선택해 주세요"
         return
     }
@@ -274,7 +283,7 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
         message = "목소리 메시지는 200자까지 보낼 수 있어요"
         return
     }
-    if (voiceProfileId.isBlank()) {
+    if (normalizedVoiceProfileId.isBlank()) {
         message = "목소리를 선택해 주세요"
         return
     }
@@ -285,7 +294,7 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
                 api.generateTts(
                     authorization = authorization,
                     request = TtsGenerateRequest(
-                        voiceProfileId = voiceProfileId,
+                        voiceProfileId = normalizedVoiceProfileId,
                         text = trimmedText,
                         category = "custom",
                         language = "ko",
@@ -297,9 +306,9 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
             api.sendNote(
                 authorization = authorization,
                 request = SendNoteRequest(
-                    receiverId = receiverId,
+                    receiverId = normalizedReceiverId,
                     text = trimmedText,
-                    audioUrl = audioUrl,
+                    audioUrl = audioUrl.trimmedOrNull(),
                 ),
             )
         }.onSuccess {

@@ -24,6 +24,7 @@ import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -57,10 +58,15 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.login(email: String, password: String) {
+    val normalizedEmail = email.trim()
+    if (normalizedEmail.isBlank() || password.isBlank()) {
+        message = "이메일과 비밀번호를 입력해 주세요."
+        return
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
-            api.login(LoginRequest(email = email.trim(), password = password))
+            api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
@@ -132,6 +138,12 @@ internal fun MainViewModel.register(
     emailVerificationCode: String,
 ) {
     val normalizedEmail = email.trim().lowercase()
+    val trimmedName = name.trim()
+    val trimmedCode = emailVerificationCode.trim()
+    if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
+        message = "회원가입 정보를 모두 입력해 주세요."
+        return
+    }
     if (registerEmailVerified != normalizedEmail) {
         message = "이메일 인증을 먼저 완료해 주세요"
         return
@@ -143,8 +155,8 @@ internal fun MainViewModel.register(
                 RegisterRequest(
                     email = normalizedEmail,
                     password = password,
-                    name = name.trim(),
-                    emailVerificationCode = emailVerificationCode.trim(),
+                    name = trimmedName,
+                    emailVerificationCode = trimmedCode,
                 ),
             )
         }.onSuccess { response ->
@@ -163,6 +175,10 @@ internal fun MainViewModel.register(
 }
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String) {
+    if (idToken.isBlank()) {
+        message = "Google 로그인 토큰을 확인하지 못했어요."
+        return
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -278,6 +294,28 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             message = userFacingError(error, "상대방 알람 설정을 저장하지 못했어요")
         }
         authBusy = false
+    }
+}
+
+internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
+    val session = authSession ?: return
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.updateProfile(
+                authorization,
+                com.voicealarm.nativeapp.network.UpdateProfileRequest(
+                    dynamicPromptSettings = settings,
+                ),
+            )
+        }.onSuccess { response ->
+            val updatedSettings = response.dynamicPromptSettings ?: settings
+            val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
+            authSession = authSessionStore.save(updated)
+            refreshSocial()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update dynamic prompt settings", error)
+        }
     }
 }
 

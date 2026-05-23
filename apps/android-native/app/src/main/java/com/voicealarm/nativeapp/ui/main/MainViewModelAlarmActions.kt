@@ -45,6 +45,7 @@ import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -122,10 +123,10 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                 api.createFamilyVoiceAlarm(
                     authorization = VoiceAlarmApiClient.bearer(session.token),
                     request = FamilyVoiceAlarmRequest(
-                        recipientUserId = requireNotNull(draft.targetUserId),
+                        recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
                         wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
                         voiceUploadId = upload.id,
-                        label = draft.label.ifBlank { "가족이 보낸 음성" },
+                        label = draft.label.trimmedOrNull() ?: "가족이 보낸 음성",
                         repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
                     ),
                 ).alarm
@@ -183,11 +184,11 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
             else -> "sound_then_voice"
         },
         isActive = true,
-        messageId = ttsMessageId,
-        voiceProfileId = voiceProfileId.takeIf { voiceSource != VoiceSources.LOCAL_AUDIO },
+        messageId = ttsMessageId.trimmedOrNull(),
+        voiceProfileId = voiceProfileId.takeIf { voiceSource != VoiceSources.LOCAL_AUDIO }.trimmedOrNull(),
         rawAudioUrl = rawAudioUrl,
         rawAudioDurationMs = null,
-        targetUserId = targetUserId,
+        targetUserId = targetUserId.trimmedOrNull(),
     )
 }
 

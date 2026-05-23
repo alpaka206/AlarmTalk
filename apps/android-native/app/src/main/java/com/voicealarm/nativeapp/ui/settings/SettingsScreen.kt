@@ -51,7 +51,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
+import com.voicealarm.nativeapp.data.toDynamicPromptSettings
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 
 @Composable
@@ -66,6 +68,7 @@ internal fun SettingsScreen(
     onRequestAllPermissions: () -> Unit,
     onEditNickname: () -> Unit,
     onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
+    onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -74,6 +77,7 @@ internal fun SettingsScreen(
     var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
+    var showFortuneInfoDialog by remember { mutableStateOf(false) }
     var showFamilyAlarmDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
@@ -121,6 +125,16 @@ internal fun SettingsScreen(
                         promptPreferences.weatherCity,
                     ),
                     onClick = { showWeatherLocationDialog = true },
+                )
+                HorizontalDivider()
+                SettingsRow(
+                    label = "운세 정보",
+                    value = fortuneInfoSettingsLabel(
+                        promptPreferences.fortuneGender,
+                        promptPreferences.fortuneBirthDate,
+                        promptPreferences.fortuneBirthTime,
+                    ),
+                    onClick = { showFortuneInfoDialog = true },
                 )
             }
         }
@@ -206,7 +220,24 @@ internal fun SettingsScreen(
             onConfirm = { country, city ->
                 promptPreferenceStore.saveWeatherLocation(country, city)
                 promptPreferences = promptPreferenceStore.read()
+                onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showWeatherLocationDialog = false
+            },
+        )
+    }
+
+    if (showFortuneInfoDialog) {
+        FortuneInfoDialog(
+            gender = promptPreferences.fortuneGender,
+            birthDate = promptPreferences.fortuneBirthDate,
+            birthTime = promptPreferences.fortuneBirthTime,
+            description = "운세 랜덤 문구에만 사용해요. 가족/커플이 내 알람을 맞춰줄 때도 이 값을 기준으로 사용할 수 있어요.",
+            onDismissWithoutSave = { showFortuneInfoDialog = false },
+            onConfirm = { gender, birthDate, birthTime ->
+                promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
+                promptPreferences = promptPreferenceStore.read()
+                onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
+                showFortuneInfoDialog = false
             },
         )
     }
@@ -734,6 +765,14 @@ private fun weatherLocationSettingsLabel(country: String, city: String): String 
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" ")
+    return value.ifBlank { "미설정" }
+}
+
+private fun fortuneInfoSettingsLabel(gender: String, birthDate: String, birthTime: String): String {
+    val value = listOf(gender, birthDate, birthTime)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
     return value.ifBlank { "미설정" }
 }
 

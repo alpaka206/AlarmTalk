@@ -34,6 +34,10 @@ data class FamilyGroupMember(
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String = "09:00",
     @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
     @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
+    @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
+        DynamicPromptSettings(),
+    @SerializedName("dynamic_prompt_settings_state") val dynamicPromptSettingsState: DynamicPromptSettingsState =
+        DynamicPromptSettingsState(),
 )
 
 data class FamilyVoiceAlarmRequest(

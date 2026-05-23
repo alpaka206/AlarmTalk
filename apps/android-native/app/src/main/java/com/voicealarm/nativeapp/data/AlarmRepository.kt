@@ -8,6 +8,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -518,11 +519,11 @@ class AlarmRepository(
                         randomContext = alarm.voiceRandomContext ?: DefaultDynamicVoiceContext,
                         alarmHour = alarm.hour,
                         alarmMinute = alarm.minute,
-                        weatherCountry = alarm.voiceWeatherCountry,
-                        weatherCity = alarm.voiceWeatherCity,
-                        fortuneGender = alarm.voiceFortuneGender,
-                        fortuneBirthDate = alarm.voiceFortuneBirthDate,
-                        fortuneBirthTime = alarm.voiceFortuneBirthTime,
+                        weatherCountry = alarm.voiceWeatherCountry.trimmedOrNull(),
+                        weatherCity = alarm.voiceWeatherCity.trimmedOrNull(),
+                        fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
+                        fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
+                        fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)

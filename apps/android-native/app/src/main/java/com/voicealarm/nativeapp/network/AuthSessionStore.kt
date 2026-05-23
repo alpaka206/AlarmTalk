@@ -39,6 +39,7 @@ class AuthSessionStore(context: Context) {
                 familyAlarmQuietEnd = firstQuietWindow?.end
                     ?: prefs.getString(KEY_FAMILY_ALARM_QUIET_END, "18:30") ?: "18:30",
                 familyAlarmQuietWindows = quietWindows,
+                dynamicPromptSettings = readDynamicPromptSettings(),
             ),
         )
     }
@@ -80,6 +81,7 @@ class AuthSessionStore(context: Context) {
             .putString(KEY_FAMILY_ALARM_QUIET_START, firstQuietWindow.start)
             .putString(KEY_FAMILY_ALARM_QUIET_END, firstQuietWindow.end)
             .putString(KEY_FAMILY_ALARM_QUIET_WINDOWS, encodeQuietWindows(normalizedUser.familyAlarmQuietWindows))
+            .putString(KEY_DYNAMIC_PROMPT_SETTINGS, encodeDynamicPromptSettings(normalizedUser.dynamicPromptSettings))
             .apply()
         return AuthSession(token = token, provider = provider, user = normalizedUser)
     }
@@ -133,6 +135,43 @@ class AuthSessionStore(context: Context) {
         }
         return array.toString()
     }
+
+    private fun readDynamicPromptSettings(): DynamicPromptSettings {
+        val encoded = prefs.getString(KEY_DYNAMIC_PROMPT_SETTINGS, null) ?: return DynamicPromptSettings()
+        return runCatching {
+            val root = JSONObject(encoded)
+            val weather = root.optJSONObject("weather")
+            val fortune = root.optJSONObject("fortune")
+            DynamicPromptSettings(
+                weather = DynamicPromptWeatherSettings(
+                    country = weather?.optString("country").trimmedOrNull(),
+                    city = weather?.optString("city").trimmedOrNull(),
+                ),
+                fortune = DynamicPromptFortuneSettings(
+                    gender = fortune?.optString("gender").trimmedOrNull(),
+                    birthDate = fortune?.optString("birth_date").trimmedOrNull(),
+                    birthTime = fortune?.optString("birth_time").trimmedOrNull(),
+                ),
+            )
+        }.getOrDefault(DynamicPromptSettings())
+    }
+
+    private fun encodeDynamicPromptSettings(settings: DynamicPromptSettings): String =
+        JSONObject()
+            .put(
+                "weather",
+                JSONObject()
+                    .put("country", settings.weather.country.trimmedOrNull())
+                    .put("city", settings.weather.city.trimmedOrNull()),
+            )
+            .put(
+                "fortune",
+                JSONObject()
+                    .put("gender", settings.fortune.gender.trimmedOrNull())
+                    .put("birth_date", settings.fortune.birthDate.trimmedOrNull())
+                    .put("birth_time", settings.fortune.birthTime.trimmedOrNull()),
+            )
+            .toString()
 
     private fun normalizeUser(user: AuthUser): AuthUser {
         val legacyDays = normalizeQuietDays(runCatching { user.familyAlarmQuietDays }.getOrNull())
@@ -218,6 +257,7 @@ class AuthSessionStore(context: Context) {
         private const val KEY_FAMILY_ALARM_QUIET_START = "family_alarm_quiet_start"
         private const val KEY_FAMILY_ALARM_QUIET_END = "family_alarm_quiet_end"
         private const val KEY_FAMILY_ALARM_QUIET_WINDOWS = "family_alarm_quiet_windows"
+        private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
         private const val MAX_QUIET_WINDOWS = 8
     }
 }

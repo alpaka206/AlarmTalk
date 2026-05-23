@@ -494,6 +494,12 @@ internal fun RandomPromptSettingsPane(
     weatherCity: String,
     savedWeatherCountry: String,
     savedWeatherCity: String,
+    savedWeatherConfigured: Boolean,
+    savedFortuneGender: String,
+    savedFortuneBirthDate: String,
+    savedFortuneBirthTime: String,
+    savedFortuneConfigured: Boolean,
+    usingTargetDynamicPromptSettings: Boolean,
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
@@ -512,12 +518,26 @@ internal fun RandomPromptSettingsPane(
     var draftWeatherCity by remember(weatherCity, savedWeatherCity) {
         mutableStateOf(weatherCity.ifBlank { savedWeatherCity })
     }
-    var draftFortuneGender by remember(fortuneGender) { mutableStateOf(fortuneGender) }
-    var draftFortuneBirthDate by remember(fortuneBirthDate) { mutableStateOf(fortuneBirthDate) }
-    var draftFortuneBirthTime by remember(fortuneBirthTime) { mutableStateOf(fortuneBirthTime) }
+    var draftFortuneGender by remember(fortuneGender, savedFortuneGender) {
+        mutableStateOf(fortuneGender.ifBlank { savedFortuneGender })
+    }
+    var draftFortuneBirthDate by remember(fortuneBirthDate, savedFortuneBirthDate) {
+        mutableStateOf(fortuneBirthDate.ifBlank { savedFortuneBirthDate })
+    }
+    var draftFortuneBirthTime by remember(fortuneBirthTime, savedFortuneBirthTime) {
+        mutableStateOf(fortuneBirthTime.ifBlank { savedFortuneBirthTime })
+    }
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     val normalizedContext = normalizedRandomPromptContext(draftContext)
+    fun hasWeatherInfo(): Boolean =
+        (draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank()) || savedWeatherConfigured
+    fun hasFortuneInfo(): Boolean =
+        (
+            draftFortuneGender.isNotBlank() &&
+                draftFortuneBirthDate.isNotBlank() &&
+                draftFortuneBirthTime.isNotBlank()
+            ) || savedFortuneConfigured
 
     fun saveResolvedSettings() {
         onSaveSettings(
@@ -535,15 +555,17 @@ internal fun RandomPromptSettingsPane(
 
     fun requestRequiredInfoOrSave() {
         when {
-            randomContextUsesWeather(normalizedContext) &&
-                (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) -> weatherDialogOpen = true
-            normalizedContext == "wake_fortune" &&
-                (
-                    draftFortuneGender.isBlank() ||
-                        draftFortuneBirthDate.isBlank() ||
-                        draftFortuneBirthTime.isBlank()
-                    ) -> fortuneDialogOpen = true
+            randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
+            normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
             else -> saveResolvedSettings()
+        }
+    }
+
+    fun selectContext(context: String) {
+        draftContext = context
+        when {
+            randomContextUsesWeather(context) && !hasWeatherInfo() -> weatherDialogOpen = true
+            context == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
         }
     }
 
@@ -599,7 +621,7 @@ internal fun RandomPromptSettingsPane(
                         SnoozeRadioRow(
                             label = label,
                             selected = normalizedContext == context,
-                            onClick = { draftContext = context },
+                            onClick = { selectContext(context) },
                         )
                         if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
                     }
@@ -608,10 +630,12 @@ internal fun RandomPromptSettingsPane(
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
                         title = "날씨 위치",
-                        value = if (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) {
-                            "저장할 때 나라와 도시를 입력해요."
-                        } else {
-                            "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                        value = when {
+                            draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
+                                "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                            usingTargetDynamicPromptSettings && savedWeatherConfigured ->
+                                "상대가 저장한 위치를 사용해요."
+                            else -> "저장할 때 나라와 도시를 입력해요."
                         },
                     )
                 }
@@ -619,14 +643,14 @@ internal fun RandomPromptSettingsPane(
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
                         title = "운세 정보",
-                        value = if (
-                            draftFortuneGender.isBlank() ||
-                            draftFortuneBirthDate.isBlank() ||
-                            draftFortuneBirthTime.isBlank()
-                        ) {
-                            "저장할 때 성별, 생년월일, 태어난 시간을 입력해요."
-                        } else {
-                            fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                        value = when {
+                            draftFortuneGender.isNotBlank() &&
+                                draftFortuneBirthDate.isNotBlank() &&
+                                draftFortuneBirthTime.isNotBlank() ->
+                                fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                            usingTargetDynamicPromptSettings && savedFortuneConfigured ->
+                                "상대가 저장한 운세 정보를 사용해요."
+                            else -> "저장할 때 성별, 생년월일, 태어난 시간을 입력해요."
                         },
                     )
                 }
@@ -911,10 +935,11 @@ private fun WeatherLocationDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FortuneInfoDialog(
+internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
+    description: String = "운세 문구 생성에만 사용해요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
@@ -955,7 +980,7 @@ private fun FortuneInfoDialog(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "운세 문구 생성에만 사용해요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+                        text = description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

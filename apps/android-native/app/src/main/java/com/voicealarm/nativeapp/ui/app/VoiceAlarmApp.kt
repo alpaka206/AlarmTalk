@@ -622,6 +622,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
+                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -656,6 +657,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
+                          onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()
@@ -680,6 +682,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onRequestAllPermissions = ::requestAllMissingPermissions,
                       onEditNickname = viewModel::requestEditNickname,
                       onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
+                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )

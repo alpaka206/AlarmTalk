@@ -64,10 +64,13 @@ import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
+import com.voicealarm.nativeapp.data.DynamicPromptPreferences
+import com.voicealarm.nativeapp.data.toDynamicPromptSettings
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
@@ -75,6 +78,7 @@ import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -104,6 +108,7 @@ internal fun AlarmEditorScreen(
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
@@ -139,6 +144,25 @@ internal fun AlarmEditorScreen(
     var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
         mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
     }
+    val selectedFamilyRecipientValue = familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
+    val activeDynamicPromptPreferences = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettings?.toPromptPreferences() ?: DynamicPromptPreferences()
+    } else {
+        dynamicPromptPreferences
+    }
+    val savedWeatherConfigured = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettingsState?.weatherReady == true
+    } else {
+        activeDynamicPromptPreferences.weatherCountry.isNotBlank() &&
+            activeDynamicPromptPreferences.weatherCity.isNotBlank()
+    }
+    val savedFortuneConfigured = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettingsState?.fortuneReady == true
+    } else {
+        activeDynamicPromptPreferences.fortuneGender.isNotBlank() &&
+            activeDynamicPromptPreferences.fortuneBirthDate.isNotBlank() &&
+            activeDynamicPromptPreferences.fortuneBirthTime.isNotBlank()
+    }
     val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -161,17 +185,40 @@ internal fun AlarmEditorScreen(
         if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
     }
 
-    LaunchedEffect(dynamicPromptPreferences.weatherCountry, dynamicPromptPreferences.weatherCity) {
+    LaunchedEffect(
+        familyAlarmMode,
+        selectedFamilyRecipientValue?.userId,
+        activeDynamicPromptPreferences,
+    ) {
+        if (familyAlarmMode) {
+            editor.voiceWeatherCountry = activeDynamicPromptPreferences.weatherCountry
+            editor.voiceWeatherCity = activeDynamicPromptPreferences.weatherCity
+            editor.voiceFortuneGender = activeDynamicPromptPreferences.fortuneGender
+            editor.voiceFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate
+            editor.voiceFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime
+            editor.clearTtsMeta()
+            editor.clearAudio()
+            return@LaunchedEffect
+        }
         if (editor.voiceWeatherCountry.isBlank()) {
-            editor.voiceWeatherCountry = dynamicPromptPreferences.weatherCountry
+            editor.voiceWeatherCountry = activeDynamicPromptPreferences.weatherCountry
         }
         if (editor.voiceWeatherCity.isBlank()) {
-            editor.voiceWeatherCity = dynamicPromptPreferences.weatherCity
+            editor.voiceWeatherCity = activeDynamicPromptPreferences.weatherCity
+        }
+        if (editor.voiceFortuneGender.isBlank()) {
+            editor.voiceFortuneGender = activeDynamicPromptPreferences.fortuneGender
+        }
+        if (editor.voiceFortuneBirthDate.isBlank()) {
+            editor.voiceFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate
+        }
+        if (editor.voiceFortuneBirthTime.isBlank()) {
+            editor.voiceFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime
         }
     }
 
     fun selectedFamilyRecipient(): FamilyGroupMember? =
-        familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
+        selectedFamilyRecipientValue
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
@@ -529,25 +576,36 @@ internal fun AlarmEditorScreen(
                         alarmHour = editor.hour,
                         alarmMinute = editor.minute,
                         weatherCountry = editor.voiceWeatherCountry.takeIf {
-                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
-                        },
+                            editor.voiceRandomPrompt &&
+                                randomContextUsesWeather(editor.voiceRandomContext) &&
+                                editor.voiceWeatherCountry.isNotBlank()
+                        }?.trimmedOrNull(),
                         weatherCity = editor.voiceWeatherCity.takeIf {
-                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
-                        },
+                            editor.voiceRandomPrompt &&
+                                randomContextUsesWeather(editor.voiceRandomContext) &&
+                                editor.voiceWeatherCity.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneGender = editor.voiceFortuneGender.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneGender.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneBirthDate = editor.voiceFortuneBirthDate.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneBirthDate.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneBirthTime.isNotBlank()
+                        }?.trimmedOrNull(),
+                        targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
                         listenerTitle = resolveListenerTitle(
                             profileId = profileId,
                             voiceProfiles = voiceProfiles,
                             familyVoices = familyVoices,
-                        ),
+                        ).trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -576,7 +634,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = rawAudioUri,
                 )
                 audioMessage = "생성한 음성을 로컬에 저장했어요."
-            submitDraft(editor.toDraft())
+                submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
@@ -706,13 +764,34 @@ internal fun AlarmEditorScreen(
         editor.voiceFortuneBirthTime = result.fortuneBirthTime
         editor.clearAudio()
         editor.clearTtsMeta()
+        var shouldSyncOwnDynamicPromptSettings = false
         if (
+            !familyAlarmMode &&
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCountry.isNotBlank() &&
             result.weatherCity.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
             dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            shouldSyncOwnDynamicPromptSettings = true
+        }
+        if (
+            !familyAlarmMode &&
+            normalizedRandomPromptContext(result.randomContext) == "wake_fortune" &&
+            result.fortuneGender.isNotBlank() &&
+            result.fortuneBirthDate.isNotBlank() &&
+            result.fortuneBirthTime.isNotBlank()
+        ) {
+            dynamicPromptPreferenceStore.saveFortuneInfo(
+                gender = result.fortuneGender,
+                birthDate = result.fortuneBirthDate,
+                birthTime = result.fortuneBirthTime,
+            )
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            shouldSyncOwnDynamicPromptSettings = true
+        }
+        if (shouldSyncOwnDynamicPromptSettings) {
+            onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
         }
         settingsDetailPanel = null
     }
@@ -1021,8 +1100,14 @@ internal fun AlarmEditorScreen(
                 randomContext = editor.voiceRandomContext,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
-                savedWeatherCountry = dynamicPromptPreferences.weatherCountry,
-                savedWeatherCity = dynamicPromptPreferences.weatherCity,
+                savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,
+                savedWeatherCity = activeDynamicPromptPreferences.weatherCity,
+                savedWeatherConfigured = savedWeatherConfigured,
+                savedFortuneGender = activeDynamicPromptPreferences.fortuneGender,
+                savedFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate,
+                savedFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime,
+                savedFortuneConfigured = savedFortuneConfigured,
+                usingTargetDynamicPromptSettings = familyAlarmMode,
                 fortuneGender = editor.voiceFortuneGender,
                 fortuneBirthDate = editor.voiceFortuneBirthDate,
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
@@ -1064,6 +1149,15 @@ internal fun resolveListenerTitle(
     val shared = familyVoices.firstOrNull { it.id == profileId }?.listenerTitle
     return shared?.takeIf { it.isNotBlank() }
 }
+
+private fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
+    DynamicPromptPreferences(
+        weatherCountry = weather.country?.trim().orEmpty(),
+        weatherCity = weather.city?.trim().orEmpty(),
+        fortuneGender = fortune.gender?.trim().orEmpty(),
+        fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
+        fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
+    )
 
 @Composable
 private fun AlarmEditorTopBar(
