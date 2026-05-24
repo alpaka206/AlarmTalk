@@ -104,11 +104,11 @@ internal fun MainViewModel.syncCharacterEvents() {
         }
         characterBusy = false
         syncResult.onSuccess { result ->
-            message = "XP 동기화: 완료 ${result.synced}개, 실패 ${result.failed}개"
+            message = "성장 기록을 반영했어요. 실패한 기록 ${result.failed}개는 다시 시도해 주세요."
             refreshCharacterAndBillingData(showMessage = false)
         }.onFailure { error ->
             Log.e(TAG, "Character event sync failed", error)
-            message = userFacingError(error, "XP 동기화에 실패했어요")
+            message = userFacingError(error, "성장 기록을 반영하지 못했어요")
         }
     }
 }
@@ -280,7 +280,7 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
         return
     }
     if (trimmedText.length > 200) {
-        message = "목소리 메시지는 200자까지 보낼 수 있어요"
+        message = "음성 메시지는 200자까지 보낼 수 있어요"
         return
     }
     if (normalizedVoiceProfileId.isBlank()) {
@@ -312,11 +312,11 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
                 ),
             )
         }.onSuccess {
-            message = "목소리 메시지를 보냈어요"
+            message = "음성 메시지를 보냈어요"
             refreshNotes()
         }.onFailure { error ->
             Log.e(TAG, "Failed to send TTS note", error)
-            message = userFacingError(error, "목소리 메시지 전송에 실패했어요")
+            message = userFacingError(error, "음성 메시지 전송에 실패했어요")
         }
         noteBusy = false
     }

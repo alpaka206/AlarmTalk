@@ -94,8 +94,8 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
             registerEmailVerificationSentTo = normalizedEmail
             registerEmailVerified = null
             message = response.debugCode
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "개발용 인증 코드: $it" }
+                ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
+                ?.let { "인증 코드: $it" }
                 ?: "인증 코드를 보냈어요"
         }.onFailure { error ->
             Log.e(TAG, "Email verification request failed", error)
@@ -176,7 +176,7 @@ internal fun MainViewModel.register(
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     if (idToken.isBlank()) {
-        message = "Google 로그인 토큰을 확인하지 못했어요."
+        message = "Google 로그인을 확인하지 못했어요. 다시 시도해 주세요."
         return
     }
     viewModelScope.launch {
@@ -190,7 +190,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             message = null
         }.onFailure { error ->
             Log.e(TAG, "Google token exchange failed", error)
-            message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
+            message = userFacingError(error, "Google 로그인을 완료하지 못했어요. 다시 시도해 주세요.")
         }
         authBusy = false
     }
@@ -288,10 +288,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             )
             authSession = authSessionStore.save(updated)
             refreshSocial()
-            message = "상대방 알람 설정을 저장했어요"
+            message = "상대 알람 설정을 저장했어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to update family alarm settings", error)
-            message = userFacingError(error, "상대방 알람 설정을 저장하지 못했어요")
+            message = userFacingError(error, "상대 알람 설정을 저장하지 못했어요")
         }
         authBusy = false
     }
@@ -378,7 +378,7 @@ internal fun MainViewModel.syncNow() {
             }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
-            message = userFacingError(error, "알람 정보를 불러오거나 서버에 저장하지 못했어요")
+            message = userFacingError(error, "알람 정보를 불러오거나 변경사항을 저장하지 못했어요")
         }
         syncBusy = false
     }
@@ -386,9 +386,9 @@ internal fun MainViewModel.syncNow() {
 
 private fun alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
     pushFailed > 0 && pullFailed > 0 ->
-        "알람 변경사항 일부를 서버에 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+        "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
     pushFailed > 0 ->
-        "알람 변경사항 일부를 서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+        "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
     pullFailed > 0 ->
         "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
     else -> "알람 동기화에 실패했어요."

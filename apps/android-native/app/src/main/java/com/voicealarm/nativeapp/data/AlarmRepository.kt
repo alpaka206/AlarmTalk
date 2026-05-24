@@ -51,7 +51,7 @@ class AlarmRepository(
         requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = "Test alarm",
+            label = "테스트 알람",
             hour = localTime.hour,
             minute = localTime.minute,
             fireAtMillis = fireAtMillis,

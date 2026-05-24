@@ -28,8 +28,8 @@ internal fun PlanGateDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "유료 기능이에요",
-    confirmLabel: String = "요금제 변경하러 가기",
+    title: String = "이용권이 필요한 기능이에요",
+    confirmLabel: String = "이용권 보기",
     dismissLabel: String = "닫기",
 ) {
     val scheme = MaterialTheme.colorScheme

@@ -99,7 +99,7 @@ internal fun SubscriptionPanel(
                 name = "개인",
                 price = "월 4,900원",
                 description = "내가 좋아하는 목소리로 알람을 만들어요.",
-                features = listOf("알람 음성", "음성 메시지", "개인 이용권 선물"),
+                features = listOf("목소리", "음성 메시지", "개인 이용권 선물"),
             ),
             SubscriptionPlanOption(
                 key = "couple",

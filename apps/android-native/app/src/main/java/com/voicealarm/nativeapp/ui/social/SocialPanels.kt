@@ -139,7 +139,7 @@ internal fun FamilyConnectionPanel(
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(
-                            text = "이용권에서 나가고 다른 코드 등록하기",
+                            text = "현재 이용권 나가고 새 코드 등록하기",
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -217,9 +217,9 @@ internal fun FamilyConnectionPanel(
     if (showLeaveDialog && currentGroup != null) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("이용권에서 나가고 다른 코드 등록") },
+            title = { Text("현재 이용권 나가고 새 코드 등록") },
             text = {
-                MutedText("현재 이용권에서 나가고 이 코드를 등록할까요?")
+                MutedText("현재 이용권에서 나가고 새 코드를 등록할까요?")
             },
             confirmButton = {
                 TextButton(
@@ -250,7 +250,7 @@ internal fun FamilyConnectionPanel(
             text = {
                 MutedText(
                     if (hasActivePlan) {
-                        "유효한 코드면 현재 $activePlanName 이용권은 해지되고 새 이용권으로 전환돼요. 등록하시겠어요?"
+                        "등록 가능한 코드라면 현재 $activePlanName 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?"
                     } else {
                         "이 코드를 등록할까요?"
                     },
@@ -405,7 +405,7 @@ internal fun VoiceMessagePanel(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MutedText("메시지는 커플/가족 플랜에서 사용할 수 있어요.")
+                MutedText("메시지는 커플/가족 이용권에서 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
@@ -519,7 +519,7 @@ internal fun VoiceMessagePanel(
                                 selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             ),
-                            label = { Text("목소리 메시지") },
+                            label = { Text("음성 메시지") },
                         )
                     }
                     if (sendMode == VoiceMessageSendMode.Tts) {

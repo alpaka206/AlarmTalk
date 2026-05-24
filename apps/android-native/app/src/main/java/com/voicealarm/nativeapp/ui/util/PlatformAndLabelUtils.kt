@@ -161,8 +161,8 @@ internal fun vibrationLabel(pattern: String): String = when (pattern) {
 }
 
 internal fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "음성"
-    AlarmPlayModes.ALARM_VOICE -> "알람 + 음성"
+    AlarmPlayModes.VOICE_ONLY -> "목소리"
+    AlarmPlayModes.ALARM_VOICE -> "알람 + 목소리"
     else -> "알람"
 }
 
@@ -280,7 +280,7 @@ internal fun alarmStateLabel(state: String?): String = when (state) {
     "snoozed" -> "다시 울림"
     "dismissed" -> "종료됨"
     "missed" -> "놓침"
-    "failed" -> "알람을 다시 예약하지 못했습니다"
+    "failed" -> "알람을 다시 예약하지 못했어요"
     else -> state ?: "로컬"
 }
 
@@ -300,7 +300,7 @@ internal fun stageLabel(stage: String): String = when (stage) {
 
 internal fun syncStateLabel(state: String): String = when (state) {
     AlarmSyncStates.SYNCED -> "동기화됨"
-    AlarmSyncStates.DIRTY -> "서버 저장 대기"
-    AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다"
+    AlarmSyncStates.DIRTY -> "저장 대기"
+    AlarmSyncStates.FAILED -> "서버에 저장하지 못했어요"
     else -> "기기에만 저장됨"
 }

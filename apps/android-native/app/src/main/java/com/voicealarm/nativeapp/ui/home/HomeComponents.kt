@@ -47,8 +47,8 @@ internal fun HomeHeader() {
     val hour = java.time.LocalTime.now().hour
     val (greetingTop, greetingBottom) = when {
         hour < 6 -> "좋아하는 목소리로" to "깨워드릴게요"
-        hour < 12 -> "오늘 아침," to "어떤 목소리로 깨어났나요?"
-        hour < 17 -> "내일의 목소리 알람을" to "준비해요"
+        hour < 12 -> "오늘 아침," to "잘 일어나셨나요?"
+        hour < 17 -> "내일 알람을" to "준비해요"
         hour < 21 -> "서로의 목소리로" to "아침을 예약해요"
         else -> "좋아하는 목소리로" to "깨워드릴게요"
     }

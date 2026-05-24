@@ -148,7 +148,7 @@ internal class RemoteAlarmPullSyncService(
         val label = remote.messageText
             ?.takeIf { it.isNotBlank() }
             ?: remote.senderName?.takeIf { it.isNotBlank() }?.let { "$it 알람" }
-            ?: "상대방 알람"
+            ?: "상대가 맞춰준 알람"
 
         return AlarmEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),

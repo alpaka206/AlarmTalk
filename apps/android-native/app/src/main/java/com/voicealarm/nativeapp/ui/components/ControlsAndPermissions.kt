@@ -337,8 +337,8 @@ internal fun AlarmRow(
 }
 
 private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
-    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했습니다. 시간을 확인하고 다시 저장해 주세요."
-    alarm.syncState == AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다. 이 기기의 알람은 그대로 울려요."
+    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."
+    alarm.syncState == AlarmSyncStates.FAILED -> "서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
     else -> null
 }
 

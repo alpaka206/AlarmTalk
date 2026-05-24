@@ -379,7 +379,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "알람을 받을 사람을 선택해 주세요."
             return
         }
-        showFamilyAlarmToast("상대방 알람을 등록했어요.")
+        showFamilyAlarmToast("상대 알람을 설정했어요.")
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -444,7 +444,7 @@ internal fun AlarmEditorScreen(
                 holidayOff = editor.holidayOff,
             )
             if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
-                val message = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                val message = "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -492,12 +492,12 @@ internal fun AlarmEditorScreen(
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
-            audioMessage = "사용할 알람 음성을 선택해 주세요."
+            audioMessage = "사용할 목소리를 선택해 주세요."
             return
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {
-            audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요."
+            audioMessage = "음성 메시지를 입력하거나 랜덤 문구를 켜 주세요."
             return
         }
         if (
@@ -525,7 +525,7 @@ internal fun AlarmEditorScreen(
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
-            audioMessage = "삭제된 알람 음성이라 문구를 수정할 수 없어요. 다른 알람 음성을 선택해 주세요."
+            audioMessage = "삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요."
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
@@ -557,8 +557,8 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
-            audioMessage = "음성을 생성해서 저장하는 중..."
-            showFamilyAlarmToast("음성을 생성하는 중...")
+            audioMessage = "목소리 알람을 준비하는 중이에요."
+            showFamilyAlarmToast("목소리 알람을 준비하는 중이에요.")
             runCatching {
                 val response = onGenerateTts(
                     TtsGenerateRequest(
@@ -686,7 +686,7 @@ internal fun AlarmEditorScreen(
             editor.clearAudio()
             selectedFileUri = null
             selectedFileDurationMillis = null
-            audioMessage = "무료 이용권에서는 일반 알람을 사용할 수 있어요."
+            audioMessage = "무료 이용권에서는 일반 알람만 만들 수 있어요."
         }
     }
 
@@ -1128,7 +1128,7 @@ internal fun AlarmEditorScreen(
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
-            message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요.",
+            message = "유료 이용권에서 사용할 수 있어요.",
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()
@@ -1180,7 +1180,7 @@ private fun AlarmEditorTopBar(
         Spacer(Modifier.width(8.dp))
         Text(
             text = when {
-                familyAlarmMode -> "함께 울릴 알람"
+                familyAlarmMode -> "상대 알람 맞추기"
                 isEditing -> "알람 수정"
                 else -> "새 알람"
             },
@@ -1222,7 +1222,7 @@ internal fun FamilyAlarmTargetCard(
     if (recipientDialogOpen) {
         AlertDialog(
             onDismissRequest = { recipientDialogOpen = false },
-            title = { Text("받는 사람 선택") },
+            title = { Text("알람 받을 사람 선택") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recipients.forEach { recipient ->
@@ -1259,7 +1259,7 @@ internal fun FamilyAlarmTargetCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("받는 사람", fontWeight = FontWeight.SemiBold)
+                Text("알람 받을 사람", fontWeight = FontWeight.SemiBold)
                 if (recipients.size > 1) {
                     TextButton(onClick = { recipientDialogOpen = true }) {
                         Text("변경")
@@ -1267,7 +1267,7 @@ internal fun FamilyAlarmTargetCard(
                 }
             }
             if (recipients.isEmpty()) {
-                MutedText("상대가 알람 설정을 허용하면 여기에 표시돼요.")
+                MutedText("상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
             } else {
                 RecipientSummaryRow(
                     recipient = requireNotNull(selectedRecipient),
@@ -1282,7 +1282,7 @@ internal fun FamilyAlarmTargetCard(
                 )
 
                 if (recipients.size == 1) {
-                    MutedText("수신자는 한 명이고 바로 그 사람에게 설정돼요.")
+                    MutedText("이 알람은 선택된 한 사람에게만 설정돼요.")
                 }
             }
         }
@@ -1374,11 +1374,11 @@ private fun RecipientPickerRow(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(familyMemberLabel(recipient), fontWeight = FontWeight.SemiBold)
-                MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+                MutedText("받지 않는 시간: ${familyAlarmQuietScheduleLabel(recipient)}")
             }
             if (selected) {
                 Text(
-                    text = "선택됨",
+                    text = "선택",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -1396,8 +1396,8 @@ private fun FamilyAlarmTargetStatus(
 ) {
     val blocked = leadTooSoon || quietUnavailable
     val statusText = when {
-        leadTooSoon -> "30분 뒤부터 설정할 수 있어요."
-        quietUnavailable -> "이 시간은 상대가 받을 수 없는 시간이에요."
+        leadTooSoon -> "지금부터 30분 뒤 알람부터 설정할 수 있어요."
+        quietUnavailable -> "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
         else -> "설정 가능"
     }
     Surface(
@@ -1420,7 +1420,7 @@ private fun FamilyAlarmTargetStatus(
             fontWeight = FontWeight.SemiBold,
         )
     }
-    MutedText("설정 불가: $quietLabel")
+    MutedText("받지 않는 시간: $quietLabel")
 }
 
 private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L

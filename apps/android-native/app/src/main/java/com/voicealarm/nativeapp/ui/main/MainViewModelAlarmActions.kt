@@ -76,7 +76,7 @@ private fun alarmPermissionBlockedMessage(target: PermissionTarget): String = wh
 
 internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
-        message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
+        message = "유료 이용권에서 사용할 수 있어요."
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -100,11 +100,11 @@ internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
 private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     val session = authSession
     if (session == null) {
-        message = "상대방 알람을 설정하려면 먼저 로그인해 주세요"
+        message = "상대 알람을 설정하려면 먼저 로그인해 주세요"
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "상대방 알람은 커플/가족 이용권에서 사용할 수 있어요"
+        message = "상대 알람은 커플/가족 이용권에서 사용할 수 있어요"
         return
     }
     runCatching {
@@ -138,12 +138,12 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
             }
         }
     }.onSuccess {
-        val target = draft.targetUserName?.takeIf { it.isNotBlank() } ?: "상대방"
+        val target = draft.targetUserName?.takeIf { it.isNotBlank() } ?: "상대"
         message = "${target}에게 알람을 설정했어요"
         onDone()
     }.onFailure { error ->
         Log.e(TAG, "Failed to create family target alarm target=${draft.targetUserId}", error)
-        message = userFacingError(error, "상대방 알람 설정에 실패했어요")
+        message = userFacingError(error, "상대 알람 설정에 실패했어요")
     }
 }
 
@@ -194,7 +194,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
 
 internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDone: () -> Unit) {
     if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
-        message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요."
+        message = "유료 이용권에서 사용할 수 있어요."
         return
     }
     if (!requireAlarmPermissionsForMutation()) return

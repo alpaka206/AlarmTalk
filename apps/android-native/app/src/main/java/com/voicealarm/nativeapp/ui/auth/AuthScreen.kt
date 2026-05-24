@@ -108,9 +108,9 @@ internal fun AuthScreen(
         }
         Text(
             text = if (mode == AuthMode.Login) {
-                "좋아하는 목소리 알람을 다시 불러오세요."
+                "좋아하는 목소리 알람을 다시 불러올게요."
             } else {
-                "좋아하는 목소리 알람을 만들 계정을 준비해요."
+                "목소리 알람을 만들 계정을 준비해요."
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

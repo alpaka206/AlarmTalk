@@ -110,7 +110,7 @@ internal fun MemberManagementScreen(
                     )
                 }
                 Text(
-                    text = "$planLabel 멤버/공유 코드 관리",
+                    text = "$planLabel 구성원과 공유 코드",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -120,7 +120,7 @@ internal fun MemberManagementScreen(
         if (group == null) {
             item {
                 Text(
-                    text = "참여 중인 공유 이용권이 없어요.",
+                    text = "현재 함께 쓰는 이용권이 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -150,7 +150,7 @@ internal fun MemberManagementScreen(
                         text = if (isCapacityFull) {
                             "정원이 가득 차서 더 이상 공유할 수 없어요."
                         } else {
-                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 INV 코드를 만들어 주세요."
+                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 초대 코드를 만들어 주세요."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -227,10 +227,10 @@ internal fun MemberManagementScreen(
     pendingRemoveMember?.let { member ->
         AlertDialog(
             onDismissRequest = { pendingRemoveMember = null },
-            title = { Text("멤버 내보내기") },
+            title = { Text("구성원 내보내기") },
             text = {
                 Text(
-                    text = "${member.name ?: member.email ?: "이 멤버"}을(를) 정말 내보낼까요? 다시 들어오려면 새 초대 코드가 필요해요.",
+                    text = "이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

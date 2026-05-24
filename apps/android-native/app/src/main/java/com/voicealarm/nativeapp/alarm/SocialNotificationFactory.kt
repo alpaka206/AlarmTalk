@@ -32,11 +32,11 @@ object SocialNotificationFactory {
         notify(
             context = context,
             notificationId = BASE_ALARM_NOTIFICATION_ID + stableOffset(alarmId),
-            title = "새 알람",
+            title = "알람이 설정됐어요",
             body = listOfNotNull(
                 senderName?.takeIf { it.isNotBlank() },
                 time.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifBlank { "상대방이 알람을 설정했어요" },
+            ).joinToString(" · ").ifBlank { "상대가 내 알람을 설정했어요" },
             groupId = ALARM_GROUP_ID,
         )
     }

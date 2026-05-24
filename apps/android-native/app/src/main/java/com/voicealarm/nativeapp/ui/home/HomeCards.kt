@@ -209,7 +209,7 @@ internal fun QuickStartGrid(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HomeActionCard(
-                label = "알람 음성",
+                label = "목소리",
                 icon = Icons.Outlined.Mic,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -229,7 +229,7 @@ internal fun QuickStartGrid(
         }
         if (canCreateFamilyAlarm) {
             HomeActionCard(
-                label = "다른 사람 알람 맞춰주기",
+                label = "상대 알람 맞춰주기",
                 icon = Icons.Outlined.People,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,

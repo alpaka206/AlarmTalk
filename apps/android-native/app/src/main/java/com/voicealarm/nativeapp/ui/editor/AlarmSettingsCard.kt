@@ -609,7 +609,7 @@ internal fun RandomPromptSettingsPane(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                 ) {
                     Text(
-                        text = "옵션을 고른 뒤 아래 저장을 눌러야 랜덤 생성이 적용돼요. 저장하지 않고 나가면 직접 문구 입력으로 돌아가요.",
+                        text = "저장하면 선택한 랜덤 문구로 알람 목소리를 만들어요. 저장하지 않으면 직접 입력으로 돌아가요.",
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -635,22 +635,22 @@ internal fun RandomPromptSettingsPane(
                                 "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
                                 "상대가 저장한 위치를 사용해요."
-                            else -> "저장할 때 나라와 도시를 입력해요."
+                            else -> "날씨 문구를 쓰려면 나라와 도시가 필요해요."
                         },
                     )
                 }
 
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
-                        title = "운세 정보",
+                        title = "운세용 정보",
                         value = when {
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
                                 fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
-                                "상대가 저장한 운세 정보를 사용해요."
-                            else -> "저장할 때 성별, 생년월일, 태어난 시간을 입력해요."
+                                "상대가 저장한 운세용 정보를 사용해요."
+                            else -> "운세 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요."
                         },
                     )
                 }
@@ -681,7 +681,7 @@ internal fun RandomPromptSettingsPane(
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("랜덤 설정 저장")
+                        Text("저장")
                     }
                 }
             }
@@ -822,7 +822,7 @@ private fun WeatherLocationDialog(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "현재 위치로 자동 입력하거나 직접 입력해 주세요. 위치를 못 찾으면 GPS/위치 서비스가 켜져 있는지 확인해 주세요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+                        text = "현재 위치를 불러오거나 직접 입력해 주세요. 저장하지 않으면 랜덤 문구가 꺼져요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -883,7 +883,7 @@ private fun WeatherLocationDialog(
                         singleLine = true,
                         isError = countryError,
                         supportingText = {
-                            if (countryError) Text("필수 입력 값입니다.")
+                            if (countryError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -897,7 +897,7 @@ private fun WeatherLocationDialog(
                         singleLine = true,
                         isError = cityError,
                         supportingText = {
-                            if (cityError) Text("필수 입력 값입니다.")
+                            if (cityError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -939,7 +939,7 @@ internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
-    description: String = "운세 문구 생성에만 사용해요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
+    description: String = "운세 문구를 만들 때만 사용해요. 저장하지 않으면 랜덤 문구가 꺼져요.",
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
@@ -975,7 +975,7 @@ internal fun FortuneInfoDialog(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "운세 정보",
+                        text = "운세용 정보",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )

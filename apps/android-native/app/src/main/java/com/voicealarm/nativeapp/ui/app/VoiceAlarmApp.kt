@@ -275,7 +275,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             !hasPaidVoiceAccess(subscriptionResponse)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+                message = "유료 이용권에서 사용할 수 있어요.",
             )
             navController.navigateTopLevelTab(NativeTab.Home)
         }
@@ -341,7 +341,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
         val idToken = account?.idToken
         if (idToken.isNullOrBlank()) {
-            viewModel.showGoogleSignInFailed("Google ID 토큰을 받지 못했어요")
+            viewModel.showGoogleSignInFailed("Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.")
         } else {
             viewModel.finishGoogleLogin(idToken)
         }
@@ -376,7 +376,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             !hasPaidVoiceAccess(subscriptionResponse)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+                message = "유료 이용권에서 사용할 수 있어요.",
             )
             return
         }
@@ -386,7 +386,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "메시지는 커플/가족 플랜에서 사용할 수 있어요.",
+                message = "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
             )
             return
         }
@@ -841,7 +841,7 @@ private enum class MessageSeverity { Success, Error, Info }
 
 private data class PlanGateDialogState(
     val message: String,
-    val confirmLabel: String = "요금제 변경하러 가기",
+    val confirmLabel: String = "이용권 보기",
     val dismissLabel: String = "닫기",
 )
 

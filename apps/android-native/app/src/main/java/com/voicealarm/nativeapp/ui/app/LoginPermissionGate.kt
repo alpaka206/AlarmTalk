@@ -84,7 +84,7 @@ internal fun LoginPermissionGate(
                         style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
-                        text = "정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.",
+                        text = "정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -159,7 +159,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Voices -> {
                 item {
-                    ScreenHeader(title = "음성")
+                    ScreenHeader(title = "목소리")
                 }
                 item {
                     VoiceProfileManagementPanel(

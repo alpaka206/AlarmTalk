@@ -116,7 +116,7 @@ internal fun VoiceAudioCard(
     ) {
             OptionChips(
                 options = listOf(
-                    VoiceSources.TTS_PROFILE to "알람 음성",
+                    VoiceSources.TTS_PROFILE to "목소리",
                     VoiceSources.LOCAL_AUDIO to "녹음/파일",
                 ),
                 selected = visibleVoiceSource,
@@ -148,9 +148,9 @@ internal fun VoiceAudioCard(
                 val selectedProfileUnavailable = !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
-                Text("알람에 들을 목소리", fontWeight = FontWeight.SemiBold)
+                Text("알람에서 들을 목소리", fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
-                    MutedText("알람 음성을 불러오는 중이에요.")
+                    MutedText("목소리를 불러오는 중이에요.")
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
@@ -174,12 +174,12 @@ internal fun VoiceAudioCard(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "삭제된 알람 음성",
+                                text = "삭제된 목소리",
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                             Text(
-                                text = "이미 저장된 음성은 그대로 울리지만, 문구를 바꾸려면 다른 알람 음성을 선택해 주세요.",
+                                text = "이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
                             )
@@ -193,7 +193,7 @@ internal fun VoiceAudioCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("랜덤 생성", fontWeight = FontWeight.SemiBold)
+                            Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
                         }
                         VoiceAlarmSwitch(
                             checked = editor.voiceRandomPrompt,
@@ -353,7 +353,7 @@ private fun NoUsableVoiceProfileCallout(
                 onClick = onCreateVoiceProfileClick,
                 shape = WakerButtonShape,
             ) {
-                Text("음성 생성하러 가기")
+                Text("목소리 만들기")
             }
         }
     }
@@ -452,7 +452,7 @@ private fun ManualVoiceMessageField(
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("알람에서 들을 음성 메시지") },
+            placeholder = { Text("알람에서 들려줄 음성 메시지를 입력해 주세요") },
             minLines = 3,
             maxLines = 5,
             shape = WakerInputShape,
@@ -537,7 +537,7 @@ private fun RandomPromptSummaryRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("랜덤 문구 설정", fontWeight = FontWeight.SemiBold)
+                Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
                 MutedText("$contextLabel · $languageLabel")
             }
             Spacer(Modifier.width(12.dp))
@@ -557,7 +557,7 @@ private fun VoiceRepeatSelector(
     onRepeatChange: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("목소리 반복", fontWeight = FontWeight.SemiBold)
+        Text("반복 재생", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             VoiceRepeatChoice(
                 label = "한 번만",
@@ -642,16 +642,16 @@ private fun voiceOptionLabel(options: List<Pair<String, String>>, value: String)
 private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
     val base = if (owner == null) {
-        "공유 음성"
+        "공유받은 목소리"
     } else {
-        "공유 음성 · $owner"
+        "공유받은 목소리 · $owner"
     }
     val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
     return relation?.let { "$base · 관계 $it" } ?: base
 }
 
 private fun ownedVoiceDetail(profile: VoiceProfile): String {
-    val base = if (profile.isShared == true) "내 알람 음성 · 공유 중" else "내 알람 음성"
+    val base = if (profile.isShared == true) "내 목소리 · 공유 중" else "내 목소리"
     val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
     return relation?.let { "$base · 관계 $it" } ?: base
 }

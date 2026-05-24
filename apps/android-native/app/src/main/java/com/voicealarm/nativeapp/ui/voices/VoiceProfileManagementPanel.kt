@@ -99,7 +99,7 @@ import kotlinx.coroutines.withContext
 private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
     audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
 
-private fun voiceProfilePlaceholder(): String = "알람 음성"
+private fun voiceProfilePlaceholder(): String = "목소리"
 
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
@@ -140,7 +140,7 @@ internal fun VoiceLoginRequiredCard() {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            MutedText("로그인 후 알람 음성을 만들 수 있어요.")
+            MutedText("로그인 후 목소리를 만들 수 있어요.")
         }
     }
 }
@@ -215,7 +215,7 @@ internal fun VoiceProfileManagementPanel(
     val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
-    val paidVoiceRequiredMessage = "유료 요금제를 사용해야 목소리를 만들 수 있어요."
+    val paidVoiceRequiredMessage = "유료 이용권에서 사용할 수 있어요."
 
     fun stopMediaPreview() {
         mediaPlayer?.release()
@@ -461,7 +461,7 @@ internal fun VoiceProfileManagementPanel(
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profile.id,
-                    text = "[gentle] 이 목소리로 깨워드릴까요?",
+                    text = "이 목소리로 깨워드릴까요?",
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -487,14 +487,10 @@ internal fun VoiceProfileManagementPanel(
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to prepare speaker draft id=${speaker.id}", error)
-            val code = apiErrorCode(error)
-            val cls = error.javaClass.simpleName
-            val msg = error.message ?: "(no message)"
-            val display = if (code != null) "미리듣기 실패 · $code" else "미리듣기 실패 · $cls: $msg"
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
                     status = SpeakerDraftStatus.Failed,
-                    errorMessage = display,
+                    errorMessage = "미리듣기를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.",
                 )
             }
         }
@@ -508,11 +504,11 @@ internal fun VoiceProfileManagementPanel(
         val uri = selectedFileUri ?: return
         val cropDuration = cropEndMillis - cropStartMillis
         if (cropDuration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
-            localMessage = "분리할 구간은 1분 이상이어야 해요. 자르기 범위를 늘려 주세요."
+            localMessage = "나눌 구간은 1분 이상이어야 해요. 자르기 범위를 늘려 주세요."
             return
         }
         if (cropDuration > VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
-            localMessage = "분리할 구간은 2분 이하여야 해요. 자르기 범위를 줄여 주세요."
+            localMessage = "나눌 구간은 2분 이하여야 해요. 자르기 범위를 줄여 주세요."
             return
         }
         scope.launch {
@@ -532,7 +528,7 @@ internal fun VoiceProfileManagementPanel(
                 speakerDraftStates = visible.associate { s ->
                     s.id to SpeakerDraftState(status = SpeakerDraftStatus.Cloning)
                 }
-                localMessage = if (visible.isEmpty()) "분리할 화자를 찾지 못했어요." else null
+                localMessage = if (visible.isEmpty()) "나눌 목소리를 찾지 못했어요." else null
                 val baseName = profileName.trim()
                 // 기존 추적 중인 Job 이 있다면 새 separate 가 일어났으므로 모두 취소.
                 cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
@@ -553,18 +549,13 @@ internal fun VoiceProfileManagementPanel(
                 Log.e(TAG, "Failed to separate speakers", error)
                 val code = apiErrorCode(error)
                 localMessage = when (code) {
-                    "AUDIO_DURATION_TOO_SHORT" -> "분리할 구간은 1분 이상이어야 해요."
-                    "AUDIO_DURATION_TOO_LONG" -> "분리할 구간은 2분 이하여야 해요."
+                    "AUDIO_DURATION_TOO_SHORT" -> "나눌 구간은 1분 이상이어야 해요."
+                    "AUDIO_DURATION_TOO_LONG" -> "나눌 구간은 2분 이하여야 해요."
                     "AUDIO_FILE_EMPTY" -> "선택한 음성 파일이 비어 있어요."
                     "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
                     "INVALID_AUDIO_MIME_TYPE" -> "지원하지 않는 오디오 형식이에요."
-                    "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 요금제를 사용해야 화자 분리를 할 수 있어요."
-                    else -> {
-                        // 진단용: 어떤 예외가 어디서 났는지 화면에 그대로 보여준다.
-                        val cls = error.javaClass.simpleName
-                        val msg = error.message ?: "(no message)"
-                        "화자 분리 실패 · $cls: $msg"
-                    }
+                    "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 이용권에서 목소리 나누기를 사용할 수 있어요."
+                    else -> "목소리를 나누지 못했어요. 다른 구간을 선택하거나 잠시 후 다시 시도해 주세요."
                 }
             }
             separatingBusy = false
@@ -622,7 +613,7 @@ internal fun VoiceProfileManagementPanel(
             val response = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profileId,
-                    text = "[gentle] 이 목소리로 깨워드릴까요?",
+                    text = "이 목소리로 깨워드릴까요?",
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -682,10 +673,10 @@ internal fun VoiceProfileManagementPanel(
                 speakerDraftStates = emptyMap()
                 detectedSpeakers = emptyList()
                 closeCreateDialog()
-                localMessage = "알람 음성으로 등록했어요"
+                localMessage = "목소리로 등록했어요"
             }.onFailure { error ->
                 Log.e(TAG, "Failed to promote draft voice id=$selectedDraftId", error)
-                localMessage = userFacingError(error, "알람 음성으로 등록하지 못했어요.")
+                localMessage = userFacingError(error, "목소리로 등록하지 못했어요.")
             }
             promotingBusy = false
         }
@@ -765,7 +756,7 @@ internal fun VoiceProfileManagementPanel(
             return
         }
         if (fileSpeakerMode == FileSpeakerMode.Multiple) {
-            localMessage = "화자 분리 후 사용할 목소리를 선택해 주세요."
+            localMessage = "나눈 목소리 중 사용할 목소리를 선택해 주세요."
             return
         }
         scope.launch {
@@ -796,7 +787,7 @@ internal fun VoiceProfileManagementPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "알람 음성",
+                text = "내 목소리",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -827,7 +818,7 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (voiceProfiles.isEmpty() && canCreateVoice) {
-            MutedText("아직 만든 알람 음성이 없어요.")
+            MutedText("아직 만든 목소리가 없어요.")
         } else if (voiceProfiles.isNotEmpty()) {
             voiceProfiles.forEach { profile ->
                 VoiceProfileRow(
@@ -849,7 +840,7 @@ internal fun VoiceProfileManagementPanel(
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
             Text(
-                text = "공유받은 알람 음성",
+                text = "공유받은 목소리",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -929,7 +920,7 @@ internal fun VoiceProfileManagementPanel(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "알람 음성 만들기",
+                                text = "목소리 만들기",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -1002,7 +993,7 @@ internal fun VoiceProfileManagementPanel(
                                             minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
                                             maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
-                                            uploadLabel = "파일/영상 업로드",
+                                            uploadLabel = "파일 또는 영상 업로드",
                                             notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
@@ -1035,7 +1026,7 @@ internal fun VoiceProfileManagementPanel(
                                                             when {
                                                                 separatingBusy -> "분리 중"
                                                                 hasSeparatedSpeakers -> "분리 완료"
-                                                                else -> "화자 분리"
+                                                                else -> "목소리 나누기"
                                                             },
                                                         )
                                                     }
@@ -1063,7 +1054,7 @@ internal fun VoiceProfileManagementPanel(
                                                     )
                                                 }
                                             }
-                                            MutedText("화자 분리는 선택과 동시에 등록돼요. 이름·관계·호칭은 등록 후 목록에서 정리할 수 있어요.")
+                                            MutedText("목소리를 선택하면 바로 등록돼요. 이름, 관계, 호칭은 등록한 뒤 수정할 수 있어요.")
                                         }
                                     }
                                 }
@@ -1073,12 +1064,12 @@ internal fun VoiceProfileManagementPanel(
                                 OutlinedTextField(
                                     value = profileName,
                                     onValueChange = { profileName = it.take(50) },
-                                    label = { Text("알람 음성 이름 (필수)") },
+                                    label = { Text("목소리 이름 (필수)") },
                                     placeholder = { Text("예: 엄마 목소리") },
                                     singleLine = true,
                                     isError = nameRequiredError,
                                     supportingText = {
-                                        if (nameRequiredError) Text("필수 입력 값입니다.")
+                                        if (nameRequiredError) Text("꼭 입력해 주세요.")
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
@@ -1092,15 +1083,15 @@ internal fun VoiceProfileManagementPanel(
                                 OutlinedTextField(
                                     value = profileListenerTitle,
                                     onValueChange = { profileListenerTitle = it.take(30) },
-                                    label = { Text("이 목소리가 나를 부를 호칭 (필수)") },
+                                    label = { Text("이 목소리가 나를 부를 이름 (필수)") },
                                     placeholder = { Text("예: 민지야, 여보, 우리 손주") },
                                     singleLine = true,
                                     isError = listenerRequiredError,
                                     supportingText = {
                                         if (listenerRequiredError) {
-                                            Text("필수 입력 값입니다.")
+                                            Text("꼭 입력해 주세요.")
                                         } else {
-                                            Text("랜덤 문구에서 이 호칭으로 나를 불러요.")
+                                            Text("랜덤 문구에서 이 이름으로 나를 불러요.")
                                         }
                                     },
                                     shape = WakerInputShape,
@@ -1117,17 +1108,17 @@ internal fun VoiceProfileManagementPanel(
                                 SharingOptionCard(
                                     enabled = true,
                                     title = "나만 사용",
-                                    description = "이 알람 음성은 내 계정에서만 들려요.",
+                                    description = "이 목소리는 나만 사용할 수 있어요.",
                                     onClick = { shareVoice = false },
                                     isChosen = !shareVoice,
                                 )
                                 SharingOptionCard(
                                     enabled = canShareVoice,
-                                    title = "가족·친구와 공유",
+                                    title = "가족·연인과 공유",
                                     description = if (canShareVoice) {
                                         "등록 후 목록에서 공유 코드를 만들어 전달할 수 있어요."
                                     } else {
-                                        "공유 기능은 가족 그룹이나 유료 요금제에서 사용할 수 있어요."
+                                        "공유는 커플/가족 이용권에서 사용할 수 있어요."
                                     },
                                     onClick = { if (canShareVoice) shareVoice = true },
                                     isChosen = shareVoice && canShareVoice,
@@ -1247,17 +1238,17 @@ internal fun VoiceProfileManagementPanel(
         val renameListenerError = renameSubmitAttempted && resolvedRenameListener.isBlank()
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("알람 음성 수정") },
+            title = { Text("목소리 정보 수정") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = renameName,
                         onValueChange = { renameName = it.take(50) },
-                        label = { Text("알람 음성 이름") },
+                        label = { Text("목소리 이름") },
                         singleLine = true,
                         isError = renameNameError,
                         supportingText = {
-                            if (renameNameError) Text("필수 입력 값입니다.")
+                            if (renameNameError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -1271,7 +1262,7 @@ internal fun VoiceProfileManagementPanel(
                         singleLine = true,
                         isError = renameRelationshipError,
                         supportingText = {
-                            if (renameRelationshipError) Text("필수 입력 값입니다.")
+                            if (renameRelationshipError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -1280,12 +1271,12 @@ internal fun VoiceProfileManagementPanel(
                     OutlinedTextField(
                         value = renameListenerTitle,
                         onValueChange = { renameListenerTitle = it.take(30) },
-                        label = { Text("나를 부를 호칭") },
+                        label = { Text("나를 부를 이름") },
                         placeholder = { Text("예: 민지야, 여보") },
                         singleLine = true,
                         isError = renameListenerError,
                         supportingText = {
-                            if (renameListenerError) Text("필수 입력 값입니다.")
+                            if (renameListenerError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -1411,11 +1402,11 @@ private fun VoiceProfileDeleteDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "알람 음성 삭제",
+                            text = "목소리 삭제",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        MutedText("'$profileName' 알람 음성을 목록에서 삭제할까요?")
+                        MutedText("'$profileName' 목소리를 삭제할까요?")
                     }
                     IconButton(
                         onClick = onDismiss,
@@ -1424,7 +1415,7 @@ private fun VoiceProfileDeleteDialog(
                         Icon(Icons.Outlined.Close, contentDescription = "닫기")
                     }
                 }
-                MutedText("이 알람 음성을 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 서버에 저장된 음원은 함께 정리됩니다.")
+                MutedText("이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1581,7 +1572,7 @@ private fun RelationshipDropdownField(
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 isError = isError && !selection.isComplete,
                 supportingText = {
-                    if (isError && !selection.isComplete) Text("필수 입력 값입니다.")
+                    if (isError && !selection.isComplete) Text("꼭 입력해 주세요.")
                 },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
@@ -1621,7 +1612,7 @@ private fun RelationshipDropdownField(
                 singleLine = true,
                 isError = isError && !selection.isComplete,
                 supportingText = {
-                    if (isError && !selection.isComplete) Text("필수 입력 값입니다.")
+                    if (isError && !selection.isComplete) Text("꼭 입력해 주세요.")
                 },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
@@ -1764,8 +1755,8 @@ internal data class SpeakerDraftState(
 )
 
 private fun draftStatusLabel(status: SpeakerDraftStatus, errorMessage: String?): String = when (status) {
-    SpeakerDraftStatus.Cloning -> "목소리 학습 중"
-    SpeakerDraftStatus.Synthesizing -> "미리듣기 음성 만드는 중"
+    SpeakerDraftStatus.Cloning -> "목소리를 만드는 중"
+    SpeakerDraftStatus.Synthesizing -> "미리듣기를 만드는 중"
     SpeakerDraftStatus.Ready -> "준비 완료"
     SpeakerDraftStatus.Failed -> errorMessage ?: "미리듣기를 준비하지 못했어요"
 }
@@ -1901,7 +1892,7 @@ internal fun VoiceProfileRow(
                             onDismissRequest = { menuExpanded = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("이름·관계·호칭 수정") },
+                                text = { Text("목소리 정보 수정") },
                                 leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                                 onClick = {
                                     menuExpanded = false
@@ -1992,7 +1983,7 @@ private fun SharedVoiceProfileRow(
                     val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
                     val listener = profile.listenerTitle?.takeIf { it.isNotBlank() }
                     val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-                        ?.let { "$it 님의 알람 음성" } ?: "공유받은 알람 음성"
+                        ?.let { "$it 님의 목소리" } ?: "공유받은 목소리"
                     val detail = buildList {
                         add(ownerText)
                         relation?.let { add("관계 $it") }
@@ -2012,7 +2003,7 @@ private fun SharedVoiceProfileRow(
                     border = wakerCardBorder(),
                     colors = wakerOutlinedButtonColors(),
                 ) {
-                    Text("이 음성이 나를 부를 호칭 설정하기")
+                    Text("이 목소리가 나를 어떻게 부를지 설정")
                 }
             }
         }
@@ -2035,10 +2026,10 @@ private fun SharedVoiceViewerInfoDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("공유 음성 설정") },
+        title = { Text("공유받은 목소리 설정") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                MutedText("'$profileName' 가 내게 어떻게 말할지 알려주세요.")
+                MutedText("이 목소리가 내게 어떻게 말하면 좋을지 알려주세요.")
                 OutlinedTextField(
                     value = draftRelationship,
                     onValueChange = { draftRelationship = it.take(30) },
@@ -2047,7 +2038,7 @@ private fun SharedVoiceViewerInfoDialog(
                     singleLine = true,
                     isError = relationshipError,
                     supportingText = {
-                        if (relationshipError) Text("필수 입력 값입니다.")
+                        if (relationshipError) Text("꼭 입력해 주세요.")
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -2056,12 +2047,12 @@ private fun SharedVoiceViewerInfoDialog(
                 OutlinedTextField(
                     value = draftListener,
                     onValueChange = { draftListener = it.take(30) },
-                    label = { Text("이 목소리가 나를 부를 호칭") },
-                    placeholder = { Text("예: 지호야, 우리 강아지") },
+                    label = { Text("이 목소리가 나를 부를 이름") },
+                    placeholder = { Text("예: 지호야, 여보") },
                     singleLine = true,
                     isError = listenerError,
                     supportingText = {
-                        if (listenerError) Text("필수 입력 값입니다.")
+                        if (listenerError) Text("꼭 입력해 주세요.")
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),

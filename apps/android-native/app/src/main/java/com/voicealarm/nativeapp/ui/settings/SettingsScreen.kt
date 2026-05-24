@@ -117,7 +117,7 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "AI 문구") {
+            SettingsCard(title = "랜덤 문구") {
                 SettingsRow(
                     label = "날씨 위치",
                     value = weatherLocationSettingsLabel(
@@ -128,7 +128,7 @@ internal fun SettingsScreen(
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "운세 정보",
+                    label = "운세용 정보",
                     value = fortuneInfoSettingsLabel(
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
@@ -149,10 +149,10 @@ internal fun SettingsScreen(
 
         if (authSession != null) {
             item {
-                SettingsCard(title = "공유 알람") {
+                SettingsCard(title = "상대 알람 설정") {
                     SettingsToggleRow(
-                        label = "상대방 알람 허용",
-                        value = if (authSession.user.allowFamilyAlarms) "허용" else "꺼짐",
+                        label = "상대가 내 알람 맞추기",
+                        value = if (authSession.user.allowFamilyAlarms) "허용함" else "허용 안 함",
                         checked = authSession.user.allowFamilyAlarms,
                         onCheckedChange = {
                             onChangeFamilyAlarmSettings(
@@ -164,7 +164,7 @@ internal fun SettingsScreen(
                     if (authSession.user.allowFamilyAlarms) {
                         HorizontalDivider()
                         SettingsRow(
-                            label = "설정 불가 시간",
+                            label = "알람 받지 않을 시간",
                             value = quietScheduleLabel(authSession.user.familyAlarmQuietWindows),
                             onClick = { showFamilyAlarmDialog = true },
                         )
@@ -231,7 +231,7 @@ internal fun SettingsScreen(
             gender = promptPreferences.fortuneGender,
             birthDate = promptPreferences.fortuneBirthDate,
             birthTime = promptPreferences.fortuneBirthTime,
-            description = "운세 랜덤 문구에만 사용해요. 가족/커플이 내 알람을 맞춰줄 때도 이 값을 기준으로 사용할 수 있어요.",
+            description = "운세 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
                 promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
@@ -360,7 +360,7 @@ private fun WeatherLocationPreferenceDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "랜덤 문구에서 날씨가 필요한 옵션을 고르면 이 위치를 재사용해요.",
+                    text = "날씨 문구를 만들 때 이 위치를 사용해요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -372,7 +372,7 @@ private fun WeatherLocationPreferenceDialog(
                     singleLine = true,
                     isError = countryError,
                     supportingText = {
-                        if (countryError) Text("필수 입력 값입니다.")
+                        if (countryError) Text("꼭 입력해 주세요.")
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -386,7 +386,7 @@ private fun WeatherLocationPreferenceDialog(
                     singleLine = true,
                     isError = cityError,
                     supportingText = {
-                        if (cityError) Text("필수 입력 값입니다.")
+                        if (cityError) Text("꼭 입력해 주세요.")
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -457,12 +457,12 @@ private fun FamilyAlarmQuietTimeDialog(
                     .heightIn(max = 620.dp),
             ) {
                 Text(
-                    text = "설정 불가 시간",
+                    text = "알람 받지 않을 시간",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.",
+                    text = "선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
