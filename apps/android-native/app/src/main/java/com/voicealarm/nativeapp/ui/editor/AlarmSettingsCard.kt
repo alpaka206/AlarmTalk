@@ -590,7 +590,7 @@ internal fun RandomPromptSettingsPane(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "랜덤 문구",
+                    text = "랜덤 문구 설정",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -609,7 +609,7 @@ internal fun RandomPromptSettingsPane(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                 ) {
                     Text(
-                        text = "저장하면 선택한 랜덤 문구로 알람 목소리를 만들어요. 저장하지 않으면 직접 입력으로 돌아가요.",
+                        text = "저장하면 선택한 조건으로 알람 문구를 만들어요. 저장하지 않으면 직접 입력으로 돌아가요.",
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -629,28 +629,28 @@ internal fun RandomPromptSettingsPane(
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
-                        title = "날씨 위치",
+                        title = "날씨 지역",
                         value = when {
                             draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
                                 "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
-                                "상대가 저장한 위치를 사용해요."
-                            else -> "날씨 문구를 쓰려면 나라와 도시가 필요해요."
+                                "상대가 저장한 날씨 지역을 사용해요."
+                            else -> "날씨가 들어간 문구를 쓰려면 나라와 도시가 필요해요."
                         },
                     )
                 }
 
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
-                        title = "운세용 정보",
+                        title = "운세 정보",
                         value = when {
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
                                 fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
-                                "상대가 저장한 운세용 정보를 사용해요."
-                            else -> "운세 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요."
+                                "상대가 저장한 운세 정보를 사용해요."
+                            else -> "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요."
                         },
                     )
                 }
@@ -817,12 +817,12 @@ private fun WeatherLocationDialog(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "날씨 위치",
+                        text = "날씨 지역",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "현재 위치를 불러오거나 직접 입력해 주세요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+                        text = "날씨 지역을 직접 입력하거나 현재 위치로 불러올 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -939,7 +939,7 @@ internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
-    description: String = "운세 문구를 만들 때만 사용해요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+    description: String = "운세가 들어간 문구를 만들 때만 사용해요. 저장하지 않으면 랜덤 문구가 꺼져요.",
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
@@ -975,7 +975,7 @@ internal fun FortuneInfoDialog(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "운세용 정보",
+                        text = "운세 정보",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )

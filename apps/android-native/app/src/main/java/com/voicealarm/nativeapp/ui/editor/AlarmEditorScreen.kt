@@ -497,7 +497,7 @@ internal fun AlarmEditorScreen(
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {
-            audioMessage = "음성 메시지를 입력하거나 랜덤 문구를 켜 주세요."
+            audioMessage = "음성 메시지를 입력하거나 랜덤 문구를 사용해 주세요."
             return
         }
         if (
@@ -505,7 +505,7 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(editor.voiceRandomContext) &&
             (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
         ) {
-            audioMessage = "날씨 문구는 나라와 도시를 입력해 주세요."
+            audioMessage = "날씨가 들어간 문구는 나라와 도시를 입력해 주세요."
             return
         }
         if (
@@ -517,7 +517,7 @@ internal fun AlarmEditorScreen(
                     editor.voiceFortuneBirthTime.isBlank()
                 )
         ) {
-            audioMessage = "운세 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
+            audioMessage = "운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
             return
         }
         val usableProfileIds = (

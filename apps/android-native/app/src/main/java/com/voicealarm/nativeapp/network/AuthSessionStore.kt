@@ -196,6 +196,9 @@ class AuthSessionStore(context: Context) {
             familyAlarmQuietStart = firstQuietWindow.start,
             familyAlarmQuietEnd = firstQuietWindow.end,
             familyAlarmQuietWindows = quietWindows,
+            dynamicPromptSettings = normalizeDynamicPromptSettings(
+                runCatching { user.dynamicPromptSettings }.getOrNull(),
+            ),
         )
     }
 
@@ -260,4 +263,20 @@ class AuthSessionStore(context: Context) {
         private const val KEY_DYNAMIC_PROMPT_SETTINGS = "dynamic_prompt_settings"
         private const val MAX_QUIET_WINDOWS = 8
     }
+}
+
+internal fun normalizeDynamicPromptSettings(settings: DynamicPromptSettings?): DynamicPromptSettings {
+    val weather = runCatching { settings?.weather }.getOrNull()
+    val fortune = runCatching { settings?.fortune }.getOrNull()
+    return DynamicPromptSettings(
+        weather = DynamicPromptWeatherSettings(
+            country = runCatching { weather?.country }.getOrNull().trimmedOrNull(),
+            city = runCatching { weather?.city }.getOrNull().trimmedOrNull(),
+        ),
+        fortune = DynamicPromptFortuneSettings(
+            gender = runCatching { fortune?.gender }.getOrNull().trimmedOrNull(),
+            birthDate = runCatching { fortune?.birthDate }.getOrNull().trimmedOrNull(),
+            birthTime = runCatching { fortune?.birthTime }.getOrNull().trimmedOrNull(),
+        ),
+    )
 }

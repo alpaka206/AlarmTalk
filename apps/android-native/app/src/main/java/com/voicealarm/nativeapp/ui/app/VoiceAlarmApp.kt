@@ -789,6 +789,7 @@ private fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
 }
 
 private fun NavHostController.navigateHomeClearingStack() {
+    if (currentDestination == null) return
     navigate(NativeTab.Home.route) {
         popUpTo(NativeTab.Home.route)
         launchSingleTop = true

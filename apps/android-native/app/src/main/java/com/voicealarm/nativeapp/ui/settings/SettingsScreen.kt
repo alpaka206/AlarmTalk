@@ -109,7 +109,7 @@ internal fun SettingsScreen(
         item {
             SettingsCard(title = "화면") {
                 SettingsRow(
-                    label = "화면 모드",
+                    label = "테마",
                     value = themeModeLabel(themeMode),
                     onClick = { showThemeDialog = true },
                 )
@@ -117,9 +117,9 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "랜덤 문구") {
+            SettingsCard(title = "랜덤 문구 정보") {
                 SettingsRow(
-                    label = "날씨 위치",
+                    label = "날씨 지역",
                     value = weatherLocationSettingsLabel(
                         promptPreferences.weatherCountry,
                         promptPreferences.weatherCity,
@@ -128,7 +128,7 @@ internal fun SettingsScreen(
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "운세용 정보",
+                    label = "운세 정보",
                     value = fortuneInfoSettingsLabel(
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
@@ -231,7 +231,7 @@ internal fun SettingsScreen(
             gender = promptPreferences.fortuneGender,
             birthDate = promptPreferences.fortuneBirthDate,
             birthTime = promptPreferences.fortuneBirthTime,
-            description = "운세 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
+            description = "운세가 들어간 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
                 promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
@@ -356,11 +356,11 @@ private fun WeatherLocationPreferenceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("날씨 위치") },
+        title = { Text("날씨 지역") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = "날씨 문구를 만들 때 이 위치를 사용해요.",
+                    text = "날씨가 들어간 문구를 만들 때 사용할 지역이에요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -193,7 +193,7 @@ internal fun VoiceAudioCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
+                            Text("랜덤 문구 사용", fontWeight = FontWeight.SemiBold)
                         }
                         VoiceAlarmSwitch(
                             checked = editor.voiceRandomPrompt,
@@ -537,7 +537,7 @@ private fun RandomPromptSummaryRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("랜덤 문구", fontWeight = FontWeight.SemiBold)
+                Text("랜덤 문구 설정", fontWeight = FontWeight.SemiBold)
                 MutedText("$contextLabel · $languageLabel")
             }
             Spacer(Modifier.width(12.dp))

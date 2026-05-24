@@ -200,9 +200,9 @@ internal fun ProfileMenuItem(
 enum class ThemeMode { System, Light, Dark }
 
 internal fun themeModeLabel(mode: ThemeMode): String = when (mode) {
-    ThemeMode.System -> "시스템"
-    ThemeMode.Light -> "라이트"
-    ThemeMode.Dark -> "다크"
+    ThemeMode.System -> "시스템 설정"
+    ThemeMode.Light -> "밝게"
+    ThemeMode.Dark -> "어둡게"
 }
 
 @Composable
@@ -213,7 +213,7 @@ internal fun ThemeModePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("화면 모드") },
+        title = { Text("테마 선택") },
         text = {
             Column {
                 ThemeMode.entries.forEach { mode ->
