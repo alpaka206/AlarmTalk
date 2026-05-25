@@ -447,6 +447,7 @@ struct CodeRegisterRow: View {
                                 groupId: groupId,
                                 session: auth.session
                             )
+                            await auth.refreshUser()
                         }
                     }
                 )
@@ -467,6 +468,7 @@ struct CodeRegisterRow: View {
                                 code,
                                 session: auth.session
                             )
+                            await auth.refreshUser()
                         }
                     }
                 )

@@ -76,6 +76,10 @@
 - iOS account deletion now mirrors Android's cleanup path by clearing the
   deleted user's persisted access snapshot while leaving other user snapshots
   intact.
+- iOS shared-pass and billing mutations now mirror Android's post-mutation
+  session refresh: code registration, leaving a shared pass, subscription
+  cancellation, StoreKit purchase success, and purchase restore refresh
+  `/auth/me` after the foreground action.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.

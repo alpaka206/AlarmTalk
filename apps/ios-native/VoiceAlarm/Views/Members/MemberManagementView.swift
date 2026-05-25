@@ -273,6 +273,7 @@ struct MemberManagementView: View {
                     groupId: group.id,
                     session: auth.session
                 )
+                await auth.refreshUser()
             }
         } label: {
             Label("그룹 나가기", systemImage: "rectangle.portrait.and.arrow.right")

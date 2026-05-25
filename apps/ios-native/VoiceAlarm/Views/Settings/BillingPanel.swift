@@ -133,6 +133,7 @@ struct BillingPanel: View {
                         groupId: groupID,
                         session: auth.session
                     )
+                    await auth.refreshUser()
                 }
             }
             Button("취소", role: .cancel) {}
@@ -150,6 +151,7 @@ struct BillingPanel: View {
                             mode: mode,
                             session: auth.session
                         )
+                        await auth.refreshUser()
                     }
                 }
             )
@@ -175,6 +177,9 @@ struct BillingPanel: View {
         Button {
             Task {
                 await subscriptions.restorePurchases()
+                await subscriptions.resyncEntitlements()
+                await auth.refreshUser()
+                await socialFeatures.refreshAll(session: auth.session, force: true)
                 purchaseFeedback = "이전 구매를 확인했어요."
             }
         } label: {
@@ -191,6 +196,7 @@ struct BillingPanel: View {
         purchaseFeedback = result.userMessage
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
+            await auth.refreshUser()
             await socialFeatures.refreshAll(session: auth.session, force: true)
         }
     }
