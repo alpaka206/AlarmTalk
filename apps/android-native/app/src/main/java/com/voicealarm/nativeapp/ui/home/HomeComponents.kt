@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -367,33 +368,110 @@ internal fun NicknameEditDialog(
     onConfirm: (String) -> Unit,
 ) {
     var value by remember { mutableStateOf(initial) }
-    AlertDialog(
+    val trimmedValue = value.trim()
+    val canSave = !busy && trimmedValue.isNotEmpty() && trimmedValue != initial
+
+    Dialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = {
-            ModalDialogTitle(
-                title = "닉네임 수정",
-                onDismiss = onDismiss,
-                dismissEnabled = !busy,
-            )
-        },
-        text = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it.take(30) },
-                label = { Text("닉네임") },
-                singleLine = true,
-                enabled = !busy,
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(value) },
-                enabled = !busy && value.trim().isNotEmpty() && value.trim() != initial,
-            ) { Text("저장") }
-        },
-    )
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 430.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ModalDialogTitle(
+                    title = "닉네임 수정",
+                    onDismiss = onDismiss,
+                    dismissEnabled = !busy,
+                )
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.primary,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Box(
+                                modifier = Modifier.size(42.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = "앱에서 보일 이름",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                text = "알람, 메시지, 공유 이용권 화면에서 이 이름을 사용해요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { value = it.take(30) },
+                        label = { Text("닉네임") },
+                        placeholder = { Text("예: 규원") },
+                        singleLine = true,
+                        enabled = !busy,
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        text = "${value.length}/30",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.End),
+                    )
+                }
+                Button(
+                    onClick = { onConfirm(value) },
+                    enabled = canSave,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(if (busy) "저장 중" else "저장")
+                }
+            }
+        }
+    }
 }
 
 @Composable
