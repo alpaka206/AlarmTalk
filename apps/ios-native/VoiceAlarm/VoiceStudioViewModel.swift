@@ -404,7 +404,13 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    func generateTTS(session: AuthSession?, alarmHour: Int? = nil, alarmMinute: Int? = nil) async -> PreparedVoiceAlarm? {
+    func generateTTS(
+        session: AuthSession?,
+        alarmHour: Int? = nil,
+        alarmMinute: Int? = nil,
+        targetUserId: String? = nil,
+        targetDynamicPromptState: DynamicPromptSettingsState? = nil
+    ) async -> PreparedVoiceAlarm? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return nil
@@ -422,11 +428,13 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
-        if randomPrompt && promptContext.usesWeather && !hasWeatherInfo {
+        let targetWeatherReady = targetDynamicPromptState?.weatherReady == true
+        let targetFortuneReady = targetDynamicPromptState?.fortuneReady == true
+        if randomPrompt && promptContext.usesWeather && !hasWeatherInfo && !targetWeatherReady {
             statusMessage = "날씨를 쓸 지역을 입력해 주세요."
             return nil
         }
-        if randomPrompt && promptContext.usesFortune && !hasFortuneInfo {
+        if randomPrompt && promptContext.usesFortune && !hasFortuneInfo && !targetFortuneReady {
             statusMessage = "운세에 쓸 정보를 모두 입력해 주세요."
             return nil
         }
@@ -446,12 +454,13 @@ final class VoiceStudioViewModel: ObservableObject {
                     randomContext: randomPrompt ? promptContext.rawValue : nil,
                     alarmHour: randomPrompt ? alarmHour : nil,
                     alarmMinute: randomPrompt ? alarmMinute : nil,
-                    weatherCountry: randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCountry) : nil,
-                    weatherCity: randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
-                    fortuneGender: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
-                    fortuneBirthDate: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
-                    fortuneBirthTime: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil,
-                    listenerTitle: selectedListenerTitle
+                    weatherCountry: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCountry) : nil,
+                    weatherCity: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
+                    fortuneGender: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
+                    fortuneBirthDate: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
+                    fortuneBirthTime: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil,
+                    listenerTitle: selectedListenerTitle,
+                    targetUserId: targetUserId
                 ),
                 token: token
             )

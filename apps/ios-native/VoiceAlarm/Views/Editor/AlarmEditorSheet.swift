@@ -17,6 +17,7 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
     @StateObject private var holidayStore = HolidayStore()
 
@@ -38,6 +39,9 @@ struct AlarmEditorSheet: View {
     @State private var validationAlert: ValidationAlertContent?
     @State private var isWorking = false
     @State private var sharedVoiceSetupTarget: FamilyVoiceProfile?
+    @State private var selectedFamilyRecipientID: String?
+
+    private static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
 
     private struct ValidationAlertContent: Identifiable {
         let id = UUID()
@@ -67,6 +71,20 @@ struct AlarmEditorSheet: View {
                     isOn: $draft.holidayOff,
                     enabled: draft.repeatDaysMask != 0
                 )
+            }
+
+            if target.familyAlarmMode {
+                Section("알람 받을 사람") {
+                    FamilyAlarmTargetPicker(
+                        recipients: familyRecipients,
+                        selectedRecipientID: selectedFamilyRecipientID,
+                        hour: draft.hour,
+                        minute: draft.minute,
+                        repeatDaysMask: draft.repeatDaysMask,
+                        holidayOff: draft.holidayOff,
+                        onSelect: selectFamilyRecipient
+                    )
+                }
             }
 
             Section("알람 방식") {
@@ -131,8 +149,8 @@ struct AlarmEditorSheet: View {
                                 TextField("도시", text: $voiceStudio.weatherCity)
                                     .textInputAutocapitalization(.never)
                                     .disableAutocorrection(true)
-                                if !voiceStudio.hasWeatherInfo {
-                                    Text("날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
+                                if !voiceStudio.hasWeatherInfo || targetWeatherReady {
+                                    Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
                                         .font(theme.typography.bodySmall)
                                         .foregroundStyle(theme.palette.onSurfaceVariant)
                                 }
@@ -153,8 +171,8 @@ struct AlarmEditorSheet: View {
                                     .keyboardType(.numbersAndPunctuation)
                                 TextField("태어난 시간 (HH:mm)", text: $voiceStudio.fortuneBirthTime)
                                     .keyboardType(.numbersAndPunctuation)
-                                if !voiceStudio.hasFortuneInfo {
-                                    Text("운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
+                                if !voiceStudio.hasFortuneInfo || targetFortuneReady {
+                                    Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
                                         .font(theme.typography.bodySmall)
                                         .foregroundStyle(theme.palette.onSurfaceVariant)
                                 }
@@ -225,19 +243,21 @@ struct AlarmEditorSheet: View {
                     .disabled(voiceStudio.isBusy || isWorking)
                 }
 
-                Button {
-                    Task { await scheduleOneMinuteTest() }
-                } label: {
-                    Label("1분 테스트", systemImage: "timer")
-                        .frame(maxWidth: .infinity)
+                if !target.familyAlarmMode {
+                    Button {
+                        Task { await scheduleOneMinuteTest() }
+                    } label: {
+                        Label("1분 테스트", systemImage: "timer")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isWorking)
                 }
-                .buttonStyle(.bordered)
-                .disabled(isWorking)
             }
         }
         .scrollContentBackground(.hidden)
         .background(theme.palette.background)
-        .navigationTitle(target.editingAlarmID == nil ? "알람 만들기" : "알람 수정")
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -255,7 +275,13 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
-            Task { await voiceStudio.refresh(session: auth.session) }
+            Task {
+                await voiceStudio.refresh(session: auth.session)
+                if target.familyAlarmMode {
+                    await socialFeatures.refreshAll(session: auth.session)
+                    selectDefaultFamilyRecipientIfNeeded()
+                }
+            }
         }
         .sheet(item: $sharedVoiceSetupTarget) { profile in
             SharedVoiceSelectionSetupSheet(
@@ -290,8 +316,21 @@ struct AlarmEditorSheet: View {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
     }
 
+    private var navigationTitle: String {
+        if target.familyAlarmMode { return "상대 알람 맞추기" }
+        return target.editingAlarmID == nil ? "알람 만들기" : "알람 수정"
+    }
+
     private var activePromptContext: RandomPromptContext {
         RandomPromptContext.normalized(voiceStudio.randomContext)
+    }
+
+    private var targetWeatherReady: Bool {
+        target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.weatherReady == true
+    }
+
+    private var targetFortuneReady: Bool {
+        target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.fortuneReady == true
     }
 
     private var voicePlanLocked: Bool {
@@ -309,6 +348,24 @@ struct AlarmEditorSheet: View {
         return "\(prepared.text) · \(prepared.language) · 로컬 캐시 완료"
     }
 
+    private var familyRecipients: [FamilyGroupMember] {
+        let currentUserID = auth.session?.user.id
+        let currentEmail = auth.session?.user.email
+        return (socialFeatures.familyGroup?.members ?? []).filter { member in
+            member.userId != currentUserID &&
+                member.email != currentEmail &&
+                member.allowFamilyAlarms == true
+        }
+    }
+
+    private var selectedFamilyRecipient: FamilyGroupMember? {
+        if let selectedFamilyRecipientID,
+           let selected = familyRecipients.first(where: { $0.userId == selectedFamilyRecipientID }) {
+            return selected
+        }
+        return familyRecipients.first
+    }
+
     // MARK: - Initial load
 
     private func loadInitialState() {
@@ -322,6 +379,7 @@ struct AlarmEditorSheet: View {
         } else {
             draft = .newDefault(defaultPlayMode: defaultPlayModeForPlan)
             loadVoicePromptState(from: nil)
+            selectDefaultFamilyRecipientIfNeeded()
         }
     }
 
@@ -360,6 +418,29 @@ struct AlarmEditorSheet: View {
         )
     }
 
+    private func selectDefaultFamilyRecipientIfNeeded() {
+        guard target.familyAlarmMode else { return }
+        if let selectedFamilyRecipientID,
+           familyRecipients.contains(where: { $0.userId == selectedFamilyRecipientID }) {
+            return
+        }
+        if let first = familyRecipients.first {
+            selectFamilyRecipient(first.userId)
+        }
+    }
+
+    private func selectFamilyRecipient(_ userID: String) {
+        selectedFamilyRecipientID = userID
+        voiceStudio.preparedAlarm = nil
+        guard let recipient = familyRecipients.first(where: { $0.userId == userID }) else { return }
+        let preferences = DynamicPromptPreferences.from(settings: recipient.dynamicPromptSettings)
+        voiceStudio.weatherCountry = preferences.weatherCountry
+        voiceStudio.weatherCity = preferences.weatherCity
+        voiceStudio.fortuneGender = preferences.fortuneGender
+        voiceStudio.fortuneBirthDate = preferences.fortuneBirthDate
+        voiceStudio.fortuneBirthTime = preferences.fortuneBirthTime
+    }
+
     // MARK: - Save flow
 
     private func saveFlow() async {
@@ -382,9 +463,18 @@ struct AlarmEditorSheet: View {
             return
         }
 
+        let familyRecipient = target.familyAlarmMode ? validateFamilyAlarmTarget() : nil
+        if target.familyAlarmMode && familyRecipient == nil {
+            return
+        }
+
         if draft.playMode != .alarmOnly && voiceStudio.preparedAlarm == nil {
             voiceStudio.statusMessage = "음성 알람은 먼저 목소리와 깨워줄 말을 생성해야 해요."
-            onJumpToVoices()
+            return
+        }
+
+        if let familyRecipient {
+            await createFamilyTargetAlarm(recipient: familyRecipient)
             return
         }
 
@@ -445,10 +535,89 @@ struct AlarmEditorSheet: View {
         let prepared = await voiceStudio.generateTTS(
             session: auth.session,
             alarmHour: draft.hour,
-            alarmMinute: draft.minute
+            alarmMinute: draft.minute,
+            targetUserId: target.familyAlarmMode ? selectedFamilyRecipient?.userId : nil,
+            targetDynamicPromptState: target.familyAlarmMode ? selectedFamilyRecipient?.dynamicPromptSettingsState : nil
         )
         if prepared != nil {
             await saveFlow()
+        }
+    }
+
+    private func validateFamilyAlarmTarget() -> FamilyGroupMember? {
+        guard let recipient = selectedFamilyRecipient else {
+            validationAlert = ValidationAlertContent(
+                title: "받을 사람이 없어요",
+                message: "상대가 내 알람 맞추기를 허용하면 여기에 표시돼요."
+            )
+            return nil
+        }
+
+        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        let fireAtMillis = (try? AlarmTimeCalculator.nextFireAtMillis(
+            hour: draft.hour,
+            minute: draft.minute,
+            repeatDaysMask: draft.repeatDaysMask,
+            holidayOff: draft.holidayOff,
+            nowMillis: nowMillis
+        )) ?? LocalAlarmRecord.fallbackFireAtMillis(
+            hour: draft.hour,
+            minute: draft.minute,
+            referenceMillis: nowMillis
+        )
+        if fireAtMillis - nowMillis < Self.familyAlarmMinLeadMillis {
+            validationAlert = ValidationAlertContent(
+                title: "조금 더 뒤로 설정해 주세요",
+                message: "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
+            )
+            return nil
+        }
+        if FamilyAlarmScheduleRules.isTimeUnavailable(
+            member: recipient,
+            hour: draft.hour,
+            minute: draft.minute,
+            repeatDaysMask: draft.repeatDaysMask,
+            nowMillis: nowMillis
+        ) {
+            validationAlert = ValidationAlertContent(
+                title: "받을 수 없는 시간이에요",
+                message: "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
+            )
+            return nil
+        }
+        return recipient
+    }
+
+    private func createFamilyTargetAlarm(recipient: FamilyGroupMember) async {
+        guard let token = auth.session?.token else {
+            validationAlert = ValidationAlertContent(title: "로그인이 필요해요", message: "상대 알람은 로그인 후 사용할 수 있어요.")
+            return
+        }
+        do {
+            let prepared = voiceStudio.preparedAlarm
+            let request = RemoteAlarmWriteRequest(
+                time: String(format: "%02d:%02d", draft.hour, draft.minute),
+                repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask),
+                snoozeMinutes: draft.snoozeMinutes,
+                mode: prepared == nil ? "sound-only" : "tts",
+                vibrationPattern: draft.vibrationPattern.rawValue,
+                wakeMode: draft.playMode.remoteWakeMode,
+                isActive: true,
+                messageId: prepared?.messageID,
+                voiceProfileId: prepared?.voiceProfileID,
+                rawAudioUrl: nil,
+                rawAudioDurationMs: nil,
+                targetUserId: recipient.userId
+            )
+            _ = try await VoiceAlarmAPI.shared.createAlarm(request, token: token)
+            await socialFeatures.refreshAll(session: auth.session, force: true)
+            validationAlert = nil
+            onSchedulingDidFinish()
+        } catch {
+            validationAlert = ValidationAlertContent(
+                title: "상대 알람 설정에 실패했어요",
+                message: error.localizedDescription
+            )
         }
     }
 
@@ -474,6 +643,248 @@ struct AlarmEditorSheet: View {
             return "분(0–59) 값이 올바르지 않아요."
         case .invalidSnoozeMinutes:
             return "스누즈 간격은 1–30분 사이여야 해요."
+        }
+    }
+}
+
+private struct FamilyAlarmTargetPicker: View {
+    let recipients: [FamilyGroupMember]
+    let selectedRecipientID: String?
+    let hour: Int
+    let minute: Int
+    let repeatDaysMask: Int
+    let holidayOff: Bool
+    let onSelect: (String) -> Void
+
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    private var selectedRecipient: FamilyGroupMember? {
+        if let selectedRecipientID,
+           let selected = recipients.first(where: { $0.userId == selectedRecipientID }) {
+            return selected
+        }
+        return recipients.first
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if recipients.isEmpty {
+                Text("상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            } else {
+                ForEach(recipients) { recipient in
+                    recipientRow(recipient, selected: recipient.userId == selectedRecipient?.userId)
+                }
+                if let selectedRecipient {
+                    let leadTooSoon = FamilyAlarmScheduleRules.isLeadTooSoon(
+                        hour: hour,
+                        minute: minute,
+                        repeatDaysMask: repeatDaysMask,
+                        holidayOff: holidayOff
+                    )
+                    let quietUnavailable = FamilyAlarmScheduleRules.isTimeUnavailable(
+                        member: selectedRecipient,
+                        hour: hour,
+                        minute: minute,
+                        repeatDaysMask: repeatDaysMask
+                    )
+                    targetStatus(
+                        blocked: leadTooSoon || quietUnavailable,
+                        text: FamilyAlarmScheduleRules.targetStatusText(
+                            leadTooSoon: leadTooSoon,
+                            quietUnavailable: quietUnavailable
+                        )
+                    )
+                    Text("받지 않는 시간: \(FamilyAlarmScheduleRules.quietScheduleLabel(selectedRecipient))")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+            }
+        }
+    }
+
+    private func recipientRow(_ recipient: FamilyGroupMember, selected: Bool) -> some View {
+        Button {
+            onSelect(recipient.userId)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "person.circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? theme.palette.primary : theme.palette.onSurfaceVariant)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(FamilyAlarmScheduleRules.memberLabel(recipient))
+                        .font(theme.typography.labelLarge)
+                        .foregroundStyle(theme.palette.onSurface)
+                    if let email = recipient.email, !email.isEmpty {
+                        Text(email)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(selected ? theme.palette.primaryContainer.opacity(0.35) : theme.palette.surfaceVariant.opacity(0.34))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? theme.palette.primary.opacity(0.42) : theme.palette.outlineVariant.opacity(0.62), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func targetStatus(blocked: Bool, text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(blocked ? VoiceAlarmTheme.error : VoiceAlarmTheme.primaryDark)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                blocked ? VoiceAlarmTheme.error.opacity(0.12) : VoiceAlarmTheme.primary.opacity(0.12),
+                in: Capsule()
+            )
+    }
+}
+
+private enum FamilyAlarmScheduleRules {
+    private static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
+
+    static func memberLabel(_ member: FamilyGroupMember) -> String {
+        if let name = member.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        if let email = member.email?.trimmingCharacters(in: .whitespacesAndNewlines), !email.isEmpty {
+            return email
+        }
+        return "멤버"
+    }
+
+    static func quietScheduleLabel(_ member: FamilyGroupMember) -> String {
+        quietWindows(member).map { window in
+            "\(quietDaysLabel(window.days)) \(window.start)-\(window.end)"
+        }.joined(separator: " · ")
+    }
+
+    static func targetStatusText(leadTooSoon: Bool, quietUnavailable: Bool) -> String {
+        if leadTooSoon { return "지금부터 30분 뒤 알람부터 설정할 수 있어요." }
+        if quietUnavailable { return "상대가 이 시간에는 알람을 받지 않도록 해뒀어요." }
+        return "설정 가능"
+    }
+
+    static func isLeadTooSoon(
+        hour: Int,
+        minute: Int,
+        repeatDaysMask: Int,
+        holidayOff: Bool,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) -> Bool {
+        let fireAtMillis = (try? AlarmTimeCalculator.nextFireAtMillis(
+            hour: hour,
+            minute: minute,
+            repeatDaysMask: repeatDaysMask,
+            holidayOff: holidayOff,
+            nowMillis: nowMillis
+        )) ?? LocalAlarmRecord.fallbackFireAtMillis(
+            hour: hour,
+            minute: minute,
+            referenceMillis: nowMillis
+        )
+        return fireAtMillis - nowMillis < familyAlarmMinLeadMillis
+    }
+
+    static func isTimeUnavailable(
+        member: FamilyGroupMember,
+        hour: Int,
+        minute: Int,
+        repeatDaysMask: Int,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) -> Bool {
+        let dayIndices = targetDayIndices(hour: hour, minute: minute, repeatDaysMask: repeatDaysMask, nowMillis: nowMillis)
+        return quietWindows(member).contains { window in
+            dayIndices.contains { dayIndex in blocks(window: window, dayIndex: dayIndex, hour: hour, minute: minute) }
+        }
+    }
+
+    private static func quietWindows(_ member: FamilyGroupMember) -> [FamilyAlarmQuietWindow] {
+        let fallback = FamilyAlarmQuietWindow(
+            days: safeQuietDays(member.familyAlarmQuietDays),
+            start: safeQuietTime(member.familyAlarmQuietStart, fallback: "09:00"),
+            end: safeQuietTime(member.familyAlarmQuietEnd, fallback: "18:30")
+        )
+        let windows = (member.familyAlarmQuietWindows ?? []).compactMap { window -> FamilyAlarmQuietWindow? in
+            let start = safeQuietTime(window.start, fallback: "")
+            let end = safeQuietTime(window.end, fallback: "")
+            guard !start.isEmpty, !end.isEmpty else { return nil }
+            return FamilyAlarmQuietWindow(days: safeQuietDays(window.days), start: start, end: end)
+        }
+        return windows.isEmpty ? [fallback] : windows
+    }
+
+    private static func targetDayIndices(hour: Int, minute: Int, repeatDaysMask: Int, nowMillis: Int64) -> [Int] {
+        if repeatDaysMask != 0 {
+            return (0...6).filter { repeatDaysMask & (1 << $0) != 0 }
+        }
+        let fireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
+            hour: hour,
+            minute: minute,
+            repeatDaysMask: 0,
+            nowMillis: nowMillis
+        )) ?? LocalAlarmRecord.fallbackFireAtMillis(hour: hour, minute: minute, referenceMillis: nowMillis)
+        let date = Date(timeIntervalSince1970: TimeInterval(fireAt) / 1000.0)
+        return [(Calendar.current.component(.weekday, from: date) - 1) % 7]
+    }
+
+    private static func blocks(window: FamilyAlarmQuietWindow, dayIndex: Int, hour: Int, minute: Int) -> Bool {
+        guard safeQuietDays(window.days).contains(dayIndex),
+              let start = parseQuietTime(window.start),
+              let end = parseQuietTime(window.end) else {
+            return false
+        }
+        let target = hour * 60 + minute
+        if start <= end {
+            return target >= start && target < end
+        }
+        return target >= start || target < end
+    }
+
+    private static func parseQuietTime(_ value: String) -> Int? {
+        let parts = value.split(separator: ":")
+        guard parts.count >= 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute) else {
+            return nil
+        }
+        return hour * 60 + minute
+    }
+
+    private static func safeQuietDays(_ days: [Int]?) -> [Int] {
+        let normalized = Array(Set(days?.filter { (0...6).contains($0) } ?? [])).sorted()
+        return normalized.isEmpty ? [1, 2, 3, 4, 5] : normalized
+    }
+
+    private static func safeQuietTime(_ value: String?, fallback: String) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    private static func quietDaysLabel(_ days: [Int]) -> String {
+        let sorted = Array(Set(days)).sorted()
+        switch sorted {
+        case []:
+            return "없음"
+        case [1, 2, 3, 4, 5]:
+            return "평일"
+        case [0, 6]:
+            return "주말"
+        case [0, 1, 2, 3, 4, 5, 6]:
+            return "매일"
+        default:
+            let labels = ["일", "월", "화", "수", "목", "금", "토"]
+            return sorted.map { labels[max(0, min(6, $0))] }.joined(separator: ",")
         }
     }
 }

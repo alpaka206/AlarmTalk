@@ -5,6 +5,7 @@ import SwiftUI
 /// ContentView 의 `homeScreen` 을 옮긴 것. 자체 상태는 없고 라우팅 콜백을
 /// 자식 컴포넌트에 분배한다.
 struct HomeView: View {
+    @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
@@ -32,11 +33,23 @@ struct HomeView: View {
             QuickStartGrid(
                 onOpenVoices: { selectTab(.voices) },
                 onOpenEditor: { openEditor(.create()) },
+                canCreateFamilyAlarm: canCreateFamilyAlarm,
+                onOpenFamilyAlarm: { openEditor(.createFamily()) },
                 onOpenPeople: { openAuxiliary(.people) }
             )
             CharacterMiniCard {
                 openAuxiliary(.growth)
             }
+        }
+    }
+
+    private var canCreateFamilyAlarm: Bool {
+        let currentUserID = auth.session?.user.id
+        let currentEmail = auth.session?.user.email
+        return socialFeatures.selectableMembers.contains { member in
+            member.userId != currentUserID &&
+                member.email != currentEmail &&
+                member.allowFamilyAlarms == true
         }
     }
 

@@ -7,6 +7,8 @@ import SwiftUI
 struct QuickStartGrid: View {
     let onOpenVoices: () -> Void
     let onOpenEditor: () -> Void
+    let canCreateFamilyAlarm: Bool
+    let onOpenFamilyAlarm: () -> Void
     let onOpenPeople: () -> Void
 
     var body: some View {
@@ -34,6 +36,14 @@ struct QuickStartGrid: View {
                 background: Color(red: 0.92, green: 0.88, blue: 0.96),
                 action: onOpenPeople
             )
+            if canCreateFamilyAlarm {
+                QuickActionCard(
+                    title: "상대 알람 맞춰주기",
+                    icon: "bell.badge",
+                    background: Color(red: 0.88, green: 0.95, blue: 0.91),
+                    action: onOpenFamilyAlarm
+                )
+            }
         }
     }
 }
@@ -79,12 +89,24 @@ struct QuickActionCard: View {
 
 #if DEBUG
 #Preview("QuickStart (light)") {
-    QuickStartGrid(onOpenVoices: {}, onOpenEditor: {}, onOpenPeople: {})
+    QuickStartGrid(
+        onOpenVoices: {},
+        onOpenEditor: {},
+        canCreateFamilyAlarm: true,
+        onOpenFamilyAlarm: {},
+        onOpenPeople: {}
+    )
         .padding()
 }
 
 #Preview("QuickStart (dark)") {
-    QuickStartGrid(onOpenVoices: {}, onOpenEditor: {}, onOpenPeople: {})
+    QuickStartGrid(
+        onOpenVoices: {},
+        onOpenEditor: {},
+        canCreateFamilyAlarm: true,
+        onOpenFamilyAlarm: {},
+        onOpenPeople: {}
+    )
         .padding()
         .preferredColorScheme(.dark)
 }
