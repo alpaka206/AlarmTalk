@@ -326,13 +326,19 @@ struct AlarmEditorSheet: View {
     }
 
     private func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
+        let saved = savedPromptPreferences()
         voiceStudio.randomPrompt = alarm?.voiceRandomPrompt ?? false
         voiceStudio.randomContext = RandomPromptContext.normalized(alarm?.voiceRandomContext).rawValue
-        voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? ""
-        voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? ""
-        voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? ""
-        voiceStudio.fortuneBirthDate = alarm?.voiceFortuneBirthDate ?? ""
-        voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? ""
+        voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? saved.weatherCountry
+        voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? saved.weatherCity
+        voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? saved.fortuneGender
+        voiceStudio.fortuneBirthDate = alarm?.voiceFortuneBirthDate ?? saved.fortuneBirthDate
+        voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? saved.fortuneBirthTime
+    }
+
+    private func savedPromptPreferences() -> DynamicPromptPreferences {
+        let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
+        return server == DynamicPromptPreferences() ? .loadFromDefaults() : server
     }
 
     private func applyVoicePromptState(to record: inout LocalAlarmRecord) {

@@ -130,6 +130,24 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(VoiceProfileLimits.maxDurationMs, 120_000)
     }
 
+    func test_dynamicPromptPreferences_trimAndSerializeToSettings() {
+        let preferences = DynamicPromptPreferences(
+            weatherCountry: " 대한민국 ",
+            weatherCity: " 서울 ",
+            fortuneGender: " 여성 ",
+            fortuneBirthDate: " 1996-05-20 ",
+            fortuneBirthTime: " 07:30 "
+        )
+
+        let settings = preferences.toSettings()
+
+        XCTAssertEqual(settings.weather.country, "대한민국")
+        XCTAssertEqual(settings.weather.city, "서울")
+        XCTAssertEqual(settings.fortune.gender, "여성")
+        XCTAssertEqual(settings.fortune.birthDate, "1996-05-20")
+        XCTAssertEqual(settings.fortune.birthTime, "07:30")
+    }
+
     func test_isProfileLimitReached_andRemainingSlots() {
         let vm = VoiceStudioViewModel()
         vm.profiles = []

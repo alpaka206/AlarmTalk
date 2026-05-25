@@ -326,7 +326,8 @@ final class AuthViewModel: ObservableObject {
     func updateProfile(
         name: String? = nil,
         allowFamilyAlarms: Bool? = nil,
-        quietWindows: [FamilyAlarmQuietWindow]? = nil
+        quietWindows: [FamilyAlarmQuietWindow]? = nil,
+        dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
             statusMessage = "로그인이 필요해요."
@@ -341,7 +342,8 @@ final class AuthViewModel: ObservableObject {
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
-                    familyAlarmQuietWindows: quietWindows
+                    familyAlarmQuietWindows: quietWindows,
+                    dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
             )

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct VoiceAlarmApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(VoiceAlarmThemeMode.storageKey) private var themeModeRaw = VoiceAlarmThemeMode.system.rawValue
 
     @StateObject private var alarmStore = LocalAlarmStore()
     @StateObject private var alarmKit = AlarmKitViewModel()
@@ -94,6 +95,7 @@ struct VoiceAlarmApp: App {
                         BackgroundSyncTask.scheduleNext()
                     }
             }
+            .preferredColorScheme(VoiceAlarmThemeMode.normalized(themeModeRaw).preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {

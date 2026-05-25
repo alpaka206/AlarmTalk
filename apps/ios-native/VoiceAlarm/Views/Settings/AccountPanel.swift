@@ -9,25 +9,33 @@ struct AccountPanel: View {
     @Binding var nicknameDraft: String
     let user: AuthUser
     let onSignOut: () -> Void
+    @State private var nicknameDialogOpen = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("닉네임")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            Button {
+                nicknameDraft = user.name
+                nicknameDialogOpen = true
+            } label: {
                 HStack {
-                    TextField("닉네임", text: $nicknameDraft)
-                        .textFieldStyle(.roundedBorder)
-                    Button("저장") {
-                        Task { await auth.updateProfile(name: nicknameDraft) }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(nicknameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || auth.isBusy)
+                    Image(systemName: "person.text.rectangle")
+                        .frame(width: 24)
+                        .foregroundStyle(VoiceAlarmTheme.primaryDark)
+                    Text("닉네임")
+                        .fontWeight(.medium)
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Spacer()
+                    Text(user.name.isEmpty ? "이름 없음" : user.name)
+                        .font(.subheadline)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .buttonStyle(.plain)
             Divider()
             SettingsRow(label: "계정", value: user.email)
             Divider()
@@ -48,6 +56,94 @@ struct AccountPanel: View {
             .buttonStyle(.plain)
         }
         .settingsCard(title: "계정")
+        .sheet(isPresented: $nicknameDialogOpen) {
+            NicknameEditSheet(
+                initialName: user.name,
+                isBusy: auth.isBusy,
+                onDismiss: { nicknameDialogOpen = false },
+                onSave: { name in
+                    nicknameDraft = name
+                    nicknameDialogOpen = false
+                    Task { await auth.updateProfile(name: name) }
+                }
+            )
+            .presentationDetents([.medium])
+        }
+    }
+}
+
+private struct NicknameEditSheet: View {
+    let initialName: String
+    let isBusy: Bool
+    let onDismiss: () -> Void
+    let onSave: (String) -> Void
+
+    @State private var name = ""
+    @State private var submitted = false
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("닉네임")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Text("앱에서 표시될 이름이에요.")
+                        .font(.subheadline)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.headline)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(VoiceAlarmTheme.surfaceVariant, in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("이름")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("닉네임", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .onChange(of: name) { _, newValue in
+                        if newValue.count > 30 {
+                            name = String(newValue.prefix(30))
+                        }
+                    }
+                if submitted && trimmedName.isEmpty {
+                    Text("닉네임을 입력해 주세요.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+
+            Button("저장") {
+                submitted = true
+                guard !trimmedName.isEmpty else { return }
+                onSave(trimmedName)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VoiceAlarmTheme.primary)
+            .frame(maxWidth: .infinity)
+            .disabled(isBusy)
+
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .background(VoiceAlarmTheme.background)
+        .onAppear {
+            name = initialName
+        }
     }
 }
 

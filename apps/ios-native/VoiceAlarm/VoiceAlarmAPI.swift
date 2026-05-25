@@ -11,6 +11,104 @@ struct FamilyAlarmQuietWindow: Codable, Equatable {
     var end: String
 }
 
+struct DynamicPromptWeatherSettings: Codable, Equatable {
+    var country: String?
+    var city: String?
+}
+
+struct DynamicPromptFortuneSettings: Codable, Equatable {
+    var gender: String?
+    var birthDate: String?
+    var birthTime: String?
+}
+
+struct DynamicPromptSettings: Codable, Equatable {
+    var weather: DynamicPromptWeatherSettings
+    var fortune: DynamicPromptFortuneSettings
+
+    static let empty = DynamicPromptSettings(
+        weather: DynamicPromptWeatherSettings(country: nil, city: nil),
+        fortune: DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+    )
+}
+
+struct DynamicPromptSettingsState: Codable, Equatable {
+    var weatherReady: Bool?
+    var fortuneReady: Bool?
+}
+
+struct DynamicPromptPreferences: Codable, Equatable {
+    var weatherCountry: String = ""
+    var weatherCity: String = ""
+    var fortuneGender: String = ""
+    var fortuneBirthDate: String = ""
+    var fortuneBirthTime: String = ""
+
+    private static let defaultsKey = "dynamic_prompt_preferences"
+
+    static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
+        DynamicPromptPreferences(
+            weatherCountry: settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            weatherCity: settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneGender: settings?.fortune.gender?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneBirthDate: settings?.fortune.birthDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneBirthTime: settings?.fortune.birthTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+    }
+
+    static func loadFromDefaults() -> DynamicPromptPreferences {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: data) else {
+            return DynamicPromptPreferences()
+        }
+        return decoded.normalized()
+    }
+
+    func saveToDefaults() {
+        guard let data = try? JSONEncoder().encode(normalized()) else { return }
+        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+    }
+
+    func toSettings() -> DynamicPromptSettings {
+        DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(
+                country: clean(weatherCountry),
+                city: clean(weatherCity)
+            ),
+            fortune: DynamicPromptFortuneSettings(
+                gender: clean(fortuneGender),
+                birthDate: clean(fortuneBirthDate),
+                birthTime: clean(fortuneBirthTime)
+            )
+        )
+    }
+
+    var weatherReady: Bool {
+        clean(weatherCountry) != nil && clean(weatherCity) != nil
+    }
+
+    var fortuneReady: Bool {
+        clean(fortuneGender) != nil &&
+            clean(fortuneBirthDate) != nil &&
+            clean(fortuneBirthTime) != nil
+    }
+
+    private func normalized() -> DynamicPromptPreferences {
+        DynamicPromptPreferences(
+            weatherCountry: weatherCountry.trimmingCharacters(in: .whitespacesAndNewlines),
+            weatherCity: weatherCity.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneGender: fortuneGender.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneBirthDate: fortuneBirthDate.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneBirthTime: fortuneBirthTime.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private func clean(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct AuthUser: Codable, Equatable, Identifiable {
     var id: String
     var email: String
@@ -26,6 +124,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
     /// 백엔드 `/auth/apple` 와 `/auth/me` 응답이 `apple_user_id` 키로 전달한다.
     /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
     var appleUserId: String?
+    var dynamicPromptSettings: DynamicPromptSettings? = nil
 }
 
 struct RemoteAlarmListResponse: Decodable {
@@ -307,6 +406,8 @@ struct FamilyGroupMember: Decodable, Identifiable, Equatable {
     var familyAlarmQuietStart: String?
     var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
+    var dynamicPromptSettingsState: DynamicPromptSettingsState?
 }
 
 struct FamilyVoiceProfileListResponse: Decodable {
@@ -569,6 +670,7 @@ struct UpdateProfileRequest: Encodable {
     var name: String?
     var allowFamilyAlarms: Bool?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
 }
 
 struct UpdateProfileResponse: Decodable, Equatable {
@@ -579,6 +681,7 @@ struct UpdateProfileResponse: Decodable, Equatable {
     var familyAlarmQuietStart: String?
     var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
 }
 
 struct DeleteAccountResponse: Decodable, Equatable {
