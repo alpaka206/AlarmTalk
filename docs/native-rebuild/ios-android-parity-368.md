@@ -62,6 +62,10 @@
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
+- iOS weather-region input now mirrors Android's explicit "use current
+  location" action. It requests When-In-Use location permission only when the
+  user taps the button, reverse geocodes to country/city, and still supports
+  manual entry.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

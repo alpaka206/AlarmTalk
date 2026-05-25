@@ -24,6 +24,8 @@
   <string>Naro needs permission to schedule real local alarms that appear on the Lock Screen.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Naro needs microphone access to record voice samples for voice alarms.</string>
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Naro uses your current location only when you tap the location button to fill the weather region for random wake messages.</string>
   <key>NSSupportsLiveActivities</key>
   <true/>
   <key>VOICE_ALARM_API_BASE_URL</key>

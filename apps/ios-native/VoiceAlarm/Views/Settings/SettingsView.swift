@@ -270,8 +270,8 @@ private struct WeatherLocationPreferenceSheet: View {
     @State private var city = ""
     @State private var submitted = false
 
-    private var countryValue: String { country.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var cityValue: String { city.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var countryValue: String { WeatherLocationInputFields.clean(country) }
+    private var cityValue: String { WeatherLocationInputFields.clean(city) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -280,8 +280,11 @@ private struct WeatherLocationPreferenceSheet: View {
                 subtitle: "날씨가 들어간 랜덤 깨움말에 사용할 지역이에요.",
                 onDismiss: onDismiss
             )
-            SettingsTextField(title: "국가 또는 지역", placeholder: "예: 대한민국", text: $country, showError: submitted && countryValue.isEmpty)
-            SettingsTextField(title: "도시", placeholder: "예: 서울", text: $city, showError: submitted && cityValue.isEmpty)
+            WeatherLocationInputFields(
+                country: $country,
+                city: $city,
+                submitted: submitted
+            )
             Button("저장") {
                 submitted = true
                 guard !countryValue.isEmpty, !cityValue.isEmpty else { return }

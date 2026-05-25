@@ -143,12 +143,11 @@ struct AlarmEditorSheet: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("날씨 지역")
                                     .font(theme.typography.titleSmall)
-                                TextField("국가 또는 지역", text: $voiceStudio.weatherCountry)
-                                    .textInputAutocapitalization(.never)
-                                    .disableAutocorrection(true)
-                                TextField("도시", text: $voiceStudio.weatherCity)
-                                    .textInputAutocapitalization(.never)
-                                    .disableAutocorrection(true)
+                                WeatherLocationInputFields(
+                                    country: $voiceStudio.weatherCountry,
+                                    city: $voiceStudio.weatherCity,
+                                    helperText: "날씨가 들어간 깨움말에 사용할 지역이에요."
+                                )
                                 if !voiceStudio.hasWeatherInfo || targetWeatherReady {
                                     Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
                                         .font(theme.typography.bodySmall)
