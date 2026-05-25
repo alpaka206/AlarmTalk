@@ -24,7 +24,9 @@ import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
 import java.io.File
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -97,6 +99,32 @@ internal fun formatVoucherIssuedAt(isoString: String?): String? {
             .format(formatter)
     }.getOrNull()
 }
+
+internal fun formatNoteCreatedAt(isoString: String?, zoneId: ZoneId = ZoneId.systemDefault()): String? {
+    val value = isoString?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    val instant = parseBackendTimestamp(value)
+    return instant
+        ?.atZone(zoneId)
+        ?.format(formatter)
+        ?: value
+            .replace('T', ' ')
+            .take(16)
+            .takeIf { it.isNotBlank() }
+}
+
+private fun parseBackendTimestamp(value: String): Instant? =
+    runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching {
+            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                .atZone(ZoneOffset.UTC)
+                .toInstant()
+        }.getOrNull()
+        ?: runCatching {
+            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                .atZone(ZoneOffset.UTC)
+                .toInstant()
+        }.getOrNull()
 
 internal fun audioFileLabel(localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment

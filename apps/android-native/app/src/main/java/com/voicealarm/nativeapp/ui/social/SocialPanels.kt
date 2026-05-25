@@ -55,6 +55,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.apiErrorCode
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
@@ -321,7 +322,18 @@ internal fun VoiceMessagePanel(
     var notePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingNoteId by remember { mutableStateOf<String?>(null) }
     var loadingNoteId by remember { mutableStateOf<String?>(null) }
+    var unavailableAudioNoteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showComposer by remember { mutableStateOf(false) }
+
+    LaunchedEffect(receivedNotes) {
+        unavailableAudioNoteIds = unavailableAudioNoteIds.filter { noteId ->
+            receivedNotes.any { note ->
+                note.id == noteId &&
+                    note.audioUrl != null &&
+                    note.audioAvailable == false
+            }
+        }.toSet()
+    }
 
     LaunchedEffect(sendMode, maxTextLength) {
         if (text.length > maxTextLength) text = text.take(maxTextLength)
@@ -388,6 +400,10 @@ internal fun VoiceMessagePanel(
                 }
             }.onSuccess { player ->
                 startNotePlayer(note.id, player)
+            }.onFailure { error ->
+                if (apiErrorCode(error) in setOf("NOTE_AUDIO_MISSING", "NOTE_AUDIO_NOT_FOUND")) {
+                    unavailableAudioNoteIds = unavailableAudioNoteIds + note.id
+                }
             }
             loadingNoteId = null
         }
@@ -464,6 +480,9 @@ internal fun VoiceMessagePanel(
                         note = note,
                         isPlaying = playingNoteId == note.id,
                         isLoading = loadingNoteId == note.id,
+                        hasAudio = note.audioUrl != null &&
+                            note.audioAvailable != false &&
+                            note.id !in unavailableAudioNoteIds,
                         onMarkRead = { onMarkNoteRead(note.id) },
                         onPlayClick = { playNoteAudio(note) },
                     )
@@ -593,6 +612,7 @@ internal fun NoteRow(
     note: ReceivedNote,
     isPlaying: Boolean,
     isLoading: Boolean,
+    hasAudio: Boolean,
     onMarkRead: () -> Unit,
     onPlayClick: () -> Unit,
 ) {
@@ -648,9 +668,9 @@ internal fun NoteRow(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    note.createdAt?.let { MutedText(it.take(10)) }
+                    formatNoteCreatedAt(note.createdAt)?.let { MutedText(it) }
                 }
-                if (note.audioUrl != null) {
+                if (hasAudio) {
                     IconButton(
                         onClick = onPlayClick,
                         enabled = !isLoading,
