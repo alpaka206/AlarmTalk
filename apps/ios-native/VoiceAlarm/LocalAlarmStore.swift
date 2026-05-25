@@ -27,6 +27,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceCategory: String?
     var voiceLanguage: String?      // ISO 639-1
     var voiceRandomPrompt: Bool
+    var voiceRandomContext: String?
+    var voiceWeatherCountry: String?
+    var voiceWeatherCity: String?
+    var voiceFortuneGender: String?
+    var voiceFortuneBirthDate: String?
+    var voiceFortuneBirthTime: String?
     var voiceRepeat: Bool
     var ttsMessageId: String?
     var remoteAlarmId: String?
@@ -110,6 +116,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         voiceCategory: String? = nil,
         voiceLanguage: String? = nil,
         voiceRandomPrompt: Bool = false,
+        voiceRandomContext: String? = nil,
+        voiceWeatherCountry: String? = nil,
+        voiceWeatherCity: String? = nil,
+        voiceFortuneGender: String? = nil,
+        voiceFortuneBirthDate: String? = nil,
+        voiceFortuneBirthTime: String? = nil,
         voiceRepeat: Bool = true,
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
@@ -148,6 +160,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceCategory = voiceCategory
         self.voiceLanguage = voiceLanguage
         self.voiceRandomPrompt = voiceRandomPrompt
+        self.voiceRandomContext = voiceRandomContext
+        self.voiceWeatherCountry = voiceWeatherCountry
+        self.voiceWeatherCity = voiceWeatherCity
+        self.voiceFortuneGender = voiceFortuneGender
+        self.voiceFortuneBirthDate = voiceFortuneBirthDate
+        self.voiceFortuneBirthTime = voiceFortuneBirthTime
         self.voiceRepeat = voiceRepeat
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
@@ -188,6 +206,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case voiceCategory
         case voiceLanguage
         case voiceRandomPrompt
+        case voiceRandomContext
+        case voiceWeatherCountry
+        case voiceWeatherCity
+        case voiceFortuneGender
+        case voiceFortuneBirthDate
+        case voiceFortuneBirthTime
         case voiceRepeat
         case ttsMessageId
         case remoteAlarmId
@@ -279,6 +303,12 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceCategory = try c.decodeIfPresent(String.self, forKey: .voiceCategory)
         self.voiceLanguage = try c.decodeIfPresent(String.self, forKey: .voiceLanguage)
         self.voiceRandomPrompt = try c.decodeIfPresent(Bool.self, forKey: .voiceRandomPrompt) ?? false
+        self.voiceRandomContext = try c.decodeIfPresent(String.self, forKey: .voiceRandomContext)
+        self.voiceWeatherCountry = try c.decodeIfPresent(String.self, forKey: .voiceWeatherCountry)
+        self.voiceWeatherCity = try c.decodeIfPresent(String.self, forKey: .voiceWeatherCity)
+        self.voiceFortuneGender = try c.decodeIfPresent(String.self, forKey: .voiceFortuneGender)
+        self.voiceFortuneBirthDate = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthDate)
+        self.voiceFortuneBirthTime = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthTime)
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)
             ?? c.decodeIfPresent(String.self, forKey: .legacyMessageID)

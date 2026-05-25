@@ -87,22 +87,58 @@ struct AlarmEditorSheet: View {
                         .buttonStyle(.bordered)
                     }
 
-                    // Android `TtsApi.randomContext` 와 매칭되는 랜덤 프롬프트 토글.
-                    // 토글 ON 이면 카테고리 picker 가 노출되며, generateTTS 호출 시
-                    // VoiceStudioViewModel 의 randomPrompt/randomContext 가 함께 전달된다.
-                    // 날씨/운세 컨텍스트의 추가 입력(country/city/birthday 등) 은 추후 PR.
                     Toggle("랜덤 깨움말 생성", isOn: $voiceStudio.randomPrompt)
                         .tint(theme.palette.primary)
                     if voiceStudio.randomPrompt {
                         Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
-                            ForEach(RandomPromptContext.allCases, id: \.rawValue) { context in
+                            ForEach(RandomPromptContext.alarmEditorCases, id: \.rawValue) { context in
                                 Text(context.label).tag(context.rawValue)
                             }
                         }
                         .pickerStyle(.menu)
-                        Text("선택한 컨텍스트에 어울리는 깨움말이 자동 생성돼요.")
+                        Text("선택한 상황에 맞춰 깨움말을 자동으로 만들어요.")
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
+                        if activePromptContext.usesWeather {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("날씨 지역")
+                                    .font(theme.typography.titleSmall)
+                                TextField("국가 또는 지역", text: $voiceStudio.weatherCountry)
+                                    .textInputAutocapitalization(.never)
+                                    .disableAutocorrection(true)
+                                TextField("도시", text: $voiceStudio.weatherCity)
+                                    .textInputAutocapitalization(.never)
+                                    .disableAutocorrection(true)
+                                if !voiceStudio.hasWeatherInfo {
+                                    Text("날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
+                                        .font(theme.typography.bodySmall)
+                                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+                        if activePromptContext.usesFortune {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("운세 정보")
+                                    .font(theme.typography.titleSmall)
+                                Picker("성별", selection: $voiceStudio.fortuneGender) {
+                                    Text("선택").tag("")
+                                    Text("남성").tag("남성")
+                                    Text("여성").tag("여성")
+                                }
+                                .pickerStyle(.segmented)
+                                TextField("생년월일 (YYYY-MM-DD)", text: $voiceStudio.fortuneBirthDate)
+                                    .keyboardType(.numbersAndPunctuation)
+                                TextField("태어난 시간 (HH:mm)", text: $voiceStudio.fortuneBirthTime)
+                                    .keyboardType(.numbersAndPunctuation)
+                                if !voiceStudio.hasFortuneInfo {
+                                    Text("운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
+                                        .font(theme.typography.bodySmall)
+                                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
                     }
                 }
             }
@@ -204,6 +240,10 @@ struct AlarmEditorSheet: View {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
     }
 
+    private var activePromptContext: RandomPromptContext {
+        RandomPromptContext.normalized(voiceStudio.randomContext)
+    }
+
     private var preparedVoiceLabel: String {
         guard let prepared = voiceStudio.preparedAlarm else {
             return "아직 생성한 음성이 없어요. 음성 탭에서 음성을 생성해 주세요."
@@ -217,9 +257,33 @@ struct AlarmEditorSheet: View {
         if let editingID = target.editingAlarmID,
            let alarm = store.alarms.first(where: { $0.id == editingID }) {
             draft = AlarmEditDraft(from: alarm)
+            loadVoicePromptState(from: alarm)
         } else {
             draft = .newDefault()
+            loadVoicePromptState(from: nil)
         }
+    }
+
+    private func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
+        voiceStudio.randomPrompt = alarm?.voiceRandomPrompt ?? false
+        voiceStudio.randomContext = RandomPromptContext.normalized(alarm?.voiceRandomContext).rawValue
+        voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? ""
+        voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? ""
+        voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? ""
+        voiceStudio.fortuneBirthDate = alarm?.voiceFortuneBirthDate ?? ""
+        voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? ""
+    }
+
+    private func applyVoicePromptState(to record: inout LocalAlarmRecord) {
+        let enabled = record.playModeEnum != .alarmOnly && voiceStudio.randomPrompt
+        let context = RandomPromptContext.normalized(voiceStudio.randomContext)
+        record.voiceRandomPrompt = enabled
+        record.voiceRandomContext = enabled ? context.rawValue : nil
+        record.voiceWeatherCountry = enabled && context.usesWeather ? nonEmpty(voiceStudio.weatherCountry) : nil
+        record.voiceWeatherCity = enabled && context.usesWeather ? nonEmpty(voiceStudio.weatherCity) : nil
+        record.voiceFortuneGender = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneGender) : nil
+        record.voiceFortuneBirthDate = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneBirthDate) : nil
+        record.voiceFortuneBirthTime = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneBirthTime) : nil
     }
 
     // MARK: - Save flow
@@ -265,6 +329,7 @@ struct AlarmEditorSheet: View {
         // playMode 가 음성을 포함하면, voiceStudio 의 prepared 결과를 record 의
         // 음원/프로필 필드에 합쳐 둔다.
         var merged = draft.toRecord(existing: existing, fireAtMillis: fireAt, nowMillis: now)
+        applyVoicePromptState(to: &merged)
         if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.serverTts.rawValue
             merged.localAudioUri = prepared.localAudioFileName
@@ -297,7 +362,11 @@ struct AlarmEditorSheet: View {
     }
 
     private func generateVoiceAndSave() async {
-        let prepared = await voiceStudio.generateTTS(session: auth.session)
+        let prepared = await voiceStudio.generateTTS(
+            session: auth.session,
+            alarmHour: draft.hour,
+            alarmMinute: draft.minute
+        )
         if prepared != nil {
             await saveFlow()
         }
@@ -306,6 +375,11 @@ struct AlarmEditorSheet: View {
     private func scheduleOneMinuteTest() async {
         await alarmKit.scheduleOneMinuteTest(store: store)
         onSchedulingDidFinish()
+    }
+
+    private func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: - Error formatting

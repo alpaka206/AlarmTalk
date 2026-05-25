@@ -24,6 +24,13 @@ struct AlarmEditDraft: Equatable {
 
     var vibrationPattern: VibrationPattern
     var alarmVolumePercent: Int      // 0..100
+    var voiceRandomPrompt: Bool
+    var voiceRandomContext: String?
+    var voiceWeatherCountry: String
+    var voiceWeatherCity: String
+    var voiceFortuneGender: String
+    var voiceFortuneBirthDate: String
+    var voiceFortuneBirthTime: String
 
     // MARK: - 신규 생성 default
 
@@ -42,7 +49,14 @@ struct AlarmEditDraft: Equatable {
             snoozeMinutes: 5,
             snoozeRepeatLimit: .three,
             vibrationPattern: .default,
-            alarmVolumePercent: 80
+            alarmVolumePercent: 80,
+            voiceRandomPrompt: false,
+            voiceRandomContext: RandomPromptContext.defaultContext.rawValue,
+            voiceWeatherCountry: "",
+            voiceWeatherCity: "",
+            voiceFortuneGender: "",
+            voiceFortuneBirthDate: "",
+            voiceFortuneBirthTime: ""
         )
     }
 
@@ -60,6 +74,13 @@ struct AlarmEditDraft: Equatable {
         self.snoozeRepeatLimit = SnoozeRepeatLimit(rawValue: record.snoozeRepeatLimit) ?? .three
         self.vibrationPattern = record.vibrationPatternEnum
         self.alarmVolumePercent = max(0, min(100, record.alarmVolumePercent))
+        self.voiceRandomPrompt = record.voiceRandomPrompt
+        self.voiceRandomContext = RandomPromptContext.normalized(record.voiceRandomContext).rawValue
+        self.voiceWeatherCountry = record.voiceWeatherCountry ?? ""
+        self.voiceWeatherCity = record.voiceWeatherCity ?? ""
+        self.voiceFortuneGender = record.voiceFortuneGender ?? ""
+        self.voiceFortuneBirthDate = record.voiceFortuneBirthDate ?? ""
+        self.voiceFortuneBirthTime = record.voiceFortuneBirthTime ?? ""
     }
 
     init(
@@ -73,7 +94,14 @@ struct AlarmEditDraft: Equatable {
         snoozeMinutes: Int,
         snoozeRepeatLimit: SnoozeRepeatLimit,
         vibrationPattern: VibrationPattern,
-        alarmVolumePercent: Int
+        alarmVolumePercent: Int,
+        voiceRandomPrompt: Bool = false,
+        voiceRandomContext: String? = RandomPromptContext.defaultContext.rawValue,
+        voiceWeatherCountry: String = "",
+        voiceWeatherCity: String = "",
+        voiceFortuneGender: String = "",
+        voiceFortuneBirthDate: String = "",
+        voiceFortuneBirthTime: String = ""
     ) {
         self.label = label
         self.hour = hour
@@ -86,6 +114,13 @@ struct AlarmEditDraft: Equatable {
         self.snoozeRepeatLimit = snoozeRepeatLimit
         self.vibrationPattern = vibrationPattern
         self.alarmVolumePercent = alarmVolumePercent
+        self.voiceRandomPrompt = voiceRandomPrompt
+        self.voiceRandomContext = RandomPromptContext.normalized(voiceRandomContext).rawValue
+        self.voiceWeatherCountry = voiceWeatherCountry
+        self.voiceWeatherCity = voiceWeatherCity
+        self.voiceFortuneGender = voiceFortuneGender
+        self.voiceFortuneBirthDate = voiceFortuneBirthDate
+        self.voiceFortuneBirthTime = voiceFortuneBirthTime
     }
 
     // MARK: - Validation
@@ -129,6 +164,9 @@ struct AlarmEditDraft: Equatable {
     ) -> LocalAlarmRecord {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeLabel = trimmedLabel.isEmpty ? "알람" : trimmedLabel
+        let promptContext = RandomPromptContext.normalized(voiceRandomContext)
+        let storesWeather = voiceRandomPrompt && promptContext.usesWeather
+        let storesFortune = voiceRandomPrompt && promptContext.usesFortune
 
         return LocalAlarmRecord(
             id: existing?.id ?? UUID().uuidString,
@@ -153,7 +191,13 @@ struct AlarmEditDraft: Equatable {
             voiceText: existing?.voiceText,
             voiceCategory: existing?.voiceCategory,
             voiceLanguage: existing?.voiceLanguage,
-            voiceRandomPrompt: existing?.voiceRandomPrompt ?? false,
+            voiceRandomPrompt: voiceRandomPrompt,
+            voiceRandomContext: voiceRandomPrompt ? promptContext.rawValue : nil,
+            voiceWeatherCountry: storesWeather ? nonEmpty(voiceWeatherCountry) : nil,
+            voiceWeatherCity: storesWeather ? nonEmpty(voiceWeatherCity) : nil,
+            voiceFortuneGender: storesFortune ? nonEmpty(voiceFortuneGender) : nil,
+            voiceFortuneBirthDate: storesFortune ? nonEmpty(voiceFortuneBirthDate) : nil,
+            voiceFortuneBirthTime: storesFortune ? nonEmpty(voiceFortuneBirthTime) : nil,
             voiceRepeat: existing?.voiceRepeat ?? true,
             ttsMessageId: existing?.ttsMessageId,
             remoteAlarmId: existing?.remoteAlarmId,
@@ -172,4 +216,9 @@ struct AlarmEditDraft: Equatable {
             alarmKitID: nil
         )
     }
+}
+
+private func nonEmpty(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
 }

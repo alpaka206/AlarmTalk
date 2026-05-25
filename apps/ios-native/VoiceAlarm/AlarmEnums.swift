@@ -190,17 +190,69 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static let defaultContext: RandomPromptContext = .wakeWeather
+    static let alarmEditorCases: [RandomPromptContext] = [
+        .wakeWeather,
+        .wakeFortune,
+        .meal,
+        .sleep,
+        .exercise,
+        .love
+    ]
+
+    static func normalized(_ rawValue: String?) -> RandomPromptContext {
+        switch rawValue {
+        case "daily", "weather":
+            return .wakeWeather
+        case "fortune":
+            return .wakeFortune
+        default:
+            guard let rawValue,
+                  let context = RandomPromptContext(rawValue: rawValue),
+                  context != .preset else {
+                return defaultContext
+            }
+            return context
+        }
+    }
+
     var label: String {
         switch self {
         case .preset: return "기본"
-        case .wakeWeather: return "날씨"
-        case .wakeFortune: return "운세"
+        case .wakeWeather: return "기상 + 날씨"
+        case .wakeFortune: return "기상 + 운세"
         case .meal: return "식사"
-        case .sleep: return "수면"
+        case .sleep: return "취침"
         case .exercise: return "운동"
         case .love: return "사랑"
         }
     }
+
+    var ttsCategory: String {
+        switch self {
+        case .meal:
+            return "lunch"
+        case .sleep:
+            return "night"
+        case .exercise:
+            return "health"
+        case .love:
+            return "love"
+        default:
+            return "morning"
+        }
+    }
+
+    var usesWeather: Bool {
+        switch self {
+        case .wakeWeather, .meal, .exercise:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var usesFortune: Bool { self == .wakeFortune }
 }
 
 // MARK: - Default Alarm Sound IDs

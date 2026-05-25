@@ -39,7 +39,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
     /// 허용 값: preset / wake_weather / wake_fortune / meal / sleep / exercise / love.
     /// randomPrompt 가 true 일 때만 의미가 있다.
-    @Published var randomContext: String = "preset"
+    @Published var randomContext: String = RandomPromptContext.defaultContext.rawValue
+    @Published var weatherCountry = ""
+    @Published var weatherCity = ""
+    @Published var fortuneGender = ""
+    @Published var fortuneBirthDate = ""
+    @Published var fortuneBirthTime = ""
     @Published var cloneName = "내 목소리"
     @Published var isBusy = false
     @Published var statusMessage: String?
@@ -74,6 +79,16 @@ final class VoiceStudioViewModel: ObservableObject {
         recorder.latestRecordingURL != nil
             && (recorder.latestDurationMs ?? 0) >= VoiceProfileLimits.minDurationMs
             && (recorder.latestDurationMs ?? 0) <= VoiceProfileLimits.maxDurationMs
+    }
+
+    var hasWeatherInfo: Bool {
+        nonEmpty(weatherCountry) != nil && nonEmpty(weatherCity) != nil
+    }
+
+    var hasFortuneInfo: Bool {
+        nonEmpty(fortuneGender) != nil &&
+            nonEmpty(fortuneBirthDate) != nil &&
+            nonEmpty(fortuneBirthTime) != nil
     }
 
     /// 슬롯이 가득 찼는지 — VoiceProfileManagementPanel 의 슬롯 카드/추가 버튼 비활성에 사용.
@@ -366,7 +381,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    func generateTTS(session: AuthSession?) async -> PreparedVoiceAlarm? {
+    func generateTTS(session: AuthSession?, alarmHour: Int? = nil, alarmMinute: Int? = nil) async -> PreparedVoiceAlarm? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return nil
@@ -379,6 +394,15 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "깨워줄 말을 입력하거나 랜덤 생성을 켜 주세요."
             return nil
         }
+        let promptContext = RandomPromptContext.normalized(randomContext)
+        if randomPrompt && promptContext.usesWeather && !hasWeatherInfo {
+            statusMessage = "날씨를 쓸 지역을 입력해 주세요."
+            return nil
+        }
+        if randomPrompt && promptContext.usesFortune && !hasFortuneInfo {
+            statusMessage = "운세에 쓸 정보를 모두 입력해 주세요."
+            return nil
+        }
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
@@ -387,12 +411,19 @@ final class VoiceStudioViewModel: ObservableObject {
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
-                    text: ttsText,
-                    category: ttsCategory,
+                    text: randomPrompt ? "" : ttsText,
+                    category: randomPrompt ? promptContext.ttsCategory : ttsCategory,
                     language: ttsLanguage,
                     translate: translateText,
                     random: randomPrompt,
-                    randomContext: randomPrompt ? randomContext : nil
+                    randomContext: randomPrompt ? promptContext.rawValue : nil,
+                    alarmHour: randomPrompt ? alarmHour : nil,
+                    alarmMinute: randomPrompt ? alarmMinute : nil,
+                    weatherCountry: randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCountry) : nil,
+                    weatherCity: randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
+                    fortuneGender: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
+                    fortuneBirthDate: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
+                    fortuneBirthTime: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil
                 ),
                 token: token
             )
@@ -512,6 +543,11 @@ final class VoiceStudioViewModel: ObservableObject {
                 try? audioCache.deleteCachedAudio(cacheKey: key)
             }
         }
+    }
+
+    private func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// 프로필 이름 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.

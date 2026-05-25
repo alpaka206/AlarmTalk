@@ -82,6 +82,30 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(rebuilt.syncState, AlarmSyncState.dirty.rawValue)
     }
 
+    func testRandomPromptFieldsRoundTrip() throws {
+        var draft = AlarmEditDraft.newDefault()
+        draft.playMode = .soundThenVoice
+        draft.voiceRandomPrompt = true
+        draft.voiceRandomContext = RandomPromptContext.wakeWeather.rawValue
+        draft.voiceWeatherCountry = "대한민국"
+        draft.voiceWeatherCity = "서울"
+
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let record = draft.toRecord(existing: nil, fireAtMillis: now + 60_000, nowMillis: now)
+
+        XCTAssertTrue(record.voiceRandomPrompt)
+        XCTAssertEqual(record.voiceRandomContext, RandomPromptContext.wakeWeather.rawValue)
+        XCTAssertEqual(record.voiceWeatherCountry, "대한민국")
+        XCTAssertEqual(record.voiceWeatherCity, "서울")
+        XCTAssertNil(record.voiceFortuneGender)
+
+        let restored = AlarmEditDraft(from: record)
+        XCTAssertTrue(restored.voiceRandomPrompt)
+        XCTAssertEqual(restored.voiceRandomContext, RandomPromptContext.wakeWeather.rawValue)
+        XCTAssertEqual(restored.voiceWeatherCountry, "대한민국")
+        XCTAssertEqual(restored.voiceWeatherCity, "서울")
+    }
+
     // MARK: - Validation
 
     func testValidationFlagsEmptyLabel() {
