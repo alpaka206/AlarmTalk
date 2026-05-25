@@ -69,6 +69,7 @@ struct VoiceProfileManagementPanel: View {
                 initialRelationship: editRelationship,
                 initialListenerTitle: editListenerTitle,
                 initialIsShared: editIsShared,
+                canShareVoice: canShareVoice,
                 onCancel: { editTarget = nil },
                 onSave: { newName, newRelationship, newListenerTitle, newShared in
                     Task {
@@ -259,6 +260,7 @@ struct VoiceProfileManagementPanel: View {
                 VoiceProfileRow(
                     profile: profile,
                     isSelected: profile.id == voice.selectedProfileID,
+                    canShareVoice: canShareVoice,
                     onSelect: { voice.selectedProfileID = profile.id },
                     onEdit: {
                         editName = profile.name
@@ -281,7 +283,7 @@ struct VoiceProfileManagementPanel: View {
 
     @ViewBuilder
     private var familyProfilesSection: some View {
-        if !voice.familyVoices.isEmpty {
+        if canShareVoice && !voice.familyVoices.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("공유받은 목소리")
                     .font(.subheadline.weight(.semibold))
@@ -294,6 +296,16 @@ struct VoiceProfileManagementPanel: View {
             }
         }
     }
+
+    private var canShareVoice: Bool {
+        canShareVoiceWithOthers(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            authSession: auth.session,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+    }
 }
 
 // MARK: - Row
@@ -302,6 +314,7 @@ struct VoiceProfileManagementPanel: View {
 private struct VoiceProfileRow: View {
     let profile: VoiceProfile
     let isSelected: Bool
+    let canShareVoice: Bool
     let onSelect: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -337,10 +350,15 @@ private struct VoiceProfileRow: View {
                 Menu {
                     Button("선택", action: onSelect)
                     Button("이름·공유 변경", action: onEdit)
-                    Toggle("공유 허용", isOn: Binding(
-                        get: { profile.isShared ?? false },
-                        set: { onToggleShare($0) }
-                    ))
+                    if canShareVoice {
+                        Toggle("공유 허용", isOn: Binding(
+                            get: { profile.isShared ?? false },
+                            set: { onToggleShare($0) }
+                        ))
+                    } else {
+                        Button("공유 허용") {}
+                            .disabled(true)
+                    }
                     Divider()
                     Button("삭제", role: .destructive, action: onDelete)
                 } label: {
@@ -514,6 +532,7 @@ private struct VoiceProfileEditDialog: View {
     let initialRelationship: String
     let initialListenerTitle: String
     let initialIsShared: Bool
+    let canShareVoice: Bool
     let onCancel: () -> Void
     let onSave: (String, String, String, Bool) -> Void
 
@@ -598,11 +617,12 @@ private struct VoiceProfileEditDialog: View {
             Toggle(isOn: $isShared) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("목소리 공유").font(.subheadline.weight(.semibold))
-                    Text(isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요.")
+                    Text(shareDescription)
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
             }
+            .disabled(!canShareVoice)
 
             Button("저장") {
                 submitted = true
@@ -625,6 +645,13 @@ private struct VoiceProfileEditDialog: View {
             listenerTitle = initialListenerTitle
             isShared = initialIsShared
         }
+    }
+
+    private var shareDescription: String {
+        if !canShareVoice {
+            return "공유는 커플/가족 이용권에서 사용할 수 있어요."
+        }
+        return isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요."
     }
 }
 

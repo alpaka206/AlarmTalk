@@ -24,6 +24,8 @@ private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
 struct VoiceCloneUploadFlow: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     @Binding var route: VoicesRoute
 
@@ -185,10 +187,16 @@ struct VoiceCloneUploadFlow: View {
             )
             HStack(spacing: 10) {
                 Toggle(isOn: $isShared) {
-                    Text("목소리 공유")
-                        .font(.footnote)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("목소리 공유")
+                            .font(.footnote.weight(.semibold))
+                        Text(shareDescription)
+                            .font(.caption2)
+                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    }
                 }
                 .toggleStyle(.switch)
+                .disabled(!canShareVoice)
             }
         }
         .sectionSurface()
@@ -515,7 +523,7 @@ struct VoiceCloneUploadFlow: View {
                     audioFileURL: url,
                     name: trimmedName,
                     durationMs: durationMs,
-                    isShared: isShared,
+                    isShared: shouldShareVoice,
                     session: auth.session,
                     relationshipLabel: trimmedRelationship,
                     listenerTitle: trimmedListener
@@ -524,7 +532,7 @@ struct VoiceCloneUploadFlow: View {
                 voice.cloneName = trimmedName
                 await voice.uploadRecordingForClone(
                     session: auth.session,
-                    isShared: isShared,
+                    isShared: shouldShareVoice,
                     relationshipLabel: trimmedRelationship,
                     listenerTitle: trimmedListener
                 )
@@ -536,7 +544,7 @@ struct VoiceCloneUploadFlow: View {
                     audioFileURL: prepared.url,
                     name: trimmedName,
                     durationMs: prepared.durationMs,
-                    isShared: isShared,
+                    isShared: shouldShareVoice,
                     session: auth.session,
                     noiseRemoval: noiseRemovalEnabled,
                     relationshipLabel: trimmedRelationship,
@@ -552,6 +560,27 @@ struct VoiceCloneUploadFlow: View {
         if voice.statusMessage?.contains("등록") == true || voice.statusMessage?.contains("완료") == true {
             route = .management
         }
+    }
+
+    private var canShareVoice: Bool {
+        canShareVoiceWithOthers(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            authSession: auth.session,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+    }
+
+    private var shouldShareVoice: Bool {
+        isShared && canShareVoice
+    }
+
+    private var shareDescription: String {
+        if !canShareVoice {
+            return "공유는 커플/가족 이용권에서 사용할 수 있어요."
+        }
+        return isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요."
     }
 
     private func importAudioFile(_ source: URL) async {

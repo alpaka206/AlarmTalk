@@ -13,6 +13,8 @@ import UniformTypeIdentifiers
 struct SpeakerSeparationFlow: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     @Binding var route: VoicesRoute
 
@@ -396,8 +398,16 @@ struct SpeakerSeparationFlow: View {
                 relationshipLabel: relationshipSelection.resolved
             )
 
-            Toggle("목소리 공유", isOn: $isShared)
-                .font(.footnote)
+            Toggle(isOn: $isShared) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("목소리 공유")
+                        .font(.footnote.weight(.semibold))
+                    Text(shareDescription)
+                        .font(.caption2)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+            }
+            .disabled(!canShareVoice)
             Button {
                 Task { await registerSelected() }
             } label: {
@@ -563,7 +573,7 @@ struct SpeakerSeparationFlow: View {
                     uploadId: uploadId,
                     speakerId: speaker.id,
                     name: resolvedName.isEmpty ? "분리한 목소리" : resolvedName,
-                    isShared: isShared,
+                    isShared: shouldShareVoice,
                     durationMs: speaker.durationMs,
                     audioFileURL: cropped,
                     relationshipLabel: trimmedRelationship,
@@ -576,6 +586,27 @@ struct SpeakerSeparationFlow: View {
         if voice.statusMessage?.contains("학습") == true {
             route = .management
         }
+    }
+
+    private var canShareVoice: Bool {
+        canShareVoiceWithOthers(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            authSession: auth.session,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+    }
+
+    private var shouldShareVoice: Bool {
+        isShared && canShareVoice
+    }
+
+    private var shareDescription: String {
+        if !canShareVoice {
+            return "공유는 커플/가족 이용권에서 사용할 수 있어요."
+        }
+        return isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요."
     }
 
     /// 임시 cropping — AVAssetExportSession 기반.
