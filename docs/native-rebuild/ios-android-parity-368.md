@@ -19,7 +19,7 @@
 | Voice creation | Record/upload, crop, speaker separation, clone, relationship/listener, slots, delete cascade | Voice recorder/upload/speaker separation/clone/profile management | Need latest Android shared voice card/modal copy/design and preview parity. |
 | Shared voices | Family shared voices, viewer relationship/listener, no relation on card, preview before selection | Family voices, viewer info update, simplified card copy, setup CTA, preview | Need macOS visual QA and final alarm-selection device pass. |
 | Messages | Received/sent note flow, voice note audio availability, read after listen, timestamp with time | Received notes, text/TTS composer, audio freshness/read behavior | Need macOS visual QA and Android row copy final pass. |
-| Members/share code | Current group, share code refresh, one-member modal, owner/member permissions | MemberManagementView + vouchers | Need latest Android wording, refresh-on-open, member permission audit. |
+| Members/share code | Current group, share code refresh, one-member modal, owner/member permissions | Code registration plus routed shared-pass member screen | Need macOS visual QA. |
 | Billing | Plan cards, voucher/redeem/cancel/change, feature gates | StoreKit2 UI + backend voucher primitives | Platform-specific purchase path OK; need Android copy/gate parity where not IAP-specific. |
 | Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, theme/nickname/weather/fortune sheets | Need macOS visual QA and final copy pass. |
 | Character/streak | XP queue and character card | CharacterEventStore and GrowthPanel with Android stage/stat/recent-record display rules | Need macOS visual QA and physical-device ring-to-XP pass. |
@@ -90,7 +90,10 @@
   show time plus XP only, and the iOS-only manual XP button/achievement/extra XP
   rows are no longer shown in the growth panel.
 - Member management now exposes the family-alarm permission and quiet-window
-  editor used by Android's shared-plan screen.
+  editor used by Android's shared-plan screen. The shared-pass screen is now
+  routed from home/settings when a group exists, keeps code registration as the
+  no-group path, refreshes before sharing a code, and uses Android's current
+  "공유 이용권" wording.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

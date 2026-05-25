@@ -6,6 +6,7 @@ import Foundation
 /// MainTabsView, Settings 화면, Home 의 빠른 가기 카드 모두에서 참조한다.
 enum AuxiliaryScreen: String, Identifiable {
     case people
+    case members
     case growth
     case billing
 
@@ -14,6 +15,7 @@ enum AuxiliaryScreen: String, Identifiable {
     var title: String {
         switch self {
         case .people: return "코드 등록"
+        case .members: return "공유 이용권"
         case .growth: return "캐릭터"
         case .billing: return "이용권"
         }

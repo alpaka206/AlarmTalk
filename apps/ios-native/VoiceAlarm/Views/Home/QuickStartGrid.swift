@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 홈 화면 "바로 가기" 영역. 음성 탭 진입, 새 알람 만들기, 함께(가족) 시트 진입.
+/// 홈 화면 "바로 가기" 영역. 음성 탭 진입, 새 알람 만들기, 코드/공유 이용권 시트 진입.
 ///
 /// ContentView 의 `quickStartGrid` 와 `quickActionCard(_:_:_:_:)` 헬퍼를 옮긴 것.
 /// 부모(HomeView)가 라우팅 의무를 가져가므로 각 카드는 단순 콜백을 호출한다.
@@ -9,6 +9,7 @@ struct QuickStartGrid: View {
     let onOpenEditor: () -> Void
     let canCreateFamilyAlarm: Bool
     let onOpenFamilyAlarm: () -> Void
+    let peopleTitle: String
     let onOpenPeople: () -> Void
 
     var body: some View {
@@ -31,7 +32,7 @@ struct QuickStartGrid: View {
                 )
             }
             QuickActionCard(
-                title: "함께",
+                title: peopleTitle,
                 icon: "person.2",
                 background: Color(red: 0.92, green: 0.88, blue: 0.96),
                 action: onOpenPeople
@@ -94,6 +95,7 @@ struct QuickActionCard: View {
         onOpenEditor: {},
         canCreateFamilyAlarm: true,
         onOpenFamilyAlarm: {},
+        peopleTitle: "공유 이용권",
         onOpenPeople: {}
     )
         .padding()
@@ -105,6 +107,7 @@ struct QuickActionCard: View {
         onOpenEditor: {},
         canCreateFamilyAlarm: true,
         onOpenFamilyAlarm: {},
+        peopleTitle: "공유 이용권",
         onOpenPeople: {}
     )
         .padding()

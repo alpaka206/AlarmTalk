@@ -11,6 +11,23 @@ struct AuxiliarySheetHost: View {
 
     var body: some View {
         NavigationStack {
+            content
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                        }
+                        .accessibilityLabel(Text("닫기"))
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if screen == .members {
+            MemberManagementView()
+        } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     ScreenHeader(title: screen.title)
@@ -21,19 +38,13 @@ struct AuxiliarySheetHost: View {
                         GrowthPanel()
                     case .billing:
                         BillingPanel()
+                    case .members:
+                        EmptyView()
                     }
                 }
                 .padding(20)
             }
             .background(VoiceAlarmTheme.background)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                    }
-                    .accessibilityLabel(Text("닫기"))
-                }
-            }
         }
     }
 }
@@ -47,6 +58,11 @@ struct AuxiliarySheetHost: View {
 #Preview("AuxiliarySheet — growth (dark)") {
     AuxiliarySheetHost(screen: .growth, onClose: {})
         .preferredColorScheme(.dark)
+        .voiceAlarmPreviewEnvironment()
+}
+
+#Preview("AuxiliarySheet — members (light)") {
+    AuxiliarySheetHost(screen: .members, onClose: {})
         .voiceAlarmPreviewEnvironment()
 }
 

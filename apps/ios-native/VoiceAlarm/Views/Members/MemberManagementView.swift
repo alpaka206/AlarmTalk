@@ -7,7 +7,7 @@ import UIKit
 /// 모든 동작을 1:1 포팅했다.
 ///
 /// 기능 요약
-///   - 그룹 정보 카드: 현재 인원 / 최대 인원, 내 역할 칩
+///   - 공유 이용권 요약: 이용권 종류 / 현재 인원 / 최대 인원
 ///   - 소유자 전용 공유 코드 카드: 코드 표시 + 클립보드 복사 + Share Sheet,
 ///     코드가 없을 땐 발급 버튼 노출. 정원 가득 차면 발급/공유 비활성.
 ///   - 구성원 리스트: 소유자(관리자) 표시, "나" 표시, allowFamilyAlarms 상태,
@@ -17,7 +17,6 @@ struct MemberManagementView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
 
     @State private var pendingRemoveMember: FamilyGroupMember?
     @State private var isSharePresented = false
@@ -70,10 +69,8 @@ struct MemberManagementView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                header
-
                 if group == nil {
-                    Text("참여 중인 공유 이용권이 없어요.")
+                    Text("현재 함께 쓰는 이용권이 없어요.")
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .padding(.vertical, 24)
@@ -122,10 +119,10 @@ struct MemberManagementView: View {
             .padding(.vertical, 12)
         }
         .background(theme.palette.background.ignoresSafeArea())
-        .navigationTitle("구성원과 공유 코드")
+        .navigationTitle("공유 이용권")
         .navigationBarTitleDisplayMode(.inline)
         .alert(
-            "멤버 내보내기",
+            "구성원 내보내기",
             isPresented: Binding(
                 get: { pendingRemoveMember != nil },
                 set: { if !$0 { pendingRemoveMember = nil } }
@@ -146,9 +143,8 @@ struct MemberManagementView: View {
             Button("취소", role: .cancel) {
                 pendingRemoveMember = nil
             }
-        } message: { member in
-            let label = member.name ?? member.email ?? "이 멤버"
-            Text("\(label)을(를) 정말 내보낼까요? 다시 들어오려면 새 초대 코드가 필요해요.")
+        } message: { _ in
+            Text("이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.")
         }
         .sheet(isPresented: $isSharePresented) {
             ActivityShareSheet(text: shareText)
@@ -178,23 +174,8 @@ struct MemberManagementView: View {
 
     // MARK: - Sections
 
-    private var header: some View {
-        HStack(spacing: 0) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.backward")
-                    .padding(8)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("뒤로")
-
-            Spacer().frame(width: 4)
-        }
-    }
-
     private var capacityRow: some View {
-        Text("현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
+        Text("\(planLabel) 이용권 · 현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
             .font(theme.typography.bodyMedium)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }
@@ -214,7 +195,7 @@ struct MemberManagementView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(isCapacityFull
                      ? "정원이 가득 차서 더 이상 공유할 수 없어요."
-                     : "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 INV 코드를 만들어 주세요.")
+                     : "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 초대 코드를 만들어 주세요.")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
 
@@ -263,6 +244,7 @@ struct MemberManagementView: View {
                     Task {
                         await socialFeatures.refreshAll(session: auth.session)
                         shareText = shareVoucher?.code ?? voucher.code
+                        UIPasteboard.general.string = shareText
                         isSharePresented = true
                     }
                 } label: {

@@ -65,8 +65,8 @@ struct SettingsView: View {
                 .settingsCard(title: "랜덤 문구 정보")
 
                 VStack(alignment: .leading, spacing: 0) {
-                    SettingsActionRow(label: "초대 코드 등록", icon: "qrcode") {
-                        onRequestAuxiliary(.people)
+                    SettingsActionRow(label: sharedPassMenuLabel, icon: sharedPassMenuIcon) {
+                        onRequestAuxiliary(sharedPassMenuTarget)
                     }
                     Divider()
                     SettingsActionRow(label: "캐릭터", icon: "chart.line.uptrend.xyaxis") {
@@ -143,6 +143,18 @@ struct SettingsView: View {
 
     private var currentThemeMode: VoiceAlarmThemeMode {
         VoiceAlarmThemeMode.normalized(themeModeRaw)
+    }
+
+    private var sharedPassMenuTarget: AuxiliaryScreen {
+        socialFeatures.familyGroup?.group == nil ? .people : .members
+    }
+
+    private var sharedPassMenuLabel: String {
+        sharedPassMenuTarget == .members ? "공유 이용권" : "초대 코드 등록"
+    }
+
+    private var sharedPassMenuIcon: String {
+        sharedPassMenuTarget == .members ? "person.2" : "qrcode"
     }
 
     private var weatherLocationLabel: String {

@@ -35,7 +35,8 @@ struct HomeView: View {
                 onOpenEditor: { openEditor(.create()) },
                 canCreateFamilyAlarm: canCreateFamilyAlarm,
                 onOpenFamilyAlarm: { openEditor(.createFamily()) },
-                onOpenPeople: { openAuxiliary(.people) }
+                peopleTitle: sharedPassAuxiliaryTarget == .members ? "공유 이용권" : "초대 코드",
+                onOpenPeople: { openAuxiliary(sharedPassAuxiliaryTarget) }
             )
             CharacterMiniCard {
                 openAuxiliary(.growth)
@@ -51,6 +52,10 @@ struct HomeView: View {
                 member.email != currentEmail &&
                 member.allowFamilyAlarms == true
         }
+    }
+
+    private var sharedPassAuxiliaryTarget: AuxiliaryScreen {
+        socialFeatures.familyGroup?.group == nil ? .people : .members
     }
 
     private var homeHeader: some View {
