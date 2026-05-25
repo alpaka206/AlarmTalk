@@ -366,6 +366,7 @@ struct ReceivedNote: Decodable, Identifiable, Equatable {
     var senderPicture: String?
     var text: String
     var audioUrl: String?
+    var audioAvailable: Bool?
     var readAt: String?
     var createdAt: String?
 }

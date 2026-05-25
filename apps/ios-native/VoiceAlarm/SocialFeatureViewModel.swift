@@ -13,8 +13,13 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var noteText = "오늘도 좋은 아침이에요. 잘 일어나길 바라요."
     @Published var isBusy = false
     @Published var statusMessage: String?
+    @Published var loadingNoteID: String?
+    @Published var playingNoteID: String?
+    @Published var unavailableAudioNoteIDs: Set<String> = []
+    @Published var revealedNoteIDs: Set<String> = []
 
     private let api: VoiceAlarmAPI
+    private let notePreviewPlayer = AudioPreviewPlayer()
 
     init(api: VoiceAlarmAPI = .shared) {
         self.api = api
@@ -54,6 +59,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             receivedNotes = try await api.listReceivedNotes(token: token)
+            let activeIDs = Set(receivedNotes.map(\.id))
+            unavailableAudioNoteIDs = unavailableAudioNoteIDs.intersection(activeIDs)
+            revealedNoteIDs = revealedNoteIDs.intersection(activeIDs)
         } catch {
             messages.append("메시지: \(error.localizedDescription)")
         }
@@ -136,6 +144,75 @@ final class SocialFeatureViewModel: ObservableObject {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    func hasPlayableAudio(_ note: ReceivedNote) -> Bool {
+        note.audioUrl != nil &&
+            note.audioAvailable != false &&
+            !unavailableAudioNoteIDs.contains(note.id)
+    }
+
+    func shouldRevealText(_ note: ReceivedNote) -> Bool {
+        !hasPlayableAudio(note) || note.readAt != nil || revealedNoteIDs.contains(note.id)
+    }
+
+    func playNoteAudio(_ note: ReceivedNote, session: AuthSession?) async {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        if playingNoteID == note.id {
+            notePreviewPlayer.stop()
+            playingNoteID = nil
+            return
+        }
+        guard hasPlayableAudio(note) else { return }
+        guard loadingNoteID == nil else { return }
+
+        loadingNoteID = note.id
+        defer { loadingNoteID = nil }
+
+        do {
+            let response = try await api.getNoteAudio(id: note.id, token: token)
+            let url = try cacheNoteAudio(response)
+            try notePreviewPlayer.play(url: url)
+            playingNoteID = note.id
+            revealedNoteIDs.insert(note.id)
+            _ = try? await api.markNoteRead(id: note.id, token: token)
+            await refreshAll(session: session)
+        } catch {
+            if isMissingNoteAudio(error) {
+                unavailableAudioNoteIDs.insert(note.id)
+            }
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func cacheNoteAudio(_ response: NoteAudioResponse) throws -> URL {
+        guard let data = Data(base64Encoded: response.audioBase64) else {
+            throw AudioCacheError.invalidBase64
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("note-audio", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let ext: String
+        switch response.audioFormat.lowercased() {
+        case "wav":
+            ext = "wav"
+        case "m4a", "aac", "mp4":
+            ext = "m4a"
+        default:
+            ext = "mp3"
+        }
+        let url = directory.appendingPathComponent("\(response.noteId).\(ext)")
+        try data.write(to: url, options: [.atomic])
+        return url
+    }
+
+    private func isMissingNoteAudio(_ error: Error) -> Bool {
+        let text = String(describing: error)
+        return text.contains("NOTE_AUDIO_MISSING") || text.contains("NOTE_AUDIO_NOT_FOUND")
     }
 
     func ensureFamilyShareCode(session: AuthSession?) async {

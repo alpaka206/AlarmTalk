@@ -113,41 +113,85 @@ struct ReceivedNoteRow: View {
     let note: ReceivedNote
 
     var body: some View {
-        Button {
-            Task { await socialFeatures.markRead(note, session: auth.session) }
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(note.senderName ?? note.senderEmail ?? "보낸 사람")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.text)
-                    Spacer()
-                    if note.readAt == nil {
-                        Text("새 메시지")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(VoiceAlarmTheme.error, in: Capsule())
-                    }
-                }
-                Text(note.text)
-                    .font(.footnote)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                    .lineLimit(3)
-                if let createdAt = note.createdAt {
-                    Text(createdAt)
-                        .font(.caption2)
-                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+        let hasAudio = socialFeatures.hasPlayableAudio(note)
+        let revealText = socialFeatures.shouldRevealText(note)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(note.senderName ?? note.senderEmail ?? "보낸 사람")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.text)
+                Spacer()
+                if note.readAt == nil {
+                    Circle()
+                        .fill(VoiceAlarmTheme.secondary)
+                        .frame(width: 9, height: 9)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(VoiceAlarmTheme.surfaceVariant)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(revealText ? note.text : "음성을 들으면 메시지가 보여요.")
+                        .font(.footnote)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .lineLimit(3)
+                    if let createdAt = formatNoteCreatedAt(note.createdAt) {
+                        Text(createdAt)
+                            .font(.caption2)
+                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if hasAudio {
+                    Button {
+                        Task { await socialFeatures.playNoteAudio(note, session: auth.session) }
+                    } label: {
+                        if socialFeatures.loadingNoteID == note.id {
+                            ProgressView()
+                                .frame(width: 38, height: 38)
+                        } else {
+                            Image(systemName: socialFeatures.playingNoteID == note.id ? "stop.fill" : "play.fill")
+                                .foregroundStyle(.white)
+                                .frame(width: 38, height: 38)
+                                .background(VoiceAlarmTheme.secondary, in: Circle())
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(socialFeatures.loadingNoteID != nil && socialFeatures.loadingNoteID != note.id)
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(note.readAt == nil ? VoiceAlarmTheme.surfaceVariant.opacity(0.82) : VoiceAlarmTheme.surfaceVariant)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture {
+            guard !hasAudio else { return }
+            Task { await socialFeatures.markRead(note, session: auth.session) }
+        }
     }
+}
+
+private func formatNoteCreatedAt(_ value: String?) -> String? {
+    guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+        return nil
+    }
+    let output = DateFormatter()
+    output.dateFormat = "yyyy-MM-dd HH:mm"
+    output.locale = Locale(identifier: "ko_KR")
+    output.timeZone = .current
+
+    let iso = ISO8601DateFormatter()
+    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = iso.date(from: raw) {
+        return output.string(from: date)
+    }
+    iso.formatOptions = [.withInternetDateTime]
+    if let date = iso.date(from: raw) {
+        return output.string(from: date)
+    }
+
+    let fallback = raw.replacingOccurrences(of: "T", with: " ")
+    return String(fallback.prefix(16))
 }
 
 #if DEBUG
