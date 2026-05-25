@@ -294,7 +294,7 @@ private fun LandingAuthPanel(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "목소리 알람을 만들려면 로그인이 필요해요.",
+                    text = "로그인하면 목소리 알람을 만들 수 있어요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = LandingMuted,
                 )

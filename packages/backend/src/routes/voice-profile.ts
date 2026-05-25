@@ -260,8 +260,8 @@ voiceProfile.get('/family', async (c) => {
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
-                 COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
-                 COALESCE(NULLIF(vpr.listener_title, ''), vp.listener_title) AS listener_title,
+                 vpr.relationship_label AS relationship_label,
+                 vpr.listener_title AS listener_title,
                  vpr.relationship_label AS viewer_relationship_raw,
                  vpr.listener_title AS viewer_listener_raw,
                  u.name as owner_name
@@ -905,10 +905,22 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const assetsRes = await db.execute({
-    sql: `SELECT audio_object_key FROM generated_audio_assets
+    sql: `SELECT audio_url, audio_object_key FROM generated_audio_assets
           WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
     args: [id],
   });
+  const deletedAudioUrls = Array.from(new Set(
+    assetsRes.rows
+      .flatMap((row) => {
+        const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(row);
+        return [
+          typed.audio_url,
+          typed.audio_object_key,
+          typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
+        ];
+      })
+      .filter((url): url is string => Boolean(url)),
+  ));
   const bucket = c.env?.VOICE_BUCKET;
   if (bucket && assetsRes.rows.length > 0) {
     const storage = new R2VoiceStorage(bucket);
@@ -924,6 +936,14 @@ voiceProfile.delete('/:id', async (c) => {
     }
   }
 
+  if (deletedAudioUrls.length > 0) {
+    const placeholders = deletedAudioUrls.map(() => '?').join(',');
+    await db.execute({
+      sql: `UPDATE notes SET audio_url = NULL WHERE audio_url IN (${placeholders})`,
+      args: deletedAudioUrls,
+    });
+  }
+
   await db.execute({
     sql: 'DELETE FROM generated_audio_assets WHERE voice_profile_id = ?',
     args: [id],
@@ -932,7 +952,10 @@ voiceProfile.delete('/:id', async (c) => {
   await db.execute({
     sql: `UPDATE alarms
           SET mode = 'sound-only',
+              wake_mode = 'sound_then_voice',
+              message_id = NULL,
               voice_profile_id = NULL,
+              speaker_id = NULL,
               raw_audio_url = NULL,
               raw_audio_duration_ms = NULL
           WHERE voice_profile_id = ?

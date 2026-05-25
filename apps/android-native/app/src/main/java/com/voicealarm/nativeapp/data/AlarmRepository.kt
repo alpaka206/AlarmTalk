@@ -8,6 +8,7 @@ import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.VoiceAlarmApi
 import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -50,7 +51,7 @@ class AlarmRepository(
         requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = "Test alarm",
+            label = "테스트 알람",
             hour = localTime.hour,
             minute = localTime.minute,
             fireAtMillis = fireAtMillis,
@@ -80,6 +81,7 @@ class AlarmRepository(
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
+            voiceVolumePercent = 100,
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -147,6 +149,7 @@ class AlarmRepository(
             dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
                 ?: fireAtMillis.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
+            voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -215,6 +218,7 @@ class AlarmRepository(
             dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
                 ?: nextFireAt.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
+            voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
@@ -518,11 +522,11 @@ class AlarmRepository(
                         randomContext = alarm.voiceRandomContext ?: DefaultDynamicVoiceContext,
                         alarmHour = alarm.hour,
                         alarmMinute = alarm.minute,
-                        weatherCountry = alarm.voiceWeatherCountry,
-                        weatherCity = alarm.voiceWeatherCity,
-                        fortuneGender = alarm.voiceFortuneGender,
-                        fortuneBirthDate = alarm.voiceFortuneBirthDate,
-                        fortuneBirthTime = alarm.voiceFortuneBirthTime,
+                        weatherCountry = alarm.voiceWeatherCountry.trimmedOrNull(),
+                        weatherCity = alarm.voiceWeatherCity.trimmedOrNull(),
+                        fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
+                        fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
+                        fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -575,6 +579,7 @@ class AlarmRepository(
         require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
+        require(draft.voiceVolumePercent in 0..100) { "Voice volume must be between 0 and 100." }
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }

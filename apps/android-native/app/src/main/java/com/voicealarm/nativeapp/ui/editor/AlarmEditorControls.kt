@@ -293,9 +293,12 @@ internal fun PlayModeSelector(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PlayModeChip(
-            label = "알람",
-            selected = selected == AlarmPlayModes.ALARM_ONLY,
-            onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
+            label = "알람 + 음성",
+            selected = selected == AlarmPlayModes.ALARM_VOICE,
+            locked = voiceLocked,
+            onClick = {
+                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
+            },
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
@@ -308,12 +311,9 @@ internal fun PlayModeSelector(
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "알람 + 음성",
-            selected = selected == AlarmPlayModes.ALARM_VOICE,
-            locked = voiceLocked,
-            onClick = {
-                if (voiceLocked) onLockedVoiceClick() else onSelect(AlarmPlayModes.ALARM_VOICE)
-            },
+            label = "알람",
+            selected = selected == AlarmPlayModes.ALARM_ONLY,
+            onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
             modifier = Modifier.weight(1f),
         )
     }

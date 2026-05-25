@@ -95,9 +95,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionRouteKey = authSession?.user?.id
-    val isPlanOwner = familyGroup?.role == "owner" &&
-        familyGroup.group != null &&
-        subscriptionResponse?.plan?.planType == "family"
+    val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
         alarms.count { alarm ->
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
@@ -215,6 +213,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    LaunchedEffect(viewModel.navigateSharedPassTick) {
+        if (viewModel.navigateSharedPassTick > 0) {
+            navController.navigate(AppRoute.MemberManagement) {
+                launchSingleTop = true
+            }
+        }
+    }
+
     LoginPermissionGate(
         authSession = authSession,
         enabled = authSession != null && !viewModel.showOnboarding,
@@ -275,7 +281,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             !hasPaidVoiceAccess(subscriptionResponse)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+                message = "유료 이용권에서 사용할 수 있어요.",
             )
             navController.navigateTopLevelTab(NativeTab.Home)
         }
@@ -341,7 +347,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
         val idToken = account?.idToken
         if (idToken.isNullOrBlank()) {
-            viewModel.showGoogleSignInFailed("Google ID 토큰을 받지 못했어요")
+            viewModel.showGoogleSignInFailed("Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.")
         } else {
             viewModel.finishGoogleLogin(idToken)
         }
@@ -373,20 +379,23 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         if (
             tab == NativeTab.Voices &&
             authSession != null &&
+            subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "유료 요금제를 사용해야 목소리를 만들 수 있어요.",
+                message = "유료 이용권에서 사용할 수 있어요.",
             )
             return
         }
         if (
             tab == NativeTab.Messages &&
             authSession != null &&
+            subscriptionResponse != null &&
+            familyGroup != null &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "메시지는 커플/가족 플랜에서 사용할 수 있어요.",
+                message = "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
             )
             return
         }
@@ -441,7 +450,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         PlanGateDialog(
             message = gate.message,
             confirmLabel = gate.confirmLabel,
-            dismissLabel = gate.dismissLabel,
             onConfirm = {
                 planGateDialog = null
                 navController.navigateTopLevelTab(NativeTab.Billing)
@@ -562,6 +570,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCheckoutPlan = viewModel::checkoutPlan,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
+                          onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           permissions = permissions,
                           onCreateAlarm = {
                               if (!permissions.alarmReady) {
@@ -591,7 +600,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           profileMenu = if (tab == NativeTab.Alarms) {
                               {
                                   ProfileMenu(
-                                      isPlanOwner = isPlanOwner,
+                                      hasSharedPass = hasSharedPass,
                                       onSelectTab = ::navigateToTab,
                                       onOpenSettings = { navController.navigate(AppRoute.Settings) },
                                       onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
@@ -622,6 +631,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
+                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
+                          viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
+                      },
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -656,6 +669,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
+                          onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                          onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
+                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
+                          },
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()
@@ -673,13 +690,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       authSession = authSession,
                       themeMode = themeMode,
-                      permissions = permissions,
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
-                      onRequestPermission = ::requestPermission,
-                      onRequestAllPermissions = ::requestAllMissingPermissions,
                       onEditNickname = viewModel::requestEditNickname,
-                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
+                      onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )
@@ -690,12 +704,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       familyGroup = familyGroup,
                       subscriptionResponse = subscriptionResponse,
                       vouchers = vouchers,
+                      authSession = authSession,
                       currentUserId = authSession?.user?.id,
                       socialBusy = socialBusy,
                       billingBusy = billingBusy,
                       onBack = ::goBackInApp,
                       onRemoveFamilyMember = viewModel::removeFamilyMember,
                       onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
+                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                   )
               }
           }
@@ -710,7 +726,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           ),
                   ) {
                       ProfileMenu(
-                          isPlanOwner = isPlanOwner,
+                          hasSharedPass = hasSharedPass,
                           onSelectTab = ::navigateToTab,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
@@ -786,6 +802,7 @@ private fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
 }
 
 private fun NavHostController.navigateHomeClearingStack() {
+    if (currentDestination == null) return
     navigate(NativeTab.Home.route) {
         popUpTo(NativeTab.Home.route)
         launchSingleTop = true
@@ -838,8 +855,7 @@ private enum class MessageSeverity { Success, Error, Info }
 
 private data class PlanGateDialogState(
     val message: String,
-    val confirmLabel: String = "요금제 변경하러 가기",
-    val dismissLabel: String = "닫기",
+    val confirmLabel: String = "이용권 보기",
 )
 
 private fun messageSeverity(text: String): MessageSeverity = when {

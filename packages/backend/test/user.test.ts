@@ -35,6 +35,10 @@ describe('GET /user/me', () => {
         name: 'Test',
         plan: 'free',
         allow_family_alarms: 0,
+        dynamic_prompt_settings_json: JSON.stringify({
+          weather: { country: 'KR', city: 'Seoul' },
+          fortune: { gender: '남성', birth_date: '1990-01-02', birth_time: '08:30' },
+        }),
       },
     ]);
     mockDB.pushResult([{ count: 3 }]);
@@ -46,6 +50,10 @@ describe('GET /user/me', () => {
     const body = await res.json();
     expect(body.user.google_id).toBe('user-1');
     expect(body.user.allow_family_alarms).toBe(false);
+    expect(body.user.dynamic_prompt_settings).toEqual({
+      weather: { country: 'KR', city: 'Seoul' },
+      fortune: { gender: '남성', birth_date: '1990-01-02', birth_time: '08:30' },
+    });
     expect(body.stats.voice_profiles).toBe(3);
     expect(body.stats.alarms).toBe(2);
   });
@@ -188,6 +196,38 @@ describe('PATCH /user/me', () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('NO_FIELDS_TO_UPDATE');
+  });
+
+  it('dynamic_prompt_settings 저장 성공', async () => {
+    mockDB.pushResult([], 1);
+    const settings = {
+      weather: { country: 'KR', city: 'Seoul' },
+      fortune: { gender: '여성', birth_date: '1995-05-20', birth_time: '07:30' },
+    };
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('PATCH', '/user/me', { dynamic_prompt_settings: settings }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.dynamic_prompt_settings).toEqual(settings);
+    expect(mockDB.calls[0].sql).toContain('dynamic_prompt_settings_json = ?');
+    expect(JSON.parse(String(mockDB.calls[0].args[0]))).toEqual(settings);
+  });
+
+  it('dynamic_prompt_settings 시간 형식 오류 → 400', async () => {
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('PATCH', '/user/me', {
+        dynamic_prompt_settings: {
+          fortune: { birth_time: '25:99' },
+        },
+      }),
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_DYNAMIC_PROMPT_SETTINGS');
   });
 });
 

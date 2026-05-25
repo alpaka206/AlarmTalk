@@ -6,13 +6,18 @@ import android.net.Uri
 import android.util.Base64
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Add
@@ -54,7 +59,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.apiErrorCode
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
@@ -139,7 +147,7 @@ internal fun FamilyConnectionPanel(
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(
-                            text = "이용권에서 나가고 다른 코드 등록하기",
+                            text = "현재 이용권 나가고 새 코드 등록하기",
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -217,9 +225,14 @@ internal fun FamilyConnectionPanel(
     if (showLeaveDialog && currentGroup != null) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("이용권에서 나가고 다른 코드 등록") },
+            title = {
+                ModalDialogTitle(
+                    title = "현재 이용권 나가고 새 코드 등록",
+                    onDismiss = { showLeaveDialog = false },
+                )
+            },
             text = {
-                MutedText("현재 이용권에서 나가고 이 코드를 등록할까요?")
+                MutedText("현재 이용권에서 나가고 새 코드를 등록할까요?")
             },
             confirmButton = {
                 TextButton(
@@ -235,22 +248,22 @@ internal fun FamilyConnectionPanel(
                     )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showLeaveDialog = false }) {
-                    Text("취소")
-                }
-            },
         )
     }
 
     pendingRegisterCode?.let { code ->
         AlertDialog(
             onDismissRequest = { pendingRegisterCode = null },
-            title = { Text("코드 등록") },
+            title = {
+                ModalDialogTitle(
+                    title = "코드 등록",
+                    onDismiss = { pendingRegisterCode = null },
+                )
+            },
             text = {
                 MutedText(
                     if (hasActivePlan) {
-                        "유효한 코드면 현재 $activePlanName 이용권은 해지되고 새 이용권으로 전환돼요. 등록하시겠어요?"
+                        "등록 가능한 코드라면 현재 $activePlanName 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?"
                     } else {
                         "이 코드를 등록할까요?"
                     },
@@ -266,11 +279,6 @@ internal fun FamilyConnectionPanel(
                     },
                 ) {
                     Text("등록")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRegisterCode = null }) {
-                    Text("취소")
                 }
             },
         )
@@ -321,7 +329,18 @@ internal fun VoiceMessagePanel(
     var notePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingNoteId by remember { mutableStateOf<String?>(null) }
     var loadingNoteId by remember { mutableStateOf<String?>(null) }
+    var unavailableAudioNoteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showComposer by remember { mutableStateOf(false) }
+
+    LaunchedEffect(receivedNotes) {
+        unavailableAudioNoteIds = unavailableAudioNoteIds.filter { noteId ->
+            receivedNotes.any { note ->
+                note.id == noteId &&
+                    note.audioUrl != null &&
+                    note.audioAvailable == false
+            }
+        }.toSet()
+    }
 
     LaunchedEffect(sendMode, maxTextLength) {
         if (text.length > maxTextLength) text = text.take(maxTextLength)
@@ -388,6 +407,10 @@ internal fun VoiceMessagePanel(
                 }
             }.onSuccess { player ->
                 startNotePlayer(note.id, player)
+            }.onFailure { error ->
+                if (apiErrorCode(error) in setOf("NOTE_AUDIO_MISSING", "NOTE_AUDIO_NOT_FOUND")) {
+                    unavailableAudioNoteIds = unavailableAudioNoteIds + note.id
+                }
             }
             loadingNoteId = null
         }
@@ -405,7 +428,7 @@ internal fun VoiceMessagePanel(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MutedText("메시지는 커플/가족 플랜에서 사용할 수 있어요.")
+                MutedText("메시지는 커플/가족 이용권에서 사용할 수 있어요.")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
@@ -464,6 +487,9 @@ internal fun VoiceMessagePanel(
                         note = note,
                         isPlaying = playingNoteId == note.id,
                         isLoading = loadingNoteId == note.id,
+                        hasAudio = note.audioUrl != null &&
+                            note.audioAvailable != false &&
+                            note.id !in unavailableAudioNoteIds,
                         onMarkRead = { onMarkNoteRead(note.id) },
                         onPlayClick = { playNoteAudio(note) },
                     )
@@ -473,118 +499,170 @@ internal fun VoiceMessagePanel(
     }
 
     if (showComposer) {
-        AlertDialog(
+        val composerScrollState = rememberScrollState()
+        val canSend = selectedRecipientId != null &&
+            text.isNotBlank() &&
+            !noteBusy &&
+            (sendMode == VoiceMessageSendMode.Text || !selectedVoiceProfileId.isNullOrBlank())
+        fun sendComposerMessage() {
+            val recipientId = selectedRecipientId ?: return
+            if (sendMode == VoiceMessageSendMode.Tts) {
+                selectedVoiceProfileId?.let { profileId ->
+                    onSendTtsNote(recipientId, text, profileId)
+                }
+            } else {
+                onSendNote(recipientId, text)
+            }
+            text = ""
+            showComposer = false
+        }
+
+        Dialog(
             onDismissRequest = { showComposer = false },
-            title = { Text("새 메시지") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("받는 사람", fontWeight = FontWeight.SemiBold)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        recipients.take(3).forEach { member ->
-                            val selected = selectedRecipientId == member.userId
-                            FilterChip(
-                                selected = selected,
-                                onClick = { selectedRecipientId = member.userId },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                                ),
-                                label = {
-                                    Text(
-                                        text = member.name ?: member.email ?: "멤버",
-                                        maxLines = 1,
-                                    )
-                                },
-                            )
-                        }
-                    }
-                    Text("보내기 방식", fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = sendMode == VoiceMessageSendMode.Text,
-                            onClick = { sendMode = VoiceMessageSendMode.Text },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
-                            label = { Text("텍스트") },
-                        )
-                        FilterChip(
-                            selected = sendMode == VoiceMessageSendMode.Tts,
-                            onClick = { sendMode = VoiceMessageSendMode.Tts },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
-                            label = { Text("목소리 메시지") },
-                        )
-                    }
-                    if (sendMode == VoiceMessageSendMode.Tts) {
-                        Text("보낼 목소리", fontWeight = FontWeight.SemiBold)
-                        when {
-                            voiceProfileBusy -> MutedText("목소리를 불러오는 중이에요.")
-                            voiceOptions.isEmpty() -> MutedText("사용 가능한 목소리가 없어요.")
-                            else -> ChipGrid(
-                                options = voiceOptions,
-                                selected = selectedVoiceProfileId.orEmpty(),
-                                onSelect = { selectedVoiceProfileId = it },
-                                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
-                        }
-                    }
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it.take(maxTextLength) },
-                        label = { Text("메시지") },
-                        placeholder = { Text("전하고 싶은 말을 입력하세요") },
-                        minLines = 3,
-                        maxLines = 5,
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Text(
-                        text = "${text.length}/$maxTextLength",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.End),
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val recipientId = selectedRecipientId
-                        if (recipientId != null) {
-                            if (sendMode == VoiceMessageSendMode.Tts) {
-                                selectedVoiceProfileId?.let { profileId ->
-                                    onSendTtsNote(recipientId, text, profileId)
-                                }
-                            } else {
-                                onSendNote(recipientId, text)
-                            }
-                            text = ""
-                            showComposer = false
-                        }
-                    },
-                    enabled = selectedRecipientId != null &&
-                        text.isNotBlank() &&
-                        !noteBusy &&
-                        (sendMode == VoiceMessageSendMode.Text || !selectedVoiceProfileId.isNullOrBlank()),
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .widthIn(max = 520.dp),
+                shape = WakerCardShape,
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
+                shadowElevation = 18.dp,
+                border = wakerCardBorder(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    Text("보내기")
+                    ModalDialogTitle(
+                        title = "새 메시지",
+                        onDismiss = { showComposer = false },
+                    )
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 520.dp)
+                            .verticalScroll(composerScrollState),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        ComposerSection(title = "받는 사람") {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                recipients.take(3).forEach { member ->
+                                    val selected = selectedRecipientId == member.userId
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { selectedRecipientId = member.userId },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                            selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        ),
+                                        label = {
+                                            Text(
+                                                text = member.name ?: member.email ?: "멤버",
+                                                maxLines = 1,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        ComposerSection(title = "보내기 방식") {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = sendMode == VoiceMessageSendMode.Text,
+                                    onClick = { sendMode = VoiceMessageSendMode.Text },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
+                                    label = { Text("텍스트") },
+                                )
+                                FilterChip(
+                                    selected = sendMode == VoiceMessageSendMode.Tts,
+                                    onClick = { sendMode = VoiceMessageSendMode.Tts },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
+                                    label = { Text("음성 메시지") },
+                                )
+                            }
+                        }
+                        if (sendMode == VoiceMessageSendMode.Tts) {
+                            ComposerSection(title = "보낼 목소리") {
+                                when {
+                                    voiceProfileBusy -> MutedText("목소리를 불러오는 중이에요.")
+                                    voiceOptions.isEmpty() -> MutedText("사용 가능한 목소리가 없어요.")
+                                    else -> ChipGrid(
+                                        options = voiceOptions,
+                                        selected = selectedVoiceProfileId.orEmpty(),
+                                        onSelect = { selectedVoiceProfileId = it },
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    )
+                                }
+                            }
+                        }
+                        ComposerSection(title = "메시지") {
+                            OutlinedTextField(
+                                value = text,
+                                onValueChange = { text = it.take(maxTextLength) },
+                                placeholder = { Text("전하고 싶은 말을 입력하세요") },
+                                minLines = 4,
+                                maxLines = 6,
+                                shape = WakerInputShape,
+                                colors = wakerOutlinedTextFieldColors(),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text(
+                                text = "${text.length}/$maxTextLength",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.align(Alignment.End),
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = ::sendComposerMessage,
+                        enabled = canSend,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = WakerButtonShape,
+                    ) {
+                        Text(if (noteBusy) "보내는 중" else "보내기")
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showComposer = false }) {
-                    Text("취소")
-                }
-            },
-        )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComposerSection(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            content()
+        }
     }
 }
 
@@ -593,6 +671,7 @@ internal fun NoteRow(
     note: ReceivedNote,
     isPlaying: Boolean,
     isLoading: Boolean,
+    hasAudio: Boolean,
     onMarkRead: () -> Unit,
     onPlayClick: () -> Unit,
 ) {
@@ -648,9 +727,9 @@ internal fun NoteRow(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    note.createdAt?.let { MutedText(it.take(10)) }
+                    formatNoteCreatedAt(note.createdAt)?.let { MutedText(it) }
                 }
-                if (note.audioUrl != null) {
+                if (hasAudio) {
                     IconButton(
                         onClick = onPlayClick,
                         enabled = !isLoading,

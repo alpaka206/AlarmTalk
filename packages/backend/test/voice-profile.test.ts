@@ -512,7 +512,10 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const alarmsCascade = mockDB.calls.find((c) => c.sql.startsWith('UPDATE alarms'));
     expect(alarmsCascade).toBeDefined();
     expect(alarmsCascade!.sql).toContain("mode = 'sound-only'");
+    expect(alarmsCascade!.sql).toContain("wake_mode = 'sound_then_voice'");
+    expect(alarmsCascade!.sql).toContain('message_id = NULL');
     expect(alarmsCascade!.sql).toContain('voice_profile_id = NULL');
+    expect(alarmsCascade!.sql).toContain('speaker_id = NULL');
     const messagesUpdate = mockDB.calls.find((c) =>
       c.sql.startsWith('UPDATE messages SET audio_url'),
     );
@@ -520,6 +523,26 @@ describe('DELETE /:id — 프로필 삭제 (voice-profile)', () => {
     const update = mockDB.calls.find((c) => c.sql.startsWith('UPDATE voice_profiles'));
     expect(update?.sql).toContain('deleted_at');
     expect(update?.sql).toContain('is_shared = 0');
+  });
+
+  it('삭제된 목소리로 만든 쪽지는 오디오 URL을 비움', async () => {
+    mockDB.pushResult([{ id: V1, elevenlabs_voice_id: null }]);
+    mockDB.pushResult([{
+      audio_url: 'https://cdn.example.com/generated/voice-note.mp3',
+      audio_object_key: 'generated/voice-note.mp3',
+    }]);
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vp/${V1}`, { method: 'DELETE' }),
+    );
+
+    expect(res.status).toBe(200);
+    const notesUpdate = mockDB.calls.find((c) =>
+      c.sql.startsWith('UPDATE notes SET audio_url = NULL'),
+    );
+    expect(notesUpdate).toBeDefined();
+    expect(notesUpdate!.args).toContain('r2://generated/voice-note.mp3');
+    expect(notesUpdate!.args).toContain('https://cdn.example.com/generated/voice-note.mp3');
   });
 
   it('force=true 여도 메시지와 알람 행은 삭제하지 않음', async () => {

@@ -246,10 +246,18 @@ describe('POST /family-alarm/alarms — TTS 가족 알람', () => {
     expect(body.alarm.voice_profile_id).toBe(VP_ID);
     expect(body.alarm.repeat_days).toEqual([]);
     expect(body.message.text).toBe('좋은 아침이야!');
+    expect(body.message.synthesis_text).toContain(body.message.text);
+    expect(body.message.tags).toHaveLength(1);
+    expect(body.message.synthesis_text).toContain(`[${body.message.tags[0]}]`);
     expect(body.message.category).toBe('family');
 
     const insertMsg = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(insertMsg).toBeDefined();
+    expect(insertMsg!.sql).toContain('synthesis_text');
+    expect(insertMsg!.sql).toContain('delivery_tags_json');
+    expect(insertMsg!.args[3]).toBe(body.message.text);
+    expect(insertMsg!.args[4]).toBe(body.message.synthesis_text);
+    expect(insertMsg!.args[5]).toBe(JSON.stringify(body.message.tags));
     const insertAlarm = mockDB.calls.find((c) => c.sql.includes('INSERT INTO alarms'));
     expect(insertAlarm).toBeDefined();
   });

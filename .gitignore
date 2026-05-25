@@ -47,10 +47,8 @@ logcat-*.txt
 dumpsys-*.txt
 .DS_Store
 
-# Claude Code local settings (local-only, not shared)
-.claude/settings.local.json
-.claude/agents/
-.claude/skills/
+# Claude Code local files (local-only, not shared)
+.claude/
 
 # Local-only articles/drafts (not shared)
 articles/
@@ -69,4 +67,3 @@ test/*
 *.caf
 !packages/**/test/**
 !apps/android-native/**/res/raw/**
-.claude

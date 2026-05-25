@@ -14,6 +14,27 @@ data class FamilyAlarmQuietWindow(
     val end: String = "18:30",
 )
 
+data class DynamicPromptSettings(
+    val weather: DynamicPromptWeatherSettings = DynamicPromptWeatherSettings(),
+    val fortune: DynamicPromptFortuneSettings = DynamicPromptFortuneSettings(),
+)
+
+data class DynamicPromptWeatherSettings(
+    val country: String? = null,
+    val city: String? = null,
+)
+
+data class DynamicPromptFortuneSettings(
+    val gender: String? = null,
+    @SerializedName("birth_date") val birthDate: String? = null,
+    @SerializedName("birth_time") val birthTime: String? = null,
+)
+
+data class DynamicPromptSettingsState(
+    @SerializedName("weather_ready") val weatherReady: Boolean = false,
+    @SerializedName("fortune_ready") val fortuneReady: Boolean = false,
+)
+
 data class AuthUser(
     val id: String,
     val email: String,
@@ -26,6 +47,8 @@ data class AuthUser(
     @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String = "18:30",
     @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow> =
         listOf(FamilyAlarmQuietWindow()),
+    @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
+        DynamicPromptSettings(),
 )
 
 data class AuthTokenResponse(
@@ -79,6 +102,7 @@ data class UpdateProfileRequest(
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
     @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
     @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
+    @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
 )
 
 data class UpdateProfileResponse(
@@ -89,6 +113,7 @@ data class UpdateProfileResponse(
     @SerializedName("family_alarm_quiet_start") val familyAlarmQuietStart: String? = null,
     @SerializedName("family_alarm_quiet_end") val familyAlarmQuietEnd: String? = null,
     @SerializedName("family_alarm_quiet_windows") val familyAlarmQuietWindows: List<FamilyAlarmQuietWindow>? = null,
+    @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings? = null,
 )
 
 data class DeleteAccountResponse(

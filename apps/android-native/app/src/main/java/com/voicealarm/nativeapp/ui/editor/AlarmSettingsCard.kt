@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -494,6 +495,12 @@ internal fun RandomPromptSettingsPane(
     weatherCity: String,
     savedWeatherCountry: String,
     savedWeatherCity: String,
+    savedWeatherConfigured: Boolean,
+    savedFortuneGender: String,
+    savedFortuneBirthDate: String,
+    savedFortuneBirthTime: String,
+    savedFortuneConfigured: Boolean,
+    usingTargetDynamicPromptSettings: Boolean,
     fortuneGender: String,
     fortuneBirthDate: String,
     fortuneBirthTime: String,
@@ -512,12 +519,26 @@ internal fun RandomPromptSettingsPane(
     var draftWeatherCity by remember(weatherCity, savedWeatherCity) {
         mutableStateOf(weatherCity.ifBlank { savedWeatherCity })
     }
-    var draftFortuneGender by remember(fortuneGender) { mutableStateOf(fortuneGender) }
-    var draftFortuneBirthDate by remember(fortuneBirthDate) { mutableStateOf(fortuneBirthDate) }
-    var draftFortuneBirthTime by remember(fortuneBirthTime) { mutableStateOf(fortuneBirthTime) }
+    var draftFortuneGender by remember(fortuneGender, savedFortuneGender) {
+        mutableStateOf(fortuneGender.ifBlank { savedFortuneGender })
+    }
+    var draftFortuneBirthDate by remember(fortuneBirthDate, savedFortuneBirthDate) {
+        mutableStateOf(fortuneBirthDate.ifBlank { savedFortuneBirthDate })
+    }
+    var draftFortuneBirthTime by remember(fortuneBirthTime, savedFortuneBirthTime) {
+        mutableStateOf(fortuneBirthTime.ifBlank { savedFortuneBirthTime })
+    }
     var weatherDialogOpen by remember { mutableStateOf(false) }
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     val normalizedContext = normalizedRandomPromptContext(draftContext)
+    fun hasWeatherInfo(): Boolean =
+        (draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank()) || savedWeatherConfigured
+    fun hasFortuneInfo(): Boolean =
+        (
+            draftFortuneGender.isNotBlank() &&
+                draftFortuneBirthDate.isNotBlank() &&
+                draftFortuneBirthTime.isNotBlank()
+            ) || savedFortuneConfigured
 
     fun saveResolvedSettings() {
         onSaveSettings(
@@ -535,15 +556,17 @@ internal fun RandomPromptSettingsPane(
 
     fun requestRequiredInfoOrSave() {
         when {
-            randomContextUsesWeather(normalizedContext) &&
-                (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) -> weatherDialogOpen = true
-            normalizedContext == "wake_fortune" &&
-                (
-                    draftFortuneGender.isBlank() ||
-                        draftFortuneBirthDate.isBlank() ||
-                        draftFortuneBirthTime.isBlank()
-                    ) -> fortuneDialogOpen = true
+            randomContextUsesWeather(normalizedContext) && !hasWeatherInfo() -> weatherDialogOpen = true
+            normalizedContext == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
             else -> saveResolvedSettings()
+        }
+    }
+
+    fun selectContext(context: String) {
+        draftContext = context
+        when {
+            randomContextUsesWeather(context) && !hasWeatherInfo() -> weatherDialogOpen = true
+            context == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
         }
     }
 
@@ -568,7 +591,7 @@ internal fun RandomPromptSettingsPane(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "랜덤 문구",
+                    text = "랜덤 문구 설정",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -587,7 +610,7 @@ internal fun RandomPromptSettingsPane(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                 ) {
                     Text(
-                        text = "옵션을 고른 뒤 아래 저장을 눌러야 랜덤 생성이 적용돼요. 저장하지 않고 나가면 직접 문구 입력으로 돌아가요.",
+                        text = "저장하면 선택한 조건으로 알람 문구를 만들어요. 저장하지 않으면 직접 입력으로 돌아가요.",
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -599,7 +622,7 @@ internal fun RandomPromptSettingsPane(
                         SnoozeRadioRow(
                             label = label,
                             selected = normalizedContext == context,
-                            onClick = { draftContext = context },
+                            onClick = { selectContext(context) },
                         )
                         if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
                     }
@@ -607,11 +630,13 @@ internal fun RandomPromptSettingsPane(
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
-                        title = "날씨 위치",
-                        value = if (draftWeatherCountry.isBlank() || draftWeatherCity.isBlank()) {
-                            "저장할 때 나라와 도시를 입력해요."
-                        } else {
-                            "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                        title = "날씨 지역",
+                        value = when {
+                            draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
+                                "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                            usingTargetDynamicPromptSettings && savedWeatherConfigured ->
+                                "상대가 저장한 날씨 지역을 사용해요."
+                            else -> "날씨가 들어간 문구를 쓰려면 나라와 도시가 필요해요."
                         },
                     )
                 }
@@ -619,14 +644,14 @@ internal fun RandomPromptSettingsPane(
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
                         title = "운세 정보",
-                        value = if (
-                            draftFortuneGender.isBlank() ||
-                            draftFortuneBirthDate.isBlank() ||
-                            draftFortuneBirthTime.isBlank()
-                        ) {
-                            "저장할 때 성별, 생년월일, 태어난 시간을 입력해요."
-                        } else {
-                            fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                        value = when {
+                            draftFortuneGender.isNotBlank() &&
+                                draftFortuneBirthDate.isNotBlank() &&
+                                draftFortuneBirthTime.isNotBlank() ->
+                                fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                            usingTargetDynamicPromptSettings && savedFortuneConfigured ->
+                                "상대가 저장한 운세 정보를 사용해요."
+                            else -> "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요."
                         },
                     )
                 }
@@ -657,7 +682,7 @@ internal fun RandomPromptSettingsPane(
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("랜덤 설정 저장")
+                        Text("저장")
                     }
                 }
             }
@@ -779,67 +804,85 @@ private fun WeatherLocationDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
             shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(20.dp)
                     .heightIn(max = 600.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "날씨 위치",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "현재 위치로 자동 입력하거나 직접 입력해 주세요. 위치를 못 찾으면 GPS/위치 서비스가 켜져 있는지 확인해 주세요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                OutlinedButton(
-                    onClick = {
-                        if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
-                            startLocationLookup()
-                        } else {
-                            locationPermissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                ),
-                            )
-                        }
-                    },
-                    enabled = !locationBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
+                ModalDialogTitle(
+                    title = "날씨 지역",
+                    onDismiss = onDismissWithoutSave,
+                )
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        if (locationBusy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("위치 가져오는 중")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.MyLocation,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("현재 위치 사용")
+                        Text(
+                            text = "날씨 문구에 사용할 지역",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = "직접 입력하거나 현재 위치로 채울 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
+                                    startLocationLookup()
+                                } else {
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = !locationBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = WakerButtonShape,
+                            border = wakerCardBorder(),
+                            colors = wakerOutlinedButtonColors(),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (locationBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("위치 가져오는 중")
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Outlined.MyLocation,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("현재 위치 사용")
+                                }
+                            }
                         }
                     }
                 }
@@ -859,7 +902,7 @@ private fun WeatherLocationDialog(
                         singleLine = true,
                         isError = countryError,
                         supportingText = {
-                            if (countryError) Text("필수 입력 값입니다.")
+                            if (countryError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -873,7 +916,7 @@ private fun WeatherLocationDialog(
                         singleLine = true,
                         isError = cityError,
                         supportingText = {
-                            if (cityError) Text("필수 입력 값입니다.")
+                            if (cityError) Text("꼭 입력해 주세요.")
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -884,13 +927,6 @@ private fun WeatherLocationDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismissWithoutSave,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("닫기")
-                    }
                     Button(
                         onClick = {
                             submitted = true
@@ -898,7 +934,7 @@ private fun WeatherLocationDialog(
                                 onConfirm(draftCountry.trim(), draftCity.trim())
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -911,10 +947,11 @@ private fun WeatherLocationDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FortuneInfoDialog(
+internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
+    description: String = "운세가 들어간 문구를 만들 때만 사용해요. 저장하지 않으면 랜덤 문구가 꺼져요.",
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
@@ -935,74 +972,102 @@ private fun FortuneInfoDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
             shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .fillMaxWidth()
                     .heightIn(max = 640.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "운세 정보",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "운세 문구 생성에만 사용해요. 저장하지 않고 나가면 랜덤 생성이 꺼져요.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                FortuneFieldLabel(text = "성별", error = genderError)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GenderChoice(
-                        label = "남",
-                        selected = draftGender == FortuneGenderMale,
-                        onClick = { draftGender = FortuneGenderMale },
-                        modifier = Modifier.weight(1f),
-                    )
-                    GenderChoice(
-                        label = "여",
-                        selected = draftGender == FortuneGenderFemale,
-                        onClick = { draftGender = FortuneGenderFemale },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                FortuneFieldLabel(text = "생년월일", error = birthDateError)
-                FortuneSelectorRow(
-                    value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
-                    placeholderActive = draftBirthDate.isBlank(),
-                    error = birthDateError,
-                    onClick = { datePickerOpen = true },
+                ModalDialogTitle(
+                    title = "운세 정보",
+                    onDismiss = onDismissWithoutSave,
                 )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    border = wakerCardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "운세 문구에만 사용해요",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+                        )
+                    }
+                }
+                FortuneInputSection(title = "성별", error = genderError) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GenderChoice(
+                            label = "남성",
+                            selected = draftGender == FortuneGenderMale,
+                            onClick = { draftGender = FortuneGenderMale },
+                            modifier = Modifier.weight(1f),
+                        )
+                        GenderChoice(
+                            label = "여성",
+                            selected = draftGender == FortuneGenderFemale,
+                            onClick = { draftGender = FortuneGenderFemale },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
 
-                FortuneFieldLabel(text = "태어난 시간", error = birthTimeError)
-                FortuneSelectorRow(
-                    value = if (draftBirthTime.isBlank()) "탭하여 시간 선택" else formatBirthTimeDisplay(draftBirthTime),
-                    placeholderActive = draftBirthTime.isBlank(),
+                FortuneInputSection(title = "생년월일", error = birthDateError) {
+                    FortuneSelectorRow(
+                        value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
+                        placeholderActive = draftBirthDate.isBlank(),
+                        error = birthDateError,
+                        onClick = { datePickerOpen = true },
+                    )
+                }
+
+                FortuneInputSection(
+                    title = "태어난 시간",
                     error = birthTimeError,
-                    onClick = { timePickerOpen = true },
-                )
+                    subtitle = "정확히 모르면 가까운 시간대를 골라도 돼요.",
+                ) {
+                    FortuneTimeChoiceGrid(
+                        selectedValue = draftBirthTime,
+                        onSelect = { draftBirthTime = it },
+                    )
+                    val exactTimePlaceholder = draftBirthTime.isBlank() ||
+                        draftBirthTime == FortuneBirthTimeUnknown
+                    FortuneSelectorRow(
+                        value = if (exactTimePlaceholder) {
+                            "정확한 시간 선택"
+                        } else {
+                            formatBirthTimeDisplay(draftBirthTime)
+                        },
+                        placeholderActive = exactTimePlaceholder,
+                        error = birthTimeError && draftBirthTime.isBlank(),
+                        onClick = { timePickerOpen = true },
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismissWithoutSave,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("닫기")
-                    }
                     Button(
                         onClick = {
                             submitted = true
@@ -1018,9 +1083,11 @@ private fun FortuneInfoDialog(
                                 )
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
+                        Icon(Icons.Outlined.Save, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
                         Text("저장")
                     }
                 }
@@ -1043,11 +1110,16 @@ private fun FortuneInfoDialog(
                     },
                 ) { Text("확인") }
             },
-            dismissButton = {
-                TextButton(onClick = { datePickerOpen = false }) { Text("취소") }
-            },
+            dismissButton = {},
         ) {
-            DatePicker(state = state)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModalDialogTitle(
+                    title = "생년월일",
+                    onDismiss = { datePickerOpen = false },
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                DatePicker(state = state)
+            }
         }
     }
 
@@ -1069,17 +1141,15 @@ private fun FortuneInfoDialog(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        text = "태어난 시간",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                    ModalDialogTitle(
+                        title = "태어난 시간",
+                        onDismiss = { timePickerOpen = false },
                     )
                     TimePicker(state = state)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(onClick = { timePickerOpen = false }) { Text("취소") }
                         TextButton(
                             onClick = {
                                 draftBirthTime = String.format(
@@ -1100,6 +1170,15 @@ private fun FortuneInfoDialog(
 
 private const val FortuneGenderMale = "남성"
 private const val FortuneGenderFemale = "여성"
+private const val FortuneBirthTimeUnknown = "시간 모름"
+
+private val FortuneBirthTimeChoices = listOf(
+    FortuneBirthTimeUnknown to "시간 모름",
+    "05:00" to "새벽",
+    "09:00" to "오전",
+    "15:00" to "오후",
+    "20:00" to "저녁",
+)
 
 private fun normalizeFortuneGender(value: String): String =
     when (value.trim()) {
@@ -1122,6 +1201,9 @@ private fun normalizeFortuneBirthDate(value: String): String {
 private fun normalizeFortuneBirthTime(value: String): String {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return ""
+    if (trimmed == FortuneBirthTimeUnknown || trimmed == "모름" || trimmed == "알 수 없음") {
+        return FortuneBirthTimeUnknown
+    }
     val digits = trimmed.filter { it.isDigit() }
     return when (digits.length) {
         4 -> "${digits.substring(0, 2)}:${digits.substring(2, 4)}"
@@ -1163,6 +1245,7 @@ private fun formatBirthDateDisplay(value: String): String {
 }
 
 private fun formatBirthTimeDisplay(value: String): String {
+    if (value == FortuneBirthTimeUnknown) return value
     val parts = value.split(":")
     val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
     val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
@@ -1172,13 +1255,124 @@ private fun formatBirthTimeDisplay(value: String): String {
 }
 
 @Composable
-private fun FortuneFieldLabel(text: String, error: Boolean) {
-    Text(
-        text = if (error) "$text · 필수 입력" else text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-    )
+private fun FortuneInputSection(
+    title: String,
+    error: Boolean,
+    subtitle: String? = null,
+    content: @Composable () -> Unit,
+) {
+    val borderColor = if (error) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (error) "$title · 필수 입력" else title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun FortuneTimeChoiceGrid(
+    selectedValue: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FortuneTimeChoice(
+                label = FortuneBirthTimeChoices[0].second,
+                value = FortuneBirthTimeChoices[0].first,
+                selected = selectedValue == FortuneBirthTimeChoices[0].first,
+                onClick = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+            FortuneTimeChoice(
+                label = FortuneBirthTimeChoices[1].second,
+                value = FortuneBirthTimeChoices[1].first,
+                selected = selectedValue == FortuneBirthTimeChoices[1].first,
+                onClick = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FortuneBirthTimeChoices.drop(2).forEach { (value, label) ->
+                FortuneTimeChoice(
+                    label = label,
+                    value = value,
+                    selected = selectedValue == value,
+                    onClick = onSelect,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FortuneTimeChoice(
+    label: String,
+    value: String,
+    selected: Boolean,
+    onClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = { onClick(value) },
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+            },
+        ),
+        modifier = modifier,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 11.dp),
+        )
+    }
 }
 
 @Composable
@@ -1534,7 +1728,12 @@ internal fun SnoozeSettingsPane(
         val customMinutes = customMinutesText.toIntOrNull()
         AlertDialog(
             onDismissRequest = { customIntervalDialogOpen = false },
-            title = { Text("간격 직접 설정") },
+            title = {
+                ModalDialogTitle(
+                    title = "간격 직접 설정",
+                    onDismiss = { customIntervalDialogOpen = false },
+                )
+            },
             text = {
                 OutlinedTextField(
                     value = customMinutesText,
@@ -1557,11 +1756,6 @@ internal fun SnoozeSettingsPane(
                     },
                 ) {
                     Text("적용")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { customIntervalDialogOpen = false }) {
-                    Text("취소")
                 }
             },
         )

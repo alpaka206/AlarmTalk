@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, CharacterEventEntity::class, HolidayEntity::class],
-    version = 13,
+    version = 14,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -40,6 +40,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_10_11,
                     MIGRATION_11_12,
                     MIGRATION_12_13,
+                    MIGRATION_13_14,
                 ).build()
                     .also { instance = it }
             }
@@ -166,6 +167,12 @@ abstract class AlarmDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceWeatherCountry TEXT")
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceWeatherCity TEXT")
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceVolumePercent INTEGER NOT NULL DEFAULT 100")
             }
         }
     }

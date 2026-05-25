@@ -41,6 +41,7 @@ private fun MainViewModel.refreshSocialData(showMessage: Boolean) {
                 }
             }.onSuccess { snapshot ->
                 familyGroup = snapshot.familyGroup
+                saveFamilyGroupSnapshot(snapshot.familyGroup)
                 familyVoices = snapshot.familyVoices
             }.onFailure { error ->
                 Log.e(TAG, "Failed to refresh social data", error)

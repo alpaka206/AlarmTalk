@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.voicealarm.nativeapp.MainActivity
 import com.voicealarm.nativeapp.R
+import com.voicealarm.nativeapp.data.receivedRemoteAlarmLabel
 
 object SocialNotificationFactory {
     private const val MESSAGE_GROUP_ID = "voice_alarm_messages"
@@ -29,14 +30,15 @@ object SocialNotificationFactory {
     }
 
     fun notifyReceivedAlarm(context: Context, alarmId: String, senderName: String?, time: String) {
+        val body = time
+            .takeIf { it.isNotBlank() }
+            ?.let { "${it}에 울려요" }
+            ?: "상대가 내 알람을 설정했어요"
         notify(
             context = context,
             notificationId = BASE_ALARM_NOTIFICATION_ID + stableOffset(alarmId),
-            title = "새 알람",
-            body = listOfNotNull(
-                senderName?.takeIf { it.isNotBlank() },
-                time.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifBlank { "상대방이 알람을 설정했어요" },
+            title = receivedRemoteAlarmLabel(senderName),
+            body = body,
             groupId = ALARM_GROUP_ID,
         )
     }

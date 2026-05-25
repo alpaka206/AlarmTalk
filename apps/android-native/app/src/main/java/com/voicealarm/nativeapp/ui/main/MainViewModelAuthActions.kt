@@ -24,6 +24,7 @@ import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
 import com.voicealarm.nativeapp.network.CharacterResponse
 import com.voicealarm.nativeapp.network.CheckoutRequest
 import com.voicealarm.nativeapp.network.CodeRegisterRequest
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyVoiceProfile
@@ -57,12 +58,18 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.login(email: String, password: String) {
+    val normalizedEmail = email.trim()
+    if (normalizedEmail.isBlank() || password.isBlank()) {
+        message = "이메일과 비밀번호를 입력해 주세요."
+        return
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
-            api.login(LoginRequest(email = email.trim(), password = password))
+            api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = "${response.user.email} 계정으로 로그인했어요"
@@ -88,8 +95,8 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
             registerEmailVerificationSentTo = normalizedEmail
             registerEmailVerified = null
             message = response.debugCode
-                ?.takeIf { it.isNotBlank() }
-                ?.let { "개발용 인증 코드: $it" }
+                ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
+                ?.let { "인증 코드: $it" }
                 ?: "인증 코드를 보냈어요"
         }.onFailure { error ->
             Log.e(TAG, "Email verification request failed", error)
@@ -132,6 +139,12 @@ internal fun MainViewModel.register(
     emailVerificationCode: String,
 ) {
     val normalizedEmail = email.trim().lowercase()
+    val trimmedName = name.trim()
+    val trimmedCode = emailVerificationCode.trim()
+    if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
+        message = "회원가입 정보를 모두 입력해 주세요."
+        return
+    }
     if (registerEmailVerified != normalizedEmail) {
         message = "이메일 인증을 먼저 완료해 주세요"
         return
@@ -143,12 +156,13 @@ internal fun MainViewModel.register(
                 RegisterRequest(
                     email = normalizedEmail,
                     password = password,
-                    name = name.trim(),
-                    emailVerificationCode = emailVerificationCode.trim(),
+                    name = trimmedName,
+                    emailVerificationCode = trimmedCode,
                 ),
             )
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            restoreAccessSnapshotForCurrentUser()
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
@@ -163,18 +177,23 @@ internal fun MainViewModel.register(
 }
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String) {
+    if (idToken.isBlank()) {
+        message = "Google 로그인을 확인하지 못했어요. 다시 시도해 주세요."
+        return
+    }
     viewModelScope.launch {
         authBusy = true
         runCatching {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
+            restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = null
         }.onFailure { error ->
             Log.e(TAG, "Google token exchange failed", error)
-            message = userFacingError(error, "Google 로그인 세션을 서버에 연결하지 못했어요")
+            message = userFacingError(error, "Google 로그인을 완료하지 못했어요. 다시 시도해 주세요.")
         }
         authBusy = false
     }
@@ -192,6 +211,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         authSessionStore.clear()
+        clearUserScopedRemoteState()
         authSession = null
         message = "로그아웃했어요"
         authBusy = false
@@ -272,12 +292,34 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             )
             authSession = authSessionStore.save(updated)
             refreshSocial()
-            message = "상대방 알람 설정을 저장했어요"
+            message = "상대 알람 설정을 저장했어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to update family alarm settings", error)
-            message = userFacingError(error, "상대방 알람 설정을 저장하지 못했어요")
+            message = userFacingError(error, "상대 알람 설정을 저장하지 못했어요")
         }
         authBusy = false
+    }
+}
+
+internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
+    val session = authSession ?: return
+    val authorization = com.voicealarm.nativeapp.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.updateProfile(
+                authorization,
+                com.voicealarm.nativeapp.network.UpdateProfileRequest(
+                    dynamicPromptSettings = settings,
+                ),
+            )
+        }.onSuccess { response ->
+            val updatedSettings = response.dynamicPromptSettings ?: settings
+            val updated = session.copy(user = session.user.copy(dynamicPromptSettings = updatedSettings))
+            authSession = authSessionStore.save(updated)
+            refreshSocial()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to update dynamic prompt settings", error)
+        }
     }
 }
 
@@ -304,7 +346,9 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
             if (revokeError != null) {
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
+            clearCurrentAccessSnapshot()
             authSessionStore.clear()
+            clearUserScopedRemoteState()
             authSession = null
             dismissDeleteAccount()
             message = if (revokeError == null) {
@@ -340,7 +384,7 @@ internal fun MainViewModel.syncNow() {
             }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
-            message = userFacingError(error, "알람 정보를 불러오거나 서버에 저장하지 못했어요")
+            message = userFacingError(error, "알람 정보를 불러오거나 변경사항을 저장하지 못했어요")
         }
         syncBusy = false
     }
@@ -348,9 +392,9 @@ internal fun MainViewModel.syncNow() {
 
 private fun alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
     pushFailed > 0 && pullFailed > 0 ->
-        "알람 변경사항 일부를 서버에 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+        "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
     pushFailed > 0 ->
-        "알람 변경사항 일부를 서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+        "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
     pullFailed > 0 ->
         "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
     else -> "알람 동기화에 실패했어요."

@@ -77,6 +77,7 @@ notes.post('/', async (c) => {
       receiver_id: receiverId,
       text,
       audio_url: audioUrl || null,
+      audio_available: Boolean(audioUrl),
       read_at: null,
       created_at: new Date().toISOString(),
     },
@@ -113,17 +114,21 @@ notes.get('/received', async (c) => {
   ]);
 
   return c.json({
-    notes: result.rows.map((r) => ({
-      id: String(r.id),
-      sender_id: String(r.sender_id),
-      sender_name: (r.sender_name as string | null) ?? null,
-      sender_email: String(r.sender_email),
-      sender_picture: (r.sender_picture as string | null) ?? null,
-      text: String(r.text),
-      audio_url: (r.audio_url as string | null) ?? null,
-      read_at: (r.read_at as string | null) ?? null,
-      created_at: String(r.created_at),
-    })),
+    notes: result.rows.map((r) => {
+      const audioUrl = (r.audio_url as string | null) ?? null;
+      return {
+        id: String(r.id),
+        sender_id: String(r.sender_id),
+        sender_name: (r.sender_name as string | null) ?? null,
+        sender_email: String(r.sender_email),
+        sender_picture: (r.sender_picture as string | null) ?? null,
+        text: String(r.text),
+        audio_url: audioUrl,
+        audio_available: Boolean(audioUrl),
+        read_at: (r.read_at as string | null) ?? null,
+        created_at: String(r.created_at),
+      };
+    }),
     total: Number(countRes.rows[0]!.cnt),
     limit,
     offset,
@@ -160,16 +165,20 @@ notes.get('/sent', async (c) => {
   ]);
 
   return c.json({
-    notes: result.rows.map((r) => ({
-      id: String(r.id),
-      receiver_id: String(r.receiver_id),
-      receiver_name: (r.receiver_name as string | null) ?? null,
-      receiver_email: String(r.receiver_email),
-      text: String(r.text),
-      audio_url: (r.audio_url as string | null) ?? null,
-      read_at: (r.read_at as string | null) ?? null,
-      created_at: String(r.created_at),
-    })),
+    notes: result.rows.map((r) => {
+      const audioUrl = (r.audio_url as string | null) ?? null;
+      return {
+        id: String(r.id),
+        receiver_id: String(r.receiver_id),
+        receiver_name: (r.receiver_name as string | null) ?? null,
+        receiver_email: String(r.receiver_email),
+        text: String(r.text),
+        audio_url: audioUrl,
+        audio_available: Boolean(audioUrl),
+        read_at: (r.read_at as string | null) ?? null,
+        created_at: String(r.created_at),
+      };
+    }),
     total: Number(countRes.rows[0]!.cnt),
     limit,
     offset,
@@ -206,6 +215,12 @@ notes.get('/:id/audio', async (c) => {
 
   const loaded = await loadAudioBytes(c, audioUrl);
   if (!loaded) {
+    if (audioUrl.startsWith('r2://')) {
+      await db.execute({
+        sql: 'UPDATE notes SET audio_url = NULL WHERE id = ? AND audio_url = ?',
+        args: [noteId, audioUrl],
+      });
+    }
     return c.json({ error: 'Stored note audio not found', error_code: 'NOTE_AUDIO_NOT_FOUND' }, 404);
   }
 

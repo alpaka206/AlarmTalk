@@ -6,6 +6,8 @@ import {
   familyAlarmSettingsFromRow,
   isBlockedByFamilyAlarmQuietTime,
 } from '../lib/family-alarm-settings';
+import { prepareAlarmTextWithVertex } from '../lib/vertex-translate';
+import { inferSynthesisLanguage } from '../lib/voice-provider';
 
 const familyAlarm = new Hono<AppEnv>();
 
@@ -140,11 +142,26 @@ familyAlarm.post('/alarms', async (c) => {
 
   const messageId = crypto.randomUUID();
   const alarmId = crypto.randomUUID();
+  const messageLanguage = inferSynthesisLanguage(messageText, 'ko');
+  const preparedMessage = await prepareAlarmTextWithVertex(c.env, messageText, {
+    targetLanguage: messageLanguage,
+    sourceLanguage: messageLanguage,
+    translate: false,
+    autoTag: true,
+  });
 
   await db.execute({
-    sql: `INSERT INTO messages (id, user_id, voice_profile_id, text, audio_url, category)
-          VALUES (?, ?, ?, ?, NULL, 'family')`,
-    args: [messageId, recipientPk, voiceProfileId, messageText],
+    sql: `INSERT INTO messages
+          (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json, audio_url, category)
+          VALUES (?, ?, ?, ?, ?, ?, NULL, 'family')`,
+    args: [
+      messageId,
+      recipientPk,
+      voiceProfileId,
+      messageText,
+      preparedMessage.text,
+      JSON.stringify(preparedMessage.tags),
+    ],
   });
 
   await db.execute({
@@ -171,7 +188,13 @@ familyAlarm.post('/alarms', async (c) => {
         mode: 'tts',
         voice_profile_id: voiceProfileId,
       },
-      message: { id: messageId, text: messageText, category: 'family' },
+      message: {
+        id: messageId,
+        text: messageText,
+        synthesis_text: preparedMessage.text,
+        tags: preparedMessage.tags,
+        category: 'family',
+      },
     },
     201,
   );

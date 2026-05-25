@@ -405,6 +405,41 @@ describe('GET /notes/received — 수신 쪽지', () => {
     expect(body.offset).toBe(0);
   });
 
+  it('returns audio_available from latest audio_url state', async () => {
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{ cnt: 2 }]);
+    mockDB.pushResult([
+      {
+        id: 'n1',
+        sender_id: 'pk2',
+        text: 'voice',
+        audio_url: 'r2://generated/note.mp3',
+        read_at: null,
+        created_at: '2026-04-24T10:00:00Z',
+        sender_name: 'Alice',
+        sender_email: 'alice@test.com',
+        sender_picture: null,
+      },
+      {
+        id: 'n2',
+        sender_id: 'pk2',
+        text: 'text',
+        audio_url: null,
+        read_at: null,
+        created_at: '2026-04-24T09:00:00Z',
+        sender_name: 'Alice',
+        sender_email: 'alice@test.com',
+        sender_picture: null,
+      },
+    ]);
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/notes/received'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.notes[0].audio_available).toBe(true);
+    expect(body.notes[1].audio_available).toBe(false);
+  });
+
   it('limit/offset 파라미터 적용', async () => {
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{ cnt: 0 }]);
@@ -555,6 +590,25 @@ describe('GET /notes/:id/audio', () => {
     expect(body.note_id).toBe('n1');
     expect(body.audio_base64).toBe('QUI=');
     expect(body.audio_format).toBe('mp3');
+  });
+
+  it('clears stale r2 audio_url when stored note audio is gone', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: 'r2://generated/missing.mp3',
+    }]);
+    const app = buildApp();
+    const res = await app.request(new Request('http://localhost/notes/n1/audio'));
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('NOTE_AUDIO_NOT_FOUND');
+    const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE notes SET audio_url = NULL'));
+    expect(update).toBeDefined();
+    expect(update!.args).toEqual(['n1', 'r2://generated/missing.mp3']);
   });
 
   it('forbids users outside the note sender and receiver', async () => {
