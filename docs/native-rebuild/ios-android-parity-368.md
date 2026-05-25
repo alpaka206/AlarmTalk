@@ -101,6 +101,11 @@
 - iOS billing cancellation now opens an Android-style choice sheet and passes
   `at_period_end` or `now` to the backend instead of immediately scheduling a
   period-end cancellation from the button.
+- iOS code registration now mirrors Android's family connection panel:
+  invite codes and gift/pass codes have separate inputs, active-pass users see
+  the same "register after current pass" guidance, shared members confirm
+  leaving the current pass before entering a new code, and registration uses an
+  X-dismiss confirmation sheet.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

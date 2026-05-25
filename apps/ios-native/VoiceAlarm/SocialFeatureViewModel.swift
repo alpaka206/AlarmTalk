@@ -100,12 +100,12 @@ final class SocialFeatureViewModel: ObservableObject {
         statusMessage = messages.isEmpty ? "소셜/이용권 정보를 불러왔어요." : messages.joined(separator: "\n")
     }
 
-    func registerCode(session: AuthSession?) async {
+    func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
         }
-        let code = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let code = (codeOverride ?? inviteCode).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else {
             statusMessage = "코드를 입력해 주세요."
             return
@@ -116,7 +116,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.registerCode(code, token: token)
-            inviteCode = ""
+            if codeOverride == nil || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines) == code {
+                inviteCode = ""
+            }
             statusMessage = "코드를 등록했어요."
             await refreshAll(session: session, force: true)
         } catch {
