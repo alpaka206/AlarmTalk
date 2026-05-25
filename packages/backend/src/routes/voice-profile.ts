@@ -905,10 +905,22 @@ voiceProfile.delete('/:id', async (c) => {
   }
 
   const assetsRes = await db.execute({
-    sql: `SELECT audio_object_key FROM generated_audio_assets
+    sql: `SELECT audio_url, audio_object_key FROM generated_audio_assets
           WHERE voice_profile_id = ? AND audio_object_key IS NOT NULL`,
     args: [id],
   });
+  const deletedAudioUrls = Array.from(new Set(
+    assetsRes.rows
+      .flatMap((row) => {
+        const typed = typedRow<{ audio_url: string | null; audio_object_key: string | null }>(row);
+        return [
+          typed.audio_url,
+          typed.audio_object_key,
+          typed.audio_object_key ? `r2://${typed.audio_object_key}` : null,
+        ];
+      })
+      .filter((url): url is string => Boolean(url)),
+  ));
   const bucket = c.env?.VOICE_BUCKET;
   if (bucket && assetsRes.rows.length > 0) {
     const storage = new R2VoiceStorage(bucket);
@@ -922,6 +934,14 @@ voiceProfile.delete('/:id', async (c) => {
         logRouteError(c, err);
       }
     }
+  }
+
+  if (deletedAudioUrls.length > 0) {
+    const placeholders = deletedAudioUrls.map(() => '?').join(',');
+    await db.execute({
+      sql: `UPDATE notes SET audio_url = NULL WHERE audio_url IN (${placeholders})`,
+      args: deletedAudioUrls,
+    });
   }
 
   await db.execute({
