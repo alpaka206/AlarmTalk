@@ -22,7 +22,7 @@
 | Members/share code | Current group, share code refresh, one-member modal, owner/member permissions | MemberManagementView + vouchers | Need latest Android wording, refresh-on-open, member permission audit. |
 | Billing | Plan cards, voucher/redeem/cancel/change, feature gates | StoreKit2 UI + backend voucher primitives | Platform-specific purchase path OK; need Android copy/gate parity where not IAP-specific. |
 | Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, theme/nickname/weather/fortune sheets | Need macOS visual QA and final copy pass. |
-| Character/streak | XP queue and character card | CharacterEventStore and GrowthPanel | Need home/settings display parity audit. |
+| Character/streak | XP queue and character card | CharacterEventStore and GrowthPanel with Android stage/stat/recent-record display rules | Need macOS visual QA and physical-device ring-to-XP pass. |
 
 ## Implementation Order
 
@@ -84,6 +84,11 @@
   shared voices show only the voice name plus "`owner`님에게 공유받은 목소리",
   while missing viewer info is handled by opening the setup sheet on selection
   instead of showing a separate "설정 필요" badge.
+- iOS character home/settings display now mirrors Android's visible rules:
+  stage is shown as the same seed/sprout/tree/bloom emoji, the settings header
+  uses `LV.n 단계명`, stat tiles use `성실함/꾸준함/건강/애정도`, recent records
+  show time plus XP only, and the iOS-only manual XP button/achievement/extra XP
+  rows are no longer shown in the growth panel.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

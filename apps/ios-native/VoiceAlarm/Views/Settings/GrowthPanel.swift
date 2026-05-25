@@ -2,9 +2,8 @@ import SwiftUI
 
 /// 캐릭터 성장 패널 — 스테이지/레벨/연속 일수/스탯/동기화 상태/최근 기록.
 ///
-/// ContentView 의 `growthPanel` 을 옮긴 것. 수동 "기상 성공 반영" 버튼은
-/// 평상시 dismiss/snooze 흐름에서 AlarmAppContext 가 자동 큐잉하므로 디버그용.
-/// 호출은 자동 큐 경로와 동일하게 멱등 nonce 로 위임해 더블 grant 를 방지한다.
+/// ContentView 의 `growthPanel` 을 옮긴 것. 성장 이벤트 생성은 Android 처럼
+/// 알람 dismiss/snooze 흐름에서만 자동 큐잉하고, 이 화면은 동기화/조회만 담당한다.
 struct GrowthPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
@@ -57,44 +56,6 @@ struct GrowthPanel: View {
                 }
             }
 
-            if let achievements = socialFeatures.character?.achievements, !achievements.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("달성 기록")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
-
-                    ForEach(Array(achievements.prefix(3)), id: \.milestone) { achievement in
-                        CharacterAchievementRow(achievement: achievement)
-                    }
-                }
-            }
-
-            // Phase 2-B5: 평상시 알람 dismiss/snooze 시 AlarmAppContext 가
-            // characterEvents.queue 를 자동 호출하므로 이 버튼은 디버그/수동 보정용.
-            // 호출은 자동 큐 경로와 동일하게 멱등 nonce 로 위임해 더블 grant 방지.
-            Button {
-                Task {
-                    let now = Date()
-                    let occurredAtMillis = Int64(now.timeIntervalSince1970 * 1000)
-                    let alarmID = "manual-\(occurredAtMillis)"
-                    let nonce = CharacterEventStore.buildClientNonce(
-                        alarmID: alarmID,
-                        eventType: .alarmCompleted,
-                        occurredAtMillis: occurredAtMillis
-                    )
-                    await characterEvents.queue(
-                        eventType: .alarmCompleted,
-                        occurredAtMillis: occurredAtMillis,
-                        clientNonce: nonce,
-                        sourceAlarmId: alarmID,
-                        context: ["source": "manual_button"]
-                    )
-                }
-            } label: {
-                Label("기상 성공 반영", systemImage: "checkmark.circle")
-            }
-            .buttonStyle(.bordered)
-            .disabled(socialFeatures.isBusy)
         }
         .sectionSurface()
     }
@@ -142,14 +103,14 @@ private struct CharacterSummaryView: View {
                 ZStack {
                     Circle()
                         .fill(Color(red: 0.88, green: 0.94, blue: 0.82))
-                    Text(HelperFormatters.characterStageLabel(character.stage))
+                    Text(HelperFormatters.characterStageEmoji(character.stage))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(VoiceAlarmTheme.text)
                 }
                 .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("LV.\(character.level) \(character.name)")
+                    Text("LV.\(character.level) \(HelperFormatters.characterStageName(character.stage))")
                         .font(.headline)
                         .foregroundStyle(VoiceAlarmTheme.text)
                     Text("연속 \(response.streak.current)일 · 최장 \(response.streak.longest)일")
@@ -175,18 +136,13 @@ private struct CharacterSummaryView: View {
             }
 
             HStack(spacing: 10) {
-                MetricTile(title: "성실", value: "\(response.stats.diligence)")
+                MetricTile(title: "성실함", value: "\(response.stats.diligence)")
                 MetricTile(title: "꾸준함", value: "\(response.stats.consistency)")
             }
 
             HStack(spacing: 10) {
                 MetricTile(title: "건강", value: "\(response.stats.health)")
-                MetricTile(title: "애정", value: "\(character.affection)")
-            }
-
-            HStack(spacing: 10) {
-                MetricTile(title: "오늘 XP", value: "\(character.dailyXp ?? 0)")
-                MetricTile(title: "총 XP", value: "\(character.xp)")
+                MetricTile(title: "애정도", value: "\(character.affection)")
             }
         }
     }
@@ -201,7 +157,7 @@ private struct CharacterEmptyStateView: View {
             ZStack {
                 Circle()
                     .fill(Color(red: 0.88, green: 0.94, blue: 0.82))
-                Text(HelperFormatters.characterStageLabel(nil))
+                Text(HelperFormatters.characterStageEmoji(nil))
                     .font(.headline.weight(.bold))
                     .foregroundStyle(VoiceAlarmTheme.text)
             }
@@ -253,57 +209,17 @@ private struct CharacterEventRecordRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(eventTitle(event.eventType))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.text)
-                Text(eventTimeLabel(event))
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(eventXpLabel(event.eventType))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(eventXpColor(event.eventType))
-                Text(eventStateLabel(event.syncState))
-                    .font(.caption2)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
-        }
-        .padding(.vertical, 6)
-    }
-}
-
-private struct CharacterAchievementRow: View {
-    let achievement: StreakAchievement
-
-    var body: some View {
-        HStack {
-            Text("연속 \(achievement.milestone)일")
-                .font(.subheadline.weight(.semibold))
+            Text(eventTimeLabel(event))
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(VoiceAlarmTheme.text)
+
             Spacer()
-            Text("+\(achievement.bonusXp) XP")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(VoiceAlarmTheme.primary)
+
+            Text(eventXpLabel(event.eventType))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(eventXpColor(event.eventType))
         }
         .padding(.vertical, 6)
-    }
-}
-
-private func eventTitle(_ event: String) -> String {
-    switch event {
-    case CharacterEventType.alarmCompleted.rawValue:
-        return "기상 성공"
-    case CharacterEventType.alarmSnoozed.rawValue:
-        return "다시 알림"
-    case "alarm_dismissed":
-        return "알람 종료"
-    default:
-        return "성장 이벤트"
     }
 }
 
@@ -326,17 +242,6 @@ private func eventXpColor(_ event: String) -> Color {
         return VoiceAlarmTheme.error
     default:
         return VoiceAlarmTheme.textSecondary
-    }
-}
-
-private func eventStateLabel(_ state: String) -> String {
-    switch state {
-    case CharacterEventSyncState.synced.rawValue:
-        return "반영됨"
-    case CharacterEventSyncState.failed.rawValue:
-        return "실패"
-    default:
-        return "대기"
     }
 }
 
