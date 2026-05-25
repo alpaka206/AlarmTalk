@@ -95,9 +95,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionRouteKey = authSession?.user?.id
-    val isPlanOwner = familyGroup?.role == "owner" &&
-        familyGroup.group != null &&
-        subscriptionResponse?.plan?.planType == "family"
+    val hasSharedPass = familyGroup?.group != null
     val unreadAlarmCount = remember(alarms, viewModel.receivedAlarmSeenAtMillis) {
         alarms.count { alarm ->
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
@@ -212,6 +210,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(viewModel.navigateHomeTick) {
         if (viewModel.navigateHomeTick > 0) {
             navController.navigateHomeClearingStack()
+        }
+    }
+
+    LaunchedEffect(viewModel.navigateSharedPassTick) {
+        if (viewModel.navigateSharedPassTick > 0) {
+            navController.navigate(AppRoute.MemberManagement) {
+                launchSingleTop = true
+            }
         }
     }
 
@@ -594,7 +600,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           profileMenu = if (tab == NativeTab.Alarms) {
                               {
                                   ProfileMenu(
-                                      isPlanOwner = isPlanOwner,
+                                      hasSharedPass = hasSharedPass,
                                       onSelectTab = ::navigateToTab,
                                       onOpenSettings = { navController.navigate(AppRoute.Settings) },
                                       onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },
@@ -678,13 +684,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       authSession = authSession,
                       themeMode = themeMode,
-                      permissions = permissions,
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
-                      onRequestPermission = ::requestPermission,
-                      onRequestAllPermissions = ::requestAllMissingPermissions,
                       onEditNickname = viewModel::requestEditNickname,
-                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
@@ -696,12 +698,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       familyGroup = familyGroup,
                       subscriptionResponse = subscriptionResponse,
                       vouchers = vouchers,
+                      authSession = authSession,
                       currentUserId = authSession?.user?.id,
                       socialBusy = socialBusy,
                       billingBusy = billingBusy,
                       onBack = ::goBackInApp,
                       onRemoveFamilyMember = viewModel::removeFamilyMember,
                       onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
+                      onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                   )
               }
           }
@@ -716,7 +720,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           ),
                   ) {
                       ProfileMenu(
-                          isPlanOwner = isPlanOwner,
+                          hasSharedPass = hasSharedPass,
                           onSelectTab = ::navigateToTab,
                           onOpenSettings = { navController.navigate(AppRoute.Settings) },
                           onOpenMemberManagement = { navController.navigate(AppRoute.MemberManagement) },

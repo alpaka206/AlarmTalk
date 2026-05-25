@@ -232,7 +232,11 @@ internal fun MainViewModel.registerCode(code: String) {
             refreshCharacterBillingAfterMutation(authorization, "code registration")
             refreshSocial()
             refreshAppSession()
-            navigateHomeTick++
+            if (response.type == "invite" || trimmedCode.startsWith("INV-", ignoreCase = true)) {
+                navigateSharedPassTick++
+            } else {
+                navigateHomeTick++
+            }
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
             message = userFacingError(error, "코드 등록에 실패했어요")
@@ -431,7 +435,11 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
-                navigateHomeTick++
+                if (response.plan.isSharedPassPlan()) {
+                    navigateSharedPassTick++
+                } else {
+                    navigateHomeTick++
+                }
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
@@ -468,6 +476,9 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         billingBusy = false
     }
 }
+
+private fun com.voicealarm.nativeapp.network.BillingPlan.isSharedPassPlan(): Boolean =
+    key in setOf("couple", "family") || planType in setOf("couple", "family")
 
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return

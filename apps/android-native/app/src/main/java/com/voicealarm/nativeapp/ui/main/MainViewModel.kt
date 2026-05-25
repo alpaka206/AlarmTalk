@@ -178,6 +178,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var navigateHomeTick by mutableStateOf(0)
         internal set
 
+    var navigateSharedPassTick by mutableStateOf(0)
+        internal set
+
     fun requestPermissionGate(target: PermissionTarget) {
         permissionGateRequest = target
     }

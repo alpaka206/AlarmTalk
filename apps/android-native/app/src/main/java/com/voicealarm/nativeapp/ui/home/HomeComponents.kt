@@ -71,7 +71,7 @@ internal fun HomeHeader() {
 
 @Composable
 internal fun ProfileMenu(
-    isPlanOwner: Boolean,
+    hasSharedPass: Boolean,
     onSelectTab: (NativeTab) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMemberManagement: () -> Unit,
@@ -113,7 +113,7 @@ internal fun ProfileMenu(
                 modifier = Modifier.padding(8.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                if (!isPlanOwner) {
+                if (!hasSharedPass) {
                     ProfileMenuItem(
                         icon = Icons.Outlined.QrCode2,
                         label = "초대 코드 등록",
@@ -136,10 +136,10 @@ internal fun ProfileMenu(
                     expanded = false
                     onSelectTab(NativeTab.Billing)
                 }
-                if (isPlanOwner) {
+                if (hasSharedPass) {
                     ProfileMenuItem(
                         icon = Icons.Outlined.People,
-                        label = "멤버 관리",
+                        label = "공유 이용권",
                     ) {
                         expanded = false
                         onOpenMemberManagement()

@@ -61,13 +61,9 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
-    permissions: PermissionSnapshot,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
-    onRequestPermission: (PermissionTarget) -> Unit,
-    onRequestAllPermissions: () -> Unit,
     onEditNickname: () -> Unit,
-    onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
@@ -78,7 +74,6 @@ internal fun SettingsScreen(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
-    var showFamilyAlarmDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -139,39 +134,7 @@ internal fun SettingsScreen(
             }
         }
 
-        item {
-            PermissionPanel(
-                permissions = permissions,
-                onRequestPermission = onRequestPermission,
-                onRequestAllPermissions = onRequestAllPermissions,
-            )
-        }
-
         if (authSession != null) {
-            item {
-                SettingsCard(title = "상대 알람 설정") {
-                    SettingsToggleRow(
-                        label = "상대가 내 알람 맞추기",
-                        value = if (authSession.user.allowFamilyAlarms) "허용함" else "허용 안 함",
-                        checked = authSession.user.allowFamilyAlarms,
-                        onCheckedChange = {
-                            onChangeFamilyAlarmSettings(
-                                it,
-                                authSession.user.familyAlarmQuietWindows,
-                            )
-                        },
-                    )
-                    if (authSession.user.allowFamilyAlarms) {
-                        HorizontalDivider()
-                        SettingsRow(
-                            label = "알람 받지 않을 시간",
-                            value = quietScheduleLabel(authSession.user.familyAlarmQuietWindows),
-                            onClick = { showFamilyAlarmDialog = true },
-                        )
-                    }
-                }
-            }
-
             item {
                 SettingsCard(title = "계정") {
                     SettingsRow(
@@ -242,16 +205,6 @@ internal fun SettingsScreen(
         )
     }
 
-    if (showFamilyAlarmDialog && authSession != null) {
-        FamilyAlarmQuietTimeDialog(
-            initialWindows = authSession.user.familyAlarmQuietWindows,
-            onDismiss = { showFamilyAlarmDialog = false },
-            onConfirm = { windows ->
-                showFamilyAlarmDialog = false
-                onChangeFamilyAlarmSettings(true, windows)
-            },
-        )
-    }
 }
 
 @Composable
@@ -412,7 +365,7 @@ private fun WeatherLocationPreferenceDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FamilyAlarmQuietTimeDialog(
+internal fun FamilyAlarmQuietTimeDialog(
     initialWindows: List<FamilyAlarmQuietWindow>,
     onDismiss: () -> Unit,
     onConfirm: (List<FamilyAlarmQuietWindow>) -> Unit,
@@ -738,7 +691,7 @@ private fun splitTime(value: String): Pair<String, String> {
 private fun twoDigit(value: String): String =
     value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
 
-private fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
+internal fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
     if (windows.isEmpty()) return "없음"
     val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
     val hidden = windows.size - 2
