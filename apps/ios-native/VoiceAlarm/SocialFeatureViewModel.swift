@@ -23,6 +23,9 @@ final class SocialFeatureViewModel: ObservableObject {
 
     init(api: VoiceAlarmAPI = .shared) {
         self.api = api
+        notePreviewPlayer.onFinish = { [weak self] in
+            self?.playingNoteID = nil
+        }
     }
 
     var selectableMembers: [FamilyGroupMember] {

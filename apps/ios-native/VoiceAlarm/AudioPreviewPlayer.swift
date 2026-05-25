@@ -5,6 +5,8 @@ import Foundation
 final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var isPlaying = false
 
+    var onFinish: (() -> Void)?
+
     private var player: AVAudioPlayer?
 
     func play(url: URL) throws {
@@ -32,6 +34,8 @@ final class AudioPreviewPlayer: NSObject, ObservableObject, AVAudioPlayerDelegat
             guard let self else { return }
             self.isPlaying = false
             self.player = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            self.onFinish?()
         }
     }
 }
