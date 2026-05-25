@@ -10,9 +10,11 @@ struct MainTabsView: View {
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
     @EnvironmentObject private var store: LocalAlarmStore
 
     @State private var selectedTab: NativeTab = .home
+    @State private var planGate: PlanGateState?
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -36,7 +38,11 @@ struct MainTabsView: View {
                 }
                 .background(VoiceAlarmTheme.background)
 
-                BottomNavBar(selected: $selectedTab, badgeProvider: badgeCount(for:))
+                BottomNavBar(
+                    selected: $selectedTab,
+                    badgeProvider: badgeCount(for:),
+                    onSelect: selectTab
+                )
             }
             .background(VoiceAlarmTheme.background)
             .navigationTitle(selectedTab.navigationTitle)
@@ -107,6 +113,9 @@ struct MainTabsView: View {
                     auxiliaryScreen = nil
                 }
             }
+            .planGate(item: $planGate) {
+                openBillingAfterPlanGate()
+            }
             .task(id: auth.session?.token) {
                 await refreshAll()
             }
@@ -120,7 +129,7 @@ struct MainTabsView: View {
             HomeView(
                 openAuxiliary: { auxiliaryScreen = $0 },
                 openEditor: { editorTarget = $0 },
-                selectTab: { selectedTab = $0 }
+                selectTab: selectTab
             )
         case .voices:
             // Phase 4-D1: 슬롯 가득 PlanGate 의 "결제 화면으로" 가 눌리면 BillingPanel
@@ -138,7 +147,67 @@ struct MainTabsView: View {
         case .alarms:
             AlarmsListView(openEditor: { editorTarget = $0 })
         case .messages:
-            MessagesView(selectTab: { selectedTab = $0 })
+            MessagesView(selectTab: selectTab)
+        }
+    }
+
+    private func selectTab(_ tab: NativeTab) {
+        guard selectedTab != tab else { return }
+        if let gate = planGateFor(tab) {
+            planGate = gate
+            return
+        }
+        selectedTab = tab
+    }
+
+    private func planGateFor(_ tab: NativeTab) -> PlanGateState? {
+        switch tab {
+        case .voices:
+            guard auth.session != nil,
+                  socialFeatures.subscription != nil,
+                  !currentPlan.meetsOrExceeds(.personal)
+            else { return nil }
+            return PlanGateState(
+                title: "이용권이 필요한 기능이에요",
+                message: "유료 이용권에서 사용할 수 있어요.",
+                confirmLabel: "이용권 보기",
+                currentPlan: currentPlan,
+                requiredPlan: .personal
+            )
+        case .messages:
+            guard auth.session != nil,
+                  socialFeatures.subscription != nil,
+                  socialFeatures.familyGroup != nil,
+                  !canUseMessages
+            else { return nil }
+            return PlanGateState(
+                title: "이용권이 필요한 기능이에요",
+                message: "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
+                confirmLabel: "이용권 보기",
+                currentPlan: currentPlan,
+                requiredPlan: .couple
+            )
+        case .home, .alarms:
+            return nil
+        }
+    }
+
+    private var currentPlan: PlanTier {
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+    }
+
+    private var canUseMessages: Bool {
+        socialFeatures.familyGroup?.group != nil || currentPlan.meetsOrExceeds(.couple)
+    }
+
+    private func openBillingAfterPlanGate() {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            auxiliaryScreen = .billing
         }
     }
 

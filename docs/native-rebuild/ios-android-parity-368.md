@@ -133,6 +133,9 @@
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.
+- iOS root tab routing now mirrors Android's navigation gate: tapping the
+  locked `목소리` tab opens the paid-plan dialog for free users, and tapping
+  `메시지` without couple/family access opens the couple/family plan dialog.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores
