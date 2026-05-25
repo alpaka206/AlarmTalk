@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -307,60 +307,93 @@ private fun WeatherLocationPreferenceDialog(
     val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { ModalDialogTitle("날씨 지역", onDismiss = onDismiss) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "날씨가 들어간 문구를 만들 때 사용할 지역이에요.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = draftCountry,
-                    onValueChange = { draftCountry = it.take(30) },
-                    label = { Text("나라") },
-                    placeholder = { Text("예: 대한민국") },
-                    singleLine = true,
-                    isError = countryError,
-                    supportingText = {
-                        if (countryError) Text("꼭 입력해 주세요.")
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftCity,
-                    onValueChange = { draftCity = it.take(30) },
-                    label = { Text("도시") },
-                    placeholder = { Text("예: 서울") },
-                    singleLine = true,
-                    isError = cityError,
-                    supportingText = {
-                        if (cityError) Text("꼭 입력해 주세요.")
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    submitted = true
-                    if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
-                        onConfirm(draftCountry.trim(), draftCity.trim())
-                    }
-                },
-                shape = WakerButtonShape,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 430.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("저장")
+                ModalDialogTitle("날씨 지역", onDismiss = onDismiss)
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "랜덤 문구의 기준 지역",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = "날씨가 들어간 문구를 만들 때 이 지역을 사용해요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = draftCountry,
+                        onValueChange = { draftCountry = it.take(30) },
+                        label = { Text("나라") },
+                        placeholder = { Text("예: 대한민국") },
+                        singleLine = true,
+                        isError = countryError,
+                        supportingText = {
+                            if (countryError) Text("꼭 입력해 주세요.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftCity,
+                        onValueChange = { draftCity = it.take(30) },
+                        label = { Text("도시") },
+                        placeholder = { Text("예: 서울") },
+                        singleLine = true,
+                        isError = cityError,
+                        supportingText = {
+                            if (cityError) Text("꼭 입력해 주세요.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
+                            onConfirm(draftCountry.trim(), draftCity.trim())
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text("저장")
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

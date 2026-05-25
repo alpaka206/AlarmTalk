@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -803,64 +804,85 @@ private fun WeatherLocationDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
             shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .padding(20.dp)
                     .heightIn(max = 600.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ModalDialogTitle(
                     title = "날씨 지역",
                     onDismiss = onDismissWithoutSave,
                 )
-                Text(
-                    text = "날씨 지역을 직접 입력하거나 현재 위치로 불러올 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    onClick = {
-                        if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
-                            startLocationLookup()
-                        } else {
-                            locationPermissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.ACCESS_COARSE_LOCATION,
-                                    Manifest.permission.ACCESS_FINE_LOCATION,
-                                ),
-                            )
-                        }
-                    },
-                    enabled = !locationBusy,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        if (locationBusy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("위치 가져오는 중")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.MyLocation,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("현재 위치 사용")
+                        Text(
+                            text = "날씨 문구에 사용할 지역",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = "직접 입력하거나 현재 위치로 채울 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
+                                    startLocationLookup()
+                                } else {
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                        ),
+                                    )
+                                }
+                            },
+                            enabled = !locationBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = WakerButtonShape,
+                            border = wakerCardBorder(),
+                            colors = wakerOutlinedButtonColors(),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (locationBusy) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("위치 가져오는 중")
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Outlined.MyLocation,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("현재 위치 사용")
+                                }
+                            }
                         }
                     }
                 }
