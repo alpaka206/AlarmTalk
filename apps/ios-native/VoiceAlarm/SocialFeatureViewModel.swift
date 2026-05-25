@@ -65,8 +65,18 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             receivedNotes = try await api.listReceivedNotes(token: token)
+            let serverUnavailableAudioIDs = Set(receivedNotes.compactMap { note in
+                note.audioUrl != nil && note.audioAvailable == false ? note.id : nil
+            })
+            unavailableAudioNoteIDs = unavailableAudioNoteIDs.intersection(serverUnavailableAudioIDs)
+            let playableAudioIDs = Set(receivedNotes.compactMap { note in
+                note.audioUrl != nil && note.audioAvailable != false ? note.id : nil
+            })
+            if let playingNoteID, !playableAudioIDs.contains(playingNoteID) {
+                notePreviewPlayer.stop()
+                self.playingNoteID = nil
+            }
             let activeIDs = Set(receivedNotes.map(\.id))
-            unavailableAudioNoteIDs = unavailableAudioNoteIDs.intersection(activeIDs)
             revealedNoteIDs = revealedNoteIDs.intersection(activeIDs)
         } catch {
             messages.append("메시지: \(error.localizedDescription)")
