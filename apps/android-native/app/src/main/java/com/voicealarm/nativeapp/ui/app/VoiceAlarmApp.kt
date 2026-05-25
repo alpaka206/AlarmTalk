@@ -632,6 +632,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
+                          viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
+                      },
                       onSave = { draft ->
                           if (!permissions.alarmReady) {
                               requestFirstMissingAlarmPermission()
@@ -667,6 +670,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                          onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
+                              viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
+                          },
                           onSave = { draft ->
                               if (!permissions.alarmReady) {
                                   requestFirstMissingAlarmPermission()

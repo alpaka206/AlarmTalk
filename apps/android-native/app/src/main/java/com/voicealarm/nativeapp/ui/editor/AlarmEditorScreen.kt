@@ -24,18 +24,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +61,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmAudioStore
@@ -91,6 +100,7 @@ import kotlinx.coroutines.withContext
 private enum class AudioPreviewTarget {
     SelectedCrop,
     CachedAudio,
+    SharedVoiceInfo,
 }
 
 @Composable
@@ -109,6 +119,7 @@ internal fun AlarmEditorScreen(
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
     val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
@@ -140,6 +151,7 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
@@ -372,6 +384,46 @@ internal fun AlarmEditorScreen(
         )
     }
 
+    fun playSharedVoiceInfoPreview(profileId: String) {
+        if (previewPreparing) return
+        scope.launch {
+            stopPreview()
+            previewTarget = AudioPreviewTarget.SharedVoiceInfo
+            previewPreparing = true
+            runCatching {
+                val response = onGenerateTts(
+                    TtsGenerateRequest(
+                        voiceProfileId = profileId,
+                        text = "이 목소리로 깨워드릴까요?",
+                        category = "custom",
+                        language = "ko",
+                        random = false,
+                    ),
+                )
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = audioBytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = "shared_voice_preview_$profileId",
+                        cacheKey = "shared_voice_preview_$profileId",
+                        messageId = response.messageId,
+                    )
+                }
+            }.onSuccess { cached ->
+                startPreparedPreview(
+                    uri = Uri.parse(cached.localAudioUri),
+                    target = AudioPreviewTarget.SharedVoiceInfo,
+                )
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
+                stopPreview()
+                audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            }
+        }
+    }
+
     fun submitDraft(draft: AlarmDraft) {
         if (!familyAlarmMode) {
             onSave(draft)
@@ -496,6 +548,15 @@ internal fun AlarmEditorScreen(
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
             audioMessage = "사용할 목소리를 선택해 주세요."
+            return
+        }
+        val selectedSharedProfile = familyVoices.firstOrNull {
+            it.id == profileId && it.requiresViewerInfo()
+        }
+        if (selectedSharedProfile != null) {
+            stopPreview()
+            audioMessage = null
+            sharedVoiceInfoTarget = selectedSharedProfile
             return
         }
         val text = editor.ttsTextForSave()
@@ -991,6 +1052,10 @@ internal fun AlarmEditorScreen(
                                 onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
+                                onSharedVoiceInfoRequired = { profile ->
+                                    stopPreview()
+                                    sharedVoiceInfoTarget = profile
+                                },
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
                                 onClear = {
@@ -1129,6 +1194,32 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    sharedVoiceInfoTarget?.let { profile ->
+        SharedVoiceInfoRequiredDialog(
+            profileName = profile.name,
+            initialRelationship = profile.relationshipLabel.orEmpty(),
+            initialListenerTitle = profile.listenerTitle.orEmpty(),
+            saving = voiceProfileBusy,
+            previewing = previewTarget == AudioPreviewTarget.SharedVoiceInfo &&
+                (previewPreparing || mediaPlayer != null),
+            onDismiss = {
+                if (!voiceProfileBusy) {
+                    stopPreview()
+                    sharedVoiceInfoTarget = null
+                }
+            },
+            onPreview = { playSharedVoiceInfoPreview(profile.id) },
+            onConfirm = { relationship, listener ->
+                onUpdateSharedVoiceInfo(profile.id, relationship, listener) {
+                    editor.voiceProfileId = profile.id
+                    editor.clearTtsMeta()
+                    stopPreview()
+                    sharedVoiceInfoTarget = null
+                }
+            },
+        )
+    }
+
     if (voicePlanGateOpen) {
         PlanGateDialog(
             message = "유료 이용권에서 사용할 수 있어요.",
@@ -1138,6 +1229,116 @@ internal fun AlarmEditorScreen(
             },
             onDismiss = { voicePlanGateOpen = false },
         )
+    }
+}
+
+
+@Composable
+private fun SharedVoiceInfoRequiredDialog(
+    profileName: String,
+    initialRelationship: String,
+    initialListenerTitle: String,
+    saving: Boolean,
+    previewing: Boolean,
+    onDismiss: () -> Unit,
+    onPreview: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
+    var draftListenerTitle by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
+    var submitted by remember { mutableStateOf(false) }
+    val relationshipError = submitted && draftRelationship.isBlank()
+    val listenerTitleError = submitted && draftListenerTitle.isBlank()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 620.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ModalDialogTitle(
+                    title = "$profileName 목소리 설정",
+                    onDismiss = onDismiss,
+                )
+                MutedText("이 목소리가 나와 어떤 관계인지, 나를 어떻게 부르면 좋을지 정해요.")
+                OutlinedButton(
+                    onClick = onPreview,
+                    enabled = !saving && !previewing,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
+                ) {
+                    if (previewing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("재생 중")
+                    } else {
+                        Text("미리듣기")
+                    }
+                }
+                OutlinedTextField(
+                    value = draftRelationship,
+                    onValueChange = { draftRelationship = it.take(30) },
+                    label = { Text("나와의 관계") },
+                    placeholder = { Text("예: 손녀, 엄마, 연인") },
+                    singleLine = true,
+                    isError = relationshipError,
+                    supportingText = {
+                        if (relationshipError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftListenerTitle,
+                    onValueChange = { draftListenerTitle = it.take(30) },
+                    label = { Text("이 목소리가 나를 부를 이름") },
+                    placeholder = { Text("예: 지호야, 여보") },
+                    singleLine = true,
+                    isError = listenerTitleError,
+                    supportingText = {
+                        if (listenerTitleError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftRelationship.isNotBlank() && draftListenerTitle.isNotBlank()) {
+                            onConfirm(draftRelationship.trim(), draftListenerTitle.trim())
+                        }
+                    },
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(if (saving) "저장 중" else "저장하고 선택")
+                }
+            }
+        }
     }
 }
 

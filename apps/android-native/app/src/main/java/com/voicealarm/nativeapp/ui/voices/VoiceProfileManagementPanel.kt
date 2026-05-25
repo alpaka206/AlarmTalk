@@ -2077,8 +2077,7 @@ private fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,
     onEdit: () -> Unit,
 ) {
-    val needsViewerInfo = profile.relationshipLabel.isNullOrBlank() ||
-        profile.listenerTitle.isNullOrBlank()
+    val needsViewerInfo = profile.requiresViewerInfo()
     OutlinedCard(
         shape = WakerCardShape,
         border = wakerCardBorder(),

@@ -687,14 +687,16 @@ tts.post('/generate', async (c) => {
         userPk,
         body.target_user_id ?? body.targetUserId,
       );
+      const isSharedVoiceProfile =
+        typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
       const relationshipLabel =
         normalizeRelationshipLabel(body.relationship_label ?? body.relationshipLabel) ??
         (await findViewerRelationshipLabel(db, userPk, userId, body.voice_profile_id)) ??
-        normalizeRelationshipLabel(vp.relationship_label);
+        (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.relationship_label));
       const listenerTitle =
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
         (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
-        normalizeRelationshipLabel(vp.listener_title);
+        (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
       const weatherSummary = randomContextUsesWeather(randomContext)
         ? await loadWeatherSummary({
             latitude: body.weather_latitude ?? body.weatherLatitude,

@@ -71,6 +71,7 @@ internal fun VoiceAudioCard(
     onPreviewCrop: () -> Unit,
     onPreviewAudio: () -> Unit,
     onCreateVoiceProfileClick: () -> Unit,
+    onSharedVoiceInfoRequired: (FamilyVoiceProfile) -> Unit,
     onOpenRandomPromptSettings: () -> Unit,
     onOpenVoiceTranslationSettings: () -> Unit,
     onClear: () -> Unit,
@@ -96,6 +97,7 @@ internal fun VoiceAudioCard(
                 id = profile.id,
                 name = profile.name,
                 detail = sharedVoiceDetail(profile),
+                sharedProfile = profile,
             )
         }
     val hasConfiguredVoice = when (visibleVoiceSource) {
@@ -158,8 +160,13 @@ internal fun VoiceAudioCard(
                     VoiceProfileOptionList(
                         options = profileOptions,
                         selected = editor.voiceProfileId ?: "",
-                        onSelect = {
-                            editor.voiceProfileId = it
+                        onSelect = { option ->
+                            val sharedProfile = option.sharedProfile
+                            if (sharedProfile?.requiresViewerInfo() == true) {
+                                onSharedVoiceInfoRequired(sharedProfile)
+                                return@VoiceProfileOptionList
+                            }
+                            editor.voiceProfileId = option.id
                             editor.clearTtsMeta()
                         },
                     )
@@ -332,6 +339,7 @@ private data class VoiceProfileOption(
     val id: String,
     val name: String,
     val detail: String,
+    val sharedProfile: FamilyVoiceProfile? = null,
 )
 
 @Composable
@@ -368,14 +376,14 @@ private fun NoUsableVoiceProfileCallout(
 private fun VoiceProfileOptionList(
     options: List<VoiceProfileOption>,
     selected: String,
-    onSelect: (String) -> Unit,
+    onSelect: (VoiceProfileOption) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
             VoiceProfileOptionRow(
                 option = option,
                 selected = selected == option.id,
-                onClick = { onSelect(option.id) },
+                onClick = { onSelect(option) },
             )
         }
     }
@@ -679,6 +687,7 @@ private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
     } else {
         "공유받은 목소리 · $owner"
     }
+    if (profile.requiresViewerInfo()) return "$base · 설정 필요"
     val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
     return relation?.let { "$base · 관계 $it" } ?: base
 }
@@ -688,3 +697,6 @@ private fun ownedVoiceDetail(profile: VoiceProfile): String {
     val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
     return relation?.let { "$base · 관계 $it" } ?: base
 }
+
+internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =
+    needsViewerInfo == true || relationshipLabel.isNullOrBlank() || listenerTitle.isNullOrBlank()

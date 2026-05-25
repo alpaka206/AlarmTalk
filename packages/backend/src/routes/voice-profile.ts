@@ -260,8 +260,8 @@ voiceProfile.get('/family', async (c) => {
   const placeholders = memberIds.map(() => '?').join(',');
   const voicesRes = await db.execute({
     sql: `SELECT vp.id, vp.name, vp.status, vp.created_at, vp.user_id, vp.is_shared,
-                 COALESCE(NULLIF(vpr.relationship_label, ''), vp.relationship_label) AS relationship_label,
-                 COALESCE(NULLIF(vpr.listener_title, ''), vp.listener_title) AS listener_title,
+                 vpr.relationship_label AS relationship_label,
+                 vpr.listener_title AS listener_title,
                  vpr.relationship_label AS viewer_relationship_raw,
                  vpr.listener_title AS viewer_listener_raw,
                  u.name as owner_name
