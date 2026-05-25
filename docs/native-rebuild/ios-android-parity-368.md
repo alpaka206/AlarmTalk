@@ -110,6 +110,11 @@
   row-level local/server/audio detail text and manual "server save" action so
   the user-facing list matches Android's simple time/label/toggle/warning
   structure.
+- iOS alarm editing now exposes Android's manual voice-message input,
+  translation language selector, random prompt language selector, voice-only
+  repeat choice, and per-alarm voice volume. The local alarm record now stores
+  `voiceVolumePercent`, and the iOS voice player uses that value instead of
+  reusing the alarm-sound volume.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

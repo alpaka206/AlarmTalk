@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - LocalAlarmRecord
-// Android `AlarmEntity.kt:7-45` 의 33필드와 1:1 매칭.
+// Android `AlarmEntity.kt:7-45` 의 알람 필드와 1:1 매칭.
 // 필드명만 Swift camelCase. epoch ms 는 `Int64` 로 직렬화.
 struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var id: String                  // UUID().uuidString
@@ -34,6 +34,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceFortuneBirthDate: String?
     var voiceFortuneBirthTime: String?
     var voiceRepeat: Bool
+    var voiceVolumePercent: Int     // 0..100
     var ttsMessageId: String?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
@@ -123,6 +124,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         voiceFortuneBirthDate: String? = nil,
         voiceFortuneBirthTime: String? = nil,
         voiceRepeat: Bool = true,
+        voiceVolumePercent: Int = 100,
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
@@ -167,6 +169,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceFortuneBirthDate = voiceFortuneBirthDate
         self.voiceFortuneBirthTime = voiceFortuneBirthTime
         self.voiceRepeat = voiceRepeat
+        self.voiceVolumePercent = voiceVolumePercent
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
@@ -213,6 +216,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case voiceFortuneBirthDate
         case voiceFortuneBirthTime
         case voiceRepeat
+        case voiceVolumePercent
         case ttsMessageId
         case remoteAlarmId
         case lastSyncedAtMillis
@@ -310,6 +314,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceFortuneBirthDate = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthDate)
         self.voiceFortuneBirthTime = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthTime)
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
+        self.voiceVolumePercent = try c.decodeIfPresent(Int.self, forKey: .voiceVolumePercent) ?? 100
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)
             ?? c.decodeIfPresent(String.self, forKey: .legacyMessageID)
 
@@ -393,6 +398,7 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
     case invalidSnoozeMinutes
     case invalidSnoozeRepeatLimit
     case invalidAlarmVolume
+    case invalidVoiceVolume
     case unknownVibrationPattern
     case unknownPlayMode
     case unknownVoiceSource
@@ -408,6 +414,7 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
         case .invalidSnoozeMinutes: return "다시 알림은 1~30분이어야 해요."
         case .invalidSnoozeRepeatLimit: return "다시 알림 반복 횟수가 유효하지 않아요."
         case .invalidAlarmVolume: return "알람 볼륨은 0~100 사이여야 해요."
+        case .invalidVoiceVolume: return "목소리 크기는 0~100 사이여야 해요."
         case .unknownVibrationPattern: return "지원하지 않는 진동 패턴이에요."
         case .unknownPlayMode: return "지원하지 않는 재생 방식이에요."
         case .unknownVoiceSource: return "지원하지 않는 음성 소스예요."
@@ -530,6 +537,9 @@ final class LocalAlarmStore: ObservableObject {
         }
         guard (0...100).contains(record.alarmVolumePercent) else {
             throw LocalAlarmValidationError.invalidAlarmVolume
+        }
+        guard (0...100).contains(record.voiceVolumePercent) else {
+            throw LocalAlarmValidationError.invalidVoiceVolume
         }
         guard VibrationPattern(rawValue: record.vibrationPattern) != nil else {
             throw LocalAlarmValidationError.unknownVibrationPattern

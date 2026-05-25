@@ -63,7 +63,7 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             // Android 의 voiceRepeat 와 동일 의미: 3회 반복 = numberOfLoops = 2.
             // AVAudioPlayer.numberOfLoops 는 초기 1회 후 추가 반복 횟수.
             p.numberOfLoops = record.voiceRepeat ? 2 : 0
-            let volume = max(0.0, min(1.0, Float(record.alarmVolumePercent) / 100.0))
+            let volume = max(0.0, min(1.0, Float(record.voiceVolumePercent) / 100.0))
             p.volume = volume
             p.prepareToPlay()
             p.play()

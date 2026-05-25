@@ -34,6 +34,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             voiceFortuneBirthDate: "1990-01-01",
             voiceFortuneBirthTime: "07:30",
             voiceRepeat: false,
+            voiceVolumePercent: 72,
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: 1_699_999_000_000,
@@ -84,6 +85,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertEqual(decoded.voiceSource, VoiceSource.ttsProfile.rawValue)
         XCTAssertFalse(decoded.voiceRandomPrompt)
         XCTAssertTrue(decoded.voiceRepeat)
+        XCTAssertEqual(decoded.voiceVolumePercent, 100)
         XCTAssertNil(decoded.remoteAlarmId)
         XCTAssertEqual(decoded.syncState, AlarmSyncState.localOnly.rawValue)
         XCTAssertEqual(decoded.origin, AlarmOrigin.localOwned.rawValue)

@@ -123,6 +123,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.snoozeCount = existing.snoozeCount                // 누적 카운트 유지
         merged.snoozeRepeatLimit = existing.snoozeRepeatLimit    // 사용자가 바꾼 값 보존
         merged.voiceRepeat = existing.voiceRepeat
+        merged.voiceVolumePercent = existing.voiceVolumePercent
         merged.holidayOff = existing.holidayOff
         merged.alarmVolumePercent = existing.alarmVolumePercent
         merged.alarmSoundUri = existing.alarmSoundUri

@@ -83,6 +83,7 @@ enum RemoteAlarmMapper {
             voiceLanguage: nil,
             voiceRandomPrompt: false,
             voiceRepeat: true,
+            voiceVolumePercent: 100,
             ttsMessageId: remote.messageId,
             remoteAlarmId: remote.id,
             lastSyncedAtMillis: nowMillis,

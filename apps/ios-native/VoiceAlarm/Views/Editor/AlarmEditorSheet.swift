@@ -93,6 +93,15 @@ struct AlarmEditorSheet: View {
                     voiceLocked: voicePlanLocked,
                     onLockedVoiceClick: showVoicePlanLockedAlert
                 )
+                    .onChange(of: draft.playMode) { _, newMode in
+                        voiceStudio.preparedAlarm = nil
+                        if newMode == .alarmOnly {
+                            draft.voiceRepeat = true
+                            draft.voiceVolumePercent = 100
+                        } else {
+                            selectDefaultVoiceProfileIfNeeded()
+                        }
+                    }
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
 
                 if draft.playMode != .alarmOnly {
@@ -127,7 +136,16 @@ struct AlarmEditorSheet: View {
                         .buttonStyle(.bordered)
                     }
 
-                    Toggle("랜덤 깨움말 생성", isOn: $voiceStudio.randomPrompt)
+                    Toggle("랜덤 문구 사용", isOn: Binding(
+                        get: { voiceStudio.randomPrompt },
+                        set: { enabled in
+                            voiceStudio.randomPrompt = enabled
+                            voiceStudio.preparedAlarm = nil
+                            if !enabled && !voiceStudio.translateText {
+                                voiceStudio.ttsLanguage = "ko"
+                            }
+                        }
+                    ))
                         .tint(theme.palette.primary)
                     if voiceStudio.randomPrompt {
                         Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
@@ -136,6 +154,18 @@ struct AlarmEditorSheet: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .onChange(of: voiceStudio.randomContext) { _, _ in
+                            voiceStudio.preparedAlarm = nil
+                        }
+                        Picker("언어", selection: $voiceStudio.ttsLanguage) {
+                            ForEach(ttsLanguages, id: \.code) { option in
+                                Text(option.label).tag(option.code)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: voiceStudio.ttsLanguage) { _, _ in
+                            voiceStudio.preparedAlarm = nil
+                        }
                         Text("선택한 상황에 맞춰 깨움말을 자동으로 만들어요.")
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -174,7 +204,19 @@ struct AlarmEditorSheet: View {
                             }
                             .padding(.top, 4)
                         }
+                    } else {
+                        ManualVoiceMessageEditor(
+                            text: $voiceStudio.ttsText,
+                            translationEnabled: $voiceStudio.translateText,
+                            language: $voiceStudio.ttsLanguage,
+                            onInvalidatePreparedAudio: { voiceStudio.preparedAlarm = nil }
+                        )
                     }
+
+                    if draft.playMode == .voiceOnly {
+                        VoiceRepeatEditor(isRepeating: $draft.voiceRepeat)
+                    }
+                    VoiceVolumeEditor(volumePercent: $draft.voiceVolumePercent)
                 }
             }
 
@@ -275,6 +317,7 @@ struct AlarmEditorSheet: View {
             loadInitialState()
             Task {
                 await voiceStudio.refresh(session: auth.session)
+                selectDefaultVoiceProfileIfNeeded()
                 if target.familyAlarmMode {
                     await socialFeatures.refreshAll(session: auth.session)
                     selectDefaultFamilyRecipientIfNeeded()
@@ -308,6 +351,11 @@ struct AlarmEditorSheet: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .onChange(of: voiceStudio.weatherCountry) { _, _ in voiceStudio.preparedAlarm = nil }
+        .onChange(of: voiceStudio.weatherCity) { _, _ in voiceStudio.preparedAlarm = nil }
+        .onChange(of: voiceStudio.fortuneGender) { _, _ in voiceStudio.preparedAlarm = nil }
+        .onChange(of: voiceStudio.fortuneBirthDate) { _, _ in voiceStudio.preparedAlarm = nil }
+        .onChange(of: voiceStudio.fortuneBirthTime) { _, _ in voiceStudio.preparedAlarm = nil }
     }
 
     private var saveButtonTitle: String {
@@ -383,8 +431,14 @@ struct AlarmEditorSheet: View {
 
     private func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
         let saved = savedPromptPreferences()
+        voiceStudio.selectedProfileID = alarm?.voiceProfileId
+        voiceStudio.preparedAlarm = nil
+        voiceStudio.ttsText = alarm?.voiceText ?? ""
+        voiceStudio.ttsCategory = alarm?.voiceCategory ?? "morning"
+        voiceStudio.ttsLanguage = alarm?.voiceLanguage ?? "ko"
         voiceStudio.randomPrompt = alarm?.voiceRandomPrompt ?? false
         voiceStudio.randomContext = RandomPromptContext.normalized(alarm?.voiceRandomContext).rawValue
+        voiceStudio.translateText = !voiceStudio.randomPrompt && voiceStudio.ttsLanguage != "ko"
         voiceStudio.weatherCountry = alarm?.voiceWeatherCountry ?? saved.weatherCountry
         voiceStudio.weatherCity = alarm?.voiceWeatherCity ?? saved.weatherCity
         voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? saved.fortuneGender
@@ -424,6 +478,25 @@ struct AlarmEditorSheet: View {
         }
         if let first = familyRecipients.first {
             selectFamilyRecipient(first.userId)
+        }
+    }
+
+    private func selectDefaultVoiceProfileIfNeeded() {
+        guard draft.playMode != .alarmOnly else { return }
+        let selected = voiceStudio.selectedProfileID
+        let readyOwn = voiceStudio.profiles.filter { $0.isReadyForAlarmSelection }
+        let readyShared = voiceStudio.familyVoices.filter { $0.isReadyForAlarmSelection }
+        let selectedStillAvailable = selected.map { selectedID in
+            readyOwn.contains(where: { $0.id == selectedID }) ||
+                readyShared.contains(where: { $0.id == selectedID })
+        } ?? false
+        if selectedStillAvailable {
+            return
+        }
+        if let first = readyOwn.first {
+            voiceStudio.selectedProfileID = first.id
+        } else if let first = readyShared.first, !first.requiresViewerInfo {
+            voiceStudio.selectedProfileID = first.id
         }
     }
 
@@ -505,6 +578,7 @@ struct AlarmEditorSheet: View {
             merged.rawAudioUri = prepared.rawAudioURL ?? merged.rawAudioUri
             merged.voiceProfileId = prepared.voiceProfileID
             merged.voiceText = prepared.text
+            merged.voiceCategory = voiceStudio.randomPrompt ? activePromptContext.ttsCategory : "custom"
             merged.voiceLanguage = prepared.language
             merged.ttsMessageId = prepared.messageID
         }
@@ -642,6 +716,8 @@ struct AlarmEditorSheet: View {
             return "분(0–59) 값이 올바르지 않아요."
         case .invalidSnoozeMinutes:
             return "스누즈 간격은 1–30분 사이여야 해요."
+        case .invalidVoiceVolume:
+            return "목소리 크기는 0–100% 사이여야 해요."
         }
     }
 }
@@ -888,6 +964,199 @@ private enum FamilyAlarmScheduleRules {
     }
 }
 
+private struct EditorLanguageOption: Identifiable {
+    let code: String
+    let label: String
+    var id: String { code }
+}
+
+private let ttsLanguages: [EditorLanguageOption] = [
+    .init(code: "ko", label: "한국어"),
+    .init(code: "en", label: "영어"),
+    .init(code: "ja", label: "일본어")
+]
+
+private let ttsTranslationLanguages: [EditorLanguageOption] = [
+    .init(code: "ko", label: "한국어"),
+    .init(code: "en", label: "영어"),
+    .init(code: "ja", label: "일본어"),
+    .init(code: "fr", label: "프랑스어"),
+    .init(code: "it", label: "이탈리아어")
+]
+
+private struct ManualVoiceMessageEditor: View {
+    @Binding var text: String
+    @Binding var translationEnabled: Bool
+    @Binding var language: String
+    let onInvalidatePreparedAudio: () -> Void
+
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    private var limitedText: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newValue in
+                text = String(newValue.prefix(200))
+                onInvalidatePreparedAudio()
+            }
+        )
+    }
+
+    private var translationToggle: Binding<Bool> {
+        Binding(
+            get: { translationEnabled },
+            set: { enabled in
+                translationEnabled = enabled
+                if enabled && language == "ko" {
+                    language = "en"
+                } else if !enabled {
+                    language = "ko"
+                }
+                onInvalidatePreparedAudio()
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text("직접 입력")
+                    .font(theme.typography.titleSmall)
+                Spacer()
+                Text("\(text.count)/200")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .monospacedDigit()
+            }
+
+            ZStack(alignment: .topLeading) {
+                if text.isEmpty {
+                    Text("알람에서 들려줄 음성 메시지를 입력해 주세요")
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                }
+                TextEditor(text: limitedText)
+                    .frame(minHeight: 86)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+            }
+            .padding(8)
+            .background(theme.palette.surfaceVariant.opacity(0.36))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(theme.palette.outlineVariant.opacity(0.62), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("번역", isOn: translationToggle)
+                    .tint(theme.palette.primary)
+                if translationEnabled {
+                    Picker("번역 언어", selection: Binding(
+                        get: { language },
+                        set: { newValue in
+                            language = newValue
+                            onInvalidatePreparedAudio()
+                        }
+                    )) {
+                        ForEach(ttsTranslationLanguages) { option in
+                            Text(option.label).tag(option.code)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                } else {
+                    Text("사용 안 함")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+            }
+            .padding(12)
+            .background(theme.palette.surfaceVariant.opacity(0.34))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
+
+private struct VoiceRepeatEditor: View {
+    @Binding var repeatVoice: Bool
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    init(isRepeating repeatVoice: Binding<Bool>) {
+        self._repeatVoice = repeatVoice
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("반복 재생")
+                .font(theme.typography.titleSmall)
+            HStack(spacing: 8) {
+                repeatButton("한 번만", selected: !repeatVoice) {
+                    repeatVoice = false
+                }
+                repeatButton("반복", selected: repeatVoice) {
+                    repeatVoice = true
+                }
+            }
+        }
+    }
+
+    private func repeatButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? theme.palette.onPrimaryContainer : theme.palette.onSurface)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(selected ? theme.palette.primaryContainer : theme.palette.surfaceVariant.opacity(0.44))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct VoiceVolumeEditor: View {
+    @Binding var volumePercent: Int
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    private var volumeBinding: Binding<Double> {
+        Binding(
+            get: { Double(max(30, min(100, volumePercent))) },
+            set: { volumePercent = max(30, min(100, Int($0.rounded()))) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("목소리 크기")
+                    .font(theme.typography.titleSmall)
+                Spacer()
+                Text("\(max(30, min(100, volumePercent)))%")
+                    .font(theme.typography.labelLarge)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .monospacedDigit()
+            }
+            Slider(value: volumeBinding, in: 30...100, step: 10)
+                .tint(theme.palette.primary)
+        }
+    }
+}
+
+private extension VoiceProfile {
+    var isReadyForAlarmSelection: Bool {
+        (status == nil || status == "ready") && isDraft != true
+    }
+}
+
+private extension FamilyVoiceProfile {
+    var isReadyForAlarmSelection: Bool {
+        (status == nil || status == "ready") && isShared != false
+    }
+}
+
 private struct AlarmVoiceProfilePicker: View {
     let ownProfiles: [VoiceProfile]
     let familyVoices: [FamilyVoiceProfile]
@@ -898,8 +1167,10 @@ private struct AlarmVoiceProfilePicker: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
+        let readyOwnProfiles = ownProfiles.filter(\.isReadyForAlarmSelection)
+        let readyFamilyVoices = familyVoices.filter(\.isReadyForAlarmSelection)
         VStack(alignment: .leading, spacing: 8) {
-            if ownProfiles.isEmpty && familyVoices.isEmpty {
+            if readyOwnProfiles.isEmpty && readyFamilyVoices.isEmpty {
                 Text("사용할 수 있는 목소리가 없어요. 먼저 목소리를 만들어 주세요.")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -908,7 +1179,7 @@ private struct AlarmVoiceProfilePicker: View {
                     .background(theme.palette.surfaceVariant.opacity(0.44))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
-                ForEach(ownProfiles) { profile in
+                ForEach(readyOwnProfiles) { profile in
                     voiceRow(
                         name: profile.name,
                         detail: profile.isShared == true ? "내 목소리 · 공유 중" : "내 목소리",
@@ -917,7 +1188,7 @@ private struct AlarmVoiceProfilePicker: View {
                         action: { onSelectOwn(profile) }
                     )
                 }
-                ForEach(familyVoices) { profile in
+                ForEach(readyFamilyVoices) { profile in
                     voiceRow(
                         name: profile.name,
                         detail: profile.sharedFromLabel,

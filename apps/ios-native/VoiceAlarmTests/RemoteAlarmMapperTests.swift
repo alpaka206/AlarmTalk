@@ -277,6 +277,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(local.snoozeMinutes, 7)
         XCTAssertEqual(local.vibrationPattern, "heartbeat")
         XCTAssertEqual(local.playModeEnum, .voiceOnly)
+        XCTAssertEqual(local.voiceVolumePercent, 100)
         XCTAssertEqual(local.originEnum, .receivedRemote)
         XCTAssertEqual(local.voiceSourceEnum, .serverTts)
         XCTAssertEqual(local.ttsMessageId, "m-9")

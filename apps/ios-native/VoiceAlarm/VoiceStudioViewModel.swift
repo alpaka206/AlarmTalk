@@ -509,13 +509,15 @@ final class VoiceStudioViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
+            let shouldTranslate = !randomPrompt && translateText
+            let activeLanguage = randomPrompt || shouldTranslate ? ttsLanguage : "ko"
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
                     text: randomPrompt ? "" : ttsText,
-                    category: randomPrompt ? promptContext.ttsCategory : ttsCategory,
-                    language: ttsLanguage,
-                    translate: translateText,
+                    category: randomPrompt ? promptContext.ttsCategory : "custom",
+                    language: activeLanguage,
+                    translate: shouldTranslate,
                     random: randomPrompt,
                     randomContext: randomPrompt ? promptContext.rawValue : nil,
                     alarmHour: randomPrompt ? alarmHour : nil,
@@ -538,7 +540,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 audioCacheKey: cached.cacheKey,
                 rawAudioURL: response.remoteAudioURI,
                 text: response.text,
-                language: ttsLanguage
+                language: activeLanguage
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."

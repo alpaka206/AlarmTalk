@@ -2,7 +2,7 @@ import Foundation
 
 /// 알람 편집 시트 내부 상태 컨테이너.
 ///
-/// `LocalAlarmRecord` 의 33 필드 중 **사용자가 시트에서 편집 가능한** 부분만
+/// `LocalAlarmRecord` 중 **사용자가 시트에서 편집 가능한** 부분만
 /// 모아 둔 가벼운 struct. 시트 내부에서는 본 struct 만 `@State` 로 들고,
 /// 저장 시점에 `toRecord(...)` 가 기존 record(있다면) 의 나머지 필드를
 /// 보존하면서 `LocalAlarmRecord` 를 만들어낸다.
@@ -31,6 +31,8 @@ struct AlarmEditDraft: Equatable {
     var voiceFortuneGender: String
     var voiceFortuneBirthDate: String
     var voiceFortuneBirthTime: String
+    var voiceRepeat: Bool
+    var voiceVolumePercent: Int
 
     // MARK: - 신규 생성 default
 
@@ -59,7 +61,9 @@ struct AlarmEditDraft: Equatable {
             voiceWeatherCity: "",
             voiceFortuneGender: "",
             voiceFortuneBirthDate: "",
-            voiceFortuneBirthTime: ""
+            voiceFortuneBirthTime: "",
+            voiceRepeat: true,
+            voiceVolumePercent: 100
         )
     }
 
@@ -84,6 +88,8 @@ struct AlarmEditDraft: Equatable {
         self.voiceFortuneGender = record.voiceFortuneGender ?? ""
         self.voiceFortuneBirthDate = record.voiceFortuneBirthDate ?? ""
         self.voiceFortuneBirthTime = record.voiceFortuneBirthTime ?? ""
+        self.voiceRepeat = record.voiceRepeat
+        self.voiceVolumePercent = max(0, min(100, record.voiceVolumePercent))
     }
 
     init(
@@ -104,7 +110,9 @@ struct AlarmEditDraft: Equatable {
         voiceWeatherCity: String = "",
         voiceFortuneGender: String = "",
         voiceFortuneBirthDate: String = "",
-        voiceFortuneBirthTime: String = ""
+        voiceFortuneBirthTime: String = "",
+        voiceRepeat: Bool = true,
+        voiceVolumePercent: Int = 100
     ) {
         self.label = label
         self.hour = hour
@@ -124,6 +132,8 @@ struct AlarmEditDraft: Equatable {
         self.voiceFortuneGender = voiceFortuneGender
         self.voiceFortuneBirthDate = voiceFortuneBirthDate
         self.voiceFortuneBirthTime = voiceFortuneBirthTime
+        self.voiceRepeat = voiceRepeat
+        self.voiceVolumePercent = voiceVolumePercent
     }
 
     // MARK: - Validation
@@ -133,6 +143,7 @@ struct AlarmEditDraft: Equatable {
         case invalidHour
         case invalidMinute
         case invalidSnoozeMinutes
+        case invalidVoiceVolume
     }
 
     /// 저장 가능한 상태인지 확인. 모든 오류를 묶어 반환.
@@ -149,6 +160,9 @@ struct AlarmEditDraft: Equatable {
         }
         if !(1...30).contains(snoozeMinutes) {
             errors.append(.invalidSnoozeMinutes)
+        }
+        if !(0...100).contains(voiceVolumePercent) {
+            errors.append(.invalidVoiceVolume)
         }
         return errors
     }
@@ -201,7 +215,8 @@ struct AlarmEditDraft: Equatable {
             voiceFortuneGender: storesFortune ? nonEmpty(voiceFortuneGender) : nil,
             voiceFortuneBirthDate: storesFortune ? nonEmpty(voiceFortuneBirthDate) : nil,
             voiceFortuneBirthTime: storesFortune ? nonEmpty(voiceFortuneBirthTime) : nil,
-            voiceRepeat: existing?.voiceRepeat ?? true,
+            voiceRepeat: playMode == .alarmOnly ? true : voiceRepeat,
+            voiceVolumePercent: playMode == .alarmOnly ? 100 : max(0, min(100, voiceVolumePercent)),
             ttsMessageId: existing?.ttsMessageId,
             remoteAlarmId: existing?.remoteAlarmId,
             lastSyncedAtMillis: existing?.lastSyncedAtMillis,

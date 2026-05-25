@@ -32,6 +32,7 @@ final class AlarmEditDraftTests: XCTestCase {
             voiceLanguage: "ko",
             voiceRandomPrompt: false,
             voiceRepeat: true,
+            voiceVolumePercent: 72,
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: now - 1_000,
@@ -59,6 +60,8 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.snoozeRepeatLimit, .five)
         XCTAssertEqual(draft.vibrationPattern, .heartbeat)
         XCTAssertEqual(draft.alarmVolumePercent, 65)
+        XCTAssertTrue(draft.voiceRepeat)
+        XCTAssertEqual(draft.voiceVolumePercent, 72)
 
         let rebuilt = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
         XCTAssertEqual(rebuilt.id, original.id, "ID 는 보존되어야 한다")
@@ -77,6 +80,8 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(rebuilt.snoozeMinutes, 7)
         XCTAssertEqual(rebuilt.snoozeRepeatLimit, SnoozeRepeatLimit.five.rawValue)
         XCTAssertEqual(rebuilt.alarmVolumePercent, 65)
+        XCTAssertTrue(rebuilt.voiceRepeat)
+        XCTAssertEqual(rebuilt.voiceVolumePercent, 72)
 
         // remote 가 있던 record 는 dirty 로 마킹.
         XCTAssertEqual(rebuilt.syncState, AlarmSyncState.dirty.rawValue)
@@ -165,6 +170,8 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.snoozeRepeatLimit, .three)
         XCTAssertEqual(draft.vibrationPattern, .default)
         XCTAssertEqual(draft.alarmVolumePercent, 80)
+        XCTAssertTrue(draft.voiceRepeat)
+        XCTAssertEqual(draft.voiceVolumePercent, 100)
         XCTAssertEqual(draft.repeatDaysMask, 0)
         XCTAssertFalse(draft.holidayOff)
     }

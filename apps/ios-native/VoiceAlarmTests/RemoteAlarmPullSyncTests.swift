@@ -52,6 +52,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         existing.alarmKitID = "kit-id"
         existing.snoozeCount = 3
         existing.snoozeRepeatLimit = SnoozeRepeatLimit.five.rawValue
+        existing.voiceVolumePercent = 64
         existing.holidayOff = true
         existing.alarmVolumePercent = 70
         existing.alarmSoundUri = "file:///x.wav"
@@ -63,6 +64,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         mapped.alarmKitID = nil
         mapped.snoozeCount = 0
         mapped.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
+        mapped.voiceVolumePercent = 100
         mapped.holidayOff = false
         mapped.alarmVolumePercent = 80
         mapped.alarmSoundUri = nil
@@ -76,6 +78,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertEqual(merged.alarmKitID, "kit-id")
         XCTAssertEqual(merged.snoozeCount, 3)
         XCTAssertEqual(merged.snoozeRepeatLimit, SnoozeRepeatLimit.five.rawValue)
+        XCTAssertEqual(merged.voiceVolumePercent, 64)
         XCTAssertTrue(merged.holidayOff)
         XCTAssertEqual(merged.alarmVolumePercent, 70)
         XCTAssertEqual(merged.alarmSoundUri, "file:///x.wav")
