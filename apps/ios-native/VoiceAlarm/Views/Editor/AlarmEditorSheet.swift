@@ -610,6 +610,7 @@ struct AlarmEditorSheet: View {
                 targetUserId: recipient.userId
             )
             _ = try await VoiceAlarmAPI.shared.createAlarm(request, token: token)
+            await remoteSync.refresh(session: auth.session, force: true)
             await socialFeatures.refreshAll(session: auth.session, force: true)
             validationAlert = nil
             onSchedulingDidFinish()
