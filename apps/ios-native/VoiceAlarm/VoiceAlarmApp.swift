@@ -94,12 +94,20 @@ struct VoiceAlarmApp: App {
                         await characterEvents.flushPending()
                         BackgroundSyncTask.scheduleNext()
                     }
+                    .task(id: alarmStore.hasLoadedFromDisk) {
+                        guard alarmStore.hasLoadedFromDisk else { return }
+                        await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                    }
             }
             .preferredColorScheme(VoiceAlarmThemeMode.normalized(themeModeRaw).preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
+                Task {
+                    guard alarmStore.hasLoadedFromDisk else { return }
+                    await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
                 //  2) /auth/me 갱신 — 401 만 signOut, 5xx/네트워크 단절은 lastNetworkError 만 갱신

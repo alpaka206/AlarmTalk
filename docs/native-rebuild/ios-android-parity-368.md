@@ -54,6 +54,11 @@
   note if the generated TTS response has no remote audio identifier.
 - Received remote alarms now downgrade to alarm-only when their voice audio
   cannot be cached locally, matching Android's local-file-only ring path.
+- iOS app launch and foreground entry now recover enabled local alarms that are
+  missing an AlarmKit runtime ID or were left in a failed state. Repeating
+  alarms are moved to the next valid fire time before rescheduling; expired
+  one-shot alarms are disabled and marked failed, matching Android boot-restore
+  semantics.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

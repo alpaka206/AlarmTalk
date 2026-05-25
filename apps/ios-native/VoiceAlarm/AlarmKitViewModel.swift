@@ -23,6 +23,7 @@ final class AlarmKitViewModel: ObservableObject {
     /// AlarmKit alarmUpdates 가 직전에 emit 한 알람들의 (alarmKitID, state-raw) 스냅샷.
     /// `.alerting` 진입 감지(idempotent) 와 사라짐 감지(dismiss) 를 위해 유지.
     private var lastAlarmStateSnapshot: [String: String] = [:]
+    private var observationTask: Task<Void, Never>?
 
     func refreshAuthorizationState() {
         #if canImport(AlarmKit)
@@ -49,13 +50,21 @@ final class AlarmKitViewModel: ObservableObject {
     func startObserving(store: LocalAlarmStore) async {
         #if canImport(AlarmKit)
         refreshAuthorizationState()
-        for await alarms in AlarmManager.shared.alarmUpdates {
-            await processAlarmUpdate(alarms: alarms, store: store)
+        guard observationTask == nil else { return }
+        observationTask = Task { [weak self, weak store] in
+            guard let self, let store else { return }
+            await self.observeAlarmUpdates(store: store)
         }
         #endif
     }
 
     #if canImport(AlarmKit)
+    private func observeAlarmUpdates(store: LocalAlarmStore) async {
+        for await alarms in AlarmManager.shared.alarmUpdates {
+            await processAlarmUpdate(alarms: alarms, store: store)
+        }
+    }
+
     /// 한 번의 alarmUpdates emit 을 처리. 별도 메서드로 분리해 테스트 가능성을
     /// 높이고 (직접 Alarm 배열을 주입 가능), 두 책임을 명시한다:
     ///   1. 사라진 alarmKitID -> markStopped + CharacterEvent.alarmCompleted emit
@@ -124,6 +133,49 @@ final class AlarmKitViewModel: ObservableObject {
         lastAlarmStateSnapshot = currentSnapshot
     }
     #endif
+
+    @discardableResult
+    func recoverScheduledAlarms(store: LocalAlarmStore) async -> Int {
+        #if canImport(AlarmKit)
+        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        let holidayPredicate = holidayStore.holidayPredicate()
+        let candidates = store.alarms.filter { record in
+            record.enabled && (
+                record.alarmKitUUID == nil ||
+                record.runtimeStateEnum == .failed
+            )
+        }
+        var recovered = 0
+
+        for record in candidates {
+            guard let prepared = store.prepareForScheduleRecovery(
+                id: record.id,
+                nowMillis: nowMillis,
+                isHoliday: holidayPredicate
+            ) else {
+                continue
+            }
+
+            let scheduled = await schedule(record: prepared, store: store)
+            if scheduled {
+                recovered += 1
+                if record.alarmKitUUID != nil {
+                    _ = await cancelScheduledAlarm(record: record)
+                }
+            } else {
+                store.markFailed(id: prepared.id)
+            }
+        }
+
+        if recovered > 0 {
+            statusMessage = "Recovered \(recovered) scheduled alarm(s)."
+        }
+        return recovered
+        #else
+        statusMessage = "AlarmKit is unavailable in this SDK."
+        return 0
+        #endif
+    }
 
     func scheduleOneMinuteTest(store: LocalAlarmStore) async {
         let now = Int64(Date().timeIntervalSince1970 * 1000)

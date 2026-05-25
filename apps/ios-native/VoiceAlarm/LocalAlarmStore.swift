@@ -444,16 +444,29 @@ actor LocalAlarmPersistence {
 @MainActor
 final class LocalAlarmStore: ObservableObject {
     @Published private(set) var alarms: [LocalAlarmRecord] = []
+    @Published private(set) var hasLoadedFromDisk = false
 
     private let persistence: LocalAlarmPersistence
 
-    init() {
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let storageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
-        self.persistence = LocalAlarmPersistence(storageURL: storageURL)
+    init(storageURL: URL? = nil, loadFromDisk: Bool = true) {
+        let resolvedStorageURL: URL
+        if let storageURL {
+            resolvedStorageURL = storageURL
+        } else {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            resolvedStorageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
+        }
+        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
+        guard loadFromDisk else {
+            self.hasLoadedFromDisk = true
+            return
+        }
         Task { [persistence] in
             let loaded = await persistence.load()
-            await MainActor.run { self.alarms = loaded }
+            await MainActor.run {
+                self.alarms = loaded
+                self.hasLoadedFromDisk = true
+            }
         }
     }
 
@@ -622,6 +635,47 @@ final class LocalAlarmStore: ObservableObject {
         alarms[index].state = AlarmRuntimeState.failed.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
         persist()
+    }
+
+    /// Mirrors Android boot restore preparation before AlarmKit rescheduling.
+    /// Returns nil when an expired one-shot alarm can no longer be restored.
+    func prepareForScheduleRecovery(
+        id: String,
+        nowMillis: Int64,
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) -> LocalAlarmRecord? {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return nil }
+
+        if alarms[index].fireAtMillis <= nowMillis {
+            if alarms[index].repeatDaysMask != 0,
+               let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                repeatDaysMask: alarms[index].repeatDaysMask,
+                holidayOff: alarms[index].holidayOff,
+                nowMillis: nowMillis,
+                isHoliday: isHoliday
+               ) {
+                alarms[index].fireAtMillis = nextFireAt
+                alarms[index].state = AlarmRuntimeState.armed.rawValue
+                alarms[index].enabled = true
+                alarms[index].snoozeCount = 0
+            } else {
+                alarms[index].enabled = false
+                alarms[index].state = AlarmRuntimeState.failed.rawValue
+                alarms[index].alarmKitID = nil
+                alarms[index].updatedAtMillis = nowMillis
+                persist()
+                return nil
+            }
+        } else if alarms[index].runtimeStateEnum == .failed {
+            alarms[index].state = AlarmRuntimeState.armed.rawValue
+            alarms[index].enabled = true
+        }
+
+        alarms[index].updatedAtMillis = nowMillis
+        persist()
+        return alarms[index]
     }
 
     func setEnabled(id: String, enabled: Bool) {
