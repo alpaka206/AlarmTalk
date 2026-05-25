@@ -12,8 +12,6 @@ struct SettingsView: View {
     @AppStorage(VoiceAlarmThemeMode.storageKey) private var themeModeRaw = VoiceAlarmThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
-    /// "설정 불가 시간" 편집 모달 표시 플래그.
-    @State private var quietDialogOpen: Bool = false
     @State private var themeDialogOpen: Bool = false
     @State private var weatherDialogOpen: Bool = false
     @State private var fortuneDialogOpen: Bool = false
@@ -84,41 +82,6 @@ struct SettingsView: View {
                 AlarmPermissionSection()
 
                 if let user = auth.session?.user {
-                    VStack(alignment: .leading, spacing: 0) {
-                        SettingsActionRow(
-                            label: user.allowFamilyAlarms == true ? "상대방 알람 허용" : "상대방 알람 꺼짐",
-                            icon: user.allowFamilyAlarms == true ? "bell.badge" : "bell.slash"
-                        ) {
-                            Task {
-                                await auth.updateProfile(allowFamilyAlarms: !(user.allowFamilyAlarms ?? false))
-                                await socialFeatures.refreshAll(session: auth.session)
-                            }
-                        }
-                        Divider()
-                        // Android `FamilyAlarmQuietTimeDialog` 와 동등 — 라벨 부분은 현재 값을
-                        // 그대로 보여주고, 탭 시 편집 모달을 띄운다.
-                        Button {
-                            quietDialogOpen = true
-                        } label: {
-                            HStack {
-                                Text("설정 불가 시간")
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(VoiceAlarmTheme.text)
-                                Spacer()
-                                Text(HelperFormatters.quietScheduleLabel(user.familyAlarmQuietWindows))
-                                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                                    .lineLimit(1)
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .settingsCard(title: "공유 알람")
-
                     AccountPanel(
                         nicknameDraft: $nicknameDraft,
                         user: user,
@@ -137,20 +100,6 @@ struct SettingsView: View {
         }
         .onChange(of: auth.session?.user.dynamicPromptSettings) { _, _ in
             loadPromptPreferences()
-        }
-        .sheet(isPresented: $quietDialogOpen) {
-            FamilyAlarmQuietTimeDialog(
-                initialWindows: auth.session?.user.familyAlarmQuietWindows ?? [],
-                onCancel: { quietDialogOpen = false },
-                onConfirm: { windows in
-                    quietDialogOpen = false
-                    Task {
-                        await auth.updateProfile(quietWindows: windows)
-                        await socialFeatures.refreshAll(session: auth.session)
-                    }
-                }
-            )
-            .presentationDetents([.large])
         }
         .sheet(isPresented: $themeDialogOpen) {
             ThemeModePickerSheet(
