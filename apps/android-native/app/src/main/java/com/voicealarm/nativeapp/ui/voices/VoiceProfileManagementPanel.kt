@@ -171,7 +171,6 @@ internal fun VoiceProfileManagementPanel(
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var profileName by remember { mutableStateOf("") }
-    var profileRelationship by remember { mutableStateOf("") }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
     var shareVoice by remember { mutableStateOf(false) }
@@ -187,8 +186,6 @@ internal fun VoiceProfileManagementPanel(
     var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
     var cropStartMillis by remember { mutableStateOf(0L) }
     var cropEndMillis by remember { mutableStateOf(VoiceProfileAudioLimits.MAX_DURATION_MILLIS) }
-    var fileWaveformLevels by remember { mutableStateOf<List<Float>>(emptyList()) }
-    var fileWaveformLoading by remember { mutableStateOf(false) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
     var speakerDraftStates by remember { mutableStateOf<Map<String, SpeakerDraftState>>(emptyMap()) }
     // 진행 중인 prepareSpeakerDraft 코루틴을 화자 id 별로 추적해
@@ -229,27 +226,6 @@ internal fun VoiceProfileManagementPanel(
         localMessage = voiceProfileDurationError(audio.durationMillis)
     }
 
-    fun loadSelectedFileWaveform(uri: Uri) {
-        fileWaveformLevels = emptyList()
-        fileWaveformLoading = true
-        scope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    audioStore.readWaveformLevels(uri, bins = 48)
-                }
-            }.onSuccess { levels ->
-                if (selectedFileUri == uri) {
-                    fileWaveformLevels = levels
-                }
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to read selected audio waveform", error)
-            }
-            if (selectedFileUri == uri) {
-                fileWaveformLoading = false
-            }
-        }
-    }
-
     fun prepareSelectedFile(uri: Uri) {
         stopMediaPreview()
         scope.launch {
@@ -260,18 +236,15 @@ internal fun VoiceProfileManagementPanel(
                 selectedAudio = null
                 selectedFileUri = uri
                 selectedFileDurationMillis = durationMillis
-                fileWaveformLevels = emptyList()
                 cropStartMillis = 0L
                 cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 detectedSpeakers = emptyList()
                 speakerDraftStates = emptyMap()
                 activePlayingSpeakerId = null
                 localMessage = voiceProfileFileDurationError(durationMillis)
-                loadSelectedFileWaveform(uri)
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache voice profile audio", error)
-                    fileWaveformLoading = false
                     localMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요.")
                 }
         }
@@ -344,8 +317,6 @@ internal fun VoiceProfileManagementPanel(
         stopMediaPreview()
         selectedFileUri = null
         selectedFileDurationMillis = null
-        fileWaveformLevels = emptyList()
-        fileWaveformLoading = false
         cropStartMillis = 0L
         cropEndMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS
         fileSpeakerMode = FileSpeakerMode.Single
@@ -361,7 +332,6 @@ internal fun VoiceProfileManagementPanel(
         createPreparing = false
         createSubmitAttempted = false
         profileName = ""
-        profileRelationship = ""
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
         shareVoice = false
@@ -878,7 +848,7 @@ internal fun VoiceProfileManagementPanel(
             Modifier.fillMaxSize()
         }
         val resolvedProfileName = profileName.trim()
-        val resolvedRelationship = profileRelationship.trim()
+        val resolvedRelationship = relationshipSelection.resolved
         val resolvedListener = profileListenerTitle.trim()
         val nameRequiredError = createSubmitAttempted && resolvedProfileName.isBlank()
         val relationshipRequiredError = createSubmitAttempted && resolvedRelationship.isBlank()
@@ -996,8 +966,6 @@ internal fun VoiceProfileManagementPanel(
                                             notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
-                                            waveformLevels = fileWaveformLevels,
-                                            waveformLoading = fileWaveformLoading,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },
                                             onCropChange = { start, end ->
                                                 if (start != cropStartMillis || end != cropEndMillis) {
@@ -1742,7 +1710,9 @@ private fun RelationshipDropdownField(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
             ) {
-                RelationshipPreset.entries.forEach { preset ->
+                val relationshipOptions = listOf(RelationshipPreset.Custom) +
+                    RelationshipPreset.entries.filterNot { it == RelationshipPreset.Custom }
+                relationshipOptions.forEach { preset ->
                     DropdownMenuItem(
                         text = { Text(preset.label) },
                         onClick = {
