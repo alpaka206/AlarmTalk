@@ -2032,11 +2032,6 @@ internal fun VoiceProfileRow(
                             VoiceSharedBadge()
                         }
                     }
-                    val detail = buildList {
-                        profile.relationshipLabel?.takeIf { it.isNotBlank() }?.let { add("관계 $it") }
-                        profile.listenerTitle?.takeIf { it.isNotBlank() }?.let { add("호칭 $it") }
-                    }.joinToString(" · ")
-                    if (detail.isNotBlank()) MutedText(detail)
                 }
                 when {
                     isProcessing -> VoiceProgressMessage("생성 중")
@@ -2095,13 +2090,6 @@ internal fun VoiceProfileRow(
                                 text = "목소리 공유",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
-                            )
-                            MutedText(
-                                if (canShareVoice) {
-                                    "이용권을 같이 사용하는 사람들에게 목소리를 공유해요."
-                                } else {
-                                    "이용권을 같이 사용하는 사람들과 연결하면 공유할 수 있어요."
-                                },
                             )
                         }
                         VoiceAlarmSwitch(
