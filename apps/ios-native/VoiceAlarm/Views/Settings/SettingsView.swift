@@ -79,8 +79,6 @@ struct SettingsView: View {
                 }
                 .settingsCard(title: "프로필")
 
-                AlarmPermissionSection()
-
                 if let user = auth.session?.user {
                     AccountPanel(
                         nicknameDraft: $nicknameDraft,

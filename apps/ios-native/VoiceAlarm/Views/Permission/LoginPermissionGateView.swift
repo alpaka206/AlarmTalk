@@ -15,7 +15,7 @@ import AlarmKit
 ///      .shared.recordPermission == .granted`.
 ///
 /// 둘 다 부족한 경우 사용자 입장에서 한 번에 안내받게 한다. 한쪽만 부족하면
-/// 해당 항목만 강조해 보여준다. "나중에" 누르면 본 시트가 닫히고, 본문 화면은
+/// 해당 항목만 강조해 보여준다. X를 누르면 본 시트가 닫히고, 본문 화면은
 /// 그대로 노출되되 각 기능 진입 시점에 다시 검사한다.
 ///
 /// 사용법
@@ -189,13 +189,27 @@ private struct PermissionGateSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("알람 권한을 허용해 주세요")
-                    .font(theme.typography.titleLarge)
-                    .foregroundStyle(theme.palette.onSurface)
-                Text("정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("알람 권한을 허용해 주세요")
+                        .font(theme.typography.titleLarge)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text("정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.")
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.headline)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(width: 32, height: 32)
+                        .background(theme.palette.surfaceVariant, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("닫기"))
             }
 
             PermissionItemRow(
@@ -208,12 +222,6 @@ private struct PermissionGateSheet: View {
                 granted: snapshot.microphoneGranted,
                 onTap: onRequestMicrophone
             )
-
-            Button("나중에", action: onClose)
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
         }
         .padding(18)
     }
