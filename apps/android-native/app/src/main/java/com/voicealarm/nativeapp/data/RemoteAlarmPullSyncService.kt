@@ -77,7 +77,9 @@ internal class RemoteAlarmPullSyncService(
                     SocialNotificationFactory.notifyReceivedAlarm(
                         context = context,
                         alarmId = local.id,
-                        senderName = remote.senderName ?: remote.senderEmail,
+                        senderName = remote.senderName
+                            ?.takeIf { it.isNotBlank() }
+                            ?: remote.senderEmail,
                         time = "%02d:%02d".format(local.hour, local.minute),
                     )
                     imported += 1
@@ -145,10 +147,7 @@ internal class RemoteAlarmPullSyncService(
             remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_VOICE
         }
-        val label = remote.messageText
-            ?.takeIf { it.isNotBlank() }
-            ?: remote.senderName?.takeIf { it.isNotBlank() }?.let { "$it 알람" }
-            ?: "상대가 맞춰준 알람"
+        val label = receivedRemoteAlarmLabel(remote.senderName, remote.senderEmail)
 
         return AlarmEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),

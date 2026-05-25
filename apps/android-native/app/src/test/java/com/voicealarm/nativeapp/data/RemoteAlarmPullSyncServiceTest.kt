@@ -1,6 +1,7 @@
 package com.voicealarm.nativeapp.data
 
 import com.voicealarm.nativeapp.network.RemoteAlarm
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -58,6 +59,26 @@ class RemoteAlarmPullSyncServiceTest {
         val remote = RemoteAlarm(id = "remote-id", mode = "tts", messageId = " ")
 
         assertFalse(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원"))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelDoesNotDuplicateHonorific() {
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원님"))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelFallsBackWhenSenderIsMissing() {
+        assertEquals("상대가 보낸 알람", receivedRemoteAlarmLabel(" "))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelUsesFallbackSenderWhenPrimaryIsBlank() {
+        assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(" ", "sender@example.com"))
     }
 
     private fun alarm(
