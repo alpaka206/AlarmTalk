@@ -3,14 +3,12 @@ import SwiftUI
 /// 알람 리스트의 한 줄.
 ///
 /// ContentView 의 `alarmRow(_:)` 헬퍼를 옮긴 것. 본문은 알람 편집 진입,
-/// 우측 메뉴는 서버 push/cancel 등을 노출한다. 모든 부수효과는 부모(AlarmsListView)에
-/// 위임해 본 컴포넌트는 순수 표시 + 콜백 호출만 책임진다.
+/// 토글과 삭제 액션은 부모(AlarmsListView)에 위임해 본 컴포넌트는 순수 표시 +
+/// 콜백 호출만 책임진다.
 struct AlarmRow: View {
     let alarm: LocalAlarmRecord
     let onTap: () -> Void
-    let onEdit: () -> Void
     let onToggleEnabled: (Bool) -> Void
-    let onPushRemote: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -24,10 +22,6 @@ struct AlarmRow: View {
                         Text(alarm.label)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(alarm.enabled ? VoiceAlarmTheme.text : VoiceAlarmTheme.textSecondary)
-                        Text(HelperFormatters.alarmDetail(alarm))
-                            .font(.caption)
-                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                            .lineLimit(2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -44,8 +38,6 @@ struct AlarmRow: View {
                 .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
 
                 Menu {
-                    Button("수정", action: onEdit)
-                    Button("서버에 저장", action: onPushRemote)
                     Button("삭제", role: .destructive, action: onDelete)
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -134,7 +126,7 @@ private extension LocalAlarmRecord {
 #Preview("AlarmRow (light)") {
     AlarmRow(
         alarm: .previewSample,
-        onTap: {}, onEdit: {}, onToggleEnabled: { _ in }, onPushRemote: {}, onDelete: {}
+        onTap: {}, onToggleEnabled: { _ in }, onDelete: {}
     )
     .padding()
 }
@@ -142,7 +134,7 @@ private extension LocalAlarmRecord {
 #Preview("AlarmRow (dark)") {
     AlarmRow(
         alarm: .previewSample,
-        onTap: {}, onEdit: {}, onToggleEnabled: { _ in }, onPushRemote: {}, onDelete: {}
+        onTap: {}, onToggleEnabled: { _ in }, onDelete: {}
     )
     .padding()
     .preferredColorScheme(.dark)

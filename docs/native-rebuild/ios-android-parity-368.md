@@ -106,6 +106,10 @@
   the same "register after current pass" guidance, shared members confirm
   leaving the current pass before entering a new code, and registration uses an
   X-dismiss confirmation sheet.
+- iOS alarm list now hides the developer-facing server sync card and removes
+  row-level local/server/audio detail text and manual "server save" action so
+  the user-facing list matches Android's simple time/label/toggle/warning
+  structure.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

@@ -18,9 +18,11 @@ struct EmptyStatePlaceholder: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.text)
-            Text(subtitle)
-                .font(.footnote)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

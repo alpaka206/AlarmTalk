@@ -78,13 +78,4 @@ enum HelperFormatters {
         return "\(days) \(first.start)-\(first.end)"
     }
 
-    /// 알람 한 줄 요약. 반복요일/재생모드/스누즈/오디오캐시/서버동기화 상태를 합친다.
-    static func alarmDetail(_ alarm: LocalAlarmRecord) -> String {
-        let repeatLabel = alarm.repeatWeekdays.isEmpty
-            ? "한 번"
-            : alarm.repeatWeekdays.sorted().map(weekdayLabel).joined(separator: " ")
-        let remoteLabel = alarm.remoteAlarmId == nil ? "서버 미저장" : "서버 저장됨"
-        let audioLabel = alarm.localAudioUri == nil ? "로컬 음성 없음" : "로컬 음성 캐시"
-        return "\(repeatLabel) · \(alarm.playModeEnum.label) · 다시 알림 \(alarm.snoozeMinutes)분 · \(audioLabel) · \(remoteLabel)"
-    }
 }
