@@ -325,10 +325,10 @@ internal fun MainViewModel.renameVoiceProfile(
                     it
                 }
             }
-            message = "목소리 정보를 수정했어요"
+            message = "정보를 수정했어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
-            message = userFacingError(error, "목소리 정보 수정에 실패했어요")
+            message = userFacingError(error, "정보 수정에 실패했어요")
         }
         voiceProfileBusy = false
     }
@@ -458,10 +458,12 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
             message = "목소리를 삭제했어요"
+            refreshNotesSilently()
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
                 message = "이미 삭제된 목소리예요"
+                refreshNotesSilently()
             } else {
                 if (originalProfile != null) {
                     voiceProfiles = voiceProfiles.map {
