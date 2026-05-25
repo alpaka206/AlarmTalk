@@ -825,9 +825,16 @@ struct AlarmEditorSheet: View {
     private func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
         localPreviewPlayer.stop()
         if mode == .file {
-            localRecorder.stop()
+            localRecorder.clearLatest()
+        } else {
+            selectedLocalAudioURL = nil
+            selectedLocalAudioName = nil
+            selectedLocalAudioDurationMs = nil
+            localAudioCropStartMs = 0
+            localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
         }
         localAudioMode = mode
+        clearExistingLocalAudio = true
         localAudioMessage = nil
     }
 
@@ -836,11 +843,13 @@ struct AlarmEditorSheet: View {
         if localRecorder.isRecording {
             localRecorder.stop()
             localAudioMessage = "녹음을 저장했어요."
+            clearExistingLocalAudio = false
             return
         }
         selectedLocalAudioURL = nil
         selectedLocalAudioName = nil
         selectedLocalAudioDurationMs = nil
+        localRecorder.clearLatest()
         clearExistingLocalAudio = false
         localAudioCropStartMs = 0
         localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
@@ -895,7 +904,7 @@ struct AlarmEditorSheet: View {
 
     private func clearLocalAlarmAudio() {
         localPreviewPlayer.stop()
-        localRecorder.stop()
+        localRecorder.clearLatest()
         selectedLocalAudioURL = nil
         selectedLocalAudioName = nil
         selectedLocalAudioDurationMs = nil
