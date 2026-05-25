@@ -39,7 +39,7 @@ struct VoiceProfileManagementPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ScreenHeader(title: "음성", subtitle: nil)
+            ScreenHeader(title: "목소리", subtitle: nil)
             slotStatusCard
             addActionsRow
             if let message = voice.statusMessage {

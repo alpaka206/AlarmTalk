@@ -117,6 +117,8 @@
   profile opens code/character/billing/shared-pass/settings actions, while
   quick-start stays focused on `목소리`, `새 알람`, and `상대 알람 맞춰주기`
   with lock badges for unavailable voice/alarm capabilities.
+- iOS bottom navigation and voice-tab header now use Android's visible
+  `목소리` wording.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores

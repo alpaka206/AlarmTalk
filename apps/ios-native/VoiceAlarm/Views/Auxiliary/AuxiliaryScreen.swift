@@ -67,7 +67,7 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .home: return "홈"
-        case .voices: return "음성"
+        case .voices: return "목소리"
         case .alarms: return "알람"
         case .messages: return "메시지"
         }
