@@ -33,6 +33,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceFortuneGender: String?
     var voiceFortuneBirthDate: String?
     var voiceFortuneBirthTime: String?
+    var dynamicVoicePreparedForFireAtMillis: Int64?
     var voiceRepeat: Bool
     var voiceVolumePercent: Int     // 0..100
     var ttsMessageId: String?
@@ -92,7 +93,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
     // MARK: Defaults / Designated init
 
-    /// 풀 33필드 designated init. 누락된 필드는 default 사용.
+    /// Android `AlarmEntity` 와 맞춘 designated init. 누락된 필드는 default 사용.
     init(
         id: String = UUID().uuidString,
         label: String,
@@ -123,6 +124,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         voiceFortuneGender: String? = nil,
         voiceFortuneBirthDate: String? = nil,
         voiceFortuneBirthTime: String? = nil,
+        dynamicVoicePreparedForFireAtMillis: Int64? = nil,
         voiceRepeat: Bool = true,
         voiceVolumePercent: Int = 100,
         ttsMessageId: String? = nil,
@@ -168,6 +170,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceFortuneGender = voiceFortuneGender
         self.voiceFortuneBirthDate = voiceFortuneBirthDate
         self.voiceFortuneBirthTime = voiceFortuneBirthTime
+        self.dynamicVoicePreparedForFireAtMillis = dynamicVoicePreparedForFireAtMillis
         self.voiceRepeat = voiceRepeat
         self.voiceVolumePercent = voiceVolumePercent
         self.ttsMessageId = ttsMessageId
@@ -215,6 +218,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case voiceFortuneGender
         case voiceFortuneBirthDate
         case voiceFortuneBirthTime
+        case dynamicVoicePreparedForFireAtMillis
         case voiceRepeat
         case voiceVolumePercent
         case ttsMessageId
@@ -313,6 +317,10 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceFortuneGender = try c.decodeIfPresent(String.self, forKey: .voiceFortuneGender)
         self.voiceFortuneBirthDate = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthDate)
         self.voiceFortuneBirthTime = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthTime)
+        self.dynamicVoicePreparedForFireAtMillis = try c.decodeIfPresent(
+            Int64.self,
+            forKey: .dynamicVoicePreparedForFireAtMillis
+        )
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
         self.voiceVolumePercent = try c.decodeIfPresent(Int.self, forKey: .voiceVolumePercent) ?? 100
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)

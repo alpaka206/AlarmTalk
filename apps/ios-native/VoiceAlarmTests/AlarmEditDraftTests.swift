@@ -103,6 +103,7 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(record.voiceWeatherCountry, "대한민국")
         XCTAssertEqual(record.voiceWeatherCity, "서울")
         XCTAssertNil(record.voiceFortuneGender)
+        XCTAssertNil(record.dynamicVoicePreparedForFireAtMillis)
 
         let restored = AlarmEditDraft(from: record)
         XCTAssertTrue(restored.voiceRandomPrompt)
@@ -131,6 +132,7 @@ final class AlarmEditDraftTests: XCTestCase {
             voiceRandomContext: RandomPromptContext.wakeWeather.rawValue,
             voiceWeatherCountry: "대한민국",
             voiceWeatherCity: "서울",
+            dynamicVoicePreparedForFireAtMillis: now + 60_000,
             voiceRepeat: false,
             voiceVolumePercent: 70,
             ttsMessageId: "msg-1",
@@ -155,6 +157,7 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertNil(record.voiceRandomContext)
         XCTAssertNil(record.voiceWeatherCountry)
         XCTAssertNil(record.voiceWeatherCity)
+        XCTAssertNil(record.dynamicVoicePreparedForFireAtMillis)
         XCTAssertTrue(record.voiceRepeat)
         XCTAssertEqual(record.voiceVolumePercent, 100)
         XCTAssertNil(record.ttsMessageId)

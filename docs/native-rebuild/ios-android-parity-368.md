@@ -219,6 +219,11 @@
   alarm recalculates the next fire time, clears the snooze count and stale
   AlarmKit ID before rescheduling, while disabling clears the scheduled
   AlarmKit ID and marks remote-backed alarms dirty for push sync.
+- iOS local alarm records now include Android's
+  `dynamicVoicePreparedForFireAtMillis` field, and newly generated random
+  voice alarms mark the generated audio as prepared for the saved fire time.
+  The remaining gap is the Android-style periodic refresh worker for future
+  repeat occurrences.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

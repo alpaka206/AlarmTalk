@@ -4,7 +4,7 @@ import Foundation
 //
 // Android 의 `RemoteAlarmMapper.kt` 를 1:1 포팅한다.
 // 두 가지 방향을 모두 다룬다.
-//   1. `RemoteAlarm` (서버 응답) -> `LocalAlarmRecord` (로컬 33필드 모델)
+//   1. `RemoteAlarm` (서버 응답) -> `LocalAlarmRecord` (Android-aligned 로컬 모델)
 //   2. `LocalAlarmRecord` -> `RemoteAlarmWriteRequest` (서버 push 본문)
 //
 // 매핑 규약은 Android 와 동일하게 유지한다.
@@ -21,7 +21,7 @@ enum RemoteAlarmMapper {
 
     // MARK: To local
 
-    /// 서버 알람 응답을 로컬 33필드 레코드로 변환한다.
+    /// 서버 알람 응답을 로컬 알람 레코드로 변환한다.
     ///
     /// 동기화 흐름에서 호출되며, 신규 import 시 기본값을 채워 줄 책임을 진다.
     /// (existing 레코드와의 머지는 `RemoteAlarmPullSync` 가 담당하므로
@@ -82,6 +82,7 @@ enum RemoteAlarmMapper {
             voiceCategory: remote.category,
             voiceLanguage: nil,
             voiceRandomPrompt: false,
+            dynamicVoicePreparedForFireAtMillis: nil,
             voiceRepeat: true,
             voiceVolumePercent: 100,
             ttsMessageId: remote.messageId,

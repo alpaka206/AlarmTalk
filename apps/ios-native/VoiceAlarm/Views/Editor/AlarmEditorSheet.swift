@@ -738,6 +738,7 @@ struct AlarmEditorSheet: View {
             merged.voiceFortuneGender = nil
             merged.voiceFortuneBirthDate = nil
             merged.voiceFortuneBirthTime = nil
+            merged.dynamicVoicePreparedForFireAtMillis = nil
             merged.ttsMessageId = nil
         } else if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.serverTts.rawValue
@@ -748,6 +749,7 @@ struct AlarmEditorSheet: View {
             merged.voiceText = prepared.text
             merged.voiceCategory = voiceStudio.randomPrompt ? activePromptContext.ttsCategory : "custom"
             merged.voiceLanguage = prepared.language
+            merged.dynamicVoicePreparedForFireAtMillis = voiceStudio.randomPrompt ? merged.fireAtMillis : nil
             merged.ttsMessageId = prepared.messageID
         }
 

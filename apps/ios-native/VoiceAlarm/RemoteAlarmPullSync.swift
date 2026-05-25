@@ -228,6 +228,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         copy.voiceFortuneGender = nil
         copy.voiceFortuneBirthDate = nil
         copy.voiceFortuneBirthTime = nil
+        copy.dynamicVoicePreparedForFireAtMillis = nil
         copy.ttsMessageId = nil
         return copy
     }

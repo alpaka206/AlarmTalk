@@ -4,7 +4,7 @@ import XCTest
 /// `LocalAlarmRecord` 의 Codable 라운드트립 + legacy 17필드 JSON 호환.
 final class LocalAlarmRecordCodableTests: XCTestCase {
 
-    func test_full33FieldRoundTrip() throws {
+    func test_fullFieldRoundTrip() throws {
         let original = LocalAlarmRecord(
             id: "11111111-1111-1111-1111-111111111111",
             label: "Morning",
@@ -33,6 +33,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             voiceFortuneGender: "여성",
             voiceFortuneBirthDate: "1990-01-01",
             voiceFortuneBirthTime: "07:30",
+            dynamicVoicePreparedForFireAtMillis: 1_700_000_000_000,
             voiceRepeat: false,
             voiceVolumePercent: 72,
             ttsMessageId: "msg-1",
@@ -84,6 +85,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertNil(decoded.localAudioUri)
         XCTAssertEqual(decoded.voiceSource, VoiceSource.ttsProfile.rawValue)
         XCTAssertFalse(decoded.voiceRandomPrompt)
+        XCTAssertNil(decoded.dynamicVoicePreparedForFireAtMillis)
         XCTAssertTrue(decoded.voiceRepeat)
         XCTAssertEqual(decoded.voiceVolumePercent, 100)
         XCTAssertNil(decoded.remoteAlarmId)

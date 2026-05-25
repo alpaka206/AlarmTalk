@@ -216,6 +216,9 @@ struct AlarmEditDraft: Equatable {
             voiceFortuneGender: storesFortune ? nonEmpty(voiceFortuneGender) : nil,
             voiceFortuneBirthDate: storesFortune ? nonEmpty(voiceFortuneBirthDate) : nil,
             voiceFortuneBirthTime: storesFortune ? nonEmpty(voiceFortuneBirthTime) : nil,
+            dynamicVoicePreparedForFireAtMillis: !alarmOnly && voiceRandomPrompt
+                ? existing?.dynamicVoicePreparedForFireAtMillis
+                : nil,
             voiceRepeat: alarmOnly ? true : voiceRepeat,
             voiceVolumePercent: alarmOnly ? 100 : max(0, min(100, voiceVolumePercent)),
             ttsMessageId: alarmOnly ? nil : existing?.ttsMessageId,
