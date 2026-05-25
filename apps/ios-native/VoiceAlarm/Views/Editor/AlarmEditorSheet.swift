@@ -922,7 +922,7 @@ private struct AlarmVoiceProfilePicker: View {
                         name: profile.name,
                         detail: profile.sharedFromLabel,
                         selected: profile.id == selectedProfileID,
-                        badge: profile.requiresViewerInfo ? "설정 필요" : nil,
+                        badge: nil,
                         action: { onSelectShared(profile) }
                     )
                 }
@@ -996,7 +996,7 @@ private struct SharedVoiceSelectionSetupSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("목소리 설정")
+                    Text("공유받은 목소리 설정")
                         .font(.title3.weight(.bold))
                     Text("알람에서 이 목소리가 나를 어떻게 부를지 정해요.")
                         .font(.subheadline)

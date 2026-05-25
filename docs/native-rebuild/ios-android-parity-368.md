@@ -14,7 +14,7 @@
 | Auth | Email, Google login, session restore, profile update/delete, latest state gating | Apple + email login, Keychain restore, profile update/delete | Google is Android-only; iOS should keep Apple as platform equivalent. Need copy/status parity review. |
 | Permissions | Exact alarm, notification, full-screen intent, battery guidance | AlarmKit + microphone gate | Platform-specific parity acceptable. Need final AlarmKit physical-device proof. |
 | Alarm list | Local + remote alarms, sender labels, disabled/deleted voice handling | Local store + AlarmKit + remote sync | Need latest Android display copy and received-alarm metadata parity audit. |
-| Alarm editor | Time wheel, repeat, holiday, snooze, vibration, play mode, voice picker, random prompt weather/fortune, shared voice setup preview | Time wheel, repeat, holiday, snooze, vibration, play mode, prepared voice flow, basic random prompt | Missing Android-level random prompt settings panes, weather/fortune inputs, shared voice selection/setup preview. |
+| Alarm editor | Time wheel, repeat, holiday, snooze, vibration, play mode, voice picker, random prompt weather/fortune, shared voice setup preview | Time wheel, repeat, holiday, snooze, vibration, play mode, voice picker, weather/fortune inputs, shared voice setup preview | Need macOS visual QA and physical-device save/schedule pass. |
 | Alarm ring | AlarmManager full-screen service, local audio, volume ramp, snooze/dismiss, XP event | AlarmKit schedule, local sound staging, in-app voice fallback, App Intents | iOS AlarmKit limitations need device proof; volume-ramp parity is limited by AlarmKit/system sound behavior. |
 | Voice creation | Record/upload, crop, speaker separation, clone, relationship/listener, slots, delete cascade | Voice recorder/upload/speaker separation/clone/profile management | Need latest Android shared voice card/modal copy/design and preview parity. |
 | Shared voices | Family shared voices, viewer relationship/listener, no relation on card, preview before selection | Family voices, viewer info update, simplified card copy, setup CTA, preview | Need macOS visual QA and final alarm-selection device pass. |
@@ -77,6 +77,10 @@
   `requiresViewerInfo`, keep relationship/listener hidden on the shared voice
   card, show the same setup CTA, and expose the shared voice setup/preview flow
   from both the voice tab and alarm editor selection path.
+- iOS alarm-editor shared voice rows now match Android's simplified copy:
+  shared voices show only the voice name plus "`owner`님에게 공유받은 목소리",
+  while missing viewer info is handled by opening the setup sheet on selection
+  instead of showing a separate "설정 필요" badge.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows
