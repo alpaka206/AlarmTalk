@@ -62,6 +62,9 @@
   alarms are moved to the next valid fire time before rescheduling; expired
   one-shot alarms are disabled and marked failed, matching Android boot-restore
   semantics.
+- iOS onboarding completion now mirrors Android's user-scoped storage: each
+  signed-in user has an independent completion marker, with a one-time migration
+  from the old global `onboarding_completed_v1` flag for the first migrated user.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
