@@ -181,6 +181,7 @@ internal class RemoteAlarmPullSyncService(
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = existing?.voiceRepeat ?: true,
+            voiceVolumePercent = existing?.voiceVolumePercent ?: 100,
             ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,

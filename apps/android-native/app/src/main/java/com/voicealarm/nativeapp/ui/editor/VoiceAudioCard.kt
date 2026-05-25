@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -309,6 +310,10 @@ internal fun VoiceAudioCard(
                     },
                 )
             }
+            VoiceVolumeSelector(
+                volumePercent = editor.voiceVolumePercent,
+                onVolumeChange = { editor.voiceVolumePercent = it },
+            )
             if (audioMessage != null) {
                 Text(
                     text = audioMessage,
@@ -605,6 +610,34 @@ private fun VoiceRepeatChoice(
             },
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun VoiceVolumeSelector(
+    volumePercent: Int,
+    onVolumeChange: (Int) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("목소리 크기", fontWeight = FontWeight.SemiBold)
+            Text(
+                text = "${volumePercent.coerceIn(MinVoiceVolumePercent, 100)}%",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Slider(
+            value = volumePercent.coerceIn(MinVoiceVolumePercent, 100).toFloat(),
+            onValueChange = { onVolumeChange(it.toInt().coerceIn(MinVoiceVolumePercent, 100)) },
+            valueRange = MinVoiceVolumePercent.toFloat()..100f,
+            steps = 6,
         )
     }
 }

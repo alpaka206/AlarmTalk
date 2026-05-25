@@ -278,6 +278,8 @@ internal fun AlarmEditorScreen(
                     fun startFromPreparedPosition() {
                         if (mediaPlayer !== preparedPlayer) return
                         previewPreparing = false
+                        val previewVolume = editor.voiceVolumePercent.coerceIn(0, 100) / 100f
+                        preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()
                         scheduleAutoStop()
                     }

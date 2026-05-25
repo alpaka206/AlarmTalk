@@ -117,6 +117,7 @@ class RemoteAlarmPullSyncServiceTest {
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
+            voiceVolumePercent = 100,
             ttsMessageId = null,
             remoteAlarmId = "remote-id",
             lastSyncedAtMillis = 1_000L,

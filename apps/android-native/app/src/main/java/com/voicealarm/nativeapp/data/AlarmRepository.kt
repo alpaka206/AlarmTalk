@@ -81,6 +81,7 @@ class AlarmRepository(
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
+            voiceVolumePercent = 100,
             ttsMessageId = null,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -148,6 +149,7 @@ class AlarmRepository(
             dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
                 ?: fireAtMillis.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
+            voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
@@ -216,6 +218,7 @@ class AlarmRepository(
             dynamicVoicePreparedForFireAtMillis = draft.dynamicVoicePreparedForFireAtMillis
                 ?: nextFireAt.takeIf { draft.voiceRandomPrompt && !draft.localAudioUri.isNullOrBlank() },
             voiceRepeat = draft.voiceRepeat,
+            voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
@@ -576,6 +579,7 @@ class AlarmRepository(
         require(draft.snoozeMinutes in 1..30) { "Snooze must be between 1 and 30 minutes." }
         require(draft.snoozeRepeatLimit in SnoozeRepeatLimits.all) { "Unknown snooze repeat limit." }
         require(draft.alarmVolumePercent in 0..100) { "Alarm volume must be between 0 and 100." }
+        require(draft.voiceVolumePercent in 0..100) { "Voice volume must be between 0 and 100." }
         require(draft.vibrationPattern in VibrationPatterns.all) { "Unknown vibration pattern." }
         require(draft.playMode in AlarmPlayModes.all) { "Unknown play mode." }
         require(draft.voiceSource in VoiceSources.all) { "Unknown voice source." }
