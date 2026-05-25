@@ -121,6 +121,9 @@
   `목소리` wording.
 - iOS settings sheet now uses the same X-style modal dismissal affordance as
   the other iOS modal surfaces.
+- iOS settings now mirrors Android's settings scope: screen mode, random
+  prompt info, account, and delete account stay in Settings, while code,
+  character, billing, and shared-pass navigation live only in the profile menu.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.

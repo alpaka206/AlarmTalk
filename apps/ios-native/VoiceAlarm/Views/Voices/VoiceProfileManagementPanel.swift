@@ -120,8 +120,7 @@ struct VoiceProfileManagementPanel: View {
                     planGateOpen = false
                     // Phase 4-D1: 부모(MainTabsView)가 .billing auxiliary 시트를
                     // 띄우도록 콜백 호출. 시트 충돌을 피하려 PlanGate 시트를 먼저
-                    // 닫고, 부모가 onDismiss → pendingAuxiliary → auxiliaryScreen
-                    // 흐름으로 빌링 시트를 chain.
+                    // 닫고, 부모가 짧은 지연 뒤 빌링 시트를 연다.
                     onRequestBilling?()
                 },
                 onClose: { planGateOpen = false }

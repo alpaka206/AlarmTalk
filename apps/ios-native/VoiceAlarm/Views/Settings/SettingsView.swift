@@ -2,13 +2,10 @@ import SwiftUI
 
 /// 프로필 버튼에서 띄우는 설정 시트.
 ///
-/// ContentView 의 `settingsSheet` 를 옮긴 것. 보조 화면(가족코드/캐릭터/이용권)
-/// 진입은 부모(MainTabsView)에 콜백으로 위임한다. 기존의
-/// `DispatchQueue.main.asyncAfter(deadline: .now() + 0.25)` 우회는 제거하고,
-/// MainTabsView 가 `.sheet(item:).onDismiss` 패턴으로 처리한다.
+/// Android 설정 화면과 동일하게 화면/랜덤 문구/계정 편집만 다룬다.
+/// 코드/캐릭터/이용권/공유 이용권 진입은 MainTabsView 의 프로필 메뉴가 맡는다.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @AppStorage(VoiceAlarmThemeMode.storageKey) private var themeModeRaw = VoiceAlarmThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
@@ -17,9 +14,6 @@ struct SettingsView: View {
     @State private var fortuneDialogOpen: Bool = false
     @State private var promptPreferences: DynamicPromptPreferences = .loadFromDefaults()
 
-    /// 보조 화면 요청 — 부모가 settingsPresented 를 false 로 만들고,
-    /// 시트 dismiss 후 auxiliaryScreen 을 세팅한다.
-    let onRequestAuxiliary: (AuxiliaryScreen) -> Void
     /// 사용자가 시트를 닫고 싶을 때(상단 X) 호출.
     let onClose: () -> Void
 
@@ -68,21 +62,6 @@ struct SettingsView: View {
                     )
                 }
                 .settingsCard(title: "랜덤 문구 정보")
-
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsActionRow(label: sharedPassMenuLabel, icon: sharedPassMenuIcon) {
-                        onRequestAuxiliary(sharedPassMenuTarget)
-                    }
-                    Divider()
-                    SettingsActionRow(label: "캐릭터", icon: "chart.line.uptrend.xyaxis") {
-                        onRequestAuxiliary(.growth)
-                    }
-                    Divider()
-                    SettingsActionRow(label: "이용권", icon: "creditcard") {
-                        onRequestAuxiliary(.billing)
-                    }
-                }
-                .settingsCard(title: "프로필")
 
                 if let user = auth.session?.user {
                     AccountPanel(
@@ -148,18 +127,6 @@ struct SettingsView: View {
 
     private var currentThemeMode: VoiceAlarmThemeMode {
         VoiceAlarmThemeMode.normalized(themeModeRaw)
-    }
-
-    private var sharedPassMenuTarget: AuxiliaryScreen {
-        socialFeatures.familyGroup?.group == nil ? .people : .members
-    }
-
-    private var sharedPassMenuLabel: String {
-        sharedPassMenuTarget == .members ? "공유 이용권" : "초대 코드 등록"
-    }
-
-    private var sharedPassMenuIcon: String {
-        sharedPassMenuTarget == .members ? "person.2" : "qrcode"
     }
 
     private var weatherLocationLabel: String {
@@ -450,7 +417,6 @@ private struct SettingsTextField: View {
 #Preview("SettingsView (light)") {
     NavigationStack {
         SettingsView(
-            onRequestAuxiliary: { _ in },
             onClose: {}
         )
     }
@@ -460,7 +426,6 @@ private struct SettingsTextField: View {
 #Preview("SettingsView (dark)") {
     NavigationStack {
         SettingsView(
-            onRequestAuxiliary: { _ in },
             onClose: {}
         )
     }
