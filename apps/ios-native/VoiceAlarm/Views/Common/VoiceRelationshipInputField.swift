@@ -93,7 +93,6 @@ struct VoiceRelationshipInputField: View {
     }
 
     @ViewBuilder
-    @ViewBuilder
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(required ? "\(title) (필수)" : title)
