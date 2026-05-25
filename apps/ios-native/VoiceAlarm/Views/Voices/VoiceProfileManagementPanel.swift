@@ -22,6 +22,8 @@ struct VoiceProfileManagementPanel: View {
     /// 프로필 편집 다이얼로그 입력값.
     @State private var editTarget: VoiceProfile?
     @State private var editName: String = ""
+    @State private var editRelationship: String = ""
+    @State private var editListenerTitle: String = ""
     @State private var editIsShared: Bool = false
 
     /// 삭제 확인 다이얼로그 입력값. force 토글 포함.
@@ -62,12 +64,22 @@ struct VoiceProfileManagementPanel: View {
         .sheet(item: $editTarget) { profile in
             VoiceProfileEditDialog(
                 initialName: editName,
+                initialRelationship: editRelationship,
+                initialListenerTitle: editListenerTitle,
                 initialIsShared: editIsShared,
                 onCancel: { editTarget = nil },
-                onSave: { newName, newShared in
+                onSave: { newName, newRelationship, newListenerTitle, newShared in
                     Task {
-                        if newName != profile.name {
-                            await voice.renameProfile(profile, newName: newName, session: auth.session)
+                        if newName != profile.name ||
+                            newRelationship != (profile.relationshipLabel ?? "") ||
+                            newListenerTitle != (profile.listenerTitle ?? "") {
+                            await voice.updateProfileInfo(
+                                profile,
+                                newName: newName,
+                                relationshipLabel: newRelationship,
+                                listenerTitle: newListenerTitle,
+                                session: auth.session
+                            )
                         }
                         if newShared != (profile.isShared ?? false) {
                             await voice.toggleShare(profile, isShared: newShared, session: auth.session)
@@ -76,7 +88,7 @@ struct VoiceProfileManagementPanel: View {
                     }
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
         }
         .sheet(item: $deleteTarget) { profile in
             VoiceProfileDeleteDialog(
@@ -235,6 +247,8 @@ struct VoiceProfileManagementPanel: View {
                     onSelect: { voice.selectedProfileID = profile.id },
                     onEdit: {
                         editName = profile.name
+                        editRelationship = profile.relationshipLabel ?? ""
+                        editListenerTitle = profile.listenerTitle ?? ""
                         editIsShared = profile.isShared ?? false
                         editTarget = profile
                     },
@@ -498,17 +512,43 @@ private struct FamilyVoiceProfileRow: View {
 /// 프로필 이름 + 공유 토글 동시 편집 다이얼로그.
 private struct VoiceProfileEditDialog: View {
     let initialName: String
+    let initialRelationship: String
+    let initialListenerTitle: String
     let initialIsShared: Bool
     let onCancel: () -> Void
-    let onSave: (String, Bool) -> Void
+    let onSave: (String, String, String, Bool) -> Void
 
     @State private var name: String = ""
+    @State private var relationship: String = ""
+    @State private var listenerTitle: String = ""
     @State private var isShared: Bool = false
+    @State private var submitted = false
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedRelationship: String {
+        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedListenerTitle: String {
+        listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("보이스 정보 편집")
-                .font(.title3.weight(.bold))
+            HStack(alignment: .top) {
+                Text("정보 수정")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("닫기"))
+            }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("이름")
@@ -516,34 +556,82 @@ private struct VoiceProfileEditDialog: View {
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 TextField("보이스 이름", text: $name)
                     .textFieldStyle(.roundedBorder)
+                    .onChange(of: name) { _, newValue in
+                        if newValue.count > 50 {
+                            name = String(newValue.prefix(50))
+                        }
+                    }
+                if submitted && trimmedName.isEmpty {
+                    Text("목소리 이름을 입력해 주세요.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("나와의 관계")
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("예: 손주, 자식, 형제", text: $relationship)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: relationship) { _, newValue in
+                        if newValue.count > 30 {
+                            relationship = String(newValue.prefix(30))
+                        }
+                    }
+                if submitted && trimmedRelationship.isEmpty {
+                    Text("나와의 관계를 입력해 주세요.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("이 목소리가 나를 부를 호칭")
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("예: 지호야, 여보", text: $listenerTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: listenerTitle) { _, newValue in
+                        if newValue.count > 30 {
+                            listenerTitle = String(newValue.prefix(30))
+                        }
+                    }
+                if submitted && trimmedListenerTitle.isEmpty {
+                    Text("이 목소리가 나를 부를 이름을 입력해 주세요.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
             }
 
             Toggle(isOn: $isShared) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("공유 허용").font(.subheadline.weight(.semibold))
-                    Text(isShared ? "가족·커플이 이 보이스를 선택할 수 있어요" : "내 계정에서만 사용해요")
+                    Text("목소리 공유").font(.subheadline.weight(.semibold))
+                    Text(isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요.")
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
             }
 
-            HStack {
-                Button("취소", action: onCancel)
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                Button("저장") {
-                    onSave(name.trimmingCharacters(in: .whitespacesAndNewlines), isShared)
+            Button("저장") {
+                submitted = true
+                guard !trimmedName.isEmpty,
+                      !trimmedRelationship.isEmpty,
+                      !trimmedListenerTitle.isEmpty else {
+                    return
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(VoiceAlarmTheme.primary)
-                .frame(maxWidth: .infinity)
-                .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                onSave(trimmedName, trimmedRelationship, trimmedListenerTitle, isShared)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(VoiceAlarmTheme.primary)
+            .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
         }
         .padding(20)
         .onAppear {
             name = initialName
+            relationship = initialRelationship
+            listenerTitle = initialListenerTitle
             isShared = initialIsShared
         }
     }

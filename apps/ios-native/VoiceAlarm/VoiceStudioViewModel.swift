@@ -600,20 +600,43 @@ final class VoiceStudioViewModel: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// 프로필 이름 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.
-    func renameProfile(_ profile: VoiceProfile, newName: String, session: AuthSession?) async {
+    /// 프로필 정보 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.
+    func updateProfileInfo(
+        _ profile: VoiceProfile,
+        newName: String,
+        relationshipLabel: String,
+        listenerTitle: String,
+        session: AuthSession?
+    ) async {
         guard let token = session?.token else { return }
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedRelationship = relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusMessage = "이름을 비울 수 없어요."
+            return
+        }
+        guard !trimmedRelationship.isEmpty else {
+            statusMessage = "나와의 관계를 입력해 주세요."
+            return
+        }
+        guard !trimmedListener.isEmpty else {
+            statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
             return
         }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            _ = try await api.updateVoiceProfile(id: profile.id, name: trimmed, isShared: nil, token: token)
-            statusMessage = "이름을 변경했어요."
+            _ = try await api.updateVoiceProfile(
+                id: profile.id,
+                name: trimmed,
+                isShared: nil,
+                relationshipLabel: trimmedRelationship,
+                listenerTitle: trimmedListener,
+                token: token
+            )
+            statusMessage = "정보를 수정했어요."
             await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
