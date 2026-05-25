@@ -34,7 +34,10 @@ struct AlarmEditDraft: Equatable {
 
     // MARK: - 신규 생성 default
 
-    static func newDefault(referenceDate: Date = Date()) -> AlarmEditDraft {
+    static func newDefault(
+        referenceDate: Date = Date(),
+        defaultPlayMode: AlarmPlayMode = .alarmOnly
+    ) -> AlarmEditDraft {
         let cal = Calendar.current
         let target = referenceDate.addingTimeInterval(5 * 60)
         let comps = cal.dateComponents([.hour, .minute], from: target)
@@ -44,7 +47,7 @@ struct AlarmEditDraft: Equatable {
             minute: comps.minute ?? 0,
             repeatDaysMask: 0,
             holidayOff: false,
-            playMode: .alarmOnly,
+            playMode: defaultPlayMode,
             snoozeEnabled: true,
             snoozeMinutes: 5,
             snoozeRepeatLimit: .three,

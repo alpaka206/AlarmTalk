@@ -69,7 +69,11 @@ struct AlarmEditorSheet: View {
             }
 
             Section("알람 방식") {
-                VoicePlayModePicker(mode: $draft.playMode)
+                VoicePlayModePicker(
+                    mode: $draft.playMode,
+                    voiceLocked: voicePlanLocked,
+                    onLockedVoiceClick: showVoicePlanLockedAlert
+                )
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
 
                 if draft.playMode != .alarmOnly {
@@ -244,6 +248,14 @@ struct AlarmEditorSheet: View {
         RandomPromptContext.normalized(voiceStudio.randomContext)
     }
 
+    private var voicePlanLocked: Bool {
+        !PlanTier.from(auth.session?.user.plan).meetsOrExceeds(.personal)
+    }
+
+    private var defaultPlayModeForPlan: AlarmPlayMode {
+        voicePlanLocked ? .alarmOnly : .soundThenVoice
+    }
+
     private var preparedVoiceLabel: String {
         guard let prepared = voiceStudio.preparedAlarm else {
             return "아직 생성한 음성이 없어요. 음성 탭에서 음성을 생성해 주세요."
@@ -257,9 +269,12 @@ struct AlarmEditorSheet: View {
         if let editingID = target.editingAlarmID,
            let alarm = store.alarms.first(where: { $0.id == editingID }) {
             draft = AlarmEditDraft(from: alarm)
+            if voicePlanLocked && draft.playMode != .alarmOnly {
+                draft.playMode = .alarmOnly
+            }
             loadVoicePromptState(from: alarm)
         } else {
-            draft = .newDefault()
+            draft = .newDefault(defaultPlayMode: defaultPlayModeForPlan)
             loadVoicePromptState(from: nil)
         }
     }
@@ -286,6 +301,13 @@ struct AlarmEditorSheet: View {
         record.voiceFortuneBirthTime = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneBirthTime) : nil
     }
 
+    private func showVoicePlanLockedAlert() {
+        validationAlert = ValidationAlertContent(
+            title: "이용권이 필요해요",
+            message: "무료 이용권에서는 알람만 사용할 수 있어요."
+        )
+    }
+
     // MARK: - Save flow
 
     private func saveFlow() async {
@@ -299,6 +321,12 @@ struct AlarmEditorSheet: View {
                 title: "저장할 수 없어요",
                 message: errorMessage(first)
             )
+            return
+        }
+
+        if voicePlanLocked && draft.playMode != .alarmOnly {
+            draft.playMode = .alarmOnly
+            showVoicePlanLockedAlert()
             return
         }
 

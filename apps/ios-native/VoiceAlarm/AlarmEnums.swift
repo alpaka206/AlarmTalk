@@ -12,6 +12,12 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static let pickerCases: [AlarmPlayMode] = [
+        .soundThenVoice,
+        .voiceOnly,
+        .alarmOnly
+    ]
+
     /// Legacy / Android 호환: "alarm_voice" 도 sound_then_voice 로 매핑.
     static func decode(_ raw: String) -> AlarmPlayMode {
         switch raw {
@@ -24,8 +30,8 @@ enum AlarmPlayMode: String, Codable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .alarmOnly: return "알람만"
-        case .voiceOnly: return "음성만"
+        case .alarmOnly: return "알람"
+        case .voiceOnly: return "음성"
         case .soundThenVoice: return "알람 + 음성"
         }
     }

@@ -169,6 +169,14 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertFalse(draft.holidayOff)
     }
 
+    func testNewAlarmCanUsePaidDefaultPlayMode() {
+        let draft = AlarmEditDraft.newDefault(
+            referenceDate: Date(timeIntervalSince1970: 0),
+            defaultPlayMode: .soundThenVoice
+        )
+        XCTAssertEqual(draft.playMode, .soundThenVoice)
+    }
+
     // MARK: - RepeatDay mask consistency with RepeatWeekdayChips
 
     func testRepeatDayMaskMatchesEnumBits() {
