@@ -65,6 +65,10 @@
 - iOS onboarding completion now mirrors Android's user-scoped storage: each
   signed-in user has an independent completion marker, with a one-time migration
   from the old global `onboarding_completed_v1` flag for the first migrated user.
+- iOS auth user decoding now mirrors Android's session-store normalization:
+  blank or null profile/plan values fall back to stable defaults, quiet-window
+  settings are sanitized, and missing dynamic prompt settings decode as empty
+  weather/fortune preferences.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.

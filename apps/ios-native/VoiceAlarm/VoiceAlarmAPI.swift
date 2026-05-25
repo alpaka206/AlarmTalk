@@ -26,10 +26,45 @@ struct DynamicPromptSettings: Codable, Equatable {
     var weather: DynamicPromptWeatherSettings
     var fortune: DynamicPromptFortuneSettings
 
+    init(
+        weather: DynamicPromptWeatherSettings = DynamicPromptWeatherSettings(country: nil, city: nil),
+        fortune: DynamicPromptFortuneSettings = DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+    ) {
+        self.weather = DynamicPromptWeatherSettings(
+            country: Self.clean(weather.country),
+            city: Self.clean(weather.city)
+        )
+        self.fortune = DynamicPromptFortuneSettings(
+            gender: Self.clean(fortune.gender),
+            birthDate: Self.clean(fortune.birthDate),
+            birthTime: Self.clean(fortune.birthTime)
+        )
+    }
+
     static let empty = DynamicPromptSettings(
         weather: DynamicPromptWeatherSettings(country: nil, city: nil),
         fortune: DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
     )
+
+    private enum CodingKeys: String, CodingKey {
+        case weather
+        case fortune
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            weather: try container.decodeIfPresent(DynamicPromptWeatherSettings.self, forKey: .weather)
+                ?? DynamicPromptWeatherSettings(country: nil, city: nil),
+            fortune: try container.decodeIfPresent(DynamicPromptFortuneSettings.self, forKey: .fortune)
+                ?? DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+        )
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 struct DynamicPromptSettingsState: Codable, Equatable {
@@ -125,6 +160,109 @@ struct AuthUser: Codable, Equatable, Identifiable {
     /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
     var appleUserId: String? = nil
     var dynamicPromptSettings: DynamicPromptSettings? = nil
+
+    init(
+        id: String,
+        email: String,
+        name: String = "",
+        plan: String = "free",
+        allowFamilyAlarms: Bool? = nil,
+        familyAlarmQuietDays: [Int]? = nil,
+        familyAlarmQuietStart: String? = nil,
+        familyAlarmQuietEnd: String? = nil,
+        familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil,
+        appleUserId: String? = nil,
+        dynamicPromptSettings: DynamicPromptSettings? = nil
+    ) {
+        let legacyDays = Self.normalizedQuietDays(familyAlarmQuietDays)
+        let legacyStart = Self.normalizedQuietTime(familyAlarmQuietStart, fallback: "09:00")
+        let legacyEnd = Self.normalizedQuietTime(familyAlarmQuietEnd, fallback: "18:30")
+        let fallbackWindow = FamilyAlarmQuietWindow(days: legacyDays, start: legacyStart, end: legacyEnd)
+        let quietWindows = Self.normalizedQuietWindows(familyAlarmQuietWindows, fallback: fallbackWindow)
+        let firstWindow = quietWindows.first ?? fallbackWindow
+
+        self.id = id
+        self.email = email
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.plan = Self.normalizedPlan(plan)
+        self.allowFamilyAlarms = allowFamilyAlarms ?? false
+        self.familyAlarmQuietDays = firstWindow.days
+        self.familyAlarmQuietStart = firstWindow.start
+        self.familyAlarmQuietEnd = firstWindow.end
+        self.familyAlarmQuietWindows = quietWindows
+        self.appleUserId = Self.clean(appleUserId)
+        self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case name
+        case plan
+        case allowFamilyAlarms
+        case familyAlarmQuietDays
+        case familyAlarmQuietStart
+        case familyAlarmQuietEnd
+        case familyAlarmQuietWindows
+        case appleUserId
+        case dynamicPromptSettings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            email: try container.decode(String.self, forKey: .email),
+            name: try container.decodeIfPresent(String.self, forKey: .name) ?? "",
+            plan: try container.decodeIfPresent(String.self, forKey: .plan) ?? "free",
+            allowFamilyAlarms: try container.decodeIfPresent(Bool.self, forKey: .allowFamilyAlarms),
+            familyAlarmQuietDays: try container.decodeIfPresent([Int].self, forKey: .familyAlarmQuietDays),
+            familyAlarmQuietStart: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietStart),
+            familyAlarmQuietEnd: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietEnd),
+            familyAlarmQuietWindows: try container.decodeIfPresent([FamilyAlarmQuietWindow].self, forKey: .familyAlarmQuietWindows),
+            appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
+            dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings)
+        )
+    }
+
+    private static func normalizedPlan(_ value: String?) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "free" : trimmed
+    }
+
+    private static func normalizedQuietDays(_ days: [Int]?) -> [Int] {
+        let normalized = Array(Set(days?.filter { (0...6).contains($0) } ?? [])).sorted()
+        return normalized.isEmpty ? [1, 2, 3, 4, 5] : normalized
+    }
+
+    private static func normalizedQuietTime(_ value: String?, fallback: String) -> String {
+        guard let value, value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
+            return fallback
+        }
+        return value
+    }
+
+    private static func normalizedQuietWindows(
+        _ windows: [FamilyAlarmQuietWindow]?,
+        fallback: FamilyAlarmQuietWindow
+    ) -> [FamilyAlarmQuietWindow] {
+        guard let windows else { return [fallback] }
+        let normalized = windows.compactMap { window -> FamilyAlarmQuietWindow? in
+            let days = Array(Set(window.days.filter { (0...6).contains($0) })).sorted()
+            guard !days.isEmpty else { return nil }
+            guard window.start.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil,
+                  window.end.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            return FamilyAlarmQuietWindow(days: days, start: window.start, end: window.end)
+        }
+        return Array(normalized.prefix(8))
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 struct RemoteAlarmListResponse: Decodable {
