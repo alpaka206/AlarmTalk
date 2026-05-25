@@ -75,6 +75,21 @@ final class VoiceStudioViewModel: ObservableObject {
         return profiles.first { $0.id == selectedProfileID }
     }
 
+    var selectedFamilyVoice: FamilyVoiceProfile? {
+        guard let selectedProfileID else { return nil }
+        return familyVoices.first { $0.id == selectedProfileID }
+    }
+
+    private var selectedListenerTitle: String? {
+        if let listener = selectedProfile?.listenerTitle, let trimmed = nonEmpty(listener) {
+            return trimmed
+        }
+        if let listener = selectedFamilyVoice?.listenerTitle, let trimmed = nonEmpty(listener) {
+            return trimmed
+        }
+        return nil
+    }
+
     var canUploadRecording: Bool {
         recorder.latestRecordingURL != nil
             && (recorder.latestDurationMs ?? 0) >= VoiceProfileLimits.minDurationMs
@@ -118,8 +133,16 @@ final class VoiceStudioViewModel: ObservableObject {
             profiles = try await nextProfiles
             messages = try await nextMessages
             familyVoices = familyResult
+            if let selectedProfileID,
+               !profiles.contains(where: { $0.id == selectedProfileID }),
+               !familyVoices.contains(where: { $0.id == selectedProfileID }) {
+                self.selectedProfileID = nil
+            }
             if selectedProfileID == nil {
-                selectedProfileID = profiles.first(where: { $0.status == "ready" })?.id ?? profiles.first?.id
+                selectedProfileID = profiles.first(where: { $0.status == "ready" })?.id ??
+                    profiles.first?.id ??
+                    familyVoices.first(where: { $0.status == "ready" })?.id ??
+                    familyVoices.first?.id
             }
             statusMessage = "목소리 정보를 불러왔어요."
         } catch {
@@ -390,6 +413,10 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "사용할 목소리를 먼저 선택해 주세요."
             return nil
         }
+        if selectedFamilyVoice?.requiresViewerInfo == true {
+            statusMessage = "공유받은 목소리의 관계와 호칭을 먼저 설정해 주세요."
+            return nil
+        }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             statusMessage = "깨워줄 말을 입력하거나 랜덤 생성을 켜 주세요."
             return nil
@@ -423,7 +450,8 @@ final class VoiceStudioViewModel: ObservableObject {
                     weatherCity: randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
                     fortuneGender: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
                     fortuneBirthDate: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
-                    fortuneBirthTime: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil
+                    fortuneBirthTime: randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil,
+                    listenerTitle: selectedListenerTitle
                 ),
                 token: token
             )

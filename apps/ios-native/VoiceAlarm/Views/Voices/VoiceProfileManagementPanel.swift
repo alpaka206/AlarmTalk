@@ -117,7 +117,7 @@ struct VoiceProfileManagementPanel: View {
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
                 profileName: profile.name,
-                sharedFromLabel: sharedVoiceDetail(profile),
+                sharedFromLabel: profile.sharedFromLabel,
                 initialRelationship: profile.relationshipLabel ?? "",
                 initialListenerTitle: profile.listenerTitle ?? "",
                 isWorking: voice.isBusy,
@@ -429,9 +429,7 @@ private struct FamilyVoiceProfileRow: View {
     /// Android `SharedVoiceProfileRow.needsViewerInfo` (VoiceProfileManagementPanel.kt:1477) 와 동일.
     /// 관계/호칭 중 하나라도 비어 있으면 "설정하기" CTA 버튼을 노출.
     private var needsViewerInfo: Bool {
-        profile.needsViewerInfo == true ||
-            (profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
-            (profile.listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        profile.requiresViewerInfo
     }
 
     var body: some View {
@@ -445,7 +443,7 @@ private struct FamilyVoiceProfileRow: View {
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(profile.name).font(.subheadline.weight(.semibold))
-                    Text(sharedVoiceDetail(profile))
+                    Text(profile.sharedFromLabel)
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
@@ -493,11 +491,6 @@ private struct FamilyVoiceProfileRow: View {
         }
         return parts.joined(separator: " · ")
     }
-}
-
-private func sharedVoiceDetail(_ profile: FamilyVoiceProfile) -> String {
-    let owner = profile.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
 }
 
 // MARK: - Edit dialog

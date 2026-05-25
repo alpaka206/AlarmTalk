@@ -329,6 +329,19 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var needsViewerInfo: Bool?
 }
 
+extension FamilyVoiceProfile {
+    var requiresViewerInfo: Bool {
+        needsViewerInfo == true ||
+            (relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            (listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    var sharedFromLabel: String {
+        let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
+    }
+}
+
 struct CodeRegisterRequest: Encodable {
     var code: String
 }

@@ -37,6 +37,7 @@ struct AlarmEditorSheet: View {
     @State private var didLoadInitial = false
     @State private var validationAlert: ValidationAlertContent?
     @State private var isWorking = false
+    @State private var sharedVoiceSetupTarget: FamilyVoiceProfile?
 
     private struct ValidationAlertContent: Identifiable {
         let id = UUID()
@@ -78,8 +79,25 @@ struct AlarmEditorSheet: View {
 
                 if draft.playMode != .alarmOnly {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("선택한 음성")
+                        Text("목소리")
                             .font(theme.typography.titleSmall)
+                        AlarmVoiceProfilePicker(
+                            ownProfiles: voiceStudio.profiles,
+                            familyVoices: voiceStudio.familyVoices,
+                            selectedProfileID: voiceStudio.selectedProfileID,
+                            onSelectOwn: { profile in
+                                voiceStudio.selectedProfileID = profile.id
+                                voiceStudio.preparedAlarm = nil
+                            },
+                            onSelectShared: { profile in
+                                if profile.requiresViewerInfo {
+                                    sharedVoiceSetupTarget = profile
+                                } else {
+                                    voiceStudio.selectedProfileID = profile.id
+                                    voiceStudio.preparedAlarm = nil
+                                }
+                            }
+                        )
                         Text(preparedVoiceLabel)
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -237,6 +255,34 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
+            Task { await voiceStudio.refresh(session: auth.session) }
+        }
+        .sheet(item: $sharedVoiceSetupTarget) { profile in
+            SharedVoiceSelectionSetupSheet(
+                profile: profile,
+                isWorking: voiceStudio.isBusy,
+                onCancel: { sharedVoiceSetupTarget = nil },
+                onPreview: {
+                    Task {
+                        await voiceStudio.previewSharedVoice(profileId: profile.id, session: auth.session)
+                    }
+                },
+                onConfirm: { relationship, listener in
+                    let target = profile
+                    Task {
+                        await voiceStudio.updateSharedVoiceViewerInfo(
+                            profileId: target.id,
+                            relationshipLabel: relationship,
+                            listenerTitle: listener,
+                            session: auth.session
+                        )
+                        voiceStudio.selectedProfileID = target.id
+                        voiceStudio.preparedAlarm = nil
+                        sharedVoiceSetupTarget = nil
+                    }
+                }
+            )
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -422,6 +468,214 @@ struct AlarmEditorSheet: View {
             return "분(0–59) 값이 올바르지 않아요."
         case .invalidSnoozeMinutes:
             return "스누즈 간격은 1–30분 사이여야 해요."
+        }
+    }
+}
+
+private struct AlarmVoiceProfilePicker: View {
+    let ownProfiles: [VoiceProfile]
+    let familyVoices: [FamilyVoiceProfile]
+    let selectedProfileID: String?
+    let onSelectOwn: (VoiceProfile) -> Void
+    let onSelectShared: (FamilyVoiceProfile) -> Void
+
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if ownProfiles.isEmpty && familyVoices.isEmpty {
+                Text("사용할 수 있는 목소리가 없어요. 먼저 목소리를 만들어 주세요.")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(theme.palette.surfaceVariant.opacity(0.44))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                ForEach(ownProfiles) { profile in
+                    voiceRow(
+                        name: profile.name,
+                        detail: profile.isShared == true ? "내 목소리 · 공유 중" : "내 목소리",
+                        selected: profile.id == selectedProfileID,
+                        badge: nil,
+                        action: { onSelectOwn(profile) }
+                    )
+                }
+                ForEach(familyVoices) { profile in
+                    voiceRow(
+                        name: profile.name,
+                        detail: profile.sharedFromLabel,
+                        selected: profile.id == selectedProfileID,
+                        badge: profile.requiresViewerInfo ? "설정 필요" : nil,
+                        action: { onSelectShared(profile) }
+                    )
+                }
+            }
+        }
+    }
+
+    private func voiceRow(
+        name: String,
+        detail: String,
+        selected: Bool,
+        badge: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "mic.circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? theme.palette.primary : theme.palette.onSurfaceVariant)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(theme.typography.labelLarge)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text(detail)
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                Spacer(minLength: 0)
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(theme.palette.primary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(theme.palette.primaryContainer.opacity(0.55))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(12)
+            .background(selected ? theme.palette.primaryContainer.opacity(0.35) : theme.palette.surfaceVariant.opacity(0.34))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? theme.palette.primary.opacity(0.42) : theme.palette.outlineVariant.opacity(0.62), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SharedVoiceSelectionSetupSheet: View {
+    let profile: FamilyVoiceProfile
+    let isWorking: Bool
+    let onCancel: () -> Void
+    let onPreview: () -> Void
+    let onConfirm: (String, String) -> Void
+
+    @State private var relationship: String = ""
+    @State private var listenerTitle: String = ""
+    @State private var submitted = false
+
+    private var trimmedRelationship: String {
+        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedListener: String {
+        listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("목소리 설정")
+                        .font(.title3.weight(.bold))
+                    Text("알람에서 이 목소리가 나를 어떻게 부를지 정해요.")
+                        .font(.subheadline)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer()
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: "mic.circle.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(VoiceAlarmTheme.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.name)
+                        .font(.headline)
+                    Text(profile.sharedFromLabel)
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(VoiceAlarmTheme.surfaceVariant.opacity(0.55))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16).stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            field(
+                title: "나와의 관계",
+                placeholder: "예: 손주, 자식, 형제",
+                text: $relationship,
+                showError: submitted && trimmedRelationship.isEmpty
+            )
+            field(
+                title: "이 목소리가 나를 부를 이름",
+                placeholder: "예: 지호야, 여보",
+                text: $listenerTitle,
+                showError: submitted && trimmedListener.isEmpty
+            )
+
+            Button(action: onPreview) {
+                Label("미리듣기", systemImage: "play.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(isWorking)
+
+            Button("저장하고 선택") {
+                submitted = true
+                if !trimmedRelationship.isEmpty && !trimmedListener.isEmpty {
+                    onConfirm(trimmedRelationship, trimmedListener)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VoiceAlarmTheme.primary)
+            .frame(maxWidth: .infinity)
+            .disabled(isWorking)
+
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .onAppear {
+            relationship = profile.relationshipLabel ?? ""
+            listenerTitle = profile.listenerTitle ?? ""
+        }
+    }
+
+    private func field(
+        title: String,
+        placeholder: String,
+        text: Binding<String>,
+        showError: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: text.wrappedValue) { _, newValue in
+                    if newValue.count > 30 {
+                        text.wrappedValue = String(newValue.prefix(30))
+                    }
+                }
+            if showError {
+                Text("꼭 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
         }
     }
 }
