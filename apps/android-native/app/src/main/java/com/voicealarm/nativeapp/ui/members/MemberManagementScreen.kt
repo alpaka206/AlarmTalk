@@ -227,7 +227,12 @@ internal fun MemberManagementScreen(
     pendingRemoveMember?.let { member ->
         AlertDialog(
             onDismissRequest = { pendingRemoveMember = null },
-            title = { Text("구성원 내보내기") },
+            title = {
+                ModalDialogTitle(
+                    title = "구성원 내보내기",
+                    onDismiss = { pendingRemoveMember = null },
+                )
+            },
             text = {
                 Text(
                     text = "이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.",
@@ -250,11 +255,6 @@ internal fun MemberManagementScreen(
                         text = "내보내기",
                         color = MaterialTheme.colorScheme.error,
                     )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRemoveMember = null }) {
-                    Text("취소")
                 }
             },
         )

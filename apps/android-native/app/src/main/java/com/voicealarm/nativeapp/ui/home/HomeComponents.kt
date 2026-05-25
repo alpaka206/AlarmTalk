@@ -213,7 +213,7 @@ internal fun ThemeModePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("테마 선택") },
+        title = { ModalDialogTitle("테마 선택", onDismiss = onDismiss) },
         text = {
             Column {
                 ThemeMode.entries.forEach { mode ->
@@ -232,9 +232,7 @@ internal fun ThemeModePickerDialog(
                 }
             }
         },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("닫기") }
-        },
+        confirmButton = {},
     )
 }
 
@@ -248,7 +246,13 @@ internal fun NicknameEditDialog(
     var value by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("닉네임 수정") },
+        title = {
+            ModalDialogTitle(
+                title = "닉네임 수정",
+                onDismiss = onDismiss,
+                dismissEnabled = !busy,
+            )
+        },
         text = {
             OutlinedTextField(
                 value = value,
@@ -266,9 +270,6 @@ internal fun NicknameEditDialog(
                 enabled = !busy && value.trim().isNotEmpty() && value.trim() != initial,
             ) { Text("저장") }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("취소") }
-        },
     )
 }
 
@@ -280,7 +281,13 @@ internal fun DeleteAccountConfirmDialog(
 ) {
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("회원 탈퇴") },
+        title = {
+            ModalDialogTitle(
+                title = "회원 탈퇴",
+                onDismiss = onDismiss,
+                dismissEnabled = !busy,
+            )
+        },
         text = {
             Text(
                 "정말 탈퇴할까요? 알람, 음성, 메시지 등 모든 데이터가 삭제되고 복구할 수 없어요.",
@@ -293,9 +300,6 @@ internal fun DeleteAccountConfirmDialog(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) { Text("취소") }
         },
     )
 }

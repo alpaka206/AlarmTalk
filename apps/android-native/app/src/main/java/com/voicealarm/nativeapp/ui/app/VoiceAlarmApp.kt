@@ -444,7 +444,6 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         PlanGateDialog(
             message = gate.message,
             confirmLabel = gate.confirmLabel,
-            dismissLabel = gate.dismissLabel,
             onConfirm = {
                 planGateDialog = null
                 navController.navigateTopLevelTab(NativeTab.Billing)
@@ -846,7 +845,6 @@ private enum class MessageSeverity { Success, Error, Info }
 private data class PlanGateDialogState(
     val message: String,
     val confirmLabel: String = "이용권 보기",
-    val dismissLabel: String = "닫기",
 )
 
 private fun messageSeverity(text: String): MessageSeverity = when {

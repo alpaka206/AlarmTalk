@@ -1470,18 +1470,9 @@ private fun VoiceFormDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                        border = wakerCardBorder(),
-                        colors = wakerOutlinedButtonColors(),
-                    ) {
-                        Text("취소")
-                    }
                     Button(
                         onClick = onConfirm,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -1546,18 +1537,9 @@ private fun VoiceProfileDeleteDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                        border = wakerCardBorder(),
-                        colors = wakerOutlinedButtonColors(),
-                    ) {
-                        Text("취소")
-                    }
                     Button(
                         onClick = onDelete,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,

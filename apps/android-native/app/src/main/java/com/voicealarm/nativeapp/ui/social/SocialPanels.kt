@@ -218,7 +218,12 @@ internal fun FamilyConnectionPanel(
     if (showLeaveDialog && currentGroup != null) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
-            title = { Text("현재 이용권 나가고 새 코드 등록") },
+            title = {
+                ModalDialogTitle(
+                    title = "현재 이용권 나가고 새 코드 등록",
+                    onDismiss = { showLeaveDialog = false },
+                )
+            },
             text = {
                 MutedText("현재 이용권에서 나가고 새 코드를 등록할까요?")
             },
@@ -236,18 +241,18 @@ internal fun FamilyConnectionPanel(
                     )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showLeaveDialog = false }) {
-                    Text("취소")
-                }
-            },
         )
     }
 
     pendingRegisterCode?.let { code ->
         AlertDialog(
             onDismissRequest = { pendingRegisterCode = null },
-            title = { Text("코드 등록") },
+            title = {
+                ModalDialogTitle(
+                    title = "코드 등록",
+                    onDismiss = { pendingRegisterCode = null },
+                )
+            },
             text = {
                 MutedText(
                     if (hasActivePlan) {
@@ -267,11 +272,6 @@ internal fun FamilyConnectionPanel(
                     },
                 ) {
                     Text("등록")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingRegisterCode = null }) {
-                    Text("취소")
                 }
             },
         )
@@ -494,7 +494,12 @@ internal fun VoiceMessagePanel(
     if (showComposer) {
         AlertDialog(
             onDismissRequest = { showComposer = false },
-            title = { Text("새 메시지") },
+            title = {
+                ModalDialogTitle(
+                    title = "새 메시지",
+                    onDismiss = { showComposer = false },
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("받는 사람", fontWeight = FontWeight.SemiBold)
@@ -596,11 +601,6 @@ internal fun VoiceMessagePanel(
                         (sendMode == VoiceMessageSendMode.Text || !selectedVoiceProfileId.isNullOrBlank()),
                 ) {
                     Text("보내기")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showComposer = false }) {
-                    Text("취소")
                 }
             },
         )

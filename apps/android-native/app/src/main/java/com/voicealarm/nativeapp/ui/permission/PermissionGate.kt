@@ -187,13 +187,10 @@ internal fun PermissionGateDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { ModalDialogTitle(title, onDismiss = onDismiss) },
         text = { Text(body) },
         confirmButton = {
             TextButton(onClick = onOpenSettings) { Text(action) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("닫기") }
         },
     )
 }

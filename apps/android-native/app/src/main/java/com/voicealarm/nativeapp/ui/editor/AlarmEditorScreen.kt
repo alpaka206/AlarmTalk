@@ -1222,7 +1222,12 @@ internal fun FamilyAlarmTargetCard(
     if (recipientDialogOpen) {
         AlertDialog(
             onDismissRequest = { recipientDialogOpen = false },
-            title = { Text("알람 받을 사람 선택") },
+            title = {
+                ModalDialogTitle(
+                    title = "알람 받을 사람 선택",
+                    onDismiss = { recipientDialogOpen = false },
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recipients.forEach { recipient ->
@@ -1237,11 +1242,7 @@ internal fun FamilyAlarmTargetCard(
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { recipientDialogOpen = false }) {
-                    Text("닫기")
-                }
-            },
+            confirmButton = {},
         )
     }
 

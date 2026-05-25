@@ -10,13 +10,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -30,7 +28,6 @@ internal fun PlanGateDialog(
     modifier: Modifier = Modifier,
     title: String = "이용권이 필요한 기능이에요",
     confirmLabel: String = "이용권 보기",
-    dismissLabel: String = "닫기",
 ) {
     val scheme = MaterialTheme.colorScheme
     Dialog(
@@ -52,6 +49,10 @@ internal fun PlanGateDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                ModalDialogTitle(
+                    title = title,
+                    onDismiss = onDismiss,
+                )
                 FeatureLockBadge(
                     size = 58.dp,
                     iconSize = 27.dp,
@@ -61,13 +62,6 @@ internal fun PlanGateDialog(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        color = scheme.onSurface,
-                    )
                     Text(
                         text = message,
                         style = MaterialTheme.typography.bodyMedium,
@@ -84,15 +78,6 @@ internal fun PlanGateDialog(
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(confirmLabel, maxLines = 1)
-                    }
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp),
-                        shape = RoundedCornerShape(14.dp),
-                    ) {
-                        Text(dismissLabel, maxLines = 1)
                     }
                 }
             }

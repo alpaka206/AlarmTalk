@@ -815,18 +815,15 @@ private fun WeatherLocationDialog(
                     .heightIn(max = 600.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "날씨 지역",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = "날씨 지역을 직접 입력하거나 현재 위치로 불러올 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                ModalDialogTitle(
+                    title = "날씨 지역",
+                    onDismiss = onDismissWithoutSave,
+                )
+                Text(
+                    text = "날씨 지역을 직접 입력하거나 현재 위치로 불러올 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedButton(
                     onClick = {
                         if (com.voicealarm.nativeapp.location.WeatherLocationProvider.hasPermission(context)) {
@@ -908,13 +905,6 @@ private fun WeatherLocationDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismissWithoutSave,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("닫기")
-                    }
                     Button(
                         onClick = {
                             submitted = true
@@ -922,7 +912,7 @@ private fun WeatherLocationDialog(
                                 onConfirm(draftCountry.trim(), draftCity.trim())
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -973,18 +963,15 @@ internal fun FortuneInfoDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "운세 정보",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                ModalDialogTitle(
+                    title = "운세 정보",
+                    onDismiss = onDismissWithoutSave,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 FortuneFieldLabel(text = "성별", error = genderError)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GenderChoice(
@@ -1021,13 +1008,6 @@ internal fun FortuneInfoDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismissWithoutSave,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("닫기")
-                    }
                     Button(
                         onClick = {
                             submitted = true
@@ -1043,7 +1023,7 @@ internal fun FortuneInfoDialog(
                                 )
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -1068,11 +1048,16 @@ internal fun FortuneInfoDialog(
                     },
                 ) { Text("확인") }
             },
-            dismissButton = {
-                TextButton(onClick = { datePickerOpen = false }) { Text("취소") }
-            },
+            dismissButton = {},
         ) {
-            DatePicker(state = state)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModalDialogTitle(
+                    title = "생년월일",
+                    onDismiss = { datePickerOpen = false },
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+                DatePicker(state = state)
+            }
         }
     }
 
@@ -1094,17 +1079,15 @@ internal fun FortuneInfoDialog(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        text = "태어난 시간",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                    ModalDialogTitle(
+                        title = "태어난 시간",
+                        onDismiss = { timePickerOpen = false },
                     )
                     TimePicker(state = state)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(onClick = { timePickerOpen = false }) { Text("취소") }
                         TextButton(
                             onClick = {
                                 draftBirthTime = String.format(
@@ -1559,7 +1542,12 @@ internal fun SnoozeSettingsPane(
         val customMinutes = customMinutesText.toIntOrNull()
         AlertDialog(
             onDismissRequest = { customIntervalDialogOpen = false },
-            title = { Text("간격 직접 설정") },
+            title = {
+                ModalDialogTitle(
+                    title = "간격 직접 설정",
+                    onDismiss = { customIntervalDialogOpen = false },
+                )
+            },
             text = {
                 OutlinedTextField(
                     value = customMinutesText,
@@ -1582,11 +1570,6 @@ internal fun SnoozeSettingsPane(
                     },
                 ) {
                     Text("적용")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { customIntervalDialogOpen = false }) {
-                    Text("취소")
                 }
             },
         )

@@ -356,7 +356,7 @@ private fun WeatherLocationPreferenceDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("날씨 지역") },
+        title = { ModalDialogTitle("날씨 지역", onDismiss = onDismiss) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -407,11 +407,6 @@ private fun WeatherLocationPreferenceDialog(
                 Text("저장")
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("취소")
-            }
-        },
     )
 }
 
@@ -456,10 +451,9 @@ private fun FamilyAlarmQuietTimeDialog(
                     .padding(horizontal = 22.dp, vertical = 22.dp)
                     .heightIn(max = 620.dp),
             ) {
-                Text(
-                    text = "알람 받지 않을 시간",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                ModalDialogTitle(
+                    title = "알람 받지 않을 시간",
+                    onDismiss = onDismiss,
                 )
                 Text(
                     text = "선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.",
@@ -520,17 +514,10 @@ private fun FamilyAlarmQuietTimeDialog(
                         .padding(top = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("취소")
-                    }
                     Button(
                         onClick = { onConfirm(drafts.map { it.toWindow() }) },
                         enabled = valid,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -560,17 +547,15 @@ private fun FamilyAlarmQuietTimeDialog(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        text = if (target.isStart) "시작 시간" else "종료 시간",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                    ModalDialogTitle(
+                        title = if (target.isStart) "시작 시간" else "종료 시간",
+                        onDismiss = { timePickerTarget = null },
                     )
                     TimePicker(state = state)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(onClick = { timePickerTarget = null }) { Text("취소") }
                         TextButton(
                             onClick = {
                                 val hh = String.format(Locale.US, "%02d", state.hour)
