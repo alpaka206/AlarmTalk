@@ -90,6 +90,9 @@
 - iOS voice-message sending now mirrors Android's ViewModel guardrails before
   calling TTS: recipient/profile IDs are trimmed and required, and voice-note
   text is rejected above 200 characters even outside the composer UI.
+- iOS text-message sending now mirrors Android's `sendNote` guardrails by
+  trimming the selected receiver ID before validation and before the `notes`
+  request is sent.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.

@@ -191,7 +191,8 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
-        guard let receiverID = selectedReceiverID else {
+        let normalizedReceiverID = selectedReceiverID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalizedReceiverID.isEmpty else {
             statusMessage = "메시지를 받을 가족 멤버를 선택해 주세요."
             return
         }
@@ -205,7 +206,7 @@ final class SocialFeatureViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await api.sendNote(receiverId: receiverID, text: text, token: token)
+            _ = try await api.sendNote(receiverId: normalizedReceiverID, text: text, token: token)
             noteText = ""
             statusMessage = "메시지를 보냈어요."
             await refreshAll(session: session, force: true)
