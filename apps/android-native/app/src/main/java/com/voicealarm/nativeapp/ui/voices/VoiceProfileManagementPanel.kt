@@ -2092,15 +2092,15 @@ internal fun VoiceProfileRow(
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             Text(
-                                text = "가족/파트너에게 공유",
+                                text = "목소리 공유",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             MutedText(
                                 if (canShareVoice) {
-                                    "켜면 연결된 사람이 이 목소리로 알람을 만들 수 있어요."
+                                    "이용권을 같이 사용하는 사람들에게 목소리를 공유해요."
                                 } else {
-                                    "커플/가족 연결 후 공유할 수 있어요."
+                                    "이용권을 같이 사용하는 사람들과 연결하면 공유할 수 있어요."
                                 },
                             )
                         }
