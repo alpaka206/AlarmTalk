@@ -751,9 +751,9 @@ function hasRelationshipLabelLeak(
 
 function hasDeliveryTagOrStageDirection(text: string): boolean {
   if (TAG_RE.test(text)) return true;
-  if (/^\s*[\[(（]/.test(text)) return true;
+  if (/^\s*[[（(]/.test(text)) return true;
 
-  const bracketedParts = text.match(/[\[(（][^\])）\]]{1,50}[\])）\]]/g) ?? [];
+  const bracketedParts = text.match(/[[（(][^\])）\]]{1,50}[\])）\]]/g) ?? [];
   return bracketedParts.some((part) =>
     /(softly|warmly|gently|cheerfully|brightly|calmly|whisper|속삭|다정하게|밝게|차분하게|부드럽게|따뜻하게|상냥하게)/i.test(
       part,
