@@ -106,7 +106,7 @@ struct MemberManagementView: View {
             .padding(.vertical, 12)
         }
         .background(theme.palette.background.ignoresSafeArea())
-        .navigationTitle("\(planLabel) 멤버/공유 코드 관리")
+        .navigationTitle("구성원과 공유 코드")
         .navigationBarTitleDisplayMode(.inline)
         .alert(
             "멤버 내보내기",
@@ -227,8 +227,11 @@ struct MemberManagementView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 Button {
-                    shareText = voucher.code
-                    isSharePresented = true
+                    Task {
+                        await socialFeatures.refreshAll(session: auth.session)
+                        shareText = shareVoucher?.code ?? voucher.code
+                        isSharePresented = true
+                    }
                 } label: {
                     Label(isFull ? "공유 불가" : "공유하기", systemImage: "square.and.arrow.up")
                         .font(theme.typography.labelLarge)

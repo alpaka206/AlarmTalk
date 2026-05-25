@@ -33,11 +33,14 @@ final class SocialFeatureViewModel: ObservableObject {
         receivedNotes.filter { $0.readAt == nil }.count
     }
 
-    func refreshAll(session: AuthSession?) async {
+    func refreshAll(session: AuthSession?, force: Bool = false) async {
         guard let token = session?.token else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+        guard force || !isBusy else { return }
+        let shouldSetBusy = !isBusy
+        if shouldSetBusy { isBusy = true }
+        defer {
+            if shouldSetBusy { isBusy = false }
+        }
 
         var messages: [String] = []
 
@@ -102,7 +105,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.registerCode(code, token: token)
             inviteCode = ""
             statusMessage = "코드를 등록했어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -130,7 +133,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.sendNote(receiverId: receiverID, text: text, token: token)
             noteText = ""
             statusMessage = "메시지를 보냈어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -140,7 +143,7 @@ final class SocialFeatureViewModel: ObservableObject {
         guard let token = session?.token else { return }
         do {
             _ = try await api.markNoteRead(id: note.id, token: token)
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -179,7 +182,7 @@ final class SocialFeatureViewModel: ObservableObject {
             playingNoteID = note.id
             revealedNoteIDs.insert(note.id)
             _ = try? await api.markNoteRead(id: note.id, token: token)
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             if isMissingNoteAudio(error) {
                 unavailableAudioNoteIDs.insert(note.id)
@@ -230,6 +233,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 vouchers.insert(voucher, at: 0)
             }
             statusMessage = "가족 공유 코드를 준비했어요."
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -260,7 +264,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
             #endif
             statusMessage = "이용권 상태를 갱신했어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -285,7 +289,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.cancelSubscription(mode: "at_period_end", token: token)
             statusMessage = "구독 해지를 예약했어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -306,7 +310,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.leaveFamilyGroup(groupId: groupId, token: token)
             statusMessage = "그룹에서 나왔어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -325,7 +329,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.removeFamilyMember(groupId: groupId, userId: userId, token: token)
             statusMessage = "멤버를 내보냈어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -344,7 +348,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.transferFamilyOwnership(groupId: groupId, newOwnerId: newOwnerId, token: token)
             statusMessage = "소유권을 이양했어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -394,7 +398,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 token: token
             )
             statusMessage = "음성 메시지를 보냈어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -409,7 +413,7 @@ final class SocialFeatureViewModel: ObservableObject {
     /// 는 SwiftUI 클라이언트가 다운그레이드 직후 `refreshAll` 만 다시 돌려 최신
     /// 상태로 화면을 동기화한다.
     func applyFreePlanVoiceLock(session: AuthSession?) async {
-        await refreshAll(session: session)
+        await refreshAll(session: session, force: true)
     }
 
     /// 일반 코드(=plan voucher) 사용. Android `BillingApi.redeem`.
@@ -431,7 +435,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.redeemVoucher(code: trimmed, token: token)
             statusMessage = "코드를 적용했어요."
-            await refreshAll(session: session)
+            await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
