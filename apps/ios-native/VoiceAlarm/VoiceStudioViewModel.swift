@@ -215,6 +215,15 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        guard let fields = requiredVoiceProfileFields(
+            name: cloneName,
+            fallbackName: "내 목소리",
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return
+        }
+        cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
             statusMessage = "먼저 목소리를 녹음해 주세요."
             return
@@ -236,8 +245,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
@@ -261,19 +270,26 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return nil
         }
+        guard let fields = requiredVoiceProfileFields(
+            name: name,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
         do {
             let profile = try await api.cloneVoice(
                 audioFileURL: audioFileURL,
-                name: name,
+                name: fields.name,
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
                 noiseRemoval: true,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
@@ -300,6 +316,13 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return nil
         }
+        guard let fields = requiredVoiceProfileFields(
+            name: name,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
         guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
                 ? "1분 이상 준비해 주세요."
@@ -312,13 +335,13 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             let profile = try await api.cloneVoice(
                 audioFileURL: audioFileURL,
-                name: name,
+                name: fields.name,
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
                 noiseRemoval: noiseRemoval,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."
@@ -342,14 +365,20 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        guard let fields = requiredVoiceRelationshipFields(
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return
+        }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
             _ = try await api.updateVoiceProfileRelationship(
                 profileId: profileId,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle,
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle,
                 token: token
             )
             statusMessage = "공유 음성 정보를 저장했어요."
@@ -468,6 +497,13 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return nil
         }
+        guard let fields = requiredVoiceProfileFields(
+            name: name,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
         guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
@@ -476,17 +512,17 @@ final class VoiceStudioViewModel: ObservableObject {
             _ = try? await api.updateVoiceUploadSpeaker(
                 uploadId: uploadId,
                 speakerId: speakerId,
-                label: name,
+                label: fields.name,
                 token: token
             )
             let profile = try await api.cloneVoice(
                 audioFileURL: audioFileURL,
-                name: name,
+                name: fields.name,
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "선택한 목소리를 학습했어요."
@@ -681,6 +717,51 @@ final class VoiceStudioViewModel: ObservableObject {
     private func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private struct RequiredVoiceProfileFields {
+        var name: String
+        var relationshipLabel: String
+        var listenerTitle: String
+    }
+
+    private func requiredVoiceProfileFields(
+        name: String,
+        fallbackName: String? = nil,
+        relationshipLabel: String?,
+        listenerTitle: String?
+    ) -> RequiredVoiceProfileFields? {
+        let normalizedName = nonEmpty(name) ?? fallbackName.flatMap { nonEmpty($0) }
+        guard let normalizedName else {
+            statusMessage = "목소리 이름을 입력해 주세요."
+            return nil
+        }
+        guard let relationship = requiredVoiceRelationshipFields(
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
+        return RequiredVoiceProfileFields(
+            name: normalizedName,
+            relationshipLabel: relationship.relationshipLabel,
+            listenerTitle: relationship.listenerTitle
+        )
+    }
+
+    private func requiredVoiceRelationshipFields(
+        relationshipLabel: String?,
+        listenerTitle: String?
+    ) -> (relationshipLabel: String, listenerTitle: String)? {
+        guard let relationshipLabel = nonEmpty(relationshipLabel ?? "") else {
+            statusMessage = "나와의 관계를 입력해 주세요."
+            return nil
+        }
+        guard let listenerTitle = nonEmpty(listenerTitle ?? "") else {
+            statusMessage = "이 목소리가 나를 부를 호칭을 입력해 주세요."
+            return nil
+        }
+        return (relationshipLabel, listenerTitle)
     }
 
     /// 프로필 정보 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.

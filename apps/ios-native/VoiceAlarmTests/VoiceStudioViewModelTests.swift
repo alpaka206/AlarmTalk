@@ -184,4 +184,39 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let e2 = APIError.invalidResponse
         XCTAssertNil(e2.serverErrorCode)
     }
+
+    func test_voiceCloneMultipartFields_matchAndroidRequiredParts() {
+        let fields = VoiceAlarmAPI.voiceCloneMultipartFields(
+            name: "  Gia  ",
+            isShared: true,
+            durationMs: 60_000,
+            relationshipLabel: " granddaughter ",
+            listenerTitle: " grandpa "
+        )
+
+        XCTAssertEqual(fields["name"], "Gia")
+        XCTAssertEqual(fields["isShared"], "true")
+        XCTAssertEqual(fields["durationMs"], "60000")
+        XCTAssertEqual(fields["relationshipLabel"], "granddaughter")
+        XCTAssertEqual(fields["listenerTitle"], "grandpa")
+        XCTAssertEqual(fields["isDraft"], "false")
+    }
+
+    func test_voiceCloneMultipartFields_keepBlankRelationshipPartsForServerValidation() {
+        let fields = VoiceAlarmAPI.voiceCloneMultipartFields(
+            name: "Draft",
+            isShared: false,
+            durationMs: 60_000,
+            noiseRemoval: true,
+            relationshipLabel: nil,
+            listenerTitle: "   ",
+            isDraft: true
+        )
+
+        XCTAssertEqual(fields["relationshipLabel"], "")
+        XCTAssertEqual(fields["listenerTitle"], "")
+        XCTAssertEqual(fields["isDraft"], "true")
+        XCTAssertEqual(fields["noiseRemoval"], "true")
+        XCTAssertEqual(fields["noise_removal"], "true")
+    }
 }

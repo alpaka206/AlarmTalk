@@ -1018,6 +1018,30 @@ final class VoiceAlarmAPI {
         return response.profiles
     }
 
+    static func voiceCloneMultipartFields(
+        name: String,
+        isShared: Bool,
+        durationMs: Int,
+        noiseRemoval: Bool = false,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil,
+        isDraft: Bool? = nil
+    ) -> [String: String] {
+        var fields: [String: String] = [
+            "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
+            "isShared": isShared ? "true" : "false",
+            "durationMs": String(durationMs),
+            "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            "isDraft": (isDraft ?? false) ? "true" : "false",
+        ]
+        if noiseRemoval {
+            fields["noiseRemoval"] = "true"
+            fields["noise_removal"] = "true"
+        }
+        return fields
+    }
+
     func cloneVoice(
         audioFileURL: URL,
         name: String,
@@ -1029,28 +1053,19 @@ final class VoiceAlarmAPI {
         listenerTitle: String? = nil,
         isDraft: Bool? = nil
     ) async throws -> VoiceProfile {
-        var fields: [String: String] = [
-            "name": name,
-            "isShared": isShared ? "true" : "false",
-            "durationMs": String(durationMs),
-        ]
+        let fields = Self.voiceCloneMultipartFields(
+            name: name,
+            isShared: isShared,
+            durationMs: durationMs,
+            noiseRemoval: noiseRemoval,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle,
+            isDraft: isDraft
+        )
         // noise_removal 플래그 — `feat/voice-clone-noise-removal` 머지 이후 backend 가
         // 인식하지만, 미인식 환경(이전 deploy)에서도 무시되도록 옵션으로 추가.
-        if noiseRemoval {
-            fields["noiseRemoval"] = "true"
-            fields["noise_removal"] = "true"
-        }
         // Android `VoiceProfileApi.kt:97-108` 와 동일하게 multipart 필드로 전송.
-        // 비어 있으면 보내지 않아 백엔드 누락 검증을 피한다.
-        if let trimmed = relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
-            fields["relationshipLabel"] = trimmed
-        }
-        if let trimmed = listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
-            fields["listenerTitle"] = trimmed
-        }
-        if let isDraft {
-            fields["isDraft"] = isDraft ? "true" : "false"
-        }
+        // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
             token: token,

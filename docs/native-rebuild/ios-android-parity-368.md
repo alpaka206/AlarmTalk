@@ -175,6 +175,10 @@
   unavailable.
 - iOS voice creation, speaker separation, billing plan descriptions, and voice
   error messages now use the same `목소리` / `유료 이용권` wording as Android.
+- iOS voice clone requests now mirror Android's multipart shape: profile name is
+  trimmed, relationship/listener fields are always included, `isDraft=false` is
+  sent by default, and ViewModel clone/update paths validate relationship and
+  listener labels before making the server call.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.
