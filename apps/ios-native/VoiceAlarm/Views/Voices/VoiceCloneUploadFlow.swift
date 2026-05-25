@@ -14,11 +14,12 @@ struct VoiceCloneUploadFlow: View {
     @Binding var route: VoicesRoute
 
     @State private var profileName: String = ""
+    @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var noiseRemovalEnabled: Bool = false
     @State private var isShared: Bool = false
-    /// 공유된 음성을 받는 사람이 자신을 부를 호칭. Android `VoiceProfileApi.kt:74`.
-    /// 본인이 사용할 때는 비어 있어도 무방하나, 가족·커플에게 공유할 거라면 미리 채워둔다.
+    /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
+    @State private var submitted: Bool = false
     @State private var animatedLevel: CGFloat = 0.0
     @State private var levelTimer: Timer?
 
@@ -75,19 +76,50 @@ struct VoiceCloneUploadFlow: View {
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
+                    if newValue.count > 50 {
+                        profileName = String(newValue.prefix(50))
+                        voice.cloneName = profileName
+                    }
                 }
+            if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("목소리 이름을 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: submitted
+            )
+            .padding(.top, 4)
+
             Text("이 목소리가 부를 호칭")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 .padding(.top, 4)
             TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
                 .textFieldStyle(.roundedBorder)
-            Text("공유 받은 사람이 듣게 될 호칭이에요. 공유하지 않으면 비워둬도 돼요.")
-                .font(.caption2)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                .onChange(of: listenerTitle) { _, newValue in
+                    if newValue.count > 30 {
+                        listenerTitle = String(newValue.prefix(30))
+                    }
+                }
+            if submitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("이 목소리가 나를 부를 이름을 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            } else {
+                Text("랜덤 문구에서 이 이름으로 나를 불러요.")
+                    .font(.caption2)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: relationshipSelection.resolved
+            )
             HStack(spacing: 10) {
                 Toggle(isOn: $isShared) {
-                    Text("가족·커플과 공유")
+                    Text("목소리 공유")
                         .font(.footnote)
                 }
                 .toggleStyle(.switch)
@@ -271,30 +303,44 @@ struct VoiceCloneUploadFlow: View {
     // MARK: - Actions
 
     private func submit() async {
+        submitted = true
         guard let url = voice.recorder.latestRecordingURL,
               let durationMs = voice.recorder.latestDurationMs else {
             voice.statusMessage = "먼저 목소리를 녹음해 주세요."
             return
         }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveName = trimmedName.isEmpty ? "내 목소리" : trimmedName
+        guard !trimmedName.isEmpty else {
+            voice.statusMessage = "목소리 이름을 입력해 주세요."
+            return
+        }
+        let trimmedRelationship = relationshipSelection.resolved
+        guard !trimmedRelationship.isEmpty else {
+            voice.statusMessage = "나와의 관계를 입력해 주세요."
+            return
+        }
         let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveListener = trimmedListener.isEmpty ? nil : trimmedListener
+        guard !trimmedListener.isEmpty else {
+            voice.statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
+            return
+        }
         if noiseRemovalEnabled {
             let _ = await voice.cloneWithNoiseRemoval(
                 audioFileURL: url,
-                name: effectiveName,
+                name: trimmedName,
                 durationMs: durationMs,
                 isShared: isShared,
                 session: auth.session,
-                listenerTitle: effectiveListener
+                relationshipLabel: trimmedRelationship,
+                listenerTitle: trimmedListener
             )
         } else {
-            voice.cloneName = effectiveName
+            voice.cloneName = trimmedName
             await voice.uploadRecordingForClone(
                 session: auth.session,
                 isShared: isShared,
-                listenerTitle: effectiveListener
+                relationshipLabel: trimmedRelationship,
+                listenerTitle: trimmedListener
             )
         }
         // 성공 시 management 로 복귀.

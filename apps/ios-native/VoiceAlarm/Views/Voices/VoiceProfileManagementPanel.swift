@@ -519,7 +519,7 @@ private struct VoiceProfileEditDialog: View {
     let onSave: (String, String, String, Bool) -> Void
 
     @State private var name: String = ""
-    @State private var relationship: String = ""
+    @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var listenerTitle: String = ""
     @State private var isShared: Bool = false
     @State private var submitted = false
@@ -529,7 +529,7 @@ private struct VoiceProfileEditDialog: View {
     }
 
     private var trimmedRelationship: String {
-        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+        relationshipSelection.resolved
     }
 
     private var trimmedListenerTitle: String {
@@ -568,23 +568,10 @@ private struct VoiceProfileEditDialog: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("나와의 관계")
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                TextField("예: 손주, 자식, 형제", text: $relationship)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: relationship) { _, newValue in
-                        if newValue.count > 30 {
-                            relationship = String(newValue.prefix(30))
-                        }
-                    }
-                if submitted && trimmedRelationship.isEmpty {
-                    Text("나와의 관계를 입력해 주세요.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.error)
-                }
-            }
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: submitted
+            )
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("이 목소리가 나를 부를 호칭")
@@ -603,6 +590,11 @@ private struct VoiceProfileEditDialog: View {
                         .foregroundStyle(VoiceAlarmTheme.error)
                 }
             }
+
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: trimmedRelationship
+            )
 
             Toggle(isOn: $isShared) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -630,7 +622,7 @@ private struct VoiceProfileEditDialog: View {
         .padding(20)
         .onAppear {
             name = initialName
-            relationship = initialRelationship
+            relationshipSelection = parseVoiceRelationshipLabel(initialRelationship)
             listenerTitle = initialListenerTitle
             isShared = initialIsShared
         }
@@ -707,17 +699,16 @@ private struct SharedVoiceViewerInfoDialog: View {
     let onPreview: () -> Void
     let onConfirm: (String, String) -> Void
 
-    @State private var relationship: String = ""
+    @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var listenerTitle: String = ""
     @State private var submitted: Bool = false
 
     private var trimmedRelationship: String {
-        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+        relationshipSelection.resolved
     }
     private var trimmedListener: String {
         listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    private var relationshipError: Bool { submitted && trimmedRelationship.isEmpty }
     private var listenerError: Bool { submitted && trimmedListener.isEmpty }
 
     var body: some View {
@@ -759,23 +750,10 @@ private struct SharedVoiceViewerInfoDialog: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("나와의 관계")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                TextField("예: 손주, 자식, 형제", text: $relationship)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: relationship) { _, newValue in
-                        if newValue.count > 30 {
-                            relationship = String(newValue.prefix(30))
-                        }
-                    }
-                if relationshipError {
-                    Text("필수 입력 값입니다.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.error)
-                }
-            }
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: submitted
+            )
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("이 목소리가 나를 부를 호칭")
@@ -794,6 +772,11 @@ private struct SharedVoiceViewerInfoDialog: View {
                         .foregroundStyle(VoiceAlarmTheme.error)
                 }
             }
+
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: trimmedRelationship
+            )
 
             VStack(spacing: 8) {
                 Button(action: onPreview) {
@@ -818,7 +801,7 @@ private struct SharedVoiceViewerInfoDialog: View {
         }
         .padding(20)
         .onAppear {
-            relationship = initialRelationship
+            relationshipSelection = parseVoiceRelationshipLabel(initialRelationship)
             listenerTitle = initialListenerTitle
         }
     }

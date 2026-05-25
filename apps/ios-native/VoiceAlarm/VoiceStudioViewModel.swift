@@ -180,6 +180,7 @@ final class VoiceStudioViewModel: ObservableObject {
     func uploadRecordingForClone(
         session: AuthSession?,
         isShared: Bool = false,
+        relationshipLabel: String? = nil,
         listenerTitle: String? = nil
     ) async {
         guard let token = session?.token else {
@@ -207,6 +208,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
+                relationshipLabel: relationshipLabel,
                 listenerTitle: listenerTitle
             )
             selectedProfileID = profile.id
@@ -224,6 +226,7 @@ final class VoiceStudioViewModel: ObservableObject {
         durationMs: Int,
         isShared: Bool,
         session: AuthSession?,
+        relationshipLabel: String? = nil,
         listenerTitle: String? = nil
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
@@ -241,6 +244,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: durationMs,
                 token: token,
                 noiseRemoval: true,
+                relationshipLabel: relationshipLabel,
                 listenerTitle: listenerTitle
             )
             selectedProfileID = profile.id

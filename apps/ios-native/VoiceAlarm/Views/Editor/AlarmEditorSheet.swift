@@ -985,12 +985,12 @@ private struct SharedVoiceSelectionSetupSheet: View {
     let onPreview: () -> Void
     let onConfirm: (String, String) -> Void
 
-    @State private var relationship: String = ""
+    @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var listenerTitle: String = ""
     @State private var submitted = false
 
     private var trimmedRelationship: String {
-        relationship.trimmingCharacters(in: .whitespacesAndNewlines)
+        relationshipSelection.resolved
     }
 
     private var trimmedListener: String {
@@ -1035,17 +1035,19 @@ private struct SharedVoiceSelectionSetupSheet: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
 
-            field(
-                title: "나와의 관계",
-                placeholder: "예: 손주, 자식, 형제",
-                text: $relationship,
-                showError: submitted && trimmedRelationship.isEmpty
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: submitted
             )
             field(
                 title: "이 목소리가 나를 부를 이름",
                 placeholder: "예: 지호야, 여보",
                 text: $listenerTitle,
                 showError: submitted && trimmedListener.isEmpty
+            )
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: trimmedRelationship
             )
 
             Button(action: onPreview) {
@@ -1070,7 +1072,7 @@ private struct SharedVoiceSelectionSetupSheet: View {
         }
         .padding(20)
         .onAppear {
-            relationship = profile.relationshipLabel ?? ""
+            relationshipSelection = parseVoiceRelationshipLabel(profile.relationshipLabel)
             listenerTitle = profile.listenerTitle ?? ""
         }
     }
