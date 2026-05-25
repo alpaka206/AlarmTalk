@@ -7,6 +7,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
+    @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
     let openAuxiliary: (AuxiliaryScreen) -> Void
@@ -35,8 +36,8 @@ struct HomeView: View {
                 onOpenEditor: { openEditor(.create()) },
                 canCreateFamilyAlarm: canCreateFamilyAlarm,
                 onOpenFamilyAlarm: { openEditor(.createFamily()) },
-                peopleTitle: sharedPassAuxiliaryTarget == .members ? "공유 이용권" : "초대 코드",
-                onOpenPeople: { openAuxiliary(sharedPassAuxiliaryTarget) }
+                voiceLocked: !hasPaidVoiceAccess,
+                alarmLocked: !alarmKit.alarmAuthorized
             )
             CharacterMiniCard {
                 openAuxiliary(.growth)
@@ -54,8 +55,12 @@ struct HomeView: View {
         }
     }
 
-    private var sharedPassAuxiliaryTarget: AuxiliaryScreen {
-        socialFeatures.familyGroup?.group == nil ? .people : .members
+    private var hasPaidVoiceAccess: Bool {
+        guard socialFeatures.subscription?.subscription?.status == "active" else { return false }
+        let key = socialFeatures.subscription?.plan?.key
+        let type = socialFeatures.subscription?.plan?.planType
+        return ["personal", "plus", "couple", "family"].contains(key ?? "") ||
+            ["personal", "individual", "plus", "couple", "family"].contains(type ?? "")
     }
 
     private var homeHeader: some View {

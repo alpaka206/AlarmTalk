@@ -9,8 +9,8 @@ struct QuickStartGrid: View {
     let onOpenEditor: () -> Void
     let canCreateFamilyAlarm: Bool
     let onOpenFamilyAlarm: () -> Void
-    let peopleTitle: String
-    let onOpenPeople: () -> Void
+    var voiceLocked: Bool = false
+    var alarmLocked: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,29 +19,26 @@ struct QuickStartGrid: View {
                 .foregroundStyle(VoiceAlarmTheme.text)
             HStack(spacing: 12) {
                 QuickActionCard(
-                    title: "알람 음성",
+                    title: "목소리",
                     icon: "mic",
                     background: Color(red: 0.86, green: 0.91, blue: 0.96),
+                    locked: voiceLocked,
                     action: onOpenVoices
                 )
                 QuickActionCard(
                     title: "새 알람",
                     icon: "alarm",
                     background: Color(red: 0.98, green: 0.89, blue: 0.58),
+                    locked: alarmLocked,
                     action: onOpenEditor
                 )
             }
-            QuickActionCard(
-                title: peopleTitle,
-                icon: "person.2",
-                background: Color(red: 0.92, green: 0.88, blue: 0.96),
-                action: onOpenPeople
-            )
             if canCreateFamilyAlarm {
                 QuickActionCard(
                     title: "상대 알람 맞춰주기",
                     icon: "bell.badge",
                     background: Color(red: 0.88, green: 0.95, blue: 0.91),
+                    locked: alarmLocked,
                     action: onOpenFamilyAlarm
                 )
             }
@@ -54,6 +51,7 @@ struct QuickActionCard: View {
     let title: String
     let icon: String
     let background: Color
+    var locked: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -61,16 +59,20 @@ struct QuickActionCard: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(background)
+                        .fill(locked ? VoiceAlarmTheme.surfaceVariant : background)
                     Image(systemName: icon)
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(VoiceAlarmTheme.text)
+                        .foregroundStyle(locked ? VoiceAlarmTheme.textSecondary : VoiceAlarmTheme.text)
+                    if locked {
+                        FeatureLockBadge(size: 20, iconSize: 11)
+                            .offset(x: 16, y: -16)
+                    }
                 }
                 .frame(width: 42, height: 42)
 
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(VoiceAlarmTheme.text)
+                    .foregroundStyle(locked ? VoiceAlarmTheme.textSecondary : VoiceAlarmTheme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Spacer()
@@ -95,8 +97,8 @@ struct QuickActionCard: View {
         onOpenEditor: {},
         canCreateFamilyAlarm: true,
         onOpenFamilyAlarm: {},
-        peopleTitle: "공유 이용권",
-        onOpenPeople: {}
+        voiceLocked: true,
+        alarmLocked: false
     )
         .padding()
 }
@@ -107,8 +109,8 @@ struct QuickActionCard: View {
         onOpenEditor: {},
         canCreateFamilyAlarm: true,
         onOpenFamilyAlarm: {},
-        peopleTitle: "공유 이용권",
-        onOpenPeople: {}
+        voiceLocked: false,
+        alarmLocked: true
     )
         .padding()
         .preferredColorScheme(.dark)

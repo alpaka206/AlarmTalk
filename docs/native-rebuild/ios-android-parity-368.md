@@ -113,6 +113,10 @@
 - iOS alarm list now shows the AlarmKit permission card only while alarm
   authorization is missing, matching Android's alarm-tab behavior instead of
   keeping a granted-permission card on the main list.
+- iOS home now mirrors Android's profile menu and quick-start structure:
+  profile opens code/character/billing/shared-pass/settings actions, while
+  quick-start stays focused on `목소리`, `새 알람`, and `상대 알람 맞춰주기`
+  with lock badges for unavailable voice/alarm capabilities.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores

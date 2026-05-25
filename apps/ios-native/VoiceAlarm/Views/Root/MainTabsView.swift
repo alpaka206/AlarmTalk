@@ -48,8 +48,37 @@ struct MainTabsView: View {
             .navigationTitle(selectedTab.navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        settingsPresented = true
+                    Menu {
+                        if socialFeatures.familyGroup?.group == nil {
+                            Button {
+                                auxiliaryScreen = .people
+                            } label: {
+                                Label("초대 코드 등록", systemImage: "qrcode")
+                            }
+                        }
+                        Button {
+                            auxiliaryScreen = .growth
+                        } label: {
+                            Label("캐릭터", systemImage: "sparkles")
+                        }
+                        Button {
+                            auxiliaryScreen = .billing
+                        } label: {
+                            Label("이용권", systemImage: "creditcard")
+                        }
+                        if socialFeatures.familyGroup?.group != nil {
+                            Button {
+                                auxiliaryScreen = .members
+                            } label: {
+                                Label("공유 이용권", systemImage: "person.2")
+                            }
+                        }
+                        Divider()
+                        Button {
+                            settingsPresented = true
+                        } label: {
+                            Label("설정", systemImage: "gearshape")
+                        }
                     } label: {
                         Image(systemName: "person.crop.circle")
                     }
