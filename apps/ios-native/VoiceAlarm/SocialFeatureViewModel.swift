@@ -19,10 +19,16 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var revealedNoteIDs: Set<String> = []
 
     private let api: VoiceAlarmAPI
+    private let accessSnapshotStore: AccessSnapshotStore
     private let notePreviewPlayer = AudioPreviewPlayer()
+    private var activeUserID: String?
 
-    init(api: VoiceAlarmAPI = .shared) {
+    init(
+        api: VoiceAlarmAPI = .shared,
+        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore()
+    ) {
         self.api = api
+        self.accessSnapshotStore = accessSnapshotStore
         notePreviewPlayer.onFinish = { [weak self] in
             self?.playingNoteID = nil
         }
@@ -36,8 +42,43 @@ final class SocialFeatureViewModel: ObservableObject {
         receivedNotes.filter { $0.readAt == nil }.count
     }
 
+    func restoreAccessSnapshot(session: AuthSession?) {
+        guard let userID = normalizedUserID(session?.user.id) else {
+            clearUserScopedRemoteState()
+            return
+        }
+        let snapshot = accessSnapshotStore.read(userID: userID)
+        clearUserScopedRemoteState()
+        activeUserID = userID
+        subscription = snapshot.subscriptionResponse
+        familyGroup = snapshot.familyGroup
+    }
+
+    func clearUserScopedRemoteState() {
+        activeUserID = nil
+        notePreviewPlayer.stop()
+        familyGroup = nil
+        familyVoices = []
+        receivedNotes = []
+        character = nil
+        subscription = nil
+        vouchers = []
+        selectedReceiverID = nil
+        inviteCode = ""
+        statusMessage = nil
+        loadingNoteID = nil
+        playingNoteID = nil
+        unavailableAudioNoteIDs = []
+        revealedNoteIDs = []
+    }
+
     func refreshAll(session: AuthSession?, force: Bool = false) async {
-        guard let token = session?.token else { return }
+        guard let token = session?.token,
+              let userID = normalizedUserID(session?.user.id) else {
+            clearUserScopedRemoteState()
+            return
+        }
+        activeUserID = userID
         guard force || !isBusy else { return }
         let shouldSetBusy = !isBusy
         if shouldSetBusy { isBusy = true }
@@ -48,8 +89,11 @@ final class SocialFeatureViewModel: ObservableObject {
         var messages: [String] = []
 
         do {
-            familyGroup = try await api.getFamilyGroup(token: token)
-            let currentUserID = session?.user.id
+            let nextFamilyGroup = try await api.getFamilyGroup(token: token)
+            guard activeUserID == userID else { return }
+            familyGroup = nextFamilyGroup
+            accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
+            let currentUserID = userID
             if selectedReceiverID == nil {
                 selectedReceiverID = familyGroup?.members.first { $0.userId != currentUserID }?.userId
             }
@@ -58,13 +102,17 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
-            familyVoices = try await api.listFamilyVoiceProfiles(token: token)
+            let nextFamilyVoices = try await api.listFamilyVoiceProfiles(token: token)
+            guard activeUserID == userID else { return }
+            familyVoices = nextFamilyVoices
         } catch {
             messages.append("가족 목소리: \(error.localizedDescription)")
         }
 
         do {
-            receivedNotes = try await api.listReceivedNotes(token: token)
+            let nextReceivedNotes = try await api.listReceivedNotes(token: token)
+            guard activeUserID == userID else { return }
+            receivedNotes = nextReceivedNotes
             let serverUnavailableAudioIDs = Set(receivedNotes.compactMap { note in
                 note.audioUrl != nil && note.audioAvailable == false ? note.id : nil
             })
@@ -83,7 +131,9 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
-            character = try await api.getCharacter(token: token)
+            let nextCharacter = try await api.getCharacter(token: token)
+            guard activeUserID == userID else { return }
+            character = nextCharacter
         } catch {
             messages.append("캐릭터: \(error.localizedDescription)")
         }
@@ -91,13 +141,23 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             async let nextSubscription = api.getSubscription(token: token)
             async let nextVouchers = api.listVouchers(token: token)
-            subscription = try await nextSubscription
-            vouchers = try await nextVouchers
+            let resolvedSubscription = try await nextSubscription
+            let resolvedVouchers = try await nextVouchers
+            guard activeUserID == userID else { return }
+            subscription = resolvedSubscription
+            accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
+            vouchers = resolvedVouchers
         } catch {
             messages.append("이용권: \(error.localizedDescription)")
         }
 
+        guard activeUserID == userID else { return }
         statusMessage = messages.isEmpty ? "소셜/이용권 정보를 불러왔어요." : messages.joined(separator: "\n")
+    }
+
+    private func normalizedUserID(_ userID: String?) -> String? {
+        let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? nil : normalized
     }
 
     func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async {

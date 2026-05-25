@@ -69,6 +69,10 @@
   blank or null profile/plan values fall back to stable defaults, quiet-window
   settings are sanitized, and missing dynamic prompt settings decode as empty
   weather/fortune preferences.
+- iOS access gating now mirrors Android's user-scoped access snapshot: recent
+  subscription and family-group state is restored per signed-in user, refreshed
+  snapshots are persisted, and logout/account switching clears in-memory
+  social, voice, and remote-sync state.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.

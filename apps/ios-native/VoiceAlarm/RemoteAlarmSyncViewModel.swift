@@ -25,6 +25,12 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
         self.api = api
     }
 
+    func clearUserScopedRemoteState() {
+        remoteAlarms = []
+        voiceProfiles = []
+        statusMessage = nil
+    }
+
     /// 메인 앱 초기화 시 한 번 주입. 이후 refresh/push 는 새 동기화 컴포넌트를 사용.
     func configure(store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel) {
         if pull == nil {

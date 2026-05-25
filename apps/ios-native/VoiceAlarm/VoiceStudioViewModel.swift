@@ -55,6 +55,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private let api: VoiceAlarmAPI
     private var cancellables = Set<AnyCancellable>()
+    private var activeUserID: String?
 
     init(api: VoiceAlarmAPI = .shared) {
         self.api = api
@@ -78,6 +79,18 @@ final class VoiceStudioViewModel: ObservableObject {
     var selectedFamilyVoice: FamilyVoiceProfile? {
         guard let selectedProfileID else { return nil }
         return familyVoices.first { $0.id == selectedProfileID }
+    }
+
+    func clearUserScopedRemoteState() {
+        activeUserID = nil
+        previewPlayer.stop()
+        recorder.clearLatest()
+        profiles = []
+        familyVoices = []
+        messages = []
+        selectedProfileID = nil
+        statusMessage = nil
+        preparedAlarm = nil
     }
 
     private var selectedListenerTitle: String? {
@@ -114,12 +127,22 @@ final class VoiceStudioViewModel: ObservableObject {
         max(0, VoiceProfileLimits.maxProfiles - profiles.count)
     }
 
+    private func normalizedUserID(_ userID: String?) -> String? {
+        let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? nil : normalized
+    }
+
     func refresh(
         session: AuthSession?,
         force: Bool = false,
         successMessage: String? = "목소리 정보를 불러왔어요."
     ) async {
-        guard let token = session?.token else { return }
+        guard let token = session?.token,
+              let userID = normalizedUserID(session?.user.id) else {
+            clearUserScopedRemoteState()
+            return
+        }
+        activeUserID = userID
         guard force || !isBusy else { return }
         let shouldManageBusy = !isBusy
         if shouldManageBusy {
@@ -141,8 +164,11 @@ final class VoiceStudioViewModel: ObservableObject {
             } catch {
                 familyResult = []
             }
-            profiles = try await nextProfiles
-            messages = try await nextMessages
+            let resolvedProfiles = try await nextProfiles
+            let resolvedMessages = try await nextMessages
+            guard activeUserID == userID else { return }
+            profiles = resolvedProfiles
+            messages = resolvedMessages
             familyVoices = familyResult
             if let selectedProfileID,
                !profiles.contains(where: { $0.id == selectedProfileID }),
@@ -156,9 +182,11 @@ final class VoiceStudioViewModel: ObservableObject {
                     familyVoices.first?.id
             }
             if let successMessage {
+                guard activeUserID == userID else { return }
                 statusMessage = successMessage
             }
         } catch {
+            guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
         }
     }

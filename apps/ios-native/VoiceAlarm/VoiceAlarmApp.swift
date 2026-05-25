@@ -94,6 +94,11 @@ struct VoiceAlarmApp: App {
                         await characterEvents.flushPending()
                         BackgroundSyncTask.scheduleNext()
                     }
+                    .task(id: auth.session?.user.id) {
+                        remoteSync.clearUserScopedRemoteState()
+                        voiceStudio.clearUserScopedRemoteState()
+                        socialFeatures.restoreAccessSnapshot(session: auth.session)
+                    }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore)

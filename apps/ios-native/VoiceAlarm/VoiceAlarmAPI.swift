@@ -534,13 +534,13 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
     var voiceProfileId: String?
 }
 
-struct FamilyGroupCurrentResponse: Decodable, Equatable {
+struct FamilyGroupCurrentResponse: Codable, Equatable {
     var group: FamilyGroup?
     var role: String?
     var members: [FamilyGroupMember]
 }
 
-struct FamilyGroup: Decodable, Identifiable, Equatable {
+struct FamilyGroup: Codable, Identifiable, Equatable {
     var id: String
     var ownerUserId: String
     var planId: String
@@ -548,7 +548,7 @@ struct FamilyGroup: Decodable, Identifiable, Equatable {
     var createdAt: String
 }
 
-struct FamilyGroupMember: Decodable, Identifiable, Equatable {
+struct FamilyGroupMember: Codable, Identifiable, Equatable {
     var id: String
     var userId: String
     var role: String
@@ -718,13 +718,13 @@ struct CharacterGrant: Decodable, Equatable {
     var duplicated: Bool
 }
 
-struct BillingSubscriptionResponse: Decodable, Equatable {
+struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
     var nextPlan: BillingPlanSummary?
 }
 
-struct BillingSubscription: Decodable, Identifiable, Equatable {
+struct BillingSubscription: Codable, Identifiable, Equatable {
     var id: String
     var planId: String
     var planGroupId: String?
@@ -736,7 +736,7 @@ struct BillingSubscription: Decodable, Identifiable, Equatable {
     var nextPlanId: String?
 }
 
-struct BillingPlan: Decodable, Identifiable, Equatable {
+struct BillingPlan: Codable, Identifiable, Equatable {
     var id: String
     var key: String
     var name: String
@@ -746,7 +746,7 @@ struct BillingPlan: Decodable, Identifiable, Equatable {
     var priceKrw: Int
 }
 
-struct BillingPlanSummary: Decodable, Identifiable, Equatable {
+struct BillingPlanSummary: Codable, Identifiable, Equatable {
     var id: String
     var key: String
     var name: String
