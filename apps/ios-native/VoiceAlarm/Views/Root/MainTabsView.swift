@@ -15,6 +15,7 @@ struct MainTabsView: View {
 
     @State private var selectedTab: NativeTab = .home
     @State private var planGate: PlanGateState?
+    @State private var receivedAlarmSeenAtMillis: Int64 = 0
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -117,7 +118,9 @@ struct MainTabsView: View {
                 openBillingAfterPlanGate()
             }
             .task(id: auth.session?.token) {
+                loadReceivedAlarmBadgeState()
                 await refreshAll()
+                ensureReceivedAlarmBadgeBaseline()
             }
             .task(id: selectedTab) {
                 await refreshForSelectedTab(selectedTab)
@@ -219,9 +222,16 @@ struct MainTabsView: View {
         case .home, .voices:
             return 0
         case .alarms:
-            return store.alarms.filter { !$0.enabled }.count
+            return selectedTab == .alarms ? 0 : unreadReceivedAlarmCount
         case .messages:
             return socialFeatures.unreadNoteCount
+        }
+    }
+
+    private var unreadReceivedAlarmCount: Int {
+        store.alarms.count { alarm in
+            alarm.originEnum == .receivedRemote &&
+                alarm.createdAtMillis > receivedAlarmSeenAtMillis
         }
     }
 
@@ -243,10 +253,34 @@ struct MainTabsView: View {
         case .alarms:
             await remoteSync.refresh(session: auth.session)
             alarmKit.refreshAuthorizationState()
+            markReceivedAlarmsSeen()
         case .messages:
             await socialFeatures.refreshAll(session: auth.session)
             await voiceStudio.refresh(session: auth.session)
         }
+    }
+
+    private func loadReceivedAlarmBadgeState() {
+        guard let userID = auth.session?.user.id else {
+            receivedAlarmSeenAtMillis = 0
+            return
+        }
+        receivedAlarmSeenAtMillis = ReceivedAlarmBadgeStore().readSeenAtMillis(userID: userID)
+    }
+
+    private func ensureReceivedAlarmBadgeBaseline() {
+        guard let userID = auth.session?.user.id else { return }
+        let badgeStore = ReceivedAlarmBadgeStore()
+        if badgeStore.hasBaseline(userID: userID) {
+            receivedAlarmSeenAtMillis = badgeStore.readSeenAtMillis(userID: userID)
+        } else {
+            receivedAlarmSeenAtMillis = badgeStore.markSeen(userID: userID, alarms: store.alarms)
+        }
+    }
+
+    private func markReceivedAlarmsSeen() {
+        guard let userID = auth.session?.user.id else { return }
+        receivedAlarmSeenAtMillis = ReceivedAlarmBadgeStore().markSeen(userID: userID, alarms: store.alarms)
     }
 }
 

@@ -115,6 +115,9 @@
   keeping a granted-permission card on the main list.
 - iOS alarm list ordering now matches Android's visible ordering by hour,
   minute, then creation time instead of sorting by the next fire date.
+- iOS alarm-tab badge now mirrors Android's received-alarm badge semantics:
+  the badge counts newly received remote alarms since the user's last alarm-tab
+  visit instead of counting disabled alarms.
 - iOS home now mirrors Android's profile menu and quick-start structure:
   profile opens code/character/billing/shared-pass/settings actions, while
   quick-start stays focused on `목소리`, `새 알람`, and `상대 알람 맞춰주기`
