@@ -52,6 +52,7 @@ struct HomeView: View {
     }
 
     private var canCreateFamilyAlarm: Bool {
+        guard auth.session != nil, hasFamilyAlarmAccess else { return false }
         let currentUserID = auth.session?.user.id
         let currentEmail = auth.session?.user.email
         return socialFeatures.selectableMembers.contains { member in
@@ -62,12 +63,19 @@ struct HomeView: View {
     }
 
     private var hasPaidVoiceAccess: Bool {
+        currentPlan.meetsOrExceeds(.personal)
+    }
+
+    private var hasFamilyAlarmAccess: Bool {
+        socialFeatures.familyGroup?.group != nil || currentPlan.meetsOrExceeds(.couple)
+    }
+
+    private var currentPlan: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
-        .meetsOrExceeds(.personal)
     }
 
     private func openVoicesFromHome() {

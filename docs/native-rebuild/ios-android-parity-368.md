@@ -126,6 +126,10 @@
   voice entry requests microphone permission before opening the voice tab when
   the paid plan is available, and new/family alarm creation requests AlarmKit
   permission before opening the editor.
+- iOS family-alarm entry now mirrors Android's availability rule: the home
+  shortcut requires login, couple/family access, and at least one recipient who
+  allows family alarms, and the editor blocks family-alarm save without
+  couple/family access.
 - iOS bottom navigation and voice-tab header now use Android's visible
   `목소리` wording.
 - iOS settings sheet now uses the same X-style modal dismissal affordance as

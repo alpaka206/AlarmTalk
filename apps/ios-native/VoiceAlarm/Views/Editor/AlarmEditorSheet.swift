@@ -453,12 +453,19 @@ struct AlarmEditorSheet: View {
     }
 
     private var voicePlanLocked: Bool {
-        !PlanTier.bestKnown(
+        !currentPlan.meetsOrExceeds(.personal)
+    }
+
+    private var familyAlarmLocked: Bool {
+        socialFeatures.familyGroup?.group == nil && !currentPlan.meetsOrExceeds(.couple)
+    }
+
+    private var currentPlan: PlanTier {
+        PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
-        .meetsOrExceeds(.personal)
     }
 
     private var defaultPlayModeForPlan: AlarmPlayMode {
@@ -631,6 +638,14 @@ struct AlarmEditorSheet: View {
         if voicePlanLocked && draft.playMode != .alarmOnly {
             draft.playMode = .alarmOnly
             showVoicePlanLockedAlert()
+            return
+        }
+
+        if target.familyAlarmMode && familyAlarmLocked {
+            validationAlert = ValidationAlertContent(
+                title: "이용권이 필요해요",
+                message: "상대 알람은 커플/가족 이용권에서 사용할 수 있어요."
+            )
             return
         }
 
