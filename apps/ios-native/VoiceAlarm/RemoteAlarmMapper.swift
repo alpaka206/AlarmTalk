@@ -196,13 +196,14 @@ enum RemoteAlarmMapper {
         return hasVoice ? .serverTts : .ttsProfile
     }
 
-    /// 라벨 우선순위: messageText -> "{senderName} 알람" -> "받은 알람"
+    /// Android `receivedRemoteAlarmLabel(...)` 과 동일한 받은 알람 라벨.
     static func resolveLabel(_ remote: RemoteAlarm) -> String {
-        if let text = remote.messageText?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !text.isEmpty { return text }
-        if let sender = remote.senderName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sender.isEmpty { return "\(sender) 알람" }
-        return "받은 알람"
+        let sender = [remote.senderName, remote.senderEmail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard let sender else { return "상대가 보낸 알람" }
+        let displayName = sender.hasSuffix("님") ? sender : "\(sender)님"
+        return "\(displayName)이 보낸 알람"
     }
 
     /// Android `RemoteAlarmMapper.isRemoteAudioUrl` 동일.

@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | Auth | Email, Google login, session restore, profile update/delete, latest state gating | Apple + email login, Keychain restore, profile update/delete | Google is Android-only; iOS should keep Apple as platform equivalent. Need copy/status parity review. |
 | Permissions | Exact alarm, notification, full-screen intent, battery guidance | AlarmKit + microphone gate | Platform-specific parity acceptable. Need final AlarmKit physical-device proof. |
-| Alarm list | Local + remote alarms, sender labels, disabled/deleted voice handling | Local store + AlarmKit + remote sync | Need latest Android display copy and received-alarm metadata parity audit. |
+| Alarm list | Local + remote alarms, sender labels, disabled/deleted voice handling | Local store + AlarmKit + remote sync with Android sender labels | Need macOS visual QA and received-alarm device pass. |
 | Alarm editor | Time wheel, repeat, holiday, snooze, vibration, play mode, voice picker, random prompt weather/fortune, shared voice setup preview | Time wheel, repeat, holiday, snooze, vibration, play mode, voice picker, weather/fortune inputs, shared voice setup preview | Need macOS visual QA and physical-device save/schedule pass. |
 | Alarm ring | AlarmManager full-screen service, local audio, volume ramp, snooze/dismiss, XP event | AlarmKit schedule, local sound staging, in-app voice fallback, App Intents | iOS AlarmKit limitations need device proof; volume-ramp parity is limited by AlarmKit/system sound behavior. |
 | Voice creation | Record/upload, crop, speaker separation, clone, relationship/listener, slots, delete cascade | Voice recorder/upload/speaker separation/clone/profile management | Need latest Android shared voice card/modal copy/design and preview parity. |
@@ -54,6 +54,9 @@
   note if the generated TTS response has no remote audio identifier.
 - Received remote alarms now downgrade to alarm-only when their voice audio
   cannot be cached locally, matching Android's local-file-only ring path.
+- Received remote alarm labels now mirror Android's
+  "`sender`님이 보낸 알람" / "상대가 보낸 알람" rules instead of using the
+  message text as the alarm title.
 - iOS app launch and foreground entry now recover enabled local alarms that are
   missing an AlarmKit runtime ID or were left in a failed state. Repeating
   alarms are moved to the next valid fire time before rescheduling; expired

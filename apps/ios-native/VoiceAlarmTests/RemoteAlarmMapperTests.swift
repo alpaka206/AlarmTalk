@@ -116,6 +116,67 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .alarmOnly)
     }
 
+    // MARK: - label resolution
+
+    func test_resolveLabel_usesSenderNameLikeAndroid() {
+        let remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "Other님이 보낸 알람")
+    }
+
+    func test_resolveLabel_doesNotDuplicateHonorific() {
+        var remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: "message text should not become label",
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: "규원님", senderEmail: remote.senderEmail,
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "규원님이 보낸 알람")
+    }
+
+    func test_resolveLabel_fallsBackToSenderEmailAndGenericText() {
+        var remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: remote.messageText,
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: nil, senderEmail: "sender@example.com",
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "sender@example.com님이 보낸 알람")
+
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: remote.messageText,
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: nil, senderEmail: nil,
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "상대가 보낸 알람")
+    }
+
     // MARK: - toRemoteRequest
 
     func test_toRemoteRequest_withTtsMessage_setsTtsMode() {
@@ -210,7 +271,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             isReceivedFamilyAlarm: false
         )
         let local = RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000)
-        XCTAssertEqual(local.label, "Wake up")
+        XCTAssertEqual(local.label, "Sender님이 보낸 알람")
         XCTAssertEqual(local.hour, 7)
         XCTAssertEqual(local.minute, 30)
         XCTAssertEqual(local.snoozeMinutes, 7)
