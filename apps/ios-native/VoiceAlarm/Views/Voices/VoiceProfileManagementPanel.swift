@@ -103,13 +103,16 @@ struct VoiceProfileManagementPanel: View {
                     let force = deleteForce
                     deleteTarget = nil
                     Task {
-                        await voice.deleteProfile(
+                        let didDelete = await voice.deleteProfile(
                             target,
                             session: auth.session,
                             force: force,
                             alarmStore: alarmStore,
                             audioCache: AudioCacheStore.shared
                         )
+                        if didDelete {
+                            await socialFeatures.refreshAll(session: auth.session, force: true)
+                        }
                     }
                 }
             )

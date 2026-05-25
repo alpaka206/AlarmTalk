@@ -189,6 +189,9 @@
 - iOS voice deletion now mirrors Android's recovery path: a server 404 is
   treated as an already-deleted voice, selected voice state is cleared, local
   alarms are downgraded to alarm-only, and voice state is refreshed.
+- iOS voice deletion now also mirrors Android's `refreshNotesSilently()` follow-up
+  by refreshing social/message state after deletion, so received voice-message
+  play buttons disappear after the backend marks audio unavailable.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.

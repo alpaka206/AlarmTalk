@@ -652,9 +652,9 @@ final class VoiceStudioViewModel: ObservableObject {
         force: Bool = true,
         alarmStore: LocalAlarmStore? = nil,
         audioCache: AudioCacheStore? = nil
-    ) async {
-        guard let token = session?.token else { return }
-        guard !isBusy else { return }
+    ) async -> Bool {
+        guard let token = session?.token else { return false }
+        guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
 
@@ -663,14 +663,16 @@ final class VoiceStudioViewModel: ObservableObject {
             handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
             statusMessage = "목소리를 삭제했어요."
             await refresh(session: session, force: true, successMessage: nil)
+            return true
         } catch {
             if isNotFoundError(error) {
                 handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
                 statusMessage = "이미 삭제된 목소리예요."
                 await refresh(session: session, force: true, successMessage: nil)
-                return
+                return true
             }
             statusMessage = mapVoiceError(error)
+            return false
         }
     }
 
