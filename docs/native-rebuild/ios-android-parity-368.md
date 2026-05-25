@@ -98,6 +98,9 @@
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even
   when only one code is available.
+- iOS billing cancellation now opens an Android-style choice sheet and passes
+  `at_period_end` or `now` to the backend instead of immediately scheduling a
+  period-end cancellation from the button.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

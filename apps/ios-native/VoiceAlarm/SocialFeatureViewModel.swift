@@ -290,7 +290,7 @@ final class SocialFeatureViewModel: ObservableObject {
         try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
     }
 
-    func cancelSubscription(session: AuthSession?) async {
+    func cancelSubscription(mode: String = "at_period_end", session: AuthSession?) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
@@ -300,8 +300,8 @@ final class SocialFeatureViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await api.cancelSubscription(mode: "at_period_end", token: token)
-            statusMessage = "구독 해지를 예약했어요."
+            _ = try await api.cancelSubscription(mode: mode, token: token)
+            statusMessage = mode == "now" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
             await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription

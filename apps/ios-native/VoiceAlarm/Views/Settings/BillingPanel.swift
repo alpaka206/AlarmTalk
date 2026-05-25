@@ -25,6 +25,7 @@ struct BillingPanel: View {
     /// 결제 결과를 사용자에게 토스트로 알리기 위한 transient 메시지.
     @State private var purchaseFeedback: String?
     @State private var showLeaveSharedPassConfirm = false
+    @State private var showCancelSubscriptionSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
 
     private var currentTier: PlanTier {
@@ -100,9 +101,9 @@ struct BillingPanel: View {
                 .disabled(socialFeatures.isBusy)
             } else if socialFeatures.subscription?.subscription != nil {
                 Button(role: .destructive) {
-                    Task { await socialFeatures.cancelSubscription(session: auth.session) }
+                    showCancelSubscriptionSheet = true
                 } label: {
-                    Label("구독 해지 예약", systemImage: "xmark.circle")
+                    Label("이용권 해지", systemImage: "xmark.circle")
                 }
                 .buttonStyle(.bordered)
                 .disabled(socialFeatures.isBusy)
@@ -137,6 +138,22 @@ struct BillingPanel: View {
             Button("취소", role: .cancel) {}
         } message: {
             Text("나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.")
+        }
+        .sheet(isPresented: $showCancelSubscriptionSheet) {
+            CancelSubscriptionSheet(
+                subscription: socialFeatures.subscription?.subscription,
+                onDismiss: { showCancelSubscriptionSheet = false },
+                onConfirm: { mode in
+                    showCancelSubscriptionSheet = false
+                    Task {
+                        await socialFeatures.cancelSubscription(
+                            mode: mode,
+                            session: auth.session
+                        )
+                    }
+                }
+            )
+            .presentationDetents([.medium])
         }
         .sheet(
             isPresented: Binding(
@@ -478,6 +495,80 @@ struct PlanCard: View {
         case .couple:   return "두 사람의 알람과 메시지 공유"
         case .family:   return "최대 6인 가족 공유 알람"
         }
+    }
+}
+
+private struct CancelSubscriptionSheet: View {
+    let subscription: BillingSubscription?
+    let onDismiss: () -> Void
+    let onConfirm: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("이용권 해지")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Text(description)
+                        .font(.footnote)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("닫기")
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    onConfirm("at_period_end")
+                } label: {
+                    Text(periodEndButtonTitle)
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+
+                Button(role: .destructive) {
+                    onConfirm("now")
+                } label: {
+                    Text("지금 해지하기")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(VoiceAlarmTheme.error)
+                .foregroundStyle(.white)
+            }
+        }
+        .padding(20)
+        .background(VoiceAlarmTheme.background)
+    }
+
+    private var periodEndButtonTitle: String {
+        if let endDate {
+            return "\(endDate)에 해지"
+        }
+        return "종료일에 해지"
+    }
+
+    private var description: String {
+        if let endDate {
+            return "종료일인 \(endDate)까지 이용권을 유지하거나, 지금 바로 무료 이용권으로 전환할 수 있어요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+        }
+        return "해지 시점을 선택해 주세요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+    }
+
+    private var endDate: String? {
+        formatPassDate(subscription?.expiresAt)
     }
 }
 
