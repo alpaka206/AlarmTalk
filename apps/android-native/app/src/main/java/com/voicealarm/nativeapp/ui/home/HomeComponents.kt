@@ -15,7 +15,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.QrCode2
@@ -26,7 +28,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 @Composable
 internal fun HomeHeader() {
@@ -211,29 +215,148 @@ internal fun ThemeModePickerDialog(
     onDismiss: () -> Unit,
     onSelect: (ThemeMode) -> Unit,
 ) {
-    AlertDialog(
+    val options = listOf(
+        ThemeModeOption(
+            mode = ThemeMode.System,
+            title = "시스템",
+            description = "휴대폰 설정을 따라가요.",
+            icon = Icons.Outlined.Settings,
+        ),
+        ThemeModeOption(
+            mode = ThemeMode.Light,
+            title = "밝게",
+            description = "낮에도 선명한 밝은 화면이에요.",
+            icon = Icons.Outlined.LightMode,
+        ),
+        ThemeModeOption(
+            mode = ThemeMode.Dark,
+            title = "어둡게",
+            description = "밤에 보기 편한 어두운 화면이에요.",
+            icon = Icons.Outlined.DarkMode,
+        ),
+    )
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { ModalDialogTitle("테마 선택", onDismiss = onDismiss) },
-        text = {
-            Column {
-                ThemeMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = mode == current,
-                            onClick = { onSelect(mode) },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 420.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                ModalDialogTitle("테마 선택", onDismiss = onDismiss)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    options.forEach { option ->
+                        ThemeModeOptionRow(
+                            option = option,
+                            selected = option.mode == current,
+                            onClick = {
+                                onSelect(option.mode)
+                                onDismiss()
+                            },
                         )
-                        Text(themeModeLabel(mode))
                     }
                 }
             }
+        }
+    }
+}
+
+private data class ThemeModeOption(
+    val mode: ThemeMode,
+    val title: String,
+    val description: String,
+    val icon: ImageVector,
+)
+
+@Composable
+private fun ThemeModeOptionRow(
+    option: ThemeModeOption,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) {
+            scheme.primaryContainer.copy(alpha = 0.62f)
+        } else {
+            scheme.surfaceVariant.copy(alpha = 0.34f)
         },
-        confirmButton = {},
-    )
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (selected) scheme.primary.copy(alpha = 0.52f) else scheme.outlineVariant,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (selected) scheme.primary else scheme.surface,
+                contentColor = if (selected) scheme.onPrimary else scheme.primary,
+                border = BorderStroke(1.dp, scheme.outlineVariant),
+            ) {
+                Box(
+                    modifier = Modifier.size(42.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = option.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = option.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = scheme.onSurface,
+                )
+                Text(
+                    text = option.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            if (selected) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = scheme.primary,
+                    contentColor = scheme.onPrimary,
+                ) {
+                    Text(
+                        text = "선택됨",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
