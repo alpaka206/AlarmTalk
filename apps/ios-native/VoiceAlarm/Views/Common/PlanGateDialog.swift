@@ -35,8 +35,25 @@ struct PlanGateDialog: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.headline)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(width: 32, height: 32)
+                        .background(theme.palette.surfaceVariant, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("닫기"))
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 16)
+
             FeatureLockBadge(size: 58, iconSize: 27)
-                .padding(.top, 24)
+                .padding(.top, 2)
 
             VStack(spacing: 7) {
                 Text(state.title)
@@ -85,14 +102,6 @@ struct PlanGateDialog: View {
                 .foregroundStyle(theme.palette.onPrimary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                Button(action: { dismiss() }) {
-                    Text(state.dismissLabel)
-                        .font(theme.typography.labelLarge)
-                        .frame(maxWidth: .infinity, minHeight: 46)
-                }
-                .buttonStyle(.bordered)
-                .foregroundStyle(theme.palette.onSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 22)
@@ -112,7 +121,6 @@ struct PlanGateState: Identifiable, Equatable {
     let title: String
     let body: String
     let confirmLabel: String
-    let dismissLabel: String
     let currentPlan: PlanTier
     let requiredPlan: PlanTier
 
@@ -120,14 +128,12 @@ struct PlanGateState: Identifiable, Equatable {
         title: String = "유료 기능이에요",
         message: String? = nil,
         confirmLabel: String = "요금제 변경하러 가기",
-        dismissLabel: String = "닫기",
         currentPlan: PlanTier,
         requiredPlan: PlanTier
     ) {
         self.title = title
         self.body = message ?? PlanGateState.defaultMessage(requiredPlan: requiredPlan)
         self.confirmLabel = confirmLabel
-        self.dismissLabel = dismissLabel
         self.currentPlan = currentPlan
         self.requiredPlan = requiredPlan
     }

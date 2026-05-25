@@ -753,6 +753,7 @@ struct VoicePlanGateSheet: View {
                     Image(systemName: "xmark")
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
+                .accessibilityLabel(Text("닫기"))
             }
             Text("보이스 슬롯이 가득 찼거나, 본 기능은 유료 플랜에서 사용할 수 있어요.")
                 .font(.subheadline)
@@ -761,15 +762,10 @@ struct VoicePlanGateSheet: View {
                 bullet("기존 보이스를 삭제해 자리를 만들어요")
                 bullet("Family · Couple 플랜으로 업그레이드해 슬롯을 확장해요")
             }
-            HStack {
-                Button("닫기", action: onClose)
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                Button("플랜 보기", action: onUpgrade)
-                    .buttonStyle(.borderedProminent)
-                    .tint(VoiceAlarmTheme.primary)
-                    .frame(maxWidth: .infinity)
-            }
+            Button("플랜 보기", action: onUpgrade)
+                .buttonStyle(.borderedProminent)
+                .tint(VoiceAlarmTheme.primary)
+                .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
         }
         .padding(20)

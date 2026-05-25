@@ -261,7 +261,10 @@ struct AlarmEditorSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("닫기") { onClose() }
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel(Text("닫기"))
             }
         }
         .alert(item: $validationAlert) { content in

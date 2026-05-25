@@ -3,7 +3,7 @@ import SwiftUI
 /// People/Growth/Billing 보조 화면들의 단일 시트 진입점.
 ///
 /// ContentView 의 `auxiliarySheet(_:)` 를 옮긴 것. 시트의 NavigationStack 과
-/// "닫기" 버튼은 본 호스트가 표준화한다. 부모(MainTabsView)는 어떤 화면을 띄울지만
+/// X 닫기 버튼은 본 호스트가 표준화한다. 부모(MainTabsView)는 어떤 화면을 띄울지만
 /// `.sheet(item:)` 으로 결정하면 된다.
 struct AuxiliarySheetHost: View {
     let screen: AuxiliaryScreen
@@ -28,7 +28,10 @@ struct AuxiliarySheetHost: View {
             .background(VoiceAlarmTheme.background)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("닫기") { onClose() }
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(Text("닫기"))
                 }
             }
         }
