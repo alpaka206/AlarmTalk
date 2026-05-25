@@ -136,6 +136,10 @@
 - iOS root tab routing now mirrors Android's navigation gate: tapping the
   locked `목소리` tab opens the paid-plan dialog for free users, and tapping
   `메시지` without couple/family access opens the couple/family plan dialog.
+- iOS root tabs now mirror Android's foreground refresh cadence: home refreshes
+  social/billing/character state, voices refreshes voice plus social state,
+  alarms refreshes remote alarm sync plus authorization, and messages refreshes
+  social/message plus voice-message archive state on tab entry.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores

@@ -119,6 +119,9 @@ struct MainTabsView: View {
             .task(id: auth.session?.token) {
                 await refreshAll()
             }
+            .task(id: selectedTab) {
+                await refreshForSelectedTab(selectedTab)
+            }
         }
     }
 
@@ -227,6 +230,23 @@ struct MainTabsView: View {
         await voiceStudio.refresh(session: auth.session)
         await socialFeatures.refreshAll(session: auth.session)
         alarmKit.refreshAuthorizationState()
+    }
+
+    private func refreshForSelectedTab(_ tab: NativeTab) async {
+        guard auth.session != nil else { return }
+        switch tab {
+        case .home:
+            await socialFeatures.refreshAll(session: auth.session)
+        case .voices:
+            await voiceStudio.refresh(session: auth.session)
+            await socialFeatures.refreshAll(session: auth.session)
+        case .alarms:
+            await remoteSync.refresh(session: auth.session)
+            alarmKit.refreshAuthorizationState()
+        case .messages:
+            await socialFeatures.refreshAll(session: auth.session)
+            await voiceStudio.refresh(session: auth.session)
+        }
     }
 }
 
