@@ -134,7 +134,8 @@ struct LoginPermissionSnapshot: Equatable {
     @MainActor
     private static func isAlarmAuthorized(alarmKit: AlarmKitViewModel) -> Bool {
         #if canImport(AlarmKit)
-        return AlarmManager.shared.authorizationState == .authorized
+        alarmKit.refreshAuthorizationState()
+        return alarmKit.alarmAuthorized
         #else
         // AlarmKit 미사용 SDK 빌드는 게이트 통과로 간주.
         return true

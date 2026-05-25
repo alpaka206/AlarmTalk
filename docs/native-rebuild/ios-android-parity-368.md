@@ -110,6 +110,9 @@
   row-level local/server/audio detail text and manual "server save" action so
   the user-facing list matches Android's simple time/label/toggle/warning
   structure.
+- iOS alarm list now shows the AlarmKit permission card only while alarm
+  authorization is missing, matching Android's alarm-tab behavior instead of
+  keeping a granted-permission card on the main list.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores

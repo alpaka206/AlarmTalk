@@ -8,6 +8,7 @@ import AlarmKit
 @MainActor
 final class AlarmKitViewModel: ObservableObject {
     @Published var authorizationLabel = "Unknown"
+    @Published private(set) var alarmAuthorized = false
     @Published var statusMessage: String?
 
     private let holidayStore = HolidayStore()
@@ -27,9 +28,10 @@ final class AlarmKitViewModel: ObservableObject {
 
     func refreshAuthorizationState() {
         #if canImport(AlarmKit)
-        authorizationLabel = String(describing: AlarmManager.shared.authorizationState)
+        applyAuthorizationState(AlarmManager.shared.authorizationState)
         #else
         authorizationLabel = "Unavailable"
+        alarmAuthorized = true
         #endif
     }
 
@@ -37,7 +39,7 @@ final class AlarmKitViewModel: ObservableObject {
         #if canImport(AlarmKit)
         do {
             let state = try await AlarmManager.shared.requestAuthorization()
-            authorizationLabel = String(describing: state)
+            applyAuthorizationState(state)
             statusMessage = "Alarm authorization: \(authorizationLabel)"
         } catch {
             statusMessage = "Alarm authorization failed: \(error.localizedDescription)"
@@ -59,6 +61,11 @@ final class AlarmKitViewModel: ObservableObject {
     }
 
     #if canImport(AlarmKit)
+    private func applyAuthorizationState(_ state: AlarmManager.AuthorizationState) {
+        authorizationLabel = String(describing: state)
+        alarmAuthorized = state == .authorized
+    }
+
     private func observeAlarmUpdates(store: LocalAlarmStore) async {
         for await alarms in AlarmManager.shared.alarmUpdates {
             await processAlarmUpdate(alarms: alarms, store: store)
@@ -230,7 +237,7 @@ final class AlarmKitViewModel: ObservableObject {
         do {
             if AlarmManager.shared.authorizationState != .authorized {
                 let state = try await AlarmManager.shared.requestAuthorization()
-                authorizationLabel = String(describing: state)
+                applyAuthorizationState(state)
                 guard state == .authorized else {
                     statusMessage = "AlarmKit permission is required before scheduling."
                     return false

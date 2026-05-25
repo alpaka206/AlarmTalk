@@ -27,7 +27,9 @@ struct AlarmsListView: View {
                 .foregroundStyle(VoiceAlarmTheme.text)
             }
 
-            AlarmPermissionSection()
+            if !alarmKit.alarmAuthorized {
+                AlarmPermissionSection()
+            }
             localAlarmSection
         }
     }
