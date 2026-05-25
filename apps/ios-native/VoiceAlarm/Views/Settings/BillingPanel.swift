@@ -23,6 +23,7 @@ struct BillingPanel: View {
 
     /// 결제 결과를 사용자에게 토스트로 알리기 위한 transient 메시지.
     @State private var purchaseFeedback: String?
+    @State private var showLeaveSharedPassConfirm = false
 
     private var currentTier: PlanTier {
         // StoreKit currentEntitlements 가 권위. 백엔드 plan key 는 fallback.
@@ -31,9 +32,27 @@ struct BillingPanel: View {
         return PlanTier.from(socialFeatures.subscription?.plan?.key)
     }
 
+    private var isSharedMember: Bool {
+        socialFeatures.familyGroup?.role == "member" && socialFeatures.familyGroup?.group != nil
+    }
+
+    private var sharedGroupID: String? {
+        socialFeatures.familyGroup?.group?.id
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            headerSection
+            CurrentPassSummaryCard(
+                subscription: socialFeatures.subscription?.subscription,
+                currentPlan: socialFeatures.subscription?.plan,
+                nextPlan: socialFeatures.subscription?.nextPlan,
+                currentTier: currentTier,
+                isSharedMember: isSharedMember
+            )
+
+            Text("이용권 선택")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(VoiceAlarmTheme.text)
 
             ForEach(PlanTier.allCases, id: \.self) { tier in
                 PlanCard(
@@ -61,7 +80,15 @@ struct BillingPanel: View {
                     .padding(.top, 4)
             }
 
-            if socialFeatures.subscription?.subscription != nil {
+            if isSharedMember {
+                Button(role: .destructive) {
+                    showLeaveSharedPassConfirm = true
+                } label: {
+                    Label("공유 이용권에서 나가기", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .buttonStyle(.bordered)
+                .disabled(socialFeatures.isBusy)
+            } else if socialFeatures.subscription?.subscription != nil {
                 Button(role: .destructive) {
                     Task { await socialFeatures.cancelSubscription(session: auth.session) }
                 } label: {
@@ -85,35 +112,22 @@ struct BillingPanel: View {
             if subscriptions.products.isEmpty {
                 await subscriptions.fetchProducts()
             }
+            await socialFeatures.refreshAll(session: auth.session, force: true)
         }
-    }
-
-    // MARK: - Header
-
-    @ViewBuilder
-    private var headerSection: some View {
-        let subscription = socialFeatures.subscription?.subscription
-        let plan = socialFeatures.subscription?.plan
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(plan?.name ?? currentTier.displayLabel)
-                    .font(.headline)
-                Text(subscription?.status ?? statusLabel(for: currentTier))
-                    .font(.footnote)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+        .alert("공유 이용권에서 나가기", isPresented: $showLeaveSharedPassConfirm) {
+            Button("나가기", role: .destructive) {
+                guard let groupID = sharedGroupID else { return }
+                Task {
+                    await socialFeatures.leaveFamilyGroup(
+                        groupId: groupID,
+                        session: auth.session
+                    )
+                }
             }
-            Spacer()
-            if let expiresAt = subscription?.expiresAt {
-                PermissionPill(text: "만료 \(expiresAt)")
-            }
-            if subscriptions.isLoadingProducts {
-                ProgressView().controlSize(.small)
-            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.")
         }
-    }
-
-    private func statusLabel(for tier: PlanTier) -> String {
-        tier == .free ? "free" : "active"
     }
 
     // MARK: - Restore
@@ -138,10 +152,174 @@ struct BillingPanel: View {
         purchaseFeedback = result.userMessage
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
-            await socialFeatures.refreshAll(session: auth.session)
+            await socialFeatures.refreshAll(session: auth.session, force: true)
         }
     }
 }
+
+private struct CurrentPassSummaryCard: View {
+    let subscription: BillingSubscription?
+    let currentPlan: BillingPlan?
+    let nextPlan: BillingPlanSummary?
+    let currentTier: PlanTier
+    let isSharedMember: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("현재 이용권")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.primaryDark)
+                Text(planName)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(VoiceAlarmTheme.text)
+            }
+
+            HStack(spacing: 8) {
+                PassSummaryChip(label: priceText)
+                PassSummaryChip(label: capacityText)
+            }
+
+            Text(statusText)
+                .font(.subheadline)
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VoiceAlarmTheme.primary.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(VoiceAlarmTheme.primary.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var planKey: String {
+        currentPlan?.key ?? currentTier.apiKey
+    }
+
+    private var planName: String {
+        passPlanName(planKey: planKey, fallback: currentPlan?.name ?? currentTier.displayLabel)
+    }
+
+    private var statusText: String {
+        let expiresAt = formatPassDate(subscription?.expiresAt)
+        let cancelScheduled = subscription?.cancelAtPeriodEnd == true
+
+        if isSharedMember {
+            return "공유 이용권에 참여 중이에요."
+        }
+        if cancelScheduled, let nextPlan {
+            let nextName = passPlanName(planKey: nextPlan.key, fallback: nextPlan.name)
+            if let expiresAt {
+                return "\(expiresAt) 이후 \(nextName) 이용권으로 변경돼요."
+            }
+            return "\(nextName) 이용권으로 변경 예정이에요."
+        }
+        if cancelScheduled {
+            if let expiresAt {
+                return "\(expiresAt)까지 사용 후 종료돼요."
+            }
+            return "현재 이용권이 종료 예정이에요."
+        }
+        if subscription != nil, let expiresAt {
+            return "\(expiresAt)까지 사용할 수 있어요."
+        }
+        if subscription != nil {
+            return "사용 중인 이용권이에요."
+        }
+        return "기본 알람은 무료로 사용할 수 있어요."
+    }
+
+    private var priceText: String {
+        guard currentPlan != nil else {
+            return currentTier == .free ? "0원" : "App Store 결제"
+        }
+        guard let price = currentPlan?.priceKrw, price > 0 else {
+            return "0원"
+        }
+        return "월 \(formatKrw(price))원"
+    }
+
+    private var capacityText: String {
+        guard let maxMembers = currentPlan?.maxMembers, maxMembers > 1 else {
+            return "개인 사용"
+        }
+        return "최대 \(maxMembers)명"
+    }
+}
+
+private struct PassSummaryChip: View {
+    let label: String
+
+    var body: some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(VoiceAlarmTheme.text)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(VoiceAlarmTheme.surface.opacity(0.86), in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(VoiceAlarmTheme.outline.opacity(0.8), lineWidth: 1)
+            )
+    }
+}
+
+private func passPlanName(planKey: String?, fallback: String?) -> String {
+    switch planKey {
+    case "free":
+        return "무료"
+    case "personal", "individual", "plus":
+        return "개인"
+    case "couple":
+        return "커플"
+    case "family":
+        return "가족"
+    default:
+        if let fallback, !fallback.isEmpty {
+            return fallback
+        }
+        return "이용권"
+    }
+}
+
+private func formatPassDate(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let date = BillingISODateFormatter.date(from: value)
+        ?? BillingShortISODateFormatter.date(from: value)
+    guard let date else { return nil }
+    return BillingDisplayDateFormatter.string(from: date)
+}
+
+private func formatKrw(_ value: Int) -> String {
+    BillingKrwFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
+}
+
+private let BillingISODateFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+}()
+
+private let BillingShortISODateFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+}()
+
+private let BillingDisplayDateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "ko_KR")
+    formatter.dateFormat = "yyyy.MM.dd"
+    return formatter
+}()
+
+private let BillingKrwFormatter: NumberFormatter = {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    return formatter
+}()
 
 /// 결제 플랜 카드 한 장. IAP 가격은 StoreKit `Product.displayPrice` 를 그대로
 /// 사용해 region/통화/세금이 자동 반영된다.
