@@ -661,9 +661,30 @@ struct AlarmEditorSheet: View {
             return
         }
 
+        let familyLocalVoiceSource: FamilyLocalVoiceUploadSource?
+        if familyRecipient != nil,
+           draft.playMode != .alarmOnly,
+           voiceSourceMode == .localAudio {
+            do {
+                let prepared = try await preparedLocalAlarmAudioSource()
+                familyLocalVoiceSource = FamilyLocalVoiceUploadSource(
+                    url: prepared.url,
+                    durationMs: prepared.durationMs,
+                    displayName: localAudioUploadDisplayName(for: prepared.url)
+                )
+            } catch {
+                localAudioMessage = error.localizedDescription
+                return
+            }
+        } else {
+            familyLocalVoiceSource = nil
+        }
+
         let existing = editingAlarm
         let cachedLocalAudio: CachedLocalAlarmAudio?
-        if draft.playMode != .alarmOnly && voiceSourceMode == .localAudio {
+        if familyRecipient == nil,
+           draft.playMode != .alarmOnly,
+           voiceSourceMode == .localAudio {
             do {
                 cachedLocalAudio = try await cachedLocalAudioForSave(existing: existing)
             } catch {
@@ -675,7 +696,10 @@ struct AlarmEditorSheet: View {
         }
 
         if let familyRecipient {
-            await createFamilyTargetAlarm(recipient: familyRecipient)
+            await createFamilyTargetAlarm(
+                recipient: familyRecipient,
+                localVoiceSource: familyLocalVoiceSource
+            )
             return
         }
 
@@ -804,28 +828,49 @@ struct AlarmEditorSheet: View {
         return recipient
     }
 
-    private func createFamilyTargetAlarm(recipient: FamilyGroupMember) async {
+    private func createFamilyTargetAlarm(
+        recipient: FamilyGroupMember,
+        localVoiceSource: FamilyLocalVoiceUploadSource?
+    ) async {
         guard let token = auth.session?.token else {
             validationAlert = ValidationAlertContent(title: "로그인이 필요해요", message: "상대 알람은 로그인 후 사용할 수 있어요.")
             return
         }
         do {
-            let prepared = voiceStudio.preparedAlarm
-            let request = RemoteAlarmWriteRequest(
-                time: String(format: "%02d:%02d", draft.hour, draft.minute),
-                repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask),
-                snoozeMinutes: draft.snoozeMinutes,
-                mode: prepared == nil ? "sound-only" : "tts",
-                vibrationPattern: draft.vibrationPattern.rawValue,
-                wakeMode: draft.playMode.remoteWakeMode,
-                isActive: true,
-                messageId: prepared?.messageID,
-                voiceProfileId: prepared?.voiceProfileID,
-                rawAudioUrl: nil,
-                rawAudioDurationMs: nil,
-                targetUserId: recipient.userId
-            )
-            _ = try await VoiceAlarmAPI.shared.createAlarm(request, token: token)
+            if let localVoiceSource {
+                let upload = try await VoiceAlarmAPI.shared.uploadVoiceAudio(
+                    audioFileURL: localVoiceSource.url,
+                    durationMs: localVoiceSource.durationMs,
+                    originalName: localVoiceSource.displayName,
+                    token: token
+                )
+                let request = FamilyVoiceAlarmRequest(
+                    recipientUserId: recipient.userId,
+                    wakeAt: String(format: "%02d:%02d", draft.hour, draft.minute),
+                    voiceUploadId: upload.id,
+                    label: nonEmpty(draft.label) ?? "가족이 보낸 음성",
+                    dubTargetLanguage: nil,
+                    repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask)
+                )
+                _ = try await VoiceAlarmAPI.shared.createFamilyVoiceAlarm(request, token: token)
+            } else {
+                let prepared = voiceStudio.preparedAlarm
+                let request = RemoteAlarmWriteRequest(
+                    time: String(format: "%02d:%02d", draft.hour, draft.minute),
+                    repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask),
+                    snoozeMinutes: draft.snoozeMinutes,
+                    mode: prepared == nil ? "sound-only" : "tts",
+                    vibrationPattern: draft.vibrationPattern.rawValue,
+                    wakeMode: draft.playMode.remoteWakeMode,
+                    isActive: true,
+                    messageId: prepared?.messageID,
+                    voiceProfileId: prepared?.voiceProfileID,
+                    rawAudioUrl: nil,
+                    rawAudioDurationMs: nil,
+                    targetUserId: recipient.userId
+                )
+                _ = try await VoiceAlarmAPI.shared.createAlarm(request, token: token)
+            }
             await remoteSync.refresh(session: auth.session, force: true)
             await socialFeatures.refreshAll(session: auth.session, force: true)
             validationAlert = nil
@@ -1035,6 +1080,19 @@ struct AlarmEditorSheet: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    private func localAudioUploadDisplayName(for url: URL) -> String {
+        switch localAudioMode {
+        case .record:
+            return "alarm-recording.m4a"
+        case .file:
+            if let name = selectedLocalAudioName?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !name.isEmpty {
+                return name
+            }
+            return url.lastPathComponent.isEmpty ? "alarm-audio.m4a" : url.lastPathComponent
+        }
+    }
+
     // MARK: - Error formatting
 
     private func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
@@ -1056,6 +1114,12 @@ struct AlarmEditorSheet: View {
 private struct CachedLocalAlarmAudio {
     let fileName: String
     let cacheKey: String
+}
+
+private struct FamilyLocalVoiceUploadSource {
+    let url: URL
+    let durationMs: Int
+    let displayName: String
 }
 
 private enum LocalAlarmAudioError: LocalizedError {

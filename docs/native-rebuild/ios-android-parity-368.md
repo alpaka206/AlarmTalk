@@ -211,6 +211,10 @@
   It records up to 30 seconds, imports audio files, trims long files to the
   alarm-audio limit, previews the selected local audio, caches it through
   `AudioCacheStore`, and saves the alarm with `voiceSource = local_audio`.
+- iOS family-alarm creation now mirrors Android's local-voice branch: when a
+  recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
+  `/voice/upload` and the alarm is created through `/family/alarms/voice`
+  instead of sending an unusable local-only file reference in `/alarms`.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
