@@ -257,6 +257,51 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// 녹음 외 파일 업로드/자르기 결과처럼 임의 URL을 곧바로 보이스 프로필로 등록한다.
+    func cloneAudioForProfile(
+        audioFileURL: URL,
+        name: String,
+        durationMs: Int,
+        isShared: Bool,
+        session: AuthSession?,
+        noiseRemoval: Bool = false,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil
+    ) async -> VoiceProfile? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs else {
+            statusMessage = durationMs < VoiceProfileLimits.minDurationMs
+                ? "1분 이상 준비해 주세요."
+                : "2분 이하 음성으로 등록할 수 있어요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.cloneVoice(
+                audioFileURL: audioFileURL,
+                name: name,
+                isShared: isShared,
+                durationMs: durationMs,
+                token: token,
+                noiseRemoval: noiseRemoval,
+                relationshipLabel: relationshipLabel,
+                listenerTitle: listenerTitle
+            )
+            selectedProfileID = profile.id
+            statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."
+            await refresh(session: session, force: true, successMessage: nil)
+            return profile
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
     /// 공유받은 음성에 viewer 의 관계·호칭을 등록한다.
     /// `VoiceProfileManagementPanel` 의 SharedVoiceViewerInfoDialog 가 호출.
     func updateSharedVoiceViewerInfo(
