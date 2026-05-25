@@ -384,6 +384,8 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool,
         durationMs: Int,
         audioFileURL: URL,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil,
         session: AuthSession?
     ) async -> VoiceProfile? {
         // 현재 백엔드는 화자 선택 후 별도 endpoint 가 아니라 cropped audio 를 다시
@@ -409,7 +411,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 name: name,
                 isShared: isShared,
                 durationMs: durationMs,
-                token: token
+                token: token,
+                relationshipLabel: relationshipLabel,
+                listenerTitle: listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "선택한 목소리를 학습했어요."

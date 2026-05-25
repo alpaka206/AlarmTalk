@@ -1,4 +1,6 @@
+import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 화자 분리 워크플로우.
 ///
@@ -15,13 +17,49 @@ struct SpeakerSeparationFlow: View {
     @Binding var route: VoicesRoute
 
     @State private var uploadId: String?
+    @State private var uploadedAudioURL: URL?
     @State private var speakers: [VoiceSpeakerSegment] = []
     @State private var selectedSpeakerIds: Set<String> = []
     @State private var removedSpeakerIds: Set<String> = []
     @State private var profileName: String = "분리한 보이스"
+    @State private var relationshipSelection = VoiceRelationshipSelection()
+    @State private var listenerTitle: String = ""
     @State private var isShared: Bool = false
     @State private var separationBusy: Bool = false
+    @State private var fileImporterPresented: Bool = false
+    @State private var selectedFileURL: URL?
+    @State private var selectedFileName: String?
+    @State private var selectedFileDurationMs: Int?
+    @State private var cropStartMs: Int = 0
+    @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
+    @State private var registerSubmitted: Bool = false
     @State private var localError: String?
+
+    private var preparedSourceURL: URL? {
+        selectedFileURL ?? voice.recorder.latestRecordingURL
+    }
+
+    private var preparedSourceName: String {
+        selectedFileName ?? "최근 녹음"
+    }
+
+    private var preparedDurationMs: Int? {
+        selectedFileDurationMs ?? voice.recorder.latestDurationMs
+    }
+
+    private var cropDurationMs: Int {
+        max(0, cropEndMs - cropStartMs)
+    }
+
+    private var preparedSourceReady: Bool {
+        guard preparedSourceURL != nil,
+              let duration = preparedDurationMs else {
+            return false
+        }
+        return duration >= VoiceProfileLimits.minDurationMs &&
+            cropDurationMs >= VoiceProfileLimits.minDurationMs &&
+            cropDurationMs <= VoiceProfileLimits.maxDurationMs
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -47,6 +85,28 @@ struct SpeakerSeparationFlow: View {
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
                     .padding(.horizontal, 4)
             }
+        }
+        .fileImporter(
+            isPresented: $fileImporterPresented,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let source = urls.first else { return }
+                Task { await importAudioFile(source) }
+            case .failure(let error):
+                localError = error.localizedDescription
+            }
+        }
+        .onChange(of: voice.recorder.latestDurationMs) { _, durationMs in
+            guard selectedFileURL == nil, let durationMs else { return }
+            applyCropDefaults(durationMs: durationMs)
+            uploadId = nil
+            uploadedAudioURL = nil
+            speakers.removeAll()
+            selectedSpeakerIds.removeAll()
+            removedSpeakerIds.removeAll()
         }
     }
 
@@ -101,11 +161,16 @@ struct SpeakerSeparationFlow: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(voice.recorder.latestRecordingURL == nil)
+
+                Button {
+                    fileImporterPresented = true
+                } label: {
+                    Label("파일 선택", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
             }
-            if let durationMs = voice.recorder.latestDurationMs {
-                Text("길이: \(durationMs / 1000)초")
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            if let url = preparedSourceURL, let durationMs = preparedDurationMs {
+                sourceCropCard(url: url, durationMs: durationMs)
             }
             Button {
                 Task { await uploadCurrentRecording() }
@@ -115,9 +180,70 @@ struct SpeakerSeparationFlow: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
-            .disabled(voice.recorder.latestRecordingURL == nil || voice.isBusy)
+            .disabled(!preparedSourceReady || voice.isBusy)
         }
         .sectionSurface()
+    }
+
+    private func sourceCropCard(url: URL, durationMs: Int) -> some View {
+        let effectiveEndMs = min(cropEndMs, durationMs)
+        let effectiveDurationMs = max(0, effectiveEndMs - cropStartMs)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(preparedSourceName)
+                        .font(.subheadline.weight(.semibold))
+                    Text("전체 \(timeLabel(durationMs)) · 사용할 구간 \(timeLabel(effectiveDurationMs))")
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    clearImportedFile()
+                } label: {
+                    Image(systemName: "xmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                .opacity(selectedFileURL == nil ? 0 : 1)
+                .disabled(selectedFileURL == nil)
+            }
+
+            if durationMs > VoiceProfileLimits.maxDurationMs {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(cropEndMs))")
+                        .font(.caption.weight(.semibold))
+                    Slider(
+                        value: Binding(
+                            get: { Double(cropStartMs) / 1000.0 },
+                            set: { seconds in
+                                let maxStart = max(0, durationMs - VoiceProfileLimits.maxDurationMs)
+                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
+                                cropEndMs = min(durationMs, cropStartMs + VoiceProfileLimits.maxDurationMs)
+                            }
+                        ),
+                        in: 0...(Double(max(0, durationMs - VoiceProfileLimits.maxDurationMs)) / 1000.0),
+                        step: 1
+                    )
+                }
+            }
+
+            VoiceSegmentPreviewPlayer(
+                title: "선택 구간 미리듣기",
+                subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
+                audioURL: url,
+                startMs: cropStartMs,
+                endMs: effectiveEndMs
+            )
+
+            if effectiveDurationMs < VoiceProfileLimits.minDurationMs {
+                Text("1분 이상 들리는 구간을 선택해 주세요.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+        }
+        .padding(12)
+        .background(VoiceAlarmTheme.surfaceVariant.opacity(0.44), in: RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Step 2: separate
@@ -187,7 +313,7 @@ struct SpeakerSeparationFlow: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
             }
-            if let url = voice.recorder.latestRecordingURL {
+            if let url = uploadedAudioURL ?? preparedSourceURL {
                 VoiceSegmentPreviewPlayer(
                     title: "구간 미리듣기",
                     subtitle: nil,
@@ -232,7 +358,45 @@ struct SpeakerSeparationFlow: View {
             stepLabel(num: 4, title: "이름 정하고 등록")
             TextField("보이스 이름", text: $profileName)
                 .textFieldStyle(.roundedBorder)
-            Toggle("가족·커플과 공유", isOn: $isShared)
+                .onChange(of: profileName) { _, newValue in
+                    if newValue.count > 50 {
+                        profileName = String(newValue.prefix(50))
+                    }
+                }
+            if registerSubmitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("목소리 이름을 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: registerSubmitted
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("이 목소리가 나를 부를 이름")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                TextField("예: 지호야, 여보, 우리 손주", text: $listenerTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: listenerTitle) { _, newValue in
+                        if newValue.count > 30 {
+                            listenerTitle = String(newValue.prefix(30))
+                        }
+                    }
+                if registerSubmitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("꼭 입력해 주세요.")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.error)
+                }
+            }
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: relationshipSelection.resolved
+            )
+
+            Toggle("목소리 공유", isOn: $isShared)
                 .font(.footnote)
             Button {
                 Task { await registerSelected() }
@@ -266,20 +430,60 @@ struct SpeakerSeparationFlow: View {
 
     // MARK: - Actions
 
+    private func importAudioFile(_ source: URL) async {
+        do {
+            let importedURL = try copyImportedAudio(source)
+            let durationMs = try await readAudioDurationMs(importedURL)
+            await MainActor.run {
+                selectedFileURL = importedURL
+                selectedFileName = source.lastPathComponent
+                selectedFileDurationMs = durationMs
+                applyCropDefaults(durationMs: durationMs)
+                uploadId = nil
+                uploadedAudioURL = nil
+                speakers.removeAll()
+                selectedSpeakerIds.removeAll()
+                removedSpeakerIds.removeAll()
+                localError = durationMs < VoiceProfileLimits.minDurationMs
+                    ? "1분 이상 파일을 선택해 주세요."
+                    : nil
+            }
+        } catch {
+            await MainActor.run {
+                localError = error.localizedDescription
+            }
+        }
+    }
+
     private func uploadCurrentRecording() async {
-        guard let url = voice.recorder.latestRecordingURL,
-              let durationMs = voice.recorder.latestDurationMs else {
-            localError = "녹음을 먼저 진행해 주세요."
+        guard preparedSourceURL != nil,
+              preparedDurationMs != nil else {
+            localError = "녹음하거나 파일을 선택해 주세요."
+            return
+        }
+        let prepared: (url: URL, durationMs: Int)
+        do {
+            prepared = try await preparedCroppedAudio()
+        } catch {
+            if localError == nil {
+                localError = error.localizedDescription
+            }
             return
         }
         localError = nil
         let id = await voice.uploadForSeparation(
-            audioFileURL: url,
-            durationMs: durationMs,
-            originalName: url.lastPathComponent,
+            audioFileURL: prepared.url,
+            durationMs: prepared.durationMs,
+            originalName: preparedSourceName,
             session: auth.session
         )
-        await MainActor.run { self.uploadId = id }
+        await MainActor.run {
+            self.uploadId = id
+            self.uploadedAudioURL = prepared.url
+            self.speakers.removeAll()
+            self.selectedSpeakerIds.removeAll()
+            self.removedSpeakerIds.removeAll()
+        }
     }
 
     private func runSeparate() async {
@@ -309,6 +513,7 @@ struct SpeakerSeparationFlow: View {
     }
 
     private func registerSelected() async {
+        registerSubmitted = true
         guard let uploadId else {
             localError = "업로드 정보를 잃어버렸어요. 처음부터 다시 시도해 주세요."
             return
@@ -324,15 +529,30 @@ struct SpeakerSeparationFlow: View {
             localError = "화자 '\(tooShort.label)' 의 구간이 1분보다 짧아요."
             return
         }
-        guard let originalURL = voice.recorder.latestRecordingURL else {
-            localError = "원본 녹음을 찾지 못했어요."
+        let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedRelationship = relationshipSelection.resolved
+        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            localError = nil
+            return
+        }
+        guard !trimmedRelationship.isEmpty else {
+            localError = nil
+            return
+        }
+        guard !trimmedListener.isEmpty else {
+            localError = nil
+            return
+        }
+        guard let originalURL = uploadedAudioURL ?? preparedSourceURL else {
+            localError = "원본 음원을 찾지 못했어요."
             return
         }
         localError = nil
         for (idx, speaker) in chosen.enumerated() {
             let resolvedName = chosen.count == 1
-                ? profileName.trimmingCharacters(in: .whitespacesAndNewlines)
-                : "\(profileName) \(idx + 1)"
+                ? trimmedName
+                : "\(trimmedName) \(idx + 1)"
             // 화자 구간만 잘라 새 임시 파일로.
             if let cropped = try? await cropAudio(
                 source: originalURL,
@@ -346,6 +566,8 @@ struct SpeakerSeparationFlow: View {
                     isShared: isShared,
                     durationMs: speaker.durationMs,
                     audioFileURL: cropped,
+                    relationshipLabel: trimmedRelationship,
+                    listenerTitle: trimmedListener,
                     session: auth.session
                 )
             }
@@ -359,6 +581,83 @@ struct SpeakerSeparationFlow: View {
     /// 임시 cropping — AVAssetExportSession 기반.
     private func cropAudio(source: URL, startMs: Int, endMs: Int) async throws -> URL {
         try await AudioCropper.crop(source: source, startMs: startMs, endMs: endMs)
+    }
+
+    private func preparedCroppedAudio() async throws -> (url: URL, durationMs: Int) {
+        guard let source = preparedSourceURL,
+              let sourceDuration = preparedDurationMs else {
+            localError = "녹음하거나 파일을 선택해 주세요."
+            throw AudioCropper.CropperError.invalidRange
+        }
+        let endMs = min(cropEndMs, sourceDuration)
+        let durationMs = max(0, endMs - cropStartMs)
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            localError = "1분 이상 들리는 구간을 선택해 주세요."
+            throw AudioCropper.CropperError.invalidRange
+        }
+        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+            localError = "2분 이하 구간만 사용할 수 있어요."
+            throw AudioCropper.CropperError.invalidRange
+        }
+        if cropStartMs == 0 && endMs == sourceDuration {
+            return (source, durationMs)
+        }
+        let cropped = try await cropAudio(source: source, startMs: cropStartMs, endMs: endMs)
+        return (cropped, durationMs)
+    }
+
+    private func copyImportedAudio(_ source: URL) throws -> URL {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                source.stopAccessingSecurityScopedResource()
+            }
+        }
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("VoiceImports", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
+        let destination = directory.appendingPathComponent("import-\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    private func readAudioDurationMs(_ url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let duration = try await asset.load(.duration)
+        let seconds = CMTimeGetSeconds(duration)
+        guard seconds.isFinite, seconds > 0 else {
+            throw AudioCropper.CropperError.invalidRange
+        }
+        return Int((seconds * 1000).rounded())
+    }
+
+    private func applyCropDefaults(durationMs: Int) {
+        cropStartMs = 0
+        cropEndMs = min(durationMs, VoiceProfileLimits.maxDurationMs)
+    }
+
+    private func clearImportedFile() {
+        selectedFileURL = nil
+        selectedFileName = nil
+        selectedFileDurationMs = nil
+        if let durationMs = voice.recorder.latestDurationMs {
+            applyCropDefaults(durationMs: durationMs)
+        } else {
+            cropStartMs = 0
+            cropEndMs = VoiceProfileLimits.maxDurationMs
+        }
+        uploadId = nil
+        uploadedAudioURL = nil
+        speakers.removeAll()
+        selectedSpeakerIds.removeAll()
+        removedSpeakerIds.removeAll()
+        localError = nil
+    }
+
+    private func timeLabel(_ millis: Int) -> String {
+        let seconds = max(0, millis / 1000)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
