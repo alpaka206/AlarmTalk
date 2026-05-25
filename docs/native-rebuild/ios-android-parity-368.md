@@ -122,6 +122,10 @@
   profile opens code/character/billing/shared-pass/settings actions, while
   quick-start stays focused on `목소리`, `새 알람`, and `상대 알람 맞춰주기`
   with lock badges for unavailable voice/alarm capabilities.
+- iOS home quick-start actions now mirror Android's permission gate behavior:
+  voice entry requests microphone permission before opening the voice tab when
+  the paid plan is available, and new/family alarm creation requests AlarmKit
+  permission before opening the editor.
 - iOS bottom navigation and voice-tab header now use Android's visible
   `목소리` wording.
 - iOS settings sheet now uses the same X-style modal dismissal affordance as

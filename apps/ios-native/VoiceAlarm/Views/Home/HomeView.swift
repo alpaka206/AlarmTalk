@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// 홈 탭의 컨테이너 화면.
@@ -14,6 +15,7 @@ struct HomeView: View {
     let openAuxiliary: (AuxiliaryScreen) -> Void
     let openEditor: (AlarmEditorTarget) -> Void
     let selectTab: (NativeTab) -> Void
+    @State private var permissionSnapshot = LoginPermissionSnapshot.unknown
 
     private var nextAlarm: LocalAlarmRecord? {
         store.alarms
@@ -29,20 +31,23 @@ struct HomeView: View {
                 if let nextAlarm {
                     openEditor(.edit(nextAlarm.id))
                 } else {
-                    openEditor(.create())
+                    openAlarmFromHome()
                 }
             }
             QuickStartGrid(
-                onOpenVoices: { selectTab(.voices) },
-                onOpenEditor: { openEditor(.create()) },
+                onOpenVoices: openVoicesFromHome,
+                onOpenEditor: openAlarmFromHome,
                 canCreateFamilyAlarm: canCreateFamilyAlarm,
-                onOpenFamilyAlarm: { openEditor(.createFamily()) },
-                voiceLocked: !hasPaidVoiceAccess,
-                alarmLocked: !alarmKit.alarmAuthorized
+                onOpenFamilyAlarm: openFamilyAlarmFromHome,
+                voiceLocked: !hasPaidVoiceAccess || !permissionSnapshot.microphoneGranted,
+                alarmLocked: !permissionSnapshot.alarmAuthorized
             )
             CharacterMiniCard {
                 openAuxiliary(.growth)
             }
+        }
+        .task {
+            await refreshPermissionSnapshot()
         }
     }
 
@@ -63,6 +68,57 @@ struct HomeView: View {
             userPlan: auth.session?.user.plan
         )
         .meetsOrExceeds(.personal)
+    }
+
+    private func openVoicesFromHome() {
+        guard hasPaidVoiceAccess else {
+            selectTab(.voices)
+            return
+        }
+        guard permissionSnapshot.microphoneGranted else {
+            requestMicrophone()
+            return
+        }
+        selectTab(.voices)
+    }
+
+    private func openAlarmFromHome() {
+        guard permissionSnapshot.alarmAuthorized else {
+            requestAlarmAuthorization()
+            return
+        }
+        openEditor(.create())
+    }
+
+    private func openFamilyAlarmFromHome() {
+        guard permissionSnapshot.alarmAuthorized else {
+            requestAlarmAuthorization()
+            return
+        }
+        openEditor(.createFamily())
+    }
+
+    private func requestAlarmAuthorization() {
+        Task {
+            await alarmKit.requestAuthorization()
+            await refreshPermissionSnapshot()
+        }
+    }
+
+    private func requestMicrophone() {
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission { _ in
+                Task { @MainActor in await refreshPermissionSnapshot() }
+            }
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission { _ in
+                Task { @MainActor in await refreshPermissionSnapshot() }
+            }
+        }
+    }
+
+    private func refreshPermissionSnapshot() async {
+        permissionSnapshot = LoginPermissionSnapshot.current(alarmKit: alarmKit)
     }
 
     private var homeHeader: some View {
