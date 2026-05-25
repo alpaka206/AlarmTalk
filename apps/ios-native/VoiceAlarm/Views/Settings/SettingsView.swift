@@ -132,13 +132,13 @@ struct SettingsView: View {
     private var weatherLocationLabel: String {
         promptPreferences.weatherReady
             ? "\(promptPreferences.weatherCountry) \(promptPreferences.weatherCity)"
-            : "설정 필요"
+            : "미설정"
     }
 
     private var fortuneInfoLabel: String {
         promptPreferences.fortuneReady
             ? [promptPreferences.fortuneGender, promptPreferences.fortuneBirthDate, promptPreferences.fortuneBirthTime].joined(separator: " · ")
-            : "설정 필요"
+            : "미설정"
     }
 
     private func loadPromptPreferences() {

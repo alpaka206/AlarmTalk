@@ -124,6 +124,8 @@
 - iOS settings now mirrors Android's settings scope: screen mode, random
   prompt info, account, and delete account stay in Settings, while code,
   character, billing, and shared-pass navigation live only in the profile menu.
+- iOS settings empty weather/fortune labels now use Android's `미설정`
+  wording, and the account card no longer shows the extra email row.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.

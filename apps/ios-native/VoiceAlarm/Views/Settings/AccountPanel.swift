@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 계정 카드 — 닉네임 편집, 이메일 표시, 로그아웃.
+/// 계정 카드 — 닉네임 편집, 로그아웃.
 ///
 /// ContentView 의 settingsSheet 내 "계정" 섹션을 빼낸 것. 부모(SettingsView)는
 /// 로그아웃 시 시트를 닫는 책임만 onSignOut 콜백으로 받는다.
@@ -36,8 +36,6 @@ struct AccountPanel: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.plain)
-            Divider()
-            SettingsRow(label: "계정", value: user.email)
             Divider()
             Button {
                 auth.signOut()
