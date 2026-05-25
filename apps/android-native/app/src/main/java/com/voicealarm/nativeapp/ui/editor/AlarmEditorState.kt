@@ -277,7 +277,10 @@ internal class AlarmEditorState(
     }
 
     companion object {
-        fun from(alarm: AlarmEntity?): AlarmEditorState {
+        fun from(
+            alarm: AlarmEntity?,
+            defaultPlayMode: String = AlarmPlayModes.ALARM_ONLY,
+        ): AlarmEditorState {
             val defaultTime = java.time.LocalTime.of(6, 0)
             return AlarmEditorState(
                 label = alarm?.label ?: "",
@@ -289,7 +292,7 @@ internal class AlarmEditorState(
                 snoozeMinutes = alarm?.snoozeMinutes ?: 5,
                 snoozeRepeatLimit = alarm?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
-                playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
+                playMode = alarm?.playMode ?: defaultPlayMode,
                 localAudioUri = alarm?.localAudioUri,
                 audioCacheKey = alarm?.audioCacheKey,
                 rawAudioUri = alarm?.rawAudioUri,

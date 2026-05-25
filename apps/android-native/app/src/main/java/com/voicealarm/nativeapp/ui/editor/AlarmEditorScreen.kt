@@ -111,7 +111,9 @@ internal fun AlarmEditorScreen(
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
-    val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
+    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
+    val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
@@ -163,7 +165,6 @@ internal fun AlarmEditorScreen(
             activeDynamicPromptPreferences.fortuneBirthDate.isNotBlank() &&
             activeDynamicPromptPreferences.fortuneBirthTime.isNotBlank()
     }
-    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
