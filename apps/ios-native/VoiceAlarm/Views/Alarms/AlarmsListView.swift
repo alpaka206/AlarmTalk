@@ -51,7 +51,7 @@ struct AlarmsListView: View {
                 .tint(VoiceAlarmTheme.primary)
                 .foregroundStyle(VoiceAlarmTheme.text)
             } else {
-                ForEach(store.alarms.sorted { $0.nextFireDate < $1.nextFireDate }) { alarm in
+                ForEach(sortedAlarms) { alarm in
                     AlarmRow(
                         alarm: alarm,
                         onTap: { openEditor(.edit(alarm.id)) },
@@ -69,6 +69,14 @@ struct AlarmsListView: View {
             }
         }
         .sectionSurface()
+    }
+
+    private var sortedAlarms: [LocalAlarmRecord] {
+        store.alarms.sorted { lhs, rhs in
+            if lhs.hour != rhs.hour { return lhs.hour < rhs.hour }
+            if lhs.minute != rhs.minute { return lhs.minute < rhs.minute }
+            return lhs.createdAtMillis < rhs.createdAtMillis
+        }
     }
 
     @MainActor

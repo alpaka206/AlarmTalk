@@ -113,6 +113,8 @@
 - iOS alarm list now shows the AlarmKit permission card only while alarm
   authorization is missing, matching Android's alarm-tab behavior instead of
   keeping a granted-permission card on the main list.
+- iOS alarm list ordering now matches Android's visible ordering by hour,
+  minute, then creation time instead of sorting by the next fire date.
 - iOS home now mirrors Android's profile menu and quick-start structure:
   profile opens code/character/billing/shared-pass/settings actions, while
   quick-start stays focused on `목소리`, `새 알람`, and `상대 알람 맞춰주기`
