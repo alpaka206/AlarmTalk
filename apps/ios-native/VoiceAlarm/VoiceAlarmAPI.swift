@@ -114,16 +114,16 @@ struct AuthUser: Codable, Equatable, Identifiable {
     var email: String
     var name: String
     var plan: String
-    var allowFamilyAlarms: Bool?
-    var familyAlarmQuietDays: [Int]?
-    var familyAlarmQuietStart: String?
-    var familyAlarmQuietEnd: String?
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var allowFamilyAlarms: Bool? = nil
+    var familyAlarmQuietDays: [Int]? = nil
+    var familyAlarmQuietStart: String? = nil
+    var familyAlarmQuietEnd: String? = nil
+    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil
     /// Apple `sub` (user identifier). Apple 로그인 사용자만 비-nil.
     /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` 호출에 사용.
     /// 백엔드 `/auth/apple` 와 `/auth/me` 응답이 `apple_user_id` 키로 전달한다.
     /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
-    var appleUserId: String?
+    var appleUserId: String? = nil
     var dynamicPromptSettings: DynamicPromptSettings? = nil
 }
 
