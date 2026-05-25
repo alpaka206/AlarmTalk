@@ -63,6 +63,44 @@ internal fun MainViewModel.refreshCharacterAndBilling() {
     refreshCharacterAndBillingData(showMessage = true)
 }
 
+internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
+    val authorization = bearerOrMessage("공유 코드 정보를 불러오려면 먼저 로그인해 주세요") ?: return vouchers
+    if (billingBusy || socialBusy) return vouchers
+    billingBusy = true
+    socialBusy = true
+    return try {
+        coroutineScope {
+            val subscription = async { api.getSubscription(authorization) }
+            val freshVouchers = async { api.listVouchers(authorization).vouchers }
+            val group = async {
+                runCatching {
+                    api.getFamilyGroup(authorization)
+                }.onFailure { error ->
+                    Log.w(TAG, "Failed to refresh family group before voucher share", error)
+                }.getOrNull()
+            }
+            val updatedSubscription = subscription.await()
+            val updatedVouchers = freshVouchers.await()
+            val updatedGroup = group.await()
+            subscriptionResponse = updatedSubscription
+            saveSubscriptionSnapshot(updatedSubscription)
+            vouchers = updatedVouchers
+            updatedGroup?.let {
+                familyGroup = it
+                saveFamilyGroupSnapshot(it)
+            }
+            updatedVouchers
+        }
+    } catch (error: Throwable) {
+        Log.e(TAG, "Failed to refresh share code data", error)
+        message = userFacingError(error, "공유 코드 정보를 불러오지 못했어요")
+        vouchers
+    } finally {
+        billingBusy = false
+        socialBusy = false
+    }
+}
+
 internal fun MainViewModel.preloadCharacterAndBilling() {
     if (authSession == null || characterBusy || billingBusy) return
     refreshCharacterAndBillingData(showMessage = false)

@@ -564,6 +564,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                           onCheckoutPlan = viewModel::checkoutPlan,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
+                          onRefreshShareCodeData = viewModel::refreshShareCodeData,
                           permissions = permissions,
                           onCreateAlarm = {
                               if (!permissions.alarmReady) {

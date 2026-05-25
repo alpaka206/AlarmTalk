@@ -84,6 +84,7 @@ internal fun AlarmListScreen(
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
+    onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onCreateFamilyAlarm: () -> Unit,
@@ -291,6 +292,7 @@ internal fun AlarmListScreen(
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
+                        onRefreshShareCodeData = onRefreshShareCodeData,
                     )
                 }
             }
