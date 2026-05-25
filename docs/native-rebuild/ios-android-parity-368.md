@@ -222,8 +222,11 @@
 - iOS local alarm records now include Android's
   `dynamicVoicePreparedForFireAtMillis` field, and newly generated random
   voice alarms mark the generated audio as prepared for the saved fire time.
-  The remaining gap is the Android-style periodic refresh worker for future
-  repeat occurrences.
+- iOS now mirrors Android's dynamic voice refresh path for future repeat
+  occurrences: app launch, login/session refresh, foreground entry, and
+  BGAppRefresh sync all scan due repeating random voice alarms, generate fresh
+  TTS, cache it locally, update the alarm audio fields, and mark the current
+  fire time as prepared.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

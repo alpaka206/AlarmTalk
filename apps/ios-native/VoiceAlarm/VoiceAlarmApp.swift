@@ -79,6 +79,7 @@ struct VoiceAlarmApp: App {
                         // 로그인되어 있으면 즉시 한 사이클.
                         if auth.session != nil {
                             await remoteSync.runFullSync()
+                            await refreshDynamicVoicesIfNeeded()
                         }
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
@@ -90,6 +91,7 @@ struct VoiceAlarmApp: App {
                         guard auth.session != nil else { return }
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
+                        await refreshDynamicVoicesIfNeeded()
                         // Phase 2-B5: 로그인 전에 쌓여 있던 PENDING/FAILED 캐릭터 이벤트를 비운다.
                         await characterEvents.flushPending()
                         BackgroundSyncTask.scheduleNext()
@@ -123,6 +125,7 @@ struct VoiceAlarmApp: App {
                     await auth.refreshUser()
                     guard auth.session != nil else { return }
                     await remoteSync.runFullSync()
+                    await refreshDynamicVoicesIfNeeded()
                 }
                 // Phase 2-B5: 백그라운드에서 발생했을 수 있는 dismiss/snooze 이벤트의
                 // pending queue 를 비운다. 로그인 안 되어 있어도 호출은 안전 (no-op).
@@ -143,6 +146,13 @@ struct VoiceAlarmApp: App {
                 break
             }
         }
+    }
+
+    @MainActor
+    private func refreshDynamicVoicesIfNeeded() async {
+        guard let token = auth.session?.token else { return }
+        let refresh = DynamicVoiceRefreshService(store: alarmStore)
+        _ = await refresh.refreshDue(token: token)
     }
 }
 
@@ -166,6 +176,7 @@ private final class Bootstrap {
             auth: auth
         )
         let push = RemoteAlarmPushSync(store: store, auth: auth)
-        BackgroundSyncTask.register(pull: pull, push: push)
+        let dynamicVoice = DynamicVoiceRefreshService(store: store)
+        BackgroundSyncTask.register(pull: pull, push: push, dynamicVoice: dynamicVoice)
     }
 }

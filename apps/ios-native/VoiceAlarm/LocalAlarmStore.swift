@@ -762,6 +762,27 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
+    func updateDynamicVoiceAudio(
+        id: String,
+        localAudioUri: String,
+        audioCacheKey: String?,
+        rawAudioUri: String?,
+        voiceText: String,
+        ttsMessageId: String?,
+        preparedForFireAtMillis: Int64,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[index].localAudioUri = localAudioUri
+        alarms[index].audioCacheKey = audioCacheKey
+        alarms[index].rawAudioUri = rawAudioUri
+        alarms[index].voiceText = voiceText
+        alarms[index].ttsMessageId = ttsMessageId
+        alarms[index].dynamicVoicePreparedForFireAtMillis = preparedForFireAtMillis
+        alarms[index].updatedAtMillis = nowMillis
+        persist()
+    }
+
     /// Android `AlarmRepository.nextLocalSyncState` 동일.
     /// - received_remote 는 항상 synced 로 회귀
     /// - remoteAlarmId 없으면 local_only

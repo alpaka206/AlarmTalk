@@ -32,17 +32,27 @@ final class BackgroundSyncTask {
 
     private let pull: RemoteAlarmPullSync
     private let push: RemoteAlarmPushSync
+    private let dynamicVoice: DynamicVoiceRefreshService
 
-    init(pull: RemoteAlarmPullSync, push: RemoteAlarmPushSync) {
+    init(
+        pull: RemoteAlarmPullSync,
+        push: RemoteAlarmPushSync,
+        dynamicVoice: DynamicVoiceRefreshService
+    ) {
         self.pull = pull
         self.push = push
+        self.dynamicVoice = dynamicVoice
     }
 
     // MARK: Registration
 
     /// 시스템에 task 핸들러를 등록한다. App init 시 한 번만 호출해야 한다.
     /// register 자체는 BGAppRefreshTask 의 실제 실행 시점에 클로저를 호출한다.
-    static func register(pull: RemoteAlarmPullSync, push: RemoteAlarmPushSync) {
+    static func register(
+        pull: RemoteAlarmPullSync,
+        push: RemoteAlarmPushSync,
+        dynamicVoice: DynamicVoiceRefreshService
+    ) {
         #if canImport(BackgroundTasks)
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: taskIdentifier,
@@ -53,7 +63,7 @@ final class BackgroundSyncTask {
                 return
             }
             Task { @MainActor in
-                let runner = BackgroundSyncTask(pull: pull, push: push)
+                let runner = BackgroundSyncTask(pull: pull, push: push, dynamicVoice: dynamicVoice)
                 await runner.runAndSchedule(task: refresh)
             }
         }
@@ -87,6 +97,9 @@ final class BackgroundSyncTask {
         do {
             _ = try await push.runOnce()
             try await pull.runOnce()
+            if let token = KeychainStore.readSession()?.token {
+                _ = await dynamicVoice.refreshDue(token: token)
+            }
             timeoutTask.cancel()
             task.setTaskCompleted(success: true)
         } catch {
