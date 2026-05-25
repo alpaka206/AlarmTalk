@@ -205,6 +205,27 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
             return .free
         }
     }
+
+    /// iOS 는 StoreKit entitlement, 백엔드 구독 응답, 세션의 마지막 plan 값이
+    /// 짧은 시간 서로 다를 수 있다. 화면 게이트는 가장 높은 "최근 확인 상태"를
+    /// 사용해 구매 직후 UI가 순간적으로 무료처럼 보이는 일을 줄인다.
+    static func bestKnown(
+        serverSubscription: BillingSubscriptionResponse?,
+        storeTier: PlanTier = .free,
+        userPlan: String? = nil
+    ) -> PlanTier {
+        var candidates = [storeTier]
+        if serverSubscription == nil {
+            candidates.append(PlanTier.from(userPlan))
+        }
+        if serverSubscription?.subscription?.status == "active" {
+            candidates.append(PlanTier.from(serverSubscription?.plan?.key))
+            candidates.append(PlanTier.from(serverSubscription?.plan?.planType))
+        }
+        return candidates.max { lhs, rhs in
+            (tierOrder[lhs] ?? 0) < (tierOrder[rhs] ?? 0)
+        } ?? .free
+    }
 }
 
 // MARK: - View modifier

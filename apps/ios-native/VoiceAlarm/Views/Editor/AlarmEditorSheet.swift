@@ -20,6 +20,7 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     @StateObject private var holidayStore = HolidayStore()
     @StateObject private var localRecorder = VoiceRecorder()
@@ -452,7 +453,12 @@ struct AlarmEditorSheet: View {
     }
 
     private var voicePlanLocked: Bool {
-        !PlanTier.from(auth.session?.user.plan).meetsOrExceeds(.personal)
+        !PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
     }
 
     private var defaultPlayModeForPlan: AlarmPlayMode {

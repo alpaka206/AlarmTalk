@@ -9,6 +9,7 @@ struct HomeView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     let openAuxiliary: (AuxiliaryScreen) -> Void
     let openEditor: (AlarmEditorTarget) -> Void
@@ -56,11 +57,12 @@ struct HomeView: View {
     }
 
     private var hasPaidVoiceAccess: Bool {
-        guard socialFeatures.subscription?.subscription?.status == "active" else { return false }
-        let key = socialFeatures.subscription?.plan?.key
-        let type = socialFeatures.subscription?.plan?.planType
-        return ["personal", "plus", "couple", "family"].contains(key ?? "") ||
-            ["personal", "individual", "plus", "couple", "family"].contains(type ?? "")
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
     }
 
     private var homeHeader: some View {

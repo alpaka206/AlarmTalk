@@ -10,6 +10,8 @@ struct VoiceProfileManagementPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
     @EnvironmentObject private var alarmStore: LocalAlarmStore
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     @Binding var route: VoicesRoute
 
@@ -49,13 +51,13 @@ struct VoiceProfileManagementPanel: View {
                     .padding(.horizontal, 4)
             }
 
-            if voice.profiles.isEmpty {
+            if voice.profiles.isEmpty && hasPaidVoiceAccess {
                 EmptyStatePlaceholder(
                     title: "아직 사용할 수 있는 목소리가 없어요.",
                     subtitle: "60초 이상 녹음한 뒤 학습을 등록해 주세요.",
                     icon: "mic.slash"
                 )
-            } else {
+            } else if !voice.profiles.isEmpty {
                 ownProfilesSection
             }
             familyProfilesSection
@@ -196,7 +198,7 @@ struct VoiceProfileManagementPanel: View {
                 .font(.subheadline.weight(.semibold))
             HStack(spacing: 8) {
                 Button {
-                    if voice.isProfileLimitReached {
+                    if !hasPaidVoiceAccess || voice.isProfileLimitReached {
                         planGateOpen = true
                     } else {
                         route = .clone
@@ -210,7 +212,7 @@ struct VoiceProfileManagementPanel: View {
                 .disabled(voice.isBusy)
 
                 Button {
-                    if voice.isProfileLimitReached {
+                    if !hasPaidVoiceAccess || voice.isProfileLimitReached {
                         planGateOpen = true
                     } else {
                         route = .separate
@@ -222,8 +224,22 @@ struct VoiceProfileManagementPanel: View {
                 .buttonStyle(.bordered)
                 .disabled(voice.isBusy)
             }
+            if !hasPaidVoiceAccess {
+                Text("유료 이용권에서 사용할 수 있어요.")
+                    .font(.footnote)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
         }
         .sectionSurface()
+    }
+
+    private var hasPaidVoiceAccess: Bool {
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
     }
 
     // MARK: - Own profiles list

@@ -121,6 +121,9 @@
   `목소리` wording.
 - iOS settings sheet now uses the same X-style modal dismissal affordance as
   the other iOS modal surfaces.
+- iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
+  backend subscription, and the restored session plan. Home quick-start,
+  alarm-editor voice modes, and voice creation use the same paid-voice gate.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores

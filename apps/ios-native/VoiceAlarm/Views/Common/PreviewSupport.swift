@@ -38,7 +38,13 @@ extension CharacterEventStore {
     }
 }
 
-/// 한 곳에서 본 앱이 환경에 주입하는 7개 ViewModel 을 모두 attach 해 주는 헬퍼 modifier.
+extension SubscriptionManager {
+    static var preview: SubscriptionManager {
+        SubscriptionManager(api: VoiceAlarmAPI.shared, authProvider: { nil })
+    }
+}
+
+/// 한 곳에서 본 앱이 환경에 주입하는 ViewModel 을 모두 attach 해 주는 헬퍼 modifier.
 struct PreviewEnvironment: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -49,11 +55,12 @@ struct PreviewEnvironment: ViewModifier {
             .environmentObject(SocialFeatureViewModel.preview)
             .environmentObject(LocalAlarmStore.preview)
             .environmentObject(CharacterEventStore.preview)
+            .environmentObject(SubscriptionManager.preview)
     }
 }
 
 extension View {
-    /// Preview 에서 본 앱과 동일한 7개 ViewModel 을 한 줄로 주입.
+    /// Preview 에서 본 앱과 동일한 ViewModel 을 한 줄로 주입.
     func voiceAlarmPreviewEnvironment() -> some View {
         modifier(PreviewEnvironment())
     }
