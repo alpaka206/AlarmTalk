@@ -73,6 +73,9 @@
   subscription and family-group state is restored per signed-in user, refreshed
   snapshots are persisted, and logout/account switching clears in-memory
   social, voice, and remote-sync state.
+- iOS account deletion now mirrors Android's cleanup path by clearing the
+  deleted user's persisted access snapshot while leaving other user snapshots
+  intact.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.

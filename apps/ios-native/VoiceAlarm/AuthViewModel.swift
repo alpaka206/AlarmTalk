@@ -6,6 +6,7 @@ import Foundation
 /// MainActor 제약을 두지 않아 `VoiceAlarmAPI` (non-isolated) 가 그대로 만족.
 protocol AuthAPIProviding: AnyObject {
     func me(token: String) async throws -> AuthUser
+    func deleteAccount(token: String) async throws -> DeleteAccountResponse
 }
 
 extension VoiceAlarmAPI: AuthAPIProviding {}
@@ -43,6 +44,7 @@ final class AuthViewModel: ObservableObject {
 
     private let api: AuthAPIProviding
     private let appleCredentialProvider: AppleCredentialStateProviding
+    private let accessSnapshotStore: AccessSnapshotStore
     /// `addObserver(forName:object:queue:using:)` 가 반환한 토큰. deinit 시
     /// 명시 해제해야 NotificationCenter 내부 strong reference 가 풀린다.
     /// `nonisolated(unsafe)` — deinit 은 nonisolated 컨텍스트인데 본 프로퍼티는
@@ -55,10 +57,12 @@ final class AuthViewModel: ObservableObject {
 
     init(
         api: AuthAPIProviding = VoiceAlarmAPI.shared,
-        appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider()
+        appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider(),
+        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore()
     ) {
         self.api = api
         self.appleCredentialProvider = appleCredentialProvider
+        self.accessSnapshotStore = accessSnapshotStore
         session = KeychainStore.readSession()
 
         // Apple 자격 증명이 다른 디바이스에서 revoke 되면 시스템이 이 알림을 쏜다.
@@ -359,12 +363,16 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await VoiceAlarmAPI.shared.deleteAccount(token: token)
+            _ = try await api.deleteAccount(token: token)
+            if let currentUserID, !currentUserID.isEmpty {
+                accessSnapshotStore.clear(userID: currentUserID)
+            }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
             statusMessage = error.localizedDescription

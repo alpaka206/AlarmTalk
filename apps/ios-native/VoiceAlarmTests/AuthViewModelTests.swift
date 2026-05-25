@@ -59,6 +59,32 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
+    private func subscription(planKey: String) -> BillingSubscriptionResponse {
+        BillingSubscriptionResponse(
+            subscription: BillingSubscription(
+                id: "subscription-\(planKey)",
+                planId: "plan-\(planKey)",
+                planGroupId: nil,
+                status: "active",
+                startsAt: "2026-01-01T00:00:00Z",
+                expiresAt: "2026-02-01T00:00:00Z",
+                cancelAtPeriodEnd: false,
+                canceledAt: nil,
+                nextPlanId: nil
+            ),
+            plan: BillingPlan(
+                id: "plan-\(planKey)",
+                key: planKey,
+                name: planKey,
+                planType: planKey,
+                periodDays: 30,
+                maxMembers: planKey == "family" ? 4 : 2,
+                priceKrw: 9_900
+            ),
+            nextPlan: nil
+        )
+    }
+
     // MARK: - refreshUser status code branches
 
     func test_refreshUser_with401_signsOutAndSetsStatusMessage() async {
@@ -269,6 +295,33 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.statusMessage, "bye")
         XCTAssertNil(vm.lastNetworkError)
     }
+
+    func test_deleteAccount_clearsOnlyCurrentUserAccessSnapshot() async {
+        let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let snapshotStore = AccessSnapshotStore(defaults: defaults)
+        snapshotStore.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
+        snapshotStore.updateSubscription(userID: "user-2", response: subscription(planKey: "personal"))
+
+        let api = MockAuthAPI()
+        api.deleteAccountResult = .success(DeleteAccountResponse(success: true))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: snapshotStore
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.deleteAccount()
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(api.deleteAccountCallCount, 1)
+        XCTAssertNil(snapshotStore.read(userID: "user-1").subscriptionResponse)
+        XCTAssertEqual(snapshotStore.read(userID: "user-2").subscriptionResponse?.plan?.key, "personal")
+    }
 }
 
 // MARK: - Mocks
@@ -283,7 +336,9 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     }
 
     var meResult: StubResult = .failure(.invalidResponse)
+    var deleteAccountResult: Result<DeleteAccountResponse, Error> = .success(DeleteAccountResponse(success: true))
     private(set) var meCallCount = 0
+    private(set) var deleteAccountCallCount = 0
 
     func me(token: String) async throws -> AuthUser {
         meCallCount += 1
@@ -294,6 +349,16 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
             throw apiError
         case .failureRaw(let err):
             throw err
+        }
+    }
+
+    func deleteAccount(token: String) async throws -> DeleteAccountResponse {
+        deleteAccountCallCount += 1
+        switch deleteAccountResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
         }
     }
 }
