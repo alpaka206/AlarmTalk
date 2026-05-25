@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import UIKit
 
 /// 이용권/구독 패널.
 ///
@@ -24,6 +25,7 @@ struct BillingPanel: View {
     /// 결제 결과를 사용자에게 토스트로 알리기 위한 transient 메시지.
     @State private var purchaseFeedback: String?
     @State private var showLeaveSharedPassConfirm = false
+    @State private var voucherShareTargets: [VoucherItem] = []
 
     private var currentTier: PlanTier {
         // StoreKit currentEntitlements 가 권위. 백엔드 plan key 는 fallback.
@@ -55,11 +57,19 @@ struct BillingPanel: View {
                 .foregroundStyle(VoiceAlarmTheme.text)
 
             ForEach(PlanTier.allCases, id: \.self) { tier in
+                let shareableVouchers = shareableVouchersForPlan(
+                    socialFeatures.vouchers,
+                    planKey: tier.apiKey
+                )
                 PlanCard(
                     tier: tier,
                     isCurrent: tier == currentTier,
+                    vouchers: shareableVouchers,
                     onPurchase: { product in
                         Task { await purchase(product) }
+                    },
+                    onShareVouchers: {
+                        Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
                     }
                 )
             }
@@ -128,6 +138,18 @@ struct BillingPanel: View {
         } message: {
             Text("나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.")
         }
+        .sheet(
+            isPresented: Binding(
+                get: { !voucherShareTargets.isEmpty },
+                set: { if !$0 { voucherShareTargets = [] } }
+            )
+        ) {
+            VoucherShareSelectionSheet(
+                vouchers: voucherShareTargets,
+                onDismiss: { voucherShareTargets = [] }
+            )
+            .presentationDetents([.medium])
+        }
     }
 
     // MARK: - Restore
@@ -153,6 +175,19 @@ struct BillingPanel: View {
         if result.isSuccess {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
             await socialFeatures.refreshAll(session: auth.session, force: true)
+        }
+    }
+
+    private func refreshAndOpenVoucherShare(planKey: String) async {
+        await socialFeatures.refreshAll(session: auth.session, force: true)
+        let refreshedTargets = shareableVouchersForPlan(
+            socialFeatures.vouchers,
+            planKey: planKey
+        )
+        if refreshedTargets.isEmpty {
+            purchaseFeedback = "공유할 이용권 코드가 없어요."
+        } else {
+            voucherShareTargets = refreshedTargets
         }
     }
 }
@@ -327,7 +362,9 @@ struct PlanCard: View {
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
     let isCurrent: Bool
+    let vouchers: [VoucherItem]
     let onPurchase: (SubscriptionProduct) -> Void
+    let onShareVouchers: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -363,6 +400,17 @@ struct PlanCard: View {
                     .foregroundStyle(VoiceAlarmTheme.text)
             } else {
                 purchaseButtons
+            }
+
+            if !vouchers.isEmpty {
+                Button(action: onShareVouchers) {
+                    Label("이용권 코드 공유", systemImage: "square.and.arrow.up")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .disabled(subscriptions.isPurchasing)
             }
         }
         .padding(12)
@@ -431,6 +479,110 @@ struct PlanCard: View {
         case .family:   return "최대 6인 가족 공유 알람"
         }
     }
+}
+
+private struct VoucherShareSelectionSheet: View {
+    let vouchers: [VoucherItem]
+    let onDismiss: () -> Void
+
+    @State private var shareText: String = ""
+    @State private var isSharePresented = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("공유할 이용권 선택")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Text("아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요.")
+                        .font(.footnote)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("닫기")
+            }
+
+            VStack(spacing: 10) {
+                ForEach(vouchers) { voucher in
+                    VoucherShareRow(voucher: voucher) {
+                        shareText = voucher.code
+                        UIPasteboard.general.string = voucher.code
+                        isSharePresented = true
+                    }
+                }
+            }
+        }
+        .padding(20)
+        .background(VoiceAlarmTheme.background)
+        .sheet(isPresented: $isSharePresented) {
+            BillingActivityShareSheet(text: shareText)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+private struct VoucherShareRow: View {
+    let voucher: VoucherItem
+    let onShare: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(voucher.code)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.text)
+                    .textSelection(.enabled)
+                Text(voucherShareSubtitle(voucher))
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
+            Spacer()
+            Button(action: onShare) {
+                Text("공유")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VoiceAlarmTheme.primary)
+            .foregroundStyle(.white)
+        }
+        .padding(12)
+        .background(VoiceAlarmTheme.surfaceVariant)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct BillingActivityShareSheet: UIViewControllerRepresentable {
+    let text: String
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+private func shareableVouchersForPlan(_ vouchers: [VoucherItem], planKey: String) -> [VoucherItem] {
+    vouchers.filter { voucher in
+        ["issued", "active", "pending"].contains(voucher.status) &&
+            (voucher.useCount ?? 0) < (voucher.maxUses ?? 1) &&
+            voucher.planKey == planKey
+    }
+}
+
+private func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
+    if let issuedAt = formatPassDate(voucher.issuedAt) {
+        return "미등록 · 발급일 \(issuedAt)"
+    }
+    return "미등록"
 }
 
 /// 캐릭터 패널/기타 통계 화면에서 쓰는 작은 metric 박스.

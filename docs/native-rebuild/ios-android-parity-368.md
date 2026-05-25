@@ -94,6 +94,10 @@
   routed from home/settings when a group exists, keeps code registration as the
   no-group path, refreshes before sharing a code, and uses Android's current
   "공유 이용권" wording.
+- iOS billing now mirrors Android's voucher share behavior: plan cards with
+  unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
+  subscription/voucher state before opening, and show a selection sheet even
+  when only one code is available.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
