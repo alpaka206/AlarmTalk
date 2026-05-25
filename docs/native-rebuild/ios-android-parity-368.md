@@ -179,6 +179,9 @@
   trimmed, relationship/listener fields are always included, `isDraft=false` is
   sent by default, and ViewModel clone/update paths validate relationship and
   listener labels before making the server call.
+- iOS voice deletion now mirrors Android's recovery path: a server 404 is
+  treated as an already-deleted voice, selected voice state is cleared, local
+  alarms are downgraded to alarm-only, and voice state is refreshed.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.

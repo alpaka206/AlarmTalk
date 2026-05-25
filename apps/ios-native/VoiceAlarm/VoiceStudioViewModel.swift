@@ -660,20 +660,34 @@ final class VoiceStudioViewModel: ObservableObject {
 
         do {
             try await api.deleteVoiceProfile(id: profile.id, token: token, force: force)
-            if selectedProfileID == profile.id {
-                selectedProfileID = nil
-            }
-            if let alarmStore {
-                cascadeAlarmsAfterVoiceDeletion(
-                    profileID: profile.id,
-                    alarmStore: alarmStore,
-                    audioCache: audioCache
-                )
-            }
+            handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
             statusMessage = "목소리를 삭제했어요."
             await refresh(session: session, force: true, successMessage: nil)
         } catch {
+            if isNotFoundError(error) {
+                handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
+                statusMessage = "이미 삭제된 목소리예요."
+                await refresh(session: session, force: true, successMessage: nil)
+                return
+            }
             statusMessage = mapVoiceError(error)
+        }
+    }
+
+    private func handleDeletedVoiceProfile(
+        _ profile: VoiceProfile,
+        alarmStore: LocalAlarmStore?,
+        audioCache: AudioCacheStore?
+    ) {
+        if selectedProfileID == profile.id {
+            selectedProfileID = nil
+        }
+        if let alarmStore {
+            cascadeAlarmsAfterVoiceDeletion(
+                profileID: profile.id,
+                alarmStore: alarmStore,
+                audioCache: audioCache
+            )
         }
     }
 
@@ -717,6 +731,13 @@ final class VoiceStudioViewModel: ObservableObject {
     private func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func isNotFoundError(_ error: Error) -> Bool {
+        if case APIError.server(let status, _, _) = error {
+            return status == 404
+        }
+        return false
     }
 
     private struct RequiredVoiceProfileFields {
