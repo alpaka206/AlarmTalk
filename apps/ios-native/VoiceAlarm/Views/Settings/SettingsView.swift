@@ -6,6 +6,7 @@ import SwiftUI
 /// 코드/캐릭터/이용권/공유 이용권 진입은 MainTabsView 의 프로필 메뉴가 맡는다.
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @AppStorage(VoiceAlarmThemeMode.storageKey) private var themeModeRaw = VoiceAlarmThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
@@ -156,6 +157,7 @@ struct SettingsView: View {
         preferences.saveToDefaults()
         Task {
             await auth.updateProfile(dynamicPromptSettings: preferences.toSettings())
+            await socialFeatures.refreshAll(session: auth.session, force: true)
         }
     }
 }

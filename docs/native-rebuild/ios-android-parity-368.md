@@ -80,6 +80,9 @@
   session refresh: code registration, leaving a shared pass, subscription
   cancellation, StoreKit purchase success, and purchase restore refresh
   `/auth/me` after the foreground action.
+- iOS dynamic-prompt preference saves now mirror Android's
+  `updateDynamicPromptSettings` follow-up by refreshing social/family state
+  after `/user/me` is updated.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
