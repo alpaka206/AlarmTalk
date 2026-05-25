@@ -68,6 +68,7 @@ struct AccountPanel: View {
                 }
             )
             .presentationDetents([.medium])
+            .interactiveDismissDisabled(auth.isBusy)
         }
     }
 }
@@ -85,19 +86,31 @@ private struct NicknameEditSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var normalizedInitialName: String {
+        initialName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !isBusy && !trimmedName.isEmpty && trimmedName != normalizedInitialName
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("닉네임")
+                    Text("닉네임 수정")
                         .font(.title3.weight(.bold))
                         .foregroundStyle(VoiceAlarmTheme.text)
-                    Text("앱에서 표시될 이름이에요.")
+                    Text("공유 이용권과 메시지에서 표시되는 이름이에요.")
                         .font(.subheadline)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
                 Spacer()
-                Button(action: onDismiss) {
+                Button {
+                    if !isBusy {
+                        onDismiss()
+                    }
+                } label: {
                     Image(systemName: "xmark")
                         .font(.headline)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
@@ -105,21 +118,54 @@ private struct NicknameEditSheet: View {
                         .background(VoiceAlarmTheme.surfaceVariant, in: Circle())
                 }
                 .buttonStyle(.plain)
+                .disabled(isBusy)
             }
 
+            HStack(spacing: 12) {
+                Image(systemName: "person")
+                    .font(.title3)
+                    .foregroundStyle(VoiceAlarmTheme.primary)
+                    .frame(width: 42, height: 42)
+                    .background(VoiceAlarmTheme.surface, in: Circle())
+                    .overlay(
+                        Circle()
+                            .stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+                    )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("앱에서 보일 이름")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Text("알람, 메시지, 공유 이용권 화면에서 이 이름을 사용해요.")
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(14)
+            .background(VoiceAlarmTheme.surfaceVariant.opacity(0.42), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+            )
+
             VStack(alignment: .leading, spacing: 6) {
-                Text("이름")
+                Text("닉네임")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                TextField("닉네임", text: $name)
+                TextField("예: 규원", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
+                    .disabled(isBusy)
                     .onChange(of: name) { _, newValue in
                         if newValue.count > 30 {
                             name = String(newValue.prefix(30))
                         }
                     }
+                Text("\(name.count)/30")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 if submitted && trimmedName.isEmpty {
                     Text("닉네임을 입력해 주세요.")
                         .font(.caption2.weight(.semibold))
@@ -129,13 +175,13 @@ private struct NicknameEditSheet: View {
 
             Button("저장") {
                 submitted = true
-                guard !trimmedName.isEmpty else { return }
+                guard canSave else { return }
                 onSave(trimmedName)
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
             .frame(maxWidth: .infinity)
-            .disabled(isBusy)
+            .disabled(!canSave)
 
             Spacer(minLength: 0)
         }

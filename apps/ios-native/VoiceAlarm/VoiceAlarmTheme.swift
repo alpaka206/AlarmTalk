@@ -19,9 +19,17 @@ enum VoiceAlarmThemeMode: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .system: return "기기 설정을 그대로 따라가요."
-        case .light: return "밝은 화면으로 고정해요."
-        case .dark: return "어두운 화면으로 고정해요."
+        case .system: return "휴대폰 설정을 따라가요."
+        case .light: return "낮에도 선명한 밝은 화면이에요."
+        case .dark: return "밤에 보기 편한 어두운 화면이에요."
+        }
+    }
+
+    var pickerTitle: String {
+        switch self {
+        case .system: return "시스템"
+        case .light: return "밝게"
+        case .dark: return "어둡게"
         }
     }
 

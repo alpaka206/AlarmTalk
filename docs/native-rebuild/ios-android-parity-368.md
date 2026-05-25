@@ -21,7 +21,7 @@
 | Messages | Received/sent note flow, voice note audio availability, read after listen, timestamp with time | Received notes and send note/TTS note primitives | Need UI parity for message composer and voice audio freshness/read behavior. |
 | Members/share code | Current group, share code refresh, one-member modal, owner/member permissions | MemberManagementView + vouchers | Need latest Android wording, refresh-on-open, member permission audit. |
 | Billing | Plan cards, voucher/redeem/cancel/change, feature gates | StoreKit2 UI + backend voucher primitives | Platform-specific purchase path OK; need Android copy/gate parity where not IAP-specific. |
-| Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, permission section | Missing theme/nickname/weather/fortune modal parity. |
+| Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, theme/nickname/weather/fortune sheets | Need macOS visual QA and final copy pass. |
 | Character/streak | XP queue and character card | CharacterEventStore and GrowthPanel | Need home/settings display parity audit. |
 
 ## Implementation Order
@@ -66,6 +66,10 @@
   location" action. It requests When-In-Use location permission only when the
   user taps the button, reverse geocodes to country/city, and still supports
   manual entry.
+- iOS theme and nickname settings now mirror Android's modal copy and states:
+  selected theme rows use the same icon/card/selected badge treatment, and the
+  nickname sheet adds the Android-style guidance card, placeholder, 30-character
+  counter, busy dismissal lock, and save-disabled-until-changed behavior.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

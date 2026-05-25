@@ -214,41 +214,53 @@ private struct ThemeModePickerSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSheetHeader(title: "테마", subtitle: "앱 화면 모드를 선택해요.", onDismiss: onDismiss)
+            SettingsSheetHeader(title: "테마 선택", subtitle: "휴대폰 설정과 앱 화면 모드를 선택해요.", onDismiss: onDismiss)
             VStack(spacing: 10) {
                 ForEach(VoiceAlarmThemeMode.allCases) { mode in
                     Button {
                         onSelect(mode)
                     } label: {
                         HStack(spacing: 12) {
-                            Image(systemName: mode.systemImage)
-                                .font(.title3)
-                                .frame(width: 28)
-                                .foregroundStyle(mode == current ? VoiceAlarmTheme.primary : VoiceAlarmTheme.textSecondary)
+                            ZStack {
+                                Circle()
+                                    .fill(mode == current ? VoiceAlarmTheme.primary : VoiceAlarmTheme.surface)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+                                    )
+                                Image(systemName: mode.systemImage)
+                                    .font(.title3)
+                                    .foregroundStyle(mode == current ? Color.white : VoiceAlarmTheme.primary)
+                            }
+                            .frame(width: 42, height: 42)
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(mode.label)
-                                    .font(.subheadline.weight(.semibold))
+                                Text(mode.pickerTitle)
+                                    .font(.body.weight(.semibold))
                                     .foregroundStyle(VoiceAlarmTheme.text)
                                 Text(mode.subtitle)
-                                    .font(.caption)
+                                    .font(.caption.weight(.medium))
                                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
                             }
                             Spacer()
                             if mode == current {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(VoiceAlarmTheme.primary)
+                                Text("선택됨")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(VoiceAlarmTheme.primary, in: Capsule())
                             }
                         }
                         .padding(14)
                         .background(
                             mode == current
-                                ? VoiceAlarmTheme.primary.opacity(0.12)
-                                : VoiceAlarmTheme.surfaceVariant.opacity(0.5),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                ? VoiceAlarmTheme.primary.opacity(0.16)
+                                : VoiceAlarmTheme.surfaceVariant.opacity(0.42),
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(mode == current ? VoiceAlarmTheme.primary.opacity(0.45) : VoiceAlarmTheme.outline, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(mode == current ? VoiceAlarmTheme.primary.opacity(0.52) : VoiceAlarmTheme.outline, lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
