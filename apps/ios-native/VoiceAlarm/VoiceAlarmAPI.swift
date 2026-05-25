@@ -353,6 +353,22 @@ struct TtsGenerateResponse: Decodable, Equatable {
     var randomContext: String?
 }
 
+extension TtsGenerateResponse {
+    var remoteAudioURI: String? {
+        if let trimmed = audioUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            return trimmed
+        }
+        guard let key = audioObjectKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            return nil
+        }
+        let lower = key.lowercased()
+        if lower.hasPrefix("r2://") || lower.hasPrefix("https://") || lower.hasPrefix("http://") {
+            return key
+        }
+        return "r2://\(key)"
+    }
+}
+
 struct TtsMessageListResponse: Decodable {
     var messages: [TtsMessage]
     var total: Int?

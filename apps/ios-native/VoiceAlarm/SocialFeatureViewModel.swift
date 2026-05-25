@@ -381,20 +381,24 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             let tts = try await api.generateTTS(
-                TtsGenerateRequest(
-                    voiceProfileId: voiceProfileId,
-                    text: trimmed,
-                    category: "note",
-                    language: "ko",
-                    translate: false,
-                    random: false
+                    TtsGenerateRequest(
+                        voiceProfileId: voiceProfileId,
+                        text: trimmed,
+                        category: "custom",
+                        language: "ko",
+                        translate: false,
+                        random: false
                 ),
                 token: token
             )
+            guard let remoteAudioURI = tts.remoteAudioURI else {
+                statusMessage = "생성된 음성 파일을 저장하지 못했어요."
+                return
+            }
             _ = try await api.sendNote(
                 receiverId: recipientId,
                 text: trimmed,
-                audioUrl: tts.audioUrl,
+                audioUrl: remoteAudioURI,
                 token: token
             )
             statusMessage = "음성 메시지를 보냈어요."

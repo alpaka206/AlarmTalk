@@ -483,7 +483,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 voiceProfileID: response.voiceProfileId,
                 localAudioFileName: cached.fileName,
                 audioCacheKey: cached.cacheKey,
-                rawAudioURL: response.audioUrl,
+                rawAudioURL: response.remoteAudioURI,
                 text: response.text,
                 language: ttsLanguage
             )

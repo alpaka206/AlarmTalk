@@ -37,9 +37,21 @@
 
 | Check | Environment | Status |
 | --- | --- | --- |
-| Android files unchanged | Windows git diff path filter | Pending |
-| Backend tests/typecheck if API contracts touched | Windows Node | Pending |
+| Android files unchanged | Windows git diff path filter | Passed: no `apps/android-native` diff in PR |
+| Backend/DB unchanged and not deployed | Windows git diff path filter | Passed: no backend/db/migrations diff; no deploy performed |
+| Backend tests/typecheck if API contracts touched | GitHub Actions | Passed: CI lint/typecheck/test + CodeQL |
 | Swift compile/test | macOS + Xcode | Blocked in current Windows workspace |
 | XcodeGen project generation | macOS + xcodegen | Blocked in current Windows workspace |
 | Physical iPhone AlarmKit schedule/ring/snooze/dismiss | iOS 26+ device | Blocked in current Windows workspace |
-| Screen-by-screen manual QA vs Android | Human/device | Pending |
+| Screen-by-screen manual QA vs Android | Human/device | Static audit complete for core API/UI flows; device visual QA still required |
+
+## Static Audit Notes
+
+- `TtsGenerateResponse.remoteAudioURI` now mirrors Android's fallback:
+  `audio_url ?: "r2://$audio_object_key"`. The value is reused for local TTS
+  cache metadata, saved alarm remote audio URI, and voice-message sending.
+- Voice-message TTS uses Android's `custom` category and refuses to send a text
+  note if the generated TTS response has no remote audio identifier.
+- Follow-up verification still requires macOS/Xcode because this Windows
+  workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
+  checks.

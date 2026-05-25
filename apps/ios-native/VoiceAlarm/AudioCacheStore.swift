@@ -81,7 +81,7 @@ final class AudioCacheStore {
             mimeType: Self.mimeType(forFormat: format),
             source: "tts",
             messageId: tts.messageId,
-            rawAudioUri: tts.audioUrl,
+            rawAudioUri: tts.remoteAudioURI,
             durationOverrideMs: nil,
             enforceMaxDuration: false  // tts 길이는 서버가 보장. 한도는 메타에만.
         )
