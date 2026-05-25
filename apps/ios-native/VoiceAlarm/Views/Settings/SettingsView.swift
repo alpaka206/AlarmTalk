@@ -20,7 +20,7 @@ struct SettingsView: View {
     /// 보조 화면 요청 — 부모가 settingsPresented 를 false 로 만들고,
     /// 시트 dismiss 후 auxiliaryScreen 을 세팅한다.
     let onRequestAuxiliary: (AuxiliaryScreen) -> Void
-    /// 사용자가 시트를 닫고 싶을 때(상단 chevron) 호출.
+    /// 사용자가 시트를 닫고 싶을 때(상단 X) 호출.
     let onClose: () -> Void
 
     var body: some View {
@@ -30,9 +30,14 @@ struct SettingsView: View {
                     Button {
                         onClose()
                     } label: {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(VoiceAlarmTheme.surfaceVariant, in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text("닫기"))
                     Text("설정")
                         .font(.title2.weight(.bold))
                 }

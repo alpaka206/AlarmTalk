@@ -119,6 +119,8 @@
   with lock badges for unavailable voice/alarm capabilities.
 - iOS bottom navigation and voice-tab header now use Android's visible
   `목소리` wording.
+- iOS settings sheet now uses the same X-style modal dismissal affordance as
+  the other iOS modal surfaces.
 - iOS alarm editing now exposes Android's manual voice-message input,
   translation language selector, random prompt language selector, voice-only
   repeat choice, and per-alarm voice volume. The local alarm record now stores
