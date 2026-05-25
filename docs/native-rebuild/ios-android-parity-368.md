@@ -18,7 +18,7 @@
 | Alarm ring | AlarmManager full-screen service, local audio, volume ramp, snooze/dismiss, XP event | AlarmKit schedule, local sound staging, in-app voice fallback, App Intents | iOS AlarmKit limitations need device proof; volume-ramp parity is limited by AlarmKit/system sound behavior. |
 | Voice creation | Record/upload, crop, speaker separation, clone, relationship/listener, slots, delete cascade | Voice recorder/upload/speaker separation/clone/profile management | Need latest Android shared voice card/modal copy/design and preview parity. |
 | Shared voices | Family shared voices, viewer relationship/listener, no relation on card, preview before selection | Family voices and viewer info update | Missing `needs_viewer_info`, simplified card copy, modal preview/design parity. |
-| Messages | Received/sent note flow, voice note audio availability, read after listen, timestamp with time | Received notes and send note/TTS note primitives | Need UI parity for message composer and voice audio freshness/read behavior. |
+| Messages | Received/sent note flow, voice note audio availability, read after listen, timestamp with time | Received notes, text/TTS composer, audio freshness/read behavior | Need macOS visual QA and Android row copy final pass. |
 | Members/share code | Current group, share code refresh, one-member modal, owner/member permissions | MemberManagementView + vouchers | Need latest Android wording, refresh-on-open, member permission audit. |
 | Billing | Plan cards, voucher/redeem/cancel/change, feature gates | StoreKit2 UI + backend voucher primitives | Platform-specific purchase path OK; need Android copy/gate parity where not IAP-specific. |
 | Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, theme/nickname/weather/fortune sheets | Need macOS visual QA and final copy pass. |
@@ -70,6 +70,9 @@
   selected theme rows use the same icon/card/selected badge treatment, and the
   nickname sheet adds the Android-style guidance card, placeholder, 30-character
   counter, busy dismissal lock, and save-disabled-until-changed behavior.
+- iOS message composer now uses Android-style section cards and chips for
+  recipient, send mode, and voice selection, including the same message
+  placeholder, counter, and send-disabled-until-valid behavior.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

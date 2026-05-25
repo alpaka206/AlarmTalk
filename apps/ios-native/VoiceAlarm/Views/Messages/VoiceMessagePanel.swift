@@ -40,7 +40,7 @@ struct VoiceMessagePanel: View {
                 Button {
                     composerOpen = true
                 } label: {
-                    Label("새 메시지", systemImage: "plus")
+                    Label("작성", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VoiceAlarmTheme.primary)
@@ -185,42 +185,74 @@ private struct VoiceMessageComposerSheet: View {
                 .buttonStyle(.plain)
             }
 
-            Picker("보낼 방식", selection: $sendMode) {
-                ForEach(VoiceMessageSendMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    MessageComposerSection(title: "받는 사람") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(recipients) { recipient in
+                                    MessageChoiceChip(
+                                        title: memberLabel(recipient),
+                                        selected: recipientID == recipient.userId,
+                                        action: { recipientID = recipient.userId }
+                                    )
+                                }
+                            }
+                        }
+                    }
 
-            Picker("받는 사람", selection: $recipientID) {
-                Text("선택").tag(String?.none)
-                ForEach(recipients) { recipient in
-                    Text(memberLabel(recipient)).tag(Optional(recipient.userId))
-                }
-            }
+                    MessageComposerSection(title: "보내기 방식") {
+                        HStack(spacing: 8) {
+                            ForEach(VoiceMessageSendMode.allCases) { mode in
+                                MessageChoiceChip(
+                                    title: mode.label,
+                                    selected: sendMode == mode,
+                                    action: { sendMode = mode }
+                                )
+                            }
+                        }
+                    }
 
-            if sendMode == .voice {
-                Picker("목소리", selection: $selectedVoiceID) {
-                    Text("선택").tag(String?.none)
-                    ForEach(voiceOptions) { option in
-                        Text(option.label).tag(Optional(option.id))
+                    if sendMode == .voice {
+                        MessageComposerSection(title: "보낼 목소리") {
+                            if voiceOptions.isEmpty {
+                                Text("사용 가능한 목소리가 없어요.")
+                                    .font(.caption)
+                                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                            } else {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 8) {
+                                        ForEach(voiceOptions) { option in
+                                            MessageChoiceChip(
+                                                title: option.label,
+                                                selected: selectedVoiceID == option.id,
+                                                action: { selectedVoiceID = option.id }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    MessageComposerSection(title: "메시지") {
+                        TextField("전하고 싶은 말을 입력하세요", text: $text, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .lineLimit(4...6)
+                            .onChange(of: text) { _, newValue in
+                                if newValue.count > maxLength {
+                                    text = String(newValue.prefix(maxLength))
+                                }
+                            }
+                        Text("\(text.count)/\(maxLength)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
-                if voiceOptions.isEmpty {
-                    Text("사용할 수 있는 목소리가 없어요. 먼저 목소리를 만들어 주세요.")
-                        .font(.caption)
-                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                }
             }
+            .frame(maxHeight: 520)
 
-            TextField("메시지", text: $text, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(3...6)
-                .onChange(of: text) { _, newValue in
-                    if newValue.count > maxLength {
-                        text = String(newValue.prefix(maxLength))
-                    }
-                }
             HStack {
                 if submitted && !canSend {
                     Text("받는 사람과 메시지를 확인해 주세요.")
@@ -228,12 +260,9 @@ private struct VoiceMessageComposerSheet: View {
                         .foregroundStyle(VoiceAlarmTheme.error)
                 }
                 Spacer()
-                Text("\(text.count)/\(maxLength)")
-                    .font(.caption2)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
             }
 
-            Button(sendMode == .voice ? "음성 메시지 보내기" : "메시지 보내기") {
+            Button(isBusy ? "보내는 중" : "보내기") {
                 submitted = true
                 guard canSend, let recipientID else { return }
                 if sendMode == .voice, let selectedVoiceID {
@@ -245,7 +274,7 @@ private struct VoiceMessageComposerSheet: View {
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
             .frame(maxWidth: .infinity)
-            .disabled(isBusy)
+            .disabled(!canSend)
 
             Spacer(minLength: 0)
         }
@@ -264,6 +293,14 @@ private struct VoiceMessageComposerSheet: View {
                 text = String(text.prefix(maxLength))
             }
         }
+        .onChange(of: voiceOptions) { _, nextOptions in
+            let selectionMissing = selectedVoiceID.map { id in
+                !nextOptions.contains(where: { $0.id == id })
+            } ?? true
+            if selectionMissing {
+                selectedVoiceID = nextOptions.first?.id
+            }
+        }
     }
 
     private func memberLabel(_ member: FamilyGroupMember) -> String {
@@ -274,6 +311,58 @@ private struct VoiceMessageComposerSheet: View {
             return email
         }
         return member.userId
+    }
+}
+
+private struct MessageComposerSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(VoiceAlarmTheme.text)
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(VoiceAlarmTheme.surfaceVariant.opacity(0.42), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+        )
+    }
+}
+
+private struct MessageChoiceChip: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(selected ? Color.white : VoiceAlarmTheme.text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    selected ? VoiceAlarmTheme.secondary : VoiceAlarmTheme.surface,
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(selected ? VoiceAlarmTheme.secondary : VoiceAlarmTheme.outline, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 
