@@ -445,9 +445,23 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        let normalizedRecipientID = recipientId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedVoiceProfileID = voiceProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedRecipientID.isEmpty else {
+            statusMessage = "메시지를 받을 가족 멤버를 선택해 주세요."
+            return
+        }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusMessage = "메시지 내용을 입력해 주세요."
+            return
+        }
+        guard trimmed.count <= 200 else {
+            statusMessage = "음성 메시지는 200자까지 보낼 수 있어요."
+            return
+        }
+        guard !normalizedVoiceProfileID.isEmpty else {
+            statusMessage = "목소리를 선택해 주세요."
             return
         }
         guard !isBusy else { return }
@@ -457,7 +471,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let tts = try await api.generateTTS(
                     TtsGenerateRequest(
-                        voiceProfileId: voiceProfileId,
+                        voiceProfileId: normalizedVoiceProfileID,
                         text: trimmed,
                         category: "custom",
                         language: "ko",
@@ -471,7 +485,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 return
             }
             _ = try await api.sendNote(
-                receiverId: recipientId,
+                receiverId: normalizedRecipientID,
                 text: trimmed,
                 audioUrl: remoteAudioURI,
                 token: token

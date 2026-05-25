@@ -87,6 +87,9 @@
   quiet windows are filtered to valid weekdays, capped at eight windows,
   rejected on invalid `HH:mm` times, and the first/default quiet window is sent
   through the legacy `family_alarm_quiet_*` fields alongside the window list.
+- iOS voice-message sending now mirrors Android's ViewModel guardrails before
+  calling TTS: recipient/profile IDs are trimmed and required, and voice-note
+  text is rejected above 200 characters even outside the composer UI.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
