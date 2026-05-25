@@ -823,6 +823,9 @@ struct ChangePlanResponse: Decodable, Equatable {
 struct UpdateProfileRequest: Encodable {
     var name: String?
     var allowFamilyAlarms: Bool?
+    var familyAlarmQuietDays: [Int]?
+    var familyAlarmQuietStart: String?
+    var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
     var dynamicPromptSettings: DynamicPromptSettings?
 }

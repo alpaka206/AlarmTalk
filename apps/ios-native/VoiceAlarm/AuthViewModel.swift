@@ -6,6 +6,7 @@ import Foundation
 /// MainActor 제약을 두지 않아 `VoiceAlarmAPI` (non-isolated) 가 그대로 만족.
 protocol AuthAPIProviding: AnyObject {
     func me(token: String) async throws -> AuthUser
+    func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
     func deleteAccount(token: String) async throws -> DeleteAccountResponse
 }
 
@@ -337,16 +338,27 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
+        if let normalizedQuietWindows,
+           normalizedQuietWindows.contains(where: { !Self.isValidTimeText($0.start) || !Self.isValidTimeText($0.end) }) {
+            statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
+            return
+        }
+        let firstQuietWindow = normalizedQuietWindows?.first
+            ?? (quietWindows == nil ? nil : Self.defaultFamilyAlarmQuietWindow)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await VoiceAlarmAPI.shared.updateProfile(
+            _ = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
-                    familyAlarmQuietWindows: quietWindows,
+                    familyAlarmQuietDays: firstQuietWindow?.days,
+                    familyAlarmQuietStart: firstQuietWindow?.start,
+                    familyAlarmQuietEnd: firstQuietWindow?.end,
+                    familyAlarmQuietWindows: normalizedQuietWindows,
                     dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
@@ -356,6 +368,34 @@ final class AuthViewModel: ObservableObject {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    private static let defaultFamilyAlarmQuietWindow = FamilyAlarmQuietWindow(
+        days: [1, 2, 3, 4, 5],
+        start: "09:00",
+        end: "18:30"
+    )
+
+    private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
+        Array(
+            windows
+                .map { window in
+                    FamilyAlarmQuietWindow(
+                        days: Array(Set(window.days.filter { (0...6).contains($0) })).sorted(),
+                        start: window.start,
+                        end: window.end
+                    )
+                }
+                .filter { !$0.days.isEmpty }
+                .prefix(8)
+        )
+    }
+
+    private static func isValidTimeText(_ value: String) -> Bool {
+        value.range(
+            of: #"^([01]\d|2[0-3]):[0-5]\d$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     func deleteAccount() async {

@@ -83,6 +83,10 @@
 - iOS dynamic-prompt preference saves now mirror Android's
   `updateDynamicPromptSettings` follow-up by refreshing social/family state
   after `/user/me` is updated.
+- iOS family-alarm permission saves now mirror Android's request sanitizer:
+  quiet windows are filtered to valid weekdays, capped at eight windows,
+  rejected on invalid `HH:mm` times, and the first/default quiet window is sent
+  through the legacy `family_alarm_quiet_*` fields alongside the window list.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
