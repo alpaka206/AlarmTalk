@@ -688,12 +688,38 @@ final class LocalAlarmStore: ObservableObject {
         return alarms[index]
     }
 
-    func setEnabled(id: String, enabled: Bool) {
+    func setEnabled(
+        id: String,
+        enabled: Bool,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].enabled = enabled
-        alarms[index].state = enabled ? AlarmRuntimeState.armed.rawValue : AlarmRuntimeState.disabled.rawValue
+        if enabled {
+            let nextFireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                repeatDaysMask: alarms[index].repeatDaysMask,
+                holidayOff: alarms[index].holidayOff,
+                nowMillis: nowMillis,
+                isHoliday: isHoliday
+            )) ?? LocalAlarmRecord.fallbackFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                referenceMillis: nowMillis
+            )
+            alarms[index].fireAtMillis = nextFireAt
+            alarms[index].enabled = true
+            alarms[index].snoozeCount = 0
+            alarms[index].state = AlarmRuntimeState.armed.rawValue
+            alarms[index].alarmKitID = nil
+        } else {
+            alarms[index].enabled = false
+            alarms[index].state = AlarmRuntimeState.disabled.rawValue
+            alarms[index].alarmKitID = nil
+        }
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        alarms[index].updatedAtMillis = nowMillis
         persist()
     }
 

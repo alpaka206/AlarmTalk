@@ -215,6 +215,10 @@
   recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
   `/voice/upload` and the alarm is created through `/family/alarms/voice`
   instead of sending an unusable local-only file reference in `/alarms`.
+- iOS alarm enable/disable now mirrors Android's `setEnabled`: enabling an
+  alarm recalculates the next fire time, clears the snooze count and stale
+  AlarmKit ID before rescheduling, while disabling clears the scheduled
+  AlarmKit ID and marks remote-backed alarms dirty for push sync.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
