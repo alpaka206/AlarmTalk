@@ -55,6 +55,9 @@ struct AlarmsListView: View {
                         alarm: alarm,
                         onTap: { openEditor(.edit(alarm.id)) },
                         onEdit: { openEditor(.edit(alarm.id)) },
+                        onToggleEnabled: { enabled in
+                            Task { await setAlarm(alarm, enabled: enabled) }
+                        },
                         onPushRemote: {
                             Task { await remoteSync.push(record: alarm, store: store, session: auth.session) }
                         },
@@ -69,6 +72,34 @@ struct AlarmsListView: View {
             }
         }
         .sectionSurface()
+    }
+
+    @MainActor
+    private func setAlarm(_ alarm: LocalAlarmRecord, enabled: Bool) async {
+        if enabled {
+            store.setEnabled(id: alarm.id, enabled: true)
+            guard let updated = store.record(id: alarm.id) else { return }
+            let scheduled = await alarmKit.schedule(record: updated, store: store)
+            if !scheduled {
+                store.markFailed(id: updated.id)
+                return
+            }
+            if store.record(id: updated.id)?.remoteAlarmId != nil,
+               let synced = store.record(id: updated.id) {
+                await remoteSync.push(record: synced, store: store, session: auth.session)
+            }
+        } else {
+            let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
+            guard canceled else {
+                store.markFailed(id: alarm.id)
+                return
+            }
+            store.setEnabled(id: alarm.id, enabled: false)
+            if store.record(id: alarm.id)?.remoteAlarmId != nil,
+               let updated = store.record(id: alarm.id) {
+                await remoteSync.push(record: updated, store: store, session: auth.session)
+            }
+        }
     }
 
     private var serverSection: some View {
