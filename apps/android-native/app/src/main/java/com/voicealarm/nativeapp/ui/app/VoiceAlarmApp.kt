@@ -373,6 +373,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         if (
             tab == NativeTab.Voices &&
             authSession != null &&
+            subscriptionResponse != null &&
             !hasPaidVoiceAccess(subscriptionResponse)
         ) {
             planGateDialog = PlanGateDialogState(
@@ -383,6 +384,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         if (
             tab == NativeTab.Messages &&
             authSession != null &&
+            subscriptionResponse != null &&
+            familyGroup != null &&
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
             planGateDialog = PlanGateDialogState(

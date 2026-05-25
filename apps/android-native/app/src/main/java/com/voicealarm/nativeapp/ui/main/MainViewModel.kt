@@ -54,6 +54,14 @@ import androidx.compose.runtime.setValue
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     internal val repository = AlarmAppContainer.repository(application)
     internal val authSessionStore = AuthSessionStore(application)
+    internal val accessSnapshotStore = AccessSnapshotStore(application)
+    private val initialAuthSession = authSessionStore.read()
+    private val initialAccessSnapshot = initialAuthSession
+        ?.user
+        ?.id
+        ?.takeIf { it.isNotBlank() }
+        ?.let(accessSnapshotStore::read)
+        ?: AccessSnapshot()
     internal val api = VoiceAlarmApiClient.create(
         unauthorizedHandler = object : VoiceAlarmApiClient.UnauthorizedHandler {
             override fun onUnauthorized() {
@@ -72,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (authSession == null) return@launch
             runCatching { authSessionStore.clear() }
+            clearUserScopedRemoteState()
             authSession = null
             message = "로그인이 만료되었어요. 다시 로그인해 주세요."
         }
@@ -83,7 +92,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val characterEvents: StateFlow<List<CharacterEventEntity>> = repository.observeCharacterEvents()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    var authSession by mutableStateOf<AuthSession?>(authSessionStore.read())
+    var authSession by mutableStateOf<AuthSession?>(initialAuthSession)
         internal set
 
     var authBusy by mutableStateOf(false)
@@ -113,7 +122,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var socialBusy by mutableStateOf(false)
         internal set
 
-    var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(null)
+    var familyGroup by mutableStateOf<FamilyGroupCurrentResponse?>(initialAccessSnapshot.familyGroup)
         internal set
 
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
@@ -128,7 +137,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var billingBusy by mutableStateOf(false)
         internal set
 
-    var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(null)
+    var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
         internal set
 
     var vouchers by mutableStateOf<List<VoucherItem>>(emptyList())
@@ -199,6 +208,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         receivedAlarmSeenAtMillis = receivedAlarmBadgeStore.readSeenAtMillis(userId)
+    }
+
+    internal fun restoreAccessSnapshotForCurrentUser() {
+        val snapshot = authSession
+            ?.user
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+            ?.let(accessSnapshotStore::read)
+            ?: AccessSnapshot()
+        subscriptionResponse = snapshot.subscriptionResponse
+        familyGroup = snapshot.familyGroup
+    }
+
+    internal fun saveSubscriptionSnapshot(response: BillingSubscriptionResponse?) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        accessSnapshotStore.updateSubscription(userId, response)
+    }
+
+    internal fun saveFamilyGroupSnapshot(response: FamilyGroupCurrentResponse?) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        accessSnapshotStore.updateFamilyGroup(userId, response)
+    }
+
+    internal fun clearCurrentAccessSnapshot() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        accessSnapshotStore.clear(userId)
+    }
+
+    internal fun clearUserScopedRemoteState() {
+        voiceProfiles = emptyList()
+        ttsMessages = emptyList()
+        familyGroup = null
+        familyVoices = emptyList()
+        characterResponse = null
+        subscriptionResponse = null
+        vouchers = emptyList()
+        receivedNotes = emptyList()
+        receivedAlarmSeenAtMillis = 0L
+        registerEmailVerificationSentTo = null
+        registerEmailVerified = null
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {

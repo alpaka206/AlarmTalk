@@ -130,6 +130,7 @@ private suspend fun MainViewModel.loadCharacterBillingSnapshot(
 private fun MainViewModel.applyCharacterBillingSnapshot(snapshot: CharacterBillingSnapshot) {
     characterResponse = snapshot.character
     subscriptionResponse = snapshot.subscription
+    saveSubscriptionSnapshot(snapshot.subscription)
     vouchers = snapshot.vouchers
 }
 
@@ -204,6 +205,10 @@ internal fun MainViewModel.registerCode(code: String) {
 
 internal fun MainViewModel.refreshNotes() {
     refreshNotesData(showMessage = true)
+}
+
+internal fun MainViewModel.refreshNotesSilently() {
+    refreshNotesData(showMessage = false)
 }
 
 internal fun MainViewModel.preloadNotes() {
@@ -357,10 +362,12 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey, gift = gift))
         }.onSuccess { response ->
             if (!gift) response.subscription?.let { subscription ->
-                subscriptionResponse = BillingSubscriptionResponse(
+                val updatedSubscription = BillingSubscriptionResponse(
                     subscription = subscription,
                     plan = response.plan,
                 )
+                subscriptionResponse = updatedSubscription
+                saveSubscriptionSnapshot(updatedSubscription)
             }
             response.voucher?.let { voucher ->
                 vouchers = listOf(

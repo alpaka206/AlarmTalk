@@ -69,6 +69,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             api.login(LoginRequest(email = normalizedEmail, password = password))
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = "${response.user.email} 계정으로 로그인했어요"
@@ -161,6 +162,7 @@ internal fun MainViewModel.register(
             )
         }.onSuccess { response ->
             authSession = authSessionStore.saveAppSession(response)
+            restoreAccessSnapshotForCurrentUser()
             registerEmailVerificationSentTo = null
             registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
@@ -185,6 +187,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             api.loginGoogle(GoogleLoginRequest(idToken = idToken))
         }.onSuccess { response ->
             authSession = authSessionStore.saveGoogleSession(response)
+            restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = null
@@ -208,6 +211,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         authSessionStore.clear()
+        clearUserScopedRemoteState()
         authSession = null
         message = "로그아웃했어요"
         authBusy = false
@@ -342,7 +346,9 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
             if (revokeError != null) {
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
+            clearCurrentAccessSnapshot()
             authSessionStore.clear()
+            clearUserScopedRemoteState()
             authSession = null
             dismissDeleteAccount()
             message = if (revokeError == null) {
