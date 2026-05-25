@@ -111,6 +111,55 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(restored.voiceWeatherCity, "서울")
     }
 
+    func testAlarmOnlyClearsVoiceFieldsLikeAndroid() throws {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let original = LocalAlarmRecord(
+            label: "음성 알람",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-key",
+            rawAudioUri: "https://example.com/voice.m4a",
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue,
+            voiceWeatherCountry: "대한민국",
+            voiceWeatherCity: "서울",
+            voiceRepeat: false,
+            voiceVolumePercent: 70,
+            ttsMessageId: "msg-1",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        var draft = AlarmEditDraft(from: original)
+        draft.playMode = .alarmOnly
+        let record = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
+
+        XCTAssertEqual(record.playModeEnum, .alarmOnly)
+        XCTAssertNil(record.localAudioUri)
+        XCTAssertNil(record.audioCacheKey)
+        XCTAssertNil(record.rawAudioUri)
+        XCTAssertEqual(record.voiceSourceEnum, .localAudio)
+        XCTAssertNil(record.voiceProfileId)
+        XCTAssertNil(record.voiceText)
+        XCTAssertNil(record.voiceCategory)
+        XCTAssertNil(record.voiceLanguage)
+        XCTAssertFalse(record.voiceRandomPrompt)
+        XCTAssertNil(record.voiceRandomContext)
+        XCTAssertNil(record.voiceWeatherCountry)
+        XCTAssertNil(record.voiceWeatherCity)
+        XCTAssertTrue(record.voiceRepeat)
+        XCTAssertEqual(record.voiceVolumePercent, 100)
+        XCTAssertNil(record.ttsMessageId)
+    }
+
     // MARK: - Validation
 
     func testValidationFlagsEmptyLabel() {

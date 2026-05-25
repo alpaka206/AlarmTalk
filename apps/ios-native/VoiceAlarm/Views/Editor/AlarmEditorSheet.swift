@@ -1,4 +1,6 @@
+import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 알람 만들기/수정 시트 (Phase 3-C2).
 ///
@@ -20,6 +22,8 @@ struct AlarmEditorSheet: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
     @StateObject private var holidayStore = HolidayStore()
+    @StateObject private var localRecorder = VoiceRecorder()
+    @StateObject private var localPreviewPlayer = AudioPreviewPlayer()
 
     @Environment(\.voiceAlarmTheme) private var theme
 
@@ -40,6 +44,16 @@ struct AlarmEditorSheet: View {
     @State private var isWorking = false
     @State private var sharedVoiceSetupTarget: FamilyVoiceProfile?
     @State private var selectedFamilyRecipientID: String?
+    @State private var voiceSourceMode: VoiceSource = .ttsProfile
+    @State private var localAudioMode: AlarmLocalAudioInputMode = .record
+    @State private var localAudioMessage: String?
+    @State private var localAudioFileImporterPresented = false
+    @State private var selectedLocalAudioURL: URL?
+    @State private var selectedLocalAudioName: String?
+    @State private var selectedLocalAudioDurationMs: Int?
+    @State private var localAudioCropStartMs = 0
+    @State private var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
+    @State private var clearExistingLocalAudio = false
 
     private static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
 
@@ -105,111 +119,145 @@ struct AlarmEditorSheet: View {
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
 
                 if draft.playMode != .alarmOnly {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("목소리")
-                            .font(theme.typography.titleSmall)
-                        AlarmVoiceProfilePicker(
-                            ownProfiles: voiceStudio.profiles,
-                            familyVoices: voiceStudio.familyVoices,
-                            selectedProfileID: voiceStudio.selectedProfileID,
-                            onSelectOwn: { profile in
-                                voiceStudio.selectedProfileID = profile.id
-                                voiceStudio.preparedAlarm = nil
-                            },
-                            onSelectShared: { profile in
-                                if profile.requiresViewerInfo {
-                                    sharedVoiceSetupTarget = profile
-                                } else {
-                                    voiceStudio.selectedProfileID = profile.id
-                                    voiceStudio.preparedAlarm = nil
-                                }
-                            }
-                        )
-                        Text(preparedVoiceLabel)
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                        Button {
-                            onJumpToVoices()
-                        } label: {
-                            Label("음성 탭에서 만들기", systemImage: "waveform")
+                    Picker("음성 소스", selection: $voiceSourceMode) {
+                        Text("목소리").tag(VoiceSource.ttsProfile)
+                        Text("녹음/파일").tag(VoiceSource.localAudio)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: voiceSourceMode) { _, newValue in
+                        voiceStudio.preparedAlarm = nil
+                        localPreviewPlayer.stop()
+                        if newValue == .ttsProfile {
+                            localRecorder.stop()
                         }
-                        .buttonStyle(.bordered)
                     }
 
-                    Toggle("랜덤 문구 사용", isOn: Binding(
-                        get: { voiceStudio.randomPrompt },
-                        set: { enabled in
-                            voiceStudio.randomPrompt = enabled
-                            voiceStudio.preparedAlarm = nil
-                            if !enabled && !voiceStudio.translateText {
-                                voiceStudio.ttsLanguage = "ko"
+                    if voiceSourceMode == .ttsProfile {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("목소리")
+                                .font(theme.typography.titleSmall)
+                            AlarmVoiceProfilePicker(
+                                ownProfiles: voiceStudio.profiles,
+                                familyVoices: voiceStudio.familyVoices,
+                                selectedProfileID: voiceStudio.selectedProfileID,
+                                onSelectOwn: { profile in
+                                    voiceStudio.selectedProfileID = profile.id
+                                    voiceStudio.preparedAlarm = nil
+                                },
+                                onSelectShared: { profile in
+                                    if profile.requiresViewerInfo {
+                                        sharedVoiceSetupTarget = profile
+                                    } else {
+                                        voiceStudio.selectedProfileID = profile.id
+                                        voiceStudio.preparedAlarm = nil
+                                    }
+                                }
+                            )
+                            Text(preparedVoiceLabel)
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                            Button {
+                                onJumpToVoices()
+                            } label: {
+                                Label("음성 탭에서 만들기", systemImage: "waveform")
                             }
+                            .buttonStyle(.bordered)
                         }
-                    ))
-                        .tint(theme.palette.primary)
-                    if voiceStudio.randomPrompt {
-                        Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
-                            ForEach(RandomPromptContext.alarmEditorCases, id: \.rawValue) { context in
-                                Text(context.label).tag(context.rawValue)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: voiceStudio.randomContext) { _, _ in
-                            voiceStudio.preparedAlarm = nil
-                        }
-                        Picker("언어", selection: $voiceStudio.ttsLanguage) {
-                            ForEach(ttsLanguages, id: \.code) { option in
-                                Text(option.label).tag(option.code)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: voiceStudio.ttsLanguage) { _, _ in
-                            voiceStudio.preparedAlarm = nil
-                        }
-                        Text("선택한 상황에 맞춰 깨움말을 자동으로 만들어요.")
-                            .font(theme.typography.bodySmall)
-                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                        if activePromptContext.usesWeather {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("날씨 지역")
-                                    .font(theme.typography.titleSmall)
-                                WeatherLocationInputFields(
-                                    country: $voiceStudio.weatherCountry,
-                                    city: $voiceStudio.weatherCity,
-                                    helperText: "날씨가 들어간 깨움말에 사용할 지역이에요."
-                                )
-                                if !voiceStudio.hasWeatherInfo || targetWeatherReady {
-                                    Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
-                                        .font(theme.typography.bodySmall)
-                                        .foregroundStyle(theme.palette.onSurfaceVariant)
+
+                        Toggle("랜덤 문구 사용", isOn: Binding(
+                            get: { voiceStudio.randomPrompt },
+                            set: { enabled in
+                                voiceStudio.randomPrompt = enabled
+                                voiceStudio.preparedAlarm = nil
+                                if !enabled && !voiceStudio.translateText {
+                                    voiceStudio.ttsLanguage = "ko"
                                 }
                             }
-                            .padding(.top, 4)
-                        }
-                        if activePromptContext.usesFortune {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("운세 정보")
-                                    .font(theme.typography.titleSmall)
-                                FortunePromptInputFields(
-                                    gender: $voiceStudio.fortuneGender,
-                                    birthDate: $voiceStudio.fortuneBirthDate,
-                                    birthTime: $voiceStudio.fortuneBirthTime,
-                                    helperText: "운세가 들어간 깨움말을 만들 때만 사용해요."
-                                )
-                                if !voiceStudio.hasFortuneInfo || targetFortuneReady {
-                                    Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
-                                        .font(theme.typography.bodySmall)
-                                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        ))
+                            .tint(theme.palette.primary)
+                        if voiceStudio.randomPrompt {
+                            Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
+                                ForEach(RandomPromptContext.alarmEditorCases, id: \.rawValue) { context in
+                                    Text(context.label).tag(context.rawValue)
                                 }
                             }
-                            .padding(.top, 4)
+                            .pickerStyle(.menu)
+                            .onChange(of: voiceStudio.randomContext) { _, _ in
+                                voiceStudio.preparedAlarm = nil
+                            }
+                            Picker("언어", selection: $voiceStudio.ttsLanguage) {
+                                ForEach(ttsLanguages, id: \.code) { option in
+                                    Text(option.label).tag(option.code)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: voiceStudio.ttsLanguage) { _, _ in
+                                voiceStudio.preparedAlarm = nil
+                            }
+                            Text("선택한 상황에 맞춰 깨움말을 자동으로 만들어요.")
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                            if activePromptContext.usesWeather {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("날씨 지역")
+                                        .font(theme.typography.titleSmall)
+                                    WeatherLocationInputFields(
+                                        country: $voiceStudio.weatherCountry,
+                                        city: $voiceStudio.weatherCity,
+                                        helperText: "날씨가 들어간 깨움말에 사용할 지역이에요."
+                                    )
+                                    if !voiceStudio.hasWeatherInfo || targetWeatherReady {
+                                        Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
+                                            .font(theme.typography.bodySmall)
+                                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
+                            if activePromptContext.usesFortune {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("운세 정보")
+                                        .font(theme.typography.titleSmall)
+                                    FortunePromptInputFields(
+                                        gender: $voiceStudio.fortuneGender,
+                                        birthDate: $voiceStudio.fortuneBirthDate,
+                                        birthTime: $voiceStudio.fortuneBirthTime,
+                                        helperText: "운세가 들어간 깨움말을 만들 때만 사용해요."
+                                    )
+                                    if !voiceStudio.hasFortuneInfo || targetFortuneReady {
+                                        Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
+                                            .font(theme.typography.bodySmall)
+                                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
+                        } else {
+                            ManualVoiceMessageEditor(
+                                text: $voiceStudio.ttsText,
+                                translationEnabled: $voiceStudio.translateText,
+                                language: $voiceStudio.ttsLanguage,
+                                onInvalidatePreparedAudio: { voiceStudio.preparedAlarm = nil }
+                            )
                         }
                     } else {
-                        ManualVoiceMessageEditor(
-                            text: $voiceStudio.ttsText,
-                            translationEnabled: $voiceStudio.translateText,
-                            language: $voiceStudio.ttsLanguage,
-                            onInvalidatePreparedAudio: { voiceStudio.preparedAlarm = nil }
+                        LocalAlarmAudioEditor(
+                            mode: $localAudioMode,
+                            isRecording: localRecorder.isRecording,
+                            elapsedMs: Int(localRecorder.elapsedSeconds * 1000),
+                            hasRecording: localRecorder.latestRecordingURL != nil,
+                            existingAudioLabel: existingLocalAudioLabel,
+                            fileName: selectedLocalAudioName,
+                            fileDurationMs: selectedLocalAudioDurationMs,
+                            cropStartMs: $localAudioCropStartMs,
+                            cropEndMs: $localAudioCropEndMs,
+                            isPreviewing: localPreviewPlayer.isPlaying,
+                            message: localAudioMessage,
+                            onModeChange: handleLocalAudioModeChange,
+                            onRecord: toggleLocalRecording,
+                            onPickFile: { localAudioFileImporterPresented = true },
+                            onPreview: previewLocalAlarmAudio,
+                            onClear: clearLocalAlarmAudio
                         )
                     }
 
@@ -269,7 +317,7 @@ struct AlarmEditorSheet: View {
                 .tint(theme.palette.primary)
                 .disabled(isWorking)
 
-                if draft.playMode != .alarmOnly {
+                if draft.playMode != .alarmOnly && voiceSourceMode == .ttsProfile {
                     Button {
                         Task { await generateVoiceAndSave() }
                     } label: {
@@ -351,11 +399,35 @@ struct AlarmEditorSheet: View {
             )
             .presentationDetents([.medium, .large])
         }
+        .fileImporter(
+            isPresented: $localAudioFileImporterPresented,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let source = urls.first else { return }
+                Task { await importLocalAlarmAudio(source) }
+            case .failure(let error):
+                localAudioMessage = error.localizedDescription
+            }
+        }
         .onChange(of: voiceStudio.weatherCountry) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.weatherCity) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.fortuneGender) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.fortuneBirthDate) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.fortuneBirthTime) { _, _ in voiceStudio.preparedAlarm = nil }
+        .onChange(of: localRecorder.elapsedSeconds) { _, seconds in
+            if seconds >= TimeInterval(AlarmAudioLimits.maxDurationMillis / 1000),
+               localRecorder.isRecording {
+                localRecorder.stop()
+                localAudioMessage = "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 녹음했어요."
+            }
+        }
+        .onDisappear {
+            localRecorder.stop()
+            localPreviewPlayer.stop()
+        }
     }
 
     private var saveButtonTitle: String {
@@ -394,6 +466,24 @@ struct AlarmEditorSheet: View {
         return "\(prepared.text) · \(prepared.language) · 로컬 캐시 완료"
     }
 
+    private var editingAlarm: LocalAlarmRecord? {
+        target.editingAlarmID.flatMap { id in
+            store.alarms.first { $0.id == id }
+        }
+    }
+
+    private var existingLocalAudioLabel: String? {
+        guard selectedLocalAudioURL == nil,
+              localRecorder.latestRecordingURL == nil,
+              !clearExistingLocalAudio,
+              let alarm = editingAlarm,
+              alarm.voiceSourceEnum == .localAudio,
+              alarm.audioCacheKey != nil else {
+            return nil
+        }
+        return "저장된 녹음/파일 음성을 사용 중이에요."
+    }
+
     private var familyRecipients: [FamilyGroupMember] {
         let currentUserID = auth.session?.user.id
         let currentEmail = auth.session?.user.email
@@ -418,12 +508,16 @@ struct AlarmEditorSheet: View {
         if let editingID = target.editingAlarmID,
            let alarm = store.alarms.first(where: { $0.id == editingID }) {
             draft = AlarmEditDraft(from: alarm)
+            voiceSourceMode = alarm.voiceSourceEnum == .localAudio ? .localAudio : .ttsProfile
+            clearExistingLocalAudio = false
             if voicePlanLocked && draft.playMode != .alarmOnly {
                 draft.playMode = .alarmOnly
             }
             loadVoicePromptState(from: alarm)
         } else {
             draft = .newDefault(defaultPlayMode: defaultPlayModeForPlan)
+            voiceSourceMode = .ttsProfile
+            clearExistingLocalAudio = false
             loadVoicePromptState(from: nil)
             selectDefaultFamilyRecipientIfNeeded()
         }
@@ -539,9 +633,24 @@ struct AlarmEditorSheet: View {
             return
         }
 
-        if draft.playMode != .alarmOnly && voiceStudio.preparedAlarm == nil {
+        if draft.playMode != .alarmOnly,
+           voiceSourceMode == .ttsProfile,
+           voiceStudio.preparedAlarm == nil {
             voiceStudio.statusMessage = "음성 알람은 먼저 목소리와 깨워줄 말을 생성해야 해요."
             return
+        }
+
+        let existing = editingAlarm
+        let cachedLocalAudio: CachedLocalAlarmAudio?
+        if draft.playMode != .alarmOnly && voiceSourceMode == .localAudio {
+            do {
+                cachedLocalAudio = try await cachedLocalAudioForSave(existing: existing)
+            } catch {
+                localAudioMessage = error.localizedDescription
+                return
+            }
+        } else {
+            cachedLocalAudio = nil
         }
 
         if let familyRecipient {
@@ -550,9 +659,6 @@ struct AlarmEditorSheet: View {
         }
 
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        let existing = target.editingAlarmID.flatMap { id in
-            store.alarms.first { $0.id == id }
-        }
 
         let fireAt: Int64 = (try? AlarmTimeCalculator.nextFireAtMillis(
             hour: draft.hour,
@@ -571,7 +677,24 @@ struct AlarmEditorSheet: View {
         // 음원/프로필 필드에 합쳐 둔다.
         var merged = draft.toRecord(existing: existing, fireAtMillis: fireAt, nowMillis: now)
         applyVoicePromptState(to: &merged)
-        if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
+        if let cachedLocalAudio, draft.playMode != .alarmOnly {
+            merged.voiceSource = VoiceSource.localAudio.rawValue
+            merged.localAudioUri = cachedLocalAudio.fileName
+            merged.audioCacheKey = cachedLocalAudio.cacheKey
+            merged.rawAudioUri = nil
+            merged.voiceProfileId = nil
+            merged.voiceText = nil
+            merged.voiceCategory = nil
+            merged.voiceLanguage = nil
+            merged.voiceRandomPrompt = false
+            merged.voiceRandomContext = nil
+            merged.voiceWeatherCountry = nil
+            merged.voiceWeatherCity = nil
+            merged.voiceFortuneGender = nil
+            merged.voiceFortuneBirthDate = nil
+            merged.voiceFortuneBirthTime = nil
+            merged.ttsMessageId = nil
+        } else if let prepared = voiceStudio.preparedAlarm, draft.playMode != .alarmOnly {
             merged.voiceSource = VoiceSource.serverTts.rawValue
             merged.localAudioUri = prepared.localAudioFileName
             merged.audioCacheKey = prepared.audioCacheKey
@@ -699,6 +822,184 @@ struct AlarmEditorSheet: View {
         onSchedulingDidFinish()
     }
 
+    private func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
+        localPreviewPlayer.stop()
+        if mode == .file {
+            localRecorder.stop()
+        }
+        localAudioMode = mode
+        localAudioMessage = nil
+    }
+
+    private func toggleLocalRecording() {
+        localPreviewPlayer.stop()
+        if localRecorder.isRecording {
+            localRecorder.stop()
+            localAudioMessage = "녹음을 저장했어요."
+            return
+        }
+        selectedLocalAudioURL = nil
+        selectedLocalAudioName = nil
+        selectedLocalAudioDurationMs = nil
+        clearExistingLocalAudio = false
+        localAudioCropStartMs = 0
+        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
+        Task {
+            do {
+                try await localRecorder.start()
+                localAudioMessage = "녹음 중..."
+            } catch {
+                localAudioMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func importLocalAlarmAudio(_ source: URL) async {
+        do {
+            let importedURL = try copyImportedAudio(source)
+            let durationMs = try await readAudioDurationMs(importedURL)
+            selectedLocalAudioURL = importedURL
+            selectedLocalAudioName = source.lastPathComponent
+            selectedLocalAudioDurationMs = durationMs
+            clearExistingLocalAudio = false
+            localAudioCropStartMs = 0
+            localAudioCropEndMs = min(durationMs, Int(AlarmAudioLimits.maxDurationMillis))
+            localAudioMessage = durationMs < 1_000
+                ? "1초 이상 들리는 파일을 선택해 주세요."
+                : "파일을 선택했어요."
+        } catch {
+            localAudioMessage = error.localizedDescription
+        }
+    }
+
+    private func previewLocalAlarmAudio() {
+        if localPreviewPlayer.isPlaying {
+            localPreviewPlayer.stop()
+            return
+        }
+        Task {
+            do {
+                if selectedLocalAudioURL == nil,
+                   localRecorder.latestRecordingURL == nil,
+                   let url = existingLocalAudioURL() {
+                    try localPreviewPlayer.play(url: url)
+                } else {
+                    let prepared = try await preparedLocalAlarmAudioSource()
+                    try localPreviewPlayer.play(url: prepared.url)
+                }
+            } catch {
+                localAudioMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func clearLocalAlarmAudio() {
+        localPreviewPlayer.stop()
+        localRecorder.stop()
+        selectedLocalAudioURL = nil
+        selectedLocalAudioName = nil
+        selectedLocalAudioDurationMs = nil
+        clearExistingLocalAudio = true
+        localAudioCropStartMs = 0
+        localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
+        localAudioMessage = "음성 오디오를 지웠어요."
+    }
+
+    private func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
+        let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
+        if hasNewSource {
+            let prepared = try await preparedLocalAlarmAudioSource()
+            let data = try Data(contentsOf: prepared.url)
+            let cacheKey = AudioCacheStore.computeCacheKey(data)
+            let mimeType = AudioCacheStore.mimeType(forFormat: prepared.url.pathExtension.isEmpty ? "m4a" : prepared.url.pathExtension)
+            let cachedURL = try AudioCacheStore.shared.cacheBytes(
+                data,
+                cacheKey: cacheKey,
+                mimeType: mimeType,
+                source: "raw_audio",
+                durationOverrideMs: Int64(prepared.durationMs),
+                enforceMaxDuration: true
+            )
+            return CachedLocalAlarmAudio(fileName: cachedURL.lastPathComponent, cacheKey: cacheKey)
+        }
+
+        guard !clearExistingLocalAudio,
+              let existing,
+              existing.voiceSourceEnum == .localAudio,
+              let cacheKey = existing.audioCacheKey,
+              AudioCacheStore.shared.cachedURL(for: cacheKey) != nil else {
+            throw LocalAlarmAudioError.missingSource
+        }
+        return CachedLocalAlarmAudio(fileName: existing.localAudioUri ?? "", cacheKey: cacheKey)
+    }
+
+    private func existingLocalAudioURL() -> URL? {
+        guard !clearExistingLocalAudio,
+              let alarm = editingAlarm,
+              alarm.voiceSourceEnum == .localAudio,
+              let cacheKey = alarm.audioCacheKey else {
+            return nil
+        }
+        return AudioCacheStore.shared.cachedURL(for: cacheKey)
+    }
+
+    private func preparedLocalAlarmAudioSource() async throws -> (url: URL, durationMs: Int) {
+        switch localAudioMode {
+        case .record:
+            guard let url = localRecorder.latestRecordingURL else {
+                throw LocalAlarmAudioError.missingSource
+            }
+            let durationMs = localRecorder.latestDurationMs ?? Int(localRecorder.elapsedSeconds * 1000)
+            guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
+            guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
+                throw LocalAlarmAudioError.tooLong
+            }
+            return (url, min(durationMs, Int(AlarmAudioLimits.maxDurationMillis)))
+        case .file:
+            guard let source = selectedLocalAudioURL,
+                  let sourceDuration = selectedLocalAudioDurationMs else {
+                throw LocalAlarmAudioError.missingSource
+            }
+            let endMs = min(localAudioCropEndMs, sourceDuration)
+            let durationMs = max(0, endMs - localAudioCropStartMs)
+            guard durationMs >= 1_000 else { throw LocalAlarmAudioError.tooShort }
+            guard durationMs <= Int(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) else {
+                throw LocalAlarmAudioError.tooLong
+            }
+            if localAudioCropStartMs == 0 && endMs == sourceDuration {
+                return (source, durationMs)
+            }
+            let cropped = try await AudioCropper.crop(source: source, startMs: localAudioCropStartMs, endMs: endMs)
+            return (cropped, durationMs)
+        }
+    }
+
+    private func copyImportedAudio(_ source: URL) throws -> URL {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                source.stopAccessingSecurityScopedResource()
+            }
+        }
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AlarmAudioImports", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
+        let destination = directory.appendingPathComponent("alarm-import-\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    private func readAudioDurationMs(_ url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let duration = try await asset.load(.duration)
+        let seconds = CMTimeGetSeconds(duration)
+        guard seconds.isFinite, seconds > 0 else {
+            throw LocalAlarmAudioError.invalidDuration
+        }
+        return Int((seconds * 1000).rounded())
+    }
+
     private func nonEmpty(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
@@ -719,6 +1020,213 @@ struct AlarmEditorSheet: View {
         case .invalidVoiceVolume:
             return "목소리 크기는 0–100% 사이여야 해요."
         }
+    }
+}
+
+private struct CachedLocalAlarmAudio {
+    let fileName: String
+    let cacheKey: String
+}
+
+private enum LocalAlarmAudioError: LocalizedError {
+    case missingSource
+    case tooShort
+    case tooLong
+    case invalidDuration
+
+    var errorDescription: String? {
+        switch self {
+        case .missingSource:
+            return "녹음하거나 파일을 선택해 주세요."
+        case .tooShort:
+            return "1초 이상 들리는 음성이 필요해요."
+        case .tooLong:
+            return "알람 음성은 최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초까지 사용할 수 있어요."
+        case .invalidDuration:
+            return "오디오 길이를 확인하지 못했어요."
+        }
+    }
+}
+
+private enum AlarmLocalAudioInputMode: String, CaseIterable, Hashable, Identifiable {
+    case record
+    case file
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .record: return "녹음"
+        case .file: return "파일"
+        }
+    }
+}
+
+private struct LocalAlarmAudioEditor: View {
+    @Binding var mode: AlarmLocalAudioInputMode
+    let isRecording: Bool
+    let elapsedMs: Int
+    let hasRecording: Bool
+    let existingAudioLabel: String?
+    let fileName: String?
+    let fileDurationMs: Int?
+    @Binding var cropStartMs: Int
+    @Binding var cropEndMs: Int
+    let isPreviewing: Bool
+    let message: String?
+    let onModeChange: (AlarmLocalAudioInputMode) -> Void
+    let onRecord: () -> Void
+    let onPickFile: () -> Void
+    let onPreview: () -> Void
+    let onClear: () -> Void
+
+    @Environment(\.voiceAlarmTheme) private var theme
+
+    private var sourceReady: Bool {
+        switch mode {
+        case .record:
+            return hasRecording || existingAudioLabel != nil
+        case .file:
+            return fileDurationMs != nil || existingAudioLabel != nil
+        }
+    }
+
+    private var durationLabel: String {
+        switch mode {
+        case .record:
+            return timeLabel(elapsedMs)
+        case .file:
+            guard let fileDurationMs else { return "0:00" }
+            return timeLabel(max(0, min(cropEndMs, fileDurationMs) - cropStartMs))
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("녹음/파일", selection: Binding(
+                get: { mode },
+                set: { onModeChange($0) }
+            )) {
+                ForEach(AlarmLocalAudioInputMode.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if mode == .record {
+                recordingCard
+            } else {
+                fileCard
+            }
+
+            if sourceReady {
+                HStack(spacing: 8) {
+                    Button(action: onPreview) {
+                        Label(isPreviewing ? "정지" : "미리듣기", systemImage: isPreviewing ? "stop.fill" : "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRecording)
+
+                    Button(role: .destructive, action: onClear) {
+                        Label("지우기", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isRecording)
+                }
+            }
+
+            if let message {
+                Text(message)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(isRecording ? theme.palette.primary : theme.palette.onSurfaceVariant)
+            }
+        }
+    }
+
+    private var recordingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isRecording ? "녹음 중..." : (hasRecording ? "녹음을 저장했어요." : "녹음 또는 파일 업로드"))
+                        .font(theme.typography.labelLarge)
+                    Text("\(durationLabel) / \(timeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .monospacedDigit()
+                }
+                Spacer()
+                Button(action: onRecord) {
+                    Image(systemName: isRecording ? "stop.fill" : "mic.fill")
+                        .font(.headline)
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(isRecording ? theme.palette.error : theme.palette.primary)
+            }
+            if let existingAudioLabel, !hasRecording {
+                Text(existingAudioLabel)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
+        }
+        .padding(12)
+        .background(theme.palette.surfaceVariant.opacity(0.36))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var fileCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(fileName ?? "파일 업로드")
+                        .font(theme.typography.labelLarge)
+                        .lineLimit(1)
+                    Text(fileDurationMs.map { "전체 \(timeLabel($0)) · 사용할 구간 \(durationLabel)" } ?? "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                Spacer()
+                Button(action: onPickFile) {
+                    Label("선택", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let fileDurationMs, fileDurationMs > Int(AlarmAudioLimits.maxDurationMillis) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(min(cropEndMs, fileDurationMs)))")
+                        .font(.caption.weight(.semibold))
+                    Slider(
+                        value: Binding(
+                            get: { Double(cropStartMs) / 1000.0 },
+                            set: { seconds in
+                                let maxStart = max(0, fileDurationMs - Int(AlarmAudioLimits.maxDurationMillis))
+                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
+                                cropEndMs = min(fileDurationMs, cropStartMs + Int(AlarmAudioLimits.maxDurationMillis))
+                            }
+                        ),
+                        in: 0...(Double(max(0, fileDurationMs - Int(AlarmAudioLimits.maxDurationMillis))) / 1000.0),
+                        step: 1
+                    )
+                }
+            }
+
+            if let existingAudioLabel, fileDurationMs == nil {
+                Text(existingAudioLabel)
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            }
+        }
+        .padding(12)
+        .background(theme.palette.surfaceVariant.opacity(0.36))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func timeLabel(_ millis: Int) -> String {
+        let seconds = max(0, millis / 1000)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 

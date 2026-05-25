@@ -115,6 +115,10 @@
   repeat choice, and per-alarm voice volume. The local alarm record now stores
   `voiceVolumePercent`, and the iOS voice player uses that value instead of
   reusing the alarm-sound volume.
+- iOS alarm editing now also exposes Android's local `녹음/파일` voice source.
+  It records up to 30 seconds, imports audio files, trims long files to the
+  alarm-audio limit, previews the selected local audio, caches it through
+  `AudioCacheStore`, and saves the alarm with `voiceSource = local_audio`.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

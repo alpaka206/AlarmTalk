@@ -90,7 +90,7 @@ enum AlarmRuntimeState: String, Codable, CaseIterable {
 
 // MARK: - Voice Source
 // Android: `AlarmEntity.kt:166-172` `VoiceSources`
-enum VoiceSource: String, Codable, CaseIterable {
+enum VoiceSource: String, Codable, CaseIterable, Hashable {
     case localAudio = "local_audio"
     case ttsProfile = "tts_profile"
     case serverTts = "server_tts"

@@ -182,8 +182,9 @@ struct AlarmEditDraft: Equatable {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let safeLabel = trimmedLabel.isEmpty ? "알람" : trimmedLabel
         let promptContext = RandomPromptContext.normalized(voiceRandomContext)
-        let storesWeather = voiceRandomPrompt && promptContext.usesWeather
-        let storesFortune = voiceRandomPrompt && promptContext.usesFortune
+        let alarmOnly = playMode == .alarmOnly
+        let storesWeather = !alarmOnly && voiceRandomPrompt && promptContext.usesWeather
+        let storesFortune = !alarmOnly && voiceRandomPrompt && promptContext.usesFortune
 
         return LocalAlarmRecord(
             id: existing?.id ?? UUID().uuidString,
@@ -200,24 +201,24 @@ struct AlarmEditDraft: Equatable {
             vibrationPattern: vibrationPattern.rawValue,
             playMode: playMode.rawValue,
             defaultAlarmSoundId: existing?.defaultAlarmSoundId ?? DefaultAlarmSounds.bundledDefault,
-            localAudioUri: existing?.localAudioUri,
-            audioCacheKey: existing?.audioCacheKey,
-            rawAudioUri: existing?.rawAudioUri,
-            voiceSource: existing?.voiceSource ?? VoiceSource.ttsProfile.rawValue,
-            voiceProfileId: existing?.voiceProfileId,
-            voiceText: existing?.voiceText,
-            voiceCategory: existing?.voiceCategory,
-            voiceLanguage: existing?.voiceLanguage,
-            voiceRandomPrompt: voiceRandomPrompt,
-            voiceRandomContext: voiceRandomPrompt ? promptContext.rawValue : nil,
+            localAudioUri: alarmOnly ? nil : existing?.localAudioUri,
+            audioCacheKey: alarmOnly ? nil : existing?.audioCacheKey,
+            rawAudioUri: alarmOnly ? nil : existing?.rawAudioUri,
+            voiceSource: alarmOnly ? VoiceSource.localAudio.rawValue : existing?.voiceSource ?? VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: alarmOnly ? nil : existing?.voiceProfileId,
+            voiceText: alarmOnly ? nil : existing?.voiceText,
+            voiceCategory: alarmOnly ? nil : existing?.voiceCategory,
+            voiceLanguage: alarmOnly ? nil : existing?.voiceLanguage,
+            voiceRandomPrompt: !alarmOnly && voiceRandomPrompt,
+            voiceRandomContext: !alarmOnly && voiceRandomPrompt ? promptContext.rawValue : nil,
             voiceWeatherCountry: storesWeather ? nonEmpty(voiceWeatherCountry) : nil,
             voiceWeatherCity: storesWeather ? nonEmpty(voiceWeatherCity) : nil,
             voiceFortuneGender: storesFortune ? nonEmpty(voiceFortuneGender) : nil,
             voiceFortuneBirthDate: storesFortune ? nonEmpty(voiceFortuneBirthDate) : nil,
             voiceFortuneBirthTime: storesFortune ? nonEmpty(voiceFortuneBirthTime) : nil,
-            voiceRepeat: playMode == .alarmOnly ? true : voiceRepeat,
-            voiceVolumePercent: playMode == .alarmOnly ? 100 : max(0, min(100, voiceVolumePercent)),
-            ttsMessageId: existing?.ttsMessageId,
+            voiceRepeat: alarmOnly ? true : voiceRepeat,
+            voiceVolumePercent: alarmOnly ? 100 : max(0, min(100, voiceVolumePercent)),
+            ttsMessageId: alarmOnly ? nil : existing?.ttsMessageId,
             remoteAlarmId: existing?.remoteAlarmId,
             lastSyncedAtMillis: existing?.lastSyncedAtMillis,
             syncState: existing?.remoteAlarmId == nil
