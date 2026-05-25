@@ -22,6 +22,7 @@ struct MemberManagementView: View {
     @State private var pendingRemoveMember: FamilyGroupMember?
     @State private var isSharePresented = false
     @State private var shareText: String = ""
+    @State private var showFamilyAlarmDialog = false
 
     private var familyGroup: FamilyGroupCurrentResponse? { socialFeatures.familyGroup }
     private var group: FamilyGroup? { familyGroup?.group }
@@ -78,6 +79,21 @@ struct MemberManagementView: View {
                         .padding(.vertical, 24)
                 } else {
                     capacityRow
+
+                    if let user = auth.session?.user {
+                        FamilyAlarmPermissionCard(
+                            allowFamilyAlarms: user.allowFamilyAlarms ?? false,
+                            quietWindows: user.familyAlarmQuietWindows ?? [],
+                            isBusy: auth.isBusy || socialFeatures.isBusy,
+                            onToggle: { nextValue in
+                                Task {
+                                    await auth.updateProfile(allowFamilyAlarms: nextValue)
+                                    await socialFeatures.refreshAll(session: auth.session)
+                                }
+                            },
+                            onEditQuietTime: { showFamilyAlarmDialog = true }
+                        )
+                    }
 
                     if isOwner {
                         sectionTitle("공유 코드")
@@ -137,6 +153,23 @@ struct MemberManagementView: View {
         .sheet(isPresented: $isSharePresented) {
             ActivityShareSheet(text: shareText)
                 .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showFamilyAlarmDialog) {
+            FamilyAlarmQuietTimeDialog(
+                initialWindows: auth.session?.user.familyAlarmQuietWindows ?? [],
+                onCancel: { showFamilyAlarmDialog = false },
+                onConfirm: { windows in
+                    showFamilyAlarmDialog = false
+                    Task {
+                        await auth.updateProfile(
+                            allowFamilyAlarms: true,
+                            quietWindows: windows
+                        )
+                        await socialFeatures.refreshAll(session: auth.session)
+                    }
+                }
+            )
+            .presentationDetents([.large])
         }
         .task(id: auth.session?.token) {
             await socialFeatures.refreshAll(session: auth.session)
@@ -272,6 +305,77 @@ struct MemberManagementView: View {
 }
 
 /// 한 멤버 행. Android `MemberRow:264-332` 와 동등.
+private struct FamilyAlarmPermissionCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let allowFamilyAlarms: Bool
+    let quietWindows: [FamilyAlarmQuietWindow]
+    let isBusy: Bool
+    let onToggle: (Bool) -> Void
+    let onEditQuietTime: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("상대 알람 허용")
+                        .font(theme.typography.bodyMedium.weight(.medium))
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text("함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { allowFamilyAlarms },
+                        set: { onToggle($0) }
+                    )
+                )
+                .labelsHidden()
+                .disabled(isBusy)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            if allowFamilyAlarms {
+                Divider()
+                    .overlay(theme.palette.outlineVariant)
+                Button(action: onEditQuietTime) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("알람 받지 않을 시간")
+                                .font(theme.typography.bodyMedium.weight(.medium))
+                                .foregroundStyle(theme.palette.onSurface)
+                            Text(HelperFormatters.quietScheduleLabel(quietWindows))
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text("수정")
+                            .font(theme.typography.labelLarge)
+                            .foregroundStyle(theme.palette.primary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(theme.palette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
+    }
+}
+
 private struct MemberRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let member: FamilyGroupMember

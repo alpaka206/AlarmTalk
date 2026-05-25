@@ -54,6 +54,8 @@
   note if the generated TTS response has no remote audio identifier.
 - Received remote alarms now downgrade to alarm-only when their voice audio
   cannot be cached locally, matching Android's local-file-only ring path.
+- Member management now exposes the family-alarm permission and quiet-window
+  editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
