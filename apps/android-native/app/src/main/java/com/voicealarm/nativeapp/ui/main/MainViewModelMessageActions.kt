@@ -52,7 +52,7 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.showGoogleSetupRequired() {
-    message = "Google 로그인을 쓰려면 voiceAlarmGoogleWebClientId를 설정해 주세요."
+    message = "현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요."
 }
 
 internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {

@@ -21,6 +21,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +41,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
 import com.voicealarm.nativeapp.network.VoucherItem
@@ -51,12 +54,14 @@ internal fun MemberManagementScreen(
     familyGroup: FamilyGroupCurrentResponse?,
     subscriptionResponse: BillingSubscriptionResponse?,
     vouchers: List<VoucherItem>,
+    authSession: AuthSession?,
     currentUserId: String?,
     socialBusy: Boolean,
     billingBusy: Boolean,
     onBack: () -> Unit,
     onRemoveFamilyMember: (String, String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
+    onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
 ) {
     val group = familyGroup?.group
     val isOwner = familyGroup?.role == "owner" && group != null
@@ -90,6 +95,7 @@ internal fun MemberManagementScreen(
     }
 
     var pendingRemoveMember by remember { mutableStateOf<FamilyGroupMember?>(null) }
+    var showFamilyAlarmDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -110,7 +116,7 @@ internal fun MemberManagementScreen(
                     )
                 }
                 Text(
-                    text = "$planLabel 멤버/공유 코드 관리",
+                    text = "공유 이용권",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -120,7 +126,7 @@ internal fun MemberManagementScreen(
         if (group == null) {
             item {
                 Text(
-                    text = "참여 중인 공유 이용권이 없어요.",
+                    text = "현재 함께 쓰는 이용권이 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -130,10 +136,26 @@ internal fun MemberManagementScreen(
 
         item {
             Text(
-                text = "현재 ${sortedMembers.size}/${group.maxMembers}명",
+                text = "$planLabel 이용권 · 현재 ${sortedMembers.size}/${group.maxMembers}명",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+
+        if (authSession != null) {
+            item {
+                FamilyAlarmPermissionCard(
+                    allowFamilyAlarms = authSession.user.allowFamilyAlarms,
+                    quietWindows = authSession.user.familyAlarmQuietWindows,
+                    onToggle = {
+                        onChangeFamilyAlarmSettings(
+                            it,
+                            authSession.user.familyAlarmQuietWindows,
+                        )
+                    },
+                    onEditQuietTime = { showFamilyAlarmDialog = true },
+                )
+            }
         }
 
         if (isOwner) {
@@ -150,7 +172,7 @@ internal fun MemberManagementScreen(
                         text = if (isCapacityFull) {
                             "정원이 가득 차서 더 이상 공유할 수 없어요."
                         } else {
-                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 INV 코드를 만들어 주세요."
+                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 초대 코드를 만들어 주세요."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -227,10 +249,15 @@ internal fun MemberManagementScreen(
     pendingRemoveMember?.let { member ->
         AlertDialog(
             onDismissRequest = { pendingRemoveMember = null },
-            title = { Text("멤버 내보내기") },
+            title = {
+                ModalDialogTitle(
+                    title = "구성원 내보내기",
+                    onDismiss = { pendingRemoveMember = null },
+                )
+            },
             text = {
                 Text(
-                    text = "${member.name ?: member.email ?: "이 멤버"}을(를) 정말 내보낼까요? 다시 들어오려면 새 초대 코드가 필요해요.",
+                    text = "이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -252,12 +279,89 @@ internal fun MemberManagementScreen(
                     )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { pendingRemoveMember = null }) {
-                    Text("취소")
-                }
+        )
+    }
+
+    if (showFamilyAlarmDialog && authSession != null) {
+        FamilyAlarmQuietTimeDialog(
+            initialWindows = authSession.user.familyAlarmQuietWindows,
+            onDismiss = { showFamilyAlarmDialog = false },
+            onConfirm = { windows ->
+                showFamilyAlarmDialog = false
+                onChangeFamilyAlarmSettings(true, windows)
             },
         )
+    }
+}
+
+@Composable
+private fun FamilyAlarmPermissionCard(
+    allowFamilyAlarms: Boolean,
+    quietWindows: List<FamilyAlarmQuietWindow>,
+    onToggle: (Boolean) -> Unit,
+    onEditQuietTime: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = "상대 알람 허용",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                VoiceAlarmSwitch(
+                    checked = allowFamilyAlarms,
+                    onCheckedChange = onToggle,
+                )
+            }
+            if (allowFamilyAlarms) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "알람 받지 않을 시간",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = quietScheduleLabel(quietWindows),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    TextButton(onClick = onEditQuietTime) {
+                        Text("수정")
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -389,7 +389,7 @@ private fun alarmTimeLabel(hour: Int, minute: Int): String {
 
 private fun ringingModeLabel(playMode: String, hasVoiceText: Boolean): String = when {
     hasVoiceText -> "목소리 알람이 울리고 있어요"
-    playMode == AlarmPlayModes.VOICE_ONLY -> "음성이 울리고 있어요"
-    playMode == AlarmPlayModes.ALARM_VOICE -> "알람과 음성이 준비되어 있어요"
+    playMode == AlarmPlayModes.VOICE_ONLY -> "목소리가 재생되고 있어요"
+    playMode == AlarmPlayModes.ALARM_VOICE -> "알람음과 목소리가 울리고 있어요"
     else -> "알람이 울리고 있어요"
 }

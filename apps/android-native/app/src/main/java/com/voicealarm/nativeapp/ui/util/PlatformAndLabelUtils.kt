@@ -24,7 +24,9 @@ import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
 import java.io.File
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -98,6 +100,32 @@ internal fun formatVoucherIssuedAt(isoString: String?): String? {
     }.getOrNull()
 }
 
+internal fun formatNoteCreatedAt(isoString: String?, zoneId: ZoneId = ZoneId.systemDefault()): String? {
+    val value = isoString?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+    val instant = parseBackendTimestamp(value)
+    return instant
+        ?.atZone(zoneId)
+        ?.format(formatter)
+        ?: value
+            .replace('T', ' ')
+            .take(16)
+            .takeIf { it.isNotBlank() }
+}
+
+private fun parseBackendTimestamp(value: String): Instant? =
+    runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching {
+            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                .atZone(ZoneOffset.UTC)
+                .toInstant()
+        }.getOrNull()
+        ?: runCatching {
+            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                .atZone(ZoneOffset.UTC)
+                .toInstant()
+        }.getOrNull()
+
 internal fun audioFileLabel(localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
         ?.substringAfterLast('/')
@@ -161,8 +189,8 @@ internal fun vibrationLabel(pattern: String): String = when (pattern) {
 }
 
 internal fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "음성"
-    AlarmPlayModes.ALARM_VOICE -> "알람 + 음성"
+    AlarmPlayModes.VOICE_ONLY -> "목소리"
+    AlarmPlayModes.ALARM_VOICE -> "알람 + 목소리"
     else -> "알람"
 }
 
@@ -280,7 +308,7 @@ internal fun alarmStateLabel(state: String?): String = when (state) {
     "snoozed" -> "다시 울림"
     "dismissed" -> "종료됨"
     "missed" -> "놓침"
-    "failed" -> "알람을 다시 예약하지 못했습니다"
+    "failed" -> "알람을 다시 예약하지 못했어요"
     else -> state ?: "로컬"
 }
 
@@ -300,7 +328,7 @@ internal fun stageLabel(stage: String): String = when (stage) {
 
 internal fun syncStateLabel(state: String): String = when (state) {
     AlarmSyncStates.SYNCED -> "동기화됨"
-    AlarmSyncStates.DIRTY -> "서버 저장 대기"
-    AlarmSyncStates.FAILED -> "서버에 저장하지 못했습니다"
+    AlarmSyncStates.DIRTY -> "저장 대기"
+    AlarmSyncStates.FAILED -> "서버에 저장하지 못했어요"
     else -> "기기에만 저장됨"
 }

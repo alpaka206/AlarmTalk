@@ -24,6 +24,7 @@ data class ReceivedNote(
     @SerializedName("sender_picture") val senderPicture: String? = null,
     val text: String,
     @SerializedName("audio_url") val audioUrl: String? = null,
+    @SerializedName("audio_available") val audioAvailable: Boolean? = null,
     @SerializedName("read_at") val readAt: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
 )

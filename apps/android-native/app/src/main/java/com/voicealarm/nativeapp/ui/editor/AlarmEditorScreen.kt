@@ -24,18 +24,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +63,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.voicealarm.nativeapp.core.VoiceAlarmLog.TAG
 import com.voicealarm.nativeapp.data.AlarmAudioLimits
 import com.voicealarm.nativeapp.data.AlarmAudioStore
@@ -64,10 +75,13 @@ import com.voicealarm.nativeapp.data.AlarmTimeCalculator
 import com.voicealarm.nativeapp.data.AlarmVoiceRecorder
 import com.voicealarm.nativeapp.data.CachedAlarmAudio
 import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
+import com.voicealarm.nativeapp.data.DynamicPromptPreferences
+import com.voicealarm.nativeapp.data.toDynamicPromptSettings
 import com.voicealarm.nativeapp.data.VibrationPatterns
 import com.voicealarm.nativeapp.data.VoiceSources
 import com.voicealarm.nativeapp.network.AuthSession
 import com.voicealarm.nativeapp.network.BillingSubscriptionResponse
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 import com.voicealarm.nativeapp.network.FamilyGroupCurrentResponse
 import com.voicealarm.nativeapp.network.FamilyGroupMember
@@ -75,6 +89,7 @@ import com.voicealarm.nativeapp.network.FamilyVoiceProfile
 import com.voicealarm.nativeapp.network.TtsGenerateRequest
 import com.voicealarm.nativeapp.network.TtsGenerateResponse
 import com.voicealarm.nativeapp.network.VoiceProfile
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalTime
 import java.time.ZoneId
@@ -87,6 +102,7 @@ import kotlinx.coroutines.withContext
 private enum class AudioPreviewTarget {
     SelectedCrop,
     CachedAudio,
+    SharedVoiceInfo,
 }
 
 @Composable
@@ -104,9 +120,13 @@ internal fun AlarmEditorScreen(
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
-    val editor = remember(alarm?.id) { AlarmEditorState.from(alarm) }
+    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
+    val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
@@ -133,13 +153,32 @@ internal fun AlarmEditorScreen(
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
+    var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
         familyAlarmRecipients(familyGroup, authSession)
     }
     var selectedFamilyRecipientId by remember(familyAlarmMode, familyRecipients) {
         mutableStateOf(if (familyAlarmMode) familyRecipients.firstOrNull()?.userId else null)
     }
-    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    val selectedFamilyRecipientValue = familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
+    val activeDynamicPromptPreferences = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettings?.toPromptPreferences() ?: DynamicPromptPreferences()
+    } else {
+        dynamicPromptPreferences
+    }
+    val savedWeatherConfigured = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettingsState?.weatherReady == true
+    } else {
+        activeDynamicPromptPreferences.weatherCountry.isNotBlank() &&
+            activeDynamicPromptPreferences.weatherCity.isNotBlank()
+    }
+    val savedFortuneConfigured = if (familyAlarmMode) {
+        selectedFamilyRecipientValue?.dynamicPromptSettingsState?.fortuneReady == true
+    } else {
+        activeDynamicPromptPreferences.fortuneGender.isNotBlank() &&
+            activeDynamicPromptPreferences.fortuneBirthDate.isNotBlank() &&
+            activeDynamicPromptPreferences.fortuneBirthTime.isNotBlank()
+    }
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -161,17 +200,40 @@ internal fun AlarmEditorScreen(
         if (editor.alarmVolumePercent == 0) editor.alarmVolumePercent = 100
     }
 
-    LaunchedEffect(dynamicPromptPreferences.weatherCountry, dynamicPromptPreferences.weatherCity) {
+    LaunchedEffect(
+        familyAlarmMode,
+        selectedFamilyRecipientValue?.userId,
+        activeDynamicPromptPreferences,
+    ) {
+        if (familyAlarmMode) {
+            editor.voiceWeatherCountry = activeDynamicPromptPreferences.weatherCountry
+            editor.voiceWeatherCity = activeDynamicPromptPreferences.weatherCity
+            editor.voiceFortuneGender = activeDynamicPromptPreferences.fortuneGender
+            editor.voiceFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate
+            editor.voiceFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime
+            editor.clearTtsMeta()
+            editor.clearAudio()
+            return@LaunchedEffect
+        }
         if (editor.voiceWeatherCountry.isBlank()) {
-            editor.voiceWeatherCountry = dynamicPromptPreferences.weatherCountry
+            editor.voiceWeatherCountry = activeDynamicPromptPreferences.weatherCountry
         }
         if (editor.voiceWeatherCity.isBlank()) {
-            editor.voiceWeatherCity = dynamicPromptPreferences.weatherCity
+            editor.voiceWeatherCity = activeDynamicPromptPreferences.weatherCity
+        }
+        if (editor.voiceFortuneGender.isBlank()) {
+            editor.voiceFortuneGender = activeDynamicPromptPreferences.fortuneGender
+        }
+        if (editor.voiceFortuneBirthDate.isBlank()) {
+            editor.voiceFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate
+        }
+        if (editor.voiceFortuneBirthTime.isBlank()) {
+            editor.voiceFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime
         }
     }
 
     fun selectedFamilyRecipient(): FamilyGroupMember? =
-        familyRecipients.firstOrNull { it.userId == selectedFamilyRecipientId }
+        selectedFamilyRecipientValue
 
     fun applyCachedAudio(audio: CachedAlarmAudio) {
         editor.setCachedAudio(audio)
@@ -230,6 +292,8 @@ internal fun AlarmEditorScreen(
                     fun startFromPreparedPosition() {
                         if (mediaPlayer !== preparedPlayer) return
                         previewPreparing = false
+                        val previewVolume = editor.voiceVolumePercent.coerceIn(0, 100) / 100f
+                        preparedPlayer.setVolume(previewVolume, previewVolume)
                         preparedPlayer.start()
                         scheduleAutoStop()
                     }
@@ -322,6 +386,46 @@ internal fun AlarmEditorScreen(
         )
     }
 
+    fun playSharedVoiceInfoPreview(profileId: String) {
+        if (previewPreparing) return
+        scope.launch {
+            stopPreview()
+            previewTarget = AudioPreviewTarget.SharedVoiceInfo
+            previewPreparing = true
+            runCatching {
+                val response = onGenerateTts(
+                    TtsGenerateRequest(
+                        voiceProfileId = profileId,
+                        text = "이 목소리로 깨워드릴까요?",
+                        category = "custom",
+                        language = "ko",
+                        random = false,
+                    ),
+                )
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = audioBytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = "shared_voice_preview_$profileId",
+                        cacheKey = "shared_voice_preview_$profileId",
+                        messageId = response.messageId,
+                    )
+                }
+            }.onSuccess { cached ->
+                startPreparedPreview(
+                    uri = Uri.parse(cached.localAudioUri),
+                    target = AudioPreviewTarget.SharedVoiceInfo,
+                )
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
+                stopPreview()
+                audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            }
+        }
+    }
+
     fun submitDraft(draft: AlarmDraft) {
         if (!familyAlarmMode) {
             onSave(draft)
@@ -332,7 +436,7 @@ internal fun AlarmEditorScreen(
             audioMessage = "알람을 받을 사람을 선택해 주세요."
             return
         }
-        showFamilyAlarmToast("상대방 알람을 등록했어요.")
+        showFamilyAlarmToast("상대 알람을 설정했어요.")
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
@@ -397,7 +501,7 @@ internal fun AlarmEditorScreen(
                 holidayOff = editor.holidayOff,
             )
             if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
-                val message = "상대방 알람은 최소 30분 이후로 설정해 주세요."
+                val message = "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -445,12 +549,21 @@ internal fun AlarmEditorScreen(
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
-            audioMessage = "사용할 알람 음성을 선택해 주세요."
+            audioMessage = "사용할 목소리를 선택해 주세요."
+            return
+        }
+        val selectedSharedProfile = familyVoices.firstOrNull {
+            it.id == profileId && it.requiresViewerInfo()
+        }
+        if (selectedSharedProfile != null) {
+            stopPreview()
+            audioMessage = null
+            sharedVoiceInfoTarget = selectedSharedProfile
             return
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {
-            audioMessage = "음성 메시지를 입력하거나 문구 추천을 켜 주세요."
+            audioMessage = "음성 메시지를 입력하거나 랜덤 문구를 사용해 주세요."
             return
         }
         if (
@@ -458,7 +571,7 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(editor.voiceRandomContext) &&
             (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
         ) {
-            audioMessage = "날씨 문구는 나라와 도시를 입력해 주세요."
+            audioMessage = "날씨가 들어간 문구는 나라와 도시를 입력해 주세요."
             return
         }
         if (
@@ -470,7 +583,7 @@ internal fun AlarmEditorScreen(
                     editor.voiceFortuneBirthTime.isBlank()
                 )
         ) {
-            audioMessage = "운세 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
+            audioMessage = "운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
             return
         }
         val usableProfileIds = (
@@ -478,7 +591,7 @@ internal fun AlarmEditorScreen(
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
-            audioMessage = "삭제된 알람 음성이라 문구를 수정할 수 없어요. 다른 알람 음성을 선택해 주세요."
+            audioMessage = "삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요."
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
@@ -510,8 +623,8 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
-            audioMessage = "음성을 생성해서 저장하는 중..."
-            showFamilyAlarmToast("음성을 생성하는 중...")
+            audioMessage = "목소리 알람을 준비하는 중이에요."
+            showFamilyAlarmToast("목소리 알람을 준비하는 중이에요.")
             runCatching {
                 val response = onGenerateTts(
                     TtsGenerateRequest(
@@ -529,25 +642,36 @@ internal fun AlarmEditorScreen(
                         alarmHour = editor.hour,
                         alarmMinute = editor.minute,
                         weatherCountry = editor.voiceWeatherCountry.takeIf {
-                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
-                        },
+                            editor.voiceRandomPrompt &&
+                                randomContextUsesWeather(editor.voiceRandomContext) &&
+                                editor.voiceWeatherCountry.isNotBlank()
+                        }?.trimmedOrNull(),
                         weatherCity = editor.voiceWeatherCity.takeIf {
-                            editor.voiceRandomPrompt && randomContextUsesWeather(editor.voiceRandomContext)
-                        },
+                            editor.voiceRandomPrompt &&
+                                randomContextUsesWeather(editor.voiceRandomContext) &&
+                                editor.voiceWeatherCity.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneGender = editor.voiceFortuneGender.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneGender.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneBirthDate = editor.voiceFortuneBirthDate.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneBirthDate.isNotBlank()
+                        }?.trimmedOrNull(),
                         fortuneBirthTime = editor.voiceFortuneBirthTime.takeIf {
-                            editor.voiceRandomPrompt && normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune"
-                        },
+                            editor.voiceRandomPrompt &&
+                                normalizedRandomPromptContext(editor.voiceRandomContext) == "wake_fortune" &&
+                                editor.voiceFortuneBirthTime.isNotBlank()
+                        }?.trimmedOrNull(),
+                        targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
                         listenerTitle = resolveListenerTitle(
                             profileId = profileId,
                             voiceProfiles = voiceProfiles,
                             familyVoices = familyVoices,
-                        ),
+                        ).trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -576,7 +700,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = rawAudioUri,
                 )
                 audioMessage = "생성한 음성을 로컬에 저장했어요."
-            submitDraft(editor.toDraft())
+                submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
                 audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
@@ -628,7 +752,7 @@ internal fun AlarmEditorScreen(
             editor.clearAudio()
             selectedFileUri = null
             selectedFileDurationMillis = null
-            audioMessage = "무료 이용권에서는 일반 알람을 사용할 수 있어요."
+            audioMessage = "무료 이용권에서는 일반 알람만 만들 수 있어요."
         }
     }
 
@@ -706,13 +830,34 @@ internal fun AlarmEditorScreen(
         editor.voiceFortuneBirthTime = result.fortuneBirthTime
         editor.clearAudio()
         editor.clearTtsMeta()
+        var shouldSyncOwnDynamicPromptSettings = false
         if (
+            !familyAlarmMode &&
             randomContextUsesWeather(result.randomContext) &&
             result.weatherCountry.isNotBlank() &&
             result.weatherCity.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)
             dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            shouldSyncOwnDynamicPromptSettings = true
+        }
+        if (
+            !familyAlarmMode &&
+            normalizedRandomPromptContext(result.randomContext) == "wake_fortune" &&
+            result.fortuneGender.isNotBlank() &&
+            result.fortuneBirthDate.isNotBlank() &&
+            result.fortuneBirthTime.isNotBlank()
+        ) {
+            dynamicPromptPreferenceStore.saveFortuneInfo(
+                gender = result.fortuneGender,
+                birthDate = result.fortuneBirthDate,
+                birthTime = result.fortuneBirthTime,
+            )
+            dynamicPromptPreferences = dynamicPromptPreferenceStore.read()
+            shouldSyncOwnDynamicPromptSettings = true
+        }
+        if (shouldSyncOwnDynamicPromptSettings) {
+            onUpdateDynamicPromptSettings(dynamicPromptPreferences.toDynamicPromptSettings())
         }
         settingsDetailPanel = null
     }
@@ -909,6 +1054,10 @@ internal fun AlarmEditorScreen(
                                 onPreviewCrop = { playSelectedCrop() },
                                 onPreviewAudio = { playCachedAudio() },
                                 onCreateVoiceProfileClick = onCreateVoiceProfile,
+                                onSharedVoiceInfoRequired = { profile ->
+                                    stopPreview()
+                                    sharedVoiceInfoTarget = profile
+                                },
                                 onOpenRandomPromptSettings = ::openRandomPromptSettings,
                                 onOpenVoiceTranslationSettings = { settingsDetailPanel = "voice_translation" },
                                 onClear = {
@@ -1021,8 +1170,14 @@ internal fun AlarmEditorScreen(
                 randomContext = editor.voiceRandomContext,
                 weatherCountry = editor.voiceWeatherCountry,
                 weatherCity = editor.voiceWeatherCity,
-                savedWeatherCountry = dynamicPromptPreferences.weatherCountry,
-                savedWeatherCity = dynamicPromptPreferences.weatherCity,
+                savedWeatherCountry = activeDynamicPromptPreferences.weatherCountry,
+                savedWeatherCity = activeDynamicPromptPreferences.weatherCity,
+                savedWeatherConfigured = savedWeatherConfigured,
+                savedFortuneGender = activeDynamicPromptPreferences.fortuneGender,
+                savedFortuneBirthDate = activeDynamicPromptPreferences.fortuneBirthDate,
+                savedFortuneBirthTime = activeDynamicPromptPreferences.fortuneBirthTime,
+                savedFortuneConfigured = savedFortuneConfigured,
+                usingTargetDynamicPromptSettings = familyAlarmMode,
                 fortuneGender = editor.voiceFortuneGender,
                 fortuneBirthDate = editor.voiceFortuneBirthDate,
                 fortuneBirthTime = editor.voiceFortuneBirthTime,
@@ -1041,15 +1196,178 @@ internal fun AlarmEditorScreen(
         }
     }
 
+    sharedVoiceInfoTarget?.let { profile ->
+        SharedVoiceInfoRequiredDialog(
+            profileName = profile.name,
+            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
+                ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리",
+            initialRelationship = profile.relationshipLabel.orEmpty(),
+            initialListenerTitle = profile.listenerTitle.orEmpty(),
+            saving = voiceProfileBusy,
+            previewing = previewTarget == AudioPreviewTarget.SharedVoiceInfo &&
+                (previewPreparing || mediaPlayer != null),
+            onDismiss = {
+                if (!voiceProfileBusy) {
+                    stopPreview()
+                    sharedVoiceInfoTarget = null
+                }
+            },
+            onPreview = { playSharedVoiceInfoPreview(profile.id) },
+            onConfirm = { relationship, listener ->
+                onUpdateSharedVoiceInfo(profile.id, relationship, listener) {
+                    editor.voiceProfileId = profile.id
+                    editor.clearTtsMeta()
+                    stopPreview()
+                    sharedVoiceInfoTarget = null
+                }
+            },
+        )
+    }
+
     if (voicePlanGateOpen) {
         PlanGateDialog(
-            message = "유료 요금제를 사용해야 목소리 알람을 만들 수 있어요.",
+            message = "유료 이용권에서 사용할 수 있어요.",
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()
             },
             onDismiss = { voicePlanGateOpen = false },
         )
+    }
+}
+
+
+@Composable
+private fun SharedVoiceInfoRequiredDialog(
+    profileName: String,
+    sharedFromLabel: String,
+    initialRelationship: String,
+    initialListenerTitle: String,
+    saving: Boolean,
+    previewing: Boolean,
+    onDismiss: () -> Unit,
+    onPreview: () -> Unit,
+    onConfirm: (String, String) -> Unit,
+) {
+    var draftRelationship by remember(initialRelationship) { mutableStateOf(initialRelationship) }
+    var draftListenerTitle by remember(initialListenerTitle) { mutableStateOf(initialListenerTitle) }
+    var submitted by remember { mutableStateOf(false) }
+    val relationshipError = submitted && draftRelationship.isBlank()
+    val listenerTitleError = submitted && draftListenerTitle.isBlank()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 620.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                ModalDialogTitle(
+                    title = "목소리 설정",
+                    onDismiss = onDismiss,
+                )
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    border = wakerCardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = profileName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                        Text(
+                            text = sharedFromLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = draftRelationship,
+                    onValueChange = { draftRelationship = it.take(30) },
+                    label = { Text("나와의 관계") },
+                    placeholder = { Text("예: 손녀, 엄마, 연인") },
+                    singleLine = true,
+                    isError = relationshipError,
+                    supportingText = {
+                        if (relationshipError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftListenerTitle,
+                    onValueChange = { draftListenerTitle = it.take(30) },
+                    label = { Text("이 목소리가 나를 부를 이름") },
+                    placeholder = { Text("예: 지호야, 여보") },
+                    singleLine = true,
+                    isError = listenerTitleError,
+                    supportingText = {
+                        if (listenerTitleError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = onPreview,
+                    enabled = !saving && !previewing,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
+                ) {
+                    if (previewing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("재생 중")
+                    } else {
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("미리듣기")
+                    }
+                }
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftRelationship.isNotBlank() && draftListenerTitle.isNotBlank()) {
+                            onConfirm(draftRelationship.trim(), draftListenerTitle.trim())
+                        }
+                    },
+                    enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text(if (saving) "저장 중" else "저장하고 선택")
+                }
+            }
+        }
     }
 }
 
@@ -1064,6 +1382,15 @@ internal fun resolveListenerTitle(
     val shared = familyVoices.firstOrNull { it.id == profileId }?.listenerTitle
     return shared?.takeIf { it.isNotBlank() }
 }
+
+private fun DynamicPromptSettings.toPromptPreferences(): DynamicPromptPreferences =
+    DynamicPromptPreferences(
+        weatherCountry = weather.country?.trim().orEmpty(),
+        weatherCity = weather.city?.trim().orEmpty(),
+        fortuneGender = fortune.gender?.trim().orEmpty(),
+        fortuneBirthDate = fortune.birthDate?.trim().orEmpty(),
+        fortuneBirthTime = fortune.birthTime?.trim().orEmpty(),
+    )
 
 @Composable
 private fun AlarmEditorTopBar(
@@ -1086,7 +1413,7 @@ private fun AlarmEditorTopBar(
         Spacer(Modifier.width(8.dp))
         Text(
             text = when {
-                familyAlarmMode -> "함께 울릴 알람"
+                familyAlarmMode -> "상대 알람 맞추기"
                 isEditing -> "알람 수정"
                 else -> "새 알람"
             },
@@ -1128,7 +1455,12 @@ internal fun FamilyAlarmTargetCard(
     if (recipientDialogOpen) {
         AlertDialog(
             onDismissRequest = { recipientDialogOpen = false },
-            title = { Text("받는 사람 선택") },
+            title = {
+                ModalDialogTitle(
+                    title = "알람 받을 사람 선택",
+                    onDismiss = { recipientDialogOpen = false },
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     recipients.forEach { recipient ->
@@ -1143,11 +1475,7 @@ internal fun FamilyAlarmTargetCard(
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { recipientDialogOpen = false }) {
-                    Text("닫기")
-                }
-            },
+            confirmButton = {},
         )
     }
 
@@ -1165,7 +1493,7 @@ internal fun FamilyAlarmTargetCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("받는 사람", fontWeight = FontWeight.SemiBold)
+                Text("알람 받을 사람", fontWeight = FontWeight.SemiBold)
                 if (recipients.size > 1) {
                     TextButton(onClick = { recipientDialogOpen = true }) {
                         Text("변경")
@@ -1173,7 +1501,7 @@ internal fun FamilyAlarmTargetCard(
                 }
             }
             if (recipients.isEmpty()) {
-                MutedText("상대가 알람 설정을 허용하면 여기에 표시돼요.")
+                MutedText("상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
             } else {
                 RecipientSummaryRow(
                     recipient = requireNotNull(selectedRecipient),
@@ -1188,7 +1516,7 @@ internal fun FamilyAlarmTargetCard(
                 )
 
                 if (recipients.size == 1) {
-                    MutedText("수신자는 한 명이고 바로 그 사람에게 설정돼요.")
+                    MutedText("이 알람은 선택된 한 사람에게만 설정돼요.")
                 }
             }
         }
@@ -1280,11 +1608,11 @@ private fun RecipientPickerRow(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(familyMemberLabel(recipient), fontWeight = FontWeight.SemiBold)
-                MutedText("설정 불가: ${familyAlarmQuietScheduleLabel(recipient)}")
+                MutedText("받지 않는 시간: ${familyAlarmQuietScheduleLabel(recipient)}")
             }
             if (selected) {
                 Text(
-                    text = "선택됨",
+                    text = "선택",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -1302,8 +1630,8 @@ private fun FamilyAlarmTargetStatus(
 ) {
     val blocked = leadTooSoon || quietUnavailable
     val statusText = when {
-        leadTooSoon -> "30분 뒤부터 설정할 수 있어요."
-        quietUnavailable -> "이 시간은 상대가 받을 수 없는 시간이에요."
+        leadTooSoon -> "지금부터 30분 뒤 알람부터 설정할 수 있어요."
+        quietUnavailable -> "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
         else -> "설정 가능"
     }
     Surface(
@@ -1326,7 +1654,7 @@ private fun FamilyAlarmTargetStatus(
             fontWeight = FontWeight.SemiBold,
         )
     }
-    MutedText("설정 불가: $quietLabel")
+    MutedText("받지 않는 시간: $quietLabel")
 }
 
 private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L

@@ -84,6 +84,7 @@ internal fun AlarmListScreen(
     onCheckoutPlan: (String, Boolean) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
+    onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
     onCreateFamilyAlarm: () -> Unit,
@@ -159,7 +160,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Voices -> {
                 item {
-                    ScreenHeader(title = "음성")
+                    ScreenHeader(title = "목소리")
                 }
                 item {
                     VoiceProfileManagementPanel(
@@ -291,6 +292,7 @@ internal fun AlarmListScreen(
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,
+                        onRefreshShareCodeData = onRefreshShareCodeData,
                     )
                 }
             }

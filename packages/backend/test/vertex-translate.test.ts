@@ -221,6 +221,224 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.text).not.toContain('할머니');
   });
 
+  it('accepts an explicit listener title even when it is a family title', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"할머니, 일어나실 시간이에요. 비가 올 수 있대요. 우산 꼭 챙기세요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      alarmTimeLabel: '07:30',
+      relationshipLabel: '손녀',
+      listenerTitle: '할머니',
+      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+    });
+
+    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.text).toContain('할머니');
+    expect(generated.text).toContain('우산 꼭 챙기세요');
+  });
+
+  it('prompts romantic partner cases with warm tone and flexible weather relay wording', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      alarmTimeLabel: '07:30',
+      relationshipLabel: '남편',
+      listenerTitle: '자기야',
+      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+    });
+
+    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const prompt = requestBody.contents[0].parts[0].text;
+    expect(generated.provider).toBe('gemini-api-key');
+    expect(prompt).toContain('Romantic partner/spouse tone');
+    expect(prompt).toContain('heart-fluttering');
+    expect(prompt).toContain('do not force a lead-in like "예보 보니까"');
+    expect(prompt).toContain('연인·남자친구·여자친구·아내·남편·배우자');
+  });
+
+  it('uses warmer romantic fallback copy when Gemini is unavailable', async () => {
+    const generated = await generateDynamicAlarmTextWithVertex(
+      {
+        ...ENV,
+        GOOGLE_VERTEX_API_KEY: undefined,
+        GOOGLE_VERTEX_CREDENTIALS_JSON: undefined,
+      },
+      {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '여자친구',
+        listenerTitle: '자기야',
+        weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      },
+    );
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('자기야');
+    expect(generated.text).toContain('비 올 수 있대');
+    expect(generated.text).toContain('우산 꼭 챙겨');
+    expect(generated.text).toContain('오늘도 네 편이야');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('keeps romantic weather fallback in intimate speech for spouse labels', async () => {
+    const generated = await generateDynamicAlarmTextWithVertex(
+      {
+        ...ENV,
+        GOOGLE_VERTEX_API_KEY: undefined,
+        GOOGLE_VERTEX_CREDENTIALS_JSON: undefined,
+      },
+      {
+        mode: 'wake_weather',
+        category: 'morning',
+        targetLanguage: 'ko',
+        dateLabel: '5월 20일 수요일',
+        relationshipLabel: '아내',
+        listenerTitle: '여보',
+        weatherSummary: '날씨가 좋아요. 잠깐 산책 가기에도 딱이에요',
+      },
+    );
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('여보');
+    expect(generated.text).toContain('날씨 좋대');
+    expect(generated.text).toContain('딱이야');
+    expect(generated.text).not.toContain('좋대요');
+    expect(generated.text).not.toContain('딱이에요');
+  });
+
+  it('falls back when romantic output uses stiff register or jealousy-triggering fortune', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"자기야, 일어나세요. 오늘은 새로운 인연을 만날 수도 있대요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_fortune',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '여자친구',
+      listenerTitle: '자기야',
+      fortuneProfile: 'gender=남성, birth date=1994-09-12, birth time=07:30',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('자기야');
+    expect(generated.text).toContain('작은 행운');
+    expect(generated.text).not.toContain('새로운 인연');
+    expect(generated.text).not.toContain('일어나세요');
+  });
+
+  it('falls back when Gemini mentions the speaker relationship as the source', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"할머니, 손녀 목소리로 전해요. 일어나실 시간이에요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '손녀',
+      listenerTitle: '할머니',
+      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('할머니');
+    expect(generated.text).not.toContain('손녀 목소리');
+  });
+
+  it('falls back when Gemini writes as the speaker relationship', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"민지야, 실내에서 가볍게 운동하자. 엄마가 응원할게!"}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'exercise',
+      category: 'exercise',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '엄마',
+      listenerTitle: '민지야',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).toContain('민지야');
+    expect(generated.text).not.toContain('엄마가');
+  });
+
+  it('falls back when Gemini includes delivery tags or stage directions', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"[warmly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '손녀',
+      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('[warmly]');
+  });
+
+  it('falls back when Gemini mentions the internal alarm time or date', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"7시 30분이에요. 5월 20일 수요일이라 비가 올 수 있대요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_weather',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      alarmTimeLabel: '07:30',
+      relationshipLabel: '손녀',
+      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('7시 30분');
+    expect(generated.text).not.toContain('5월 20일');
+    expect(generated.text).not.toContain('수요일');
+  });
+
+  it('falls back when Gemini mentions the internal alarm time as a Korean 12-hour label', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"할아버지, 오후 5시 30분이에요. 실내에서 가볍게 운동해요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'exercise',
+      category: 'exercise',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      alarmTimeLabel: '17:30',
+      relationshipLabel: '손녀',
+      listenerTitle: '할아버지',
+      weatherSummary: '미세먼지가 많아요. 외출할 땐 마스크 챙기세요',
+    });
+
+    expect(generated.provider).toBe('local');
+    expect(generated.text).not.toContain('오후 5시 30분');
+  });
+
   it('falls back when wake_fortune repeats birth date details', async () => {
     mockFetch.mockResolvedValueOnce(
       geminiText(

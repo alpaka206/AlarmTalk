@@ -829,6 +829,15 @@ export const migrations: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_voice_profiles_is_draft ON voice_profiles(is_draft, user_id)`,
     ],
   },
+  {
+    // 사용자별 동적 랜덤 문구 기본값. 상대 알람 생성 시 수신자 기준 날씨/운세 값을
+    // 사용할 수 있도록 가족 멤버 응답에도 노출한다.
+    id: 40,
+    name: 'user-dynamic-prompt-settings',
+    statements: [
+      `ALTER TABLE users ADD COLUMN dynamic_prompt_settings_json TEXT NOT NULL DEFAULT '{}'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

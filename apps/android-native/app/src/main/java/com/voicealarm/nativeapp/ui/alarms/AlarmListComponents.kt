@@ -41,7 +41,7 @@ internal fun AlarmsHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "목소리 알람",
+            text = "알람",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -60,7 +60,7 @@ internal fun AlarmsHeader(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("만들기")
+                Text("알람 만들기")
             }
             profileMenu?.invoke()
         }

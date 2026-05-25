@@ -11,6 +11,10 @@ import {
   validateQuietTime,
   validateQuietWindows,
 } from '../lib/family-alarm-settings';
+import {
+  dynamicPromptSettingsFromRow,
+  validateDynamicPromptSettings,
+} from '../lib/dynamic-prompt-settings';
 
 const user = new Hono<AppEnv>();
 
@@ -48,6 +52,7 @@ user.get('/me', async (c) => {
     ]);
 
     const familyAlarmSettings = familyAlarmSettingsFromRow(u as Record<string, unknown>);
+    const dynamicPromptSettings = dynamicPromptSettingsFromRow(u as Record<string, unknown>);
     return c.json({
       user: {
         ...u,
@@ -56,6 +61,7 @@ user.get('/me', async (c) => {
         family_alarm_quiet_start: familyAlarmSettings.quietStart,
         family_alarm_quiet_end: familyAlarmSettings.quietEnd,
         family_alarm_quiet_windows: familyAlarmSettings.quietWindows,
+        dynamic_prompt_settings: dynamicPromptSettings,
       },
       stats: {
         voice_profiles: Number(profileCount.rows[0]?.count ?? 0),
@@ -89,6 +95,7 @@ user.patch('/me', async (c) => {
       family_alarm_quiet_start?: unknown;
       family_alarm_quiet_end?: unknown;
       family_alarm_quiet_windows?: unknown;
+      dynamic_prompt_settings?: unknown;
       name?: unknown;
     }>()
     .catch(() => ({}));
@@ -96,6 +103,7 @@ user.patch('/me', async (c) => {
   const updates: string[] = [];
   const args: (string | number)[] = [];
   let resolvedName: string | null = null;
+  let resolvedDynamicPromptSettings: ReturnType<typeof validateDynamicPromptSettings> = null;
 
   if ('name' in body && body.name !== undefined) {
     if (typeof body.name !== 'string') {
@@ -220,6 +228,22 @@ user.patch('/me', async (c) => {
     resolvedQuietEnd = time;
   }
 
+  if ('dynamic_prompt_settings' in body && body.dynamic_prompt_settings !== undefined) {
+    const settings = validateDynamicPromptSettings(body.dynamic_prompt_settings);
+    if (settings === null) {
+      return c.json(
+        {
+          error: 'dynamic_prompt_settings 형식이 올바르지 않습니다',
+          error_code: 'INVALID_DYNAMIC_PROMPT_SETTINGS',
+        },
+        400,
+      );
+    }
+    updates.push('dynamic_prompt_settings_json = ?');
+    args.push(JSON.stringify(settings));
+    resolvedDynamicPromptSettings = settings;
+  }
+
   if (updates.length === 0) {
     return c.json({ error: '변경할 필드가 없습니다', error_code: 'NO_FIELDS_TO_UPDATE' }, 400);
   }
@@ -242,6 +266,7 @@ user.patch('/me', async (c) => {
     family_alarm_quiet_start: resolvedQuietStart,
     family_alarm_quiet_end: resolvedQuietEnd,
     family_alarm_quiet_windows: resolvedQuietWindows,
+    dynamic_prompt_settings: resolvedDynamicPromptSettings,
   });
 });
 

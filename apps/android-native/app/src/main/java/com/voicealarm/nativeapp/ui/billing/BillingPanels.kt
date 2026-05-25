@@ -34,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +59,7 @@ import com.voicealarm.nativeapp.network.VoucherItem
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun SubscriptionPanel(
@@ -70,12 +72,14 @@ internal fun SubscriptionPanel(
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
+    onRefreshShareCodeData: suspend () -> List<VoucherItem>,
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
+    var shareBusy by remember { mutableStateOf(false) }
     val subscription = subscriptionResponse?.subscription
     val currentPlan = subscriptionResponse?.plan
     val nextPlan = subscriptionResponse?.nextPlan
@@ -85,6 +89,7 @@ internal fun SubscriptionPanel(
     val sharedGroupId = familyGroup?.group?.id
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
     val options = remember {
         listOf(
             SubscriptionPlanOption(
@@ -99,7 +104,7 @@ internal fun SubscriptionPanel(
                 name = "개인",
                 price = "월 4,900원",
                 description = "내가 좋아하는 목소리로 알람을 만들어요.",
-                features = listOf("알람 음성", "음성 메시지", "개인 이용권 선물"),
+                features = listOf("목소리", "음성 메시지", "개인 이용권 선물"),
             ),
             SubscriptionPlanOption(
                 key = "couple",
@@ -126,10 +131,24 @@ internal fun SubscriptionPanel(
         context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
-        if (vouchersForPlan.size == 1) {
-            shareVoucher(vouchersForPlan.first())
-        } else if (vouchersForPlan.isNotEmpty()) {
+        if (vouchersForPlan.isNotEmpty()) {
             shareTarget = vouchersForPlan
+        }
+    }
+    fun refreshAndOpenVoucherShare(planKey: String) {
+        if (shareBusy) return
+        scope.launch {
+            shareBusy = true
+            try {
+                val refreshedVouchers = runCatching {
+                    onRefreshShareCodeData()
+                }.getOrElse {
+                    vouchers
+                }
+                openVoucherShare(shareableVouchersForPlan(refreshedVouchers, planKey))
+            } finally {
+                shareBusy = false
+            }
         }
     }
 
@@ -155,21 +174,17 @@ internal fun SubscriptionPanel(
             options.forEach { option ->
                 val currentKey = currentPlan?.key ?: "free"
                 val isCurrent = currentKey == option.key
-                val vouchersForPlan = vouchers.filter { voucher ->
-                    voucher.status in listOf("issued", "active", "pending") &&
-                        voucher.useCount < voucher.maxUses &&
-                        voucher.planKey == option.key
-                }
+                val vouchersForPlan = shareableVouchersForPlan(vouchers, option.key)
                 SubscriptionPlanCard(
                     option = option,
                     isCurrent = isCurrent,
                     hasActiveSubscription = hasActive,
-                    busy = billingBusy,
+                    busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { checkoutTarget = CheckoutSelection(option = option, gift = false) },
                     onGift = { checkoutTarget = CheckoutSelection(option = option, gift = true) },
                     onChange = { changeTarget = option },
-                    onShareVouchers = { selectedVouchers -> openVoucherShare(selectedVouchers) },
+                    onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
             }
         }
@@ -504,7 +519,7 @@ internal fun SubscriptionPlanCard(
     onPurchase: () -> Unit,
     onGift: () -> Unit,
     onChange: () -> Unit,
-    onShareVouchers: (List<VoucherItem>) -> Unit,
+    onShareVouchers: () -> Unit,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -617,7 +632,7 @@ internal fun SubscriptionPlanCard(
             }
             if (vouchers.isNotEmpty()) {
                 OutlinedButton(
-                    onClick = { onShareVouchers(vouchers) },
+                    onClick = onShareVouchers,
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
@@ -630,6 +645,16 @@ internal fun SubscriptionPlanCard(
         }
     }
 }
+
+private fun shareableVouchersForPlan(
+    vouchers: List<VoucherItem>,
+    planKey: String,
+): List<VoucherItem> =
+    vouchers.filter { voucher ->
+        voucher.status in listOf("issued", "active", "pending") &&
+            voucher.useCount < voucher.maxUses &&
+            voucher.planKey == planKey
+    }
 
 @Composable
 private fun CancelSubscriptionDialog(

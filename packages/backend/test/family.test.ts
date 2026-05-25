@@ -601,6 +601,9 @@ describe('POST /family/alarms (text mode)', () => {
     expect(body.alarm.wake_at).toBe('07:30');
     expect(body.alarm.repeat_days).toEqual([1, 3, 5]);
     expect(body.message.text).toBe('일어나세요!');
+    expect(body.message.synthesis_text).toContain(body.message.text);
+    expect(body.message.tags).toHaveLength(1);
+    expect(body.message.synthesis_text).toContain(`[${body.message.tags[0]}]`);
     expect(body.message.category).toBe('family');
 
     const msgInsert = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
@@ -608,6 +611,9 @@ describe('POST /family/alarms (text mode)', () => {
     expect(msgInsert).toBeDefined();
     expect(alarmInsert).toBeDefined();
     expect(msgInsert?.args[1]).toBe('user-recipient');
+    expect(msgInsert?.args[3]).toBe(body.message.text);
+    expect(msgInsert?.args[4]).toBe(body.message.synthesis_text);
+    expect(msgInsert?.args[5]).toBe(JSON.stringify(body.message.tags));
     expect(alarmInsert?.args[1]).toBe('google-sender');
     expect(alarmInsert?.args[2]).toBe('google-recipient');
   });

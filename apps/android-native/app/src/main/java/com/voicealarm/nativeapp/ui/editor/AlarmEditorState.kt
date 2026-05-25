@@ -77,6 +77,7 @@ internal class AlarmEditorState(
     voiceFortuneBirthDate: String?,
     voiceFortuneBirthTime: String?,
     voiceRepeat: Boolean,
+    voiceVolumePercent: Int,
     ttsMessageId: String?,
     alarmVolumePercent: Int,
     alarmSoundUri: String?,
@@ -111,6 +112,7 @@ internal class AlarmEditorState(
     var voiceFortuneBirthTime by mutableStateOf(voiceFortuneBirthTime ?: "")
     var voiceTranslationEnabled by mutableStateOf(!voiceRandomPrompt && (voiceLanguage ?: "ko") != "ko")
     var voiceRepeat by mutableStateOf(voiceRepeat)
+    var voiceVolumePercent by mutableIntStateOf(voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100))
     var ttsMessageId by mutableStateOf(ttsMessageId)
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
     var alarmSoundUri by mutableStateOf(alarmSoundUri)
@@ -183,6 +185,7 @@ internal class AlarmEditorState(
                 null
             },
             voiceRepeat = if (alarmOnly) true else voiceRepeat,
+            voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
@@ -277,7 +280,10 @@ internal class AlarmEditorState(
     }
 
     companion object {
-        fun from(alarm: AlarmEntity?): AlarmEditorState {
+        fun from(
+            alarm: AlarmEntity?,
+            defaultPlayMode: String = AlarmPlayModes.ALARM_ONLY,
+        ): AlarmEditorState {
             val defaultTime = java.time.LocalTime.of(6, 0)
             return AlarmEditorState(
                 label = alarm?.label ?: "",
@@ -289,7 +295,7 @@ internal class AlarmEditorState(
                 snoozeMinutes = alarm?.snoozeMinutes ?: 5,
                 snoozeRepeatLimit = alarm?.snoozeRepeatLimit ?: SnoozeRepeatLimits.THREE,
                 vibrationPattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT,
-                playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY,
+                playMode = alarm?.playMode ?: defaultPlayMode,
                 localAudioUri = alarm?.localAudioUri,
                 audioCacheKey = alarm?.audioCacheKey,
                 rawAudioUri = alarm?.rawAudioUri,
@@ -308,6 +314,7 @@ internal class AlarmEditorState(
                 voiceFortuneBirthDate = alarm?.voiceFortuneBirthDate,
                 voiceFortuneBirthTime = alarm?.voiceFortuneBirthTime,
                 voiceRepeat = alarm?.voiceRepeat ?: true,
+                voiceVolumePercent = alarm?.voiceVolumePercent ?: 100,
                 ttsMessageId = alarm?.ttsMessageId,
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
                 alarmSoundUri = alarm?.alarmSoundUri,
@@ -354,3 +361,4 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
 
 private const val DefaultRandomTtsCategory = "morning"
 internal const val DefaultRandomPromptContext = "wake_weather"
+internal const val MinVoiceVolumePercent = 30

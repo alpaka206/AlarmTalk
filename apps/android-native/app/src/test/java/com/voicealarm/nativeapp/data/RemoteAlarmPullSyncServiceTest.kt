@@ -1,5 +1,7 @@
 package com.voicealarm.nativeapp.data
 
+import com.voicealarm.nativeapp.network.RemoteAlarm
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,6 +33,52 @@ class RemoteAlarmPullSyncServiceTest {
         val existing = alarm(enabled = true, origin = AlarmOrigins.RECEIVED_REMOTE)
 
         assertTrue(resolveReceivedRemoteEnabled(existing, remoteIsActive = true))
+    }
+
+    @Test
+    fun remoteAlarmDoesNotDownloadMessageAudioWhenAudioUrlWasCleared() {
+        val remote = RemoteAlarm(id = "remote-id", mode = "sound-only", messageId = "message-id")
+
+        assertFalse(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun remoteAlarmWithVoiceMessageAudioDownloadsAudio() {
+        val remote = RemoteAlarm(
+            id = "remote-id",
+            mode = "sound-only",
+            messageId = "message-id",
+            messageAudioUrl = "r2://message-audio.mp3",
+        )
+
+        assertTrue(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun remoteAlarmWithoutMessageIdDoesNotDownloadAudio() {
+        val remote = RemoteAlarm(id = "remote-id", mode = "tts", messageId = " ")
+
+        assertFalse(shouldDownloadRemoteMessageAudio(remote))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원"))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelDoesNotDuplicateHonorific() {
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원님"))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelFallsBackWhenSenderIsMissing() {
+        assertEquals("상대가 보낸 알람", receivedRemoteAlarmLabel(" "))
+    }
+
+    @Test
+    fun receivedRemoteAlarmLabelUsesFallbackSenderWhenPrimaryIsBlank() {
+        assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(" ", "sender@example.com"))
     }
 
     private fun alarm(
@@ -69,6 +117,7 @@ class RemoteAlarmPullSyncServiceTest {
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
+            voiceVolumePercent = 100,
             ttsMessageId = null,
             remoteAlarmId = "remote-id",
             lastSyncedAtMillis = 1_000L,

@@ -105,6 +105,7 @@ class RemoteAlarmMapperTest {
             voiceFortuneBirthTime = null,
             dynamicVoicePreparedForFireAtMillis = null,
             voiceRepeat = true,
+            voiceVolumePercent = 100,
             ttsMessageId = ttsMessageId,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,

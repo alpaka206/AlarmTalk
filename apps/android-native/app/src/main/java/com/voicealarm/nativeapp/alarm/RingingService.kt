@@ -51,8 +51,10 @@ class RingingService : Service() {
     private var audioSequenceActive = false
     private var voiceLoopActive = false
     private var voiceRepeatJob: Job? = null
+    private var voiceFadeJob: Job? = null
     private var currentAlarm: AlarmEntity? = null
     private var voiceAfterAlarmStarted = false
+    private var voiceHasPlayedThisRing = false
 
     override fun onCreate() {
         super.onCreate()
@@ -117,6 +119,7 @@ class RingingService : Service() {
             val alarm = AlarmAppContainer.repository(applicationContext).getAlarm(alarmId)
             currentAlarm = alarm
             voiceAfterAlarmStarted = false
+            voiceHasPlayedThisRing = false
             requestAlarmAudioFocus()
             startRingingAudio(alarm)
             val pattern = alarm?.vibrationPattern ?: VibrationPatterns.DEFAULT
@@ -130,33 +133,46 @@ class RingingService : Service() {
         if (mediaPlayer?.isPlaying == true) return
 
         val voiceUri = alarm?.localAudioUri?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        val volumePercent = alarm?.alarmVolumePercent ?: 100
-        if (volumePercent <= 0) {
-            audioSequenceActive = false
-            mediaPlayer?.release()
-            mediaPlayer = null
-            Log.i(TAG, "Ringing audio muted by per-alarm volume id=${alarm?.id}")
+        val playMode = alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY
+        val alarmVolumePercent = alarm?.alarmVolumePercent ?: 100
+        val voiceVolumePercent = alarm?.voiceVolumePercent ?: 100
+        if (playMode == AlarmPlayModes.ALARM_ONLY && alarmVolumePercent <= 0) {
+            stopMediaOnly()
+            Log.i(TAG, "Ringing alarm tone muted by per-alarm volume id=${alarm?.id}")
             return
         }
         Log.i(
             TAG,
-            "Starting ringing audio playMode=${alarm?.playMode ?: AlarmPlayModes.ALARM_ONLY} hasVoiceAudio=${voiceUri != null} volume=$volumePercent",
+            "Starting ringing audio playMode=$playMode hasVoiceAudio=${voiceUri != null} alarmVolume=$alarmVolumePercent voiceVolume=$voiceVolumePercent",
         )
         when {
-            alarm?.playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
+            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null && voiceVolumePercent > 0 -> {
                 startVoiceLoop(voiceUri, alarm)
             }
 
-            alarm?.playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
-                startAlarmToneLoop(alarm)
+            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri != null -> {
+                stopMediaOnly()
+                Log.i(TAG, "Voice-only alarm muted by per-voice volume id=${alarm?.id}")
             }
 
-            alarm?.playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
+            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri != null -> {
+                if (alarmVolumePercent > 0) {
+                    startAlarmToneLoop(alarm)
+                } else if (voiceVolumePercent > 0) {
+                    voiceAfterAlarmStarted = true
+                    startVoiceLoop(voiceUri, alarm)
+                } else {
+                    stopMediaOnly()
+                    Log.i(TAG, "Alarm+voice audio muted by per-alarm settings id=${alarm?.id}")
+                }
+            }
+
+            playMode == AlarmPlayModes.VOICE_ONLY && voiceUri == null -> {
                 Log.w(TAG, "Voice-only alarm has no local voice audio; falling back to bundled alarm")
                 startAlarmToneLoop(alarm)
             }
 
-            alarm?.playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
+            playMode == AlarmPlayModes.ALARM_VOICE && voiceUri == null -> {
                 Log.w(TAG, "Alarm+voice alarm has no local voice audio; falling back to bundled alarm")
                 startAlarmToneLoop(alarm)
             }
@@ -169,6 +185,7 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
+        cancelVoiceFadeJob()
         mediaPlayer?.release()
         mediaPlayer = createAlarmTonePlayer(alarm, looping = true)?.apply {
             applyAlarmVolume(alarm)
@@ -185,14 +202,20 @@ class RingingService : Service() {
         audioSequenceActive = false
         voiceLoopActive = true
         cancelVoiceRepeatJob()
+        cancelVoiceFadeJob()
         mediaPlayer?.release()
         val repeatVoice = alarm?.voiceRepeat != false
+        val shouldFadeIn = !voiceHasPlayedThisRing
         mediaPlayer = createVoicePlayer(voiceUri)?.apply {
-            applyAlarmVolume(alarm)
+            voiceHasPlayedThisRing = true
+            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
             isLooping = false
             setOnCompletionListener { completed ->
                 completed.release()
-                if (mediaPlayer === completed) mediaPlayer = null
+                if (mediaPlayer === completed) {
+                    cancelVoiceFadeJob()
+                    mediaPlayer = null
+                }
                 if (repeatVoice && voiceLoopActive) {
                     scheduleVoiceRepeat(voiceUri, alarm)
                 }
@@ -222,9 +245,15 @@ class RingingService : Service() {
         voiceRepeatJob = null
     }
 
+    private fun cancelVoiceFadeJob() {
+        voiceFadeJob?.cancel()
+        voiceFadeJob = null
+    }
+
     private fun startAlarmVoiceSequence(voiceUri: Uri, alarm: AlarmEntity?) {
         voiceLoopActive = false
         cancelVoiceRepeatJob()
+        cancelVoiceFadeJob()
         audioSequenceActive = true
         mediaPlayer?.release()
         playSequenceStep(voiceUri = voiceUri, alarm = alarm, playAlarmTone = true)
@@ -246,11 +275,20 @@ class RingingService : Service() {
         }
 
         mediaPlayer = nextPlayer.apply {
-            applyAlarmVolume(alarm)
+            if (playAlarmTone) {
+                applyAlarmVolume(alarm)
+            } else {
+                val shouldFadeIn = !voiceHasPlayedThisRing
+                voiceHasPlayedThisRing = true
+                applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
+            }
             isLooping = false
             setOnCompletionListener { completed ->
                 completed.release()
-                if (mediaPlayer === completed) mediaPlayer = null
+                if (mediaPlayer === completed) {
+                    if (!playAlarmTone) cancelVoiceFadeJob()
+                    mediaPlayer = null
+                }
                 playSequenceStep(voiceUri, alarm, playAlarmTone = !playAlarmTone)
             }
             start()
@@ -306,6 +344,30 @@ class RingingService : Service() {
     private fun MediaPlayer.applyAlarmVolume(alarm: AlarmEntity?) {
         val volume = ((alarm?.alarmVolumePercent ?: 100).coerceIn(0, 100)) / 100f
         setVolume(volume, volume)
+    }
+
+    private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?, fadeIn: Boolean) {
+        val targetVolume = ((alarm?.voiceVolumePercent ?: 100).coerceIn(0, 100)) / 100f
+        if (!fadeIn || targetVolume <= VOICE_FADE_MIN_START_VOLUME) {
+            player.setVolume(targetVolume, targetVolume)
+            return
+        }
+
+        val startVolume = maxOf(
+            VOICE_FADE_MIN_START_VOLUME,
+            targetVolume * VOICE_FADE_START_RATIO,
+        ).coerceAtMost(targetVolume)
+        player.setVolume(startVolume, startVolume)
+        voiceFadeJob = serviceScope.launch {
+            repeat(VOICE_FADE_STEPS) { index ->
+                delay(VOICE_FADE_IN_MS / VOICE_FADE_STEPS)
+                if (mediaPlayer !== player) return@launch
+                val progress = (index + 1).toFloat() / VOICE_FADE_STEPS
+                val volume = startVolume + ((targetVolume - startVolume) * progress)
+                runCatching { player.setVolume(volume, volume) }
+            }
+            if (mediaPlayer === player) voiceFadeJob = null
+        }
     }
 
     private fun startVibration(patternName: String) {
@@ -369,11 +431,16 @@ class RingingService : Service() {
             return
         }
         mediaPlayer = player.apply {
-            applyAlarmVolume(alarm)
+            val shouldFadeIn = !voiceHasPlayedThisRing
+            voiceHasPlayedThisRing = true
+            applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
             isLooping = false
             setOnCompletionListener { completed ->
                 completed.release()
-                if (mediaPlayer === completed) mediaPlayer = null
+                if (mediaPlayer === completed) {
+                    cancelVoiceFadeJob()
+                    mediaPlayer = null
+                }
                 serviceScope.launch {
                     finishDismiss(alarmId, startId)
                 }
@@ -415,9 +482,15 @@ class RingingService : Service() {
     }
 
     private fun stopMediaAndVibration() {
+        stopMediaOnly()
+        vibrator?.cancel()
+    }
+
+    private fun stopMediaOnly() {
         audioSequenceActive = false
         voiceLoopActive = false
         cancelVoiceRepeatJob()
+        cancelVoiceFadeJob()
         mediaPlayer?.run {
             runCatching {
                 if (isPlaying) stop()
@@ -425,7 +498,6 @@ class RingingService : Service() {
             release()
         }
         mediaPlayer = null
-        vibrator?.cancel()
     }
 
     private fun requestAlarmAudioFocus() {
@@ -469,6 +541,10 @@ class RingingService : Service() {
     companion object {
         private const val RINGING_NOTIFICATION_ID = 1001
         private const val VOICE_REPEAT_GAP_MS = 900L
+        private const val VOICE_FADE_IN_MS = 6_000L
+        private const val VOICE_FADE_STEPS = 12
+        private const val VOICE_FADE_START_RATIO = 0.45f
+        private const val VOICE_FADE_MIN_START_VOLUME = 0.35f
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {

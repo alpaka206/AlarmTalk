@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -78,28 +77,20 @@ internal fun LoginPermissionGate(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "알람 권한을 허용해 주세요",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Text(
-                        text = "정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                ModalDialogTitle(
+                    title = "알람 권한을 허용해 주세요",
+                    onDismiss = { visible = false },
+                )
+                Text(
+                    text = "정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 PermissionPanel(
                     permissions = permissions,
                     onRequestPermission = onRequestPermission,
                     onRequestAllPermissions = onRequestAllPermissions,
                 )
-                TextButton(
-                    onClick = { visible = false },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("나중에")
-                }
             }
         }
     }

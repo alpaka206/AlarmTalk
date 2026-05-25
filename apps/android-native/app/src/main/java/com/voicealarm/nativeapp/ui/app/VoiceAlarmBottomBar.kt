@@ -67,7 +67,7 @@ internal fun VoiceAlarmBottomBar(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Mic,
-                label = "음성",
+                label = "목소리",
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )

@@ -661,8 +661,8 @@ describe('GET /voice/family — 가족 음성 프로필', () => {
         status: 'ready',
         user_id: 'user-2',
         owner_name: '엄마',
-        relationship_label: '엄마',
-        listener_title: '딸',
+        relationship_label: null,
+        listener_title: null,
         viewer_relationship_raw: null,
         viewer_listener_raw: null,
       },
@@ -672,6 +672,8 @@ describe('GET /voice/family — 가족 음성 프로필', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.profiles[0].needs_viewer_info).toBe(true);
+    expect(body.profiles[0].relationship_label).toBeNull();
+    expect(body.profiles[0].listener_title).toBeNull();
     expect(body.profiles[0].viewer_relationship_raw).toBeUndefined();
   });
 

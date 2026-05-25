@@ -23,6 +23,7 @@ data class TtsGenerateRequest(
     @SerializedName("fortune_birth_date") val fortuneBirthDate: String? = null,
     @SerializedName("fortune_birth_time") val fortuneBirthTime: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    @SerializedName("target_user_id") val targetUserId: String? = null,
 )
 
 data class TtsGenerateResponse(

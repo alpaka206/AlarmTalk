@@ -43,6 +43,7 @@ import com.voicealarm.nativeapp.network.VoiceAlarmApiClient
 import com.voicealarm.nativeapp.network.VoiceProfile
 import com.voicealarm.nativeapp.network.VoiceProfileUpdateRequest
 import com.voicealarm.nativeapp.network.VoucherItem
+import com.voicealarm.nativeapp.network.trimmedOrNull
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -60,6 +61,44 @@ import androidx.compose.runtime.setValue
 
 internal fun MainViewModel.refreshCharacterAndBilling() {
     refreshCharacterAndBillingData(showMessage = true)
+}
+
+internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
+    val authorization = bearerOrMessage("공유 코드 정보를 불러오려면 먼저 로그인해 주세요") ?: return vouchers
+    if (billingBusy || socialBusy) return vouchers
+    billingBusy = true
+    socialBusy = true
+    return try {
+        coroutineScope {
+            val subscription = async { api.getSubscription(authorization) }
+            val freshVouchers = async { api.listVouchers(authorization).vouchers }
+            val group = async {
+                runCatching {
+                    api.getFamilyGroup(authorization)
+                }.onFailure { error ->
+                    Log.w(TAG, "Failed to refresh family group before voucher share", error)
+                }.getOrNull()
+            }
+            val updatedSubscription = subscription.await()
+            val updatedVouchers = freshVouchers.await()
+            val updatedGroup = group.await()
+            subscriptionResponse = updatedSubscription
+            saveSubscriptionSnapshot(updatedSubscription)
+            vouchers = updatedVouchers
+            updatedGroup?.let {
+                familyGroup = it
+                saveFamilyGroupSnapshot(it)
+            }
+            updatedVouchers
+        }
+    } catch (error: Throwable) {
+        Log.e(TAG, "Failed to refresh share code data", error)
+        message = userFacingError(error, "공유 코드 정보를 불러오지 못했어요")
+        vouchers
+    } finally {
+        billingBusy = false
+        socialBusy = false
+    }
 }
 
 internal fun MainViewModel.preloadCharacterAndBilling() {
@@ -103,11 +142,11 @@ internal fun MainViewModel.syncCharacterEvents() {
         }
         characterBusy = false
         syncResult.onSuccess { result ->
-            message = "XP 동기화: 완료 ${result.synced}개, 실패 ${result.failed}개"
+            message = "성장 기록을 반영했어요. 실패한 기록 ${result.failed}개는 다시 시도해 주세요."
             refreshCharacterAndBillingData(showMessage = false)
         }.onFailure { error ->
             Log.e(TAG, "Character event sync failed", error)
-            message = userFacingError(error, "XP 동기화에 실패했어요")
+            message = userFacingError(error, "성장 기록을 반영하지 못했어요")
         }
     }
 }
@@ -129,6 +168,7 @@ private suspend fun MainViewModel.loadCharacterBillingSnapshot(
 private fun MainViewModel.applyCharacterBillingSnapshot(snapshot: CharacterBillingSnapshot) {
     characterResponse = snapshot.character
     subscriptionResponse = snapshot.subscription
+    saveSubscriptionSnapshot(snapshot.subscription)
     vouchers = snapshot.vouchers
 }
 
@@ -178,16 +218,25 @@ internal fun MainViewModel.syncPendingCharacterEventsSilently() {
 
 internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage("코드를 등록하려면 먼저 로그인해 주세요") ?: return
+    val trimmedCode = code.trim()
+    if (trimmedCode.isBlank()) {
+        message = "코드를 입력해 주세요."
+        return
+    }
     viewModelScope.launch {
         billingBusy = true
         runCatching {
-            api.registerCode(authorization, CodeRegisterRequest(code.trim()))
+            api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
             message = "코드를 등록했어요"
             refreshCharacterBillingAfterMutation(authorization, "code registration")
             refreshSocial()
             refreshAppSession()
-            navigateHomeTick++
+            if (response.type == "invite" || trimmedCode.startsWith("INV-", ignoreCase = true)) {
+                navigateSharedPassTick++
+            } else {
+                navigateHomeTick++
+            }
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
             message = userFacingError(error, "코드 등록에 실패했어요")
@@ -198,6 +247,10 @@ internal fun MainViewModel.registerCode(code: String) {
 
 internal fun MainViewModel.refreshNotes() {
     refreshNotesData(showMessage = true)
+}
+
+internal fun MainViewModel.refreshNotesSilently() {
+    refreshNotesData(showMessage = false)
 }
 
 internal fun MainViewModel.preloadNotes() {
@@ -232,8 +285,9 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
 
 internal fun MainViewModel.sendNote(receiverId: String, text: String) {
     val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val normalizedReceiverId = receiverId.trim()
     val trimmedText = text.trim()
-    if (receiverId.isBlank()) {
+    if (normalizedReceiverId.isBlank()) {
         message = "받는 사람을 선택해 주세요"
         return
     }
@@ -246,7 +300,7 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
         runCatching {
             api.sendNote(
                 authorization = authorization,
-                request = SendNoteRequest(receiverId = receiverId, text = trimmedText),
+                request = SendNoteRequest(receiverId = normalizedReceiverId, text = trimmedText),
             )
         }.onSuccess {
             message = "메시지를 보냈어요"
@@ -261,8 +315,10 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
 
 internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
     val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val normalizedReceiverId = receiverId.trim()
+    val normalizedVoiceProfileId = voiceProfileId.trim()
     val trimmedText = text.trim()
-    if (receiverId.isBlank()) {
+    if (normalizedReceiverId.isBlank()) {
         message = "받는 사람을 선택해 주세요"
         return
     }
@@ -271,10 +327,10 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
         return
     }
     if (trimmedText.length > 200) {
-        message = "목소리 메시지는 200자까지 보낼 수 있어요"
+        message = "음성 메시지는 200자까지 보낼 수 있어요"
         return
     }
-    if (voiceProfileId.isBlank()) {
+    if (normalizedVoiceProfileId.isBlank()) {
         message = "목소리를 선택해 주세요"
         return
     }
@@ -285,7 +341,7 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
                 api.generateTts(
                     authorization = authorization,
                     request = TtsGenerateRequest(
-                        voiceProfileId = voiceProfileId,
+                        voiceProfileId = normalizedVoiceProfileId,
                         text = trimmedText,
                         category = "custom",
                         language = "ko",
@@ -297,17 +353,17 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
             api.sendNote(
                 authorization = authorization,
                 request = SendNoteRequest(
-                    receiverId = receiverId,
+                    receiverId = normalizedReceiverId,
                     text = trimmedText,
-                    audioUrl = audioUrl,
+                    audioUrl = audioUrl.trimmedOrNull(),
                 ),
             )
         }.onSuccess {
-            message = "목소리 메시지를 보냈어요"
+            message = "음성 메시지를 보냈어요"
             refreshNotes()
         }.onFailure { error ->
             Log.e(TAG, "Failed to send TTS note", error)
-            message = userFacingError(error, "목소리 메시지 전송에 실패했어요")
+            message = userFacingError(error, "음성 메시지 전송에 실패했어요")
         }
         noteBusy = false
     }
@@ -348,10 +404,12 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             api.checkoutPlan(authorization, CheckoutRequest(planKey = planKey, gift = gift))
         }.onSuccess { response ->
             if (!gift) response.subscription?.let { subscription ->
-                subscriptionResponse = BillingSubscriptionResponse(
+                val updatedSubscription = BillingSubscriptionResponse(
                     subscription = subscription,
                     plan = response.plan,
                 )
+                subscriptionResponse = updatedSubscription
+                saveSubscriptionSnapshot(updatedSubscription)
             }
             response.voucher?.let { voucher ->
                 vouchers = listOf(
@@ -377,7 +435,11 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
-                navigateHomeTick++
+                if (response.plan.isSharedPassPlan()) {
+                    navigateSharedPassTick++
+                } else {
+                    navigateHomeTick++
+                }
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
@@ -414,6 +476,9 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         billingBusy = false
     }
 }
+
+private fun com.voicealarm.nativeapp.network.BillingPlan.isSharedPassPlan(): Boolean =
+    key in setOf("couple", "family") || planType in setOf("couple", "family")
 
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
     val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return

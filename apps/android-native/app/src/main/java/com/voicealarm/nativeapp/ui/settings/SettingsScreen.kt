@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -51,7 +51,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
 import com.voicealarm.nativeapp.data.DynamicPromptPreferenceStore
+import com.voicealarm.nativeapp.data.toDynamicPromptSettings
 import com.voicealarm.nativeapp.network.AuthSession
+import com.voicealarm.nativeapp.network.DynamicPromptSettings
 import com.voicealarm.nativeapp.network.FamilyAlarmQuietWindow
 
 @Composable
@@ -59,13 +61,10 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
-    permissions: PermissionSnapshot,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
-    onRequestPermission: (PermissionTarget) -> Unit,
-    onRequestAllPermissions: () -> Unit,
     onEditNickname: () -> Unit,
-    onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
+    onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -74,7 +73,7 @@ internal fun SettingsScreen(
     var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
-    var showFamilyAlarmDialog by remember { mutableStateOf(false) }
+    var showFortuneInfoDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -105,7 +104,7 @@ internal fun SettingsScreen(
         item {
             SettingsCard(title = "화면") {
                 SettingsRow(
-                    label = "화면 모드",
+                    label = "테마",
                     value = themeModeLabel(themeMode),
                     onClick = { showThemeDialog = true },
                 )
@@ -113,51 +112,29 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "AI 문구") {
+            SettingsCard(title = "랜덤 문구 정보") {
                 SettingsRow(
-                    label = "날씨 위치",
+                    label = "날씨 지역",
                     value = weatherLocationSettingsLabel(
                         promptPreferences.weatherCountry,
                         promptPreferences.weatherCity,
                     ),
                     onClick = { showWeatherLocationDialog = true },
                 )
+                HorizontalDivider()
+                SettingsRow(
+                    label = "운세 정보",
+                    value = fortuneInfoSettingsLabel(
+                        promptPreferences.fortuneGender,
+                        promptPreferences.fortuneBirthDate,
+                        promptPreferences.fortuneBirthTime,
+                    ),
+                    onClick = { showFortuneInfoDialog = true },
+                )
             }
-        }
-
-        item {
-            PermissionPanel(
-                permissions = permissions,
-                onRequestPermission = onRequestPermission,
-                onRequestAllPermissions = onRequestAllPermissions,
-            )
         }
 
         if (authSession != null) {
-            item {
-                SettingsCard(title = "공유 알람") {
-                    SettingsToggleRow(
-                        label = "상대방 알람 허용",
-                        value = if (authSession.user.allowFamilyAlarms) "허용" else "꺼짐",
-                        checked = authSession.user.allowFamilyAlarms,
-                        onCheckedChange = {
-                            onChangeFamilyAlarmSettings(
-                                it,
-                                authSession.user.familyAlarmQuietWindows,
-                            )
-                        },
-                    )
-                    if (authSession.user.allowFamilyAlarms) {
-                        HorizontalDivider()
-                        SettingsRow(
-                            label = "설정 불가 시간",
-                            value = quietScheduleLabel(authSession.user.familyAlarmQuietWindows),
-                            onClick = { showFamilyAlarmDialog = true },
-                        )
-                    }
-                }
-            }
-
             item {
                 SettingsCard(title = "계정") {
                     SettingsRow(
@@ -206,21 +183,28 @@ internal fun SettingsScreen(
             onConfirm = { country, city ->
                 promptPreferenceStore.saveWeatherLocation(country, city)
                 promptPreferences = promptPreferenceStore.read()
+                onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
                 showWeatherLocationDialog = false
             },
         )
     }
 
-    if (showFamilyAlarmDialog && authSession != null) {
-        FamilyAlarmQuietTimeDialog(
-            initialWindows = authSession.user.familyAlarmQuietWindows,
-            onDismiss = { showFamilyAlarmDialog = false },
-            onConfirm = { windows ->
-                showFamilyAlarmDialog = false
-                onChangeFamilyAlarmSettings(true, windows)
+    if (showFortuneInfoDialog) {
+        FortuneInfoDialog(
+            gender = promptPreferences.fortuneGender,
+            birthDate = promptPreferences.fortuneBirthDate,
+            birthTime = promptPreferences.fortuneBirthTime,
+            description = "운세가 들어간 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
+            onDismissWithoutSave = { showFortuneInfoDialog = false },
+            onConfirm = { gender, birthDate, birthTime ->
+                promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
+                promptPreferences = promptPreferenceStore.read()
+                onUpdateDynamicPromptSettings(promptPreferences.toDynamicPromptSettings())
+                showFortuneInfoDialog = false
             },
         )
     }
+
 }
 
 @Composable
@@ -323,70 +307,98 @@ private fun WeatherLocationPreferenceDialog(
     val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("날씨 위치") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "랜덤 문구에서 날씨가 필요한 옵션을 고르면 이 위치를 재사용해요.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                    value = draftCountry,
-                    onValueChange = { draftCountry = it.take(30) },
-                    label = { Text("나라") },
-                    placeholder = { Text("예: 대한민국") },
-                    singleLine = true,
-                    isError = countryError,
-                    supportingText = {
-                        if (countryError) Text("필수 입력 값입니다.")
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = draftCity,
-                    onValueChange = { draftCity = it.take(30) },
-                    label = { Text("도시") },
-                    placeholder = { Text("예: 서울") },
-                    singleLine = true,
-                    isError = cityError,
-                    supportingText = {
-                        if (cityError) Text("필수 입력 값입니다.")
-                    },
-                    shape = WakerInputShape,
-                    colors = wakerOutlinedTextFieldColors(),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    submitted = true
-                    if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
-                        onConfirm(draftCountry.trim(), draftCity.trim())
-                    }
-                },
-                shape = WakerButtonShape,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .widthIn(max = 430.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("저장")
+                ModalDialogTitle("날씨 지역", onDismiss = onDismiss)
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "랜덤 문구의 기준 지역",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = "날씨가 들어간 문구를 만들 때 이 지역을 사용해요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = draftCountry,
+                        onValueChange = { draftCountry = it.take(30) },
+                        label = { Text("나라") },
+                        placeholder = { Text("예: 대한민국") },
+                        singleLine = true,
+                        isError = countryError,
+                        supportingText = {
+                            if (countryError) Text("꼭 입력해 주세요.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = draftCity,
+                        onValueChange = { draftCity = it.take(30) },
+                        label = { Text("도시") },
+                        placeholder = { Text("예: 서울") },
+                        singleLine = true,
+                        isError = cityError,
+                        supportingText = {
+                            if (cityError) Text("꼭 입력해 주세요.")
+                        },
+                        shape = WakerInputShape,
+                        colors = wakerOutlinedTextFieldColors(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
+                            onConfirm(draftCountry.trim(), draftCity.trim())
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text("저장")
+                }
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("취소")
-            }
-        },
-    )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FamilyAlarmQuietTimeDialog(
+internal fun FamilyAlarmQuietTimeDialog(
     initialWindows: List<FamilyAlarmQuietWindow>,
     onDismiss: () -> Unit,
     onConfirm: (List<FamilyAlarmQuietWindow>) -> Unit,
@@ -425,13 +437,12 @@ private fun FamilyAlarmQuietTimeDialog(
                     .padding(horizontal = 22.dp, vertical = 22.dp)
                     .heightIn(max = 620.dp),
             ) {
-                Text(
-                    text = "설정 불가 시간",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                ModalDialogTitle(
+                    title = "알람 받지 않을 시간",
+                    onDismiss = onDismiss,
                 )
                 Text(
-                    text = "선택한 시간대에는 다른 사람이 내게 알람을 만들 수 없어요.",
+                    text = "선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
@@ -489,17 +500,10 @@ private fun FamilyAlarmQuietTimeDialog(
                         .padding(top = 18.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("취소")
-                    }
                     Button(
                         onClick = { onConfirm(drafts.map { it.toWindow() }) },
                         enabled = valid,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
                         Text("저장")
@@ -529,17 +533,15 @@ private fun FamilyAlarmQuietTimeDialog(
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        text = if (target.isStart) "시작 시간" else "종료 시간",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                    ModalDialogTitle(
+                        title = if (target.isStart) "시작 시간" else "종료 시간",
+                        onDismiss = { timePickerTarget = null },
                     )
                     TimePicker(state = state)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     ) {
-                        TextButton(onClick = { timePickerTarget = null }) { Text("취소") }
                         TextButton(
                             onClick = {
                                 val hh = String.format(Locale.US, "%02d", state.hour)
@@ -722,7 +724,7 @@ private fun splitTime(value: String): Pair<String, String> {
 private fun twoDigit(value: String): String =
     value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
 
-private fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
+internal fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
     if (windows.isEmpty()) return "없음"
     val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
     val hidden = windows.size - 2
@@ -734,6 +736,14 @@ private fun weatherLocationSettingsLabel(country: String, city: String): String 
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" ")
+    return value.ifBlank { "미설정" }
+}
+
+private fun fortuneInfoSettingsLabel(gender: String, birthDate: String, birthTime: String): String {
+    val value = listOf(gender, birthDate, birthTime)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .joinToString(" · ")
     return value.ifBlank { "미설정" }
 }
 

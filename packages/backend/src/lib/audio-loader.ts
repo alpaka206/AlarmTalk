@@ -16,11 +16,12 @@ export async function loadAudioBytes(
 ): Promise<{ bytes: Uint8Array; format: string } | null> {
   let bytes: Uint8Array;
   let format = audioFormatFromUrl(audioUrl);
+  const voiceBucket = c.env?.VOICE_BUCKET;
 
   if (audioUrl.startsWith('r2://')) {
-    if (!c.env.VOICE_BUCKET) return null;
+    if (!voiceBucket) return null;
     const objectKey = audioUrl.slice('r2://'.length);
-    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(objectKey);
+    const stored = await new R2VoiceStorage(voiceBucket).get(objectKey);
     if (!stored) return null;
     bytes = stored.bytes;
     format = audioFormatFromMime(stored.meta.mimeType) ?? format;
@@ -29,8 +30,8 @@ export async function loadAudioBytes(
     if (!audioRes.ok) return null;
     bytes = new Uint8Array(await audioRes.arrayBuffer());
     format = audioFormatFromMime(audioRes.headers.get('content-type')) ?? format;
-  } else if (c.env.VOICE_BUCKET) {
-    const stored = await new R2VoiceStorage(c.env.VOICE_BUCKET).get(audioUrl);
+  } else if (voiceBucket) {
+    const stored = await new R2VoiceStorage(voiceBucket).get(audioUrl);
     if (!stored) return null;
     bytes = stored.bytes;
     format = audioFormatFromMime(stored.meta.mimeType) ?? format;
