@@ -93,10 +93,12 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             familyGroup = nextFamilyGroup
             accessSnapshotStore.updateFamilyGroup(userID: userID, response: nextFamilyGroup)
-            let currentUserID = userID
-            if selectedReceiverID == nil {
-                selectedReceiverID = familyGroup?.members.first { $0.userId != currentUserID }?.userId
-            }
+            selectedReceiverID = Self.normalizedMessageReceiverID(
+                selected: selectedReceiverID,
+                members: nextFamilyGroup.members,
+                currentUserID: userID,
+                currentUserEmail: session?.user.email ?? ""
+            )
         } catch {
             messages.append("가족 그룹: \(error.localizedDescription)")
         }
@@ -158,6 +160,30 @@ final class SocialFeatureViewModel: ObservableObject {
     private func normalizedUserID(_ userID: String?) -> String? {
         let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return normalized.isEmpty ? nil : normalized
+    }
+
+    static func normalizedMessageReceiverID(
+        selected: String?,
+        members: [FamilyGroupMember],
+        currentUserID: String,
+        currentUserEmail: String
+    ) -> String? {
+        let currentID = currentUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentEmail = currentUserEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let recipientIDs = members.compactMap { member -> String? in
+            let memberID = member.userId.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !memberID.isEmpty, memberID != currentID else { return nil }
+            let memberEmail = member.email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !currentEmail.isEmpty && memberEmail == currentEmail {
+                return nil
+            }
+            return memberID
+        }
+        let selectedID = selected?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !selectedID.isEmpty, recipientIDs.contains(selectedID) {
+            return selectedID
+        }
+        return recipientIDs.first
     }
 
     func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async {

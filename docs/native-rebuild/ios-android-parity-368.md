@@ -93,6 +93,10 @@
 - iOS text-message sending now mirrors Android's `sendNote` guardrails by
   trimming the selected receiver ID before validation and before the `notes`
   request is sent.
+- iOS message recipient selection now mirrors Android's `remember(recipients)`
+  behavior: after a family-group refresh, a removed/stale recipient is replaced
+  with the first current recipient and the current user is excluded by both id
+  and email.
 - iOS fortune input now uses the Android-style date picker, preset birth-time
   choices, exact time picker, and "time unknown" option in both settings and
   alarm-editor random prompt flows.
