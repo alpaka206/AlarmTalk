@@ -59,6 +59,9 @@
   alarms are moved to the next valid fire time before rescheduling; expired
   one-shot alarms are disabled and marked failed, matching Android boot-restore
   semantics.
+- iOS fortune input now uses the Android-style date picker, preset birth-time
+  choices, exact time picker, and "time unknown" option in both settings and
+  alarm-editor random prompt flows.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen.
 - Follow-up verification still requires macOS/Xcode because this Windows

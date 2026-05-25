@@ -311,12 +311,14 @@ private struct FortuneInfoPreferenceSheet: View {
     @State private var birthTime = ""
     @State private var submitted = false
 
-    private var birthDateValue: String { birthDate.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var birthTimeValue: String { birthTime.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var birthDateValue: String { FortunePromptInputFormat.normalizedBirthDate(birthDate) }
+    private var birthTimeValue: String { FortunePromptInputFormat.normalizedBirthTime(birthTime) }
     private var isValid: Bool {
-        !gender.isEmpty &&
-            birthDateValue.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil &&
-            birthTimeValue.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil
+        FortunePromptInputFormat.isComplete(
+            gender: gender,
+            birthDate: birthDate,
+            birthTime: birthTime
+        )
     }
 
     var body: some View {
@@ -326,42 +328,16 @@ private struct FortuneInfoPreferenceSheet: View {
                 subtitle: "운세가 들어간 랜덤 깨움말을 만들 때만 사용해요.",
                 onDismiss: onDismiss
             )
-            VStack(alignment: .leading, spacing: 8) {
-                Text("성별")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                Picker("성별", selection: $gender) {
-                    Text("선택").tag("")
-                    Text("남성").tag("남성")
-                    Text("여성").tag("여성")
-                }
-                .pickerStyle(.segmented)
-                if submitted && gender.isEmpty {
-                    Text("성별을 선택해 주세요.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.error)
-                }
-            }
-            SettingsTextField(
-                title: "생년월일",
-                placeholder: "YYYY-MM-DD",
-                text: $birthDate,
-                keyboardType: .numbersAndPunctuation,
-                showError: submitted && birthDateValue.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) == nil,
-                errorText: "YYYY-MM-DD 형식으로 입력해 주세요."
-            )
-            SettingsTextField(
-                title: "태어난 시간",
-                placeholder: "HH:mm",
-                text: $birthTime,
-                keyboardType: .numbersAndPunctuation,
-                showError: submitted && birthTimeValue.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) == nil,
-                errorText: "HH:mm 형식으로 입력해 주세요."
+            FortunePromptInputFields(
+                gender: $gender,
+                birthDate: $birthDate,
+                birthTime: $birthTime,
+                submitted: submitted
             )
             Button("저장") {
                 submitted = true
                 guard isValid else { return }
-                onSave(gender, birthDateValue, birthTimeValue)
+                onSave(FortunePromptInputFormat.normalizedGender(gender), birthDateValue, birthTimeValue)
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
@@ -371,9 +347,9 @@ private struct FortuneInfoPreferenceSheet: View {
         .padding(20)
         .background(VoiceAlarmTheme.background)
         .onAppear {
-            gender = initial.fortuneGender
-            birthDate = initial.fortuneBirthDate
-            birthTime = initial.fortuneBirthTime
+            gender = FortunePromptInputFormat.normalizedGender(initial.fortuneGender)
+            birthDate = FortunePromptInputFormat.normalizedBirthDate(initial.fortuneBirthDate)
+            birthTime = FortunePromptInputFormat.normalizedBirthTime(initial.fortuneBirthTime)
         }
     }
 }

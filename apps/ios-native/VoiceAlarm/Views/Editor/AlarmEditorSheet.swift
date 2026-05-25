@@ -161,16 +161,12 @@ struct AlarmEditorSheet: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("운세 정보")
                                     .font(theme.typography.titleSmall)
-                                Picker("성별", selection: $voiceStudio.fortuneGender) {
-                                    Text("선택").tag("")
-                                    Text("남성").tag("남성")
-                                    Text("여성").tag("여성")
-                                }
-                                .pickerStyle(.segmented)
-                                TextField("생년월일 (YYYY-MM-DD)", text: $voiceStudio.fortuneBirthDate)
-                                    .keyboardType(.numbersAndPunctuation)
-                                TextField("태어난 시간 (HH:mm)", text: $voiceStudio.fortuneBirthTime)
-                                    .keyboardType(.numbersAndPunctuation)
+                                FortunePromptInputFields(
+                                    gender: $voiceStudio.fortuneGender,
+                                    birthDate: $voiceStudio.fortuneBirthDate,
+                                    birthTime: $voiceStudio.fortuneBirthTime,
+                                    helperText: "운세가 들어간 깨움말을 만들 때만 사용해요."
+                                )
                                 if !voiceStudio.hasFortuneInfo || targetFortuneReady {
                                     Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
                                         .font(theme.typography.bodySmall)
