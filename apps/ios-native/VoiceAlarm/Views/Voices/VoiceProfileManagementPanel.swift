@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// VoiceAlarm 의 보이스 프로필 관리 화면.
+/// VoiceAlarm 의 목소리 프로필 관리 화면.
 ///
 /// Android `VoiceProfileManagementPanel.kt` (1158 줄) 의 SwiftUI 포팅. 슬롯 상태,
 /// 프로필 행, 편집/공유/삭제 다이얼로그, 슬롯 부족 시 PlanGate 트리거, errorCode
@@ -169,7 +169,7 @@ struct VoiceProfileManagementPanel: View {
             HStack(spacing: 6) {
                 Image(systemName: isFull ? "exclamationmark.triangle.fill" : "person.crop.circle.badge.checkmark")
                     .foregroundStyle(isFull ? VoiceAlarmTheme.error : VoiceAlarmTheme.primary)
-                Text("보이스 슬롯")
+                Text("목소리 슬롯")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("\(used) / \(max)")
@@ -179,7 +179,7 @@ struct VoiceProfileManagementPanel: View {
             ProgressView(value: progress)
                 .tint(isFull ? VoiceAlarmTheme.error : VoiceAlarmTheme.primary)
             if isFull {
-                Text("슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요.")
+                Text("슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요.")
                     .font(.footnote)
                     .foregroundStyle(VoiceAlarmTheme.error)
             } else {
@@ -246,7 +246,7 @@ struct VoiceProfileManagementPanel: View {
     private var ownProfilesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("내 보이스")
+                Text("내 목소리")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Button("새로고침") {
@@ -298,7 +298,7 @@ struct VoiceProfileManagementPanel: View {
 
 // MARK: - Row
 
-/// 단일 보이스 프로필 행. Android `VoiceProfileRow` 와 동일한 슬롯.
+/// 단일 목소리 프로필 행. Android `VoiceProfileRow` 와 동일한 슬롯.
 private struct VoiceProfileRow: View {
     let profile: VoiceProfile
     let isSelected: Bool
@@ -352,7 +352,7 @@ private struct VoiceProfileRow: View {
             }
 
             HStack(spacing: 8) {
-                Button(isSelected ? "선택됨" : "이 보이스 사용", action: onSelect)
+                Button(isSelected ? "선택됨" : "이 목소리 사용", action: onSelect)
                     .buttonStyle(.bordered)
                     .tint(isSelected ? VoiceAlarmTheme.primary : VoiceAlarmTheme.textSecondary)
                     .disabled(isSelected)
@@ -504,22 +504,6 @@ private struct FamilyVoiceProfileRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    /// 소유자명 + (관계, 호칭) 정보를 한 줄로 조립.
-    private var detailLine: String {
-        var parts: [String] = []
-        if let owner = profile.ownerName, !owner.isEmpty {
-            parts.append("\(owner) 님의 보이스")
-        } else {
-            parts.append("공유받은 보이스")
-        }
-        if let relation = profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !relation.isEmpty {
-            parts.append("관계 \(relation)")
-        }
-        if let listener = profile.listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !listener.isEmpty {
-            parts.append("호칭 \(listener)")
-        }
-        return parts.joined(separator: " · ")
-    }
 }
 
 // MARK: - Edit dialog
@@ -569,7 +553,7 @@ private struct VoiceProfileEditDialog: View {
                 Text("이름")
                     .font(.caption)
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                TextField("보이스 이름", text: $name)
+                TextField("목소리 이름", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .onChange(of: name) { _, newValue in
                         if newValue.count > 50 {
@@ -656,7 +640,7 @@ private struct VoiceProfileDeleteDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
-                Text("보이스 삭제")
+                Text("목소리 삭제")
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button(action: onCancel) {
@@ -665,9 +649,9 @@ private struct VoiceProfileDeleteDialog: View {
                 }
             }
 
-            Text("'\(profileName)' 보이스를 삭제할까요?")
+            Text("'\(profileName)' 목소리를 삭제할까요?")
                 .font(.subheadline)
-            Text("이 보이스를 쓰는 알람은 자동으로 기본 알람음으로 바뀌고, 서버 음원은 함께 정리됩니다.")
+            Text("이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
                 .font(.footnote)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
 
@@ -841,11 +825,11 @@ struct VoicePlanGateSheet: View {
                 }
                 .accessibilityLabel(Text("닫기"))
             }
-            Text("보이스 슬롯이 가득 찼거나, 본 기능은 유료 플랜에서 사용할 수 있어요.")
+            Text("목소리 슬롯이 가득 찼거나, 본 기능은 유료 플랜에서 사용할 수 있어요.")
                 .font(.subheadline)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
             VStack(alignment: .leading, spacing: 8) {
-                bullet("기존 보이스를 삭제해 자리를 만들어요")
+                bullet("기존 목소리를 삭제해 자리를 만들어요")
                 bullet("Family · Couple 플랜으로 업그레이드해 슬롯을 확장해요")
             }
             Button("플랜 보기", action: onUpgrade)
@@ -880,7 +864,7 @@ struct VoicePlanGateSheet: View {
 
 #Preview("Delete dialog") {
     VoiceProfileDeleteDialog(
-        profileName: "아침 보이스",
+        profileName: "아침 목소리",
         force: .constant(true),
         onCancel: {},
         onConfirm: {}

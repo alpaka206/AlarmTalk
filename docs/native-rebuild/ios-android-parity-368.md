@@ -126,6 +126,8 @@
   character, billing, and shared-pass navigation live only in the profile menu.
 - iOS settings empty weather/fortune labels now use Android's `미설정`
   wording, and the account card no longer shows the extra email row.
+- iOS voice management copy now consistently uses Android's user-facing
+  `목소리` wording, including slot, selection, delete, and plan-gate text.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.
