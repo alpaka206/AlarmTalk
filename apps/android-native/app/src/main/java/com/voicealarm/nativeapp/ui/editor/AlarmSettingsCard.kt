@@ -972,59 +972,97 @@ internal fun FortuneInfoDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(28.dp),
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
             shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
+                    .fillMaxWidth()
                     .heightIn(max = 640.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
                     title = "운세 정보",
                     onDismiss = onDismissWithoutSave,
                 )
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FortuneFieldLabel(text = "성별", error = genderError)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GenderChoice(
-                        label = "남",
-                        selected = draftGender == FortuneGenderMale,
-                        onClick = { draftGender = FortuneGenderMale },
-                        modifier = Modifier.weight(1f),
-                    )
-                    GenderChoice(
-                        label = "여",
-                        selected = draftGender == FortuneGenderFemale,
-                        onClick = { draftGender = FortuneGenderFemale },
-                        modifier = Modifier.weight(1f),
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    border = wakerCardBorder(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "운세 문구에만 사용해요",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.78f),
+                        )
+                    }
+                }
+                FortuneInputSection(title = "성별", error = genderError) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        GenderChoice(
+                            label = "남성",
+                            selected = draftGender == FortuneGenderMale,
+                            onClick = { draftGender = FortuneGenderMale },
+                            modifier = Modifier.weight(1f),
+                        )
+                        GenderChoice(
+                            label = "여성",
+                            selected = draftGender == FortuneGenderFemale,
+                            onClick = { draftGender = FortuneGenderFemale },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                FortuneInputSection(title = "생년월일", error = birthDateError) {
+                    FortuneSelectorRow(
+                        value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
+                        placeholderActive = draftBirthDate.isBlank(),
+                        error = birthDateError,
+                        onClick = { datePickerOpen = true },
                     )
                 }
 
-                FortuneFieldLabel(text = "생년월일", error = birthDateError)
-                FortuneSelectorRow(
-                    value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
-                    placeholderActive = draftBirthDate.isBlank(),
-                    error = birthDateError,
-                    onClick = { datePickerOpen = true },
-                )
-
-                FortuneFieldLabel(text = "태어난 시간", error = birthTimeError)
-                FortuneSelectorRow(
-                    value = if (draftBirthTime.isBlank()) "탭하여 시간 선택" else formatBirthTimeDisplay(draftBirthTime),
-                    placeholderActive = draftBirthTime.isBlank(),
+                FortuneInputSection(
+                    title = "태어난 시간",
                     error = birthTimeError,
-                    onClick = { timePickerOpen = true },
-                )
+                    subtitle = "정확히 모르면 가까운 시간대를 골라도 돼요.",
+                ) {
+                    FortuneTimeChoiceGrid(
+                        selectedValue = draftBirthTime,
+                        onSelect = { draftBirthTime = it },
+                    )
+                    val exactTimePlaceholder = draftBirthTime.isBlank() ||
+                        draftBirthTime == FortuneBirthTimeUnknown
+                    FortuneSelectorRow(
+                        value = if (exactTimePlaceholder) {
+                            "정확한 시간 선택"
+                        } else {
+                            formatBirthTimeDisplay(draftBirthTime)
+                        },
+                        placeholderActive = exactTimePlaceholder,
+                        error = birthTimeError && draftBirthTime.isBlank(),
+                        onClick = { timePickerOpen = true },
+                    )
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1048,6 +1086,8 @@ internal fun FortuneInfoDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
+                        Icon(Icons.Outlined.Save, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
                         Text("저장")
                     }
                 }
@@ -1130,6 +1170,15 @@ internal fun FortuneInfoDialog(
 
 private const val FortuneGenderMale = "남성"
 private const val FortuneGenderFemale = "여성"
+private const val FortuneBirthTimeUnknown = "시간 모름"
+
+private val FortuneBirthTimeChoices = listOf(
+    FortuneBirthTimeUnknown to "시간 모름",
+    "05:00" to "새벽",
+    "09:00" to "오전",
+    "15:00" to "오후",
+    "20:00" to "저녁",
+)
 
 private fun normalizeFortuneGender(value: String): String =
     when (value.trim()) {
@@ -1152,6 +1201,9 @@ private fun normalizeFortuneBirthDate(value: String): String {
 private fun normalizeFortuneBirthTime(value: String): String {
     val trimmed = value.trim()
     if (trimmed.isBlank()) return ""
+    if (trimmed == FortuneBirthTimeUnknown || trimmed == "모름" || trimmed == "알 수 없음") {
+        return FortuneBirthTimeUnknown
+    }
     val digits = trimmed.filter { it.isDigit() }
     return when (digits.length) {
         4 -> "${digits.substring(0, 2)}:${digits.substring(2, 4)}"
@@ -1193,6 +1245,7 @@ private fun formatBirthDateDisplay(value: String): String {
 }
 
 private fun formatBirthTimeDisplay(value: String): String {
+    if (value == FortuneBirthTimeUnknown) return value
     val parts = value.split(":")
     val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
     val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
@@ -1202,13 +1255,124 @@ private fun formatBirthTimeDisplay(value: String): String {
 }
 
 @Composable
-private fun FortuneFieldLabel(text: String, error: Boolean) {
-    Text(
-        text = if (error) "$text · 필수 입력" else text,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-    )
+private fun FortuneInputSection(
+    title: String,
+    error: Boolean,
+    subtitle: String? = null,
+    content: @Composable () -> Unit,
+) {
+    val borderColor = if (error) {
+        MaterialTheme.colorScheme.error
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = if (error) "$title · 필수 입력" else title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun FortuneTimeChoiceGrid(
+    selectedValue: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FortuneTimeChoice(
+                label = FortuneBirthTimeChoices[0].second,
+                value = FortuneBirthTimeChoices[0].first,
+                selected = selectedValue == FortuneBirthTimeChoices[0].first,
+                onClick = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+            FortuneTimeChoice(
+                label = FortuneBirthTimeChoices[1].second,
+                value = FortuneBirthTimeChoices[1].first,
+                selected = selectedValue == FortuneBirthTimeChoices[1].first,
+                onClick = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FortuneBirthTimeChoices.drop(2).forEach { (value, label) ->
+                FortuneTimeChoice(
+                    label = label,
+                    value = value,
+                    selected = selectedValue == value,
+                    onClick = onSelect,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FortuneTimeChoice(
+    label: String,
+    value: String,
+    selected: Boolean,
+    onClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = { onClick(value) },
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)
+            },
+        ),
+        modifier = modifier,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 11.dp),
+        )
+    }
 }
 
 @Composable

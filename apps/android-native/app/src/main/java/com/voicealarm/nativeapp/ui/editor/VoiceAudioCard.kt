@@ -682,20 +682,15 @@ private fun voiceOptionLabel(options: List<Pair<String, String>>, value: String)
 
 private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
-    val base = if (owner == null) {
+    return if (owner == null) {
         "공유받은 목소리"
     } else {
-        "공유받은 목소리 · $owner"
+        "${owner}님에게 공유받은 목소리"
     }
-    if (profile.requiresViewerInfo()) return "$base · 설정 필요"
-    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
-    return relation?.let { "$base · 관계 $it" } ?: base
 }
 
 private fun ownedVoiceDetail(profile: VoiceProfile): String {
-    val base = if (profile.isShared == true) "내 목소리 · 공유 중" else "내 목소리"
-    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
-    return relation?.let { "$base · 관계 $it" } ?: base
+    return if (profile.isShared == true) "내 목소리 · 공유 중" else "내 목소리"
 }
 
 internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =

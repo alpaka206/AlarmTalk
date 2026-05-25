@@ -19,11 +19,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1238,6 +1240,8 @@ internal fun VoiceProfileManagementPanel(
     sharedInfoTarget?.let { profile ->
         SharedVoiceViewerInfoDialog(
             profileName = profile.name,
+            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
+                ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리",
             initialRelationship = profile.relationshipLabel.orEmpty(),
             initialListenerTitle = profile.listenerTitle.orEmpty(),
             onDismiss = { sharedInfoTarget = null },
@@ -1356,6 +1360,7 @@ private fun VoiceProfileEditDialog(
 @Composable
 private fun SharedVoiceViewerInfoDialog(
     profileName: String,
+    sharedFromLabel: String,
     initialRelationship: String,
     initialListenerTitle: String,
     onDismiss: () -> Unit,
@@ -1367,45 +1372,136 @@ private fun SharedVoiceViewerInfoDialog(
     val relationshipError = submitted && draftRelationship.isBlank()
     val listenerError = submitted && draftListener.isBlank()
 
-    VoiceFormDialog(
-        title = "공유받은 목소리 설정",
-        description = "'$profileName' 목소리가 나를 어떻게 부르면 좋을지 정해요.",
-        onDismiss = onDismiss,
-        onConfirm = {
-            submitted = true
-            if (draftRelationship.isNotBlank() && draftListener.isNotBlank()) {
-                onConfirm(draftRelationship.trim(), draftListener.trim())
-            }
-        },
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        OutlinedTextField(
-            value = draftRelationship,
-            onValueChange = { draftRelationship = it.take(30) },
-            label = { Text("나와의 관계") },
-            placeholder = { Text("예: 손주, 자식, 형제") },
-            singleLine = true,
-            isError = relationshipError,
-            supportingText = {
-                if (relationshipError) Text("꼭 입력해 주세요.")
-            },
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = draftListener,
-            onValueChange = { draftListener = it.take(30) },
-            label = { Text("이 목소리가 나를 부를 이름") },
-            placeholder = { Text("예: 지호야, 여보") },
-            singleLine = true,
-            isError = listenerError,
-            supportingText = {
-                if (listenerError) Text("꼭 입력해 주세요.")
-            },
-            shape = WakerInputShape,
-            colors = wakerOutlinedTextFieldColors(),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .widthIn(max = 460.dp),
+            shape = WakerCardShape,
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 620.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "공유받은 목소리 설정",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "알람에서 이 목소리가 나를 어떻게 부를지 정해요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(42.dp),
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                    }
+                }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    border = wakerCardBorder(),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(MaterialTheme.colorScheme.surface, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Mic,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                text = profileName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                text = sharedFromLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.76f),
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = draftRelationship,
+                    onValueChange = { draftRelationship = it.take(30) },
+                    label = { Text("나와의 관계") },
+                    placeholder = { Text("예: 손주, 자식, 형제") },
+                    singleLine = true,
+                    isError = relationshipError,
+                    supportingText = {
+                        if (relationshipError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = draftListener,
+                    onValueChange = { draftListener = it.take(30) },
+                    label = { Text("이 목소리가 나를 부를 이름") },
+                    placeholder = { Text("예: 지호야, 여보") },
+                    singleLine = true,
+                    isError = listenerError,
+                    supportingText = {
+                        if (listenerError) Text("꼭 입력해 주세요.")
+                    },
+                    shape = WakerInputShape,
+                    colors = wakerOutlinedTextFieldColors(),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Button(
+                    onClick = {
+                        submitted = true
+                        if (draftRelationship.isNotBlank() && draftListener.isNotBlank()) {
+                            onConfirm(draftRelationship.trim(), draftListener.trim())
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                ) {
+                    Text("저장")
+                }
+            }
+        }
     }
 }
 
@@ -2112,7 +2208,7 @@ private fun SharedVoiceProfileRow(
                 ) {
                     Text(profile.name, fontWeight = FontWeight.SemiBold)
                     val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-                        ?.let { "$it 님의 목소리" } ?: "공유받은 목소리"
+                        ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리"
                     MutedText(ownerText)
                 }
                 IconButton(onClick = onEdit) {

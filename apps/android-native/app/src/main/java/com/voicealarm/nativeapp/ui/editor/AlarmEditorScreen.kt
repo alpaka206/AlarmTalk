@@ -30,8 +30,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -1197,6 +1199,8 @@ internal fun AlarmEditorScreen(
     sharedVoiceInfoTarget?.let { profile ->
         SharedVoiceInfoRequiredDialog(
             profileName = profile.name,
+            sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
+                ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리",
             initialRelationship = profile.relationshipLabel.orEmpty(),
             initialListenerTitle = profile.listenerTitle.orEmpty(),
             saving = voiceProfileBusy,
@@ -1236,6 +1240,7 @@ internal fun AlarmEditorScreen(
 @Composable
 private fun SharedVoiceInfoRequiredDialog(
     profileName: String,
+    sharedFromLabel: String,
     initialRelationship: String,
     initialListenerTitle: String,
     saving: Boolean,
@@ -1270,30 +1275,33 @@ private fun SharedVoiceInfoRequiredDialog(
                     .fillMaxWidth()
                     .heightIn(max = 620.dp)
                     .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
-                    title = "$profileName 목소리 설정",
+                    title = "목소리 설정",
                     onDismiss = onDismiss,
                 )
-                MutedText("이 목소리가 나와 어떤 관계인지, 나를 어떻게 부르면 좋을지 정해요.")
-                OutlinedButton(
-                    onClick = onPreview,
-                    enabled = !saving && !previewing,
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                     border = wakerCardBorder(),
-                    colors = wakerOutlinedButtonColors(),
                 ) {
-                    if (previewing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = profileName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
-                        Spacer(Modifier.width(8.dp))
-                        Text("재생 중")
-                    } else {
-                        Text("미리듣기")
+                        Text(
+                            text = sharedFromLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.76f),
+                        )
                     }
                 }
                 OutlinedTextField(
@@ -1324,6 +1332,27 @@ private fun SharedVoiceInfoRequiredDialog(
                     colors = wakerOutlinedTextFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                OutlinedButton(
+                    onClick = onPreview,
+                    enabled = !saving && !previewing,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = WakerButtonShape,
+                    border = wakerCardBorder(),
+                    colors = wakerOutlinedButtonColors(),
+                ) {
+                    if (previewing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("재생 중")
+                    } else {
+                        Icon(Icons.Outlined.PlayArrow, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("미리듣기")
+                    }
+                }
                 Button(
                     onClick = {
                         submitted = true
