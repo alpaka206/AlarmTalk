@@ -117,9 +117,16 @@ struct VoiceProfileManagementPanel: View {
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
                 profileName: profile.name,
+                sharedFromLabel: sharedVoiceDetail(profile),
                 initialRelationship: profile.relationshipLabel ?? "",
                 initialListenerTitle: profile.listenerTitle ?? "",
+                isWorking: voice.isBusy,
                 onCancel: { sharedViewerInfoTarget = nil },
+                onPreview: {
+                    Task {
+                        await voice.previewSharedVoice(profileId: profile.id, session: auth.session)
+                    }
+                },
                 onConfirm: { relation, listener in
                     let target = profile
                     sharedViewerInfoTarget = nil
@@ -133,7 +140,7 @@ struct VoiceProfileManagementPanel: View {
                     }
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
         }
     }
 
@@ -247,7 +254,7 @@ struct VoiceProfileManagementPanel: View {
     private var familyProfilesSection: some View {
         if !voice.familyVoices.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Text("공유받은 보이스")
+                Text("공유받은 목소리")
                     .font(.subheadline.weight(.semibold))
                 ForEach(voice.familyVoices) { family in
                     FamilyVoiceProfileRow(
@@ -422,7 +429,8 @@ private struct FamilyVoiceProfileRow: View {
     /// Android `SharedVoiceProfileRow.needsViewerInfo` (VoiceProfileManagementPanel.kt:1477) 와 동일.
     /// 관계/호칭 중 하나라도 비어 있으면 "설정하기" CTA 버튼을 노출.
     private var needsViewerInfo: Bool {
-        (profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+        profile.needsViewerInfo == true ||
+            (profile.relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
             (profile.listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
@@ -437,7 +445,7 @@ private struct FamilyVoiceProfileRow: View {
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(profile.name).font(.subheadline.weight(.semibold))
-                    Text(detailLine)
+                    Text(sharedVoiceDetail(profile))
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
@@ -453,7 +461,7 @@ private struct FamilyVoiceProfileRow: View {
             }
             if needsViewerInfo {
                 Button(action: onEdit) {
-                    Text("이 음성이 나를 부를 호칭 설정하기")
+                    Text("이 목소리가 나를 어떻게 부를지 설정")
                         .font(.footnote.weight(.semibold))
                         .frame(maxWidth: .infinity)
                 }
@@ -485,6 +493,11 @@ private struct FamilyVoiceProfileRow: View {
         }
         return parts.joined(separator: " · ")
     }
+}
+
+private func sharedVoiceDetail(_ profile: FamilyVoiceProfile) -> String {
+    let owner = profile.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
 }
 
 // MARK: - Edit dialog
@@ -605,9 +618,12 @@ private struct VoiceProfileDeleteDialog: View {
 /// 인라인 오류 메시지를 띄우고 저장을 막는다.
 private struct SharedVoiceViewerInfoDialog: View {
     let profileName: String
+    let sharedFromLabel: String
     let initialRelationship: String
     let initialListenerTitle: String
+    let isWorking: Bool
     let onCancel: () -> Void
+    let onPreview: () -> Void
     let onConfirm: (String, String) -> Void
 
     @State private var relationship: String = ""
@@ -626,7 +642,7 @@ private struct SharedVoiceViewerInfoDialog: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top) {
-                Text("공유 음성 설정")
+                Text("공유받은 목소리 설정")
                     .font(.title3.weight(.bold))
                 Spacer()
                 Button(action: onCancel) {
@@ -638,6 +654,29 @@ private struct SharedVoiceViewerInfoDialog: View {
             Text("'\(profileName)' 가 내게 어떻게 말할지 알려주세요.")
                 .font(.subheadline)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
+
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(VoiceAlarmTheme.secondary.opacity(0.18))
+                    Image(systemName: "mic")
+                        .foregroundStyle(VoiceAlarmTheme.secondary)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profileName)
+                        .font(.headline)
+                    Text(sharedFromLabel)
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(VoiceAlarmTheme.surfaceVariant.opacity(0.55))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16).stroke(VoiceAlarmTheme.outline, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("나와의 관계")
@@ -675,10 +714,14 @@ private struct SharedVoiceViewerInfoDialog: View {
                 }
             }
 
-            HStack {
-                Button("취소", action: onCancel)
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+            VStack(spacing: 8) {
+                Button(action: onPreview) {
+                    Label("미리듣기", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isWorking)
+
                 Button("저장") {
                     submitted = true
                     if !trimmedRelationship.isEmpty && !trimmedListener.isEmpty {
@@ -688,6 +731,7 @@ private struct SharedVoiceViewerInfoDialog: View {
                 .buttonStyle(.borderedProminent)
                 .tint(VoiceAlarmTheme.primary)
                 .frame(maxWidth: .infinity)
+                .disabled(isWorking)
             }
             Spacer(minLength: 0)
         }

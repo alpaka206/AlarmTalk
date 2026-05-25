@@ -196,6 +196,8 @@ struct TtsGenerateRequest: Encodable {
     var fortuneGender: String?
     var fortuneBirthDate: String?
     var fortuneBirthTime: String?
+    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
+    var targetUserId: String?
     /// 공유 음성 viewer 가 자신을 부를 호칭.
     var listenerTitle: String?
 
@@ -214,7 +216,8 @@ struct TtsGenerateRequest: Encodable {
         fortuneGender: String? = nil,
         fortuneBirthDate: String? = nil,
         fortuneBirthTime: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        targetUserId: String? = nil
     ) {
         self.voiceProfileId = voiceProfileId
         self.text = text
@@ -231,6 +234,7 @@ struct TtsGenerateRequest: Encodable {
         self.fortuneBirthDate = fortuneBirthDate
         self.fortuneBirthTime = fortuneBirthTime
         self.listenerTitle = listenerTitle
+        self.targetUserId = targetUserId
     }
 }
 
@@ -321,6 +325,8 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var relationshipLabel: String?
     /// 받은 사람을 음성이 부를 호칭.
     var listenerTitle: String?
+    /// Server-side flag for shared voices that still need viewer-specific labels.
+    var needsViewerInfo: Bool?
 }
 
 struct CodeRegisterRequest: Encodable {

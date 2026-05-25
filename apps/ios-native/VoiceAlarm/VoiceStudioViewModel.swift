@@ -231,6 +231,36 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// 공유받은 목소리를 설정할 때 Android 와 같은 문장으로 짧게 미리듣는다.
+    func previewSharedVoice(profileId: String, session: AuthSession?) async {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let response = try await api.generateTTS(
+                TtsGenerateRequest(
+                    voiceProfileId: profileId,
+                    text: "이 목소리로 깨워드릴까요?",
+                    category: "custom",
+                    language: "ko",
+                    translate: false,
+                    random: false
+                ),
+                token: token
+            )
+            let cached = try AudioCacheStore.cache(tts: response)
+            try previewPlayer.play(url: AudioCacheStore.url(for: cached.fileName))
+            statusMessage = "미리듣기를 재생하고 있어요."
+        } catch {
+            statusMessage = mapVoiceError(error)
+        }
+    }
+
     /// SpeakerSeparationFlow 의 1단계 — raw 음원을 업로드해 uploadId 를 얻는다.
     func uploadForSeparation(
         audioFileURL: URL,
