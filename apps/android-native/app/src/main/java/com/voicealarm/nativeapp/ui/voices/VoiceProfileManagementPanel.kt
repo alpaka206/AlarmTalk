@@ -2172,16 +2172,9 @@ private fun SharedVoiceProfileRow(
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(profile.name, fontWeight = FontWeight.SemiBold)
-                    val relation = profile.relationshipLabel?.takeIf { it.isNotBlank() }
-                    val listener = profile.listenerTitle?.takeIf { it.isNotBlank() }
                     val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
                         ?.let { "$it 님의 목소리" } ?: "공유받은 목소리"
-                    val detail = buildList {
-                        add(ownerText)
-                        relation?.let { add("관계 $it") }
-                        listener?.let { add("호칭 $it") }
-                    }.joinToString(" · ")
-                    MutedText(detail)
+                    MutedText(ownerText)
                 }
                 IconButton(onClick = onEdit) {
                     Icon(Icons.Outlined.Edit, contentDescription = "내 정보 수정")
