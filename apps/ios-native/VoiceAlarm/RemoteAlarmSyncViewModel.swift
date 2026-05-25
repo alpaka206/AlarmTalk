@@ -44,11 +44,18 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     /// 서버에서 알람/음성 프로필 목록을 동기화한다.
     /// configure 가 호출되었다면 `RemoteAlarmPullSync.runOnce` 를 통해
     /// 신규 receivedRemote 자동 스케줄링과 cascade 삭제까지 수행한다.
-    func refresh(session: AuthSession?) async {
+    func refresh(session: AuthSession?, force: Bool = false) async {
         guard let token = session?.token else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+        guard force || !isBusy else { return }
+        let shouldManageBusy = !isBusy
+        if shouldManageBusy {
+            isBusy = true
+        }
+        defer {
+            if shouldManageBusy {
+                isBusy = false
+            }
+        }
 
         do {
             if let pull {
@@ -91,7 +98,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
                 lastSyncedAtMillis: nowMillis,
                 syncState: .synced
             )
-            await refresh(session: session)
+            await refresh(session: session, force: true)
         } catch {
             store.markSyncFailed(id: record.id)
             statusMessage = error.localizedDescription

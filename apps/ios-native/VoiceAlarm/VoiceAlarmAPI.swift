@@ -191,13 +191,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var isShared: Bool?
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
     /// Android `VoiceProfileApi.kt:72`.
-    var isDraft: Bool?
+    var isDraft: Bool? = nil
     /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
     /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:73`.
-    var relationshipLabel: String?
+    var relationshipLabel: String? = nil
     /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
     /// Android `VoiceProfileApi.kt:74`.
-    var listenerTitle: String?
+    var listenerTitle: String? = nil
 }
 
 struct VoiceProfileUpdateRequest: Encodable {

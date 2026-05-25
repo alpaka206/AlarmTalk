@@ -114,11 +114,22 @@ final class VoiceStudioViewModel: ObservableObject {
         max(0, VoiceProfileLimits.maxProfiles - profiles.count)
     }
 
-    func refresh(session: AuthSession?) async {
+    func refresh(
+        session: AuthSession?,
+        force: Bool = false,
+        successMessage: String? = "목소리 정보를 불러왔어요."
+    ) async {
         guard let token = session?.token else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+        guard force || !isBusy else { return }
+        let shouldManageBusy = !isBusy
+        if shouldManageBusy {
+            isBusy = true
+        }
+        defer {
+            if shouldManageBusy {
+                isBusy = false
+            }
+        }
 
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
@@ -144,7 +155,9 @@ final class VoiceStudioViewModel: ObservableObject {
                     familyVoices.first(where: { $0.status == "ready" })?.id ??
                     familyVoices.first?.id
             }
-            statusMessage = "목소리 정보를 불러왔어요."
+            if let successMessage {
+                statusMessage = successMessage
+            }
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -198,7 +211,7 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -232,7 +245,7 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -263,7 +276,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 token: token
             )
             statusMessage = "공유 음성 정보를 저장했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -396,7 +409,7 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             selectedProfileID = profile.id
             statusMessage = "선택한 목소리를 학습했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -476,7 +489,7 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
             return prepared
         } catch {
             statusMessage = mapVoiceError(error)
@@ -539,7 +552,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 )
             }
             statusMessage = "목소리를 삭제했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -601,7 +614,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             _ = try await api.updateVoiceProfile(id: profile.id, name: trimmed, isShared: nil, token: token)
             statusMessage = "이름을 변경했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -616,7 +629,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             _ = try await api.updateVoiceProfile(id: profile.id, name: nil, isShared: isShared, token: token)
             statusMessage = isShared ? "공유를 켰어요." : "공유를 껐어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
