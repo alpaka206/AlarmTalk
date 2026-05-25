@@ -111,6 +111,49 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertTrue(merged.enabled)
     }
 
+    // MARK: - remote audio fallback
+
+    func test_withoutUnavailableRemoteAudio_downgradesToAlarmOnly() {
+        var record = makeReceivedRemote(remoteID: "r1")
+        record.playMode = AlarmPlayMode.voiceOnly.rawValue
+        record.localAudioUri = "remote-message-m1.m4a"
+        record.audioCacheKey = "remote-message-m1"
+        record.rawAudioUri = "r2://tts/m1.m4a"
+        record.voiceSource = VoiceSource.serverTts.rawValue
+        record.voiceProfileId = "voice-1"
+        record.voiceText = "wake up"
+        record.voiceCategory = "custom"
+        record.voiceLanguage = "ko"
+        record.voiceRandomPrompt = true
+        record.voiceRandomContext = "weather"
+        record.voiceWeatherCountry = "KR"
+        record.voiceWeatherCity = "Seoul"
+        record.voiceFortuneGender = "female"
+        record.voiceFortuneBirthDate = "2000-01-01"
+        record.voiceFortuneBirthTime = "07:30"
+        record.ttsMessageId = "m1"
+
+        let sanitized = RemoteAlarmPullSync.withoutUnavailableRemoteAudio(record)
+
+        XCTAssertEqual(sanitized.playModeEnum, .alarmOnly)
+        XCTAssertNil(sanitized.localAudioUri)
+        XCTAssertNil(sanitized.audioCacheKey)
+        XCTAssertNil(sanitized.rawAudioUri)
+        XCTAssertEqual(sanitized.voiceSourceEnum, .localAudio)
+        XCTAssertNil(sanitized.voiceProfileId)
+        XCTAssertNil(sanitized.voiceText)
+        XCTAssertNil(sanitized.voiceCategory)
+        XCTAssertNil(sanitized.voiceLanguage)
+        XCTAssertFalse(sanitized.voiceRandomPrompt)
+        XCTAssertNil(sanitized.voiceRandomContext)
+        XCTAssertNil(sanitized.voiceWeatherCountry)
+        XCTAssertNil(sanitized.voiceWeatherCity)
+        XCTAssertNil(sanitized.voiceFortuneGender)
+        XCTAssertNil(sanitized.voiceFortuneBirthDate)
+        XCTAssertNil(sanitized.voiceFortuneBirthTime)
+        XCTAssertNil(sanitized.ttsMessageId)
+    }
+
     // MARK: - Helpers
 
     private func makeLocalOwned(remoteID: String) -> LocalAlarmRecord {

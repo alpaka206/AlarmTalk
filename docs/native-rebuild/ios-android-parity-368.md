@@ -52,6 +52,8 @@
   cache metadata, saved alarm remote audio URI, and voice-message sending.
 - Voice-message TTS uses Android's `custom` category and refuses to send a text
   note if the generated TTS response has no remote audio identifier.
+- Received remote alarms now downgrade to alarm-only when their voice audio
+  cannot be cached locally, matching Android's local-file-only ring path.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
