@@ -9,14 +9,14 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_SLOT_EXHAUSTED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_SLOT_EXHAUSTED"),
-            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_FEATURE_REQUIRES_PAID_PLAN() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN"),
-            "유료 플랜에서 사용할 수 있어요."
+            "유료 이용권에서 사용할 수 있어요."
         )
     }
 
@@ -37,7 +37,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_LIMIT_REACHED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_LIMIT_REACHED"),
-            "이번 달 보이스 생성 한도를 모두 사용했어요."
+            "이번 달 목소리 생성 한도를 모두 사용했어요."
         )
     }
 
@@ -51,7 +51,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_PROFILE_NOT_FOUND() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PROFILE_NOT_FOUND"),
-            "보이스를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+            "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
         )
     }
 
@@ -67,7 +67,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_mapVoiceError_picksUpServerErrorCode() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 403, message: "Voice features require a paid plan.", errorCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN")
-        XCTAssertEqual(vm.mapVoiceError(err), "유료 플랜에서 사용할 수 있어요.")
+        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
     }
 
     func test_mapVoiceError_jsonInMessageFallback() {
@@ -77,7 +77,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let err = APIError.server(status: 403, message: raw, errorCode: nil)
         XCTAssertEqual(
             vm.mapVoiceError(err),
-            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
         )
     }
 

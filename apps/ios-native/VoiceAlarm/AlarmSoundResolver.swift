@@ -6,7 +6,7 @@ import AlarmKit
 
 // MARK: - AlarmSoundResolution
 //
-// Phase 2-B4 — playMode 와 캐싱된 보이스/TTS 의 존재 여부에 따라 어떤 사운드
+// Phase 2-B4 — playMode 와 캐싱된 목소리/TTS 의 존재 여부에 따라 어떤 사운드
 // 전략을 쓸지 결정한다.
 //
 // - systemDefault: AlarmKit `.default` 시스템 사운드 사용.

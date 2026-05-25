@@ -3,7 +3,7 @@ import SwiftUI
 /// 첫 로그인 후 노출되는 3페이지 페이저.
 ///
 /// Android `apps/android-native/.../ui/onboarding/OnboardingScreen.kt:63-179` 의
-/// 카피를 그대로 옮겼다. 첫 페이지 = 보이스, 두 번째 = 가족, 세 번째 = 캐릭터.
+/// 카피를 그대로 옮겼다. 첫 페이지 = 목소리, 두 번째 = 가족, 세 번째 = 캐릭터.
 /// dot indicator + skip + 다음/시작하기 버튼을 모두 포함한다.
 ///
 /// 사용처

@@ -65,7 +65,7 @@
       "id" : "21500001",
       "localizations" : [
         {
-          "description" : "Naro 보이스 알람 구독 그룹",
+          "description" : "Naro 목소리 알람 구독 그룹",
           "displayName" : "Naro Subscriptions",
           "locale" : "ko_KR"
         },

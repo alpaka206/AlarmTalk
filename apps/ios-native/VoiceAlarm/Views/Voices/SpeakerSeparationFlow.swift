@@ -21,7 +21,7 @@ struct SpeakerSeparationFlow: View {
     @State private var speakers: [VoiceSpeakerSegment] = []
     @State private var selectedSpeakerIds: Set<String> = []
     @State private var removedSpeakerIds: Set<String> = []
-    @State private var profileName: String = "분리한 보이스"
+    @State private var profileName: String = "분리한 목소리"
     @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var listenerTitle: String = ""
     @State private var isShared: Bool = false
@@ -356,7 +356,7 @@ struct SpeakerSeparationFlow: View {
     private var stepRegister: some View {
         VStack(alignment: .leading, spacing: 10) {
             stepLabel(num: 4, title: "이름 정하고 등록")
-            TextField("보이스 이름", text: $profileName)
+            TextField("목소리 이름", text: $profileName)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     if newValue.count > 50 {
@@ -562,7 +562,7 @@ struct SpeakerSeparationFlow: View {
                 _ = await voice.selectSpeakerAndClone(
                     uploadId: uploadId,
                     speakerId: speaker.id,
-                    name: resolvedName.isEmpty ? "분리한 보이스" : resolvedName,
+                    name: resolvedName.isEmpty ? "분리한 목소리" : resolvedName,
                     isShared: isShared,
                     durationMs: speaker.durationMs,
                     audioFileURL: cropped,

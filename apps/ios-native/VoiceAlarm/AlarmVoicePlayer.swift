@@ -7,9 +7,9 @@ import AVFoundation
 // MARK: - AlarmVoicePlayer
 //
 // AlarmKit 의 `AlertConfiguration.AlertSound.named(_)` 는 (Apple 의 사운드 정책상)
-// 30초 이하의 짧은 사운드만 안정적으로 재생한다. 사용자 보이스/TTS 가
+// 30초 이하의 짧은 사운드만 안정적으로 재생한다. 사용자 목소리/TTS 가
 // 30초를 넘기거나 staging (트랜스코드) 이 실패하면 AlarmKit 으로는 `.default`
-// 만 울리고, 우리 앱이 활성화된 동안 AVAudioPlayer 로 같은 보이스를 재생한다.
+// 만 울리고, 우리 앱이 활성화된 동안 AVAudioPlayer 로 같은 목소리를 재생한다.
 //
 // 동작 패턴:
 //   - Pattern A (앱 활성): 알람 fire 직후 ContentView 가 ringing 상태로 진입할 때
@@ -38,7 +38,7 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         super.init()
     }
 
-    /// playMode 가 voice/sound_then_voice 이고 캐시된 보이스가 있을 때만 재생.
+    /// playMode 가 voice/sound_then_voice 이고 캐시된 목소리가 있을 때만 재생.
     /// 이미 같은 record 가 재생 중이면 no-op. 다른 record 가 재생 중이면 교체.
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
         guard record.playModeEnum != .alarmOnly,

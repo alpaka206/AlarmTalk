@@ -143,7 +143,7 @@ struct PlanGateState: Identifiable, Equatable {
         case .free:
             return "이 기능은 무료 플랜에서도 사용할 수 있어요."
         case .personal:
-            return "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 더 많은 보이스 슬롯을 열어보세요."
+            return "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 더 많은 목소리 슬롯을 열어보세요."
         case .couple:
             return "이 기능은 커플 플랜에서 사용할 수 있어요. 두 사람의 알람을 함께 관리해 보세요."
         case .family:

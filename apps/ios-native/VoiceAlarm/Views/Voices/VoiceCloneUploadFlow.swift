@@ -138,7 +138,7 @@ struct VoiceCloneUploadFlow: View {
             Text("이름")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            TextField("보이스 이름", text: $profileName)
+            TextField("목소리 이름", text: $profileName)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue

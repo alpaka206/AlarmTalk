@@ -11,13 +11,13 @@ struct PreparedVoiceAlarm {
     var language: String
 }
 
-/// VoiceAlarm 의 보이스 슬롯 / 길이 정책 상수.
+/// VoiceAlarm 의 목소리 슬롯 / 길이 정책 상수.
 ///
 /// Android 의 `VoiceProfileAudioLimits` 와 `MAX_VOICE_PROFILES` 를 그대로 옮긴다.
 /// 본 상수는 ViewModel 과 View 가 동일한 기준으로 다이얼로그/에러 메시지를 만들기 위해
 /// 존재한다.
 enum VoiceProfileLimits {
-    /// 사용자당 최대 보이스 프로필 수.
+    /// 사용자당 최대 목소리 프로필 수.
     static let maxProfiles = 5
     /// 클로닝에 허용되는 최소 음성 길이 (ms).
     static let minDurationMs = 60_000
@@ -134,7 +134,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
             async let nextMessages = api.listTTSMessages(token: token)
-            // 가족 보이스는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
+            // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
             do {
                 familyResult = try await api.listFamilyVoiceProfiles(token: token)
@@ -257,7 +257,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 녹음 외 파일 업로드/자르기 결과처럼 임의 URL을 곧바로 보이스 프로필로 등록한다.
+    /// 녹음 외 파일 업로드/자르기 결과처럼 임의 URL을 곧바로 목소리 프로필로 등록한다.
     func cloneAudioForProfile(
         audioFileURL: URL,
         name: String,
@@ -421,7 +421,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// SpeakerSeparationFlow 의 3단계 — 사용자가 선택한 화자만 골라 새 보이스로 등록.
+    /// SpeakerSeparationFlow 의 3단계 — 사용자가 선택한 화자만 골라 새 목소리로 등록.
     func selectSpeakerAndClone(
         uploadId: String,
         speakerId: String,
@@ -576,7 +576,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 보이스 프로필 삭제. force=true 가 기본 — Android 와 마찬가지로 사용 중인 알람이 있어도
+    /// 목소리 프로필 삭제. force=true 가 기본 — Android 와 마찬가지로 사용 중인 알람이 있어도
     /// cascade 로 sound-only 강등 후 삭제한다.
     ///
     /// `alarmStore` 가 주입되면 이 프로필을 쓰는 로컬 알람을 즉시 sound-only 로 강등하고
@@ -760,21 +760,21 @@ extension VoiceStudioViewModel {
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         switch code {
         case "VOICE_SLOT_EXHAUSTED":
-            return "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            return "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
-            return "유료 플랜에서 사용할 수 있어요."
+            return "유료 이용권에서 사용할 수 있어요."
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
             return "60초 이상의 음성을 녹음해 주세요."
         case "VOICE_CLONE_AUDIO_TOO_LONG":
             return "120초 이내로 녹음해 주세요."
         case "VOICE_LIMIT_REACHED":
-            return "이번 달 보이스 생성 한도를 모두 사용했어요."
+            return "이번 달 목소리 생성 한도를 모두 사용했어요."
         case "AUDIO_DURATION_TOO_SHORT":
             return "음성이 너무 짧아요. 다시 녹음해 주세요."
         case "VOICE_PROFILE_NOT_FOUND":
-            return "보이스를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+            return "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
         case "INVALID_VOICE_PROFILE_ID":
-            return "잘못된 보이스 식별자예요."
+            return "잘못된 목소리 식별자예요."
         case "NAME_TOO_LONG":
             return "이름은 50자 이내로 입력해 주세요."
         case "AUDIO_AND_NAME_REQUIRED":

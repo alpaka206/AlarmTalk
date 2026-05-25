@@ -128,6 +128,8 @@
   wording, and the account card no longer shows the extra email row.
 - iOS voice management copy now consistently uses Android's user-facing
   `목소리` wording, including slot, selection, delete, and plan-gate text.
+- iOS voice creation, speaker separation, billing plan descriptions, and voice
+  error messages now use the same `목소리` / `유료 이용권` wording as Android.
 - iOS plan gating now uses a shared best-known tier from StoreKit entitlement,
   backend subscription, and the restored session plan. Home quick-start,
   alarm-editor voice modes, and voice creation use the same paid-voice gate.
