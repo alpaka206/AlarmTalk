@@ -1184,8 +1184,8 @@ final class VoiceAlarmAPI: @unchecked Sendable {
                 name: name.nilIfBlank,
                 isShared: isShared,
                 isDraft: isDraft,
-                relationshipLabel: relationshipLabel?.nilIfBlank,
-                listenerTitle: listenerTitle?.nilIfBlank
+                relationshipLabel: relationshipLabel.nilIfBlank,
+                listenerTitle: listenerTitle.nilIfBlank
             )
         )
         return response.profile

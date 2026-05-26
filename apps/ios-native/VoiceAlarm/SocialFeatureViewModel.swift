@@ -373,8 +373,8 @@ final class SocialFeatureViewModel: ObservableObject {
             try notePreviewPlayer.play(url: url)
             playingNoteID = note.id
             revealedNoteIDs.insert(note.id)
-            let response = try? await api.markNoteRead(id: note.id, token: token)
-            applyNoteRead(id: note.id, readAt: response?.readAt)
+            let markRead = try? await api.markNoteRead(id: note.id, token: token)
+            applyNoteRead(id: note.id, readAt: markRead?.readAt)
         } catch {
             if isMissingNoteAudio(error) {
                 unavailableAudioNoteIDs.insert(note.id)

@@ -317,7 +317,7 @@ final class AudioCacheStore {
         return (name, "")
     }
 
-    static func normalizedFormat(_ value: String) -> String {
+    nonisolated static func normalizedFormat(_ value: String) -> String {
         let lowered = value
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -327,7 +327,7 @@ final class AudioCacheStore {
         return lowered.isEmpty ? "mp3" : lowered
     }
 
-    static func mimeType(forFormat format: String) -> String {
+    nonisolated static func mimeType(forFormat format: String) -> String {
         switch format.lowercased() {
         case "mp3": return "audio/mpeg"
         case "m4a", "aac": return "audio/aac"
