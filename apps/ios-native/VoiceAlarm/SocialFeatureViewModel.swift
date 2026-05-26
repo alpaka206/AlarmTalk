@@ -126,6 +126,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let nextReceivedNotes = try await api.listReceivedNotes(token: token)
             guard activeUserID == userID else { return }
+            await SocialNotificationTracker.notifyNewNotes(notes: nextReceivedNotes, userID: userID)
             applyReceivedNotes(nextReceivedNotes)
         } catch {
             messages.append("메시지: \(error.localizedDescription)")
@@ -165,6 +166,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let nextReceivedNotes = try await api.listReceivedNotes(token: token)
             guard activeUserID == userID else { return }
+            await SocialNotificationTracker.notifyNewNotes(notes: nextReceivedNotes, userID: userID)
             applyReceivedNotes(nextReceivedNotes)
         } catch {
             // Android `refreshNotesSilently()` keeps background/message refresh failures quiet.

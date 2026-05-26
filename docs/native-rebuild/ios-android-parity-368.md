@@ -289,6 +289,13 @@
   after remote alarm push/pull it silently refreshes received notes, so deleted
   or unavailable voice-message audio is reflected without waiting for the user to
   open the messages tab.
+- iOS received-note refresh now also mirrors Android's `SocialNotificationTracker`
+  behavior: the first refresh only seeds seen note IDs, later refreshes post up to
+  three local notifications for newly received unread notes when iOS notification
+  permission is already authorized.
+- iOS received-remote-alarm import now mirrors Android's social notification
+  behavior by posting a local notification for newly imported alarms when iOS
+  notification permission is already authorized.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

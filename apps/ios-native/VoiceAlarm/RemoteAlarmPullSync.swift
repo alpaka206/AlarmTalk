@@ -112,6 +112,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if mapped.originEnum == .receivedRemote && mapped.enabled {
                 await alarmKit.schedule(record: mapped, store: store)
             }
+            await SocialNotificationTracker.notifyReceivedAlarm(
+                alarmID: mapped.id,
+                title: RemoteAlarmMapper.resolveLabel(remote),
+                time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
+            )
         }
     }
 
