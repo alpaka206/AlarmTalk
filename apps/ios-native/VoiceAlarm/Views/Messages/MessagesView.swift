@@ -17,6 +17,10 @@ struct MessagesView: View {
             VoiceMessagePanel(onCodeRegistered: onCodeRegistered)
             ttsMessageArchivePanel
         }
+        .task(id: auth.session?.user.id) {
+            guard auth.session != nil else { return }
+            await SocialNotificationTracker.requestAuthorizationIfNeeded()
+        }
     }
 
     private var ttsMessageArchivePanel: some View {

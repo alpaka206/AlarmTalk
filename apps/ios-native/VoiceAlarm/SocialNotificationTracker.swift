@@ -20,6 +20,15 @@ enum SocialNotificationTracker {
     private static let maxNotificationsPerRefresh = 3
     private static let prefsPrefix = "voice_alarm_social_notifications_seen_note_ids"
 
+    static func requestAuthorizationIfNeeded() async {
+        #if canImport(UserNotifications)
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        guard settings.authorizationStatus == .notDetermined else { return }
+        _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        #endif
+    }
+
     static func notifyNewNotes(
         notes: [ReceivedNote],
         userID: String,

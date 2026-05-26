@@ -296,6 +296,9 @@
 - iOS received-remote-alarm import now mirrors Android's social notification
   behavior by posting a local notification for newly imported alarms when iOS
   notification permission is already authorized.
+- iOS requests UserNotifications authorization lazily when the user opens the
+  messages tab, keeping the permission prompt tied to the social update feature
+  instead of adding another startup/settings permission surface.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
