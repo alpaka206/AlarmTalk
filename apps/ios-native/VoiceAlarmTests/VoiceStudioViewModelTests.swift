@@ -113,6 +113,12 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(vm.mapVoiceError(err), "음성 길이를 확인하지 못했어요.")
     }
 
+    func test_mapVoiceError_koreanForbiddenServerMessageIsPreserved() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
+    }
+
     func test_mapVoiceError_unauthorized() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 401, message: "no token", errorCode: nil)

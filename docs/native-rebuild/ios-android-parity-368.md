@@ -250,6 +250,9 @@
 - iOS voice error handling now also mirrors Android's `userFacingError`
   behavior for server messages: Korean backend copy is preserved, while
   non-Korean server/system text falls back to Korean copy.
+- iOS voice error handling now preserves Korean 403 backend guidance as well,
+  so plan/share permission messages are not replaced by a generic permission
+  failure.
 - iOS voice creation and speaker separation now accept profile-training audio
   and video imports like Android's `audio/*` + `video/*` picker, reject files
   without an audio track, and keep local audio preparation failures behind

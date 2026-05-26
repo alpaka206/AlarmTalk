@@ -959,9 +959,12 @@ extension VoiceStudioViewModel {
             case .invalidResponse:
                 return "서버 응답을 해석하지 못했어요."
             case .server(let status, let message, _):
-                if status == 401 || status == 403 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
-                if status >= 500 { return "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." }
                 let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                if status == 401 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
+                if status == 403 {
+                    return trimmed.containsKorean ? trimmed : "권한이 없어요. 로그인 상태를 확인해 주세요."
+                }
+                if status >= 500 { return "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." }
                 return trimmed.containsKorean ? trimmed : "처리 중 오류가 발생했어요."
             }
         }
