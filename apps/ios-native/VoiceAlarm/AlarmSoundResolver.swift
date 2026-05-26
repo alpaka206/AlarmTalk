@@ -109,7 +109,9 @@ enum AlarmSoundResolver {
     #if canImport(AlarmKit)
     /// 결정된 resolution 을 AlarmKit 의 `AlertConfiguration.AlertSound` 로 변환한다.
     /// `.cachedAudio` 는 in-app 폴백 경로이므로 OS 알람음은 `.default` 로 둔다.
-    static func makeAlertSound(_ resolution: AlarmSoundResolution) -> AlertConfiguration.AlertSound {
+    /// `nonisolated` — 순수 변환 함수라서 enum 의 @MainActor 격리에 묶일 필요가 없고,
+    /// `AlarmKitViewModel.makeConfiguration`(nonisolated) 가 호출해야 하므로.
+    nonisolated static func makeAlertSound(_ resolution: AlarmSoundResolution) -> AlertConfiguration.AlertSound {
         switch resolution {
         case .systemDefault:
             return .default

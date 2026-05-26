@@ -343,7 +343,11 @@ final class AlarmKitViewModel: ObservableObject {
         return .relative(.init(time: time, repeats: recurrence))
     }
 
-    private func makeConfiguration(
+    // `nonisolated` — main actor 격리된 self 에 의존하지 않고 순수 입력값으로만
+    // configuration 을 만든다. 그래야 결과 `AlarmConfiguration`(Sendable 미보장 타입)
+    // 을 AlarmManager 로 sending 할 때 Swift 6 의 region-based isolation 검사가
+    // main actor region 에 묶이지 않는다.
+    private nonisolated func makeConfiguration(
         record: LocalAlarmRecord,
         alarmKitID: UUID,
         schedule: Alarm.Schedule,
