@@ -61,11 +61,11 @@ struct GrowthPanel: View {
     }
 
     private var pendingCount: Int {
-        characterEvents.events.count { $0.syncState == CharacterEventSyncState.pending.rawValue }
+        characterEvents.events.filter { $0.syncState == CharacterEventSyncState.pending.rawValue }.count
     }
 
     private var failedCount: Int {
-        characterEvents.events.count { $0.syncState == CharacterEventSyncState.failed.rawValue }
+        characterEvents.events.filter { $0.syncState == CharacterEventSyncState.failed.rawValue }.count
     }
 
     private var hasUnreflectedEvents: Bool {

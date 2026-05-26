@@ -244,10 +244,10 @@ struct MainTabsView: View {
     }
 
     private var unreadReceivedAlarmCount: Int {
-        store.alarms.count { alarm in
+        store.alarms.filter { alarm in
             alarm.originEnum == .receivedRemote &&
                 alarm.createdAtMillis > receivedAlarmSeenAtMillis
-        }
+        }.count
     }
 
     private func refreshAll() async {
