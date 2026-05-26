@@ -62,6 +62,9 @@
 | Android files unchanged | Windows git diff path filter | Passed: no `apps/android-native` diff in PR |
 | Backend/DB unchanged and not deployed | Windows git diff path filter | Passed: no backend/db/migrations diff; no deploy performed |
 | Backend tests/typecheck if API contracts touched | GitHub Actions | Passed: CI lint/typecheck/test + CodeQL |
+| XcodeGen target/source coverage | Windows static audit | Passed: `project.yml` includes `VoiceAlarm`, `Shared`, `VoiceAlarmWidget`, `VoiceAlarmTests`, StoreKit resource, entitlements, and widget embedding |
+| iOS API route contract | Windows static audit | Passed: `VoiceAlarmAPI` foreground routes match current backend route mounts, including `user/search?q=` query-value encoding |
+| User-facing Korean copy/error fallback | Windows static audit + tests | Passed: legacy requested copy removed from iOS UI, modal X dismissal is checklist-gated, and English server/system errors are hidden behind Korean fallback helpers |
 | Swift compile/test | macOS + Xcode | Blocked in current Windows workspace |
 | XcodeGen project generation | macOS + xcodegen | Blocked in current Windows workspace |
 | Physical iPhone AlarmKit schedule/ring/snooze/dismiss | iOS 26+ device | Blocked in current Windows workspace |
@@ -115,6 +118,14 @@
 - iOS text-message sending now mirrors Android's `sendNote` guardrails by
   trimming the selected receiver ID before validation and before the `notes`
   request is sent.
+- iOS project configuration statically includes the app, shared code, widget,
+  test target, entitlements, StoreKit configuration resource, and widget
+  embedding. Windows cannot generate or open the project, so this is not a
+  substitute for the macOS `xcodegen generate` build gate.
+- iOS API client routes were statically checked against the current backend
+  route mounts for auth, alarms, voices, TTS messages, user profile/search,
+  family groups/alarms, notes, characters, billing, and code registration.
+  No Android, backend, DB, migration, or package files are changed in this PR.
 - iOS message recipient selection now mirrors Android's `remember(recipients)`
   behavior: after a family-group refresh, a removed/stale recipient is replaced
   with the first current recipient and the current user is excluded by both id
