@@ -302,6 +302,9 @@
 - iOS alarm permission, scheduling, cancel, Live Activity button, and recording
   permission copy now uses Korean user-facing alarm wording instead of exposing
   English AlarmKit/internal status text.
+- iOS app/widget display names and Live Activity fallback labels now mirror the
+  Android `Waker` brand and Korean alarm-state wording instead of the old
+  `Voice Alarm` placeholder.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
