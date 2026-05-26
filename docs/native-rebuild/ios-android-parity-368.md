@@ -167,6 +167,9 @@
   backend call instead of running a full social refresh that can replace the
   action context with a generic refresh status message. Read-mark failures stay
   quiet like Android and are reconciled by the next note refresh.
+- iOS generated voice-message archive rows now avoid raw API metadata by
+  rendering TTS categories with the same Korean labels used by Android and
+  formatting `created_at` values as `yyyy-MM-dd HH:mm`.
 - iOS billing now mirrors Android's voucher share behavior: plan cards with
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even
