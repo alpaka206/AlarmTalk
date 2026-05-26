@@ -75,7 +75,7 @@ enum NativeTab: String, CaseIterable, Identifiable {
 
     var navigationTitle: String {
         switch self {
-        case .home: return "Naro"
+        case .home: return "AlarmTalk"
         default: return title
         }
     }

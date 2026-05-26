@@ -6,7 +6,7 @@ import Foundation
 /// 각 플랜은 월간/연간 두 가격대로 노출된다. `free` 플랜은 IAP 가 없다.
 ///
 /// App Store Connect 등록 가이드:
-///   1. 구독 그룹 1개 ("Naro Subscriptions") 를 만들고 6개 SKU 를 동일 그룹에 둔다.
+///   1. 구독 그룹 1개 ("AlarmTalk Subscriptions") 를 만들고 6개 SKU 를 동일 그룹에 둔다.
 ///      → 같은 그룹 안에서 사용자가 자유롭게 업/다운그레이드 할 수 있다.
 ///   2. 6개 productID 를 정확히 아래 rawValue 와 동일하게 등록.
 ///   3. 가격은 App Store 의 region 별 tier 로 설정 — 본 enum 은 가격에 관여하지 않는다.

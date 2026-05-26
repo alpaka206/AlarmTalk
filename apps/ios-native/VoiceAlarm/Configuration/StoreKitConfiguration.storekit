@@ -65,17 +65,17 @@
       "id" : "21500001",
       "localizations" : [
         {
-          "description" : "Naro 목소리 알람 구독 그룹",
-          "displayName" : "Naro Subscriptions",
+          "description" : "AlarmTalk 목소리 알람 구독 그룹",
+          "displayName" : "AlarmTalk Subscriptions",
           "locale" : "ko_KR"
         },
         {
-          "description" : "Naro voice alarm subscriptions",
-          "displayName" : "Naro Subscriptions",
+          "description" : "AlarmTalk voice alarm subscriptions",
+          "displayName" : "AlarmTalk Subscriptions",
           "locale" : "en_US"
         }
       ],
-      "name" : "Naro Subscriptions",
+      "name" : "AlarmTalk Subscriptions",
       "subscriptions" : [
         {
           "adHocOffers" : [

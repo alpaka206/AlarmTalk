@@ -222,7 +222,7 @@ struct DeleteAccountPanel: View {
 
 #if DEBUG
 private struct AccountPanelPreviewHost: View {
-    @State private var nickname = "Naro"
+    @State private var nickname = "AlarmTalk"
     var body: some View {
         VStack(spacing: 16) {
             AccountPanel(
@@ -230,7 +230,7 @@ private struct AccountPanelPreviewHost: View {
                 user: AuthUser(
                     id: "u1",
                     email: "preview@voicealarm.app",
-                    name: "Naro",
+                    name: "AlarmTalk",
                     plan: "free"
                 ),
                 onSignOut: {}

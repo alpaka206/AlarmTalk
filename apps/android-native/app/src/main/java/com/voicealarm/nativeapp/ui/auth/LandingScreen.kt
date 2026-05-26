@@ -121,7 +121,7 @@ private fun WakerBrandHeader() {
         Spacer(Modifier.width(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
-                text = "Waker",
+                text = "AlarmTalk",
                 style = MaterialTheme.typography.titleLarge,
                 color = LandingText,
                 fontWeight = FontWeight.Bold,
