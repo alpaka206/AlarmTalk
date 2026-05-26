@@ -935,7 +935,10 @@ struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
     var expiresAt: String?
 }
 
-final class VoiceAlarmAPI {
+// 모든 stored property 가 `let` 이고 URLSession / JSONDecoder / JSONEncoder 는
+// 사실상 thread-safe 이므로 `@unchecked Sendable` 로 노출해 async 컨텍스트에서
+// main actor 격리된 RemoteAlarmSyncViewModel.api 를 캡처할 수 있게 한다.
+final class VoiceAlarmAPI: @unchecked Sendable {
     static let shared = VoiceAlarmAPI()
 
     private let baseURL: URL

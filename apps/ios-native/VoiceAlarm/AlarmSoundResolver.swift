@@ -2,6 +2,7 @@ import Foundation
 
 #if canImport(AlarmKit)
 import AlarmKit
+import ActivityKit
 #endif
 
 // MARK: - AlarmSoundResolution

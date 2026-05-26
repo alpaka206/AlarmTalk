@@ -243,7 +243,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case updatedAtMillis
         case alarmKitID
 
-        // Legacy 17필드 호환 키 (iOS 초기 빌드 JSON)
+        // Legacy 17필드 호환 키 (iOS 초기 빌드 JSON). 디코딩 전용.
+        // alarmKitID 는 동일 키를 String/UUID 두 형식으로 시도하므로 별도 케이스 불필요.
         case legacyRemoteID = "remoteID"
         case legacyRepeatWeekdays = "repeatWeekdays"
         case legacyVoiceProfileID = "voiceProfileID"
@@ -251,7 +252,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case legacyRawAudioURL = "rawAudioURL"
         case legacyLocalAudioFilePath = "localAudioFilePath"
         case legacyUpdatedAt = "updatedAt"
-        case legacyAlarmKitID = "alarmKitID"  // 동일 키 — UUID 형식이면 String 으로 재해석
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default + legacy 17필드 JSON 호환.
@@ -385,6 +385,57 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
                 referenceMillis: now
             )
         }
+    }
+
+    /// Encodable. legacy 키 케이스는 디코딩 전용이라 auto-synthesis 가 실패하므로
+    /// stored property 만 직렬화하는 인코더를 직접 구현한다.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(label, forKey: .label)
+        try c.encode(hour, forKey: .hour)
+        try c.encode(minute, forKey: .minute)
+        try c.encode(fireAtMillis, forKey: .fireAtMillis)
+        try c.encode(repeatDaysMask, forKey: .repeatDaysMask)
+        try c.encode(holidayOff, forKey: .holidayOff)
+        try c.encode(snoozeEnabled, forKey: .snoozeEnabled)
+        try c.encode(snoozeMinutes, forKey: .snoozeMinutes)
+        try c.encode(snoozeRepeatLimit, forKey: .snoozeRepeatLimit)
+        try c.encode(snoozeCount, forKey: .snoozeCount)
+        try c.encode(vibrationPattern, forKey: .vibrationPattern)
+        try c.encode(playMode, forKey: .playMode)
+        try c.encode(defaultAlarmSoundId, forKey: .defaultAlarmSoundId)
+        try c.encodeIfPresent(localAudioUri, forKey: .localAudioUri)
+        try c.encodeIfPresent(audioCacheKey, forKey: .audioCacheKey)
+        try c.encodeIfPresent(rawAudioUri, forKey: .rawAudioUri)
+        try c.encode(voiceSource, forKey: .voiceSource)
+        try c.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
+        try c.encodeIfPresent(voiceText, forKey: .voiceText)
+        try c.encodeIfPresent(voiceCategory, forKey: .voiceCategory)
+        try c.encodeIfPresent(voiceLanguage, forKey: .voiceLanguage)
+        try c.encode(voiceRandomPrompt, forKey: .voiceRandomPrompt)
+        try c.encodeIfPresent(voiceRandomContext, forKey: .voiceRandomContext)
+        try c.encodeIfPresent(voiceWeatherCountry, forKey: .voiceWeatherCountry)
+        try c.encodeIfPresent(voiceWeatherCity, forKey: .voiceWeatherCity)
+        try c.encodeIfPresent(voiceFortuneGender, forKey: .voiceFortuneGender)
+        try c.encodeIfPresent(voiceFortuneBirthDate, forKey: .voiceFortuneBirthDate)
+        try c.encodeIfPresent(voiceFortuneBirthTime, forKey: .voiceFortuneBirthTime)
+        try c.encodeIfPresent(dynamicVoicePreparedForFireAtMillis, forKey: .dynamicVoicePreparedForFireAtMillis)
+        try c.encode(voiceRepeat, forKey: .voiceRepeat)
+        try c.encode(voiceVolumePercent, forKey: .voiceVolumePercent)
+        try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
+        try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
+        try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
+        try c.encode(syncState, forKey: .syncState)
+        try c.encode(origin, forKey: .origin)
+        try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)
+        try c.encodeIfPresent(alarmSoundUri, forKey: .alarmSoundUri)
+        try c.encodeIfPresent(alarmSoundLabel, forKey: .alarmSoundLabel)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(state, forKey: .state)
+        try c.encode(createdAtMillis, forKey: .createdAtMillis)
+        try c.encode(updatedAtMillis, forKey: .updatedAtMillis)
+        try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
     }
 
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).

@@ -384,13 +384,15 @@ private func formatKrw(_ value: Int) -> String {
     BillingKrwFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
 }
 
-private let BillingISODateFormatter: ISO8601DateFormatter = {
+// ISO8601DateFormatter 인스턴스는 iOS 7 이후 thread-safe (Apple docs).
+// 초기화 후 formatOptions 만 읽으므로 nonisolated(unsafe) 로 표시.
+nonisolated(unsafe) private let BillingISODateFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter
 }()
 
-private let BillingShortISODateFormatter: ISO8601DateFormatter = {
+nonisolated(unsafe) private let BillingShortISODateFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     return formatter

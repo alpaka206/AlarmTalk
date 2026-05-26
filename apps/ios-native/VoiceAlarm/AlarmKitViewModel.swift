@@ -353,12 +353,14 @@ final class AlarmKitViewModel: ObservableObject {
         let stopButton = AlarmButton(text: "알람 끄기", textColor: .white, systemImageName: "stop.fill")
         let snoozeButton = AlarmButton(text: "다시 울리기", textColor: .white, systemImageName: "moon.zzz.fill")
         let alert = AlarmPresentation.Alert(
-            title: record.label,
+            title: LocalizedStringResource(stringLiteral: record.label),
             stopButton: stopButton,
             secondaryButton: snoozeButton,
             secondaryButtonBehavior: .countdown
         )
-        let countdown = AlarmPresentation.Countdown(title: "\(record.label) 다시 울릴 준비 중")
+        let countdown = AlarmPresentation.Countdown(
+            title: LocalizedStringResource(stringLiteral: "\(record.label) 다시 울릴 준비 중")
+        )
         let paused = AlarmPresentation.Paused(
             title: "일시정지됨",
             resumeButton: AlarmButton(text: "다시 시작", textColor: .white, systemImageName: "play.fill")

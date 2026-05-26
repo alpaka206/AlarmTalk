@@ -22,7 +22,7 @@ import AlarmKit
 // 사라진 alarmKitID 를 감지해 markStopped + characterEvents.queue 를 호출하므로
 // 멱등성이 유지된다 (clientNonce 는 동일 패턴이라 중복 enqueue 방지).
 struct StopAlarmIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "알람 끄기"
+    static let title: LocalizedStringResource = "알람 끄기"
 
     @Parameter(title: "알람 ID")
     var alarmID: String
@@ -68,7 +68,7 @@ struct StopAlarmIntent: LiveActivityIntent {
 // 으로 직접 호출될 가능성과 우리 측 markSnoozed(newFireAtMillis:) 계산을 위해
 // 보존. 기본값 0 이면 LocalAlarmRecord.snoozeMinutes 값을 사용한다.
 struct SnoozeAlarmIntent: LiveActivityIntent {
-    static var title: LocalizedStringResource = "알람 다시 울리기"
+    static let title: LocalizedStringResource = "알람 다시 울리기"
 
     @Parameter(title: "알람 ID")
     var alarmID: String
