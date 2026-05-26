@@ -3,6 +3,14 @@
 ## Ground Rules
 
 - Android source is the reference and must not be modified in this branch.
+- Parity means matching product logic, API contracts, data semantics,
+  permission gates, feature availability, and visual hierarchy. It does not mean
+  forcing Android-specific microcopy or interaction patterns onto iOS when an
+  iOS-native presentation is clearer.
+- iOS may use platform-native affordances such as Apple sign-in, StoreKit,
+  AlarmKit, SwiftUI sheets, and iOS permission flows as long as the resulting
+  user journey, server communication, and local alarm guarantees remain
+  equivalent to Android.
 - iOS ring-time behavior must use local alarm records and local audio only.
 - Network calls are allowed only during explicit foreground user actions such as login, sync, voice upload, TTS generation, or message sending.
 - Windows workspace cannot run `xcodebuild`, Swift compiler, iOS simulator, or physical-device install. Those checks stay as required macOS/Xcode QA items before release.
@@ -23,6 +31,20 @@
 | Billing | Plan cards, voucher/redeem/cancel/change, feature gates | StoreKit2 UI + backend voucher primitives with Android non-IAP copy/gate parity | Need macOS StoreKit/IAP QA. |
 | Settings | Theme, nickname, weather, fortune, quiet time, account, permissions | Account, billing, people, growth, quiet time, theme/nickname/weather/fortune sheets with Android modal copy parity | Need macOS visual QA. |
 | Character/streak | XP queue and character card | CharacterEventStore and GrowthPanel with Android stage/stat/recent-record display rules | Need macOS visual QA and physical-device ring-to-XP pass. |
+
+## iOS Adaptation Boundary
+
+- Must match Android: server routes and payload semantics, local alarm storage
+  invariants, ring-time local-only audio behavior, plan gates, ownership/member
+  permissions, voice-sharing state transitions, message read/audio availability
+  behavior, XP/idempotency rules, and paid-plan downgrade cascades.
+- May be iOS-native: presentation components, sheet/navigation affordances,
+  permission prompt timing when the platform requires it, Apple/StoreKit flows,
+  AlarmKit-specific labels, and microcopy that is clearer on iOS while preserving
+  the same product meaning.
+- Should not be changed just for parity: Android-only implementation details,
+  Android permission names, Android navigation mechanics, or literal Android
+  text where iOS has a clearer native convention.
 
 ## Implementation Order
 
