@@ -338,21 +338,18 @@ private struct VoiceProfileRow: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(VoiceAlarmTheme.text)
                     HStack(spacing: 6) {
-                        statusPill
+                        if shouldShowStatusPill {
+                            statusPill
+                        }
                         if profile.isShared == true {
                             sharedPill
-                        }
-                        if let createdAt = profile.createdAt, !createdAt.isEmpty {
-                            Text(prettyDate(createdAt))
-                                .font(.caption)
-                                .foregroundStyle(VoiceAlarmTheme.textSecondary)
                         }
                     }
                 }
                 Spacer()
                 Menu {
                     Button("선택", action: onSelect)
-                    Button("이름·공유 변경", action: onEdit)
+                    Button("정보 수정", action: onEdit)
                     if canShareVoice {
                         Toggle("공유 허용", isOn: Binding(
                             get: { profile.isShared ?? false },
@@ -403,6 +400,11 @@ private struct VoiceProfileRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    private var shouldShowStatusPill: Bool {
+        let status = normalizedStatus(profile.status)
+        return status != "ready"
+    }
+
     private var statusPill: some View {
         let status = normalizedStatus(profile.status)
         let bg: Color
@@ -449,34 +451,6 @@ private struct VoiceProfileRow: View {
     private func normalizedStatus(_ raw: String?) -> String {
         let status = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return status.isEmpty ? "ready" : status
-    }
-
-    private func prettyDate(_ raw: String) -> String {
-        guard let isoDate = ISO8601DateFormatter().date(from: raw) ?? ISO8601DateFormatter.compatDate(from: raw) else {
-            return raw.prefix(10).description
-        }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ko_KR")
-        formatter.dateFormat = "yyyy.MM.dd"
-        return formatter.string(from: isoDate)
-    }
-}
-
-private extension ISO8601DateFormatter {
-    static func compatDate(from string: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        for pattern in [
-            "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
-            "yyyy-MM-dd'T'HH:mm:ssXXXXX",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-dd",
-        ] {
-            formatter.dateFormat = pattern
-            if let d = formatter.date(from: string) { return d }
-        }
-        return nil
     }
 }
 

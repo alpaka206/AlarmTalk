@@ -228,6 +228,10 @@
   values: blank/ready voices read as usable, processing/deleting/failed states
   use Korean labels, and unknown future values fall back to a safe Korean
   "상태 확인 중" label.
+- iOS own-voice cards now mirror Android's quieter card surface: ready voices
+  no longer show an extra status/date row, shared voices show only the "공유 중"
+  badge next to the name, and the overflow edit action uses the same "정보 수정"
+  label.
 - iOS voice sharing availability now mirrors Android's `canShareVoiceWithOthers`
   rule: couple/family access or another shared member is required before share
   toggles can be enabled, and received shared voices are hidden when sharing is
