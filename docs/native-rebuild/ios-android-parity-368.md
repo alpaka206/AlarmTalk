@@ -189,6 +189,9 @@
   voice entry requests microphone permission before opening the voice tab when
   the paid plan is available, and new/family alarm creation requests AlarmKit
   permission before opening the editor.
+- iOS alarm-tab creation now follows the same iOS-native on-demand permission
+  flow: tapping "알람 만들기" requests AlarmKit authorization first and opens
+  the editor only after authorization is available.
 - iOS family-alarm entry now mirrors Android's availability rule: the home
   shortcut requires login, couple/family access, and at least one recipient who
   allows family alarms, and the editor blocks family-alarm save without

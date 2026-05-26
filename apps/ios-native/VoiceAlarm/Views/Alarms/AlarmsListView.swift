@@ -20,7 +20,7 @@ struct AlarmsListView: View {
                 ScreenHeader(title: "알람")
                 Spacer()
                 Button {
-                    openEditor(.create())
+                    Task { await openCreateAlarm() }
                 } label: {
                     Label("알람 만들기", systemImage: "plus")
                 }
@@ -51,7 +51,7 @@ struct AlarmsListView: View {
                     icon: "alarm"
                 )
                 Button {
-                    openEditor(.create())
+                    Task { await openCreateAlarm() }
                 } label: {
                     Text("새 알람 만들기")
                 }
@@ -88,6 +88,19 @@ struct AlarmsListView: View {
             if lhs.minute != rhs.minute { return lhs.minute < rhs.minute }
             return lhs.createdAtMillis < rhs.createdAtMillis
         }
+    }
+
+    @MainActor
+    private func openCreateAlarm() async {
+        alarmKit.refreshAuthorizationState()
+        guard alarmKit.alarmAuthorized else {
+            await alarmKit.requestAuthorization()
+            alarmKit.refreshAuthorizationState()
+            guard alarmKit.alarmAuthorized else { return }
+            openEditor(.create())
+            return
+        }
+        openEditor(.create())
     }
 
     @MainActor
