@@ -255,6 +255,9 @@
   paid users. Saving a blank label still stores `"알람"`.
 - iOS alarm-volume defaults now mirror Android's 100% default for new,
   decoded-legacy, test, preview, and received-remote alarm records.
+- iOS voice-volume editing now mirrors Android's 30-100% range: existing voice
+  alarms below the UI minimum are normalized to 30% on edit/save, and validation
+  reports the same lower bound.
 - iOS family-alarm creation now mirrors Android's local-voice branch: when a
   recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
   `/voice/upload` and the alarm is created through `/family/alarms/voice`

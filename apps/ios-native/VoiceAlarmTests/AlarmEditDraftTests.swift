@@ -206,6 +206,37 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertTrue(errors.contains(.invalidAlarmVolume))
     }
 
+    func testValidationFlagsVoiceVolumeBelowAndroidMinimumForVoiceModes() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
+        draft.voiceVolumePercent = 29
+        XCTAssertTrue(draft.validate().contains(.invalidVoiceVolume))
+
+        draft.voiceVolumePercent = 30
+        XCTAssertFalse(draft.validate().contains(.invalidVoiceVolume))
+    }
+
+    func testVoiceVolumeLoadsAndSavesAtAndroidMinimum() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let original = LocalAlarmRecord(
+            label: "작은 목소리",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-key",
+            voiceVolumePercent: 0,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let draft = AlarmEditDraft(from: original)
+        XCTAssertEqual(draft.voiceVolumePercent, 30)
+
+        let record = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
+        XCTAssertEqual(record.voiceVolumePercent, 30)
+    }
+
     func testCanReuseExistingTtsAudioForUnchangedManualVoice() {
         let record = makeTtsRecord(
             voiceProfileId: "voice-1",

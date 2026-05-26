@@ -1122,7 +1122,7 @@ struct AlarmEditorSheet: View {
         case .invalidAlarmVolume:
             return "알람 볼륨은 0–100% 사이여야 해요."
         case .invalidVoiceVolume:
-            return "목소리 크기는 0–100% 사이여야 해요."
+            return "목소리 크기는 30–100% 사이여야 해요."
         }
     }
 }

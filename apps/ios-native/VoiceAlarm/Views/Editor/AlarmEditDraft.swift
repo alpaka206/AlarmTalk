@@ -9,6 +9,8 @@ import Foundation
 ///
 /// Android 의 `AlarmEditorState` (in_progress 편집 상태 모델) 와 1:1 대응.
 struct AlarmEditDraft: Equatable {
+    private static let minVoiceVolumePercent = 30
+
     var label: String
     var hour: Int           // 0..23
     var minute: Int         // 0..59
@@ -83,7 +85,7 @@ struct AlarmEditDraft: Equatable {
         self.voiceFortuneBirthDate = record.voiceFortuneBirthDate ?? ""
         self.voiceFortuneBirthTime = record.voiceFortuneBirthTime ?? ""
         self.voiceRepeat = record.voiceRepeat
-        self.voiceVolumePercent = max(0, min(100, record.voiceVolumePercent))
+        self.voiceVolumePercent = Self.normalizedVoiceVolume(record.voiceVolumePercent)
     }
 
     init(
@@ -159,7 +161,7 @@ struct AlarmEditDraft: Equatable {
         if !(0...100).contains(alarmVolumePercent) {
             errors.append(.invalidAlarmVolume)
         }
-        if !(0...100).contains(voiceVolumePercent) {
+        if playMode != .alarmOnly && !(Self.minVoiceVolumePercent...100).contains(voiceVolumePercent) {
             errors.append(.invalidVoiceVolume)
         }
         return errors
@@ -260,7 +262,7 @@ struct AlarmEditDraft: Equatable {
                 ? existing?.dynamicVoicePreparedForFireAtMillis
                 : nil,
             voiceRepeat: alarmOnly ? true : voiceRepeat,
-            voiceVolumePercent: alarmOnly ? 100 : max(0, min(100, voiceVolumePercent)),
+            voiceVolumePercent: alarmOnly ? 100 : Self.normalizedVoiceVolume(voiceVolumePercent),
             ttsMessageId: alarmOnly ? nil : existing?.ttsMessageId,
             remoteAlarmId: existing?.remoteAlarmId,
             lastSyncedAtMillis: existing?.lastSyncedAtMillis,
@@ -277,6 +279,10 @@ struct AlarmEditDraft: Equatable {
             updatedAtMillis: nowMillis,
             alarmKitID: nil
         )
+    }
+
+    private static func normalizedVoiceVolume(_ value: Int) -> Int {
+        max(minVoiceVolumePercent, min(100, value))
     }
 }
 
