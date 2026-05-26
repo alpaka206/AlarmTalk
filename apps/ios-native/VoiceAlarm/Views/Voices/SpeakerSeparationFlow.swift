@@ -2,12 +2,30 @@ import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum SpeakerDraftStatus {
+    case cloning
+    case synthesizing
+    case ready
+    case failed
+}
+
+private struct SpeakerDraftState {
+    var profileId: String?
+    var previewURL: URL?
+    var status: SpeakerDraftStatus = .cloning
+    var errorMessage: String?
+
+    var isReady: Bool {
+        status == .ready && previewURL != nil && profileId != nil
+    }
+}
+
 /// 화자 분리 워크플로우.
 ///
 /// 1. 녹음 또는 기존 녹음 사용 -> raw upload (`uploadForSeparation`)
 /// 2. `runSeparation(uploadId:)` 호출 -> [VoiceSpeakerSegment]
-/// 3. 각 화자별 미리듣기 (`VoiceSegmentPreviewPlayer`) -> 본 화자 선택
-/// 4. 선택한 화자만 cropping 해 `selectSpeakerAndClone` 로 등록
+/// 3. 각 화자별 draft 목소리 생성 -> 생성 음성 미리듣기
+/// 4. 선택한 draft 만 정식 목소리로 승격하고 나머지는 삭제
 ///
 /// Android `VoiceProfileManagementPanel.kt:660~764` 의 화자 분리 블록을 풀어쓴 화면.
 struct SpeakerSeparationFlow: View {
@@ -20,7 +38,12 @@ struct SpeakerSeparationFlow: View {
 
     @State private var uploadId: String?
     @State private var uploadedAudioURL: URL?
+    @State private var uploadedDurationMs: Int?
     @State private var speakers: [VoiceSpeakerSegment] = []
+    @State private var speakerDraftStates: [String: SpeakerDraftState] = [:]
+    @State private var speakerDraftRunID = UUID()
+    @State private var activePreviewSpeakerId: String?
+    @State private var promotingSpeakerId: String?
     @State private var selectedSpeakerIds: Set<String> = []
     @State private var removedSpeakerIds: Set<String> = []
     @State private var profileName: String = "분리한 목소리"
@@ -81,7 +104,6 @@ struct SpeakerSeparationFlow: View {
             }
             if !speakers.isEmpty {
                 stepPick
-                stepRegister
             }
             if let localError {
                 Text(localError)
@@ -111,12 +133,22 @@ struct SpeakerSeparationFlow: View {
         }
         .onChange(of: voice.recorder.latestDurationMs) { _, durationMs in
             guard selectedFileURL == nil, let durationMs else { return }
+            cleanupDrafts()
             applyCropDefaults(durationMs: durationMs)
             uploadId = nil
             uploadedAudioURL = nil
+            uploadedDurationMs = nil
             speakers.removeAll()
             selectedSpeakerIds.removeAll()
             removedSpeakerIds.removeAll()
+        }
+        .onChange(of: voice.previewPlayer.isPlaying) { _, playing in
+            if !playing {
+                activePreviewSpeakerId = nil
+            }
+        }
+        .onDisappear {
+            cleanupDrafts()
         }
     }
 
@@ -294,7 +326,7 @@ struct SpeakerSeparationFlow: View {
     private var stepPick: some View {
         VStack(alignment: .leading, spacing: 10) {
             stepLabel(num: 3, title: "사용할 화자 고르기")
-            Text("재생해 보고 가장 잘 들리는 화자를 골라 주세요. 최대 \(voice.remainingProfileSlots)명까지 동시에 등록할 수 있어요.")
+            Text("각 화자의 목소리를 만든 뒤 미리듣고 사용할 목소리를 하나 골라 주세요.")
                 .font(.caption)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
             let visible = speakers.filter { !removedSpeakerIds.contains($0.id) }
@@ -311,7 +343,9 @@ struct SpeakerSeparationFlow: View {
     }
 
     private func speakerCard(speaker: VoiceSpeakerSegment, index: Int) -> some View {
-        let selected = selectedSpeakerIds.contains(speaker.id)
+        let draftState = speakerDraftStates[speaker.id] ?? SpeakerDraftState()
+        let isPlaying = activePreviewSpeakerId == speaker.id && voice.previewPlayer.isPlaying
+        let isPromoting = promotingSpeakerId == speaker.id
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("목소리 \(index + 1)")
@@ -324,40 +358,52 @@ struct SpeakerSeparationFlow: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
             }
-            if let url = uploadedAudioURL ?? preparedSourceURL {
-                VoiceSegmentPreviewPlayer(
-                    title: "구간 미리듣기",
-                    subtitle: nil,
-                    audioURL: url,
-                    startMs: speaker.startMs,
-                    endMs: speaker.endMs,
-                    onError: { localError = $0 }
-                )
+            HStack(spacing: 8) {
+                draftStatusIcon(draftState)
+                Text(draftStatusLabel(draftState))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(draftState.status == .failed ? VoiceAlarmTheme.error : VoiceAlarmTheme.textSecondary)
+                Spacer(minLength: 0)
+                if draftState.status == .cloning || draftState.status == .synthesizing || isPromoting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
             HStack(spacing: 8) {
                 Button {
-                    toggleSpeaker(speaker.id)
+                    toggleDraftPreview(speaker.id)
                 } label: {
-                    Text(selected ? "선택됨" : "선택")
+                    Label(isPlaying ? "일시정지" : "미리듣기",
+                          systemImage: isPlaying ? "pause.fill" : "play.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(selected ? .borderedProminent : .bordered)
-                .tint(selected ? VoiceAlarmTheme.primary : VoiceAlarmTheme.textSecondary)
-                .disabled(!selected && selectedSpeakerIds.count >= voice.remainingProfileSlots)
+                .buttonStyle(.bordered)
+                .disabled(!draftState.isReady || isPromoting)
+
+                Button {
+                    Task { await promoteSpeakerDraft(speaker.id) }
+                } label: {
+                    Label(isPromoting ? "등록 중" : "이 목소리 선택",
+                          systemImage: isPromoting ? "hourglass" : "checkmark.seal")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(VoiceAlarmTheme.primary)
+                .disabled(!draftState.isReady || isPromoting || promotingSpeakerId != nil || voice.isBusy)
 
                 Button(role: .destructive) {
-                    removedSpeakerIds.insert(speaker.id)
-                    selectedSpeakerIds.remove(speaker.id)
+                    removeSpeaker(speaker.id)
                 } label: {
                     Image(systemName: "xmark.bin")
                 }
                 .buttonStyle(.bordered)
+                .disabled(isPromoting)
             }
         }
         .padding(12)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(selected ? VoiceAlarmTheme.primary : VoiceAlarmTheme.outline, lineWidth: selected ? 1.5 : 1)
+                .stroke(draftState.isReady ? VoiceAlarmTheme.primary.opacity(0.7) : VoiceAlarmTheme.outline, lineWidth: draftState.isReady ? 1.5 : 1)
         )
         .background(VoiceAlarmTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -448,6 +494,41 @@ struct SpeakerSeparationFlow: View {
         }
     }
 
+    private func draftStatusIcon(_ state: SpeakerDraftState) -> some View {
+        let systemName: String
+        let color: Color
+        switch state.status {
+        case .cloning:
+            systemName = "waveform"
+            color = VoiceAlarmTheme.textSecondary
+        case .synthesizing:
+            systemName = "speaker.wave.2.fill"
+            color = VoiceAlarmTheme.textSecondary
+        case .ready:
+            systemName = "checkmark.circle.fill"
+            color = VoiceAlarmTheme.primary
+        case .failed:
+            systemName = "exclamationmark.triangle.fill"
+            color = VoiceAlarmTheme.error
+        }
+        return Image(systemName: systemName)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color)
+    }
+
+    private func draftStatusLabel(_ state: SpeakerDraftState) -> String {
+        switch state.status {
+        case .cloning:
+            return "목소리를 만드는 중"
+        case .synthesizing:
+            return "미리듣기를 만드는 중"
+        case .ready:
+            return "준비 완료"
+        case .failed:
+            return state.errorMessage ?? "미리듣기를 준비하지 못했어요."
+        }
+    }
+
     // MARK: - Actions
 
     private func importAudioFile(_ source: URL) async {
@@ -455,12 +536,14 @@ struct SpeakerSeparationFlow: View {
             let importedURL = try copyImportedAudio(source)
             let durationMs = try await readAudioDurationMs(importedURL)
             await MainActor.run {
+                cleanupDrafts()
                 selectedFileURL = importedURL
                 selectedFileName = source.lastPathComponent
                 selectedFileDurationMs = durationMs
                 applyCropDefaults(durationMs: durationMs)
                 uploadId = nil
                 uploadedAudioURL = nil
+                uploadedDurationMs = nil
                 speakers.removeAll()
                 selectedSpeakerIds.removeAll()
                 removedSpeakerIds.removeAll()
@@ -498,9 +581,12 @@ struct SpeakerSeparationFlow: View {
             originalName: preparedUploadFileName,
             session: auth.session
         )
+        guard let id else { return }
         await MainActor.run {
+            cleanupDrafts()
             self.uploadId = id
             self.uploadedAudioURL = prepared.url
+            self.uploadedDurationMs = prepared.durationMs
             self.speakers.removeAll()
             self.selectedSpeakerIds.removeAll()
             self.removedSpeakerIds.removeAll()
@@ -510,17 +596,26 @@ struct SpeakerSeparationFlow: View {
     private func runSeparate() async {
         guard validateCreateVoiceAccess() else { return }
         guard let uploadId else { return }
+        cleanupDrafts()
         separationBusy = true
         defer { separationBusy = false }
         let result = await voice.runSeparation(uploadId: uploadId, session: auth.session)
+        let visible = result.filter { $0.endMs > $0.startMs }.prefix(3).map { $0 }
+        let draftRunID = UUID()
         await MainActor.run {
-            self.speakers = result.filter { $0.endMs > $0.startMs }.prefix(3).map { $0 }
+            self.speakerDraftRunID = draftRunID
+            self.speakers = visible
+            self.speakerDraftStates = Dictionary(uniqueKeysWithValues: visible.map { ($0.id, SpeakerDraftState(status: .cloning)) })
             self.selectedSpeakerIds.removeAll()
             self.removedSpeakerIds.removeAll()
+        }
+        for speaker in visible {
+            await prepareSpeakerDraft(speaker, runID: draftRunID)
         }
     }
 
     private func resetSpeakers() {
+        cleanupDrafts()
         speakers.removeAll()
         selectedSpeakerIds.removeAll()
         removedSpeakerIds.removeAll()
@@ -531,6 +626,173 @@ struct SpeakerSeparationFlow: View {
             selectedSpeakerIds.remove(id)
         } else if selectedSpeakerIds.count < voice.remainingProfileSlots {
             selectedSpeakerIds.insert(id)
+        }
+    }
+
+    private func prepareSpeakerDraft(_ speaker: VoiceSpeakerSegment, runID: UUID) async {
+        guard let source = uploadedAudioURL ?? preparedSourceURL else {
+            markDraftFailed(speaker.id, message: "원본 음원을 찾지 못했어요.")
+            return
+        }
+        let endMs = speakerDraftEndMs(for: speaker)
+        let durationMs = max(0, endMs - speaker.startMs)
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            markDraftFailed(speaker.id, message: "1분 이상 들리는 구간이 필요해요.")
+            return
+        }
+        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+            markDraftFailed(speaker.id, message: "2분 이하 구간만 사용할 수 있어요.")
+            return
+        }
+        let cropped: URL
+        do {
+            cropped = try await cropAudio(source: source, startMs: speaker.startMs, endMs: endMs)
+        } catch {
+            guard isCurrentDraftRun(runID, speakerId: speaker.id) else { return }
+            markDraftFailed(
+                speaker.id,
+                message: AudioUserFacingError.message(for: error, fallback: "화자 구간을 준비하지 못했어요.")
+            )
+            return
+        }
+        guard isCurrentDraftRun(runID, speakerId: speaker.id) else { return }
+        let resolvedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "분리한 목소리"
+            : profileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let profile = await voice.cloneSpeakerDraft(
+            audioFileURL: cropped,
+            name: resolvedName,
+            durationMs: durationMs,
+            uploadFileName: preparedUploadFileName,
+            session: auth.session
+        ) else {
+            guard isCurrentDraftRun(runID, speakerId: speaker.id) else { return }
+            markDraftFailed(speaker.id, message: voice.statusMessage ?? "목소리를 만들지 못했어요.")
+            return
+        }
+        guard isCurrentDraftRun(runID, speakerId: speaker.id) else {
+            await voice.deleteDraftVoice(profileId: profile.id, session: auth.session)
+            return
+        }
+        speakerDraftStates[speaker.id] = SpeakerDraftState(
+            profileId: profile.id,
+            status: .synthesizing
+        )
+        guard let previewURL = await voice.prepareSpeakerDraftPreview(
+            profileId: profile.id,
+            session: auth.session
+        ) else {
+            guard isCurrentDraftRun(runID, speakerId: speaker.id) else {
+                await voice.deleteDraftVoice(profileId: profile.id, session: auth.session)
+                return
+            }
+            markDraftFailed(
+                speaker.id,
+                profileId: profile.id,
+                message: voice.statusMessage ?? "미리듣기를 만들지 못했어요."
+            )
+            await voice.deleteDraftVoice(profileId: profile.id, session: auth.session)
+            return
+        }
+        guard isCurrentDraftRun(runID, speakerId: speaker.id) else {
+            await voice.deleteDraftVoice(profileId: profile.id, session: auth.session)
+            return
+        }
+        speakerDraftStates[speaker.id] = SpeakerDraftState(
+            profileId: profile.id,
+            previewURL: previewURL,
+            status: .ready
+        )
+    }
+
+    private func isCurrentDraftRun(_ runID: UUID, speakerId: String) -> Bool {
+        speakerDraftRunID == runID &&
+            !removedSpeakerIds.contains(speakerId) &&
+            speakers.contains(where: { $0.id == speakerId })
+    }
+
+    private func speakerDraftEndMs(for speaker: VoiceSpeakerSegment) -> Int {
+        let sourceDuration = uploadedDurationMs
+            ?? preparedDurationMs
+            ?? max(speaker.endMs, speaker.startMs + VoiceProfileLimits.minDurationMs)
+        let desiredDuration = min(
+            max(speaker.durationMs, VoiceProfileLimits.minDurationMs),
+            VoiceProfileLimits.maxDurationMs
+        )
+        return min(sourceDuration, speaker.startMs + desiredDuration)
+    }
+
+    private func markDraftFailed(_ speakerId: String, profileId: String? = nil, message: String? = nil) {
+        var state = speakerDraftStates[speakerId] ?? SpeakerDraftState()
+        state.profileId = profileId ?? state.profileId
+        state.status = .failed
+        state.errorMessage = message
+        speakerDraftStates[speakerId] = state
+    }
+
+    private func toggleDraftPreview(_ speakerId: String) {
+        if activePreviewSpeakerId == speakerId, voice.previewPlayer.isPlaying {
+            voice.previewPlayer.stop()
+            activePreviewSpeakerId = nil
+            return
+        }
+        guard let previewURL = speakerDraftStates[speakerId]?.previewURL else { return }
+        do {
+            try voice.previewPlayer.play(url: previewURL)
+            activePreviewSpeakerId = speakerId
+            localError = nil
+        } catch {
+            localError = "미리듣기를 재생하지 못했어요."
+        }
+    }
+
+    private func promoteSpeakerDraft(_ speakerId: String) async {
+        guard let profileId = speakerDraftStates[speakerId]?.profileId else { return }
+        promotingSpeakerId = speakerId
+        voice.previewPlayer.stop()
+        defer { promotingSpeakerId = nil }
+        let promoted = await voice.promoteDraftVoice(profileId: profileId, session: auth.session)
+        guard promoted != nil else {
+            localError = voice.statusMessage ?? "목소리를 등록하지 못했어요."
+            return
+        }
+        cleanupDrafts(excluding: [profileId])
+        route = .management
+    }
+
+    private func removeSpeaker(_ speakerId: String) {
+        cleanupDraft(for: speakerId)
+        removedSpeakerIds.insert(speakerId)
+        selectedSpeakerIds.remove(speakerId)
+    }
+
+    private func cleanupDraft(for speakerId: String) {
+        let state = speakerDraftStates.removeValue(forKey: speakerId)
+        if activePreviewSpeakerId == speakerId {
+            voice.previewPlayer.stop()
+            activePreviewSpeakerId = nil
+        }
+        guard let profileId = state?.profileId else { return }
+        let session = auth.session
+        Task { @MainActor in
+            await voice.deleteDraftVoice(profileId: profileId, session: session)
+        }
+    }
+
+    private func cleanupDrafts(excluding keptProfileIds: Set<String> = []) {
+        let profileIds = speakerDraftStates.values
+            .compactMap(\.profileId)
+            .filter { !keptProfileIds.contains($0) }
+        voice.previewPlayer.stop()
+        activePreviewSpeakerId = nil
+        speakerDraftRunID = UUID()
+        speakerDraftStates.removeAll()
+        guard !profileIds.isEmpty else { return }
+        let session = auth.session
+        Task { @MainActor in
+            for profileId in profileIds {
+                await voice.deleteDraftVoice(profileId: profileId, session: session)
+            }
         }
     }
 
@@ -713,6 +975,7 @@ struct SpeakerSeparationFlow: View {
     }
 
     private func clearImportedFile() {
+        cleanupDrafts()
         selectedFileURL = nil
         selectedFileName = nil
         selectedFileDurationMs = nil
@@ -724,6 +987,7 @@ struct SpeakerSeparationFlow: View {
         }
         uploadId = nil
         uploadedAudioURL = nil
+        uploadedDurationMs = nil
         speakers.removeAll()
         selectedSpeakerIds.removeAll()
         removedSpeakerIds.removeAll()

@@ -496,6 +496,115 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// SpeakerSeparationFlow 의 draft 단계 — 화자 구간을 임시 목소리로 학습한다.
+    /// 관계/호칭은 정식 프로필 편집 단계에서 관리하므로 draft 생성 때는 요구하지 않는다.
+    func cloneSpeakerDraft(
+        audioFileURL: URL,
+        name: String,
+        durationMs: Int,
+        uploadFileName: String? = nil,
+        session: AuthSession?
+    ) async -> VoiceProfile? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        let resolvedName = nonEmpty(name) ?? "분리한 목소리"
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            statusMessage = "1분 이상 들리는 구간이 필요해요."
+            return nil
+        }
+        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+            statusMessage = "2분 이하 구간만 사용할 수 있어요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.cloneVoice(
+                audioFileURL: audioFileURL,
+                name: resolvedName,
+                isShared: false,
+                durationMs: durationMs,
+                token: token,
+                uploadFileName: uploadFileName,
+                relationshipLabel: nil,
+                listenerTitle: nil,
+                isDraft: true
+            )
+            statusMessage = "미리듣기 목소리를 준비하고 있어요."
+            return profile
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// draft 목소리를 Android 와 같은 짧은 문장으로 합성해 선택 전 미리듣기 파일을 만든다.
+    func prepareSpeakerDraftPreview(profileId: String, session: AuthSession?) async -> URL? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let response = try await api.generateTTS(
+                TtsGenerateRequest(
+                    voiceProfileId: profileId,
+                    text: "이 목소리로 깨워드릴까요?",
+                    category: "custom",
+                    language: "ko",
+                    translate: false,
+                    random: false
+                ),
+                token: token
+            )
+            let cached = try AudioCacheStore.cache(
+                tts: response,
+                cacheKey: "draft_preview_\(profileId)"
+            )
+            statusMessage = "미리듣기를 만들었어요."
+            return cached.url
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// 선택한 draft 를 정식 목소리 프로필로 승격한다.
+    func promoteDraftVoice(profileId: String, session: AuthSession?) async -> VoiceProfile? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.promoteDraftVoice(profileId: profileId, token: token)
+            selectedProfileID = profile.id
+            statusMessage = "목소리를 등록했어요."
+            await refresh(session: session, force: true, successMessage: nil)
+            return profile
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// 선택하지 않은 draft 는 알람에서 보이면 안 되므로 best-effort 로 정리한다.
+    func deleteDraftVoice(profileId: String, session: AuthSession?) async {
+        guard let token = session?.token else { return }
+        do {
+            try await api.deleteDraftVoice(profileId: profileId, token: token)
+        } catch {
+            // 정리 실패는 사용자 작업을 막지 않는다. 다음 서버 정리/재시도 대상이다.
+        }
+    }
+
     /// SpeakerSeparationFlow 의 3단계 — 사용자가 선택한 화자만 골라 새 목소리로 등록.
     func selectSpeakerAndClone(
         uploadId: String,

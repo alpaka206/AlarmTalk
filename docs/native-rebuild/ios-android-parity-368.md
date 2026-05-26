@@ -235,6 +235,10 @@
 - iOS voice creation and speaker-separation actions now mirror Android's
   ViewModel guardrails by checking paid voice access and the local voice-slot
   limit before starting upload, separation, or clone registration requests.
+- iOS speaker separation now mirrors Android's draft-preview-promote flow:
+  separated speakers are cloned as draft voices, previewed with the generated
+  "이 목소리로 깨워드릴까요?" audio, and only the selected draft is promoted while
+  the unselected drafts are cleaned up.
 - iOS voice deletion now mirrors Android's recovery path: a server 404 is
   treated as an already-deleted voice, selected voice state is cleared, local
   alarms are downgraded to alarm-only, and voice state is refreshed.
