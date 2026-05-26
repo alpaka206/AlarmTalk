@@ -328,17 +328,6 @@ struct AlarmEditorSheet: View {
                     .buttonStyle(.bordered)
                     .disabled(voiceStudio.isBusy || isWorking)
                 }
-
-                if !target.familyAlarmMode {
-                    Button {
-                        Task { await scheduleOneMinuteTest() }
-                    } label: {
-                        Label("1분 테스트", systemImage: "timer")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(isWorking)
-                }
             }
         }
         .scrollContentBackground(.hidden)
@@ -883,11 +872,6 @@ struct AlarmEditorSheet: View {
                 message: error.localizedDescription
             )
         }
-    }
-
-    private func scheduleOneMinuteTest() async {
-        await alarmKit.scheduleOneMinuteTest(store: store)
-        onSchedulingDidFinish()
     }
 
     private func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {

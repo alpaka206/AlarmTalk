@@ -277,6 +277,8 @@
 - iOS remote-alarm pull now filters server results to alarms targeted at the
   current user and sent by someone else before importing, matching Android's
   received-alarm sync boundary and avoiding local-owned remote duplicates.
+- iOS alarm editor no longer exposes the iOS-only "1분 테스트" action in the
+  user-facing save section, matching Android's editor surface.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
