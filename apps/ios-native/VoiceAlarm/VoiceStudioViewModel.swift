@@ -605,64 +605,6 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// SpeakerSeparationFlow 의 3단계 — 사용자가 선택한 화자만 골라 새 목소리로 등록.
-    func selectSpeakerAndClone(
-        uploadId: String,
-        speakerId: String,
-        name: String,
-        isShared: Bool,
-        durationMs: Int,
-        audioFileURL: URL,
-        uploadFileName: String? = nil,
-        relationshipLabel: String? = nil,
-        listenerTitle: String? = nil,
-        session: AuthSession?
-    ) async -> VoiceProfile? {
-        // 현재 백엔드는 화자 선택 후 별도 endpoint 가 아니라 cropped audio 를 다시
-        // /voice/clone 에 업로드해 처리한다. View 가 audio 를 cropping 한 뒤 결과 URL 을
-        // 넘기면 이 메서드가 clone 한다.
-        guard let token = session?.token else {
-            statusMessage = "로그인이 필요해요."
-            return nil
-        }
-        guard let fields = requiredVoiceProfileFields(
-            name: name,
-            relationshipLabel: relationshipLabel,
-            listenerTitle: listenerTitle
-        ) else {
-            return nil
-        }
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            // 화자 라벨 업데이트(존재할 때만) — best-effort.
-            _ = try? await api.updateVoiceUploadSpeaker(
-                uploadId: uploadId,
-                speakerId: speakerId,
-                label: fields.name,
-                token: token
-            )
-            let profile = try await api.cloneVoice(
-                audioFileURL: audioFileURL,
-                name: fields.name,
-                isShared: isShared,
-                durationMs: durationMs,
-                token: token,
-                uploadFileName: uploadFileName,
-                relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
-            )
-            selectedProfileID = profile.id
-            statusMessage = "선택한 목소리를 학습했어요."
-            await refresh(session: session, force: true, successMessage: nil)
-            return profile
-        } catch {
-            statusMessage = mapVoiceError(error)
-            return nil
-        }
-    }
-
     func generateTTS(
         session: AuthSession?,
         alarmHour: Int? = nil,

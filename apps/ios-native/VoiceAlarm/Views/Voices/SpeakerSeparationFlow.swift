@@ -44,12 +44,8 @@ struct SpeakerSeparationFlow: View {
     @State private var speakerDraftRunID = UUID()
     @State private var activePreviewSpeakerId: String?
     @State private var promotingSpeakerId: String?
-    @State private var selectedSpeakerIds: Set<String> = []
     @State private var removedSpeakerIds: Set<String> = []
     @State private var profileName: String = "분리한 목소리"
-    @State private var relationshipSelection = VoiceRelationshipSelection()
-    @State private var listenerTitle: String = ""
-    @State private var isShared: Bool = false
     @State private var separationBusy: Bool = false
     @State private var fileImporterPresented: Bool = false
     @State private var selectedFileURL: URL?
@@ -57,7 +53,6 @@ struct SpeakerSeparationFlow: View {
     @State private var selectedFileDurationMs: Int?
     @State private var cropStartMs: Int = 0
     @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
-    @State private var registerSubmitted: Bool = false
     @State private var localError: String?
 
     private var preparedSourceURL: URL? {
@@ -139,7 +134,6 @@ struct SpeakerSeparationFlow: View {
             uploadedAudioURL = nil
             uploadedDurationMs = nil
             speakers.removeAll()
-            selectedSpeakerIds.removeAll()
             removedSpeakerIds.removeAll()
         }
         .onChange(of: voice.previewPlayer.isPlaying) { _, playing in
@@ -409,79 +403,6 @@ struct SpeakerSeparationFlow: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    // MARK: - Step 4: register
-
-    private var stepRegister: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            stepLabel(num: 4, title: "이름 정하고 등록")
-            TextField("목소리 이름", text: $profileName)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: profileName) { _, newValue in
-                    if newValue.count > 50 {
-                        profileName = String(newValue.prefix(50))
-                    }
-                }
-            if registerSubmitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("목소리 이름을 입력해 주세요.")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.error)
-            }
-
-            VoiceRelationshipInputField(
-                selection: $relationshipSelection,
-                submitted: registerSubmitted
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("이 목소리가 나를 부를 이름")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                TextField("예: 지호야, 여보, 우리 손주", text: $listenerTitle)
-                    .textFieldStyle(.roundedBorder)
-                    .onChange(of: listenerTitle) { _, newValue in
-                        if newValue.count > 30 {
-                            listenerTitle = String(newValue.prefix(30))
-                        }
-                    }
-                if registerSubmitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("꼭 입력해 주세요.")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(VoiceAlarmTheme.error)
-                }
-            }
-            VoiceListenerPreviewCard(
-                listenerTitle: listenerTitle,
-                relationshipLabel: relationshipSelection.resolved
-            )
-
-            Toggle(isOn: $isShared) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("목소리 공유")
-                        .font(.footnote.weight(.semibold))
-                    Text(shareDescription)
-                        .font(.caption2)
-                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
-                }
-            }
-            .disabled(!canShareVoice)
-            Button {
-                Task { await registerSelected() }
-            } label: {
-                Label("선택한 화자 학습", systemImage: "checkmark.seal")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(VoiceAlarmTheme.primary)
-            .disabled(selectedSpeakerIds.isEmpty || !canCreateVoice || voice.isBusy)
-            if selectedSpeakerIds.count > voice.remainingProfileSlots {
-                Text("남은 슬롯(\(voice.remainingProfileSlots))보다 많이 골랐어요.")
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.error)
-            }
-        }
-        .sectionSurface()
-    }
-
     private func stepLabel(num: Int, title: String) -> some View {
         HStack(spacing: 8) {
             Text("\(num)")
@@ -545,7 +466,6 @@ struct SpeakerSeparationFlow: View {
                 uploadedAudioURL = nil
                 uploadedDurationMs = nil
                 speakers.removeAll()
-                selectedSpeakerIds.removeAll()
                 removedSpeakerIds.removeAll()
                 localError = durationMs < VoiceProfileLimits.minDurationMs
                     ? "1분 이상 파일을 선택해 주세요."
@@ -588,7 +508,6 @@ struct SpeakerSeparationFlow: View {
             self.uploadedAudioURL = prepared.url
             self.uploadedDurationMs = prepared.durationMs
             self.speakers.removeAll()
-            self.selectedSpeakerIds.removeAll()
             self.removedSpeakerIds.removeAll()
         }
     }
@@ -606,7 +525,6 @@ struct SpeakerSeparationFlow: View {
             self.speakerDraftRunID = draftRunID
             self.speakers = visible
             self.speakerDraftStates = Dictionary(uniqueKeysWithValues: visible.map { ($0.id, SpeakerDraftState(status: .cloning)) })
-            self.selectedSpeakerIds.removeAll()
             self.removedSpeakerIds.removeAll()
         }
         for speaker in visible {
@@ -617,16 +535,7 @@ struct SpeakerSeparationFlow: View {
     private func resetSpeakers() {
         cleanupDrafts()
         speakers.removeAll()
-        selectedSpeakerIds.removeAll()
         removedSpeakerIds.removeAll()
-    }
-
-    private func toggleSpeaker(_ id: String) {
-        if selectedSpeakerIds.contains(id) {
-            selectedSpeakerIds.remove(id)
-        } else if selectedSpeakerIds.count < voice.remainingProfileSlots {
-            selectedSpeakerIds.insert(id)
-        }
     }
 
     private func prepareSpeakerDraft(_ speaker: VoiceSpeakerSegment, runID: UUID) async {
@@ -763,7 +672,6 @@ struct SpeakerSeparationFlow: View {
     private func removeSpeaker(_ speakerId: String) {
         cleanupDraft(for: speakerId)
         removedSpeakerIds.insert(speakerId)
-        selectedSpeakerIds.remove(speakerId)
     }
 
     private func cleanupDraft(for speakerId: String) {
@@ -796,84 +704,6 @@ struct SpeakerSeparationFlow: View {
         }
     }
 
-    private func registerSelected() async {
-        registerSubmitted = true
-        guard validateCreateVoiceAccess() else { return }
-        guard let uploadId else {
-            localError = "업로드 정보를 잃어버렸어요. 처음부터 다시 시도해 주세요."
-            return
-        }
-        let chosen = speakers.filter { selectedSpeakerIds.contains($0.id) }
-        guard !chosen.isEmpty else {
-            localError = "등록할 화자를 선택해 주세요."
-            return
-        }
-        // 각 화자별 구간 길이가 minDuration 이상인지 확인.
-        let tooShort = chosen.first(where: { $0.durationMs < VoiceProfileLimits.minDurationMs })
-        if let tooShort {
-            localError = "화자 '\(tooShort.label)' 의 구간이 1분보다 짧아요."
-            return
-        }
-        let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedRelationship = relationshipSelection.resolved
-        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else {
-            localError = nil
-            return
-        }
-        guard !trimmedRelationship.isEmpty else {
-            localError = nil
-            return
-        }
-        guard !trimmedListener.isEmpty else {
-            localError = nil
-            return
-        }
-        guard let originalURL = uploadedAudioURL ?? preparedSourceURL else {
-            localError = "원본 음원을 찾지 못했어요."
-            return
-        }
-        localError = nil
-        for (idx, speaker) in chosen.enumerated() {
-            let resolvedName = chosen.count == 1
-                ? trimmedName
-                : "\(trimmedName) \(idx + 1)"
-            // 화자 구간만 잘라 새 임시 파일로.
-            if let cropped = try? await cropAudio(
-                source: originalURL,
-                startMs: speaker.startMs,
-                endMs: speaker.endMs
-            ) {
-                _ = await voice.selectSpeakerAndClone(
-                    uploadId: uploadId,
-                    speakerId: speaker.id,
-                    name: resolvedName.isEmpty ? "분리한 목소리" : resolvedName,
-                    isShared: shouldShareVoice,
-                    durationMs: speaker.durationMs,
-                    audioFileURL: cropped,
-                    uploadFileName: preparedUploadFileName,
-                    relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener,
-                    session: auth.session
-                )
-            }
-        }
-        // 성공 후 정리.
-        if voice.statusMessage?.contains("학습") == true {
-            route = .management
-        }
-    }
-
-    private var canShareVoice: Bool {
-        canShareVoiceWithOthers(
-            subscriptionResponse: socialFeatures.subscription,
-            familyGroup: socialFeatures.familyGroup,
-            authSession: auth.session,
-            storeTier: subscriptions.currentTier,
-            userPlan: auth.session?.user.plan
-        )
-    }
-
     private var hasPaidVoiceAccess: Bool {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
@@ -893,17 +723,6 @@ struct SpeakerSeparationFlow: View {
             return false
         }
         return true
-    }
-
-    private var shouldShareVoice: Bool {
-        isShared && canShareVoice
-    }
-
-    private var shareDescription: String {
-        if !canShareVoice {
-            return "공유는 커플/가족 이용권에서 사용할 수 있어요."
-        }
-        return isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요."
     }
 
     /// 임시 cropping — AVAssetExportSession 기반.
@@ -989,7 +808,6 @@ struct SpeakerSeparationFlow: View {
         uploadedAudioURL = nil
         uploadedDurationMs = nil
         speakers.removeAll()
-        selectedSpeakerIds.removeAll()
         removedSpeakerIds.removeAll()
         localError = nil
     }
