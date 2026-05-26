@@ -104,10 +104,15 @@ final class SubscriptionManager: ObservableObject {
                 // 결제는 나중에 `Transaction.updates` listener 로 들어온다.
                 return .pending
             @unknown default:
-                return .failure(reason: "알 수 없는 결제 상태")
+                return .failure(reason: "결제 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.")
             }
         } catch {
-            return .failure(reason: error.localizedDescription)
+            return .failure(
+                reason: Self.userFacingPurchaseError(
+                    error,
+                    fallback: "결제에 실패했어요. 잠시 후 다시 시도해 주세요."
+                )
+            )
         }
     }
 
@@ -239,6 +244,11 @@ final class SubscriptionManager: ObservableObject {
             self.lastError = "결제 확인 동기화에 실패했어요. 잠시 후 자동 재시도됩니다."
         }
     }
+
+    private static func userFacingPurchaseError(_ error: Error, fallback: String) -> String {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.containsKorean ? message : fallback
+    }
 }
 
 /// `SubscriptionManager.purchase(_:)` 가 호출자에게 돌려주는 결과 종류.
@@ -262,7 +272,17 @@ enum PurchaseResult: Equatable {
         case .success:        return "결제가 완료되었어요."
         case .userCancelled:  return "결제를 취소했어요."
         case .pending:        return "결제 승인 대기 중이에요."
-        case .failure(let r): return "결제에 실패했어요: \(r)"
+        case .failure(let r): return r
+        }
+    }
+}
+
+private extension String {
+    var containsKorean: Bool {
+        contains { character in
+            character.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(Int(scalar.value))
+            }
         }
     }
 }
