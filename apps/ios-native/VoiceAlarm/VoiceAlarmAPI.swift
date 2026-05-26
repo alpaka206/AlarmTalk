@@ -1558,12 +1558,11 @@ final class VoiceAlarmAPI {
         )
     }
 
-    /// 사용자 검색. 백엔드가 도입되기 전이라도 SocialFeatureViewModel 의 send-note
-    /// 흐름이 컴파일되도록 미리 정의해 둔다. 호출 사이트가 없으면 dead code 가 아닌
-    /// "공개된 미사용 API" 로 남는다.
+    /// 사용자 검색. Android 및 backend contract 의 `GET /user/search` 와 동일.
+    /// 호출 사이트가 없으면 dead code 가 아닌 "공개된 미사용 API" 로 남는다.
     func searchUsers(query: String, token: String) async throws -> [UserSearchResult] {
         let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let response: UserSearchResponse = try await request("users/search?q=\(escaped)", token: token)
+        let response: UserSearchResponse = try await request("user/search?q=\(escaped)", token: token)
         return response.users
     }
 
