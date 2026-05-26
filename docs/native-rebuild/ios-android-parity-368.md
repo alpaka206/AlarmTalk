@@ -141,6 +141,9 @@
   the same "register after current pass" guidance, shared members confirm
   leaving the current pass before entering a new code, and registration uses an
   X-dismiss confirmation sheet.
+- iOS code registration now also mirrors Android's post-registration routing:
+  invite/`INV-` codes open the shared-pass/member sheet, while non-invite
+  voucher codes return to the home tab after the refreshed session is applied.
 - iOS alarm list now hides the developer-facing server sync card and removes
   row-level local/server/audio detail text and manual "server save" action so
   the user-facing list matches Android's simple time/label/toggle/warning

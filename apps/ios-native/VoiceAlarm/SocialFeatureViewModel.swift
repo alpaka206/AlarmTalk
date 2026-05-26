@@ -1,5 +1,10 @@
 import Foundation
 
+enum CodeRegistrationDestination: Equatable {
+    case home
+    case sharedPass
+}
+
 @MainActor
 final class SocialFeatureViewModel: ObservableObject {
     @Published var familyGroup: FamilyGroupCurrentResponse?
@@ -186,29 +191,31 @@ final class SocialFeatureViewModel: ObservableObject {
         return recipientIDs.first
     }
 
-    func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async {
+    func registerCode(_ codeOverride: String? = nil, session: AuthSession?) async -> CodeRegistrationDestination? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
-            return
+            return nil
         }
         let code = (codeOverride ?? inviteCode).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !code.isEmpty else {
             statusMessage = "코드를 입력해 주세요."
-            return
+            return nil
         }
-        guard !isBusy else { return }
+        guard !isBusy else { return nil }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await api.registerCode(code, token: token)
+            let response = try await api.registerCode(code, token: token)
             if codeOverride == nil || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines) == code {
                 inviteCode = ""
             }
             statusMessage = "코드를 등록했어요."
             await refreshAll(session: session, force: true)
+            return Self.codeRegistrationDestination(responseType: response.type, code: code)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
+            return nil
         }
     }
 
@@ -428,6 +435,15 @@ final class SocialFeatureViewModel: ObservableObject {
 
     static func upsertingVoucher(_ voucher: VoucherItem, into vouchers: [VoucherItem]) -> [VoucherItem] {
         [voucher] + vouchers.filter { $0.id != voucher.id }
+    }
+
+    static func codeRegistrationDestination(responseType: String?, code: String) -> CodeRegistrationDestination {
+        let normalizedType = responseType?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalizedType == "invite" || normalizedCode.range(of: "INV-", options: [.anchored, .caseInsensitive]) != nil {
+            return .sharedPass
+        }
+        return .home
     }
 
     static func billingErrorMessage(_ error: Error, fallback: String) -> String {

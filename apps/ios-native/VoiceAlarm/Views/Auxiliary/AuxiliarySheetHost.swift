@@ -8,6 +8,7 @@ import SwiftUI
 struct AuxiliarySheetHost: View {
     let screen: AuxiliaryScreen
     let onClose: () -> Void
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
 
     var body: some View {
         NavigationStack {
@@ -33,7 +34,7 @@ struct AuxiliarySheetHost: View {
                     ScreenHeader(title: screen.title)
                     switch screen {
                     case .people:
-                        PeoplePanel()
+                        PeoplePanel(onCodeRegistered: onCodeRegistered)
                     case .growth:
                         GrowthPanel()
                     case .billing:

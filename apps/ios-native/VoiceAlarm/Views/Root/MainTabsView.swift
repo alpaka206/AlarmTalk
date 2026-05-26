@@ -110,9 +110,11 @@ struct MainTabsView: View {
                 }
             }
             .sheet(item: $auxiliaryScreen) { screen in
-                AuxiliarySheetHost(screen: screen) {
-                    auxiliaryScreen = nil
-                }
+                AuxiliarySheetHost(
+                    screen: screen,
+                    onClose: { auxiliaryScreen = nil },
+                    onCodeRegistered: handleCodeRegistrationDestination
+                )
             }
             .planGate(item: $planGate) {
                 openBillingAfterPlanGate()
@@ -153,7 +155,10 @@ struct MainTabsView: View {
         case .alarms:
             AlarmsListView(openEditor: { editorTarget = $0 })
         case .messages:
-            MessagesView(selectTab: selectTab)
+            MessagesView(
+                selectTab: selectTab,
+                onCodeRegistered: handleCodeRegistrationDestination
+            )
         }
     }
 
@@ -214,6 +219,16 @@ struct MainTabsView: View {
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 300_000_000)
             auxiliaryScreen = .billing
+        }
+    }
+
+    private func handleCodeRegistrationDestination(_ destination: CodeRegistrationDestination) {
+        switch destination {
+        case .home:
+            auxiliaryScreen = nil
+            selectedTab = .home
+        case .sharedPass:
+            auxiliaryScreen = .members
         }
     }
 

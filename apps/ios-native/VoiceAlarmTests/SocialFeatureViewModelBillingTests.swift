@@ -30,6 +30,33 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         XCTAssertEqual(result.first?.useCount, 1)
     }
 
+    func test_codeRegistrationDestination_opensSharedPassForInviteResponseLikeAndroid() {
+        let result = SocialFeatureViewModel.codeRegistrationDestination(
+            responseType: "invite",
+            code: "GIFT-1234"
+        )
+
+        XCTAssertEqual(result, .sharedPass)
+    }
+
+    func test_codeRegistrationDestination_opensSharedPassForInvitePrefixLikeAndroid() {
+        let result = SocialFeatureViewModel.codeRegistrationDestination(
+            responseType: nil,
+            code: "inv-abcd-1234"
+        )
+
+        XCTAssertEqual(result, .sharedPass)
+    }
+
+    func test_codeRegistrationDestination_opensHomeForVoucherLikeAndroid() {
+        let result = SocialFeatureViewModel.codeRegistrationDestination(
+            responseType: "voucher",
+            code: "GIFT-ABCD-1234"
+        )
+
+        XCTAssertEqual(result, .home)
+    }
+
     func test_billingFailureMessage_matchesAndroidErrorCodeCopy() {
         XCTAssertEqual(
             SocialFeatureViewModel.billingFailureMessage(errorCode: "SAME_PLAN", fallback: "fallback"),

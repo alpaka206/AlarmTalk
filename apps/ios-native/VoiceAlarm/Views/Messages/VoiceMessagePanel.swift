@@ -9,6 +9,8 @@ struct VoiceMessagePanel: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
 
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
+
     @State private var composerOpen = false
 
     var body: some View {
@@ -35,7 +37,7 @@ struct VoiceMessagePanel: View {
                     subtitle: "초대 코드를 등록하거나 가족 이용권 공유 코드를 만든 뒤 메시지를 보낼 수 있어요.",
                     icon: "person.2"
                 )
-                CodeRegisterRow()
+                CodeRegisterRow(onCodeRegistered: onCodeRegistered)
             } else {
                 Button {
                     composerOpen = true
@@ -374,6 +376,8 @@ struct CodeRegisterRow: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
+
     @State private var inviteCodeDraft = ""
     @State private var voucherCodeDraft = ""
     @State private var showCodeInputs = false
@@ -464,11 +468,15 @@ struct CodeRegisterRow: View {
                         inviteCodeDraft = ""
                         voucherCodeDraft = ""
                         Task {
-                            await socialFeatures.registerCode(
+                            if let destination = await socialFeatures.registerCode(
                                 code,
                                 session: auth.session
-                            )
-                            await auth.refreshUser()
+                            ) {
+                                await auth.refreshUser()
+                                await MainActor.run {
+                                    onCodeRegistered(destination)
+                                }
+                            }
                         }
                     }
                 )

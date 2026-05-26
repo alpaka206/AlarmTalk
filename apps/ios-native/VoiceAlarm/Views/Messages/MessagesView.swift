@@ -9,11 +9,12 @@ struct MessagesView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
 
     let selectTab: (NativeTab) -> Void
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScreenHeader(title: "메시지")
-            VoiceMessagePanel()
+            VoiceMessagePanel(onCodeRegistered: onCodeRegistered)
             ttsMessageArchivePanel
         }
     }

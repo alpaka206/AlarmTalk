@@ -7,6 +7,8 @@ import SwiftUI
 struct PeoplePanel: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let group = socialFeatures.familyGroup?.group {
@@ -48,7 +50,7 @@ struct PeoplePanel: View {
                 )
             }
 
-            CodeRegisterRow()
+            CodeRegisterRow(onCodeRegistered: onCodeRegistered)
 
             if socialFeatures.vouchers.isEmpty {
                 Text("발급된 공유 코드가 없어요.")
