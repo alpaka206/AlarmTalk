@@ -77,6 +77,7 @@ struct VoiceCloneUploadFlow: View {
     private var canSubmit: Bool {
         !voice.isBusy
             && !voice.recorder.isRecording
+            && canCreateVoice
             && hasPreparedSource
             && isInValidRange
     }
@@ -496,6 +497,14 @@ struct VoiceCloneUploadFlow: View {
 
     private func submit() async {
         submitted = true
+        guard hasPaidVoiceAccess else {
+            voice.statusMessage = "유료 이용권에서 사용할 수 있어요."
+            return
+        }
+        guard !voice.isProfileLimitReached else {
+            voice.statusMessage = "목소리는 최대 \(VoiceProfileLimits.maxProfiles)개까지 만들 수 있어요."
+            return
+        }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             voice.statusMessage = "목소리 이름을 입력해 주세요."
@@ -573,6 +582,19 @@ struct VoiceCloneUploadFlow: View {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
+    }
+
+    private var hasPaidVoiceAccess: Bool {
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
+    }
+
+    private var canCreateVoice: Bool {
+        hasPaidVoiceAccess && !voice.isProfileLimitReached
     }
 
     private var shouldShareVoice: Bool {

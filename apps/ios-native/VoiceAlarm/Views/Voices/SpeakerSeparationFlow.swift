@@ -67,6 +67,10 @@ struct SpeakerSeparationFlow: View {
             cropDurationMs <= VoiceProfileLimits.maxDurationMs
     }
 
+    private var canCreateVoice: Bool {
+        hasPaidVoiceAccess && !voice.isProfileLimitReached
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
@@ -186,7 +190,7 @@ struct SpeakerSeparationFlow: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
-            .disabled(!preparedSourceReady || voice.isBusy)
+            .disabled(!preparedSourceReady || !canCreateVoice || voice.isBusy)
         }
         .sectionSurface()
     }
@@ -271,7 +275,7 @@ struct SpeakerSeparationFlow: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VoiceAlarmTheme.primary)
-                .disabled(separationBusy || voice.isBusy)
+                .disabled(separationBusy || !canCreateVoice || voice.isBusy)
 
                 Button {
                     resetSpeakers()
@@ -422,7 +426,7 @@ struct SpeakerSeparationFlow: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
-            .disabled(selectedSpeakerIds.isEmpty || voice.isBusy)
+            .disabled(selectedSpeakerIds.isEmpty || !canCreateVoice || voice.isBusy)
             if selectedSpeakerIds.count > voice.remainingProfileSlots {
                 Text("남은 슬롯(\(voice.remainingProfileSlots))보다 많이 골랐어요.")
                     .font(.caption)
@@ -472,6 +476,7 @@ struct SpeakerSeparationFlow: View {
     }
 
     private func uploadCurrentRecording() async {
+        guard validateCreateVoiceAccess() else { return }
         guard preparedSourceURL != nil,
               preparedDurationMs != nil else {
             localError = "녹음하거나 파일을 선택해 주세요."
@@ -503,6 +508,7 @@ struct SpeakerSeparationFlow: View {
     }
 
     private func runSeparate() async {
+        guard validateCreateVoiceAccess() else { return }
         guard let uploadId else { return }
         separationBusy = true
         defer { separationBusy = false }
@@ -530,6 +536,7 @@ struct SpeakerSeparationFlow: View {
 
     private func registerSelected() async {
         registerSubmitted = true
+        guard validateCreateVoiceAccess() else { return }
         guard let uploadId else {
             localError = "업로드 정보를 잃어버렸어요. 처음부터 다시 시도해 주세요."
             return
@@ -603,6 +610,27 @@ struct SpeakerSeparationFlow: View {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
+    }
+
+    private var hasPaidVoiceAccess: Bool {
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
+    }
+
+    private func validateCreateVoiceAccess() -> Bool {
+        guard hasPaidVoiceAccess else {
+            localError = "유료 이용권에서 사용할 수 있어요."
+            return false
+        }
+        guard !voice.isProfileLimitReached else {
+            localError = "목소리는 최대 \(VoiceProfileLimits.maxProfiles)개까지 만들 수 있어요."
+            return false
+        }
+        return true
     }
 
     private var shouldShareVoice: Bool {

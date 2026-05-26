@@ -232,6 +232,9 @@
   trimmed, relationship/listener fields are always included, `isDraft=false` is
   sent by default, and ViewModel clone/update paths validate relationship and
   listener labels before making the server call.
+- iOS voice creation and speaker-separation actions now mirror Android's
+  ViewModel guardrails by checking paid voice access and the local voice-slot
+  limit before starting upload, separation, or clone registration requests.
 - iOS voice deletion now mirrors Android's recovery path: a server 404 is
   treated as an already-deleted voice, selected voice state is cleared, local
   alarms are downgraded to alarm-only, and voice state is refreshed.
