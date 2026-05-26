@@ -252,6 +252,8 @@
   request value (`immediate`) instead of the old UI-only `now` alias.
 - iOS share-code preparation messages now use Android's active-plan label
   (`커플`, `가족`, or `공유`) instead of always saying "가족".
+- iOS share-code creation now also upserts the returned voucher like Android,
+  replacing stale rows with the same id and moving the fresh code to the top.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

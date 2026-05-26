@@ -18,6 +18,18 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         XCTAssertEqual(SocialFeatureViewModel.shareCodePlanLabel(response(planKey: "legacy", planType: "couple")), "커플")
     }
 
+    func test_upsertingVoucher_replacesSameIdAndMovesToFrontLikeAndroid() {
+        let stale = voucher(id: "share", code: "INV-OLD", useCount: 0)
+        let other = voucher(id: "other", code: "GIFT-1", useCount: 0)
+        let fresh = voucher(id: "share", code: "INV-NEW", useCount: 1)
+
+        let result = SocialFeatureViewModel.upsertingVoucher(fresh, into: [other, stale])
+
+        XCTAssertEqual(result.map(\.id), ["share", "other"])
+        XCTAssertEqual(result.first?.code, "INV-NEW")
+        XCTAssertEqual(result.first?.useCount, 1)
+    }
+
     private func response(planKey: String, planType: String) -> BillingSubscriptionResponse {
         BillingSubscriptionResponse(
             subscription: nil,
@@ -31,6 +43,21 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
                 priceKrw: 0
             ),
             nextPlan: nil
+        )
+    }
+
+    private func voucher(id: String, code: String, useCount: Int) -> VoucherItem {
+        VoucherItem(
+            id: id,
+            code: code,
+            planKey: "family",
+            planName: "가족",
+            planType: "family",
+            status: "issued",
+            issuedAt: nil,
+            expiresAt: "2026-12-31T00:00:00Z",
+            maxUses: 6,
+            useCount: useCount
         )
     }
 }

@@ -332,9 +332,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let planLabel = Self.shareCodePlanLabel(subscription)
             let voucher = try await api.ensureFamilyShareCode(token: token)
-            if !vouchers.contains(where: { $0.id == voucher.id }) {
-                vouchers.insert(voucher, at: 0)
-            }
+            vouchers = Self.upsertingVoucher(voucher, into: vouchers)
             statusMessage = "\(planLabel) 공유 코드를 준비했어요."
             await refreshAll(session: session, force: true)
         } catch {
@@ -421,6 +419,10 @@ final class SocialFeatureViewModel: ObservableObject {
                 return "공유"
             }
         }
+    }
+
+    static func upsertingVoucher(_ voucher: VoucherItem, into vouchers: [VoucherItem]) -> [VoucherItem] {
+        [voucher] + vouchers.filter { $0.id != voucher.id }
     }
 
     // MARK: - Phase 3-C3: 멤버 액션, family alarm, 바우처 redeem, plan downgrade cascade
