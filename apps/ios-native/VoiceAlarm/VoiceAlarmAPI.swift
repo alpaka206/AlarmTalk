@@ -1561,7 +1561,7 @@ final class VoiceAlarmAPI {
     /// 사용자 검색. Android 및 backend contract 의 `GET /user/search` 와 동일.
     /// 호출 사이트가 없으면 dead code 가 아닌 "공개된 미사용 API" 로 남는다.
     func searchUsers(query: String, token: String) async throws -> [UserSearchResult] {
-        let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let escaped = Self.percentEncodedQueryValue(query)
         let response: UserSearchResponse = try await request("user/search?q=\(escaped)", token: token)
         return response.users
     }
@@ -1681,6 +1681,12 @@ final class VoiceAlarmAPI {
     private func splitPathAndQuery(_ path: String) -> (path: String, query: String?) {
         guard let qIndex = path.firstIndex(of: "?") else { return (path, nil) }
         return (String(path[path.startIndex..<qIndex]), String(path[path.index(after: qIndex)...]))
+    }
+
+    private static func percentEncodedQueryValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     static func multipartUploadFileName(fileURL: URL, originalName: String?) -> String {

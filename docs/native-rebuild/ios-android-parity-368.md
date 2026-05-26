@@ -434,7 +434,9 @@
   not exposed from the alarm editor.
 - iOS user-search API now targets Android/backend's `GET /user/search`
   contract instead of the stale `users/search` path kept from the earlier
-  placeholder implementation.
+  placeholder implementation, and query values are percent-encoded as values so
+  `&`, `=`, and `+` inside a search term cannot be interpreted as query
+  delimiters.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
