@@ -134,8 +134,8 @@
   subscription/voucher state before opening, and show a selection sheet even
   when only one code is available.
 - iOS billing cancellation now opens an Android-style choice sheet and passes
-  `at_period_end` or `now` to the backend instead of immediately scheduling a
-  period-end cancellation from the button.
+  `at_period_end` or `immediate` to the backend instead of immediately
+  scheduling a period-end cancellation from the button.
 - iOS code registration now mirrors Android's family connection panel:
   invite codes and gift/pass codes have separate inputs, active-pass users see
   the same "register after current pass" guidance, shared members confirm
@@ -248,6 +248,8 @@
 - iOS alarm rows now expose Android's local copy behavior: copying an alarm
   creates a local-owned duplicate 10 minutes later, clears remote sync identity,
   schedules it with AlarmKit, and removes the duplicate if scheduling fails.
+- iOS subscription cancellation now uses Android/backend's immediate-cancel
+  request value (`immediate`) instead of the old UI-only `now` alias.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

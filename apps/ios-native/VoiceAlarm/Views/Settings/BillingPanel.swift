@@ -544,7 +544,7 @@ private struct CancelSubscriptionSheet: View {
                 .buttonStyle(.bordered)
 
                 Button(role: .destructive) {
-                    onConfirm("now")
+                    onConfirm("immediate")
                 } label: {
                     Text("지금 해지하기")
                         .font(.subheadline.weight(.semibold))

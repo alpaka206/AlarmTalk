@@ -389,12 +389,19 @@ final class SocialFeatureViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
-            _ = try await api.cancelSubscription(mode: mode, token: token)
-            statusMessage = mode == "now" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
+            let normalizedMode = Self.normalizedCancellationMode(mode)
+            _ = try await api.cancelSubscription(mode: normalizedMode, token: token)
+            statusMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
             await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    static func normalizedCancellationMode(_ mode: String) -> String {
+        let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized == "at_period_end" { return "at_period_end" }
+        return "immediate"
     }
 
     // MARK: - Phase 3-C3: 멤버 액션, family alarm, 바우처 redeem, plan downgrade cascade

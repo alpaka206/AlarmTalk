@@ -796,6 +796,7 @@ struct EnsureFamilyShareCodeResponse: Decodable, Equatable {
     var voucher: VoucherItem
 }
 
+/// Backend/Android billing mode contract: `immediate` or `at_period_end`.
 struct CancelSubscriptionRequest: Encodable {
     var mode: String
 }
