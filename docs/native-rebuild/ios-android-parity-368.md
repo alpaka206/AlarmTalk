@@ -257,6 +257,9 @@
 - iOS billing/code mutation failures now map backend `error_code` values to
   the same Korean user-facing messages Android uses for plan, checkout, cancel,
   and voucher failures.
+- iOS shared-pass leave/remove-member messages now mirror Android's
+  user-facing copy and fallback behavior instead of surfacing English server
+  messages.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

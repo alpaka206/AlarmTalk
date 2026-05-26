@@ -433,7 +433,7 @@ final class SocialFeatureViewModel: ObservableObject {
     static func billingErrorMessage(_ error: Error, fallback: String) -> String {
         billingFailureMessage(
             errorCode: extractServerErrorCode(from: error),
-            fallback: userFacingFallback(error, fallback: fallback)
+            fallback: userFacingErrorMessage(error, fallback: fallback)
         )
     }
 
@@ -458,7 +458,7 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    private static func userFacingFallback(_ error: Error, fallback: String) -> String {
+    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
         guard let apiError = error as? APIError else {
             let message = error.localizedDescription
             return message.containsKorean ? message : fallback
@@ -517,10 +517,10 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.leaveFamilyGroup(groupId: groupId, token: token)
-            statusMessage = "그룹에서 나왔어요."
+            statusMessage = "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
         }
     }
 
@@ -539,7 +539,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "멤버를 내보냈어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "멤버를 내보내지 못했어요")
         }
     }
 

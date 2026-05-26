@@ -68,6 +68,22 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         )
     }
 
+    func test_userFacingErrorMessage_usesFallbackForEnglishServerMessageLikeAndroid() {
+        let error = APIError.server(status: 400, message: "User not found", errorCode: nil)
+        XCTAssertEqual(
+            SocialFeatureViewModel.userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요"),
+            "이용권에서 나가지 못했어요"
+        )
+    }
+
+    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+        let error = APIError.server(status: 400, message: "이미 처리된 요청이에요", errorCode: nil)
+        XCTAssertEqual(
+            SocialFeatureViewModel.userFacingErrorMessage(error, fallback: "fallback"),
+            "이미 처리된 요청이에요"
+        )
+    }
+
     private func response(planKey: String, planType: String) -> BillingSubscriptionResponse {
         BillingSubscriptionResponse(
             subscription: nil,
