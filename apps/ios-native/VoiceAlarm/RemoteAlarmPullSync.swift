@@ -64,10 +64,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         let token = session.token
 
         let remoteAlarms = try await api.listAlarms(token: token)
+        let receivedRemoteAlarms = remoteAlarms.filter {
+            Self.isReceivedRemoteCandidate($0, currentUserID: userID)
+        }
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
         // 1. 신규/갱신 처리.
-        for remote in remoteAlarms {
+        for remote in receivedRemoteAlarms {
             let mapped = RemoteAlarmMapper.toLocalRecord(
                 remote,
                 currentUserID: userID,
@@ -145,6 +148,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     static func shouldApplyRemote(existing: LocalAlarmRecord, mapped: LocalAlarmRecord) -> Bool {
         if existing.syncStateEnum == .dirty { return false }
         return (mapped.lastSyncedAtMillis ?? 0) >= (existing.lastSyncedAtMillis ?? 0)
+    }
+
+    /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.
+    /// 내가 만든 서버 알람은 push sync 의 결과물이므로 received import 대상으로 삼지 않는다.
+    static func isReceivedRemoteCandidate(_ remote: RemoteAlarm, currentUserID: String) -> Bool {
+        guard let target = remote.targetUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !target.isEmpty,
+              target == currentUserID,
+              let sender = remote.senderUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sender.isEmpty,
+              sender != currentUserID else {
+            return false
+        }
+        return true
     }
 
     private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async {

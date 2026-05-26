@@ -274,6 +274,9 @@
   blank identifiers are omitted, and received remote alarms without
   `message_audio_url` are downgraded to alarm-only instead of trying to fetch
   unavailable voice audio.
+- iOS remote-alarm pull now filters server results to alarms targeted at the
+  current user and sent by someone else before importing, matching Android's
+  received-alarm sync boundary and avoiding local-owned remote duplicates.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

@@ -44,6 +44,35 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         XCTAssertFalse(RemoteAlarmPullSync.shouldApplyRemote(existing: existing, mapped: mapped))
     }
 
+    // MARK: - received remote filter
+
+    func test_isReceivedRemoteCandidate_targetMeSenderOther_returnsTrue() {
+        let remote = makeRemote(targetUserID: "me", senderUserID: "other")
+
+        XCTAssertTrue(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
+    }
+
+    func test_isReceivedRemoteCandidate_senderIsMe_returnsFalse() {
+        let remote = makeRemote(targetUserID: "me", senderUserID: "me")
+
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(remote, currentUserID: "me"))
+    }
+
+    func test_isReceivedRemoteCandidate_missingTargetOrSender_returnsFalse() {
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(
+            makeRemote(targetUserID: nil, senderUserID: "other"),
+            currentUserID: "me"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(
+            makeRemote(targetUserID: "me", senderUserID: nil),
+            currentUserID: "me"
+        ))
+        XCTAssertFalse(RemoteAlarmPullSync.isReceivedRemoteCandidate(
+            makeRemote(targetUserID: "someone-else", senderUserID: "other"),
+            currentUserID: "me"
+        ))
+    }
+
     // MARK: - merge
 
     func test_merge_preservesLocalIdentityAndCounters() {
@@ -190,6 +219,33 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
             origin: AlarmOrigin.receivedRemote.rawValue,
             createdAtMillis: now,
             updatedAtMillis: now
+        )
+    }
+
+    private func makeRemote(targetUserID: String?, senderUserID: String?) -> RemoteAlarm {
+        RemoteAlarm(
+            id: "remote",
+            time: "07:30",
+            repeatDays: [1, 2, 3, 4, 5],
+            isActive: true,
+            snoozeMinutes: 5,
+            mode: "tts",
+            vibrationPattern: "default",
+            wakeMode: "sound_then_voice",
+            voiceProfileId: "vp",
+            speakerId: nil,
+            messageId: "m1",
+            messageText: "msg",
+            category: nil,
+            rawAudioUrl: nil,
+            messageAudioUrl: "https://example.com/audio.m4a",
+            rawAudioDurationMs: nil,
+            targetUserId: targetUserID,
+            senderUserId: senderUserID,
+            senderName: "Other",
+            senderEmail: nil,
+            isFamilyAlarm: false,
+            isReceivedFamilyAlarm: false
         )
     }
 }
