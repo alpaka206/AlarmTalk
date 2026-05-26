@@ -24,7 +24,7 @@ export function Waitlist() {
     setStatus("loading");
     window.setTimeout(() => {
       // eslint-disable-next-line no-console
-      console.log("[Waker waitlist] mock submit:", trimmed);
+      console.log("[AlarmTalk waitlist] mock submit:", trimmed);
       setStatus("success");
       setEmail("");
     }, 700);

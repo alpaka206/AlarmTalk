@@ -11,7 +11,7 @@ export default function RootPage() {
   return (
     <main className="grid min-h-[60vh] place-items-center text-text-muted">
       <a href={`/${routing.defaultLocale}/`} className="underline">
-        Waker
+        AlarmTalk
       </a>
     </main>
   );

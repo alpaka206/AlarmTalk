@@ -1,6 +1,6 @@
 ﻿# Legal / Privacy Release Pack
 
-This folder contains launch-review drafts for Naro's legal and privacy surfaces.
+This folder contains launch-review drafts for AlarmTalk's legal and privacy surfaces.
 They are written for Korean launch first, with Android first and iOS later.
 
 These drafts are not a substitute for review by counsel. Before public release,
@@ -29,7 +29,7 @@ business registration, payment, and processor details.
 
 ## Release Blockers
 
-- Confirm the final public brand: `Naro`, `Waker`, or both.
+- Confirm the final public brand: `AlarmTalk` (Korean: `알람톡`).
 - Confirm operator entity, representative, address, business registration number,
   mail-order business registration if paid plans are sold directly.
 - Confirm support/privacy email domains are live.

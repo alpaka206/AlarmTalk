@@ -104,7 +104,7 @@ Apple App Store 정책상 디지털 구독은 **반드시 StoreKit2 IAP** 로 �
 
 ### App Store Connect 제품 등록
 
-App Store Connect → My Apps → Naro → Features → In-App Purchases 에서 다음 6개 SKU 를 동일한 구독 그룹("Naro Subscriptions") 아래에 등록한다.
+App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 6개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다.
 
 | productID | PlanTier | Period | 비고 |
 | --- | --- | --- | --- |

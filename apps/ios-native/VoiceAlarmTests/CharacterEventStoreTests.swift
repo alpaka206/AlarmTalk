@@ -266,7 +266,7 @@ final class CharacterEventStoreTests: XCTestCase {
     private func makeSuccessResponse(grantedXp: Int) -> CharacterGrantResponse {
         CharacterGrantResponse(
             character: CharacterPayload(
-                id: "c", name: "Naro", level: 1, xp: grantedXp, affection: 0,
+                id: "c", name: "AlarmTalk", level: 1, xp: grantedXp, affection: 0,
                 stage: "egg", dailyXp: grantedXp
             ),
             progress: CharacterProgress(

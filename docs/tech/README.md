@@ -1,6 +1,6 @@
 # Technical Reference
 
-System architecture, database schema, and HTTP API for Naro.
+System architecture, database schema, and HTTP API for AlarmTalk.
 
 ## 1. System Architecture
 

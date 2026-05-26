@@ -11,7 +11,7 @@ export function BrandMark({ size = 36, className }: Props) {
       width={size}
       height={size}
       role="img"
-      aria-label="Waker"
+      aria-label="AlarmTalk"
       className={className}
     >
       <rect width="64" height="64" rx="14" fill="#1A1248" />

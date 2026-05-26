@@ -21,7 +21,7 @@ struct AlarmLiveActivity: Widget {
                         .font(.subheadline.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Waker")
+                    Text("AlarmTalk")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

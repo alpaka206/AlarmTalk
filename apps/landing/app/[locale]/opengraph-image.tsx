@@ -2,7 +2,7 @@
 import { routing } from "@/i18n/routing";
 
 export const dynamic = "force-static";
-export const alt = "Waker — wake up to a voice you love";
+export const alt = "AlarmTalk — wake up to a voice you love";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -45,7 +45,7 @@ export default function OpengraphImage() {
             <rect x="39" y="26" width="3" height="12" rx="1.5" fill="#FFF8EE" />
           </svg>
           <div style={{ display: "flex", fontSize: 32, fontWeight: 700 }}>
-            Waker
+            AlarmTalk
           </div>
         </div>
 

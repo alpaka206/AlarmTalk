@@ -1,6 +1,6 @@
-﻿# Waker Landing
+﻿# AlarmTalk Landing
 
-Waker 마케팅 랜딩 페이지. Next.js 15 (App Router) + TypeScript + Tailwind v4 정적 빌드.
+AlarmTalk(알람톡) 마케팅 랜딩 페이지. Next.js 15 (App Router) + TypeScript + Tailwind v4 정적 빌드.
 
 ## 개발
 

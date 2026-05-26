@@ -1,6 +1,6 @@
 ﻿{
   "meta": {
-    "title": "Waker · The one alarm that changes your morning",
+    "title": "AlarmTalk · The one alarm that changes your morning",
     "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time, every time."
   },
   "nav": {
@@ -84,7 +84,7 @@
   },
   "scenarios": {
     "headline": "Some people use it like this.",
-    "description": "Waker redesigns the first second of every morning, not just the alarm sound.",
+    "description": "AlarmTalk redesigns the first second of every morning, not just the alarm sound.",
     "items": [
       {
         "tag": "Couple",
@@ -129,7 +129,7 @@
       },
       {
         "q": "How is it different from other alarm apps?",
-        "a": "Other apps add more sounds. Waker redefines an alarm as a person's voice. Who's speaking is the feature."
+        "a": "Other apps add more sounds. AlarmTalk redefines an alarm as a person's voice. Who's speaking is the feature."
       }
     ]
   },

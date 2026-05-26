@@ -1,6 +1,6 @@
 # Documentation
 
-Project documentation for **Naro**, an OS-native voice alarm app.
+Project documentation for **AlarmTalk**, an OS-native voice alarm app.
 
 This documentation is intended for contributors and developers reading the source. It is self-contained — no external doc system is required.
 
