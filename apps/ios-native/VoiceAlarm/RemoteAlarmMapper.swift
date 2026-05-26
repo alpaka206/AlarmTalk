@@ -54,9 +54,11 @@ enum RemoteAlarmMapper {
 
         // 새 import 의 cacheKey 는 messageId 기반 deterministic 키로 잡는다.
         // 동일 messageId 가 재인입되어도 같은 키로 cascade cleanup 이 일관된다.
-        let cacheKey: String? = remote.messageId.flatMap { id in
-            id.isEmpty ? nil : "remote-message-\(id)"
-        }
+        let remoteMessageId = remoteMessageIDForAudio(remote)
+        let cacheKey: String? = remoteMessageId.map { "remote-message-\($0)" }
+        let remoteAudioUri = remoteMessageId == nil ? nil : (
+            trimmedOrNil(remote.messageAudioUrl) ?? trimmedOrNil(remote.rawAudioUrl)
+        )
 
         return LocalAlarmRecord(
             id: UUID().uuidString,
@@ -75,17 +77,17 @@ enum RemoteAlarmMapper {
             defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: nil,
             audioCacheKey: cacheKey,
-            rawAudioUri: remote.rawAudioUrl ?? remote.messageAudioUrl,
+            rawAudioUri: remoteAudioUri,
             voiceSource: voiceSource.rawValue,
-            voiceProfileId: remote.voiceProfileId,
-            voiceText: remote.messageText,
-            voiceCategory: remote.category,
+            voiceProfileId: remoteMessageId == nil ? nil : remote.voiceProfileId,
+            voiceText: remoteMessageId == nil ? nil : remote.messageText,
+            voiceCategory: remoteMessageId == nil ? nil : remote.category,
             voiceLanguage: nil,
             voiceRandomPrompt: false,
             dynamicVoicePreparedForFireAtMillis: nil,
             voiceRepeat: true,
             voiceVolumePercent: 100,
-            ttsMessageId: remote.messageId,
+            ttsMessageId: remoteMessageId,
             remoteAlarmId: remote.id,
             lastSyncedAtMillis: nowMillis,
             syncState: AlarmSyncState.synced.rawValue,
@@ -117,6 +119,8 @@ enum RemoteAlarmMapper {
             return local.ttsMessageId == nil ? uri : nil
         }()
         let hasRemoteVoice = local.ttsMessageId != nil || rawAudioUrl != nil
+        let messageId = trimmedOrNil(local.ttsMessageId)
+        let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : trimmedOrNil(local.voiceProfileId)
 
         return RemoteAlarmWriteRequest(
             time: local.timeString,
@@ -126,8 +130,8 @@ enum RemoteAlarmMapper {
             vibrationPattern: local.vibrationPattern,
             wakeMode: local.playModeEnum.remoteWakeMode,
             isActive: local.enabled,
-            messageId: local.ttsMessageId,
-            voiceProfileId: local.voiceSourceEnum == .localAudio ? nil : local.voiceProfileId,
+            messageId: messageId,
+            voiceProfileId: voiceProfileId,
             rawAudioUrl: rawAudioUrl,
             rawAudioDurationMs: nil,
             targetUserId: nil
@@ -179,9 +183,7 @@ enum RemoteAlarmMapper {
     /// `wake_mode` 에 따라 로컬 play mode 를 결정.
     /// 음성 자원이 전혀 없는 알람은 .alarmOnly 로 강등.
     static func resolvePlayMode(_ remote: RemoteAlarm) -> AlarmPlayMode {
-        let hasVoice = (remote.messageId?.isEmpty == false) ||
-            (remote.rawAudioUrl?.isEmpty == false) ||
-            (remote.messageAudioUrl?.isEmpty == false)
+        let hasVoice = shouldDownloadRemoteMessageAudio(remote)
         guard hasVoice else { return .alarmOnly }
         switch remote.wakeMode {
         case "voice_only": return .voiceOnly
@@ -190,12 +192,31 @@ enum RemoteAlarmMapper {
         }
     }
 
-    /// 서버에 음원이 있으면 server_tts, 없으면 tts_profile (정의 디폴트).
+    /// 서버에 내려받을 수 있는 음원이 있으면 server_tts, 없으면 local_audio.
     static func resolveVoiceSource(_ remote: RemoteAlarm) -> VoiceSource {
-        let hasVoice = (remote.messageId?.isEmpty == false) ||
-            (remote.rawAudioUrl?.isEmpty == false) ||
-            (remote.messageAudioUrl?.isEmpty == false)
-        return hasVoice ? .serverTts : .ttsProfile
+        let hasVoice = shouldDownloadRemoteMessageAudio(remote)
+        return hasVoice ? .serverTts : .localAudio
+    }
+
+    /// Android `shouldDownloadRemoteMessageAudio` 동일.
+    static func shouldDownloadRemoteMessageAudio(_ remote: RemoteAlarm) -> Bool {
+        remoteMessageIDForAudio(remote) != nil
+    }
+
+    private static func remoteMessageIDForAudio(_ remote: RemoteAlarm) -> String? {
+        guard let messageId = trimmedOrNil(remote.messageId),
+              trimmedOrNil(remote.messageAudioUrl) != nil else {
+            return nil
+        }
+        return messageId
+    }
+
+    private static func trimmedOrNil(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     /// Android `receivedRemoteAlarmLabel(...)` 과 동일한 받은 알람 라벨.

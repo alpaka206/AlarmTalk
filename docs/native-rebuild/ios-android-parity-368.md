@@ -269,6 +269,11 @@
 - iOS shared-pass leave/remove-member messages now mirror Android's
   user-facing copy and fallback behavior instead of surfacing English server
   messages.
+- iOS remote-alarm mapping now mirrors Android's request sanitizing and
+  received-audio guard: `messageId` / `voiceProfileId` are trimmed before push,
+  blank identifiers are omitted, and received remote alarms without
+  `message_audio_url` are downgraded to alarm-only instead of trying to fetch
+  unavailable voice audio.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
