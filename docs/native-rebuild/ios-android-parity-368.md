@@ -359,7 +359,9 @@
   raw `Server error ...` text in user-visible status messages.
 - iOS voice segment preview now mirrors Android's visible failure behavior by
   showing the Korean "preview playback failed" message instead of silently
-  ignoring AVAudioPlayer errors during clone/separation preview.
+  ignoring preview errors, and the segment preview player uses AVPlayer so
+  profile-training video imports can play their audio track like Android's
+  MediaPlayer preview.
 - iOS auth/profile/account mutation errors now mirror Android's
   `userFacingError` behavior by preserving Korean backend messages and replacing
   English server/system errors with Korean fallback copy.
