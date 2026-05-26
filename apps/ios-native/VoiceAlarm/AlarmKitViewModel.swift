@@ -7,7 +7,7 @@ import AlarmKit
 
 @MainActor
 final class AlarmKitViewModel: ObservableObject {
-    @Published var authorizationLabel = "Unknown"
+    @Published var authorizationLabel = "확인 전"
     @Published private(set) var alarmAuthorized = false
     @Published var statusMessage: String?
 
@@ -26,11 +26,35 @@ final class AlarmKitViewModel: ObservableObject {
     private var lastAlarmStateSnapshot: [String: String] = [:]
     private var observationTask: Task<Void, Never>?
 
+    private static let alarmUnavailableMessage = "이 iOS 버전에서는 알람 기능을 사용할 수 없어요."
+
+    nonisolated static func authorizationDisplayLabel(_ rawValue: String) -> String {
+        let normalized = rawValue
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        if normalized.contains("unavailable") {
+            return "사용 불가"
+        }
+        if normalized.contains("denied")
+            || normalized.contains("restricted")
+            || normalized.contains("notauthorized") {
+            return "거부됨"
+        }
+        if normalized == "authorized" || normalized.hasSuffix(".authorized") {
+            return "허용됨"
+        }
+        if normalized.contains("notdetermined") || normalized.contains("unknown") {
+            return "확인 필요"
+        }
+        return "확인 필요"
+    }
+
     func refreshAuthorizationState() {
         #if canImport(AlarmKit)
         applyAuthorizationState(AlarmManager.shared.authorizationState)
         #else
-        authorizationLabel = "Unavailable"
+        authorizationLabel = Self.authorizationDisplayLabel("unavailable")
         alarmAuthorized = true
         #endif
     }
@@ -40,12 +64,14 @@ final class AlarmKitViewModel: ObservableObject {
         do {
             let state = try await AlarmManager.shared.requestAuthorization()
             applyAuthorizationState(state)
-            statusMessage = "Alarm authorization: \(authorizationLabel)"
+            statusMessage = alarmAuthorized
+                ? "알람 권한이 허용됐어요."
+                : "알람 권한을 허용한 뒤 다시 시도해 주세요."
         } catch {
-            statusMessage = "Alarm authorization failed: \(error.localizedDescription)"
+            statusMessage = "알람 권한을 확인하지 못했어요. 잠시 후 다시 시도해 주세요."
         }
         #else
-        statusMessage = "AlarmKit is unavailable in this SDK."
+        statusMessage = Self.alarmUnavailableMessage
         #endif
     }
 
@@ -62,7 +88,7 @@ final class AlarmKitViewModel: ObservableObject {
 
     #if canImport(AlarmKit)
     private func applyAuthorizationState(_ state: AlarmManager.AuthorizationState) {
-        authorizationLabel = String(describing: state)
+        authorizationLabel = Self.authorizationDisplayLabel(String(describing: state))
         alarmAuthorized = state == .authorized
     }
 
@@ -175,11 +201,11 @@ final class AlarmKitViewModel: ObservableObject {
         }
 
         if recovered > 0 {
-            statusMessage = "Recovered \(recovered) scheduled alarm(s)."
+            statusMessage = "예약된 알람 \(recovered)개를 다시 연결했어요."
         }
         return recovered
         #else
-        statusMessage = "AlarmKit is unavailable in this SDK."
+        statusMessage = Self.alarmUnavailableMessage
         return 0
         #endif
     }
@@ -189,7 +215,7 @@ final class AlarmKitViewModel: ObservableObject {
         let fireDate = Date().addingTimeInterval(60)
         let parts = Calendar.current.dateComponents([.hour, .minute], from: fireDate)
         let record = LocalAlarmRecord(
-            label: "1 min test",
+            label: "1분 테스트 알람",
             hour: parts.hour ?? 7,
             minute: parts.minute ?? 0,
             fireAtMillis: Int64(fireDate.timeIntervalSince1970 * 1000),
@@ -215,7 +241,7 @@ final class AlarmKitViewModel: ObservableObject {
             isHoliday: holidayStore.holidayPredicate()
         )) ?? now + 60 * 60 * 1000
         let record = LocalAlarmRecord(
-            label: "Weekday test",
+            label: "평일 테스트 알람",
             hour: 7,
             minute: 30,
             fireAtMillis: fireAt,
@@ -239,7 +265,7 @@ final class AlarmKitViewModel: ObservableObject {
                 let state = try await AlarmManager.shared.requestAuthorization()
                 applyAuthorizationState(state)
                 guard state == .authorized else {
-                    statusMessage = "AlarmKit permission is required before scheduling."
+                    statusMessage = "알람 권한이 필요해요. 권한을 허용한 뒤 다시 시도해 주세요."
                     return false
                 }
             }
@@ -261,11 +287,11 @@ final class AlarmKitViewModel: ObservableObject {
             statusMessage = describeScheduleStatus(record: record, resolution: resolution)
             return true
         } catch {
-            statusMessage = "Schedule failed: \(error.localizedDescription)"
+            statusMessage = "알람 예약에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }
         #else
-        statusMessage = "AlarmKit is unavailable in this SDK."
+        statusMessage = Self.alarmUnavailableMessage
         return false
         #endif
     }
@@ -276,14 +302,14 @@ final class AlarmKitViewModel: ObservableObject {
         guard let alarmKitUUID = record.alarmKitUUID else { return true }
         do {
             try AlarmManager.shared.cancel(id: alarmKitUUID)
-            statusMessage = "Canceled \(record.label)"
+            statusMessage = "\(record.label) 알람을 취소했어요."
             return true
         } catch {
-            statusMessage = "Cancel failed: \(error.localizedDescription)"
+            statusMessage = "알람 취소에 실패했어요. 잠시 후 다시 시도해 주세요."
             return false
         }
         #else
-        statusMessage = "AlarmKit is unavailable in this SDK."
+        statusMessage = Self.alarmUnavailableMessage
         return false
         #endif
     }
@@ -321,18 +347,18 @@ final class AlarmKitViewModel: ObservableObject {
         resolution: AlarmSoundResolution
     ) -> AlarmManager.AlarmConfiguration<VoiceAlarmMetadata> {
         typealias AlarmConfiguration = AlarmManager.AlarmConfiguration<VoiceAlarmMetadata>
-        let stopButton = AlarmButton(text: "Stop", textColor: .white, systemImageName: "stop.fill")
-        let snoozeButton = AlarmButton(text: "Snooze", textColor: .white, systemImageName: "moon.zzz.fill")
+        let stopButton = AlarmButton(text: "알람 끄기", textColor: .white, systemImageName: "stop.fill")
+        let snoozeButton = AlarmButton(text: "다시 울리기", textColor: .white, systemImageName: "moon.zzz.fill")
         let alert = AlarmPresentation.Alert(
             title: record.label,
             stopButton: stopButton,
             secondaryButton: snoozeButton,
             secondaryButtonBehavior: .countdown
         )
-        let countdown = AlarmPresentation.Countdown(title: "Snoozing \(record.label)")
+        let countdown = AlarmPresentation.Countdown(title: "\(record.label) 다시 울릴 준비 중")
         let paused = AlarmPresentation.Paused(
-            title: "Paused",
-            resumeButton: AlarmButton(text: "Resume", textColor: .white, systemImageName: "play.fill")
+            title: "일시정지됨",
+            resumeButton: AlarmButton(text: "다시 시작", textColor: .white, systemImageName: "play.fill")
         )
         let presentation = AlarmPresentation(alert: alert, countdown: countdown, paused: paused)
         // Phase 2-B4: 메타데이터에 playMode + voiceCacheKey 를 실어 LiveActivity /
@@ -367,12 +393,12 @@ final class AlarmKitViewModel: ObservableObject {
     ) -> String {
         switch resolution {
         case .systemDefault:
-            return "Scheduled \(record.label)"
-        case .bundledNamed(let name):
-            return "Scheduled \(record.label) (custom sound: \(name))"
+            return "\(record.label) 알람을 예약했어요."
+        case .bundledNamed:
+            return "\(record.label) 알람을 예약했어요."
         case .cachedAudio(_, let durationMs):
             let seconds = max(1, Int((durationMs + 500) / 1000))
-            return "Scheduled \(record.label). Voice \(seconds)s exceeds AlarmKit limit — system tone rings while in-app voice fallback plays when app is active."
+            return "\(record.label) 알람을 예약했어요. \(seconds)초 목소리는 iOS 제한으로 기본 알람음 뒤 앱이 열려 있을 때 재생돼요."
         }
     }
 

@@ -777,7 +777,7 @@ struct AlarmEditorSheet: View {
             }
             validationAlert = ValidationAlertContent(
                 title: "예약할 수 없어요",
-                message: alarmKit.statusMessage ?? "AlarmKit 예약에 실패했어요."
+                message: alarmKit.statusMessage ?? "알람 예약에 실패했어요."
             )
             return
         }

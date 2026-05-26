@@ -299,6 +299,9 @@
 - iOS requests UserNotifications authorization lazily when the user opens the
   messages tab, keeping the permission prompt tied to the social update feature
   instead of adding another startup/settings permission surface.
+- iOS alarm permission, scheduling, cancel, Live Activity button, and recording
+  permission copy now uses Korean user-facing alarm wording instead of exposing
+  English AlarmKit/internal status text.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

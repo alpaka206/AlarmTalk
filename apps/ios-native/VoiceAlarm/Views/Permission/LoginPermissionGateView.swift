@@ -165,7 +165,7 @@ enum PermissionTarget: String, Hashable {
     var description: String {
         switch self {
         case .alarmKit:
-            return "잠금 화면에서도 정확한 시간에 알람을 울리려면 AlarmKit 권한이 필요해요."
+            return "잠금 화면에서도 정확한 시간에 알람을 울리려면 알람 권한이 필요해요."
         case .microphone:
             return "내 목소리를 녹음해 클로닝하거나 미리듣기를 하려면 마이크 권한이 필요해요."
         }

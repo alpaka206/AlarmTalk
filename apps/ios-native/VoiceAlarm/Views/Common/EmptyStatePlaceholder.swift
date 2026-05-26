@@ -35,7 +35,7 @@ struct EmptyStatePlaceholder: View {
 #Preview("Empty (light)") {
     EmptyStatePlaceholder(
         title: "아직 예약한 알람이 없어요.",
-        subtitle: "새 알람을 만들면 iOS 로컬 저장소와 AlarmKit에 예약됩니다.",
+        subtitle: "새 알람을 만들면 기기에 바로 예약돼요.",
         icon: "alarm"
     )
     .padding()

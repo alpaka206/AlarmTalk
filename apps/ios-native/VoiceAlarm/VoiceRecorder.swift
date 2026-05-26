@@ -104,7 +104,7 @@ enum VoiceRecorderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .microphoneDenied:
-            return "Microphone permission is required to record a voice sample."
+            return "녹음하려면 마이크 권한이 필요해요."
         }
     }
 }
