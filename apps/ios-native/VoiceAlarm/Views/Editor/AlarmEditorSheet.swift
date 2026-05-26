@@ -297,7 +297,9 @@ struct AlarmEditorSheet: View {
             }
 
             Section("사운드 & 진동") {
-                AlarmVolumeSlider(volume: $draft.alarmVolumePercent)
+                if draft.showsAlarmSoundControls {
+                    AlarmVolumeSlider(volume: $draft.alarmVolumePercent)
+                }
 
                 HStack {
                     Text("진동 패턴")

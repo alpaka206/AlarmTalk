@@ -258,6 +258,10 @@
 - iOS voice-volume editing now mirrors Android's 30-100% range: existing voice
   alarms below the UI minimum are normalized to 30% on edit/save, and validation
   reports the same lower bound.
+- iOS alarm editing now keeps platform-native presentation while matching the
+  Android product semantics: `음성만` hides alarm-sound controls because alarm
+  sound is not part of that ring path, but the saved alarm volume is preserved
+  for switching back to alarm-inclusive modes.
 - iOS family-alarm creation now mirrors Android's local-voice branch: when a
   recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
   `/voice/upload` and the alarm is created through `/family/alarms/voice`

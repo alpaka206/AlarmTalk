@@ -311,6 +311,17 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertTrue(draft.isValid)
     }
 
+    func testAlarmSoundControlsHiddenOnlyForVoiceOnlyMode() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
+        XCTAssertTrue(draft.showsAlarmSoundControls)
+
+        draft.playMode = .alarmOnly
+        XCTAssertTrue(draft.showsAlarmSoundControls)
+
+        draft.playMode = .voiceOnly
+        XCTAssertFalse(draft.showsAlarmSoundControls)
+    }
+
     // MARK: - Empty label fallback in toRecord
 
     func testToRecordSubstitutesDefaultLabelWhenEmpty() {

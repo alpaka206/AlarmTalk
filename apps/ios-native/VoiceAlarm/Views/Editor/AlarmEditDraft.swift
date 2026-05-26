@@ -7,7 +7,7 @@ import Foundation
 /// 저장 시점에 `toRecord(...)` 가 기존 record(있다면) 의 나머지 필드를
 /// 보존하면서 `LocalAlarmRecord` 를 만들어낸다.
 ///
-/// Android 의 `AlarmEditorState` (in_progress 편집 상태 모델) 와 1:1 대응.
+/// Android 의 `AlarmEditorState` 와 같은 저장 계약을 쓰되, UI 표현은 iOS 흐름에 맞춘다.
 struct AlarmEditDraft: Equatable {
     private static let minVoiceVolumePercent = 30
 
@@ -169,6 +169,9 @@ struct AlarmEditDraft: Equatable {
 
     /// validate 가 빈 배열이면 true.
     var isValid: Bool { validate().isEmpty }
+
+    /// `음성만` 모드에서는 알람음이 실제 링 경로에 쓰이지 않으므로 사운드 컨트롤을 숨긴다.
+    var showsAlarmSoundControls: Bool { playMode != .voiceOnly }
 
     /// Android `AlarmEditorState.hasFreshTtsAudio` 와 같은 목적.
     /// 기존 TTS 음원이 현재 선택한 목소리/문구/언어와 맞으면 재생성 없이 저장할 수 있다.
