@@ -190,8 +190,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     });
 
     expect(generated.text).toContain('일어나실 시간');
-    expect(generated.text).toContain('강수 확률 70%');
-    expect(generated.text).toContain('오늘도 화이팅');
+    expect(generated.text).toContain('비가 올 수 있대요');
+    expect(generated.text).toContain('우산 꼭 챙기세요');
+    expect(generated.text).not.toContain('강수 확률 70%');
     expect(generated.text).not.toContain('손녀 목소리');
     expect(generated.text).not.toContain('5월 20일');
     expect(generated.text).not.toContain('서울');
@@ -214,7 +215,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
 
     expect(generated.provider).toBe('local');
     expect(generated.text).toContain('일어나실 시간');
-    expect(generated.text).toContain('강수 확률 70%');
+    expect(generated.text).toContain('비가 올 수 있대요');
+    expect(generated.text).toContain('우산 꼭 챙기세요');
+    expect(generated.text).not.toContain('강수 확률 70%');
     expect(generated.text).not.toContain('손녀 목소리');
     expect(generated.text).not.toContain('5월 20일');
     expect(generated.text).not.toContain('서울');
@@ -223,7 +226,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
 
   it('accepts an explicit listener title even when it is a family title', async () => {
     mockFetch.mockResolvedValueOnce(
-      geminiText('{"text":"할머니, 일어나실 시간이에요. 비가 올 수 있대요. 우산 꼭 챙기세요."}'),
+      geminiText('{"text":"할아버지, 일어나실 시간이에요. 오늘 비 올 수 있대요. 나가실 때 우산 꼭 챙기세요."}'),
     );
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
@@ -233,13 +236,68 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       dateLabel: '5월 20일 수요일',
       alarmTimeLabel: '07:30',
       relationshipLabel: '손녀',
-      listenerTitle: '할머니',
+      listenerTitle: '할아버지',
       weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
     });
 
+    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const prompt = requestBody.contents[0].parts[0].text;
     expect(generated.provider).toBe('gemini-api-key');
-    expect(generated.text).toContain('할머니');
+    expect(generated.text).toContain('할아버지');
+    expect(generated.text).toContain('오늘은 비가 올 수 있대요');
+    expect(generated.text).not.toContain('오늘 비 올 수 있대요');
     expect(generated.text).toContain('우산 꼭 챙기세요');
+    expect(prompt).toContain('actual grandchild speaking beside the listener');
+    expect(prompt).toContain('할아버지, 일어나실 시간이에요');
+    expect(prompt).toContain('avoid clipped wording like "비 올 수 있대요"');
+    expect(prompt).toContain('조심히 다녀오세요');
+  });
+
+  it('polishes grandchild to grandparent wake wording into respectful verb forms', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"할머니, 일어날 시간이에요! 오늘은 천천히 움직이면 컨디션이 좋대요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'wake_fortune',
+      category: 'morning',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      relationshipLabel: '손주',
+      listenerTitle: '할머니',
+      fortuneProfile: 'gender=여성, birth date=1954-01-05, birth time=05:30',
+    });
+
+    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const prompt = requestBody.contents[0].parts[0].text;
+    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.text).toContain('할머니, 일어나실 시간이에요');
+    expect(generated.text).not.toContain('할머니, 일어날 시간이에요');
+    expect(prompt).toContain('Speaker is a grandchild speaking to a grandparent');
+    expect(prompt).toContain('never write casual elder-address phrases like "할머니, 일어날 시간이에요"');
+  });
+
+  it('keeps sibling bedtime messages in natural banmal', async () => {
+    mockFetch.mockResolvedValueOnce(
+      geminiText('{"text":"누나, 벌써 잘 시간이에요. 휴대폰은 내려놓고 편안하게 쉬어요."}'),
+    );
+
+    const generated = await generateDynamicAlarmTextWithVertex(ENV, {
+      mode: 'sleep',
+      category: 'sleep',
+      targetLanguage: 'ko',
+      dateLabel: '5월 20일 수요일',
+      alarmTimeLabel: '23:00',
+      relationshipLabel: '형제·자매',
+      listenerTitle: '누나',
+    });
+
+    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const prompt = requestBody.contents[0].parts[0].text;
+    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.text).toBe('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
+    expect(prompt).toContain('Create a sibling-style bedtime message in natural 반말');
+    expect(prompt).toContain('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
   });
 
   it('prompts romantic partner cases with warm tone and flexible weather relay wording', async () => {
@@ -263,7 +321,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     expect(generated.provider).toBe('gemini-api-key');
     expect(prompt).toContain('Romantic partner/spouse tone');
     expect(prompt).toContain('heart-fluttering');
-    expect(prompt).toContain('do not force a lead-in like "예보 보니까"');
+    expect(prompt).toContain('Avoid robotic connector phrases like "예보 보니까"');
     expect(prompt).toContain('연인·남자친구·여자친구·아내·남편·배우자');
   });
 
