@@ -101,6 +101,18 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(vm.mapVoiceError(err), "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.")
     }
 
+    func test_mapVoiceError_nonKoreanServerMessageUsesFallback() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 400, message: "durationMs must be a positive integer", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
+    }
+
+    func test_mapVoiceError_koreanServerMessageIsPreserved() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 400, message: "음성 길이를 확인하지 못했어요.", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "음성 길이를 확인하지 못했어요.")
+    }
+
     func test_mapVoiceError_unauthorized() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 401, message: "no token", errorCode: nil)

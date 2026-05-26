@@ -247,6 +247,9 @@
 - iOS voice-clone error-code mapping now mirrors Android's user-facing fallback:
   known backend codes such as `INVALID_DURATION` use the Android Korean copy,
   and unknown future codes no longer leak raw API identifiers to the UI.
+- iOS voice error handling now also mirrors Android's `userFacingError`
+  behavior for server messages: Korean backend copy is preserved, while
+  non-Korean server/system text falls back to Korean copy.
 - iOS voice creation and speaker separation now accept profile-training audio
   and video imports like Android's `audio/*` + `video/*` picker, reject files
   without an audio track, and keep local audio preparation failures behind
