@@ -193,6 +193,11 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
+    private func refreshAllAfterMutation(session: AuthSession?, successMessage: String) async {
+        await refreshAll(session: session, force: true)
+        statusMessage = successMessage
+    }
+
     private func applyReceivedNotes(_ notes: [ReceivedNote]) {
         let state = Self.receivedNoteRefreshState(
             notes: notes,
@@ -278,8 +283,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if codeOverride == nil || inviteCode.trimmingCharacters(in: .whitespacesAndNewlines) == code {
                 inviteCode = ""
             }
-            statusMessage = "코드를 등록했어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "코드를 등록했어요.")
             return Self.codeRegistrationDestination(responseType: response.type, code: code)
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
@@ -309,8 +313,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             _ = try await api.sendNote(receiverId: normalizedReceiverID, text: text, token: token)
             noteText = ""
-            statusMessage = "메시지를 보냈어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "메시지를 보냈어요.")
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지 전송에 실패했어요")
         }
@@ -408,8 +411,10 @@ final class SocialFeatureViewModel: ObservableObject {
             let planLabel = Self.shareCodePlanLabel(subscription)
             let voucher = try await api.ensureFamilyShareCode(token: token)
             vouchers = Self.upsertingVoucher(voucher, into: vouchers)
-            statusMessage = "\(planLabel) 공유 코드를 준비했어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(
+                session: session,
+                successMessage: "\(planLabel) 공유 코드를 준비했어요."
+            )
         } catch {
             let planLabel = Self.shareCodePlanLabel(subscription)
             statusMessage = Self.billingErrorMessage(
@@ -443,8 +448,7 @@ final class SocialFeatureViewModel: ObservableObject {
             #else
             _ = try await api.checkoutPlan(planKey: planKey, gift: gift, token: token)
             #endif
-            statusMessage = "이용권 상태를 갱신했어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "이용권 상태를 갱신했어요.")
         } catch {
             let fallback = gift ? "선물하기에 실패했어요" : "이용권 적용에 실패했어요"
             statusMessage = Self.billingErrorMessage(error, fallback: fallback)
@@ -470,8 +474,8 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let normalizedMode = Self.normalizedCancellationMode(mode)
             _ = try await api.cancelSubscription(mode: normalizedMode, token: token)
-            statusMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
-            await refreshAll(session: session, force: true)
+            let successMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
+            await refreshAllAfterMutation(session: session, successMessage: successMessage)
         } catch {
             statusMessage = Self.billingErrorMessage(error, fallback: "해지에 실패했어요")
         }
@@ -605,8 +609,10 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.leaveFamilyGroup(groupId: groupId, token: token)
-            statusMessage = "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(
+                session: session,
+                successMessage: "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
+            )
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
         }
@@ -624,8 +630,7 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.removeFamilyMember(groupId: groupId, userId: userId, token: token)
-            statusMessage = "멤버를 내보냈어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "멤버를 내보냈어요.")
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "멤버를 내보내지 못했어요")
         }
@@ -643,8 +648,7 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.transferFamilyOwnership(groupId: groupId, newOwnerId: newOwnerId, token: token)
-            statusMessage = "소유권을 이양했어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "소유권을 이양했어요.")
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "소유권을 이양하지 못했어요")
         }
@@ -711,8 +715,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 audioUrl: remoteAudioURI,
                 token: token
             )
-            statusMessage = "음성 메시지를 보냈어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "음성 메시지를 보냈어요.")
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "음성 메시지 전송에 실패했어요")
         }
@@ -768,8 +771,7 @@ final class SocialFeatureViewModel: ObservableObject {
 
         do {
             _ = try await api.redeemVoucher(code: trimmed, token: token)
-            statusMessage = "코드를 적용했어요."
-            await refreshAll(session: session, force: true)
+            await refreshAllAfterMutation(session: session, successMessage: "코드를 적용했어요.")
         } catch {
             statusMessage = Self.billingErrorMessage(error, fallback: "코드 적용에 실패했어요")
         }
