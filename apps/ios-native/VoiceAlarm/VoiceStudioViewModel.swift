@@ -11,13 +11,13 @@ struct PreparedVoiceAlarm {
     var language: String
 }
 
-/// VoiceAlarm 의 보이스 슬롯 / 길이 정책 상수.
+/// VoiceAlarm 의 목소리 슬롯 / 길이 정책 상수.
 ///
 /// Android 의 `VoiceProfileAudioLimits` 와 `MAX_VOICE_PROFILES` 를 그대로 옮긴다.
 /// 본 상수는 ViewModel 과 View 가 동일한 기준으로 다이얼로그/에러 메시지를 만들기 위해
 /// 존재한다.
 enum VoiceProfileLimits {
-    /// 사용자당 최대 보이스 프로필 수.
+    /// 사용자당 최대 목소리 프로필 수.
     static let maxProfiles = 5
     /// 클로닝에 허용되는 최소 음성 길이 (ms).
     static let minDurationMs = 60_000
@@ -39,7 +39,12 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 랜덤 프롬프트 컨텍스트. Android `TtsApi.kt` randomContext 와 동일.
     /// 허용 값: preset / wake_weather / wake_fortune / meal / sleep / exercise / love.
     /// randomPrompt 가 true 일 때만 의미가 있다.
-    @Published var randomContext: String = "preset"
+    @Published var randomContext: String = RandomPromptContext.defaultContext.rawValue
+    @Published var weatherCountry = ""
+    @Published var weatherCity = ""
+    @Published var fortuneGender = ""
+    @Published var fortuneBirthDate = ""
+    @Published var fortuneBirthTime = ""
     @Published var cloneName = "내 목소리"
     @Published var isBusy = false
     @Published var statusMessage: String?
@@ -50,6 +55,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     private let api: VoiceAlarmAPI
     private var cancellables = Set<AnyCancellable>()
+    private var activeUserID: String?
 
     init(api: VoiceAlarmAPI = .shared) {
         self.api = api
@@ -70,10 +76,56 @@ final class VoiceStudioViewModel: ObservableObject {
         return profiles.first { $0.id == selectedProfileID }
     }
 
+    var selectedFamilyVoice: FamilyVoiceProfile? {
+        guard let selectedProfileID else { return nil }
+        return familyVoices.first { $0.id == selectedProfileID }
+    }
+
+    func clearUserScopedRemoteState() {
+        activeUserID = nil
+        previewPlayer.stop()
+        recorder.clearLatest()
+        profiles = []
+        familyVoices = []
+        messages = []
+        selectedProfileID = nil
+        statusMessage = nil
+        preparedAlarm = nil
+    }
+
+    func clearPaidVoiceState() {
+        previewPlayer.stop()
+        profiles = []
+        familyVoices = []
+        messages = []
+        selectedProfileID = nil
+        preparedAlarm = nil
+    }
+
+    private var selectedListenerTitle: String? {
+        if let listener = selectedProfile?.listenerTitle, let trimmed = nonEmpty(listener) {
+            return trimmed
+        }
+        if let listener = selectedFamilyVoice?.listenerTitle, let trimmed = nonEmpty(listener) {
+            return trimmed
+        }
+        return nil
+    }
+
     var canUploadRecording: Bool {
         recorder.latestRecordingURL != nil
             && (recorder.latestDurationMs ?? 0) >= VoiceProfileLimits.minDurationMs
             && (recorder.latestDurationMs ?? 0) <= VoiceProfileLimits.maxDurationMs
+    }
+
+    var hasWeatherInfo: Bool {
+        nonEmpty(weatherCountry) != nil && nonEmpty(weatherCity) != nil
+    }
+
+    var hasFortuneInfo: Bool {
+        nonEmpty(fortuneGender) != nil &&
+            nonEmpty(fortuneBirthDate) != nil &&
+            nonEmpty(fortuneBirthTime) != nil
     }
 
     /// 슬롯이 가득 찼는지 — VoiceProfileManagementPanel 의 슬롯 카드/추가 버튼 비활성에 사용.
@@ -84,30 +136,66 @@ final class VoiceStudioViewModel: ObservableObject {
         max(0, VoiceProfileLimits.maxProfiles - profiles.count)
     }
 
-    func refresh(session: AuthSession?) async {
-        guard let token = session?.token else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+    private func normalizedUserID(_ userID: String?) -> String? {
+        let normalized = userID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    func refresh(
+        session: AuthSession?,
+        force: Bool = false,
+        successMessage: String? = "목소리 정보를 불러왔어요."
+    ) async {
+        guard let token = session?.token,
+              let userID = normalizedUserID(session?.user.id) else {
+            clearUserScopedRemoteState()
+            return
+        }
+        activeUserID = userID
+        guard force || !isBusy else { return }
+        let shouldManageBusy = !isBusy
+        if shouldManageBusy {
+            isBusy = true
+        }
+        defer {
+            if shouldManageBusy {
+                isBusy = false
+            }
+        }
 
         do {
             async let nextProfiles = api.listVoiceProfiles(token: token)
             async let nextMessages = api.listTTSMessages(token: token)
-            // 가족 보이스는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
+            // 가족 목소리는 plan 에 따라 403 이 날 수 있으므로 실패해도 무시.
             let familyResult: [FamilyVoiceProfile]
             do {
                 familyResult = try await api.listFamilyVoiceProfiles(token: token)
             } catch {
                 familyResult = []
             }
-            profiles = try await nextProfiles
-            messages = try await nextMessages
+            let resolvedProfiles = try await nextProfiles
+            let resolvedMessages = try await nextMessages
+            guard activeUserID == userID else { return }
+            profiles = resolvedProfiles
+            messages = resolvedMessages
             familyVoices = familyResult
-            if selectedProfileID == nil {
-                selectedProfileID = profiles.first(where: { $0.status == "ready" })?.id ?? profiles.first?.id
+            if let selectedProfileID,
+               !profiles.contains(where: { $0.id == selectedProfileID }),
+               !familyVoices.contains(where: { $0.id == selectedProfileID }) {
+                self.selectedProfileID = nil
             }
-            statusMessage = "목소리 정보를 불러왔어요."
+            if selectedProfileID == nil {
+                selectedProfileID = profiles.first(where: { $0.status == "ready" })?.id ??
+                    profiles.first?.id ??
+                    familyVoices.first(where: { $0.status == "ready" })?.id ??
+                    familyVoices.first?.id
+            }
+            if let successMessage {
+                guard activeUserID == userID else { return }
+                statusMessage = successMessage
+            }
         } catch {
+            guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
         }
     }
@@ -129,12 +217,22 @@ final class VoiceStudioViewModel: ObservableObject {
     func uploadRecordingForClone(
         session: AuthSession?,
         isShared: Bool = false,
+        relationshipLabel: String? = nil,
         listenerTitle: String? = nil
     ) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return
         }
+        guard let fields = requiredVoiceProfileFields(
+            name: cloneName,
+            fallbackName: "내 목소리",
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return
+        }
+        cloneName = fields.name
         guard let url = recorder.latestRecordingURL, let durationMs = recorder.latestDurationMs else {
             statusMessage = "먼저 목소리를 녹음해 주세요."
             return
@@ -156,11 +254,12 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -173,10 +272,18 @@ final class VoiceStudioViewModel: ObservableObject {
         durationMs: Int,
         isShared: Bool,
         session: AuthSession?,
+        relationshipLabel: String? = nil,
         listenerTitle: String? = nil
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard let fields = requiredVoiceProfileFields(
+            name: name,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
             return nil
         }
         guard !isBusy else { return nil }
@@ -185,16 +292,71 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             let profile = try await api.cloneVoice(
                 audioFileURL: audioFileURL,
-                name: name,
+                name: fields.name,
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
                 noiseRemoval: true,
-                listenerTitle: listenerTitle
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
+            return profile
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// 녹음 외 파일 업로드/자르기 결과처럼 임의 URL을 곧바로 목소리 프로필로 등록한다.
+    func cloneAudioForProfile(
+        audioFileURL: URL,
+        name: String,
+        durationMs: Int,
+        isShared: Bool,
+        session: AuthSession?,
+        noiseRemoval: Bool = false,
+        uploadFileName: String? = nil,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil
+    ) async -> VoiceProfile? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard let fields = requiredVoiceProfileFields(
+            name: name,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
+        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs else {
+            statusMessage = durationMs < VoiceProfileLimits.minDurationMs
+                ? "1분 이상 준비해 주세요."
+                : "2분 이하 음성으로 등록할 수 있어요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.cloneVoice(
+                audioFileURL: audioFileURL,
+                name: fields.name,
+                isShared: isShared,
+                durationMs: durationMs,
+                token: token,
+                noiseRemoval: noiseRemoval,
+                uploadFileName: uploadFileName,
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle
+            )
+            selectedProfileID = profile.id
+            statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."
+            await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -214,18 +376,61 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        guard let fields = requiredVoiceRelationshipFields(
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return
+        }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
             _ = try await api.updateVoiceProfileRelationship(
                 profileId: profileId,
-                relationshipLabel: relationshipLabel,
-                listenerTitle: listenerTitle,
+                relationshipLabel: fields.relationshipLabel,
+                listenerTitle: fields.listenerTitle,
                 token: token
             )
             statusMessage = "공유 음성 정보를 저장했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
+        } catch {
+            statusMessage = mapVoiceError(error)
+        }
+    }
+
+    /// 공유받은 목소리를 설정할 때 Android 와 같은 문장으로 짧게 미리듣는다.
+    func previewSharedVoice(profileId: String, session: AuthSession?) async {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let response = try await api.generateTTS(
+                TtsGenerateRequest(
+                    voiceProfileId: profileId,
+                    text: "이 목소리로 깨워드릴까요?",
+                    category: "custom",
+                    language: "ko",
+                    translate: false,
+                    random: false
+                ),
+                token: token
+            )
+            let cacheKey = AudioCacheStore.ttsCacheKey(
+                profileId: profileId,
+                text: response.text,
+                category: "custom",
+                language: "ko",
+                serverCacheKey: response.cacheKey
+            )
+            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
+            try previewPlayer.play(url: AudioCacheStore.url(for: cached.fileName))
+            statusMessage = "미리듣기를 재생하고 있어요."
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -291,19 +496,53 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// SpeakerSeparationFlow 의 3단계 — 사용자가 선택한 화자만 골라 새 보이스로 등록.
-    func selectSpeakerAndClone(
-        uploadId: String,
-        speakerId: String,
-        name: String,
-        isShared: Bool,
-        durationMs: Int,
+    /// SpeakerSeparationFlow 의 draft 단계 — 화자 구간을 임시 목소리로 학습한다.
+    /// 관계/호칭은 정식 프로필 편집 단계에서 관리하므로 draft 생성 때는 요구하지 않는다.
+    func cloneSpeakerDraft(
         audioFileURL: URL,
+        name: String,
+        durationMs: Int,
+        uploadFileName: String? = nil,
         session: AuthSession?
     ) async -> VoiceProfile? {
-        // 현재 백엔드는 화자 선택 후 별도 endpoint 가 아니라 cropped audio 를 다시
-        // /voice/clone 에 업로드해 처리한다. View 가 audio 를 cropping 한 뒤 결과 URL 을
-        // 넘기면 이 메서드가 clone 한다.
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        let resolvedName = nonEmpty(name) ?? "분리한 목소리"
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            statusMessage = "1분 이상 들리는 구간이 필요해요."
+            return nil
+        }
+        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+            statusMessage = "2분 이하 구간만 사용할 수 있어요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.cloneVoice(
+                audioFileURL: audioFileURL,
+                name: resolvedName,
+                isShared: false,
+                durationMs: durationMs,
+                token: token,
+                uploadFileName: uploadFileName,
+                relationshipLabel: nil,
+                listenerTitle: nil,
+                isDraft: true
+            )
+            statusMessage = "미리듣기 목소리를 준비하고 있어요."
+            return profile
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// draft 목소리를 Android 와 같은 짧은 문장으로 합성해 선택 전 미리듣기 파일을 만든다.
+    func prepareSpeakerDraftPreview(profileId: String, session: AuthSession?) async -> URL? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return nil
@@ -312,23 +551,43 @@ final class VoiceStudioViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            // 화자 라벨 업데이트(존재할 때만) — best-effort.
-            _ = try? await api.updateVoiceUploadSpeaker(
-                uploadId: uploadId,
-                speakerId: speakerId,
-                label: name,
+            let response = try await api.generateTTS(
+                TtsGenerateRequest(
+                    voiceProfileId: profileId,
+                    text: "이 목소리로 깨워드릴까요?",
+                    category: "custom",
+                    language: "ko",
+                    translate: false,
+                    random: false
+                ),
                 token: token
             )
-            let profile = try await api.cloneVoice(
-                audioFileURL: audioFileURL,
-                name: name,
-                isShared: isShared,
-                durationMs: durationMs,
-                token: token
+            let cached = try AudioCacheStore.cache(
+                tts: response,
+                cacheKey: "draft_preview_\(profileId)"
             )
+            statusMessage = "미리듣기를 만들었어요."
+            return cached.url
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// 선택한 draft 를 정식 목소리 프로필로 승격한다.
+    func promoteDraftVoice(profileId: String, session: AuthSession?) async -> VoiceProfile? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let profile = try await api.promoteDraftVoice(profileId: profileId, token: token)
             selectedProfileID = profile.id
-            statusMessage = "선택한 목소리를 학습했어요."
-            await refresh(session: session)
+            statusMessage = "목소리를 등록했어요."
+            await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {
             statusMessage = mapVoiceError(error)
@@ -336,7 +595,23 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    func generateTTS(session: AuthSession?) async -> PreparedVoiceAlarm? {
+    /// 선택하지 않은 draft 는 알람에서 보이면 안 되므로 best-effort 로 정리한다.
+    func deleteDraftVoice(profileId: String, session: AuthSession?) async {
+        guard let token = session?.token else { return }
+        do {
+            try await api.deleteDraftVoice(profileId: profileId, token: token)
+        } catch {
+            // 정리 실패는 사용자 작업을 막지 않는다. 다음 서버 정리/재시도 대상이다.
+        }
+    }
+
+    func generateTTS(
+        session: AuthSession?,
+        alarmHour: Int? = nil,
+        alarmMinute: Int? = nil,
+        targetUserId: String? = nil,
+        targetDynamicPromptState: DynamicPromptSettingsState? = nil
+    ) async -> PreparedVoiceAlarm? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
             return nil
@@ -345,8 +620,23 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "사용할 목소리를 먼저 선택해 주세요."
             return nil
         }
+        if selectedFamilyVoice?.requiresViewerInfo == true {
+            statusMessage = "공유받은 목소리의 관계와 호칭을 먼저 설정해 주세요."
+            return nil
+        }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             statusMessage = "깨워줄 말을 입력하거나 랜덤 생성을 켜 주세요."
+            return nil
+        }
+        let promptContext = RandomPromptContext.normalized(randomContext)
+        let targetWeatherReady = targetDynamicPromptState?.weatherReady == true
+        let targetFortuneReady = targetDynamicPromptState?.fortuneReady == true
+        if randomPrompt && promptContext.usesWeather && !hasWeatherInfo && !targetWeatherReady {
+            statusMessage = "날씨를 쓸 지역을 입력해 주세요."
+            return nil
+        }
+        if randomPrompt && promptContext.usesFortune && !hasFortuneInfo && !targetFortuneReady {
+            statusMessage = "운세에 쓸 정보를 모두 입력해 주세요."
             return nil
         }
         guard !isBusy else { return nil }
@@ -354,31 +644,50 @@ final class VoiceStudioViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
+            let shouldTranslate = !randomPrompt && translateText
+            let activeLanguage = randomPrompt || shouldTranslate ? ttsLanguage : "ko"
+            let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
-                    text: ttsText,
-                    category: ttsCategory,
-                    language: ttsLanguage,
-                    translate: translateText,
+                    text: randomPrompt ? "" : ttsText,
+                    category: activeCategory,
+                    language: activeLanguage,
+                    translate: shouldTranslate,
                     random: randomPrompt,
-                    randomContext: randomPrompt ? randomContext : nil
+                    randomContext: randomPrompt ? promptContext.rawValue : nil,
+                    alarmHour: randomPrompt ? alarmHour : nil,
+                    alarmMinute: randomPrompt ? alarmMinute : nil,
+                    weatherCountry: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCountry) : nil,
+                    weatherCity: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
+                    fortuneGender: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
+                    fortuneBirthDate: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
+                    fortuneBirthTime: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil,
+                    listenerTitle: selectedListenerTitle,
+                    targetUserId: targetUserId
                 ),
                 token: token
             )
-            let cached = try AudioCacheStore.cache(tts: response)
+            let cacheKey = AudioCacheStore.ttsCacheKey(
+                profileId: profileID,
+                text: response.text,
+                category: activeCategory,
+                language: activeLanguage,
+                serverCacheKey: response.cacheKey
+            )
+            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
             let prepared = PreparedVoiceAlarm(
                 messageID: response.messageId,
                 voiceProfileID: response.voiceProfileId,
                 localAudioFileName: cached.fileName,
                 audioCacheKey: cached.cacheKey,
-                rawAudioURL: response.audioUrl,
+                rawAudioURL: response.remoteAudioURI,
                 text: response.text,
-                language: ttsLanguage
+                language: activeLanguage
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
             return prepared
         } catch {
             statusMessage = mapVoiceError(error)
@@ -410,7 +719,7 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 보이스 프로필 삭제. force=true 가 기본 — Android 와 마찬가지로 사용 중인 알람이 있어도
+    /// 목소리 프로필 삭제. force=true 가 기본 — Android 와 마찬가지로 사용 중인 알람이 있어도
     /// cascade 로 sound-only 강등 후 삭제한다.
     ///
     /// `alarmStore` 가 주입되면 이 프로필을 쓰는 로컬 알람을 즉시 sound-only 로 강등하고
@@ -422,28 +731,44 @@ final class VoiceStudioViewModel: ObservableObject {
         force: Bool = true,
         alarmStore: LocalAlarmStore? = nil,
         audioCache: AudioCacheStore? = nil
-    ) async {
-        guard let token = session?.token else { return }
-        guard !isBusy else { return }
+    ) async -> Bool {
+        guard let token = session?.token else { return false }
+        guard !isBusy else { return false }
         isBusy = true
         defer { isBusy = false }
 
         do {
             try await api.deleteVoiceProfile(id: profile.id, token: token, force: force)
-            if selectedProfileID == profile.id {
-                selectedProfileID = nil
-            }
-            if let alarmStore {
-                cascadeAlarmsAfterVoiceDeletion(
-                    profileID: profile.id,
-                    alarmStore: alarmStore,
-                    audioCache: audioCache
-                )
-            }
+            handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
             statusMessage = "목소리를 삭제했어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
+            return true
         } catch {
+            if isNotFoundError(error) {
+                handleDeletedVoiceProfile(profile, alarmStore: alarmStore, audioCache: audioCache)
+                statusMessage = "이미 삭제된 목소리예요."
+                await refresh(session: session, force: true, successMessage: nil)
+                return true
+            }
             statusMessage = mapVoiceError(error)
+            return false
+        }
+    }
+
+    private func handleDeletedVoiceProfile(
+        _ profile: VoiceProfile,
+        alarmStore: LocalAlarmStore?,
+        audioCache: AudioCacheStore?
+    ) {
+        if selectedProfileID == profile.id {
+            selectedProfileID = nil
+        }
+        if let alarmStore {
+            cascadeAlarmsAfterVoiceDeletion(
+                profileID: profile.id,
+                alarmStore: alarmStore,
+                audioCache: audioCache
+            )
         }
     }
 
@@ -484,21 +809,101 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    /// 프로필 이름 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.
-    func renameProfile(_ profile: VoiceProfile, newName: String, session: AuthSession?) async {
+    private func nonEmpty(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func isNotFoundError(_ error: Error) -> Bool {
+        if case APIError.server(let status, _, _) = error {
+            return status == 404
+        }
+        return false
+    }
+
+    private struct RequiredVoiceProfileFields {
+        var name: String
+        var relationshipLabel: String
+        var listenerTitle: String
+    }
+
+    private func requiredVoiceProfileFields(
+        name: String,
+        fallbackName: String? = nil,
+        relationshipLabel: String?,
+        listenerTitle: String?
+    ) -> RequiredVoiceProfileFields? {
+        let normalizedName = nonEmpty(name) ?? fallbackName.flatMap { nonEmpty($0) }
+        guard let normalizedName else {
+            statusMessage = "목소리 이름을 입력해 주세요."
+            return nil
+        }
+        guard let relationship = requiredVoiceRelationshipFields(
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle
+        ) else {
+            return nil
+        }
+        return RequiredVoiceProfileFields(
+            name: normalizedName,
+            relationshipLabel: relationship.relationshipLabel,
+            listenerTitle: relationship.listenerTitle
+        )
+    }
+
+    private func requiredVoiceRelationshipFields(
+        relationshipLabel: String?,
+        listenerTitle: String?
+    ) -> (relationshipLabel: String, listenerTitle: String)? {
+        guard let relationshipLabel = nonEmpty(relationshipLabel ?? "") else {
+            statusMessage = "나와의 관계를 입력해 주세요."
+            return nil
+        }
+        guard let listenerTitle = nonEmpty(listenerTitle ?? "") else {
+            statusMessage = "이 목소리가 나를 부를 호칭을 입력해 주세요."
+            return nil
+        }
+        return (relationshipLabel, listenerTitle)
+    }
+
+    /// 프로필 정보 변경 — VoiceProfileManagementPanel 의 편집 다이얼로그가 호출.
+    func updateProfileInfo(
+        _ profile: VoiceProfile,
+        newName: String,
+        relationshipLabel: String,
+        listenerTitle: String,
+        session: AuthSession?
+    ) async {
         guard let token = session?.token else { return }
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedRelationship = relationshipLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             statusMessage = "이름을 비울 수 없어요."
+            return
+        }
+        guard !trimmedRelationship.isEmpty else {
+            statusMessage = "나와의 관계를 입력해 주세요."
+            return
+        }
+        guard !trimmedListener.isEmpty else {
+            statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
             return
         }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            _ = try await api.updateVoiceProfile(id: profile.id, name: trimmed, isShared: nil, token: token)
-            statusMessage = "이름을 변경했어요."
-            await refresh(session: session)
+            _ = try await api.updateVoiceProfile(
+                id: profile.id,
+                name: trimmed,
+                isShared: nil,
+                relationshipLabel: trimmedRelationship,
+                listenerTitle: trimmedListener,
+                token: token
+            )
+            statusMessage = "정보를 수정했어요."
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -513,7 +918,7 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             _ = try await api.updateVoiceProfile(id: profile.id, name: nil, isShared: isShared, token: token)
             statusMessage = isShared ? "공유를 켰어요." : "공유를 껐어요."
-            await refresh(session: session)
+            await refresh(session: session, force: true, successMessage: nil)
         } catch {
             statusMessage = mapVoiceError(error)
         }
@@ -527,9 +932,9 @@ final class VoiceStudioViewModel: ObservableObject {
 
 // MARK: - errorCode 매핑
 //
-// Android `MainViewModelVoiceActions.kt:136-144` 의 mapping 을 그대로 옮긴다. 본 매퍼는
+// Android `MainViewModelVoiceActions.kt:184-190` 의 mapping 을 그대로 옮긴다. 본 매퍼는
 // `APIError.server` 응답 body 안의 error_code 를 한국어 메시지로 변환한다. 해당 코드가
-// 없는 경우 generic fallback 메시지를 반환한다.
+// 없거나 모르는 코드인 경우 generic fallback 메시지를 반환한다.
 extension VoiceStudioViewModel {
     /// 외부에서도 테스트하기 위해 nonisolated.
     nonisolated func mapVoiceError(_ error: Error) -> String {
@@ -554,9 +959,13 @@ extension VoiceStudioViewModel {
             case .invalidResponse:
                 return "서버 응답을 해석하지 못했어요."
             case .server(let status, let message, _):
-                if status == 401 || status == 403 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
+                let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                if status == 401 { return "권한이 없어요. 로그인 상태를 확인해 주세요." }
+                if status == 403 {
+                    return trimmed.containsKorean ? trimmed : "권한이 없어요. 로그인 상태를 확인해 주세요."
+                }
                 if status >= 500 { return "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요." }
-                return message.isEmpty ? "처리 중 오류가 발생했어요." : message
+                return trimmed.containsKorean ? trimmed : "처리 중 오류가 발생했어요."
             }
         }
         return "처리 중 오류가 발생했어요."
@@ -566,27 +975,29 @@ extension VoiceStudioViewModel {
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         switch code {
         case "VOICE_SLOT_EXHAUSTED":
-            return "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            return "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
-            return "유료 플랜에서 사용할 수 있어요."
+            return "유료 이용권에서 사용할 수 있어요."
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
-            return "60초 이상의 음성을 녹음해 주세요."
+            return "목소리를 만들 음성은 1분 이상이어야 해요."
         case "VOICE_CLONE_AUDIO_TOO_LONG":
-            return "120초 이내로 녹음해 주세요."
+            return "목소리를 만들 음성은 2분 이하로 준비해 주세요."
+        case "INVALID_DURATION":
+            return "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
         case "VOICE_LIMIT_REACHED":
-            return "이번 달 보이스 생성 한도를 모두 사용했어요."
+            return "이번 달 목소리 생성 한도를 모두 사용했어요."
         case "AUDIO_DURATION_TOO_SHORT":
             return "음성이 너무 짧아요. 다시 녹음해 주세요."
         case "VOICE_PROFILE_NOT_FOUND":
-            return "보이스를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+            return "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
         case "INVALID_VOICE_PROFILE_ID":
-            return "잘못된 보이스 식별자예요."
+            return "잘못된 목소리 식별자예요."
         case "NAME_TOO_LONG":
             return "이름은 50자 이내로 입력해 주세요."
         case "AUDIO_AND_NAME_REQUIRED":
             return "음성과 이름을 모두 입력해 주세요."
         default:
-            return code
+            return "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
         }
     }
 
@@ -618,6 +1029,7 @@ extension VoiceStudioViewModel {
         "VOICE_FEATURE_REQUIRES_PAID_PLAN",
         "VOICE_CLONE_AUDIO_TOO_SHORT",
         "VOICE_CLONE_AUDIO_TOO_LONG",
+        "INVALID_DURATION",
         "VOICE_LIMIT_REACHED",
         "AUDIO_DURATION_TOO_SHORT",
         "VOICE_PROFILE_NOT_FOUND",
@@ -625,4 +1037,14 @@ extension VoiceStudioViewModel {
         "NAME_TOO_LONG",
         "AUDIO_AND_NAME_REQUIRED",
     ]
+}
+
+private extension String {
+    var containsKorean: Bool {
+        contains { character in
+            character.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(Int(scalar.value))
+            }
+        }
+    }
 }

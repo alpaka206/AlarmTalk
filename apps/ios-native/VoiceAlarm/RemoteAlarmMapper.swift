@@ -4,7 +4,7 @@ import Foundation
 //
 // Android 의 `RemoteAlarmMapper.kt` 를 1:1 포팅한다.
 // 두 가지 방향을 모두 다룬다.
-//   1. `RemoteAlarm` (서버 응답) -> `LocalAlarmRecord` (로컬 33필드 모델)
+//   1. `RemoteAlarm` (서버 응답) -> `LocalAlarmRecord` (Android-aligned 로컬 모델)
 //   2. `LocalAlarmRecord` -> `RemoteAlarmWriteRequest` (서버 push 본문)
 //
 // 매핑 규약은 Android 와 동일하게 유지한다.
@@ -21,7 +21,7 @@ enum RemoteAlarmMapper {
 
     // MARK: To local
 
-    /// 서버 알람 응답을 로컬 33필드 레코드로 변환한다.
+    /// 서버 알람 응답을 로컬 알람 레코드로 변환한다.
     ///
     /// 동기화 흐름에서 호출되며, 신규 import 시 기본값을 채워 줄 책임을 진다.
     /// (existing 레코드와의 머지는 `RemoteAlarmPullSync` 가 담당하므로
@@ -54,9 +54,11 @@ enum RemoteAlarmMapper {
 
         // 새 import 의 cacheKey 는 messageId 기반 deterministic 키로 잡는다.
         // 동일 messageId 가 재인입되어도 같은 키로 cascade cleanup 이 일관된다.
-        let cacheKey: String? = remote.messageId.flatMap { id in
-            id.isEmpty ? nil : "remote-message-\(id)"
-        }
+        let remoteMessageId = remoteMessageIDForAudio(remote)
+        let cacheKey: String? = remoteMessageId.map { "remote-message-\($0)" }
+        let remoteAudioUri = remoteMessageId == nil ? nil : (
+            trimmedOrNil(remote.messageAudioUrl) ?? trimmedOrNil(remote.rawAudioUrl)
+        )
 
         return LocalAlarmRecord(
             id: UUID().uuidString,
@@ -75,20 +77,22 @@ enum RemoteAlarmMapper {
             defaultAlarmSoundId: DefaultAlarmSounds.bundledDefault,
             localAudioUri: nil,
             audioCacheKey: cacheKey,
-            rawAudioUri: remote.rawAudioUrl ?? remote.messageAudioUrl,
+            rawAudioUri: remoteAudioUri,
             voiceSource: voiceSource.rawValue,
-            voiceProfileId: remote.voiceProfileId,
-            voiceText: remote.messageText,
-            voiceCategory: remote.category,
+            voiceProfileId: remoteMessageId == nil ? nil : remote.voiceProfileId,
+            voiceText: remoteMessageId == nil ? nil : remote.messageText,
+            voiceCategory: remoteMessageId == nil ? nil : remote.category,
             voiceLanguage: nil,
             voiceRandomPrompt: false,
+            dynamicVoicePreparedForFireAtMillis: nil,
             voiceRepeat: true,
-            ttsMessageId: remote.messageId,
+            voiceVolumePercent: 100,
+            ttsMessageId: remoteMessageId,
             remoteAlarmId: remote.id,
             lastSyncedAtMillis: nowMillis,
             syncState: AlarmSyncState.synced.rawValue,
             origin: origin.rawValue,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             alarmSoundUri: nil,
             alarmSoundLabel: nil,
             enabled: remote.isActive ?? true,
@@ -115,6 +119,8 @@ enum RemoteAlarmMapper {
             return local.ttsMessageId == nil ? uri : nil
         }()
         let hasRemoteVoice = local.ttsMessageId != nil || rawAudioUrl != nil
+        let messageId = trimmedOrNil(local.ttsMessageId)
+        let voiceProfileId = local.voiceSourceEnum == .localAudio ? nil : trimmedOrNil(local.voiceProfileId)
 
         return RemoteAlarmWriteRequest(
             time: local.timeString,
@@ -124,8 +130,8 @@ enum RemoteAlarmMapper {
             vibrationPattern: local.vibrationPattern,
             wakeMode: local.playModeEnum.remoteWakeMode,
             isActive: local.enabled,
-            messageId: local.ttsMessageId,
-            voiceProfileId: local.voiceSourceEnum == .localAudio ? nil : local.voiceProfileId,
+            messageId: messageId,
+            voiceProfileId: voiceProfileId,
             rawAudioUrl: rawAudioUrl,
             rawAudioDurationMs: nil,
             targetUserId: nil
@@ -177,9 +183,7 @@ enum RemoteAlarmMapper {
     /// `wake_mode` 에 따라 로컬 play mode 를 결정.
     /// 음성 자원이 전혀 없는 알람은 .alarmOnly 로 강등.
     static func resolvePlayMode(_ remote: RemoteAlarm) -> AlarmPlayMode {
-        let hasVoice = (remote.messageId?.isEmpty == false) ||
-            (remote.rawAudioUrl?.isEmpty == false) ||
-            (remote.messageAudioUrl?.isEmpty == false)
+        let hasVoice = shouldDownloadRemoteMessageAudio(remote)
         guard hasVoice else { return .alarmOnly }
         switch remote.wakeMode {
         case "voice_only": return .voiceOnly
@@ -188,21 +192,41 @@ enum RemoteAlarmMapper {
         }
     }
 
-    /// 서버에 음원이 있으면 server_tts, 없으면 tts_profile (정의 디폴트).
+    /// 서버에 내려받을 수 있는 음원이 있으면 server_tts, 없으면 local_audio.
     static func resolveVoiceSource(_ remote: RemoteAlarm) -> VoiceSource {
-        let hasVoice = (remote.messageId?.isEmpty == false) ||
-            (remote.rawAudioUrl?.isEmpty == false) ||
-            (remote.messageAudioUrl?.isEmpty == false)
-        return hasVoice ? .serverTts : .ttsProfile
+        let hasVoice = shouldDownloadRemoteMessageAudio(remote)
+        return hasVoice ? .serverTts : .localAudio
     }
 
-    /// 라벨 우선순위: messageText -> "{senderName} 알람" -> "받은 알람"
+    /// Android `shouldDownloadRemoteMessageAudio` 동일.
+    static func shouldDownloadRemoteMessageAudio(_ remote: RemoteAlarm) -> Bool {
+        remoteMessageIDForAudio(remote) != nil
+    }
+
+    private static func remoteMessageIDForAudio(_ remote: RemoteAlarm) -> String? {
+        guard let messageId = trimmedOrNil(remote.messageId),
+              trimmedOrNil(remote.messageAudioUrl) != nil else {
+            return nil
+        }
+        return messageId
+    }
+
+    private static func trimmedOrNil(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// Android `receivedRemoteAlarmLabel(...)` 과 동일한 받은 알람 라벨.
     static func resolveLabel(_ remote: RemoteAlarm) -> String {
-        if let text = remote.messageText?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !text.isEmpty { return text }
-        if let sender = remote.senderName?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sender.isEmpty { return "\(sender) 알람" }
-        return "받은 알람"
+        let sender = [remote.senderName, remote.senderEmail]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard let sender else { return "상대가 보낸 알람" }
+        let displayName = sender.hasSuffix("님") ? sender : "\(sender)님"
+        return "\(displayName)이 보낸 알람"
     }
 
     /// Android `RemoteAlarmMapper.isRemoteAudioUrl` 동일.

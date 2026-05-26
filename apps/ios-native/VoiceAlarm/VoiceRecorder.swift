@@ -58,6 +58,18 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
+    func clearLatest() {
+        if isRecording {
+            stop()
+        }
+        if let latestRecordingURL {
+            try? FileManager.default.removeItem(at: latestRecordingURL)
+        }
+        latestRecordingURL = nil
+        latestDurationMs = nil
+        elapsedSeconds = 0
+    }
+
     private func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -92,7 +104,7 @@ enum VoiceRecorderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .microphoneDenied:
-            return "Microphone permission is required to record a voice sample."
+            return "녹음하려면 마이크 권한이 필요해요."
         }
     }
 }

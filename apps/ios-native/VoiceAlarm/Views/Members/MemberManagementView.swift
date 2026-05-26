@@ -7,7 +7,7 @@ import UIKit
 /// 모든 동작을 1:1 포팅했다.
 ///
 /// 기능 요약
-///   - 그룹 정보 카드: 현재 인원 / 최대 인원, 내 역할 칩
+///   - 공유 이용권 요약: 이용권 종류 / 현재 인원 / 최대 인원
 ///   - 소유자 전용 공유 코드 카드: 코드 표시 + 클립보드 복사 + Share Sheet,
 ///     코드가 없을 땐 발급 버튼 노출. 정원 가득 차면 발급/공유 비활성.
 ///   - 구성원 리스트: 소유자(관리자) 표시, "나" 표시, allowFamilyAlarms 상태,
@@ -17,11 +17,11 @@ struct MemberManagementView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @Environment(\.voiceAlarmTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
 
     @State private var pendingRemoveMember: FamilyGroupMember?
     @State private var isSharePresented = false
     @State private var shareText: String = ""
+    @State private var showFamilyAlarmDialog = false
 
     private var familyGroup: FamilyGroupCurrentResponse? { socialFeatures.familyGroup }
     private var group: FamilyGroup? { familyGroup?.group }
@@ -69,15 +69,28 @@ struct MemberManagementView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                header
-
                 if group == nil {
-                    Text("참여 중인 공유 이용권이 없어요.")
+                    Text("현재 함께 쓰는 이용권이 없어요.")
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .padding(.vertical, 24)
                 } else {
                     capacityRow
+
+                    if let user = auth.session?.user {
+                        FamilyAlarmPermissionCard(
+                            allowFamilyAlarms: user.allowFamilyAlarms ?? false,
+                            quietWindows: user.familyAlarmQuietWindows ?? [],
+                            isBusy: auth.isBusy || socialFeatures.isBusy,
+                            onToggle: { nextValue in
+                                Task {
+                                    await auth.updateProfile(allowFamilyAlarms: nextValue)
+                                    await socialFeatures.refreshAll(session: auth.session)
+                                }
+                            },
+                            onEditQuietTime: { showFamilyAlarmDialog = true }
+                        )
+                    }
 
                     if isOwner {
                         sectionTitle("공유 코드")
@@ -106,10 +119,10 @@ struct MemberManagementView: View {
             .padding(.vertical, 12)
         }
         .background(theme.palette.background.ignoresSafeArea())
-        .navigationTitle("\(planLabel) 멤버/공유 코드 관리")
+        .navigationTitle("공유 이용권")
         .navigationBarTitleDisplayMode(.inline)
         .alert(
-            "멤버 내보내기",
+            "구성원 내보내기",
             isPresented: Binding(
                 get: { pendingRemoveMember != nil },
                 set: { if !$0 { pendingRemoveMember = nil } }
@@ -130,13 +143,29 @@ struct MemberManagementView: View {
             Button("취소", role: .cancel) {
                 pendingRemoveMember = nil
             }
-        } message: { member in
-            let label = member.name ?? member.email ?? "이 멤버"
-            Text("\(label)을(를) 정말 내보낼까요? 다시 들어오려면 새 초대 코드가 필요해요.")
+        } message: { _ in
+            Text("이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.")
         }
         .sheet(isPresented: $isSharePresented) {
             ActivityShareSheet(text: shareText)
                 .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showFamilyAlarmDialog) {
+            FamilyAlarmQuietTimeDialog(
+                initialWindows: auth.session?.user.familyAlarmQuietWindows ?? [],
+                onCancel: { showFamilyAlarmDialog = false },
+                onConfirm: { windows in
+                    showFamilyAlarmDialog = false
+                    Task {
+                        await auth.updateProfile(
+                            allowFamilyAlarms: true,
+                            quietWindows: windows
+                        )
+                        await socialFeatures.refreshAll(session: auth.session)
+                    }
+                }
+            )
+            .presentationDetents([.large])
         }
         .task(id: auth.session?.token) {
             await socialFeatures.refreshAll(session: auth.session)
@@ -145,23 +174,8 @@ struct MemberManagementView: View {
 
     // MARK: - Sections
 
-    private var header: some View {
-        HStack(spacing: 0) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.backward")
-                    .padding(8)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("뒤로")
-
-            Spacer().frame(width: 4)
-        }
-    }
-
     private var capacityRow: some View {
-        Text("현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
+        Text("\(planLabel) 이용권 · 현재 \(sortedMembers.count)/\(group?.maxMembers ?? 0)명")
             .font(theme.typography.bodyMedium)
             .foregroundStyle(theme.palette.onSurfaceVariant)
     }
@@ -181,7 +195,7 @@ struct MemberManagementView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text(isCapacityFull
                      ? "정원이 가득 차서 더 이상 공유할 수 없어요."
-                     : "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 INV 코드를 만들어 주세요.")
+                     : "공유 코드가 아직 없어요. \(planLabel) 구성원을 초대할 초대 코드를 만들어 주세요.")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
 
@@ -227,8 +241,22 @@ struct MemberManagementView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 Button {
-                    shareText = voucher.code
-                    isSharePresented = true
+                    Task {
+                        await socialFeatures.refreshAll(session: auth.session, force: true)
+                        guard let latestVoucher = shareVoucher else {
+                            socialFeatures.statusMessage = "공유 코드를 다시 불러오지 못했어요."
+                            return
+                        }
+                        let latestFull = isCapacityFull
+                            || ((latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1))
+                        guard !latestFull else {
+                            socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
+                            return
+                        }
+                        shareText = latestVoucher.code
+                        UIPasteboard.general.string = shareText
+                        isSharePresented = true
+                    }
                 } label: {
                     Label(isFull ? "공유 불가" : "공유하기", systemImage: "square.and.arrow.up")
                         .font(theme.typography.labelLarge)
@@ -255,6 +283,7 @@ struct MemberManagementView: View {
                     groupId: group.id,
                     session: auth.session
                 )
+                await auth.refreshUser()
             }
         } label: {
             Label("그룹 나가기", systemImage: "rectangle.portrait.and.arrow.right")
@@ -269,6 +298,77 @@ struct MemberManagementView: View {
 }
 
 /// 한 멤버 행. Android `MemberRow:264-332` 와 동등.
+private struct FamilyAlarmPermissionCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let allowFamilyAlarms: Bool
+    let quietWindows: [FamilyAlarmQuietWindow]
+    let isBusy: Bool
+    let onToggle: (Bool) -> Void
+    let onEditQuietTime: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("상대 알람 허용")
+                        .font(theme.typography.bodyMedium.weight(.medium))
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text("함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.")
+                        .font(theme.typography.bodySmall)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+                Spacer()
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { allowFamilyAlarms },
+                        set: { onToggle($0) }
+                    )
+                )
+                .labelsHidden()
+                .disabled(isBusy)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            if allowFamilyAlarms {
+                Divider()
+                    .overlay(theme.palette.outlineVariant)
+                Button(action: onEditQuietTime) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("알람 받지 않을 시간")
+                                .font(theme.typography.bodyMedium.weight(.medium))
+                                .foregroundStyle(theme.palette.onSurface)
+                            Text(HelperFormatters.quietScheduleLabel(quietWindows))
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Text("수정")
+                            .font(theme.typography.labelLarge)
+                            .foregroundStyle(theme.palette.primary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(theme.palette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
+        )
+    }
+}
+
 private struct MemberRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let member: FamilyGroupMember

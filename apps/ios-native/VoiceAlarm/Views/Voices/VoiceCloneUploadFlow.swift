@@ -1,38 +1,84 @@
 import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// 녹음 -> 60~120초 검증 -> 노이즈 제거 옵션 -> upload -> status 표시 워크플로우.
+private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
+    case record
+    case file
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .record: return "녹음"
+        case .file: return "파일"
+        }
+    }
+}
+
+/// 녹음/파일 선택 -> 60~120초 검증 -> 노이즈 제거 옵션 -> upload -> status 표시 워크플로우.
 ///
 /// Android `VoiceProfileManagementPanel.kt:577~764` 의 생성 다이얼로그를 SwiftUI 자체
-/// 화면으로 분리한 것. `VoiceStudioViewModel.recorder` 를 그대로 활용하고, 업로드는
-/// `cloneWithNoiseRemoval` / `uploadRecordingForClone` 둘 중 noiseRemovalEnabled 에 따라
-/// 분기한다.
+/// 화면으로 분리한 것. 녹음은 `VoiceStudioViewModel.recorder`, 파일은 `fileImporter` 와
+/// `AudioCropper` 를 활용하고, 업로드는 입력 방식과 noiseRemovalEnabled 에 따라 분기한다.
 struct VoiceCloneUploadFlow: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var voice: VoiceStudioViewModel
+    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var subscriptions: SubscriptionManager
 
     @Binding var route: VoicesRoute
 
+    @State private var sourceMode: VoiceCloneSourceMode = .record
     @State private var profileName: String = ""
+    @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var noiseRemovalEnabled: Bool = false
     @State private var isShared: Bool = false
-    /// 공유된 음성을 받는 사람이 자신을 부를 호칭. Android `VoiceProfileApi.kt:74`.
-    /// 본인이 사용할 때는 비어 있어도 무방하나, 가족·커플에게 공유할 거라면 미리 채워둔다.
+    /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
+    @State private var submitted: Bool = false
+    @State private var fileImporterPresented: Bool = false
+    @State private var selectedFileURL: URL?
+    @State private var selectedFileName: String?
+    @State private var selectedFileDurationMs: Int?
+    @State private var cropStartMs: Int = 0
+    @State private var cropEndMs: Int = VoiceProfileLimits.maxDurationMs
+    @State private var localError: String?
     @State private var animatedLevel: CGFloat = 0.0
     @State private var levelTimer: Timer?
 
+    private var activeDurationMs: Int {
+        switch sourceMode {
+        case .record:
+            return voice.recorder.latestDurationMs ?? Int(voice.recorder.elapsedSeconds * 1000)
+        case .file:
+            return cropDurationMs
+        }
+    }
+
+    private var cropDurationMs: Int {
+        max(0, cropEndMs - cropStartMs)
+    }
+
     /// 60~120초 구간 검증.
-    private var elapsedMs: Int {
-        voice.recorder.latestDurationMs ?? Int(voice.recorder.elapsedSeconds * 1000)
-    }
     private var isInValidRange: Bool {
-        elapsedMs >= VoiceProfileLimits.minDurationMs && elapsedMs <= VoiceProfileLimits.maxDurationMs
+        activeDurationMs >= VoiceProfileLimits.minDurationMs && activeDurationMs <= VoiceProfileLimits.maxDurationMs
     }
+
+    private var hasPreparedSource: Bool {
+        switch sourceMode {
+        case .record:
+            return voice.recorder.latestRecordingURL != nil
+        case .file:
+            return selectedFileURL != nil && selectedFileDurationMs != nil
+        }
+    }
+
     private var canSubmit: Bool {
         !voice.isBusy
-            && voice.recorder.latestRecordingURL != nil
             && !voice.recorder.isRecording
+            && canCreateVoice
+            && hasPreparedSource
             && isInValidRange
     }
 
@@ -40,7 +86,12 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             nameSection
-            recordingSection
+            sourceModeSection
+            if sourceMode == .record {
+                recordingSection
+            } else {
+                fileSection
+            }
             durationSection
             optionsSection
             guidanceSection
@@ -49,6 +100,25 @@ struct VoiceCloneUploadFlow: View {
         }
         .onAppear { profileName = voice.cloneName }
         .onDisappear { levelTimer?.invalidate() }
+        .fileImporter(
+            isPresented: $fileImporterPresented,
+            allowedContentTypes: VoiceImportContentTypes.profileTraining,
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let source = urls.first else { return }
+                Task { await importAudioFile(source) }
+            case .failure(let error):
+                localError = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
+            }
+        }
+        .onChange(of: sourceMode) { _, newValue in
+            if newValue == .file, voice.recorder.isRecording {
+                voice.stopRecording()
+                stopLevelAnimation()
+            }
+        }
     }
 
     private var header: some View {
@@ -59,7 +129,7 @@ struct VoiceCloneUploadFlow: View {
             .buttonStyle(.borderless)
             .tint(VoiceAlarmTheme.primary)
             Spacer()
-            Text("녹음으로 보이스 만들기")
+            Text("목소리 만들기")
                 .font(.headline)
             Spacer()
             Color.clear.frame(width: 40, height: 1)
@@ -71,26 +141,63 @@ struct VoiceCloneUploadFlow: View {
             Text("이름")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            TextField("보이스 이름", text: $profileName)
+            TextField("목소리 이름", text: $profileName)
                 .textFieldStyle(.roundedBorder)
                 .onChange(of: profileName) { _, newValue in
                     voice.cloneName = newValue
+                    if newValue.count > 50 {
+                        profileName = String(newValue.prefix(50))
+                        voice.cloneName = profileName
+                    }
                 }
+            if submitted && profileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("목소리 이름을 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+
+            VoiceRelationshipInputField(
+                selection: $relationshipSelection,
+                submitted: submitted
+            )
+            .padding(.top, 4)
+
             Text("이 목소리가 부를 호칭")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 .padding(.top, 4)
             TextField("예: 지호야, 우리 강아지", text: $listenerTitle)
                 .textFieldStyle(.roundedBorder)
-            Text("공유 받은 사람이 듣게 될 호칭이에요. 공유하지 않으면 비워둬도 돼요.")
-                .font(.caption2)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                .onChange(of: listenerTitle) { _, newValue in
+                    if newValue.count > 30 {
+                        listenerTitle = String(newValue.prefix(30))
+                    }
+                }
+            if submitted && listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("이 목소리가 나를 부를 이름을 입력해 주세요.")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            } else {
+                Text("랜덤 문구에서 이 이름으로 나를 불러요.")
+                    .font(.caption2)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
+            VoiceListenerPreviewCard(
+                listenerTitle: listenerTitle,
+                relationshipLabel: relationshipSelection.resolved
+            )
             HStack(spacing: 10) {
                 Toggle(isOn: $isShared) {
-                    Text("가족·커플과 공유")
-                        .font(.footnote)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("목소리 공유")
+                            .font(.footnote.weight(.semibold))
+                        Text(shareDescription)
+                            .font(.caption2)
+                            .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    }
                 }
                 .toggleStyle(.switch)
+                .disabled(!canShareVoice)
             }
         }
         .sectionSurface()
@@ -137,10 +244,126 @@ struct VoiceCloneUploadFlow: View {
         .sectionSurface()
     }
 
+    private var sourceModeSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("입력 방식")
+                .font(.subheadline.weight(.semibold))
+            Picker("입력 방식", selection: $sourceMode) {
+                ForEach(VoiceCloneSourceMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .sectionSurface()
+    }
+
+    private var fileSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("파일/영상으로 목소리 만들기")
+                        .font(.subheadline.weight(.semibold))
+                    Text("1분 이상 2분 이하 구간만 학습에 사용할 수 있어요.")
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    fileImporterPresented = true
+                } label: {
+                    Label("선택", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if let url = selectedFileURL, let durationMs = selectedFileDurationMs {
+                fileCropCard(url: url, durationMs: durationMs)
+            } else {
+                EmptyStatePlaceholder(
+                    title: "선택한 음성 파일이나 영상이 없어요.",
+                    subtitle: "m4a, mp3, wav, mp4 등 iOS가 읽을 수 있는 파일을 선택해 주세요.",
+                    icon: "folder.badge.plus"
+                )
+            }
+
+            if let localError {
+                Text(localError)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+        }
+        .sectionSurface()
+    }
+
+    private func fileCropCard(url: URL, durationMs: Int) -> some View {
+        let effectiveEndMs = min(cropEndMs, durationMs)
+        let effectiveDurationMs = max(0, effectiveEndMs - cropStartMs)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(selectedFileName ?? "선택한 파일")
+                        .font(.subheadline.weight(.semibold))
+                    Text("전체 \(timeLabel(durationMs)) · 사용할 구간 \(timeLabel(effectiveDurationMs))")
+                        .font(.caption)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    clearImportedFile()
+                } label: {
+                    Image(systemName: "xmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
+
+            if durationMs > VoiceProfileLimits.maxDurationMs {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))")
+                        .font(.caption.weight(.semibold))
+                    Slider(
+                        value: Binding(
+                            get: { Double(cropStartMs) / 1000.0 },
+                            set: { seconds in
+                                let maxStart = max(0, durationMs - VoiceProfileLimits.maxDurationMs)
+                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
+                                cropEndMs = min(durationMs, cropStartMs + VoiceProfileLimits.maxDurationMs)
+                            }
+                        ),
+                        in: 0...(Double(max(0, durationMs - VoiceProfileLimits.maxDurationMs)) / 1000.0),
+                        step: 1
+                    )
+                }
+            }
+
+            VoiceSegmentPreviewPlayer(
+                title: "선택 구간 미리듣기",
+                subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
+                audioURL: url,
+                startMs: cropStartMs,
+                endMs: effectiveEndMs,
+                onError: { localError = $0 }
+            )
+
+            if durationMs < VoiceProfileLimits.minDurationMs {
+                Text("1분 이상 파일을 선택해 주세요.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            } else if effectiveDurationMs < VoiceProfileLimits.minDurationMs {
+                Text("1분 이상 들리는 구간을 선택해 주세요.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
+        }
+        .padding(12)
+        .background(VoiceAlarmTheme.surfaceVariant.opacity(0.44), in: RoundedRectangle(cornerRadius: 12))
+    }
+
     private var durationSection: some View {
-        let elapsedSec = elapsedMs / 1000
+        let elapsedSec = activeDurationMs / 1000
         let total = VoiceProfileLimits.maxDurationMs / 1000
-        let progress = min(1.0, Double(elapsedMs) / Double(VoiceProfileLimits.maxDurationMs))
+        let progress = min(1.0, Double(activeDurationMs) / Double(VoiceProfileLimits.maxDurationMs))
         let validZoneStart = Double(VoiceProfileLimits.minDurationMs) / Double(VoiceProfileLimits.maxDurationMs)
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -176,13 +399,13 @@ struct VoiceCloneUploadFlow: View {
             }
             .frame(height: 8)
 
-            Text("1분 이상 2분 이내로 녹음해 주세요. 1분 30초를 권장해요.")
+            Text(sourceMode == .record ? "1분 이상 2분 이내로 녹음해 주세요. 1분 30초를 권장해요." : "1분 이상 2분 이내 구간만 사용할 수 있어요.")
                 .font(.footnote)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            if !isInValidRange && elapsedMs > 0 {
-                Text(elapsedMs < VoiceProfileLimits.minDurationMs
-                     ? "60초 이상 녹음해야 등록할 수 있어요."
-                     : "120초 이내로 녹음해 주세요.")
+            if !isInValidRange && activeDurationMs > 0 {
+                Text(activeDurationMs < VoiceProfileLimits.minDurationMs
+                     ? "60초 이상 준비해야 등록할 수 있어요."
+                     : "120초 이내 구간만 사용할 수 있어요.")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(VoiceAlarmTheme.error)
             }
@@ -231,14 +454,16 @@ struct VoiceCloneUploadFlow: View {
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Button {
-                    voice.playRecording()
-                } label: {
-                    Label("들어보기", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
+                if sourceMode == .record {
+                    Button {
+                        voice.playRecording()
+                    } label: {
+                        Label("들어보기", systemImage: "play.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(voice.recorder.latestRecordingURL == nil)
                 }
-                .buttonStyle(.bordered)
-                .disabled(voice.recorder.latestRecordingURL == nil)
 
                 Button {
                     Task { await submit() }
@@ -271,36 +496,211 @@ struct VoiceCloneUploadFlow: View {
     // MARK: - Actions
 
     private func submit() async {
-        guard let url = voice.recorder.latestRecordingURL,
-              let durationMs = voice.recorder.latestDurationMs else {
-            voice.statusMessage = "먼저 목소리를 녹음해 주세요."
+        submitted = true
+        guard hasPaidVoiceAccess else {
+            voice.statusMessage = "유료 이용권에서 사용할 수 있어요."
+            return
+        }
+        guard !voice.isProfileLimitReached else {
+            voice.statusMessage = "목소리는 최대 \(VoiceProfileLimits.maxProfiles)개까지 만들 수 있어요."
             return
         }
         let trimmedName = profileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveName = trimmedName.isEmpty ? "내 목소리" : trimmedName
+        guard !trimmedName.isEmpty else {
+            voice.statusMessage = "목소리 이름을 입력해 주세요."
+            return
+        }
+        let trimmedRelationship = relationshipSelection.resolved
+        guard !trimmedRelationship.isEmpty else {
+            voice.statusMessage = "나와의 관계를 입력해 주세요."
+            return
+        }
         let trimmedListener = listenerTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveListener = trimmedListener.isEmpty ? nil : trimmedListener
-        if noiseRemovalEnabled {
-            let _ = await voice.cloneWithNoiseRemoval(
-                audioFileURL: url,
-                name: effectiveName,
-                durationMs: durationMs,
-                isShared: isShared,
-                session: auth.session,
-                listenerTitle: effectiveListener
-            )
-        } else {
-            voice.cloneName = effectiveName
-            await voice.uploadRecordingForClone(
-                session: auth.session,
-                isShared: isShared,
-                listenerTitle: effectiveListener
-            )
+        guard !trimmedListener.isEmpty else {
+            voice.statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
+            return
+        }
+
+        switch sourceMode {
+        case .record:
+            guard let url = voice.recorder.latestRecordingURL,
+                  let durationMs = voice.recorder.latestDurationMs else {
+                voice.statusMessage = "먼저 목소리를 녹음해 주세요."
+                return
+            }
+            if noiseRemovalEnabled {
+                let _ = await voice.cloneWithNoiseRemoval(
+                    audioFileURL: url,
+                    name: trimmedName,
+                    durationMs: durationMs,
+                    isShared: shouldShareVoice,
+                    session: auth.session,
+                    relationshipLabel: trimmedRelationship,
+                    listenerTitle: trimmedListener
+                )
+            } else {
+                voice.cloneName = trimmedName
+                await voice.uploadRecordingForClone(
+                    session: auth.session,
+                    isShared: shouldShareVoice,
+                    relationshipLabel: trimmedRelationship,
+                    listenerTitle: trimmedListener
+                )
+            }
+        case .file:
+            do {
+                let prepared = try await preparedFileAudio()
+                _ = await voice.cloneAudioForProfile(
+                    audioFileURL: prepared.url,
+                    name: trimmedName,
+                    durationMs: prepared.durationMs,
+                    isShared: shouldShareVoice,
+                    session: auth.session,
+                    noiseRemoval: noiseRemovalEnabled,
+                    uploadFileName: prepared.uploadFileName,
+                    relationshipLabel: trimmedRelationship,
+                    listenerTitle: trimmedListener
+                )
+            } catch {
+                let message = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")
+                localError = message
+                voice.statusMessage = message
+                return
+            }
         }
         // 성공 시 management 로 복귀.
         if voice.statusMessage?.contains("등록") == true || voice.statusMessage?.contains("완료") == true {
             route = .management
         }
+    }
+
+    private var canShareVoice: Bool {
+        canShareVoiceWithOthers(
+            subscriptionResponse: socialFeatures.subscription,
+            familyGroup: socialFeatures.familyGroup,
+            authSession: auth.session,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+    }
+
+    private var hasPaidVoiceAccess: Bool {
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        .meetsOrExceeds(.personal)
+    }
+
+    private var canCreateVoice: Bool {
+        hasPaidVoiceAccess && !voice.isProfileLimitReached
+    }
+
+    private var shouldShareVoice: Bool {
+        isShared && canShareVoice
+    }
+
+    private var shareDescription: String {
+        if !canShareVoice {
+            return "공유는 커플/가족 이용권에서 사용할 수 있어요."
+        }
+        return isShared ? "이용권을 같이 사용하는 사람들에게 목소리를 공유해요." : "내 계정에서만 사용해요."
+    }
+
+    private func importAudioFile(_ source: URL) async {
+        do {
+            let importedURL = try copyImportedAudio(source)
+            let durationMs = try await readAudioDurationMs(importedURL)
+            await MainActor.run {
+                selectedFileURL = importedURL
+                selectedFileName = source.lastPathComponent
+                selectedFileDurationMs = durationMs
+                applyCropDefaults(durationMs: durationMs)
+                localError = durationMs < VoiceProfileLimits.minDurationMs
+                    ? "1분 이상 파일을 선택해 주세요."
+                    : nil
+            }
+        } catch {
+            await MainActor.run {
+                localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
+            }
+        }
+    }
+
+    private func preparedFileAudio() async throws -> (url: URL, durationMs: Int, uploadFileName: String?) {
+        guard let source = selectedFileURL,
+              let sourceDuration = selectedFileDurationMs else {
+            throw AudioCropper.CropperError.invalidRange
+        }
+        let uploadFileName = selectedFileName ?? source.lastPathComponent
+        let endMs = min(cropEndMs, sourceDuration)
+        let durationMs = max(0, endMs - cropStartMs)
+        guard durationMs >= VoiceProfileLimits.minDurationMs else {
+            throw AudioCropper.CropperError.invalidRange
+        }
+        guard durationMs <= VoiceProfileLimits.maxDurationMs else {
+            throw AudioCropper.CropperError.invalidRange
+        }
+        guard AudioCropper.shouldExportAudioOnly(
+            source: source,
+            startMs: cropStartMs,
+            endMs: endMs,
+            sourceDurationMs: sourceDuration
+        ) else {
+            return (source, durationMs, uploadFileName)
+        }
+        let audioOnly = try await AudioCropper.crop(source: source, startMs: cropStartMs, endMs: endMs)
+        return (audioOnly, durationMs, uploadFileName)
+    }
+
+    private func copyImportedAudio(_ source: URL) throws -> URL {
+        let scoped = source.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                source.stopAccessingSecurityScopedResource()
+            }
+        }
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("VoiceImports", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension
+        let destination = directory.appendingPathComponent("clone-import-\(UUID().uuidString).\(ext)")
+        try FileManager.default.copyItem(at: source, to: destination)
+        return destination
+    }
+
+    private func readAudioDurationMs(_ url: URL) async throws -> Int {
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
+            throw AudioCropper.CropperError.noAudioTrack
+        }
+        let duration = try await asset.load(.duration)
+        let seconds = CMTimeGetSeconds(duration)
+        guard seconds.isFinite, seconds > 0 else {
+            throw AudioCropper.CropperError.invalidRange
+        }
+        return Int((seconds * 1000).rounded())
+    }
+
+    private func applyCropDefaults(durationMs: Int) {
+        cropStartMs = 0
+        cropEndMs = min(durationMs, VoiceProfileLimits.maxDurationMs)
+    }
+
+    private func clearImportedFile() {
+        selectedFileURL = nil
+        selectedFileName = nil
+        selectedFileDurationMs = nil
+        cropStartMs = 0
+        cropEndMs = VoiceProfileLimits.maxDurationMs
+        localError = nil
+    }
+
+    private func timeLabel(_ millis: Int) -> String {
+        let seconds = max(0, millis / 1000)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private func startLevelAnimation() {

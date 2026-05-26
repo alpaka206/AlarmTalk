@@ -18,6 +18,27 @@ final class AudioCacheStoreTests: XCTestCase {
         XCTAssertNotEqual(a, b)
     }
 
+    func test_ttsCacheKey_matchesAndroidRuleAndServerOverride() {
+        let expected = AudioCacheStore.computeCacheKey(text: "tts-v2|voice-1|wake up|custom|ko")
+
+        let key = AudioCacheStore.ttsCacheKey(
+            profileId: "voice-1",
+            text: "  wake\n up  ",
+            category: "custom",
+            language: "ko"
+        )
+        let serverKey = AudioCacheStore.ttsCacheKey(
+            profileId: "voice-1",
+            text: "wake up",
+            category: "custom",
+            language: "ko",
+            serverCacheKey: "server-cache-key"
+        )
+
+        XCTAssertEqual(key, expected)
+        XCTAssertEqual(serverKey, "server-cache-key")
+    }
+
     func test_safeCacheKey_sanitizesAndTruncates() {
         let raw = String(repeating: "Z!", count: 100) // 200 자
         let safe = AudioCacheStore.safeCacheKey(raw)
@@ -61,6 +82,23 @@ final class AudioCacheStoreTests: XCTestCase {
 
         XCTAssertEqual(cached.cacheKey, "server-cache-key")
         XCTAssertNotNil(AudioCacheStore.shared.cachedURL(for: cached.cacheKey))
+    }
+
+    func test_ttsRemoteAudioURI_fallsBackToR2ObjectKey() {
+        let response = TtsGenerateResponse(
+            messageId: "msg-r2-key",
+            audioBase64: Data("fake-audio".utf8).base64EncodedString(),
+            audioFormat: "mp3",
+            audioUrl: nil,
+            audioObjectKey: "tts/msg-r2-key.mp3",
+            text: "wake up",
+            voiceProfileId: "voice-1",
+            cacheKey: nil,
+            cacheHit: false,
+            provider: "test"
+        )
+
+        XCTAssertEqual(response.remoteAudioURI, "r2://tts/msg-r2-key.mp3")
     }
 
     func test_cacheBytes_writesFileAndMetadata_andCascadeCleanupRespectsActiveKeys() throws {

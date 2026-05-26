@@ -32,6 +32,7 @@ final class AlarmEditDraftTests: XCTestCase {
             voiceLanguage: "ko",
             voiceRandomPrompt: false,
             voiceRepeat: true,
+            voiceVolumePercent: 72,
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: now - 1_000,
@@ -59,6 +60,8 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.snoozeRepeatLimit, .five)
         XCTAssertEqual(draft.vibrationPattern, .heartbeat)
         XCTAssertEqual(draft.alarmVolumePercent, 65)
+        XCTAssertTrue(draft.voiceRepeat)
+        XCTAssertEqual(draft.voiceVolumePercent, 72)
 
         let rebuilt = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
         XCTAssertEqual(rebuilt.id, original.id, "ID 는 보존되어야 한다")
@@ -77,18 +80,96 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(rebuilt.snoozeMinutes, 7)
         XCTAssertEqual(rebuilt.snoozeRepeatLimit, SnoozeRepeatLimit.five.rawValue)
         XCTAssertEqual(rebuilt.alarmVolumePercent, 65)
+        XCTAssertTrue(rebuilt.voiceRepeat)
+        XCTAssertEqual(rebuilt.voiceVolumePercent, 72)
 
         // remote 가 있던 record 는 dirty 로 마킹.
         XCTAssertEqual(rebuilt.syncState, AlarmSyncState.dirty.rawValue)
     }
 
+    func testRandomPromptFieldsRoundTrip() throws {
+        var draft = AlarmEditDraft.newDefault()
+        draft.playMode = .soundThenVoice
+        draft.voiceRandomPrompt = true
+        draft.voiceRandomContext = RandomPromptContext.wakeWeather.rawValue
+        draft.voiceWeatherCountry = "대한민국"
+        draft.voiceWeatherCity = "서울"
+
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let record = draft.toRecord(existing: nil, fireAtMillis: now + 60_000, nowMillis: now)
+
+        XCTAssertTrue(record.voiceRandomPrompt)
+        XCTAssertEqual(record.voiceRandomContext, RandomPromptContext.wakeWeather.rawValue)
+        XCTAssertEqual(record.voiceWeatherCountry, "대한민국")
+        XCTAssertEqual(record.voiceWeatherCity, "서울")
+        XCTAssertNil(record.voiceFortuneGender)
+        XCTAssertNil(record.dynamicVoicePreparedForFireAtMillis)
+
+        let restored = AlarmEditDraft(from: record)
+        XCTAssertTrue(restored.voiceRandomPrompt)
+        XCTAssertEqual(restored.voiceRandomContext, RandomPromptContext.wakeWeather.rawValue)
+        XCTAssertEqual(restored.voiceWeatherCountry, "대한민국")
+        XCTAssertEqual(restored.voiceWeatherCity, "서울")
+    }
+
+    func testAlarmOnlyClearsVoiceFieldsLikeAndroid() throws {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let original = LocalAlarmRecord(
+            label: "음성 알람",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-key",
+            rawAudioUri: "https://example.com/voice.m4a",
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue,
+            voiceWeatherCountry: "대한민국",
+            voiceWeatherCity: "서울",
+            dynamicVoicePreparedForFireAtMillis: now + 60_000,
+            voiceRepeat: false,
+            voiceVolumePercent: 70,
+            ttsMessageId: "msg-1",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        var draft = AlarmEditDraft(from: original)
+        draft.playMode = .alarmOnly
+        let record = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
+
+        XCTAssertEqual(record.playModeEnum, .alarmOnly)
+        XCTAssertNil(record.localAudioUri)
+        XCTAssertNil(record.audioCacheKey)
+        XCTAssertNil(record.rawAudioUri)
+        XCTAssertEqual(record.voiceSourceEnum, .localAudio)
+        XCTAssertNil(record.voiceProfileId)
+        XCTAssertNil(record.voiceText)
+        XCTAssertNil(record.voiceCategory)
+        XCTAssertNil(record.voiceLanguage)
+        XCTAssertFalse(record.voiceRandomPrompt)
+        XCTAssertNil(record.voiceRandomContext)
+        XCTAssertNil(record.voiceWeatherCountry)
+        XCTAssertNil(record.voiceWeatherCity)
+        XCTAssertNil(record.dynamicVoicePreparedForFireAtMillis)
+        XCTAssertTrue(record.voiceRepeat)
+        XCTAssertEqual(record.voiceVolumePercent, 100)
+        XCTAssertNil(record.ttsMessageId)
+    }
+
     // MARK: - Validation
 
-    func testValidationFlagsEmptyLabel() {
+    func testValidationAllowsEmptyLabelLikeAndroid() {
         var draft = AlarmEditDraft.newDefault()
         draft.label = "   "
-        XCTAssertEqual(draft.validate(), [.emptyLabel])
-        XCTAssertFalse(draft.isValid)
+        XCTAssertEqual(draft.validate(), [])
+        XCTAssertTrue(draft.isValid)
     }
 
     func testValidationFlagsInvalidHourMinute() {
@@ -114,10 +195,131 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertFalse(draft.validate().contains(.invalidSnoozeMinutes))
     }
 
+    func testValidationFlagsRepeatMaskAndAlarmVolumeLikeAndroid() {
+        var draft = AlarmEditDraft.newDefault()
+        draft.repeatDaysMask = 0x80
+        draft.alarmVolumePercent = 101
+
+        let errors = Set(draft.validate())
+
+        XCTAssertTrue(errors.contains(.invalidRepeatDaysMask))
+        XCTAssertTrue(errors.contains(.invalidAlarmVolume))
+    }
+
+    func testValidationFlagsVoiceVolumeBelowAndroidMinimumForVoiceModes() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
+        draft.voiceVolumePercent = 29
+        XCTAssertTrue(draft.validate().contains(.invalidVoiceVolume))
+
+        draft.voiceVolumePercent = 30
+        XCTAssertFalse(draft.validate().contains(.invalidVoiceVolume))
+    }
+
+    func testVoiceVolumeLoadsAndSavesAtAndroidMinimum() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let original = LocalAlarmRecord(
+            label: "작은 목소리",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-key",
+            voiceVolumePercent: 0,
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let draft = AlarmEditDraft(from: original)
+        XCTAssertEqual(draft.voiceVolumePercent, 30)
+
+        let record = draft.toRecord(existing: original, fireAtMillis: now + 120_000, nowMillis: now)
+        XCTAssertEqual(record.voiceVolumePercent, 30)
+    }
+
+    func testCanReuseExistingTtsAudioForUnchangedManualVoice() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko"
+        )
+
+        XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "  일어나세요  ",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "en",
+            translateText: false
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioRejectsChangedTextOrProfile() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko"
+        )
+
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "좋은 아침",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false
+        ))
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-2",
+            text: "일어나세요",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioForUnchangedRandomPrompt() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "오늘 날씨에 맞춰 일어나세요",
+            voiceCategory: RandomPromptContext.wakeWeather.ttsCategory,
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue
+        )
+
+        XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "",
+            randomPrompt: true,
+            randomContext: RandomPromptContext.wakeWeather.rawValue,
+            language: "ko",
+            translateText: false
+        ))
+    }
+
     func testValidationPassesForValidDraft() {
         let draft = AlarmEditDraft.newDefault()
         XCTAssertEqual(draft.validate(), [])
         XCTAssertTrue(draft.isValid)
+    }
+
+    func testAlarmSoundControlsHiddenOnlyForVoiceOnlyMode() {
+        var draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
+        XCTAssertTrue(draft.showsAlarmSoundControls)
+
+        draft.playMode = .alarmOnly
+        XCTAssertTrue(draft.showsAlarmSoundControls)
+
+        draft.playMode = .voiceOnly
+        XCTAssertFalse(draft.showsAlarmSoundControls)
     }
 
     // MARK: - Empty label fallback in toRecord
@@ -133,16 +335,25 @@ final class AlarmEditDraftTests: XCTestCase {
     // MARK: - New alarm without existing record
 
     func testNewAlarmInitialDefaults() {
-        let draft = AlarmEditDraft.newDefault(referenceDate: Date(timeIntervalSince1970: 0))
-        XCTAssertFalse(draft.label.isEmpty)
+        let draft = AlarmEditDraft.newDefault()
+        XCTAssertEqual(draft.label, "")
+        XCTAssertEqual(draft.hour, 6)
+        XCTAssertEqual(draft.minute, 0)
         XCTAssertEqual(draft.playMode, .alarmOnly)
         XCTAssertTrue(draft.snoozeEnabled)
         XCTAssertEqual(draft.snoozeMinutes, 5)
         XCTAssertEqual(draft.snoozeRepeatLimit, .three)
         XCTAssertEqual(draft.vibrationPattern, .default)
-        XCTAssertEqual(draft.alarmVolumePercent, 80)
+        XCTAssertEqual(draft.alarmVolumePercent, 100)
+        XCTAssertTrue(draft.voiceRepeat)
+        XCTAssertEqual(draft.voiceVolumePercent, 100)
         XCTAssertEqual(draft.repeatDaysMask, 0)
         XCTAssertFalse(draft.holidayOff)
+    }
+
+    func testNewAlarmCanUsePaidDefaultPlayMode() {
+        let draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
+        XCTAssertEqual(draft.playMode, .soundThenVoice)
     }
 
     // MARK: - RepeatDay mask consistency with RepeatWeekdayChips
@@ -160,5 +371,35 @@ final class AlarmEditDraftTests: XCTestCase {
         // 전체 켜기
         let all = RepeatDay.allCases.mask
         XCTAssertEqual(all, 0b1111111)
+    }
+
+    private func makeTtsRecord(
+        voiceProfileId: String,
+        voiceText: String,
+        voiceCategory: String,
+        voiceLanguage: String,
+        voiceRandomPrompt: Bool = false,
+        voiceRandomContext: String? = nil
+    ) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        return LocalAlarmRecord(
+            label: "음성 알람",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-cache",
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: voiceProfileId,
+            voiceText: voiceText,
+            voiceCategory: voiceCategory,
+            voiceLanguage: voiceLanguage,
+            voiceRandomPrompt: voiceRandomPrompt,
+            voiceRandomContext: voiceRandomContext,
+            ttsMessageId: "message-1",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
     }
 }

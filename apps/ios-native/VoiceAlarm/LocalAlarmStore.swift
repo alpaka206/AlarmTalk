@@ -1,7 +1,7 @@
 import Foundation
 
 // MARK: - LocalAlarmRecord
-// Android `AlarmEntity.kt:7-45` 의 33필드와 1:1 매칭.
+// Android `AlarmEntity.kt:7-45` 의 알람 필드와 1:1 매칭.
 // 필드명만 Swift camelCase. epoch ms 는 `Int64` 로 직렬화.
 struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var id: String                  // UUID().uuidString
@@ -27,7 +27,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var voiceCategory: String?
     var voiceLanguage: String?      // ISO 639-1
     var voiceRandomPrompt: Bool
+    var voiceRandomContext: String?
+    var voiceWeatherCountry: String?
+    var voiceWeatherCity: String?
+    var voiceFortuneGender: String?
+    var voiceFortuneBirthDate: String?
+    var voiceFortuneBirthTime: String?
+    var dynamicVoicePreparedForFireAtMillis: Int64?
     var voiceRepeat: Bool
+    var voiceVolumePercent: Int     // 0..100
     var ttsMessageId: String?
     var remoteAlarmId: String?
     var lastSyncedAtMillis: Int64?
@@ -58,6 +66,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         ttsMessageId != nil || rawAudioUri != nil || localAudioUri != nil
     }
 
+    var usesPaidVoiceFeatures: Bool {
+        playModeEnum != .alarmOnly ||
+            !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     var canSnooze: Bool {
         snoozeEnabled &&
             (snoozeRepeatLimit == SnoozeRepeatLimit.unlimited.rawValue ||
@@ -85,7 +101,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 
     // MARK: Defaults / Designated init
 
-    /// 풀 33필드 designated init. 누락된 필드는 default 사용.
+    /// Android `AlarmEntity` 와 맞춘 designated init. 누락된 필드는 default 사용.
     init(
         id: String = UUID().uuidString,
         label: String,
@@ -110,13 +126,21 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         voiceCategory: String? = nil,
         voiceLanguage: String? = nil,
         voiceRandomPrompt: Bool = false,
+        voiceRandomContext: String? = nil,
+        voiceWeatherCountry: String? = nil,
+        voiceWeatherCity: String? = nil,
+        voiceFortuneGender: String? = nil,
+        voiceFortuneBirthDate: String? = nil,
+        voiceFortuneBirthTime: String? = nil,
+        dynamicVoicePreparedForFireAtMillis: Int64? = nil,
         voiceRepeat: Bool = true,
+        voiceVolumePercent: Int = 100,
         ttsMessageId: String? = nil,
         remoteAlarmId: String? = nil,
         lastSyncedAtMillis: Int64? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
-        alarmVolumePercent: Int = 80,
+        alarmVolumePercent: Int = 100,
         alarmSoundUri: String? = nil,
         alarmSoundLabel: String? = nil,
         enabled: Bool = true,
@@ -148,7 +172,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceCategory = voiceCategory
         self.voiceLanguage = voiceLanguage
         self.voiceRandomPrompt = voiceRandomPrompt
+        self.voiceRandomContext = voiceRandomContext
+        self.voiceWeatherCountry = voiceWeatherCountry
+        self.voiceWeatherCity = voiceWeatherCity
+        self.voiceFortuneGender = voiceFortuneGender
+        self.voiceFortuneBirthDate = voiceFortuneBirthDate
+        self.voiceFortuneBirthTime = voiceFortuneBirthTime
+        self.dynamicVoicePreparedForFireAtMillis = dynamicVoicePreparedForFireAtMillis
         self.voiceRepeat = voiceRepeat
+        self.voiceVolumePercent = voiceVolumePercent
         self.ttsMessageId = ttsMessageId
         self.remoteAlarmId = remoteAlarmId
         self.lastSyncedAtMillis = lastSyncedAtMillis
@@ -188,7 +220,15 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case voiceCategory
         case voiceLanguage
         case voiceRandomPrompt
+        case voiceRandomContext
+        case voiceWeatherCountry
+        case voiceWeatherCity
+        case voiceFortuneGender
+        case voiceFortuneBirthDate
+        case voiceFortuneBirthTime
+        case dynamicVoicePreparedForFireAtMillis
         case voiceRepeat
+        case voiceVolumePercent
         case ttsMessageId
         case remoteAlarmId
         case lastSyncedAtMillis
@@ -203,7 +243,8 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case updatedAtMillis
         case alarmKitID
 
-        // Legacy 17필드 호환 키 (iOS 초기 빌드 JSON)
+        // Legacy 17필드 호환 키 (iOS 초기 빌드 JSON). 디코딩 전용.
+        // alarmKitID 는 동일 키를 String/UUID 두 형식으로 시도하므로 별도 케이스 불필요.
         case legacyRemoteID = "remoteID"
         case legacyRepeatWeekdays = "repeatWeekdays"
         case legacyVoiceProfileID = "voiceProfileID"
@@ -211,7 +252,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case legacyRawAudioURL = "rawAudioURL"
         case legacyLocalAudioFilePath = "localAudioFilePath"
         case legacyUpdatedAt = "updatedAt"
-        case legacyAlarmKitID = "alarmKitID"  // 동일 키 — UUID 형식이면 String 으로 재해석
     }
 
     /// Codable 디코딩. 신규 필드 누락 시 default + legacy 17필드 JSON 호환.
@@ -279,7 +319,18 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.voiceCategory = try c.decodeIfPresent(String.self, forKey: .voiceCategory)
         self.voiceLanguage = try c.decodeIfPresent(String.self, forKey: .voiceLanguage)
         self.voiceRandomPrompt = try c.decodeIfPresent(Bool.self, forKey: .voiceRandomPrompt) ?? false
+        self.voiceRandomContext = try c.decodeIfPresent(String.self, forKey: .voiceRandomContext)
+        self.voiceWeatherCountry = try c.decodeIfPresent(String.self, forKey: .voiceWeatherCountry)
+        self.voiceWeatherCity = try c.decodeIfPresent(String.self, forKey: .voiceWeatherCity)
+        self.voiceFortuneGender = try c.decodeIfPresent(String.self, forKey: .voiceFortuneGender)
+        self.voiceFortuneBirthDate = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthDate)
+        self.voiceFortuneBirthTime = try c.decodeIfPresent(String.self, forKey: .voiceFortuneBirthTime)
+        self.dynamicVoicePreparedForFireAtMillis = try c.decodeIfPresent(
+            Int64.self,
+            forKey: .dynamicVoicePreparedForFireAtMillis
+        )
         self.voiceRepeat = try c.decodeIfPresent(Bool.self, forKey: .voiceRepeat) ?? true
+        self.voiceVolumePercent = try c.decodeIfPresent(Int.self, forKey: .voiceVolumePercent) ?? 100
         self.ttsMessageId = try c.decodeIfPresent(String.self, forKey: .ttsMessageId)
             ?? c.decodeIfPresent(String.self, forKey: .legacyMessageID)
 
@@ -298,7 +349,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         }
 
         self.origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? AlarmOrigin.localOwned.rawValue
-        self.alarmVolumePercent = try c.decodeIfPresent(Int.self, forKey: .alarmVolumePercent) ?? 80
+        self.alarmVolumePercent = try c.decodeIfPresent(Int.self, forKey: .alarmVolumePercent) ?? 100
         self.alarmSoundUri = try c.decodeIfPresent(String.self, forKey: .alarmSoundUri)
         self.alarmSoundLabel = try c.decodeIfPresent(String.self, forKey: .alarmSoundLabel)
         self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
@@ -336,6 +387,57 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         }
     }
 
+    /// Encodable. legacy 키 케이스는 디코딩 전용이라 auto-synthesis 가 실패하므로
+    /// stored property 만 직렬화하는 인코더를 직접 구현한다.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(label, forKey: .label)
+        try c.encode(hour, forKey: .hour)
+        try c.encode(minute, forKey: .minute)
+        try c.encode(fireAtMillis, forKey: .fireAtMillis)
+        try c.encode(repeatDaysMask, forKey: .repeatDaysMask)
+        try c.encode(holidayOff, forKey: .holidayOff)
+        try c.encode(snoozeEnabled, forKey: .snoozeEnabled)
+        try c.encode(snoozeMinutes, forKey: .snoozeMinutes)
+        try c.encode(snoozeRepeatLimit, forKey: .snoozeRepeatLimit)
+        try c.encode(snoozeCount, forKey: .snoozeCount)
+        try c.encode(vibrationPattern, forKey: .vibrationPattern)
+        try c.encode(playMode, forKey: .playMode)
+        try c.encode(defaultAlarmSoundId, forKey: .defaultAlarmSoundId)
+        try c.encodeIfPresent(localAudioUri, forKey: .localAudioUri)
+        try c.encodeIfPresent(audioCacheKey, forKey: .audioCacheKey)
+        try c.encodeIfPresent(rawAudioUri, forKey: .rawAudioUri)
+        try c.encode(voiceSource, forKey: .voiceSource)
+        try c.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
+        try c.encodeIfPresent(voiceText, forKey: .voiceText)
+        try c.encodeIfPresent(voiceCategory, forKey: .voiceCategory)
+        try c.encodeIfPresent(voiceLanguage, forKey: .voiceLanguage)
+        try c.encode(voiceRandomPrompt, forKey: .voiceRandomPrompt)
+        try c.encodeIfPresent(voiceRandomContext, forKey: .voiceRandomContext)
+        try c.encodeIfPresent(voiceWeatherCountry, forKey: .voiceWeatherCountry)
+        try c.encodeIfPresent(voiceWeatherCity, forKey: .voiceWeatherCity)
+        try c.encodeIfPresent(voiceFortuneGender, forKey: .voiceFortuneGender)
+        try c.encodeIfPresent(voiceFortuneBirthDate, forKey: .voiceFortuneBirthDate)
+        try c.encodeIfPresent(voiceFortuneBirthTime, forKey: .voiceFortuneBirthTime)
+        try c.encodeIfPresent(dynamicVoicePreparedForFireAtMillis, forKey: .dynamicVoicePreparedForFireAtMillis)
+        try c.encode(voiceRepeat, forKey: .voiceRepeat)
+        try c.encode(voiceVolumePercent, forKey: .voiceVolumePercent)
+        try c.encodeIfPresent(ttsMessageId, forKey: .ttsMessageId)
+        try c.encodeIfPresent(remoteAlarmId, forKey: .remoteAlarmId)
+        try c.encodeIfPresent(lastSyncedAtMillis, forKey: .lastSyncedAtMillis)
+        try c.encode(syncState, forKey: .syncState)
+        try c.encode(origin, forKey: .origin)
+        try c.encode(alarmVolumePercent, forKey: .alarmVolumePercent)
+        try c.encodeIfPresent(alarmSoundUri, forKey: .alarmSoundUri)
+        try c.encodeIfPresent(alarmSoundLabel, forKey: .alarmSoundLabel)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(state, forKey: .state)
+        try c.encode(createdAtMillis, forKey: .createdAtMillis)
+        try c.encode(updatedAtMillis, forKey: .updatedAtMillis)
+        try c.encodeIfPresent(alarmKitID, forKey: .alarmKitID)
+    }
+
     /// hour/minute 만 알 때 다음 발화 시각 계산 (legacy import 폴백용).
     static func fallbackFireAtMillis(hour: Int, minute: Int, referenceMillis: Int64) -> Int64 {
         let reference = Date(timeIntervalSince1970: TimeInterval(referenceMillis) / 1000.0)
@@ -356,13 +458,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 // MARK: - Validation
 // Android `AlarmRepository.kt:471-484` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
 enum LocalAlarmValidationError: LocalizedError, Equatable {
-    case emptyLabel
+    case alarmNotFound
     case invalidHour
     case invalidMinute
     case invalidRepeatDaysMask
     case invalidSnoozeMinutes
     case invalidSnoozeRepeatLimit
     case invalidAlarmVolume
+    case invalidVoiceVolume
     case unknownVibrationPattern
     case unknownPlayMode
     case unknownVoiceSource
@@ -371,13 +474,14 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .emptyLabel: return "알람 이름을 입력해 주세요."
+        case .alarmNotFound: return "알람을 찾지 못했어요."
         case .invalidHour: return "시는 0~23 사이여야 해요."
         case .invalidMinute: return "분은 0~59 사이여야 해요."
         case .invalidRepeatDaysMask: return "반복 요일 비트가 유효하지 않아요."
         case .invalidSnoozeMinutes: return "다시 알림은 1~30분이어야 해요."
         case .invalidSnoozeRepeatLimit: return "다시 알림 반복 횟수가 유효하지 않아요."
         case .invalidAlarmVolume: return "알람 볼륨은 0~100 사이여야 해요."
+        case .invalidVoiceVolume: return "목소리 크기는 0~100 사이여야 해요."
         case .unknownVibrationPattern: return "지원하지 않는 진동 패턴이에요."
         case .unknownPlayMode: return "지원하지 않는 재생 방식이에요."
         case .unknownVoiceSource: return "지원하지 않는 음성 소스예요."
@@ -414,16 +518,29 @@ actor LocalAlarmPersistence {
 @MainActor
 final class LocalAlarmStore: ObservableObject {
     @Published private(set) var alarms: [LocalAlarmRecord] = []
+    @Published private(set) var hasLoadedFromDisk = false
 
     private let persistence: LocalAlarmPersistence
 
-    init() {
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let storageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
-        self.persistence = LocalAlarmPersistence(storageURL: storageURL)
+    init(storageURL: URL? = nil, loadFromDisk: Bool = true) {
+        let resolvedStorageURL: URL
+        if let storageURL {
+            resolvedStorageURL = storageURL
+        } else {
+            let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            resolvedStorageURL = directory.appendingPathComponent("voice-alarm-ios-alarms.json")
+        }
+        self.persistence = LocalAlarmPersistence(storageURL: resolvedStorageURL)
+        guard loadFromDisk else {
+            self.hasLoadedFromDisk = true
+            return
+        }
         Task { [persistence] in
             let loaded = await persistence.load()
-            await MainActor.run { self.alarms = loaded }
+            await MainActor.run {
+                self.alarms = loaded
+                self.hasLoadedFromDisk = true
+            }
         }
     }
 
@@ -443,6 +560,10 @@ final class LocalAlarmStore: ObservableObject {
 
     func recordsBy(origin: AlarmOrigin) -> [LocalAlarmRecord] {
         alarms.filter { $0.originEnum == origin }
+    }
+
+    func paidVoiceAlarms() -> [LocalAlarmRecord] {
+        alarms.filter(\.usesPaidVoiceFeatures)
     }
 
     func countByAudioCacheKey(_ key: String) -> Int {
@@ -471,9 +592,6 @@ final class LocalAlarmStore: ObservableObject {
 
     /// Android `AlarmRepository.validateDraft` 동일.
     static func validateDraft(_ record: LocalAlarmRecord) throws {
-        if record.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LocalAlarmValidationError.emptyLabel
-        }
         guard (0...23).contains(record.hour) else { throw LocalAlarmValidationError.invalidHour }
         guard (0...59).contains(record.minute) else { throw LocalAlarmValidationError.invalidMinute }
         guard (0...0x7f).contains(record.repeatDaysMask) else {
@@ -487,6 +605,9 @@ final class LocalAlarmStore: ObservableObject {
         }
         guard (0...100).contains(record.alarmVolumePercent) else {
             throw LocalAlarmValidationError.invalidAlarmVolume
+        }
+        guard (0...100).contains(record.voiceVolumePercent) else {
+            throw LocalAlarmValidationError.invalidVoiceVolume
         }
         guard VibrationPattern(rawValue: record.vibrationPattern) != nil else {
             throw LocalAlarmValidationError.unknownVibrationPattern
@@ -520,14 +641,86 @@ final class LocalAlarmStore: ObservableObject {
         return copy
     }
 
-    func delete(_ alarm: LocalAlarmRecord) {
-        alarms.removeAll { $0.id == alarm.id }
+    @discardableResult
+    func copyAlarm(
+        id: String,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) },
+        idFactory: () -> String = { UUID().uuidString }
+    ) throws -> LocalAlarmRecord {
+        guard let current = record(id: id) else {
+            throw LocalAlarmValidationError.alarmNotFound
+        }
+        let copiedTime = Self.copyTargetTime(hour: current.hour, minute: current.minute)
+        try requireUniqueTime(
+            hour: copiedTime.hour,
+            minute: copiedTime.minute,
+            repeatDaysMask: current.repeatDaysMask
+        )
+
+        var copied = current
+        copied.id = idFactory()
+        copied.label = Self.copyLabel(current.label)
+        copied.hour = copiedTime.hour
+        copied.minute = copiedTime.minute
+        copied.fireAtMillis = try AlarmTimeCalculator.nextFireAtMillis(
+            hour: copiedTime.hour,
+            minute: copiedTime.minute,
+            repeatDaysMask: current.repeatDaysMask,
+            holidayOff: current.holidayOff,
+            nowMillis: nowMillis,
+            isHoliday: isHoliday
+        )
+        copied.remoteAlarmId = nil
+        copied.lastSyncedAtMillis = nil
+        copied.syncState = AlarmSyncState.localOnly.rawValue
+        copied.origin = AlarmOrigin.localOwned.rawValue
+        copied.enabled = true
+        copied.state = AlarmRuntimeState.armed.rawValue
+        copied.createdAtMillis = nowMillis
+        copied.updatedAtMillis = nowMillis
+        copied.alarmKitID = nil
+        alarms.append(copied)
         persist()
+        return copied
     }
 
-    func deleteByID(_ id: String) {
-        alarms.removeAll { $0.id == id }
+    @discardableResult
+    func delete(_ alarm: LocalAlarmRecord) -> String? {
+        guard let index = alarms.firstIndex(where: { $0.id == alarm.id }) else {
+            return nil
+        }
+        let releasedAudioCacheKey = Self.nonEmptyAudioCacheKey(alarms[index].audioCacheKey)
+        alarms.remove(at: index)
         persist()
+        guard let releasedAudioCacheKey,
+              countByAudioCacheKey(releasedAudioCacheKey) == 0 else {
+            return nil
+        }
+        return releasedAudioCacheKey
+    }
+
+    @discardableResult
+    func deleteByID(_ id: String) -> String? {
+        guard let record = alarms.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return delete(record)
+    }
+
+    private static func nonEmptyAudioCacheKey(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func copyTargetTime(hour: Int, minute: Int) -> (hour: Int, minute: Int) {
+        let totalMinutes = (hour * 60 + minute + 10) % (24 * 60)
+        return (totalMinutes / 60, totalMinutes % 60)
+    }
+
+    private static func copyLabel(_ label: String) -> String {
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "복사한 알람" : "\(trimmed) 복사본"
     }
 
     // MARK: State transitions
@@ -594,12 +787,79 @@ final class LocalAlarmStore: ObservableObject {
         persist()
     }
 
-    func setEnabled(id: String, enabled: Bool) {
+    /// Mirrors Android boot restore preparation before AlarmKit rescheduling.
+    /// Returns nil when an expired one-shot alarm can no longer be restored.
+    func prepareForScheduleRecovery(
+        id: String,
+        nowMillis: Int64,
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) -> LocalAlarmRecord? {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return nil }
+
+        if alarms[index].fireAtMillis <= nowMillis {
+            if alarms[index].repeatDaysMask != 0,
+               let nextFireAt = try? AlarmTimeCalculator.nextFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                repeatDaysMask: alarms[index].repeatDaysMask,
+                holidayOff: alarms[index].holidayOff,
+                nowMillis: nowMillis,
+                isHoliday: isHoliday
+               ) {
+                alarms[index].fireAtMillis = nextFireAt
+                alarms[index].state = AlarmRuntimeState.armed.rawValue
+                alarms[index].enabled = true
+                alarms[index].snoozeCount = 0
+            } else {
+                alarms[index].enabled = false
+                alarms[index].state = AlarmRuntimeState.failed.rawValue
+                alarms[index].alarmKitID = nil
+                alarms[index].updatedAtMillis = nowMillis
+                persist()
+                return nil
+            }
+        } else if alarms[index].runtimeStateEnum == .failed {
+            alarms[index].state = AlarmRuntimeState.armed.rawValue
+            alarms[index].enabled = true
+        }
+
+        alarms[index].updatedAtMillis = nowMillis
+        persist()
+        return alarms[index]
+    }
+
+    func setEnabled(
+        id: String,
+        enabled: Bool,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
-        alarms[index].enabled = enabled
-        alarms[index].state = enabled ? AlarmRuntimeState.armed.rawValue : AlarmRuntimeState.disabled.rawValue
+        if enabled {
+            let nextFireAt = (try? AlarmTimeCalculator.nextFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                repeatDaysMask: alarms[index].repeatDaysMask,
+                holidayOff: alarms[index].holidayOff,
+                nowMillis: nowMillis,
+                isHoliday: isHoliday
+            )) ?? LocalAlarmRecord.fallbackFireAtMillis(
+                hour: alarms[index].hour,
+                minute: alarms[index].minute,
+                referenceMillis: nowMillis
+            )
+            alarms[index].fireAtMillis = nextFireAt
+            alarms[index].enabled = true
+            alarms[index].snoozeCount = 0
+            alarms[index].state = AlarmRuntimeState.armed.rawValue
+            alarms[index].alarmKitID = nil
+        } else {
+            alarms[index].enabled = false
+            alarms[index].state = AlarmRuntimeState.disabled.rawValue
+            alarms[index].alarmKitID = nil
+        }
         alarms[index].syncState = nextLocalSyncState(for: alarms[index]).rawValue
-        alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        alarms[index].updatedAtMillis = nowMillis
         persist()
     }
 
@@ -631,6 +891,27 @@ final class LocalAlarmStore: ObservableObject {
         guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
         alarms[index].syncState = AlarmSyncState.syncFailed.rawValue
         alarms[index].updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        persist()
+    }
+
+    func updateDynamicVoiceAudio(
+        id: String,
+        localAudioUri: String,
+        audioCacheKey: String?,
+        rawAudioUri: String?,
+        voiceText: String,
+        ttsMessageId: String?,
+        preparedForFireAtMillis: Int64,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) {
+        guard let index = alarms.firstIndex(where: { $0.id == id }) else { return }
+        alarms[index].localAudioUri = localAudioUri
+        alarms[index].audioCacheKey = audioCacheKey
+        alarms[index].rawAudioUri = rawAudioUri
+        alarms[index].voiceText = voiceText
+        alarms[index].ttsMessageId = ttsMessageId
+        alarms[index].dynamicVoicePreparedForFireAtMillis = preparedForFireAtMillis
+        alarms[index].updatedAtMillis = nowMillis
         persist()
     }
 

@@ -21,7 +21,7 @@ struct AlarmLiveActivity: Widget {
                         .font(.subheadline.weight(.semibold))
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Voice Alarm")
+                    Text("Waker")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -52,17 +52,17 @@ struct AlarmLiveActivity: Widget {
     private func modeLabel(_ context: ActivityViewContext<AlarmAttributes<VoiceAlarmMetadata>>) -> some View {
         switch context.state.mode {
         case .alert:
-            Text("Ringing")
+            Text("알람 울림")
         case .countdown:
-            Text("Snoozing")
+            Text("다시 울림")
         case .paused:
-            Text("Paused")
+            Text("일시정지")
         @unknown default:
-            Text("Scheduled")
+            Text("예약됨")
         }
     }
 
     private func alarmLabel(_ context: ActivityViewContext<AlarmAttributes<VoiceAlarmMetadata>>) -> String {
-        context.attributes.metadata?.label ?? "Voice Alarm"
+        context.attributes.metadata?.label ?? "알람"
     }
 }

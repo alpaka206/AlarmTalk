@@ -59,6 +59,32 @@ final class AuthViewModelTests: XCTestCase {
         )
     }
 
+    private func subscription(planKey: String) -> BillingSubscriptionResponse {
+        BillingSubscriptionResponse(
+            subscription: BillingSubscription(
+                id: "subscription-\(planKey)",
+                planId: "plan-\(planKey)",
+                planGroupId: nil,
+                status: "active",
+                startsAt: "2026-01-01T00:00:00Z",
+                expiresAt: "2026-02-01T00:00:00Z",
+                cancelAtPeriodEnd: false,
+                canceledAt: nil,
+                nextPlanId: nil
+            ),
+            plan: BillingPlan(
+                id: "plan-\(planKey)",
+                key: planKey,
+                name: planKey,
+                planType: planKey,
+                periodDays: 30,
+                maxMembers: planKey == "family" ? 4 : 2,
+                priceKrw: 9_900
+            ),
+            nextPlan: nil
+        )
+    }
+
     // MARK: - refreshUser status code branches
 
     func test_refreshUser_with401_signsOutAndSetsStatusMessage() async {
@@ -86,7 +112,7 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.lastNetworkError, "이 계정으로는 접근할 수 없는 기능이 있어요.")
     }
 
-    func test_refreshUser_with500_keepsSessionAndSetsLastNetworkError() async {
+    func test_refreshUser_with500_keepsSessionAndUsesKoreanFallbackForEnglishServerMessage() async {
         let api = MockAuthAPI()
         api.meResult = .failure(.server(status: 500, message: "internal", errorCode: nil))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -95,7 +121,7 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session, "5xx 일시 오류는 세션을 유지해야 한다")
-        XCTAssertEqual(vm.lastNetworkError, "internal")
+        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
     func test_refreshUser_with500_blankMessage_fallsBackToGenericCopy() async {
@@ -132,6 +158,24 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertNotNil(vm.session)
         XCTAssertEqual(vm.lastNetworkError, "서버 응답을 해석하지 못했어요.")
+    }
+
+    func test_userFacingErrorMessage_hidesEnglishServerMessageLikeAndroid() {
+        let error = APIError.server(status: 500, message: "Internal Server Error", errorCode: nil)
+
+        XCTAssertEqual(
+            AuthViewModel.userFacingErrorMessage(error, fallback: "로그인에 실패했어요"),
+            "로그인에 실패했어요"
+        )
+    }
+
+    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+        let error = APIError.server(status: 400, message: "이미 가입된 이메일이에요", errorCode: nil)
+
+        XCTAssertEqual(
+            AuthViewModel.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"),
+            "이미 가입된 이메일이에요"
+        )
     }
 
     func test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId() async {
@@ -257,6 +301,68 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.lastNetworkError, "Apple 로그인 상태를 확인하지 못했어요.")
     }
 
+    // MARK: - profile update payloads
+
+    func test_updateProfile_withQuietWindows_sendsAndroidCompatiblePayload() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.updateProfile(
+            allowFamilyAlarms: true,
+            quietWindows: [
+                FamilyAlarmQuietWindow(days: [3, 1, 9, 1], start: "22:00", end: "08:30"),
+                FamilyAlarmQuietWindow(days: [], start: "10:00", end: "11:00")
+            ]
+        )
+
+        let request = api.lastUpdateProfileRequest
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(request?.allowFamilyAlarms, true)
+        XCTAssertEqual(request?.familyAlarmQuietDays, [1, 3])
+        XCTAssertEqual(request?.familyAlarmQuietStart, "22:00")
+        XCTAssertEqual(request?.familyAlarmQuietEnd, "08:30")
+        XCTAssertEqual(
+            request?.familyAlarmQuietWindows ?? [],
+            [FamilyAlarmQuietWindow(days: [1, 3], start: "22:00", end: "08:30")]
+        )
+    }
+
+    func test_updateProfile_withEmptyQuietWindows_sendsDefaultLegacyWindow() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.updateProfile(allowFamilyAlarms: false, quietWindows: [])
+
+        let request = api.lastUpdateProfileRequest
+        XCTAssertEqual(api.updateProfileCallCount, 1)
+        XCTAssertEqual(request?.allowFamilyAlarms, false)
+        XCTAssertEqual(request?.familyAlarmQuietDays, [1, 2, 3, 4, 5])
+        XCTAssertEqual(request?.familyAlarmQuietStart, "09:00")
+        XCTAssertEqual(request?.familyAlarmQuietEnd, "18:30")
+        XCTAssertEqual(request?.familyAlarmQuietWindows ?? [], [])
+    }
+
+    func test_updateProfile_withInvalidQuietTime_doesNotCallApi() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(makeEmailSession().user)
+        let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.updateProfile(
+            allowFamilyAlarms: true,
+            quietWindows: [
+                FamilyAlarmQuietWindow(days: [1], start: "9:00", end: "18:30")
+            ]
+        )
+
+        XCTAssertEqual(api.updateProfileCallCount, 0)
+        XCTAssertEqual(vm.statusMessage, "시간은 HH:mm 형식으로 입력해 주세요.")
+    }
+
     // MARK: - signOut clears state
 
     func test_signOut_clearsSessionAndLastNetworkError() {
@@ -268,6 +374,33 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(vm.session)
         XCTAssertEqual(vm.statusMessage, "bye")
         XCTAssertNil(vm.lastNetworkError)
+    }
+
+    func test_deleteAccount_clearsOnlyCurrentUserAccessSnapshot() async {
+        let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let snapshotStore = AccessSnapshotStore(defaults: defaults)
+        snapshotStore.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
+        snapshotStore.updateSubscription(userID: "user-2", response: subscription(planKey: "personal"))
+
+        let api = MockAuthAPI()
+        api.deleteAccountResult = .success(DeleteAccountResponse(success: true))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: snapshotStore
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.deleteAccount()
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(api.deleteAccountCallCount, 1)
+        XCTAssertNil(snapshotStore.read(userID: "user-1").subscriptionResponse)
+        XCTAssertEqual(snapshotStore.read(userID: "user-2").subscriptionResponse?.plan?.key, "personal")
     }
 }
 
@@ -283,7 +416,23 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     }
 
     var meResult: StubResult = .failure(.invalidResponse)
+    var updateProfileResult: Result<UpdateProfileResponse, Error> = .success(
+        UpdateProfileResponse(
+            success: true,
+            name: nil,
+            allowFamilyAlarms: nil,
+            familyAlarmQuietDays: nil,
+            familyAlarmQuietStart: nil,
+            familyAlarmQuietEnd: nil,
+            familyAlarmQuietWindows: nil,
+            dynamicPromptSettings: nil
+        )
+    )
+    var deleteAccountResult: Result<DeleteAccountResponse, Error> = .success(DeleteAccountResponse(success: true))
     private(set) var meCallCount = 0
+    private(set) var updateProfileCallCount = 0
+    private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
+    private(set) var deleteAccountCallCount = 0
 
     func me(token: String) async throws -> AuthUser {
         meCallCount += 1
@@ -294,6 +443,27 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
             throw apiError
         case .failureRaw(let err):
             throw err
+        }
+    }
+
+    func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse {
+        updateProfileCallCount += 1
+        lastUpdateProfileRequest = requestBody
+        switch updateProfileResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func deleteAccount(token: String) async throws -> DeleteAccountResponse {
+        deleteAccountCallCount += 1
+        switch deleteAccountResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct VoiceAlarmApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(VoiceAlarmThemeMode.storageKey) private var themeModeRaw = VoiceAlarmThemeMode.system.rawValue
 
     @StateObject private var alarmStore = LocalAlarmStore()
     @StateObject private var alarmKit = AlarmKitViewModel()
@@ -72,12 +73,14 @@ struct VoiceAlarmApp: App {
                         bootstrap.registerIfNeeded(
                             store: alarmStore,
                             alarmKit: alarmKit,
-                            auth: auth
+                            auth: auth,
+                            socialFeatures: socialFeatures
                         )
 
                         // 로그인되어 있으면 즉시 한 사이클.
                         if auth.session != nil {
                             await remoteSync.runFullSync()
+                            await refreshDynamicVoicesIfNeeded()
                         }
 
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
@@ -89,15 +92,33 @@ struct VoiceAlarmApp: App {
                         guard auth.session != nil else { return }
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
+                        await refreshDynamicVoicesIfNeeded()
                         // Phase 2-B5: 로그인 전에 쌓여 있던 PENDING/FAILED 캐릭터 이벤트를 비운다.
                         await characterEvents.flushPending()
                         BackgroundSyncTask.scheduleNext()
                     }
+                    .task(id: auth.session?.user.id) {
+                        remoteSync.clearUserScopedRemoteState()
+                        voiceStudio.clearUserScopedRemoteState()
+                        socialFeatures.restoreAccessSnapshot(session: auth.session)
+                    }
+                    .task(id: freePlanVoiceLockKey) {
+                        await applyFreePlanVoiceLockIfNeeded()
+                    }
+                    .task(id: alarmStore.hasLoadedFromDisk) {
+                        guard alarmStore.hasLoadedFromDisk else { return }
+                        await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                    }
             }
+            .preferredColorScheme(VoiceAlarmThemeMode.normalized(themeModeRaw).preferredColorScheme)
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
             case .active:
+                Task {
+                    guard alarmStore.hasLoadedFromDisk else { return }
+                    await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                }
                 // Phase 4-D2: 포그라운드 진입 시 세션 정합성을 직렬로 점검.
                 //  1) Apple credentialState — revoke/notFound 이면 즉시 signOut
                 //  2) /auth/me 갱신 — 401 만 signOut, 5xx/네트워크 단절은 lastNetworkError 만 갱신
@@ -108,6 +129,7 @@ struct VoiceAlarmApp: App {
                     await auth.refreshUser()
                     guard auth.session != nil else { return }
                     await remoteSync.runFullSync()
+                    await refreshDynamicVoicesIfNeeded()
                 }
                 // Phase 2-B5: 백그라운드에서 발생했을 수 있는 dismiss/snooze 이벤트의
                 // pending queue 를 비운다. 로그인 안 되어 있어도 호출은 안전 (no-op).
@@ -129,6 +151,47 @@ struct VoiceAlarmApp: App {
             }
         }
     }
+
+    @MainActor
+    private func refreshDynamicVoicesIfNeeded() async {
+        guard let token = auth.session?.token else { return }
+        let refresh = DynamicVoiceRefreshService(store: alarmStore)
+        _ = await refresh.refreshDue(token: token)
+    }
+
+    private var freePlanVoiceLockKey: String {
+        [
+            auth.session?.user.id ?? "anonymous",
+            alarmStore.hasLoadedFromDisk ? "loaded" : "loading",
+            socialFeatures.subscription?.subscription?.id ?? "no-subscription-id",
+            socialFeatures.subscription?.subscription?.status ?? "no-subscription-status",
+            socialFeatures.subscription?.plan?.key ?? "no-plan-key",
+            socialFeatures.subscription?.plan?.planType ?? "no-plan-type",
+            subscriptions.currentTier.rawValue,
+            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading"
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func applyFreePlanVoiceLockIfNeeded() async {
+        guard auth.session != nil,
+              alarmStore.hasLoadedFromDisk,
+              subscriptions.hasLoadedEntitlements,
+              socialFeatures.subscription != nil else {
+            return
+        }
+        let currentPlan = PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        guard !currentPlan.meetsOrExceeds(.personal) else { return }
+        _ = await socialFeatures.applyFreePlanVoiceLock(
+            alarmStore: alarmStore,
+            alarmKit: alarmKit,
+            voiceStudio: voiceStudio
+        )
+    }
 }
 
 // MARK: - Bootstrap
@@ -140,7 +203,12 @@ struct VoiceAlarmApp: App {
 private final class Bootstrap {
     private var didRegister = false
 
-    func registerIfNeeded(store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel) {
+    func registerIfNeeded(
+        store: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel,
+        auth: AuthViewModel,
+        socialFeatures: SocialFeatureViewModel
+    ) {
         guard !didRegister else { return }
         didRegister = true
 
@@ -151,6 +219,12 @@ private final class Bootstrap {
             auth: auth
         )
         let push = RemoteAlarmPushSync(store: store, auth: auth)
-        BackgroundSyncTask.register(pull: pull, push: push)
+        let dynamicVoice = DynamicVoiceRefreshService(store: store)
+        BackgroundSyncTask.register(
+            pull: pull,
+            push: push,
+            dynamicVoice: dynamicVoice,
+            socialFeatures: socialFeatures
+        )
     }
 }

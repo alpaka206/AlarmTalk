@@ -8,12 +8,17 @@ import SwiftUI
 struct BottomNavBar: View {
     @Binding var selected: NativeTab
     let badgeProvider: (NativeTab) -> Int
+    var onSelect: ((NativeTab) -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(NativeTab.allCases) { tab in
                 Button {
-                    selected = tab
+                    if let onSelect {
+                        onSelect(tab)
+                    } else {
+                        selected = tab
+                    }
                 } label: {
                     VStack(spacing: 3) {
                         ZStack(alignment: .topTrailing) {

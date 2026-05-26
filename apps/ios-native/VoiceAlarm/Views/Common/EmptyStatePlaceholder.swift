@@ -18,9 +18,11 @@ struct EmptyStatePlaceholder: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.text)
-            Text(subtitle)
-                .font(.footnote)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -33,7 +35,7 @@ struct EmptyStatePlaceholder: View {
 #Preview("Empty (light)") {
     EmptyStatePlaceholder(
         title: "아직 예약한 알람이 없어요.",
-        subtitle: "새 알람을 만들면 iOS 로컬 저장소와 AlarmKit에 예약됩니다.",
+        subtitle: "새 알람을 만들면 기기에 바로 예약돼요.",
         icon: "alarm"
     )
     .padding()

@@ -9,12 +9,17 @@ struct MessagesView: View {
     @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
 
     let selectTab: (NativeTab) -> Void
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScreenHeader(title: "메시지")
-            VoiceMessagePanel()
+            VoiceMessagePanel(onCodeRegistered: onCodeRegistered)
             ttsMessageArchivePanel
+        }
+        .task(id: auth.session?.user.id) {
+            guard auth.session != nil else { return }
+            await SocialNotificationTracker.requestAuthorizationIfNeeded()
         }
     }
 
@@ -53,19 +58,79 @@ struct MessagesView: View {
     }
 
     private func messageRow(_ message: TtsMessage) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let metadata = archiveMetadata(for: message)
+        return VStack(alignment: .leading, spacing: 6) {
             Text(message.text)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.text)
                 .lineLimit(2)
-            Text([message.voiceName, message.category, message.createdAt].compactMap { $0 }.joined(separator: " · "))
-                .font(.caption)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            if !metadata.isEmpty {
+                Text(metadata.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(VoiceAlarmTheme.surfaceVariant)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func archiveMetadata(for message: TtsMessage) -> [String] {
+        [
+            trimmed(message.voiceName),
+            ttsCategoryLabel(message.category),
+            formattedArchiveDate(message.createdAt)
+        ].compactMap { $0 }
+    }
+
+    private func trimmed(_ value: String?) -> String? {
+        let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? nil : text
+    }
+
+    private func ttsCategoryLabel(_ raw: String?) -> String? {
+        guard let category = trimmed(raw) else { return nil }
+        switch category {
+        case "custom":
+            return "직접 입력"
+        case "morning":
+            return "기상"
+        case "lunch":
+            return "점심 식사"
+        case "evening":
+            return "퇴근"
+        case "night":
+            return "밤"
+        case "health":
+            return "건강"
+        case "study":
+            return "공부"
+        case "cheer":
+            return "응원"
+        case "love":
+            return "사랑"
+        default:
+            return "랜덤 문구"
+        }
+    }
+
+    private func formattedArchiveDate(_ raw: String?) -> String? {
+        guard let value = trimmed(raw) else { return nil }
+        let output = DateFormatter()
+        output.dateFormat = "yyyy-MM-dd HH:mm"
+        output.locale = Locale(identifier: "ko_KR")
+        output.timeZone = .current
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = iso.date(from: value) {
+            return output.string(from: date)
+        }
+        iso.formatOptions = [.withInternetDateTime]
+        if let date = iso.date(from: value) {
+            return output.string(from: date)
+        }
+        return String(value.prefix(16))
     }
 }
 

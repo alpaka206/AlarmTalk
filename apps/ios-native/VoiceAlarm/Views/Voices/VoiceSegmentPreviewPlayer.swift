@@ -2,7 +2,7 @@ import AVFoundation
 import Combine
 import SwiftUI
 
-/// 단일 오디오 파일의 임의 구간 (startMs ~ endMs) 을 반복 재생하는 미니 플레이어.
+/// 단일 오디오/영상 파일의 임의 구간 (startMs ~ endMs) 을 재생하는 미니 플레이어.
 ///
 /// Android `MainViewModelVoiceActions.playSpeakerPreview` + `VoiceProfileManagementPanel`
 /// 의 `SpeakerCandidateRow` 가 결합돼 있던 기능을 SwiftUI 컴포넌트로 분리한 것.
@@ -13,8 +13,10 @@ struct VoiceSegmentPreviewPlayer: View {
     let audioURL: URL
     let startMs: Int
     let endMs: Int
+    var onError: ((String) -> Void)? = nil
 
     @StateObject private var controller = SegmentPlayerController()
+    @State private var localError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -23,7 +25,13 @@ struct VoiceSegmentPreviewPlayer: View {
                     if controller.isPlaying {
                         controller.stop()
                     } else {
-                        controller.play(url: audioURL, startMs: startMs, endMs: endMs)
+                        let errorMessage = "미리듣기를 재생하지 못했어요."
+                        if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
+                            localError = nil
+                        } else {
+                            localError = errorMessage
+                            onError?(errorMessage)
+                        }
                     }
                 } label: {
                     Image(systemName: controller.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -43,6 +51,11 @@ struct VoiceSegmentPreviewPlayer: View {
             }
             ProgressView(value: controller.progress)
                 .tint(VoiceAlarmTheme.primary)
+            if let localError {
+                Text(localError)
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
         }
         .padding(12)
         .background(VoiceAlarmTheme.surfaceVariant)
@@ -59,28 +72,34 @@ struct VoiceSegmentPreviewPlayer: View {
     }
 }
 
-/// 내부 컨트롤러 — 시작/종료 ms 기반으로 AVAudioPlayer 를 구동.
+/// 내부 컨트롤러 — 시작/종료 ms 기반으로 AVPlayer 를 구동.
 @MainActor
 final class SegmentPlayerController: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var elapsedSec: Double = 0
     @Published var progress: Double = 0
 
-    private var player: AVAudioPlayer?
+    private var player: AVPlayer?
     private var timer: Timer?
     private var startedAt: Date?
     private var startMs: Int = 0
     private var endMs: Int = 0
 
-    func play(url: URL, startMs: Int, endMs: Int) {
+    @discardableResult
+    func play(url: URL, startMs: Int, endMs: Int) -> Bool {
         stop()
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .spokenAudio)
             try session.setActive(true)
-            let p = try AVAudioPlayer(contentsOf: url)
-            p.prepareToPlay()
-            p.currentTime = Double(startMs) / 1000.0
+            let item = AVPlayerItem(url: url)
+            let p = AVPlayer(playerItem: item)
+            p.actionAtItemEnd = .pause
+            p.seek(
+                to: CMTime(value: CMTimeValue(max(0, startMs)), timescale: 1_000),
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
+            )
             p.play()
             self.player = p
             self.startMs = startMs
@@ -88,15 +107,18 @@ final class SegmentPlayerController: ObservableObject {
             self.startedAt = Date()
             self.isPlaying = true
             startTicker()
+            return true
         } catch {
             stop()
+            return false
         }
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
-        player?.stop()
+        player?.pause()
+        player?.replaceCurrentItem(with: nil)
         player = nil
         isPlaying = false
         elapsedSec = 0
@@ -113,12 +135,20 @@ final class SegmentPlayerController: ObservableObject {
 
     private func tick() {
         guard isPlaying, let startedAt else { return }
-        let elapsed = Date().timeIntervalSince(startedAt)
+        let segmentStartSec = Double(startMs) / 1000.0
+        let segmentEndSec = Double(endMs) / 1000.0
+        let currentSeconds: Double? = {
+            guard let player else { return nil }
+            let value = CMTimeGetSeconds(player.currentTime())
+            return value.isFinite ? value : nil
+        }()
+        let fallbackCurrent = segmentStartSec + Date().timeIntervalSince(startedAt)
+        let elapsed = max(0, (currentSeconds ?? fallbackCurrent) - segmentStartSec)
         elapsedSec = elapsed
         let totalSec = Double(max(1, endMs - startMs)) / 1000.0
         progress = min(1.0, elapsed / totalSec)
         // 종료 시각에 도달하면 정지.
-        if let player, player.currentTime >= Double(endMs) / 1000.0 {
+        if let currentSeconds, currentSeconds >= segmentEndSec {
             stop()
         }
         if progress >= 1.0 { stop() }

@@ -11,21 +11,258 @@ struct FamilyAlarmQuietWindow: Codable, Equatable {
     var end: String
 }
 
+struct DynamicPromptWeatherSettings: Codable, Equatable {
+    var country: String?
+    var city: String?
+}
+
+struct DynamicPromptFortuneSettings: Codable, Equatable {
+    var gender: String?
+    var birthDate: String?
+    var birthTime: String?
+}
+
+struct DynamicPromptSettings: Codable, Equatable {
+    var weather: DynamicPromptWeatherSettings
+    var fortune: DynamicPromptFortuneSettings
+
+    init(
+        weather: DynamicPromptWeatherSettings = DynamicPromptWeatherSettings(country: nil, city: nil),
+        fortune: DynamicPromptFortuneSettings = DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+    ) {
+        self.weather = DynamicPromptWeatherSettings(
+            country: Self.clean(weather.country),
+            city: Self.clean(weather.city)
+        )
+        self.fortune = DynamicPromptFortuneSettings(
+            gender: Self.clean(fortune.gender),
+            birthDate: Self.clean(fortune.birthDate),
+            birthTime: Self.clean(fortune.birthTime)
+        )
+    }
+
+    static let empty = DynamicPromptSettings(
+        weather: DynamicPromptWeatherSettings(country: nil, city: nil),
+        fortune: DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+    )
+
+    private enum CodingKeys: String, CodingKey {
+        case weather
+        case fortune
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            weather: try container.decodeIfPresent(DynamicPromptWeatherSettings.self, forKey: .weather)
+                ?? DynamicPromptWeatherSettings(country: nil, city: nil),
+            fortune: try container.decodeIfPresent(DynamicPromptFortuneSettings.self, forKey: .fortune)
+                ?? DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
+        )
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+struct DynamicPromptSettingsState: Codable, Equatable {
+    var weatherReady: Bool?
+    var fortuneReady: Bool?
+}
+
+struct DynamicPromptPreferences: Codable, Equatable {
+    var weatherCountry: String = ""
+    var weatherCity: String = ""
+    var fortuneGender: String = ""
+    var fortuneBirthDate: String = ""
+    var fortuneBirthTime: String = ""
+
+    private static let defaultsKey = "dynamic_prompt_preferences"
+
+    static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
+        DynamicPromptPreferences(
+            weatherCountry: settings?.weather.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            weatherCity: settings?.weather.city?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneGender: settings?.fortune.gender?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneBirthDate: settings?.fortune.birthDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            fortuneBirthTime: settings?.fortune.birthTime?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        )
+    }
+
+    static func loadFromDefaults() -> DynamicPromptPreferences {
+        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+              let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: data) else {
+            return DynamicPromptPreferences()
+        }
+        return decoded.normalized()
+    }
+
+    func saveToDefaults() {
+        guard let data = try? JSONEncoder().encode(normalized()) else { return }
+        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+    }
+
+    func toSettings() -> DynamicPromptSettings {
+        DynamicPromptSettings(
+            weather: DynamicPromptWeatherSettings(
+                country: clean(weatherCountry),
+                city: clean(weatherCity)
+            ),
+            fortune: DynamicPromptFortuneSettings(
+                gender: clean(fortuneGender),
+                birthDate: clean(fortuneBirthDate),
+                birthTime: clean(fortuneBirthTime)
+            )
+        )
+    }
+
+    var weatherReady: Bool {
+        clean(weatherCountry) != nil && clean(weatherCity) != nil
+    }
+
+    var fortuneReady: Bool {
+        clean(fortuneGender) != nil &&
+            clean(fortuneBirthDate) != nil &&
+            clean(fortuneBirthTime) != nil
+    }
+
+    private func normalized() -> DynamicPromptPreferences {
+        DynamicPromptPreferences(
+            weatherCountry: weatherCountry.trimmingCharacters(in: .whitespacesAndNewlines),
+            weatherCity: weatherCity.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneGender: fortuneGender.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneBirthDate: fortuneBirthDate.trimmingCharacters(in: .whitespacesAndNewlines),
+            fortuneBirthTime: fortuneBirthTime.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    private func clean(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
 struct AuthUser: Codable, Equatable, Identifiable {
     var id: String
     var email: String
     var name: String
     var plan: String
-    var allowFamilyAlarms: Bool?
-    var familyAlarmQuietDays: [Int]?
-    var familyAlarmQuietStart: String?
-    var familyAlarmQuietEnd: String?
-    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var allowFamilyAlarms: Bool? = nil
+    var familyAlarmQuietDays: [Int]? = nil
+    var familyAlarmQuietStart: String? = nil
+    var familyAlarmQuietEnd: String? = nil
+    var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil
     /// Apple `sub` (user identifier). Apple 로그인 사용자만 비-nil.
     /// `ASAuthorizationAppleIDProvider.credentialState(forUserID:)` 호출에 사용.
     /// 백엔드 `/auth/apple` 와 `/auth/me` 응답이 `apple_user_id` 키로 전달한다.
     /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
-    var appleUserId: String?
+    var appleUserId: String? = nil
+    var dynamicPromptSettings: DynamicPromptSettings? = nil
+
+    init(
+        id: String,
+        email: String,
+        name: String = "",
+        plan: String = "free",
+        allowFamilyAlarms: Bool? = nil,
+        familyAlarmQuietDays: [Int]? = nil,
+        familyAlarmQuietStart: String? = nil,
+        familyAlarmQuietEnd: String? = nil,
+        familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil,
+        appleUserId: String? = nil,
+        dynamicPromptSettings: DynamicPromptSettings? = nil
+    ) {
+        let legacyDays = Self.normalizedQuietDays(familyAlarmQuietDays)
+        let legacyStart = Self.normalizedQuietTime(familyAlarmQuietStart, fallback: "09:00")
+        let legacyEnd = Self.normalizedQuietTime(familyAlarmQuietEnd, fallback: "18:30")
+        let fallbackWindow = FamilyAlarmQuietWindow(days: legacyDays, start: legacyStart, end: legacyEnd)
+        let quietWindows = Self.normalizedQuietWindows(familyAlarmQuietWindows, fallback: fallbackWindow)
+        let firstWindow = quietWindows.first ?? fallbackWindow
+
+        self.id = id
+        self.email = email
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.plan = Self.normalizedPlan(plan)
+        self.allowFamilyAlarms = allowFamilyAlarms ?? false
+        self.familyAlarmQuietDays = firstWindow.days
+        self.familyAlarmQuietStart = firstWindow.start
+        self.familyAlarmQuietEnd = firstWindow.end
+        self.familyAlarmQuietWindows = quietWindows
+        self.appleUserId = Self.clean(appleUserId)
+        self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case email
+        case name
+        case plan
+        case allowFamilyAlarms
+        case familyAlarmQuietDays
+        case familyAlarmQuietStart
+        case familyAlarmQuietEnd
+        case familyAlarmQuietWindows
+        case appleUserId
+        case dynamicPromptSettings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            email: try container.decode(String.self, forKey: .email),
+            name: try container.decodeIfPresent(String.self, forKey: .name) ?? "",
+            plan: try container.decodeIfPresent(String.self, forKey: .plan) ?? "free",
+            allowFamilyAlarms: try container.decodeIfPresent(Bool.self, forKey: .allowFamilyAlarms),
+            familyAlarmQuietDays: try container.decodeIfPresent([Int].self, forKey: .familyAlarmQuietDays),
+            familyAlarmQuietStart: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietStart),
+            familyAlarmQuietEnd: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietEnd),
+            familyAlarmQuietWindows: try container.decodeIfPresent([FamilyAlarmQuietWindow].self, forKey: .familyAlarmQuietWindows),
+            appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
+            dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings)
+        )
+    }
+
+    private static func normalizedPlan(_ value: String?) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "free" : trimmed
+    }
+
+    private static func normalizedQuietDays(_ days: [Int]?) -> [Int] {
+        let normalized = Array(Set(days?.filter { (0...6).contains($0) } ?? [])).sorted()
+        return normalized.isEmpty ? [1, 2, 3, 4, 5] : normalized
+    }
+
+    private static func normalizedQuietTime(_ value: String?, fallback: String) -> String {
+        guard let value, value.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
+            return fallback
+        }
+        return value
+    }
+
+    private static func normalizedQuietWindows(
+        _ windows: [FamilyAlarmQuietWindow]?,
+        fallback: FamilyAlarmQuietWindow
+    ) -> [FamilyAlarmQuietWindow] {
+        guard let windows else { return [fallback] }
+        let normalized = windows.compactMap { window -> FamilyAlarmQuietWindow? in
+            let days = Array(Set(window.days.filter { (0...6).contains($0) })).sorted()
+            guard !days.isEmpty else { return nil }
+            guard window.start.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil,
+                  window.end.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil else {
+                return nil
+            }
+            return FamilyAlarmQuietWindow(days: days, start: window.start, end: window.end)
+        }
+        return Array(normalized.prefix(8))
+    }
+
+    private static func clean(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }
 
 struct RemoteAlarmListResponse: Decodable {
@@ -92,13 +329,13 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var isShared: Bool?
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
     /// Android `VoiceProfileApi.kt:72`.
-    var isDraft: Bool?
+    var isDraft: Bool? = nil
     /// 공유 음성을 받은 사람이 음성 주인과의 관계를 기록한 라벨.
     /// (예: "엄마", "할머니"). Android `VoiceProfileApi.kt:73`.
-    var relationshipLabel: String?
+    var relationshipLabel: String? = nil
     /// 공유 음성이 viewer 를 부를 때 쓰는 호칭(예: "지호야").
     /// Android `VoiceProfileApi.kt:74`.
-    var listenerTitle: String?
+    var listenerTitle: String? = nil
 }
 
 struct VoiceProfileUpdateRequest: Encodable {
@@ -196,6 +433,8 @@ struct TtsGenerateRequest: Encodable {
     var fortuneGender: String?
     var fortuneBirthDate: String?
     var fortuneBirthTime: String?
+    /// Family/member alarm TTS target. Android `TtsApi.kt` sends `target_user_id`.
+    var targetUserId: String?
     /// 공유 음성 viewer 가 자신을 부를 호칭.
     var listenerTitle: String?
 
@@ -214,7 +453,8 @@ struct TtsGenerateRequest: Encodable {
         fortuneGender: String? = nil,
         fortuneBirthDate: String? = nil,
         fortuneBirthTime: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        targetUserId: String? = nil
     ) {
         self.voiceProfileId = voiceProfileId
         self.text = text
@@ -231,6 +471,7 @@ struct TtsGenerateRequest: Encodable {
         self.fortuneBirthDate = fortuneBirthDate
         self.fortuneBirthTime = fortuneBirthTime
         self.listenerTitle = listenerTitle
+        self.targetUserId = targetUserId
     }
 }
 
@@ -248,6 +489,22 @@ struct TtsGenerateResponse: Decodable, Equatable {
     /// 랜덤 프롬프트가 사용된 경우, 백엔드가 선택한 실제 컨텍스트(다양화/감사 용).
     /// Android `TtsApi.kt:39`.
     var randomContext: String?
+}
+
+extension TtsGenerateResponse {
+    var remoteAudioURI: String? {
+        if let trimmed = audioUrl?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            return trimmed
+        }
+        guard let key = audioObjectKey?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
+            return nil
+        }
+        let lower = key.lowercased()
+        if lower.hasPrefix("r2://") || lower.hasPrefix("https://") || lower.hasPrefix("http://") {
+            return key
+        }
+        return "r2://\(key)"
+    }
 }
 
 struct TtsMessageListResponse: Decodable {
@@ -277,13 +534,13 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
     var voiceProfileId: String?
 }
 
-struct FamilyGroupCurrentResponse: Decodable, Equatable {
+struct FamilyGroupCurrentResponse: Codable, Equatable {
     var group: FamilyGroup?
     var role: String?
     var members: [FamilyGroupMember]
 }
 
-struct FamilyGroup: Decodable, Identifiable, Equatable {
+struct FamilyGroup: Codable, Identifiable, Equatable {
     var id: String
     var ownerUserId: String
     var planId: String
@@ -291,7 +548,7 @@ struct FamilyGroup: Decodable, Identifiable, Equatable {
     var createdAt: String
 }
 
-struct FamilyGroupMember: Decodable, Identifiable, Equatable {
+struct FamilyGroupMember: Codable, Identifiable, Equatable {
     var id: String
     var userId: String
     var role: String
@@ -303,6 +560,8 @@ struct FamilyGroupMember: Decodable, Identifiable, Equatable {
     var familyAlarmQuietStart: String?
     var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
+    var dynamicPromptSettingsState: DynamicPromptSettingsState?
 }
 
 struct FamilyVoiceProfileListResponse: Decodable {
@@ -321,6 +580,21 @@ struct FamilyVoiceProfile: Decodable, Identifiable, Equatable {
     var relationshipLabel: String?
     /// 받은 사람을 음성이 부를 호칭.
     var listenerTitle: String?
+    /// Server-side flag for shared voices that still need viewer-specific labels.
+    var needsViewerInfo: Bool?
+}
+
+extension FamilyVoiceProfile {
+    var requiresViewerInfo: Bool {
+        needsViewerInfo == true ||
+            (relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            (listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    var sharedFromLabel: String {
+        let owner = ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return owner.isEmpty ? "공유받은 목소리" : "\(owner)님에게 공유받은 목소리"
+    }
 }
 
 struct CodeRegisterRequest: Encodable {
@@ -347,6 +621,7 @@ struct ReceivedNote: Decodable, Identifiable, Equatable {
     var senderPicture: String?
     var text: String
     var audioUrl: String?
+    var audioAvailable: Bool?
     var readAt: String?
     var createdAt: String?
 }
@@ -443,13 +718,13 @@ struct CharacterGrant: Decodable, Equatable {
     var duplicated: Bool
 }
 
-struct BillingSubscriptionResponse: Decodable, Equatable {
+struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
     var nextPlan: BillingPlanSummary?
 }
 
-struct BillingSubscription: Decodable, Identifiable, Equatable {
+struct BillingSubscription: Codable, Identifiable, Equatable {
     var id: String
     var planId: String
     var planGroupId: String?
@@ -461,7 +736,7 @@ struct BillingSubscription: Decodable, Identifiable, Equatable {
     var nextPlanId: String?
 }
 
-struct BillingPlan: Decodable, Identifiable, Equatable {
+struct BillingPlan: Codable, Identifiable, Equatable {
     var id: String
     var key: String
     var name: String
@@ -471,7 +746,7 @@ struct BillingPlan: Decodable, Identifiable, Equatable {
     var priceKrw: Int
 }
 
-struct BillingPlanSummary: Decodable, Identifiable, Equatable {
+struct BillingPlanSummary: Codable, Identifiable, Equatable {
     var id: String
     var key: String
     var name: String
@@ -521,6 +796,7 @@ struct EnsureFamilyShareCodeResponse: Decodable, Equatable {
     var voucher: VoucherItem
 }
 
+/// Backend/Android billing mode contract: `immediate` or `at_period_end`.
 struct CancelSubscriptionRequest: Encodable {
     var mode: String
 }
@@ -548,7 +824,11 @@ struct ChangePlanResponse: Decodable, Equatable {
 struct UpdateProfileRequest: Encodable {
     var name: String?
     var allowFamilyAlarms: Bool?
+    var familyAlarmQuietDays: [Int]?
+    var familyAlarmQuietStart: String?
+    var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
 }
 
 struct UpdateProfileResponse: Decodable, Equatable {
@@ -559,6 +839,7 @@ struct UpdateProfileResponse: Decodable, Equatable {
     var familyAlarmQuietStart: String?
     var familyAlarmQuietEnd: String?
     var familyAlarmQuietWindows: [FamilyAlarmQuietWindow]?
+    var dynamicPromptSettings: DynamicPromptSettings?
 }
 
 struct DeleteAccountResponse: Decodable, Equatable {
@@ -654,7 +935,10 @@ struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
     var expiresAt: String?
 }
 
-final class VoiceAlarmAPI {
+// 모든 stored property 가 `let` 이고 URLSession / JSONDecoder / JSONEncoder 는
+// 사실상 thread-safe 이므로 `@unchecked Sendable` 로 노출해 async 컨텍스트에서
+// main actor 격리된 RemoteAlarmSyncViewModel.api 를 캡처할 수 있게 한다.
+final class VoiceAlarmAPI: @unchecked Sendable {
     static let shared = VoiceAlarmAPI()
 
     private let baseURL: URL
@@ -738,6 +1022,30 @@ final class VoiceAlarmAPI {
         return response.profiles
     }
 
+    static func voiceCloneMultipartFields(
+        name: String,
+        isShared: Bool,
+        durationMs: Int,
+        noiseRemoval: Bool = false,
+        relationshipLabel: String? = nil,
+        listenerTitle: String? = nil,
+        isDraft: Bool? = nil
+    ) -> [String: String] {
+        var fields: [String: String] = [
+            "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
+            "isShared": isShared ? "true" : "false",
+            "durationMs": String(durationMs),
+            "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            "isDraft": (isDraft ?? false) ? "true" : "false",
+        ]
+        if noiseRemoval {
+            fields["noiseRemoval"] = "true"
+            fields["noise_removal"] = "true"
+        }
+        return fields
+    }
+
     func cloneVoice(
         audioFileURL: URL,
         name: String,
@@ -745,37 +1053,29 @@ final class VoiceAlarmAPI {
         durationMs: Int,
         token: String,
         noiseRemoval: Bool = false,
+        uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         isDraft: Bool? = nil
     ) async throws -> VoiceProfile {
-        var fields: [String: String] = [
-            "name": name,
-            "isShared": isShared ? "true" : "false",
-            "durationMs": String(durationMs),
-        ]
+        let fields = Self.voiceCloneMultipartFields(
+            name: name,
+            isShared: isShared,
+            durationMs: durationMs,
+            noiseRemoval: noiseRemoval,
+            relationshipLabel: relationshipLabel,
+            listenerTitle: listenerTitle,
+            isDraft: isDraft
+        )
         // noise_removal 플래그 — `feat/voice-clone-noise-removal` 머지 이후 backend 가
         // 인식하지만, 미인식 환경(이전 deploy)에서도 무시되도록 옵션으로 추가.
-        if noiseRemoval {
-            fields["noiseRemoval"] = "true"
-            fields["noise_removal"] = "true"
-        }
         // Android `VoiceProfileApi.kt:97-108` 와 동일하게 multipart 필드로 전송.
-        // 비어 있으면 보내지 않아 백엔드 누락 검증을 피한다.
-        if let trimmed = relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
-            fields["relationshipLabel"] = trimmed
-        }
-        if let trimmed = listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
-            fields["listenerTitle"] = trimmed
-        }
-        if let isDraft {
-            fields["isDraft"] = isDraft ? "true" : "false"
-        }
+        // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
             token: token,
             fields: fields,
-            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
+            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL, fileName: uploadFileName)]
         )
         return response.profile
     }
@@ -884,8 +1184,8 @@ final class VoiceAlarmAPI {
                 name: name.nilIfBlank,
                 isShared: isShared,
                 isDraft: isDraft,
-                relationshipLabel: relationshipLabel?.nilIfBlank,
-                listenerTitle: listenerTitle?.nilIfBlank
+                relationshipLabel: relationshipLabel.nilIfBlank,
+                listenerTitle: listenerTitle.nilIfBlank
             )
         )
         return response.profile
@@ -1098,6 +1398,15 @@ final class VoiceAlarmAPI {
         )
     }
 
+    func createGiftVoucher(planKey: String, token: String) async throws -> CheckoutResponse {
+        try await request(
+            "billing/checkout",
+            method: "POST",
+            token: token,
+            body: CheckoutRequest(planKey: planKey, gift: true)
+        )
+    }
+
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
     ///
     /// 백엔드는 transactionId/originalTransactionId 를 Apple App Store Server API
@@ -1252,12 +1561,11 @@ final class VoiceAlarmAPI {
         )
     }
 
-    /// 사용자 검색. 백엔드가 도입되기 전이라도 SocialFeatureViewModel 의 send-note
-    /// 흐름이 컴파일되도록 미리 정의해 둔다. 호출 사이트가 없으면 dead code 가 아닌
-    /// "공개된 미사용 API" 로 남는다.
+    /// 사용자 검색. Android 및 backend contract 의 `GET /user/search` 와 동일.
+    /// 호출 사이트가 없으면 dead code 가 아닌 "공개된 미사용 API" 로 남는다.
     func searchUsers(query: String, token: String) async throws -> [UserSearchResult] {
-        let escaped = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let response: UserSearchResponse = try await request("users/search?q=\(escaped)", token: token)
+        let escaped = Self.percentEncodedQueryValue(query)
+        let response: UserSearchResponse = try await request("user/search?q=\(escaped)", token: token)
         return response.users
     }
 
@@ -1378,10 +1686,20 @@ final class VoiceAlarmAPI {
         return (String(path[path.startIndex..<qIndex]), String(path[path.index(after: qIndex)...]))
     }
 
-    private func multipartFile(fieldName: String, fileURL: URL) throws -> MultipartFile {
+    private static func percentEncodedQueryValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
+    static func multipartUploadFileName(fileURL: URL, originalName: String?) -> String {
+        originalName.nilIfBlank ?? fileURL.lastPathComponent
+    }
+
+    private func multipartFile(fieldName: String, fileURL: URL, fileName: String? = nil) throws -> MultipartFile {
         MultipartFile(
             fieldName: fieldName,
-            fileName: fileURL.lastPathComponent,
+            fileName: Self.multipartUploadFileName(fileURL: fileURL, originalName: fileName),
             mimeType: mimeType(for: fileURL),
             data: try Data(contentsOf: fileURL)
         )

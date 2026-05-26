@@ -6,6 +6,7 @@ import Foundation
 /// MainTabsView, Settings 화면, Home 의 빠른 가기 카드 모두에서 참조한다.
 enum AuxiliaryScreen: String, Identifiable {
     case people
+    case members
     case growth
     case billing
 
@@ -14,6 +15,7 @@ enum AuxiliaryScreen: String, Identifiable {
     var title: String {
         switch self {
         case .people: return "코드 등록"
+        case .members: return "공유 이용권"
         case .growth: return "캐릭터"
         case .billing: return "이용권"
         }
@@ -27,16 +29,26 @@ enum AuxiliaryScreen: String, Identifiable {
 struct AlarmEditorTarget: Identifiable, Equatable {
     let id: String
     let editingAlarmID: String?
+    let familyAlarmMode: Bool
 
     /// 새 알람용 target. id 는 매번 새 값이라 sheet 가 항상 새로 뜬다.
-    static func create() -> AlarmEditorTarget {
-        AlarmEditorTarget(id: UUID().uuidString, editingAlarmID: nil)
+    static func create(familyAlarmMode: Bool = false) -> AlarmEditorTarget {
+        AlarmEditorTarget(
+            id: "\(familyAlarmMode ? "family" : "create")-\(UUID().uuidString)",
+            editingAlarmID: nil,
+            familyAlarmMode: familyAlarmMode
+        )
+    }
+
+    /// 상대에게 보내는 가족/커플 알람 생성용 target.
+    static func createFamily() -> AlarmEditorTarget {
+        create(familyAlarmMode: true)
     }
 
     /// 기존 알람 수정용 target. id 는 알람 id 를 그대로 써서 같은 알람 재오픈 시
     /// 시트가 다시 띄워지지 않게 한다.
     static func edit(_ alarmID: String) -> AlarmEditorTarget {
-        AlarmEditorTarget(id: "edit-\(alarmID)", editingAlarmID: alarmID)
+        AlarmEditorTarget(id: "edit-\(alarmID)", editingAlarmID: alarmID, familyAlarmMode: false)
     }
 }
 
@@ -55,7 +67,7 @@ enum NativeTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .home: return "홈"
-        case .voices: return "음성"
+        case .voices: return "목소리"
         case .alarms: return "알람"
         case .messages: return "메시지"
         }

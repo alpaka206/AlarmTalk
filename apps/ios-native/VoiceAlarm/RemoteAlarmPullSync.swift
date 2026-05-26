@@ -64,10 +64,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         let token = session.token
 
         let remoteAlarms = try await api.listAlarms(token: token)
+        let receivedRemoteAlarms = remoteAlarms.filter {
+            Self.isReceivedRemoteCandidate($0, currentUserID: userID)
+        }
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
         // 1. 신규/갱신 처리.
-        for remote in remoteAlarms {
+        for remote in receivedRemoteAlarms {
             let mapped = RemoteAlarmMapper.toLocalRecord(
                 remote,
                 currentUserID: userID,
@@ -109,6 +112,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if mapped.originEnum == .receivedRemote && mapped.enabled {
                 await alarmKit.schedule(record: mapped, store: store)
             }
+            await SocialNotificationTracker.notifyReceivedAlarm(
+                alarmID: mapped.id,
+                title: RemoteAlarmMapper.resolveLabel(remote),
+                time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
+            )
         }
     }
 
@@ -123,6 +131,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         merged.snoozeCount = existing.snoozeCount                // 누적 카운트 유지
         merged.snoozeRepeatLimit = existing.snoozeRepeatLimit    // 사용자가 바꾼 값 보존
         merged.voiceRepeat = existing.voiceRepeat
+        merged.voiceVolumePercent = existing.voiceVolumePercent
         merged.holidayOff = existing.holidayOff
         merged.alarmVolumePercent = existing.alarmVolumePercent
         merged.alarmSoundUri = existing.alarmSoundUri
@@ -146,6 +155,20 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         return (mapped.lastSyncedAtMillis ?? 0) >= (existing.lastSyncedAtMillis ?? 0)
     }
 
+    /// Android `RemoteAlarmPullSyncService.pullReceivedAlarms` 의 대상 필터와 같은 의도.
+    /// 내가 만든 서버 알람은 push sync 의 결과물이므로 received import 대상으로 삼지 않는다.
+    static func isReceivedRemoteCandidate(_ remote: RemoteAlarm, currentUserID: String) -> Bool {
+        guard let target = remote.targetUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !target.isEmpty,
+              target == currentUserID,
+              let sender = remote.senderUserId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sender.isEmpty,
+              sender != currentUserID else {
+            return false
+        }
+        return true
+    }
+
     private func rescheduleReceivedRemote(record: LocalAlarmRecord, existing: LocalAlarmRecord) async {
         // 새 예약을 먼저 성공시킨 뒤 기존 AlarmKit ID 를 해제해 로컬 레코드가
         // 삭제되거나 무예약 상태로 남는 일을 막는다.
@@ -165,7 +188,6 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             guard let remoteID = record.remoteAlarmId else { continue }
             if !serverIDs.contains(remoteID) {
                 await alarmKit.cancel(record: record, store: store)
-                store.delete(record)
             }
         }
     }
@@ -194,14 +216,41 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         var copy = record
         guard let cacheKey = copy.audioCacheKey,
               let messageId = copy.ttsMessageId,
-              !messageId.isEmpty else { return copy }
+              !messageId.isEmpty else {
+            return copy.playModeEnum == .alarmOnly ? copy : Self.withoutUnavailableRemoteAudio(copy)
+        }
 
         if audioCache.cachedURL(for: cacheKey) == nil {
             await fetchAndCacheTTS(messageId: messageId, cacheKey: cacheKey, token: token)
         }
         if let cached = audioCache.cachedURL(for: cacheKey) {
             copy.localAudioUri = cached.lastPathComponent
+        } else {
+            copy = Self.withoutUnavailableRemoteAudio(copy)
         }
+        return copy
+    }
+
+    static func withoutUnavailableRemoteAudio(_ record: LocalAlarmRecord) -> LocalAlarmRecord {
+        var copy = record
+        copy.playMode = AlarmPlayMode.alarmOnly.rawValue
+        copy.localAudioUri = nil
+        copy.audioCacheKey = nil
+        copy.rawAudioUri = nil
+        copy.voiceSource = VoiceSource.localAudio.rawValue
+        copy.voiceProfileId = nil
+        copy.voiceText = nil
+        copy.voiceCategory = nil
+        copy.voiceLanguage = nil
+        copy.voiceRandomPrompt = false
+        copy.voiceRandomContext = nil
+        copy.voiceWeatherCountry = nil
+        copy.voiceWeatherCity = nil
+        copy.voiceFortuneGender = nil
+        copy.voiceFortuneBirthDate = nil
+        copy.voiceFortuneBirthTime = nil
+        copy.dynamicVoicePreparedForFireAtMillis = nil
+        copy.ttsMessageId = nil
         return copy
     }
 }

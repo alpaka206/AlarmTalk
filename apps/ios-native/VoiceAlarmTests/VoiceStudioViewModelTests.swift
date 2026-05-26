@@ -9,35 +9,42 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_SLOT_EXHAUSTED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_SLOT_EXHAUSTED"),
-            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_FEATURE_REQUIRES_PAID_PLAN() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN"),
-            "유료 플랜에서 사용할 수 있어요."
+            "유료 이용권에서 사용할 수 있어요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_SHORT() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_SHORT"),
-            "60초 이상의 음성을 녹음해 주세요."
+            "목소리를 만들 음성은 1분 이상이어야 해요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_LONG() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_LONG"),
-            "120초 이내로 녹음해 주세요."
+            "목소리를 만들 음성은 2분 이하로 준비해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_INVALID_DURATION() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "INVALID_DURATION"),
+            "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_LIMIT_REACHED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_LIMIT_REACHED"),
-            "이번 달 보이스 생성 한도를 모두 사용했어요."
+            "이번 달 목소리 생성 한도를 모두 사용했어요."
         )
     }
 
@@ -51,14 +58,14 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_PROFILE_NOT_FOUND() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_PROFILE_NOT_FOUND"),
-            "보이스를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
+            "목소리를 찾지 못했어요. 새로고침 후 다시 시도해 주세요."
         )
     }
 
-    func test_localizedVoiceMessage_unknownCodeIsPassthrough() {
+    func test_localizedVoiceMessage_unknownCodeUsesFallback() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "MYSTERY_CODE"),
-            "MYSTERY_CODE"
+            "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
         )
     }
 
@@ -67,7 +74,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_mapVoiceError_picksUpServerErrorCode() {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 403, message: "Voice features require a paid plan.", errorCode: "VOICE_FEATURE_REQUIRES_PAID_PLAN")
-        XCTAssertEqual(vm.mapVoiceError(err), "유료 플랜에서 사용할 수 있어요.")
+        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
     }
 
     func test_mapVoiceError_jsonInMessageFallback() {
@@ -77,7 +84,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let err = APIError.server(status: 403, message: raw, errorCode: nil)
         XCTAssertEqual(
             vm.mapVoiceError(err),
-            "보이스 슬롯이 가득 찼어요. 기존 보이스를 삭제하거나 플랜을 업그레이드해 주세요."
+            "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         )
     }
 
@@ -92,6 +99,24 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let vm = VoiceStudioViewModel()
         let err = APIError.server(status: 500, message: "internal", errorCode: nil)
         XCTAssertEqual(vm.mapVoiceError(err), "서버가 응답하지 않아요. 잠시 후 다시 시도해 주세요.")
+    }
+
+    func test_mapVoiceError_nonKoreanServerMessageUsesFallback() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 400, message: "durationMs must be a positive integer", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "처리 중 오류가 발생했어요.")
+    }
+
+    func test_mapVoiceError_koreanServerMessageIsPreserved() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 400, message: "음성 길이를 확인하지 못했어요.", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "음성 길이를 확인하지 못했어요.")
+    }
+
+    func test_mapVoiceError_koreanForbiddenServerMessageIsPreserved() {
+        let vm = VoiceStudioViewModel()
+        let err = APIError.server(status: 403, message: "유료 이용권에서 사용할 수 있어요.", errorCode: nil)
+        XCTAssertEqual(vm.mapVoiceError(err), "유료 이용권에서 사용할 수 있어요.")
     }
 
     func test_mapVoiceError_unauthorized() {
@@ -130,6 +155,24 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(VoiceProfileLimits.maxDurationMs, 120_000)
     }
 
+    func test_dynamicPromptPreferences_trimAndSerializeToSettings() {
+        let preferences = DynamicPromptPreferences(
+            weatherCountry: " 대한민국 ",
+            weatherCity: " 서울 ",
+            fortuneGender: " 여성 ",
+            fortuneBirthDate: " 1996-05-20 ",
+            fortuneBirthTime: " 07:30 "
+        )
+
+        let settings = preferences.toSettings()
+
+        XCTAssertEqual(settings.weather.country, "대한민국")
+        XCTAssertEqual(settings.weather.city, "서울")
+        XCTAssertEqual(settings.fortune.gender, "여성")
+        XCTAssertEqual(settings.fortune.birthDate, "1996-05-20")
+        XCTAssertEqual(settings.fortune.birthTime, "07:30")
+    }
+
     func test_isProfileLimitReached_andRemainingSlots() {
         let vm = VoiceStudioViewModel()
         vm.profiles = []
@@ -165,5 +208,58 @@ final class VoiceStudioViewModelTests: XCTestCase {
 
         let e2 = APIError.invalidResponse
         XCTAssertNil(e2.serverErrorCode)
+    }
+
+    func test_voiceCloneMultipartFields_matchAndroidRequiredParts() {
+        let fields = VoiceAlarmAPI.voiceCloneMultipartFields(
+            name: "  Gia  ",
+            isShared: true,
+            durationMs: 60_000,
+            relationshipLabel: " granddaughter ",
+            listenerTitle: " grandpa "
+        )
+
+        XCTAssertEqual(fields["name"], "Gia")
+        XCTAssertEqual(fields["isShared"], "true")
+        XCTAssertEqual(fields["durationMs"], "60000")
+        XCTAssertEqual(fields["relationshipLabel"], "granddaughter")
+        XCTAssertEqual(fields["listenerTitle"], "grandpa")
+        XCTAssertEqual(fields["isDraft"], "false")
+    }
+
+    func test_voiceCloneMultipartFields_keepBlankRelationshipPartsForServerValidation() {
+        let fields = VoiceAlarmAPI.voiceCloneMultipartFields(
+            name: "Draft",
+            isShared: false,
+            durationMs: 60_000,
+            noiseRemoval: true,
+            relationshipLabel: nil,
+            listenerTitle: "   ",
+            isDraft: true
+        )
+
+        XCTAssertEqual(fields["relationshipLabel"], "")
+        XCTAssertEqual(fields["listenerTitle"], "")
+        XCTAssertEqual(fields["isDraft"], "true")
+        XCTAssertEqual(fields["noiseRemoval"], "true")
+        XCTAssertEqual(fields["noise_removal"], "true")
+    }
+
+    func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {
+        let fileURL = URL(fileURLWithPath: "/tmp/clone-import-123.m4a")
+
+        XCTAssertEqual(
+            VoiceAlarmAPI.multipartUploadFileName(fileURL: fileURL, originalName: "  gia.mov  "),
+            "gia.mov"
+        )
+    }
+
+    func test_multipartUploadFileName_fallsBackToPreparedURLName() {
+        let fileURL = URL(fileURLWithPath: "/tmp/clone-import-123.m4a")
+
+        XCTAssertEqual(
+            VoiceAlarmAPI.multipartUploadFileName(fileURL: fileURL, originalName: "   "),
+            "clone-import-123.m4a"
+        )
     }
 }

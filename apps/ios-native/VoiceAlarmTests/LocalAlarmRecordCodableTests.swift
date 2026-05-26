@@ -4,7 +4,7 @@ import XCTest
 /// `LocalAlarmRecord` 의 Codable 라운드트립 + legacy 17필드 JSON 호환.
 final class LocalAlarmRecordCodableTests: XCTestCase {
 
-    func test_full33FieldRoundTrip() throws {
+    func test_fullFieldRoundTrip() throws {
         let original = LocalAlarmRecord(
             id: "11111111-1111-1111-1111-111111111111",
             label: "Morning",
@@ -29,7 +29,13 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
             voiceCategory: "morning",
             voiceLanguage: "ko",
             voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeFortune.rawValue,
+            voiceFortuneGender: "여성",
+            voiceFortuneBirthDate: "1990-01-01",
+            voiceFortuneBirthTime: "07:30",
+            dynamicVoicePreparedForFireAtMillis: 1_700_000_000_000,
             voiceRepeat: false,
+            voiceVolumePercent: 72,
             ttsMessageId: "msg-1",
             remoteAlarmId: "remote-1",
             lastSyncedAtMillis: 1_699_999_000_000,
@@ -79,11 +85,13 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertNil(decoded.localAudioUri)
         XCTAssertEqual(decoded.voiceSource, VoiceSource.ttsProfile.rawValue)
         XCTAssertFalse(decoded.voiceRandomPrompt)
+        XCTAssertNil(decoded.dynamicVoicePreparedForFireAtMillis)
         XCTAssertTrue(decoded.voiceRepeat)
+        XCTAssertEqual(decoded.voiceVolumePercent, 100)
         XCTAssertNil(decoded.remoteAlarmId)
         XCTAssertEqual(decoded.syncState, AlarmSyncState.localOnly.rawValue)
         XCTAssertEqual(decoded.origin, AlarmOrigin.localOwned.rawValue)
-        XCTAssertEqual(decoded.alarmVolumePercent, 80)
+        XCTAssertEqual(decoded.alarmVolumePercent, 100)
         XCTAssertTrue(decoded.enabled)
         XCTAssertEqual(decoded.state, AlarmRuntimeState.idle.rawValue)
     }

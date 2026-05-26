@@ -116,6 +116,67 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(RemoteAlarmMapper.resolvePlayMode(remote), .alarmOnly)
     }
 
+    // MARK: - label resolution
+
+    func test_resolveLabel_usesSenderNameLikeAndroid() {
+        let remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "Other님이 보낸 알람")
+    }
+
+    func test_resolveLabel_doesNotDuplicateHonorific() {
+        var remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: "message text should not become label",
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: "규원님", senderEmail: remote.senderEmail,
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "규원님이 보낸 알람")
+    }
+
+    func test_resolveLabel_fallsBackToSenderEmailAndGenericText() {
+        var remote = makeRemote(messageId: "m1", wakeMode: "sound_then_voice")
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: remote.messageText,
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: nil, senderEmail: "sender@example.com",
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "sender@example.com님이 보낸 알람")
+
+        remote = RemoteAlarm(
+            id: remote.id, time: remote.time, repeatDays: remote.repeatDays,
+            isActive: remote.isActive, snoozeMinutes: remote.snoozeMinutes, mode: remote.mode,
+            vibrationPattern: remote.vibrationPattern, wakeMode: remote.wakeMode,
+            voiceProfileId: remote.voiceProfileId, speakerId: remote.speakerId,
+            messageId: remote.messageId, messageText: remote.messageText,
+            category: remote.category, rawAudioUrl: remote.rawAudioUrl,
+            messageAudioUrl: remote.messageAudioUrl,
+            rawAudioDurationMs: remote.rawAudioDurationMs,
+            targetUserId: remote.targetUserId, senderUserId: remote.senderUserId,
+            senderName: nil, senderEmail: nil,
+            isFamilyAlarm: remote.isFamilyAlarm,
+            isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
+        )
+        XCTAssertEqual(RemoteAlarmMapper.resolveLabel(remote), "상대가 보낸 알람")
+    }
+
     // MARK: - toRemoteRequest
 
     func test_toRemoteRequest_withTtsMessage_setsTtsMode() {
@@ -182,6 +243,50 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertNil(req.voiceProfileId)
     }
 
+    func test_toRemoteRequest_trimsIdentifiersLikeAndroid() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let local = LocalAlarmRecord(
+            label: "trim",
+            hour: 8,
+            minute: 10,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: "  vp-1  ",
+            ttsMessageId: "  m-1  ",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let req = RemoteAlarmMapper.toRemoteRequest(local)
+
+        XCTAssertEqual(req.mode, "tts")
+        XCTAssertEqual(req.messageId, "m-1")
+        XCTAssertEqual(req.voiceProfileId, "vp-1")
+    }
+
+    func test_toRemoteRequest_blankIdentifiersBecomeNilLikeAndroid() {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        let local = LocalAlarmRecord(
+            label: "blank",
+            hour: 8,
+            minute: 10,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: "   ",
+            ttsMessageId: "   ",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
+
+        let req = RemoteAlarmMapper.toRemoteRequest(local)
+
+        XCTAssertEqual(req.mode, "tts")
+        XCTAssertNil(req.messageId)
+        XCTAssertNil(req.voiceProfileId)
+    }
+
     // MARK: - toLocalRecord
 
     func test_toLocalRecord_receivedRemote_setsExpectedFields() {
@@ -199,8 +304,8 @@ final class RemoteAlarmMapperTests: XCTestCase {
             messageId: "m-9",
             messageText: "Wake up",
             category: "morning",
-            rawAudioUrl: "https://example.com/audio.mp3",
-            messageAudioUrl: nil,
+            rawAudioUrl: nil,
+            messageAudioUrl: "https://example.com/audio.mp3",
             rawAudioDurationMs: nil,
             targetUserId: "me",
             senderUserId: "sender",
@@ -210,16 +315,18 @@ final class RemoteAlarmMapperTests: XCTestCase {
             isReceivedFamilyAlarm: false
         )
         let local = RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000)
-        XCTAssertEqual(local.label, "Wake up")
+        XCTAssertEqual(local.label, "Sender님이 보낸 알람")
         XCTAssertEqual(local.hour, 7)
         XCTAssertEqual(local.minute, 30)
         XCTAssertEqual(local.snoozeMinutes, 7)
         XCTAssertEqual(local.vibrationPattern, "heartbeat")
         XCTAssertEqual(local.playModeEnum, .voiceOnly)
+        XCTAssertEqual(local.voiceVolumePercent, 100)
         XCTAssertEqual(local.originEnum, .receivedRemote)
         XCTAssertEqual(local.voiceSourceEnum, .serverTts)
         XCTAssertEqual(local.ttsMessageId, "m-9")
         XCTAssertEqual(local.audioCacheKey, "remote-message-m-9")
+        XCTAssertEqual(local.rawAudioUri, "https://example.com/audio.mp3")
         XCTAssertEqual(local.remoteAlarmId, "remote-99")
         XCTAssertEqual(local.syncStateEnum, .synced)
         XCTAssertTrue(local.enabled)
@@ -249,9 +356,34 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(local.runtimeStateEnum, .disabled)
     }
 
+    func test_toLocalRecord_withoutMessageAudioUrl_downgradesToAlarmOnlyLikeAndroid() {
+        let remote = makeRemote(messageId: "m1", wakeMode: "voice_only", messageAudioUrl: nil)
+
+        let local = RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000)
+
+        XCTAssertEqual(local.playModeEnum, .alarmOnly)
+        XCTAssertEqual(local.voiceSourceEnum, .localAudio)
+        XCTAssertNil(local.ttsMessageId)
+        XCTAssertNil(local.audioCacheKey)
+        XCTAssertNil(local.rawAudioUri)
+        XCTAssertNil(local.voiceProfileId)
+        XCTAssertNil(local.voiceText)
+        XCTAssertNil(local.voiceCategory)
+    }
+
+    func test_shouldDownloadRemoteMessageAudio_requiresNonBlankIdAndAudioUrl() {
+        XCTAssertTrue(RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(makeRemote(messageId: "m1", wakeMode: "voice_only")))
+        XCTAssertFalse(RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(makeRemote(messageId: "   ", wakeMode: "voice_only")))
+        XCTAssertFalse(RemoteAlarmMapper.shouldDownloadRemoteMessageAudio(makeRemote(messageId: "m1", wakeMode: "voice_only", messageAudioUrl: nil)))
+    }
+
     // MARK: - Helpers
 
-    private func makeRemote(messageId: String?, wakeMode: String?) -> RemoteAlarm {
+    private func makeRemote(
+        messageId: String?,
+        wakeMode: String?,
+        messageAudioUrl: String? = "https://example.com/message.m4a"
+    ) -> RemoteAlarm {
         RemoteAlarm(
             id: "remote",
             time: "07:30",
@@ -267,7 +399,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             messageText: "msg",
             category: nil,
             rawAudioUrl: nil,
-            messageAudioUrl: nil,
+            messageAudioUrl: messageId == nil ? nil : messageAudioUrl,
             rawAudioDurationMs: nil,
             targetUserId: "me",
             senderUserId: "other",
