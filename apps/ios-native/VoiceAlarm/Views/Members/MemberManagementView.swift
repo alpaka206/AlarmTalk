@@ -242,8 +242,18 @@ struct MemberManagementView: View {
 
                 Button {
                     Task {
-                        await socialFeatures.refreshAll(session: auth.session)
-                        shareText = shareVoucher?.code ?? voucher.code
+                        await socialFeatures.refreshAll(session: auth.session, force: true)
+                        guard let latestVoucher = shareVoucher else {
+                            socialFeatures.statusMessage = "공유 코드를 다시 불러오지 못했어요."
+                            return
+                        }
+                        let latestFull = isCapacityFull
+                            || ((latestVoucher.useCount ?? 0) >= (latestVoucher.maxUses ?? 1))
+                        guard !latestFull else {
+                            socialFeatures.statusMessage = "정원이 가득 차서 공유할 수 없어요."
+                            return
+                        }
+                        shareText = latestVoucher.code
                         UIPasteboard.general.string = shareText
                         isSharePresented = true
                     }

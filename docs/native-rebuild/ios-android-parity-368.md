@@ -154,6 +154,9 @@
   routed from home/settings when a group exists, keeps code registration as the
   no-group path, refreshes before sharing a code, and uses Android's current
   "공유 이용권" wording.
+- iOS shared-pass code sharing now revalidates the refreshed voucher/capacity
+  state immediately before opening the share sheet, so a code that became full
+  or unavailable during refresh is not shared from stale local state.
 - iOS billing now mirrors Android's voucher share behavior: plan cards with
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even
