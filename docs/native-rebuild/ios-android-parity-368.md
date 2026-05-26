@@ -314,6 +314,9 @@
 - iOS auth/profile/account mutation errors now mirror Android's
   `userFacingError` behavior by preserving Korean backend messages and replacing
   English server/system errors with Korean fallback copy.
+- iOS remote-alarm refresh, push, full-sync, and delete errors now use the same
+  Android-style Korean fallback behavior instead of exposing raw server/system
+  error text.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
