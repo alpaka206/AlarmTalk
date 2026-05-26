@@ -141,7 +141,9 @@ struct AlarmEditDraft: Equatable {
     enum ValidationError: Error, Equatable {
         case invalidHour
         case invalidMinute
+        case invalidRepeatDaysMask
         case invalidSnoozeMinutes
+        case invalidAlarmVolume
         case invalidVoiceVolume
     }
 
@@ -154,8 +156,14 @@ struct AlarmEditDraft: Equatable {
         if !(0...59).contains(minute) {
             errors.append(.invalidMinute)
         }
+        if !(0...0x7f).contains(repeatDaysMask) {
+            errors.append(.invalidRepeatDaysMask)
+        }
         if !(1...30).contains(snoozeMinutes) {
             errors.append(.invalidSnoozeMinutes)
+        }
+        if !(0...100).contains(alarmVolumePercent) {
+            errors.append(.invalidAlarmVolume)
         }
         if !(0...100).contains(voiceVolumePercent) {
             errors.append(.invalidVoiceVolume)

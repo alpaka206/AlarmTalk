@@ -279,6 +279,9 @@
   received-alarm sync boundary and avoiding local-owned remote duplicates.
 - iOS alarm editor no longer exposes the iOS-only "1분 테스트" action in the
   user-facing save section, matching Android's editor surface.
+- iOS alarm saving now runs Android-style final validation before local upsert:
+  repeat-day masks, alarm/voice volume bounds, cached voice audio, and duplicate
+  local alarm times are rejected at the same boundary as Android's repository.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

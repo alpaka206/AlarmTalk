@@ -195,6 +195,17 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertFalse(draft.validate().contains(.invalidSnoozeMinutes))
     }
 
+    func testValidationFlagsRepeatMaskAndAlarmVolumeLikeAndroid() {
+        var draft = AlarmEditDraft.newDefault()
+        draft.repeatDaysMask = 0x80
+        draft.alarmVolumePercent = 101
+
+        let errors = Set(draft.validate())
+
+        XCTAssertTrue(errors.contains(.invalidRepeatDaysMask))
+        XCTAssertTrue(errors.contains(.invalidAlarmVolume))
+    }
+
     func testValidationPassesForValidDraft() {
         let draft = AlarmEditDraft.newDefault()
         XCTAssertEqual(draft.validate(), [])

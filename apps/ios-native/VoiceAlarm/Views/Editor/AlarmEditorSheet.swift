@@ -742,6 +742,22 @@ struct AlarmEditorSheet: View {
             merged.ttsMessageId = prepared.messageID
         }
 
+        do {
+            try LocalAlarmStore.validateDraft(merged)
+            try store.requireUniqueTime(
+                hour: merged.hour,
+                minute: merged.minute,
+                repeatDaysMask: merged.repeatDaysMask,
+                excludingID: existing?.id
+            )
+        } catch {
+            validationAlert = ValidationAlertContent(
+                title: "저장할 수 없어요",
+                message: error.localizedDescription
+            )
+            return
+        }
+
         store.upsert(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
@@ -1087,8 +1103,12 @@ struct AlarmEditorSheet: View {
             return "시간(0–23) 값이 올바르지 않아요."
         case .invalidMinute:
             return "분(0–59) 값이 올바르지 않아요."
+        case .invalidRepeatDaysMask:
+            return "반복 요일 값이 올바르지 않아요."
         case .invalidSnoozeMinutes:
             return "스누즈 간격은 1–30분 사이여야 해요."
+        case .invalidAlarmVolume:
+            return "알람 볼륨은 0–100% 사이여야 해요."
         case .invalidVoiceVolume:
             return "목소리 크기는 0–100% 사이여야 해요."
         }
