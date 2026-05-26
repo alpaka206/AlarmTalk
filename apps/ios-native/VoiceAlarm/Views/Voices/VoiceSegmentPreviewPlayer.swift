@@ -13,8 +13,10 @@ struct VoiceSegmentPreviewPlayer: View {
     let audioURL: URL
     let startMs: Int
     let endMs: Int
+    var onError: ((String) -> Void)? = nil
 
     @StateObject private var controller = SegmentPlayerController()
+    @State private var localError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -23,7 +25,13 @@ struct VoiceSegmentPreviewPlayer: View {
                     if controller.isPlaying {
                         controller.stop()
                     } else {
-                        controller.play(url: audioURL, startMs: startMs, endMs: endMs)
+                        let errorMessage = "미리듣기를 재생하지 못했어요."
+                        if controller.play(url: audioURL, startMs: startMs, endMs: endMs) {
+                            localError = nil
+                        } else {
+                            localError = errorMessage
+                            onError?(errorMessage)
+                        }
                     }
                 } label: {
                     Image(systemName: controller.isPlaying ? "pause.circle.fill" : "play.circle.fill")
@@ -43,6 +51,11 @@ struct VoiceSegmentPreviewPlayer: View {
             }
             ProgressView(value: controller.progress)
                 .tint(VoiceAlarmTheme.primary)
+            if let localError {
+                Text(localError)
+                    .font(.caption)
+                    .foregroundStyle(VoiceAlarmTheme.error)
+            }
         }
         .padding(12)
         .background(VoiceAlarmTheme.surfaceVariant)
@@ -72,7 +85,8 @@ final class SegmentPlayerController: ObservableObject {
     private var startMs: Int = 0
     private var endMs: Int = 0
 
-    func play(url: URL, startMs: Int, endMs: Int) {
+    @discardableResult
+    func play(url: URL, startMs: Int, endMs: Int) -> Bool {
         stop()
         do {
             let session = AVAudioSession.sharedInstance()
@@ -88,8 +102,10 @@ final class SegmentPlayerController: ObservableObject {
             self.startedAt = Date()
             self.isPlaying = true
             startTicker()
+            return true
         } catch {
             stop()
+            return false
         }
     }
 

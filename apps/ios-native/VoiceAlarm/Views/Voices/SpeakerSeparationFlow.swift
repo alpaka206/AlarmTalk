@@ -235,7 +235,8 @@ struct SpeakerSeparationFlow: View {
                 subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
-                endMs: effectiveEndMs
+                endMs: effectiveEndMs,
+                onError: { localError = $0 }
             )
 
             if effectiveDurationMs < VoiceProfileLimits.minDurationMs {
@@ -321,7 +322,8 @@ struct SpeakerSeparationFlow: View {
                     subtitle: nil,
                     audioURL: url,
                     startMs: speaker.startMs,
-                    endMs: speaker.endMs
+                    endMs: speaker.endMs,
+                    onError: { localError = $0 }
                 )
             }
             HStack(spacing: 8) {

@@ -308,6 +308,9 @@
 - iOS social/message/member/character failure paths now use Android-style
   Korean fallback messages when backend or system errors are English, avoiding
   raw `Server error ...` text in user-visible status messages.
+- iOS voice segment preview now mirrors Android's visible failure behavior by
+  showing the Korean "preview playback failed" message instead of silently
+  ignoring AVAudioPlayer errors during clone/separation preview.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

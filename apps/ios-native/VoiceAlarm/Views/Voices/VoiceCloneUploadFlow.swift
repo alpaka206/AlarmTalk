@@ -341,7 +341,8 @@ struct VoiceCloneUploadFlow: View {
                 subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
-                endMs: effectiveEndMs
+                endMs: effectiveEndMs,
+                onError: { localError = $0 }
             )
 
             if durationMs < VoiceProfileLimits.minDurationMs {
