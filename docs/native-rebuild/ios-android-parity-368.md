@@ -272,6 +272,9 @@
 - iOS alarm deletion now mirrors Android's audio-cache cleanup: when a deleted
   alarm releases the last reference to an `audioCacheKey`, the cached voice
   audio is removed from `AudioCacheStore`.
+- iOS received-remote-alarm pruning now deletes the local record only through
+  the AlarmKit cancel path, so a failed OS alarm cancellation leaves the record
+  in place for the next refresh instead of creating an orphan scheduled alarm.
 - iOS free-plan downgrade handling now mirrors Android's voice lock cascade:
   once StoreKit entitlements have loaded and the best-known plan is confirmed
   below personal, local voice alarms are canceled/deleted and paid

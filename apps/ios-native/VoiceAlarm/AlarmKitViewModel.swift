@@ -314,14 +314,17 @@ final class AlarmKitViewModel: ObservableObject {
         #endif
     }
 
-    func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async {
+    @discardableResult
+    func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async -> Bool {
         guard record.alarmKitUUID != nil else {
             deleteLocalAlarm(record, store: store)
-            return
+            return true
         }
         if await cancelScheduledAlarm(record: record) {
             deleteLocalAlarm(record, store: store)
+            return true
         }
+        return false
     }
 
     private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
