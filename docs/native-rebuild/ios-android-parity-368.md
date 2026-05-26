@@ -250,8 +250,9 @@
   names are accepted and saved with the default `"알람"` label instead of
   blocking the save.
 - iOS new-alarm defaults now mirror Android's editor state: newly created
-  alarms open at 06:00, while the plan-aware play-mode default remains
-  alarm-only for free users and alarm + voice for paid users.
+  alarms open at 06:00 with an empty editable label, while the plan-aware
+  play-mode default remains alarm-only for free users and alarm + voice for
+  paid users. Saving a blank label still stores `"알람"`.
 - iOS family-alarm creation now mirrors Android's local-voice branch: when a
   recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
   `/voice/upload` and the alarm is created through `/family/alarms/voice`

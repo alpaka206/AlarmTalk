@@ -38,7 +38,7 @@ struct AlarmEditDraft: Equatable {
 
     static func newDefault(defaultPlayMode: AlarmPlayMode = .alarmOnly) -> AlarmEditDraft {
         return AlarmEditDraft(
-            label: "아침 알람",
+            label: "",
             hour: 6,
             minute: 0,
             repeatDaysMask: 0,

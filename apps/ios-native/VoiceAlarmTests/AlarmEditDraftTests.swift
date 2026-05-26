@@ -294,7 +294,7 @@ final class AlarmEditDraftTests: XCTestCase {
 
     func testNewAlarmInitialDefaults() {
         let draft = AlarmEditDraft.newDefault()
-        XCTAssertFalse(draft.label.isEmpty)
+        XCTAssertEqual(draft.label, "")
         XCTAssertEqual(draft.hour, 6)
         XCTAssertEqual(draft.minute, 0)
         XCTAssertEqual(draft.playMode, .alarmOnly)
