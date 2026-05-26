@@ -32,10 +32,6 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     static let shared = AlarmVoicePlayer()
 
     private static let voiceRepeatGapNanos: UInt64 = 900_000_000
-    private static let voiceFadeInNanos: UInt64 = 6_000_000_000
-    private static let voiceFadeSteps = 12
-    private static let voiceFadeStartRatio: Float = 0.45
-    private static let voiceFadeMinStartVolume: Float = 0.35
 
     private var player: AVAudioPlayer?
     private var activePlayerID: ObjectIdentifier?
@@ -113,24 +109,22 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         fadeTask?.cancel()
         fadeTask = nil
 
-        guard Self.shouldFadeInVoice(targetVolume: targetVolume, fadeIn: fadeIn) else {
-            player.volume = targetVolume
+        let plan = Self.voiceVolumeRampPlan(targetVolume: targetVolume, fadeIn: fadeIn)
+        player.volume = plan.startVolume
+        guard !plan.stepVolumes.isEmpty else {
             return
         }
 
-        let startVolume = Self.voiceFadeStartVolume(targetVolume: targetVolume)
-        player.volume = startVolume
         let generation = playbackGeneration + 1
         fadeTask = Task { @MainActor [weak self] in
-            for index in 1...Self.voiceFadeSteps {
+            for volume in plan.stepVolumes {
                 try? await Task.sleep(nanoseconds: Self.voiceFadeInNanos / UInt64(Self.voiceFadeSteps))
                 guard let self,
                       self.playbackGeneration == generation,
                       let player = self.player else {
                     return
                 }
-                let progress = Float(index) / Float(Self.voiceFadeSteps)
-                player.volume = startVolume + ((targetVolume - startVolume) * progress)
+                player.volume = volume
             }
             if self?.playbackGeneration == generation {
                 self?.fadeTask = nil
@@ -199,12 +193,29 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
         max(0.0, min(1.0, Float(percent) / 100.0))
     }
 
-    static func shouldFadeInVoice(targetVolume: Float, fadeIn: Bool) -> Bool {
-        fadeIn && targetVolume > voiceFadeMinStartVolume
+    static let voiceFadeInNanos: UInt64 = 6_000_000_000
+    static let voiceFadeSteps = 12
+
+    static func voiceVolumeRampPlan(targetVolume: Float, fadeIn: Bool) -> VoiceVolumeRampPlan {
+        let target = max(0.0, min(1.0, targetVolume))
+        guard fadeIn, target > 0 else {
+            return VoiceVolumeRampPlan(startVolume: target, stepVolumes: [])
+        }
+
+        let start = min(max(VoiceVolumeRampPlan.minimumStartVolume, target * VoiceVolumeRampPlan.startRatio), target)
+        guard start < target else {
+            return VoiceVolumeRampPlan(startVolume: target, stepVolumes: [])
+        }
+
+        let stepVolumes = (1...voiceFadeSteps).map { step in
+            let progress = Float(step) / Float(voiceFadeSteps)
+            return start + ((target - start) * progress)
+        }
+        return VoiceVolumeRampPlan(startVolume: start, stepVolumes: stepVolumes)
     }
 
     static func voiceFadeStartVolume(targetVolume: Float) -> Float {
-        min(max(voiceFadeMinStartVolume, targetVolume * voiceFadeStartRatio), targetVolume)
+        voiceVolumeRampPlan(targetVolume: targetVolume, fadeIn: true).startVolume
     }
 
     // MARK: AVAudioPlayerDelegate
@@ -223,5 +234,13 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             self.stop()
         }
     }
+}
+
+struct VoiceVolumeRampPlan: Equatable {
+    static let startRatio: Float = 0.15
+    static let minimumStartVolume: Float = 0.10
+
+    let startVolume: Float
+    let stepVolumes: [Float]
 }
 #endif

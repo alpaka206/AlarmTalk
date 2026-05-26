@@ -347,23 +347,19 @@ class RingingService : Service() {
     }
 
     private fun applyVoiceVolume(player: MediaPlayer, alarm: AlarmEntity?, fadeIn: Boolean) {
-        val targetVolume = ((alarm?.voiceVolumePercent ?: 100).coerceIn(0, 100)) / 100f
-        if (!fadeIn || targetVolume <= VOICE_FADE_MIN_START_VOLUME) {
-            player.setVolume(targetVolume, targetVolume)
+        val plan = VoiceVolumeRamp.plan(
+            volumePercent = alarm?.voiceVolumePercent ?: 100,
+            fadeIn = fadeIn,
+        )
+        player.setVolume(plan.startVolume, plan.startVolume)
+        if (plan.stepVolumes.isEmpty()) {
             return
         }
 
-        val startVolume = maxOf(
-            VOICE_FADE_MIN_START_VOLUME,
-            targetVolume * VOICE_FADE_START_RATIO,
-        ).coerceAtMost(targetVolume)
-        player.setVolume(startVolume, startVolume)
         voiceFadeJob = serviceScope.launch {
-            repeat(VOICE_FADE_STEPS) { index ->
-                delay(VOICE_FADE_IN_MS / VOICE_FADE_STEPS)
+            plan.stepVolumes.forEach { volume ->
+                delay(VoiceVolumeRamp.FADE_IN_MS / VoiceVolumeRamp.FADE_STEPS)
                 if (mediaPlayer !== player) return@launch
-                val progress = (index + 1).toFloat() / VOICE_FADE_STEPS
-                val volume = startVolume + ((targetVolume - startVolume) * progress)
                 runCatching { player.setVolume(volume, volume) }
             }
             if (mediaPlayer === player) voiceFadeJob = null
@@ -541,10 +537,6 @@ class RingingService : Service() {
     companion object {
         private const val RINGING_NOTIFICATION_ID = 1001
         private const val VOICE_REPEAT_GAP_MS = 900L
-        private const val VOICE_FADE_IN_MS = 6_000L
-        private const val VOICE_FADE_STEPS = 12
-        private const val VOICE_FADE_START_RATIO = 0.45f
-        private const val VOICE_FADE_MIN_START_VOLUME = 0.35f
 
         fun start(context: Context, alarmId: String) {
             val intent = Intent(context, RingingService::class.java).apply {
