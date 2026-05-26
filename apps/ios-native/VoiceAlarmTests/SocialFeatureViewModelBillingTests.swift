@@ -111,6 +111,19 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         )
     }
 
+    func test_scopedRefreshErrorMessage_hidesEnglishServerMessageLikeAndroid() {
+        let error = APIError.server(status: 500, message: "Internal Server Error", errorCode: nil)
+
+        XCTAssertEqual(
+            SocialFeatureViewModel.scopedRefreshErrorMessage(
+                label: "메시지",
+                error: error,
+                fallback: "음성 메시지를 불러오지 못했어요"
+            ),
+            "메시지: 음성 메시지를 불러오지 못했어요"
+        )
+    }
+
     private func response(planKey: String, planType: String) -> BillingSubscriptionResponse {
         BillingSubscriptionResponse(
             subscription: nil,

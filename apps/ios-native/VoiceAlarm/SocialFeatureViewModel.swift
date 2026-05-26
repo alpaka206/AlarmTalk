@@ -112,7 +112,11 @@ final class SocialFeatureViewModel: ObservableObject {
                 currentUserEmail: session?.user.email ?? ""
             )
         } catch {
-            messages.append("가족 그룹: \(error.localizedDescription)")
+            messages.append(Self.scopedRefreshErrorMessage(
+                label: "가족 그룹",
+                error: error,
+                fallback: "공유 이용권 정보를 불러오지 못했어요"
+            ))
         }
 
         do {
@@ -120,7 +124,11 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             familyVoices = nextFamilyVoices
         } catch {
-            messages.append("가족 목소리: \(error.localizedDescription)")
+            messages.append(Self.scopedRefreshErrorMessage(
+                label: "가족 목소리",
+                error: error,
+                fallback: "목소리를 불러오지 못했어요"
+            ))
         }
 
         do {
@@ -129,7 +137,11 @@ final class SocialFeatureViewModel: ObservableObject {
             await SocialNotificationTracker.notifyNewNotes(notes: nextReceivedNotes, userID: userID)
             applyReceivedNotes(nextReceivedNotes)
         } catch {
-            messages.append("메시지: \(error.localizedDescription)")
+            messages.append(Self.scopedRefreshErrorMessage(
+                label: "메시지",
+                error: error,
+                fallback: "음성 메시지를 불러오지 못했어요"
+            ))
         }
 
         do {
@@ -137,7 +149,11 @@ final class SocialFeatureViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             character = nextCharacter
         } catch {
-            messages.append("캐릭터: \(error.localizedDescription)")
+            messages.append(Self.scopedRefreshErrorMessage(
+                label: "캐릭터",
+                error: error,
+                fallback: "성장 정보를 불러오지 못했어요"
+            ))
         }
 
         do {
@@ -150,7 +166,11 @@ final class SocialFeatureViewModel: ObservableObject {
             accessSnapshotStore.updateSubscription(userID: userID, response: resolvedSubscription)
             vouchers = resolvedVouchers
         } catch {
-            messages.append("이용권: \(error.localizedDescription)")
+            messages.append(Self.scopedRefreshErrorMessage(
+                label: "이용권",
+                error: error,
+                fallback: "공유 코드 정보를 불러오지 못했어요"
+            ))
         }
 
         guard activeUserID == userID else { return }
@@ -292,7 +312,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "메시지를 보냈어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지 전송에 실패했어요")
         }
     }
 
@@ -302,7 +322,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.markNoteRead(id: note.id, token: token)
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지를 읽음 처리하지 못했어요")
         }
     }
 
@@ -344,7 +364,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if isMissingNoteAudio(error) {
                 unavailableAudioNoteIDs.insert(note.id)
             }
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "음성 메시지를 재생하지 못했어요")
         }
     }
 
@@ -535,6 +555,10 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
+    static func scopedRefreshErrorMessage(label: String, error: Error, fallback: String) -> String {
+        "\(label): \(userFacingErrorMessage(error, fallback: fallback))"
+    }
+
     private static func extractServerErrorCode(from error: Error) -> String? {
         if let apiError = error as? APIError, let code = apiError.serverErrorCode {
             return code
@@ -622,7 +646,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "소유권을 이양했어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "소유권을 이양하지 못했어요")
         }
     }
 
@@ -690,7 +714,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "음성 메시지를 보냈어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "음성 메시지 전송에 실패했어요")
         }
     }
 
@@ -768,7 +792,7 @@ final class SocialFeatureViewModel: ObservableObject {
             )
             statusMessage = "캐릭터 경험치를 반영했어요."
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "성장 기록을 반영하지 못했어요")
         }
     }
 }

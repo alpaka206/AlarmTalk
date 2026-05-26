@@ -305,6 +305,9 @@
 - iOS app/widget display names and Live Activity fallback labels now mirror the
   Android `Waker` brand and Korean alarm-state wording instead of the old
   `Voice Alarm` placeholder.
+- iOS social/message/member/character failure paths now use Android-style
+  Korean fallback messages when backend or system errors are English, avoiding
+  raw `Server error ...` text in user-visible status messages.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
