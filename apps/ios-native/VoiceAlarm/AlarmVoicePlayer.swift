@@ -31,7 +31,21 @@ import AVFoundation
 final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     static let shared = AlarmVoicePlayer()
 
+    private static let voiceRepeatGapNanos: UInt64 = 900_000_000
+    private static let voiceFadeInNanos: UInt64 = 6_000_000_000
+    private static let voiceFadeSteps = 12
+    private static let voiceFadeStartRatio: Float = 0.45
+    private static let voiceFadeMinStartVolume: Float = 0.35
+
     private var player: AVAudioPlayer?
+    private var activePlayerID: ObjectIdentifier?
+    private var repeatTask: Task<Void, Never>?
+    private var fadeTask: Task<Void, Never>?
+    private var playbackGeneration = 0
+    private var currentVoiceURL: URL?
+    private var currentRepeatVoice = false
+    private var currentVoiceVolumePercent = 100
+    private var voiceHasPlayedThisRing = false
     private(set) var currentRecordID: String?
 
     private override init() {
@@ -43,11 +57,13 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
         guard record.playModeEnum != .alarmOnly,
               let key = record.audioCacheKey,
-              let url = audioCache.cachedURL(for: key) else {
+              let url = audioCache.cachedURL(for: key),
+              record.voiceVolumePercent > 0 else {
             return
         }
 
-        if currentRecordID == record.id, player?.isPlaying == true {
+        if currentRecordID == record.id,
+           player?.isPlaying == true || repeatTask != nil || voiceHasPlayedThisRing {
             return
         }
 
@@ -58,48 +74,153 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true, options: [])
 
-            let p = try AVAudioPlayer(contentsOf: url)
-            p.delegate = self
-            // Android 의 voiceRepeat 와 동일 의미: 3회 반복 = numberOfLoops = 2.
-            // AVAudioPlayer.numberOfLoops 는 초기 1회 후 추가 반복 횟수.
-            p.numberOfLoops = record.voiceRepeat ? 2 : 0
-            let volume = max(0.0, min(1.0, Float(record.voiceVolumePercent) / 100.0))
-            p.volume = volume
-            p.prepareToPlay()
-            p.play()
-            player = p
+            stopPlayback(deactivateSession: false)
             currentRecordID = record.id
+            currentVoiceURL = url
+            currentRepeatVoice = record.voiceRepeat
+            currentVoiceVolumePercent = record.voiceVolumePercent
+            voiceHasPlayedThisRing = false
+            startVoicePlayback(url: url)
         } catch {
             // silent: best-effort. AlarmKit 의 .default 는 별도로 울리고 있다.
-            player = nil
-            currentRecordID = nil
+            resetPlaybackState(deactivateSession: false)
+        }
+    }
+
+    private func startVoicePlayback(url: URL) {
+        guard let currentRecordID else { return }
+
+        do {
+            let p = try AVAudioPlayer(contentsOf: url)
+            p.delegate = self
+            p.numberOfLoops = 0
+            let shouldFadeIn = !voiceHasPlayedThisRing
+            voiceHasPlayedThisRing = true
+            let targetVolume = Self.voiceVolume(forPercent: currentVoiceVolumePercent)
+            applyVoiceVolume(to: p, targetVolume: targetVolume, fadeIn: shouldFadeIn)
+            p.prepareToPlay()
+            p.play()
+            playbackGeneration += 1
+            player = p
+            activePlayerID = ObjectIdentifier(p)
+            self.currentRecordID = currentRecordID
+        } catch {
+            resetPlaybackState(deactivateSession: false)
+        }
+    }
+
+    private func applyVoiceVolume(to player: AVAudioPlayer, targetVolume: Float, fadeIn: Bool) {
+        fadeTask?.cancel()
+        fadeTask = nil
+
+        guard Self.shouldFadeInVoice(targetVolume: targetVolume, fadeIn: fadeIn) else {
+            player.volume = targetVolume
+            return
+        }
+
+        let startVolume = Self.voiceFadeStartVolume(targetVolume: targetVolume)
+        player.volume = startVolume
+        let generation = playbackGeneration + 1
+        fadeTask = Task { @MainActor [weak self] in
+            for index in 1...Self.voiceFadeSteps {
+                try? await Task.sleep(nanoseconds: Self.voiceFadeInNanos / UInt64(Self.voiceFadeSteps))
+                guard let self,
+                      self.playbackGeneration == generation,
+                      let player = self.player else {
+                    return
+                }
+                let progress = Float(index) / Float(Self.voiceFadeSteps)
+                player.volume = startVolume + ((targetVolume - startVolume) * progress)
+            }
+            if self?.playbackGeneration == generation {
+                self?.fadeTask = nil
+            }
+        }
+    }
+
+    private func handlePlaybackFinished(playerID: ObjectIdentifier) {
+        guard activePlayerID == playerID else { return }
+
+        fadeTask?.cancel()
+        fadeTask = nil
+        player = nil
+        activePlayerID = nil
+
+        guard currentRepeatVoice,
+              let url = currentVoiceURL,
+              let recordID = currentRecordID else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            return
+        }
+
+        let generation = playbackGeneration
+        repeatTask?.cancel()
+        repeatTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.voiceRepeatGapNanos)
+            guard let self,
+                  self.playbackGeneration == generation,
+                  self.currentRecordID == recordID else {
+                return
+            }
+            self.repeatTask = nil
+            self.startVoicePlayback(url: url)
         }
     }
 
     /// 알람이 중지/스누즈 되었을 때 호출. 다중 호출에 안전.
     func stop() {
+        stopPlayback(deactivateSession: true)
+    }
+
+    private func stopPlayback(deactivateSession: Bool) {
+        repeatTask?.cancel()
+        repeatTask = nil
+        fadeTask?.cancel()
+        fadeTask = nil
         player?.stop()
+        resetPlaybackState(deactivateSession: deactivateSession)
+    }
+
+    private func resetPlaybackState(deactivateSession: Bool) {
+        playbackGeneration += 1
         player = nil
+        activePlayerID = nil
+        currentVoiceURL = nil
+        currentRepeatVoice = false
+        currentVoiceVolumePercent = 100
+        voiceHasPlayedThisRing = false
         currentRecordID = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        if deactivateSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        }
+    }
+
+    static func voiceVolume(forPercent percent: Int) -> Float {
+        max(0.0, min(1.0, Float(percent) / 100.0))
+    }
+
+    static func shouldFadeInVoice(targetVolume: Float, fadeIn: Bool) -> Bool {
+        fadeIn && targetVolume > voiceFadeMinStartVolume
+    }
+
+    static func voiceFadeStartVolume(targetVolume: Float) -> Float {
+        min(max(voiceFadeMinStartVolume, targetVolume * voiceFadeStartRatio), targetVolume)
     }
 
     // MARK: AVAudioPlayerDelegate
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let playerID = ObjectIdentifier(player)
         Task { @MainActor in
             // 자연 종료 — 세션을 비활성화하되 currentRecordID 는 유지하면
             // alarmUpdates handler 가 추가 stop 을 보내도 멱등하다.
-            self.player = nil
-            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            self.handlePlaybackFinished(playerID: playerID)
         }
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor in
-            self.player = nil
-            self.currentRecordID = nil
-            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            self.stop()
         }
     }
 }

@@ -231,6 +231,10 @@
   rule: server-provided `cacheKey` wins, otherwise the key is derived from
   `tts-v2|profileId|normalizedText|category|language`. Alarm TTS, shared-voice
   preview, and dynamic voice refresh all use this Android-compatible key.
+- iOS in-app alarm voice fallback now mirrors Android's voice playback cadence:
+  the first voice play in a ring starts lower and fades to the per-alarm voice
+  volume over 6 seconds, while repeat voice playback waits 900ms and continues
+  at the target volume until the alarm is stopped or snoozed.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
