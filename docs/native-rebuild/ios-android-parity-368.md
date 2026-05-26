@@ -235,6 +235,9 @@
   the first voice play in a ring starts lower and fades to the per-alarm voice
   volume over 6 seconds, while repeat voice playback waits 900ms and continues
   at the target volume until the alarm is stopped or snoozed.
+- iOS alarm deletion now mirrors Android's audio-cache cleanup: when a deleted
+  alarm releases the last reference to an `audioCacheKey`, the cached voice
+  audio is removed from `AudioCacheStore`.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

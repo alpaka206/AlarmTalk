@@ -290,11 +290,17 @@ final class AlarmKitViewModel: ObservableObject {
 
     func cancel(record: LocalAlarmRecord, store: LocalAlarmStore) async {
         guard record.alarmKitUUID != nil else {
-            store.delete(record)
+            deleteLocalAlarm(record, store: store)
             return
         }
         if await cancelScheduledAlarm(record: record) {
-            store.delete(record)
+            deleteLocalAlarm(record, store: store)
+        }
+    }
+
+    private func deleteLocalAlarm(_ record: LocalAlarmRecord, store: LocalAlarmStore) {
+        if let releasedAudioCacheKey = store.delete(record) {
+            try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
         }
     }
 

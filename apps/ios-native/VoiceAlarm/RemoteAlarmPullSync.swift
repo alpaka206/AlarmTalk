@@ -166,7 +166,9 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             guard let remoteID = record.remoteAlarmId else { continue }
             if !serverIDs.contains(remoteID) {
                 await alarmKit.cancel(record: record, store: store)
-                store.delete(record)
+                if let releasedAudioCacheKey = store.delete(record) {
+                    try? audioCache.deleteCachedAudio(cacheKey: releasedAudioCacheKey)
+                }
             }
         }
     }

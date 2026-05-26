@@ -581,14 +581,32 @@ final class LocalAlarmStore: ObservableObject {
         return copy
     }
 
-    func delete(_ alarm: LocalAlarmRecord) {
-        alarms.removeAll { $0.id == alarm.id }
+    @discardableResult
+    func delete(_ alarm: LocalAlarmRecord) -> String? {
+        guard let index = alarms.firstIndex(where: { $0.id == alarm.id }) else {
+            return nil
+        }
+        let releasedAudioCacheKey = Self.nonEmptyAudioCacheKey(alarms[index].audioCacheKey)
+        alarms.remove(at: index)
         persist()
+        guard let releasedAudioCacheKey,
+              countByAudioCacheKey(releasedAudioCacheKey) == 0 else {
+            return nil
+        }
+        return releasedAudioCacheKey
     }
 
-    func deleteByID(_ id: String) {
-        alarms.removeAll { $0.id == id }
-        persist()
+    @discardableResult
+    func deleteByID(_ id: String) -> String? {
+        guard let record = alarms.first(where: { $0.id == id }) else {
+            return nil
+        }
+        return delete(record)
+    }
+
+    private static func nonEmptyAudioCacheKey(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     // MARK: State transitions
