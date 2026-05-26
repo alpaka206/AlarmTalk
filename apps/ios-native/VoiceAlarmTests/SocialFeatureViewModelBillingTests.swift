@@ -30,6 +30,44 @@ final class SocialFeatureViewModelBillingTests: XCTestCase {
         XCTAssertEqual(result.first?.useCount, 1)
     }
 
+    func test_billingFailureMessage_matchesAndroidErrorCodeCopy() {
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingFailureMessage(errorCode: "SAME_PLAN", fallback: "fallback"),
+            "이미 사용 중인 이용권이에요"
+        )
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingFailureMessage(errorCode: "PLAN_NOT_FOUND", fallback: "fallback"),
+            "이용권 정보를 찾지 못했어요"
+        )
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingFailureMessage(errorCode: nil, fallback: "fallback"),
+            "fallback"
+        )
+    }
+
+    func test_billingErrorMessage_readsApiErrorCodeAndJsonFallback() {
+        let direct = APIError.server(status: 400, message: "Already on this plan", errorCode: "SAME_PLAN")
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingErrorMessage(direct, fallback: "fallback"),
+            "이미 사용 중인 이용권이에요"
+        )
+
+        let raw = #"{"error":"Plan not found","error_code":"PLAN_NOT_FOUND"}"#
+        let encoded = APIError.server(status: 404, message: raw, errorCode: nil)
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingErrorMessage(encoded, fallback: "fallback"),
+            "이용권 정보를 찾지 못했어요"
+        )
+    }
+
+    func test_billingErrorMessage_keepsKoreanServerMessageWhenCodeIsUnknown() {
+        let error = APIError.server(status: 400, message: "이미 사용된 코드예요", errorCode: "UNKNOWN")
+        XCTAssertEqual(
+            SocialFeatureViewModel.billingErrorMessage(error, fallback: "fallback"),
+            "이미 사용된 코드예요"
+        )
+    }
+
     private func response(planKey: String, planType: String) -> BillingSubscriptionResponse {
         BillingSubscriptionResponse(
             subscription: nil,

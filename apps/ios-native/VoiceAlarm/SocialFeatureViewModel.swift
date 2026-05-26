@@ -336,7 +336,11 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "\(planLabel) 공유 코드를 준비했어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            let planLabel = Self.shareCodePlanLabel(subscription)
+            statusMessage = Self.billingErrorMessage(
+                error,
+                fallback: "\(planLabel) 공유 코드를 불러오지 못했어요"
+            )
         }
     }
 
@@ -367,7 +371,8 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "이용권 상태를 갱신했어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            let fallback = gift ? "선물하기에 실패했어요" : "이용권 적용에 실패했어요"
+            statusMessage = Self.billingErrorMessage(error, fallback: fallback)
         }
     }
 
@@ -393,7 +398,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = normalizedMode == "immediate" ? "이용권을 해지했어요." : "구독 해지를 예약했어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.billingErrorMessage(error, fallback: "해지에 실패했어요")
         }
     }
 
@@ -424,6 +429,79 @@ final class SocialFeatureViewModel: ObservableObject {
     static func upsertingVoucher(_ voucher: VoucherItem, into vouchers: [VoucherItem]) -> [VoucherItem] {
         [voucher] + vouchers.filter { $0.id != voucher.id }
     }
+
+    static func billingErrorMessage(_ error: Error, fallback: String) -> String {
+        billingFailureMessage(
+            errorCode: extractServerErrorCode(from: error),
+            fallback: userFacingFallback(error, fallback: fallback)
+        )
+    }
+
+    static func billingFailureMessage(errorCode: String?, fallback: String) -> String {
+        switch errorCode {
+        case "SAME_PLAN":
+            return "이미 사용 중인 이용권이에요"
+        case "NO_ACTIVE_SUBSCRIPTION":
+            return "현재 적용된 이용권이 없어 새 이용권으로 적용할게요"
+        case "PLAN_NOT_FOUND":
+            return "이용권 정보를 찾지 못했어요"
+        case "PLAN_INACTIVE":
+            return "지금은 선택할 수 없는 이용권이에요"
+        case "FREE_NOT_BILLABLE":
+            return "무료 이용권은 여기에서 적용할 수 없어요"
+        case "GIFT_PERSONAL_ONLY":
+            return "선물하기는 개인 이용권에서만 사용할 수 있어요"
+        case "USER_NOT_FOUND":
+            return "로그인 정보를 다시 확인해 주세요"
+        default:
+            return fallback
+        }
+    }
+
+    private static func userFacingFallback(_ error: Error, fallback: String) -> String {
+        guard let apiError = error as? APIError else {
+            let message = error.localizedDescription
+            return message.containsKorean ? message : fallback
+        }
+        switch apiError {
+        case .invalidResponse:
+            return fallback
+        case .server(_, let message, _):
+            return message.containsKorean ? message : fallback
+        }
+    }
+
+    private static func extractServerErrorCode(from error: Error) -> String? {
+        if let apiError = error as? APIError, let code = apiError.serverErrorCode {
+            return code
+        }
+        guard let apiError = error as? APIError,
+              case .server(_, let message, _) = apiError else {
+            return nil
+        }
+        if let data = message.data(using: .utf8) {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            if let decoded = try? decoder.decode(ServerError.self, from: data),
+               let code = decoded.errorCode {
+                return code
+            }
+        }
+        for code in knownBillingErrorCodes where message.contains(code) {
+            return code
+        }
+        return nil
+    }
+
+    private static let knownBillingErrorCodes = [
+        "SAME_PLAN",
+        "NO_ACTIVE_SUBSCRIPTION",
+        "PLAN_NOT_FOUND",
+        "PLAN_INACTIVE",
+        "FREE_NOT_BILLABLE",
+        "GIFT_PERSONAL_ONLY",
+        "USER_NOT_FOUND"
+    ]
 
     // MARK: - Phase 3-C3: 멤버 액션, family alarm, 바우처 redeem, plan downgrade cascade
 
@@ -605,7 +683,7 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "코드를 적용했어요."
             await refreshAll(session: session, force: true)
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.billingErrorMessage(error, fallback: "코드 적용에 실패했어요")
         }
     }
 
@@ -627,6 +705,16 @@ final class SocialFeatureViewModel: ObservableObject {
             statusMessage = "캐릭터 경험치를 반영했어요."
         } catch {
             statusMessage = error.localizedDescription
+        }
+    }
+}
+
+private extension String {
+    var containsKorean: Bool {
+        contains { character in
+            character.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(Int(scalar.value))
+            }
         }
     }
 }

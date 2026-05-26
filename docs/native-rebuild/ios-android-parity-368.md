@@ -254,6 +254,9 @@
   (`커플`, `가족`, or `공유`) instead of always saying "가족".
 - iOS share-code creation now also upserts the returned voucher like Android,
   replacing stale rows with the same id and moving the fresh code to the top.
+- iOS billing/code mutation failures now map backend `error_code` values to
+  the same Korean user-facing messages Android uses for plan, checkout, cancel,
+  and voucher failures.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
