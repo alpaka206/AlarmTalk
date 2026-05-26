@@ -4,7 +4,9 @@ import Foundation
 /// `AuthViewModel` 이 의존하는 API 시그니처. 단위 테스트에서 mock 으로 주입하기 위해
 /// protocol 로 분리한다. `VoiceAlarmAPI` 가 conform.
 /// MainActor 제약을 두지 않아 `VoiceAlarmAPI` (non-isolated) 가 그대로 만족.
-protocol AuthAPIProviding: AnyObject {
+/// `Sendable` — MainActor 격리된 호출자가 async 컨텍스트로 self 인스턴스를 캡처할 때
+/// race 경고를 피하기 위해. 실제 conformer 인 `VoiceAlarmAPI` 는 `@unchecked Sendable`.
+protocol AuthAPIProviding: AnyObject, Sendable {
     func me(token: String) async throws -> AuthUser
     func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
     func deleteAccount(token: String) async throws -> DeleteAccountResponse
@@ -14,7 +16,7 @@ extension VoiceAlarmAPI: AuthAPIProviding {}
 
 /// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
 /// 실제 구현은 `ASAuthorizationAppleIDProvider.getCredentialState(forUserID:)` 를 호출.
-protocol AppleCredentialStateProviding {
+protocol AppleCredentialStateProviding: Sendable {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 }
 

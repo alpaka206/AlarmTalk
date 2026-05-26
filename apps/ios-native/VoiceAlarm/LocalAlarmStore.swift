@@ -652,7 +652,11 @@ final class LocalAlarmStore: ObservableObject {
             throw LocalAlarmValidationError.alarmNotFound
         }
         let copiedTime = Self.copyTargetTime(hour: current.hour, minute: current.minute)
-        try requireUniqueTime(hour: copiedTime.hour, minute: copiedTime.minute)
+        try requireUniqueTime(
+            hour: copiedTime.hour,
+            minute: copiedTime.minute,
+            repeatDaysMask: current.repeatDaysMask
+        )
 
         var copied = current
         copied.id = idFactory()

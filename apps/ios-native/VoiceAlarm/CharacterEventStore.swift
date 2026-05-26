@@ -50,7 +50,9 @@ actor CharacterEventPersistence {
 //
 // API 의존성을 protocol 로 분리해 테스트 시 mock 주입을 자명하게 만든다.
 // 실제 구현은 `VoiceAlarmAPI` 의 extension 으로 conform.
-protocol CharacterXPGranting: AnyObject {
+// `Sendable` — MainActor 격리된 store 가 async 컨텍스트로 api 를 캡처할 때 race
+// 경고를 피하기 위해. 실제 conformer 인 `VoiceAlarmAPI` 는 `@unchecked Sendable`.
+protocol CharacterXPGranting: AnyObject, Sendable {
     func grantCharacterXP(
         event: String,
         clientNonce: String,

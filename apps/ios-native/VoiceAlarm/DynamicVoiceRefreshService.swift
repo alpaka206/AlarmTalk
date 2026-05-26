@@ -1,6 +1,6 @@
 import Foundation
 
-protocol DynamicVoiceTTSGenerating {
+protocol DynamicVoiceTTSGenerating: Sendable {
     func generateTTS(_ requestBody: TtsGenerateRequest, token: String) async throws -> TtsGenerateResponse
 }
 

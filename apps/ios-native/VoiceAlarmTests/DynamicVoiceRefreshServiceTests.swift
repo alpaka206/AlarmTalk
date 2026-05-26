@@ -201,7 +201,7 @@ final class DynamicVoiceRefreshServiceTests: XCTestCase {
     }
 }
 
-private final class FakeDynamicVoiceAPI: DynamicVoiceTTSGenerating {
+private final class FakeDynamicVoiceAPI: DynamicVoiceTTSGenerating, @unchecked Sendable {
     private let response: TtsGenerateResponse
     private(set) var requests: [TtsGenerateRequest] = []
 
