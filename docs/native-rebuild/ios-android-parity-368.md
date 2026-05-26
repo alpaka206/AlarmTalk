@@ -217,6 +217,10 @@
   unavailable.
 - iOS voice creation, speaker separation, billing plan descriptions, and voice
   error messages now use the same `목소리` / `유료 이용권` wording as Android.
+- iOS voice creation and speaker separation now accept profile-training audio
+  and video imports like Android's `audio/*` + `video/*` picker, reject files
+  without an audio track, and keep local audio preparation failures behind
+  Korean user-facing fallback messages.
 - iOS voice clone requests now mirror Android's multipart shape: profile name is
   trimmed, relationship/listener fields are always included, `isDraft=false` is
   sent by default, and ViewModel clone/update paths validate relationship and

@@ -31,13 +31,13 @@ enum AudioCacheError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBase64:
-            return "Generated audio was not valid base64."
+            return "음성 오디오를 해석하지 못했어요."
         case .durationExceedsLimit(let limit):
-            return "Voice audio must be \(limit / 1000) seconds or shorter."
+            return "음성은 최대 \(limit / 1000)초까지 사용할 수 있어요."
         case .appGroupContainerUnavailable:
-            return "App Group container is not available."
+            return "오디오 저장 공간을 사용할 수 없어요."
         case .writeFailed(let error):
-            return "Failed to write audio file: \(error.localizedDescription)"
+            return "오디오 파일을 저장하지 못했어요."
         }
     }
 }

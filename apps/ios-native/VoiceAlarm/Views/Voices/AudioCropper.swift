@@ -11,12 +11,15 @@ enum AudioCropper {
         case sessionUnavailable
         case exportFailed(String)
         case invalidRange
+        case noAudioTrack
 
         var errorDescription: String? {
             switch self {
             case .sessionUnavailable: return "오디오 자르기 세션을 만들 수 없어요."
-            case .exportFailed(let msg): return "오디오 자르기에 실패했어요: \(msg)"
+            case .exportFailed:
+                return "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요."
             case .invalidRange: return "잘라낼 구간이 유효하지 않아요."
+            case .noAudioTrack: return "선택한 파일에서 오디오를 찾지 못했어요. 다른 파일로 시도해 주세요."
             }
         }
     }
@@ -25,6 +28,8 @@ enum AudioCropper {
     static func crop(source: URL, startMs: Int, endMs: Int) async throws -> URL {
         guard endMs > startMs else { throw CropperError.invalidRange }
         let asset = AVURLAsset(url: source)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else { throw CropperError.noAudioTrack }
         let start = CMTime(value: CMTimeValue(startMs), timescale: 1_000)
         let duration = CMTime(value: CMTimeValue(max(1, endMs - startMs)), timescale: 1_000)
         let range = CMTimeRange(start: start, duration: duration)

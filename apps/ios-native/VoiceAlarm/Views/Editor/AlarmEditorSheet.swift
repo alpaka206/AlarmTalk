@@ -401,7 +401,7 @@ struct AlarmEditorSheet: View {
                 guard let source = urls.first else { return }
                 Task { await importLocalAlarmAudio(source) }
             case .failure(let error):
-                localAudioMessage = error.localizedDescription
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
             }
         }
         .onChange(of: voiceStudio.weatherCountry) { _, _ in voiceStudio.preparedAlarm = nil }
@@ -674,7 +674,7 @@ struct AlarmEditorSheet: View {
                     displayName: localAudioUploadDisplayName(for: prepared.url)
                 )
             } catch {
-                localAudioMessage = error.localizedDescription
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
                 return
             }
         } else {
@@ -688,7 +688,7 @@ struct AlarmEditorSheet: View {
             do {
                 cachedLocalAudio = try await cachedLocalAudioForSave(existing: existing)
             } catch {
-                localAudioMessage = error.localizedDescription
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
                 return
             }
         } else {
@@ -764,7 +764,7 @@ struct AlarmEditorSheet: View {
         } catch {
             validationAlert = ValidationAlertContent(
                 title: "저장할 수 없어요",
-                message: error.localizedDescription
+                message: AudioUserFacingError.message(for: error, fallback: "알람 설정을 확인해 주세요.")
             )
             return
         }
@@ -940,7 +940,7 @@ struct AlarmEditorSheet: View {
                 try await localRecorder.start()
                 localAudioMessage = "녹음 중..."
             } catch {
-                localAudioMessage = error.localizedDescription
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "녹음을 시작하지 못했어요.")
             }
         }
     }
@@ -959,7 +959,7 @@ struct AlarmEditorSheet: View {
                 ? "1초 이상 들리는 파일을 선택해 주세요."
                 : "파일을 선택했어요."
         } catch {
-            localAudioMessage = error.localizedDescription
+            localAudioMessage = AudioUserFacingError.message(for: error, fallback: "선택한 알람 음성을 준비하지 못했어요.")
         }
     }
 
@@ -979,7 +979,7 @@ struct AlarmEditorSheet: View {
                     try localPreviewPlayer.play(url: prepared.url)
                 }
             } catch {
-                localAudioMessage = error.localizedDescription
+                localAudioMessage = AudioUserFacingError.message(for: error, fallback: "미리듣기를 재생하지 못했어요.")
             }
         }
     }

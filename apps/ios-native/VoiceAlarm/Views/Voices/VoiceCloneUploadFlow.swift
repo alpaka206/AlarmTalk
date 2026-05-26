@@ -101,7 +101,7 @@ struct VoiceCloneUploadFlow: View {
         .onDisappear { levelTimer?.invalidate() }
         .fileImporter(
             isPresented: $fileImporterPresented,
-            allowedContentTypes: [.audio],
+            allowedContentTypes: VoiceImportContentTypes.profileTraining,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -109,7 +109,7 @@ struct VoiceCloneUploadFlow: View {
                 guard let source = urls.first else { return }
                 Task { await importAudioFile(source) }
             case .failure(let error):
-                localError = error.localizedDescription
+                localError = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
             }
         }
         .onChange(of: sourceMode) { _, newValue in
@@ -261,7 +261,7 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("파일로 목소리 만들기")
+                    Text("파일/영상으로 목소리 만들기")
                         .font(.subheadline.weight(.semibold))
                     Text("1분 이상 2분 이하 구간만 학습에 사용할 수 있어요.")
                         .font(.caption)
@@ -280,8 +280,8 @@ struct VoiceCloneUploadFlow: View {
                 fileCropCard(url: url, durationMs: durationMs)
             } else {
                 EmptyStatePlaceholder(
-                    title: "선택한 음성 파일이 없어요.",
-                    subtitle: "m4a, mp3, wav 등 iOS가 읽을 수 있는 오디오 파일을 선택해 주세요.",
+                    title: "선택한 음성 파일이나 영상이 없어요.",
+                    subtitle: "m4a, mp3, wav, mp4 등 iOS가 읽을 수 있는 파일을 선택해 주세요.",
                     icon: "folder.badge.plus"
                 )
             }
@@ -552,8 +552,9 @@ struct VoiceCloneUploadFlow: View {
                     listenerTitle: trimmedListener
                 )
             } catch {
-                localError = error.localizedDescription
-                voice.statusMessage = error.localizedDescription
+                let message = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")
+                localError = message
+                voice.statusMessage = message
                 return
             }
         }
@@ -599,7 +600,7 @@ struct VoiceCloneUploadFlow: View {
             }
         } catch {
             await MainActor.run {
-                localError = error.localizedDescription
+                localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
             }
         }
     }
@@ -642,6 +643,10 @@ struct VoiceCloneUploadFlow: View {
 
     private func readAudioDurationMs(_ url: URL) async throws -> Int {
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
+            throw AudioCropper.CropperError.noAudioTrack
+        }
         let duration = try await asset.load(.duration)
         let seconds = CMTimeGetSeconds(duration)
         guard seconds.isFinite, seconds > 0 else {

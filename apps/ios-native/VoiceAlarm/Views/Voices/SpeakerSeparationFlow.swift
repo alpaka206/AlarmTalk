@@ -90,7 +90,7 @@ struct SpeakerSeparationFlow: View {
         }
         .fileImporter(
             isPresented: $fileImporterPresented,
-            allowedContentTypes: [.audio],
+            allowedContentTypes: VoiceImportContentTypes.profileTraining,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -98,7 +98,7 @@ struct SpeakerSeparationFlow: View {
                 guard let source = urls.first else { return }
                 Task { await importAudioFile(source) }
             case .failure(let error):
-                localError = error.localizedDescription
+                localError = AudioUserFacingError.message(for: error, fallback: "파일을 선택하지 못했어요.")
             }
         }
         .onChange(of: voice.recorder.latestDurationMs) { _, durationMs in
@@ -142,7 +142,7 @@ struct SpeakerSeparationFlow: View {
 
     private var stepRecord: some View {
         VStack(alignment: .leading, spacing: 10) {
-            stepLabel(num: 1, title: "여러 화자가 섞인 음원 준비")
+            stepLabel(num: 1, title: "여러 화자가 섞인 파일/영상 준비")
             HStack(spacing: 12) {
                 Button {
                     if voice.recorder.isRecording {
@@ -462,7 +462,7 @@ struct SpeakerSeparationFlow: View {
             }
         } catch {
             await MainActor.run {
-                localError = error.localizedDescription
+                localError = AudioUserFacingError.message(for: error, fallback: "선택한 파일을 준비하지 못했어요.")
             }
         }
     }
@@ -478,7 +478,7 @@ struct SpeakerSeparationFlow: View {
             prepared = try await preparedCroppedAudio()
         } catch {
             if localError == nil {
-                localError = error.localizedDescription
+                localError = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")
             }
             return
         }
@@ -657,6 +657,10 @@ struct SpeakerSeparationFlow: View {
 
     private func readAudioDurationMs(_ url: URL) async throws -> Int {
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
+            throw AudioCropper.CropperError.noAudioTrack
+        }
         let duration = try await asset.load(.duration)
         let seconds = CMTimeGetSeconds(duration)
         guard seconds.isFinite, seconds > 0 else {
