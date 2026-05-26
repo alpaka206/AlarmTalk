@@ -9,7 +9,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_SLOT_EXHAUSTED() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_SLOT_EXHAUSTED"),
-            "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
+            "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         )
     }
 
@@ -23,14 +23,21 @@ final class VoiceStudioViewModelTests: XCTestCase {
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_SHORT() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_SHORT"),
-            "60초 이상의 음성을 녹음해 주세요."
+            "목소리를 만들 음성은 1분 이상이어야 해요."
         )
     }
 
     func test_localizedVoiceMessage_VOICE_CLONE_AUDIO_TOO_LONG() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "VOICE_CLONE_AUDIO_TOO_LONG"),
-            "120초 이내로 녹음해 주세요."
+            "목소리를 만들 음성은 2분 이하로 준비해 주세요."
+        )
+    }
+
+    func test_localizedVoiceMessage_INVALID_DURATION() {
+        XCTAssertEqual(
+            VoiceStudioViewModel.localizedVoiceMessage(forCode: "INVALID_DURATION"),
+            "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
         )
     }
 
@@ -55,10 +62,10 @@ final class VoiceStudioViewModelTests: XCTestCase {
         )
     }
 
-    func test_localizedVoiceMessage_unknownCodeIsPassthrough() {
+    func test_localizedVoiceMessage_unknownCodeUsesFallback() {
         XCTAssertEqual(
             VoiceStudioViewModel.localizedVoiceMessage(forCode: "MYSTERY_CODE"),
-            "MYSTERY_CODE"
+            "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
         )
     }
 
@@ -77,7 +84,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
         let err = APIError.server(status: 403, message: raw, errorCode: nil)
         XCTAssertEqual(
             vm.mapVoiceError(err),
-            "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
+            "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         )
     }
 

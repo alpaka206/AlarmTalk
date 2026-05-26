@@ -932,9 +932,9 @@ final class VoiceStudioViewModel: ObservableObject {
 
 // MARK: - errorCode 매핑
 //
-// Android `MainViewModelVoiceActions.kt:136-144` 의 mapping 을 그대로 옮긴다. 본 매퍼는
+// Android `MainViewModelVoiceActions.kt:184-190` 의 mapping 을 그대로 옮긴다. 본 매퍼는
 // `APIError.server` 응답 body 안의 error_code 를 한국어 메시지로 변환한다. 해당 코드가
-// 없는 경우 generic fallback 메시지를 반환한다.
+// 없거나 모르는 코드인 경우 generic fallback 메시지를 반환한다.
 extension VoiceStudioViewModel {
     /// 외부에서도 테스트하기 위해 nonisolated.
     nonisolated func mapVoiceError(_ error: Error) -> String {
@@ -971,13 +971,15 @@ extension VoiceStudioViewModel {
     nonisolated static func localizedVoiceMessage(forCode code: String) -> String {
         switch code {
         case "VOICE_SLOT_EXHAUSTED":
-            return "목소리 슬롯이 가득 찼어요. 기존 목소리를 삭제하거나 플랜을 업그레이드해 주세요."
+            return "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
         case "VOICE_FEATURE_REQUIRES_PAID_PLAN":
             return "유료 이용권에서 사용할 수 있어요."
         case "VOICE_CLONE_AUDIO_TOO_SHORT":
-            return "60초 이상의 음성을 녹음해 주세요."
+            return "목소리를 만들 음성은 1분 이상이어야 해요."
         case "VOICE_CLONE_AUDIO_TOO_LONG":
-            return "120초 이내로 녹음해 주세요."
+            return "목소리를 만들 음성은 2분 이하로 준비해 주세요."
+        case "INVALID_DURATION":
+            return "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
         case "VOICE_LIMIT_REACHED":
             return "이번 달 목소리 생성 한도를 모두 사용했어요."
         case "AUDIO_DURATION_TOO_SHORT":
@@ -991,7 +993,7 @@ extension VoiceStudioViewModel {
         case "AUDIO_AND_NAME_REQUIRED":
             return "음성과 이름을 모두 입력해 주세요."
         default:
-            return code
+            return "목소리를 처리하지 못했어요. 잠시 후 다시 시도해 주세요."
         }
     }
 
@@ -1023,6 +1025,7 @@ extension VoiceStudioViewModel {
         "VOICE_FEATURE_REQUIRES_PAID_PLAN",
         "VOICE_CLONE_AUDIO_TOO_SHORT",
         "VOICE_CLONE_AUDIO_TOO_LONG",
+        "INVALID_DURATION",
         "VOICE_LIMIT_REACHED",
         "AUDIO_DURATION_TOO_SHORT",
         "VOICE_PROFILE_NOT_FOUND",

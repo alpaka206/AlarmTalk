@@ -244,6 +244,9 @@
   unavailable.
 - iOS voice creation, speaker separation, billing plan descriptions, and voice
   error messages now use the same `목소리` / `유료 이용권` wording as Android.
+- iOS voice-clone error-code mapping now mirrors Android's user-facing fallback:
+  known backend codes such as `INVALID_DURATION` use the Android Korean copy,
+  and unknown future codes no longer leak raw API identifiers to the UI.
 - iOS voice creation and speaker separation now accept profile-training audio
   and video imports like Android's `audio/*` + `video/*` picker, reject files
   without an audio track, and keep local audio preparation failures behind
