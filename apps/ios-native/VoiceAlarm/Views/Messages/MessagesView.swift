@@ -59,7 +59,7 @@ struct MessagesView: View {
 
     private func messageRow(_ message: TtsMessage) -> some View {
         let metadata = archiveMetadata(for: message)
-        VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             Text(message.text)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(VoiceAlarmTheme.text)
