@@ -643,9 +643,19 @@ struct AlarmEditorSheet: View {
             return
         }
 
+        let existing = editingAlarm
         if draft.playMode != .alarmOnly,
            voiceSourceMode == .ttsProfile,
-           voiceStudio.preparedAlarm == nil {
+           voiceStudio.preparedAlarm == nil,
+           !AlarmEditDraft.canReuseExistingTtsAudio(
+                existing: existing,
+                selectedProfileID: voiceStudio.selectedProfileID,
+                text: voiceStudio.ttsText,
+                randomPrompt: voiceStudio.randomPrompt,
+                randomContext: voiceStudio.randomContext,
+                language: voiceStudio.ttsLanguage,
+                translateText: voiceStudio.translateText
+           ) {
             voiceStudio.statusMessage = "음성 알람은 먼저 목소리와 깨워줄 말을 생성해야 해요."
             return
         }
@@ -669,7 +679,6 @@ struct AlarmEditorSheet: View {
             familyLocalVoiceSource = nil
         }
 
-        let existing = editingAlarm
         let cachedLocalAudio: CachedLocalAlarmAudio?
         if familyRecipient == nil,
            draft.playMode != .alarmOnly,

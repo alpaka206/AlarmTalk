@@ -282,6 +282,9 @@
 - iOS alarm saving now runs Android-style final validation before local upsert:
   repeat-day masks, alarm/voice volume bounds, cached voice audio, and duplicate
   local alarm times are rejected at the same boundary as Android's repository.
+- iOS alarm editing now mirrors Android's fresh-TTS reuse path: existing voice
+  alarms whose cached audio still matches the selected profile, prompt, category,
+  and language can be saved without forcing a new TTS generation.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

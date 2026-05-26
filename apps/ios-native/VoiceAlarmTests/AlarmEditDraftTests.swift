@@ -206,6 +206,74 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertTrue(errors.contains(.invalidAlarmVolume))
     }
 
+    func testCanReuseExistingTtsAudioForUnchangedManualVoice() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko"
+        )
+
+        XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "  일어나세요  ",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "en",
+            translateText: false
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioRejectsChangedTextOrProfile() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko"
+        )
+
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "좋은 아침",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false
+        ))
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-2",
+            text: "일어나세요",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioForUnchangedRandomPrompt() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "오늘 날씨에 맞춰 일어나세요",
+            voiceCategory: RandomPromptContext.wakeWeather.ttsCategory,
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue
+        )
+
+        XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "",
+            randomPrompt: true,
+            randomContext: RandomPromptContext.wakeWeather.rawValue,
+            language: "ko",
+            translateText: false
+        ))
+    }
+
     func testValidationPassesForValidDraft() {
         let draft = AlarmEditDraft.newDefault()
         XCTAssertEqual(draft.validate(), [])
@@ -262,5 +330,35 @@ final class AlarmEditDraftTests: XCTestCase {
         // 전체 켜기
         let all = RepeatDay.allCases.mask
         XCTAssertEqual(all, 0b1111111)
+    }
+
+    private func makeTtsRecord(
+        voiceProfileId: String,
+        voiceText: String,
+        voiceCategory: String,
+        voiceLanguage: String,
+        voiceRandomPrompt: Bool = false,
+        voiceRandomContext: String? = nil
+    ) -> LocalAlarmRecord {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        return LocalAlarmRecord(
+            label: "음성 알람",
+            hour: 7,
+            minute: 0,
+            fireAtMillis: now + 60_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "voice.m4a",
+            audioCacheKey: "voice-cache",
+            voiceSource: VoiceSource.serverTts.rawValue,
+            voiceProfileId: voiceProfileId,
+            voiceText: voiceText,
+            voiceCategory: voiceCategory,
+            voiceLanguage: voiceLanguage,
+            voiceRandomPrompt: voiceRandomPrompt,
+            voiceRandomContext: voiceRandomContext,
+            ttsMessageId: "message-1",
+            createdAtMillis: now,
+            updatedAtMillis: now
+        )
     }
 }

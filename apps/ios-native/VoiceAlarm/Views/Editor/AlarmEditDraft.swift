@@ -174,6 +174,48 @@ struct AlarmEditDraft: Equatable {
     /// validate 가 빈 배열이면 true.
     var isValid: Bool { validate().isEmpty }
 
+    /// Android `AlarmEditorState.hasFreshTtsAudio` 와 같은 목적.
+    /// 기존 TTS 음원이 현재 선택한 목소리/문구/언어와 맞으면 재생성 없이 저장할 수 있다.
+    static func canReuseExistingTtsAudio(
+        existing record: LocalAlarmRecord?,
+        selectedProfileID: String?,
+        text: String,
+        randomPrompt: Bool,
+        randomContext: String?,
+        language: String,
+        translateText: Bool
+    ) -> Bool {
+        guard let record,
+              record.playModeEnum != .alarmOnly,
+              record.voiceSourceEnum != .localAudio,
+              nonEmpty(record.localAudioUri) != nil,
+              nonEmpty(record.audioCacheKey) != nil,
+              let selectedProfileID = nonEmpty(selectedProfileID),
+              selectedProfileID == nonEmpty(record.voiceProfileId) else {
+            return false
+        }
+
+        let promptContext = RandomPromptContext.normalized(randomContext)
+        let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
+        let activeLanguage = (randomPrompt || translateText)
+            ? language.trimmingCharacters(in: .whitespacesAndNewlines)
+            : "ko"
+        guard activeCategory == (nonEmpty(record.voiceCategory) ?? "custom"),
+              activeLanguage == (nonEmpty(record.voiceLanguage) ?? "ko") else {
+            return false
+        }
+
+        if randomPrompt {
+            return record.voiceRandomPrompt &&
+                RandomPromptContext.normalized(record.voiceRandomContext) == promptContext
+        }
+
+        let expectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !expectedText.isEmpty else { return false }
+        return !record.voiceRandomPrompt &&
+            expectedText == nonEmpty(record.voiceText)
+    }
+
     // MARK: - Convert to record
 
     /// Draft → record 변환. 기존 record 가 있다면 *시트 외부* 에서만 의미 있는
@@ -244,7 +286,7 @@ struct AlarmEditDraft: Equatable {
     }
 }
 
-private func nonEmpty(_ value: String) -> String? {
-    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+private func nonEmpty(_ value: String?) -> String? {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     return trimmed.isEmpty ? nil : trimmed
 }
