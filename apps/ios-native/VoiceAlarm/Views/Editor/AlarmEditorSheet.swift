@@ -1099,8 +1099,6 @@ struct AlarmEditorSheet: View {
 
     private func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
         switch error {
-        case .emptyLabel:
-            return "알람 이름을 입력해 주세요."
         case .invalidHour:
             return "시간(0–23) 값이 올바르지 않아요."
         case .invalidMinute:

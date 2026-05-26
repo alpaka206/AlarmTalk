@@ -408,7 +408,6 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
 // Android `AlarmRepository.kt:471-484` `validateDraft` 의 검증 규칙을 Swift error 로 이식.
 enum LocalAlarmValidationError: LocalizedError, Equatable {
     case alarmNotFound
-    case emptyLabel
     case invalidHour
     case invalidMinute
     case invalidRepeatDaysMask
@@ -425,7 +424,6 @@ enum LocalAlarmValidationError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .alarmNotFound: return "알람을 찾지 못했어요."
-        case .emptyLabel: return "알람 이름을 입력해 주세요."
         case .invalidHour: return "시는 0~23 사이여야 해요."
         case .invalidMinute: return "분은 0~59 사이여야 해요."
         case .invalidRepeatDaysMask: return "반복 요일 비트가 유효하지 않아요."
@@ -543,9 +541,6 @@ final class LocalAlarmStore: ObservableObject {
 
     /// Android `AlarmRepository.validateDraft` 동일.
     static func validateDraft(_ record: LocalAlarmRecord) throws {
-        if record.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw LocalAlarmValidationError.emptyLabel
-        }
         guard (0...23).contains(record.hour) else { throw LocalAlarmValidationError.invalidHour }
         guard (0...59).contains(record.minute) else { throw LocalAlarmValidationError.invalidMinute }
         guard (0...0x7f).contains(record.repeatDaysMask) else {

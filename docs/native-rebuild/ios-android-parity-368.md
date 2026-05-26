@@ -217,6 +217,9 @@
   It records up to 30 seconds, imports audio files, trims long files to the
   alarm-audio limit, previews the selected local audio, caches it through
   `AudioCacheStore`, and saves the alarm with `voiceSource = local_audio`.
+- iOS alarm editing now mirrors Android's empty-name behavior: blank alarm
+  names are accepted and saved with the default `"알람"` label instead of
+  blocking the save.
 - iOS family-alarm creation now mirrors Android's local-voice branch: when a
   recipient alarm uses `녹음/파일`, the prepared local audio is uploaded through
   `/voice/upload` and the alarm is created through `/family/alarms/voice`

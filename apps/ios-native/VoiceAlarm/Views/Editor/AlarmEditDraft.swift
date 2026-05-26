@@ -139,7 +139,6 @@ struct AlarmEditDraft: Equatable {
     // MARK: - Validation
 
     enum ValidationError: Error, Equatable {
-        case emptyLabel
         case invalidHour
         case invalidMinute
         case invalidSnoozeMinutes
@@ -149,9 +148,6 @@ struct AlarmEditDraft: Equatable {
     /// 저장 가능한 상태인지 확인. 모든 오류를 묶어 반환.
     func validate() -> [ValidationError] {
         var errors: [ValidationError] = []
-        if label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            errors.append(.emptyLabel)
-        }
         if !(0...23).contains(hour) {
             errors.append(.invalidHour)
         }

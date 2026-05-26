@@ -165,11 +165,11 @@ final class AlarmEditDraftTests: XCTestCase {
 
     // MARK: - Validation
 
-    func testValidationFlagsEmptyLabel() {
+    func testValidationAllowsEmptyLabelLikeAndroid() {
         var draft = AlarmEditDraft.newDefault()
         draft.label = "   "
-        XCTAssertEqual(draft.validate(), [.emptyLabel])
-        XCTAssertFalse(draft.isValid)
+        XCTAssertEqual(draft.validate(), [])
+        XCTAssertTrue(draft.isValid)
     }
 
     func testValidationFlagsInvalidHourMinute() {
