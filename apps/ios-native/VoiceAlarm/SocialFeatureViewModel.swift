@@ -5,6 +5,13 @@ enum CodeRegistrationDestination: Equatable {
     case sharedPass
 }
 
+struct ReceivedNoteRefreshState: Equatable {
+    var notes: [ReceivedNote]
+    var unavailableAudioNoteIDs: Set<String>
+    var revealedNoteIDs: Set<String>
+    var playingNoteID: String?
+}
+
 @MainActor
 final class SocialFeatureViewModel: ObservableObject {
     @Published var familyGroup: FamilyGroupCurrentResponse?
@@ -119,20 +126,7 @@ final class SocialFeatureViewModel: ObservableObject {
         do {
             let nextReceivedNotes = try await api.listReceivedNotes(token: token)
             guard activeUserID == userID else { return }
-            receivedNotes = nextReceivedNotes
-            let serverUnavailableAudioIDs = Set(receivedNotes.compactMap { note in
-                note.audioUrl != nil && note.audioAvailable == false ? note.id : nil
-            })
-            unavailableAudioNoteIDs = unavailableAudioNoteIDs.intersection(serverUnavailableAudioIDs)
-            let playableAudioIDs = Set(receivedNotes.compactMap { note in
-                note.audioUrl != nil && note.audioAvailable != false ? note.id : nil
-            })
-            if let playingNoteID, !playableAudioIDs.contains(playingNoteID) {
-                notePreviewPlayer.stop()
-                self.playingNoteID = nil
-            }
-            let activeIDs = Set(receivedNotes.map(\.id))
-            revealedNoteIDs = revealedNoteIDs.intersection(activeIDs)
+            applyReceivedNotes(nextReceivedNotes)
         } catch {
             messages.append("메시지: \(error.localizedDescription)")
         }
@@ -160,6 +154,58 @@ final class SocialFeatureViewModel: ObservableObject {
 
         guard activeUserID == userID else { return }
         statusMessage = messages.isEmpty ? "소셜/이용권 정보를 불러왔어요." : messages.joined(separator: "\n")
+    }
+
+    func refreshNotesSilently(session: AuthSession?) async {
+        guard let token = session?.token,
+              let userID = normalizedUserID(session?.user.id) else {
+            return
+        }
+        activeUserID = userID
+        do {
+            let nextReceivedNotes = try await api.listReceivedNotes(token: token)
+            guard activeUserID == userID else { return }
+            applyReceivedNotes(nextReceivedNotes)
+        } catch {
+            // Android `refreshNotesSilently()` keeps background/message refresh failures quiet.
+        }
+    }
+
+    private func applyReceivedNotes(_ notes: [ReceivedNote]) {
+        let state = Self.receivedNoteRefreshState(
+            notes: notes,
+            unavailableAudioNoteIDs: unavailableAudioNoteIDs,
+            revealedNoteIDs: revealedNoteIDs,
+            playingNoteID: playingNoteID
+        )
+        receivedNotes = state.notes
+        unavailableAudioNoteIDs = state.unavailableAudioNoteIDs
+        revealedNoteIDs = state.revealedNoteIDs
+        if playingNoteID != nil, state.playingNoteID == nil {
+            notePreviewPlayer.stop()
+        }
+        playingNoteID = state.playingNoteID
+    }
+
+    static func receivedNoteRefreshState(
+        notes: [ReceivedNote],
+        unavailableAudioNoteIDs: Set<String>,
+        revealedNoteIDs: Set<String>,
+        playingNoteID: String?
+    ) -> ReceivedNoteRefreshState {
+        let serverUnavailableAudioIDs = Set(notes.compactMap { note in
+            note.audioUrl != nil && note.audioAvailable == false ? note.id : nil
+        })
+        let playableAudioIDs = Set(notes.compactMap { note in
+            note.audioUrl != nil && note.audioAvailable != false ? note.id : nil
+        })
+        let activeIDs = Set(notes.map(\.id))
+        return ReceivedNoteRefreshState(
+            notes: notes,
+            unavailableAudioNoteIDs: unavailableAudioNoteIDs.intersection(serverUnavailableAudioIDs),
+            revealedNoteIDs: revealedNoteIDs.intersection(activeIDs),
+            playingNoteID: playingNoteID.flatMap { playableAudioIDs.contains($0) ? $0 : nil }
+        )
     }
 
     private func normalizedUserID(_ userID: String?) -> String? {

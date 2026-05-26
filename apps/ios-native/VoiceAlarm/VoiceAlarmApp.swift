@@ -73,7 +73,8 @@ struct VoiceAlarmApp: App {
                         bootstrap.registerIfNeeded(
                             store: alarmStore,
                             alarmKit: alarmKit,
-                            auth: auth
+                            auth: auth,
+                            socialFeatures: socialFeatures
                         )
 
                         // 로그인되어 있으면 즉시 한 사이클.
@@ -202,7 +203,12 @@ struct VoiceAlarmApp: App {
 private final class Bootstrap {
     private var didRegister = false
 
-    func registerIfNeeded(store: LocalAlarmStore, alarmKit: AlarmKitViewModel, auth: AuthViewModel) {
+    func registerIfNeeded(
+        store: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel,
+        auth: AuthViewModel,
+        socialFeatures: SocialFeatureViewModel
+    ) {
         guard !didRegister else { return }
         didRegister = true
 
@@ -214,6 +220,11 @@ private final class Bootstrap {
         )
         let push = RemoteAlarmPushSync(store: store, auth: auth)
         let dynamicVoice = DynamicVoiceRefreshService(store: store)
-        BackgroundSyncTask.register(pull: pull, push: push, dynamicVoice: dynamicVoice)
+        BackgroundSyncTask.register(
+            pull: pull,
+            push: push,
+            dynamicVoice: dynamicVoice,
+            socialFeatures: socialFeatures
+        )
     }
 }

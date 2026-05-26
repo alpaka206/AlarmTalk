@@ -33,15 +33,18 @@ final class BackgroundSyncTask {
     private let pull: RemoteAlarmPullSync
     private let push: RemoteAlarmPushSync
     private let dynamicVoice: DynamicVoiceRefreshService
+    private let socialFeatures: SocialFeatureViewModel
 
     init(
         pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
-        dynamicVoice: DynamicVoiceRefreshService
+        dynamicVoice: DynamicVoiceRefreshService,
+        socialFeatures: SocialFeatureViewModel
     ) {
         self.pull = pull
         self.push = push
         self.dynamicVoice = dynamicVoice
+        self.socialFeatures = socialFeatures
     }
 
     // MARK: Registration
@@ -51,7 +54,8 @@ final class BackgroundSyncTask {
     static func register(
         pull: RemoteAlarmPullSync,
         push: RemoteAlarmPushSync,
-        dynamicVoice: DynamicVoiceRefreshService
+        dynamicVoice: DynamicVoiceRefreshService,
+        socialFeatures: SocialFeatureViewModel
     ) {
         #if canImport(BackgroundTasks)
         BGTaskScheduler.shared.register(
@@ -63,7 +67,12 @@ final class BackgroundSyncTask {
                 return
             }
             Task { @MainActor in
-                let runner = BackgroundSyncTask(pull: pull, push: push, dynamicVoice: dynamicVoice)
+                let runner = BackgroundSyncTask(
+                    pull: pull,
+                    push: push,
+                    dynamicVoice: dynamicVoice,
+                    socialFeatures: socialFeatures
+                )
                 await runner.runAndSchedule(task: refresh)
             }
         }
@@ -97,8 +106,9 @@ final class BackgroundSyncTask {
         do {
             _ = try await push.runOnce()
             try await pull.runOnce()
-            if let token = KeychainStore.readSession()?.token {
-                _ = await dynamicVoice.refreshDue(token: token)
+            if let session = KeychainStore.readSession() {
+                await socialFeatures.refreshNotesSilently(session: session)
+                _ = await dynamicVoice.refreshDue(token: session.token)
             }
             timeoutTask.cancel()
             task.setTaskCompleted(success: true)
