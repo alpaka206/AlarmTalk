@@ -16,7 +16,7 @@ export async function generateMetadata({
 
   return {
     title: "서비스 이용약관",
-    description: "Naro 음성 알람 서비스의 이용약관입니다.",
+    description: "AlarmTalk 음성 알람 서비스의 이용약관입니다.",
     alternates: { canonical: `/${locale}/terms` },
     robots: { index: true, follow: true },
   };

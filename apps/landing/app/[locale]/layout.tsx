@@ -4,8 +4,9 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 
+// TODO: 새 도메인 확정 후 SITE_URL 갱신 (AlarmTalk 리브랜딩 — Phase 미정)
 const SITE_URL = "https://waker.com";
-const SITE_NAME = "Waker";
+const SITE_NAME = "AlarmTalk";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
