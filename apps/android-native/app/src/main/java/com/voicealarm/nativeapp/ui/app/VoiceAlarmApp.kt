@@ -594,12 +594,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                               }
                           },
                           onEditAlarm = { navController.navigate(AppRoute.alarmEdit(it.id)) },
-                          onDeleteAlarm = viewModel::deleteAlarm,
-                          onRequestPermissionGate = ::requestPermission,
-                          onRequestAllPermissions = ::requestAllMissingPermissions,
-                          profileMenu = if (tab == NativeTab.Alarms) {
-                              {
-                                  ProfileMenu(
+                           onDeleteAlarm = viewModel::deleteAlarm,
+                           onRequestPermissionGate = ::requestPermission,
+                           onRequestAllPermissions = ::requestAllMissingPermissions,
+                           demoVoiceBusy = viewModel.demoVoiceBusy,
+                           onRingSiaDemoVoiceNow = viewModel::ringSiaDemoVoiceNow,
+                           profileMenu = if (tab == NativeTab.Alarms) {
+                               {
+                                   ProfileMenu(
                                       hasSharedPass = hasSharedPass,
                                       onSelectTab = ::navigateToTab,
                                       onOpenSettings = { navController.navigate(AppRoute.Settings) },

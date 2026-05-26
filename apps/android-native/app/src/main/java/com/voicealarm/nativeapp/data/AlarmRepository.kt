@@ -39,6 +39,100 @@ class AlarmRepository(
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
+    suspend fun upsertDebugDemoVoiceAlarm(
+        localAudioUri: String,
+        audioCacheKey: String?,
+        messageId: String?,
+        label: String,
+        voiceText: String,
+        hour: Int,
+        minute: Int,
+    ): AlarmEntity {
+        val now = System.currentTimeMillis()
+        val existing = alarmDao.getById(DEBUG_DEMO_ALARM_ID)
+        val resolvedLabel = label.trim().ifBlank { "알람" }
+        val resolvedVoiceText = voiceText.trim().ifBlank { "알람 시간이에요." }
+        val alarm = (existing ?: AlarmEntity(
+            id = DEBUG_DEMO_ALARM_ID,
+            label = resolvedLabel,
+            hour = hour,
+            minute = minute,
+            fireAtMillis = now,
+            repeatDaysMask = 0,
+            holidayOff = false,
+            snoozeEnabled = true,
+            snoozeMinutes = 5,
+            snoozeRepeatLimit = SnoozeRepeatLimits.THREE,
+            snoozeCount = 0,
+            vibrationPattern = VibrationPatterns.NONE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            defaultAlarmSoundId = DefaultAlarmSounds.BUNDLED_DEFAULT,
+            localAudioUri = localAudioUri,
+            audioCacheKey = audioCacheKey,
+            rawAudioUri = null,
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+            voiceProfileId = null,
+            voiceText = resolvedVoiceText,
+            voiceCategory = "morning",
+            voiceLanguage = "ko",
+            voiceRandomPrompt = false,
+            voiceRandomContext = "wake_weather",
+            voiceWeatherCountry = "대한민국",
+            voiceWeatherCity = "서울",
+            voiceFortuneGender = null,
+            voiceFortuneBirthDate = null,
+            voiceFortuneBirthTime = null,
+            dynamicVoicePreparedForFireAtMillis = null,
+            voiceRepeat = true,
+            voiceVolumePercent = 100,
+            ttsMessageId = messageId,
+            remoteAlarmId = null,
+            lastSyncedAtMillis = null,
+            syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
+            alarmVolumePercent = 0,
+            alarmSoundUri = null,
+            alarmSoundLabel = null,
+            enabled = true,
+            state = AlarmStates.RINGING,
+            createdAtMillis = now,
+            updatedAtMillis = now,
+        )).copy(
+            label = resolvedLabel,
+            hour = hour,
+            minute = minute,
+            fireAtMillis = now,
+            repeatDaysMask = 0,
+            snoozeCount = 0,
+            vibrationPattern = VibrationPatterns.NONE,
+            playMode = AlarmPlayModes.VOICE_ONLY,
+            localAudioUri = localAudioUri,
+            audioCacheKey = audioCacheKey,
+            rawAudioUri = null,
+            voiceSource = VoiceSources.LOCAL_AUDIO,
+            voiceProfileId = null,
+            voiceText = resolvedVoiceText,
+            voiceCategory = "morning",
+            voiceLanguage = "ko",
+            voiceRandomPrompt = false,
+            voiceRandomContext = "wake_weather",
+            voiceWeatherCountry = "대한민국",
+            voiceWeatherCity = "서울",
+            voiceRepeat = true,
+            voiceVolumePercent = 100,
+            ttsMessageId = messageId,
+            syncState = AlarmSyncStates.LOCAL_ONLY,
+            origin = AlarmOrigins.LOCAL_OWNED,
+            alarmVolumePercent = 0,
+            enabled = true,
+            state = AlarmStates.RINGING,
+            updatedAtMillis = now,
+        )
+        alarmDao.upsert(alarm)
+        Log.i(TAG, "Prepared debug demo voice alarm id=${alarm.id} time=%02d:%02d".format(hour, minute))
+        return alarm
+    }
+
     suspend fun createTestAlarm(delayMinutes: Int): AlarmEntity {
         require(delayMinutes in 1..5) { "Test alarm delay must be between 1 and 5 minutes." }
 
@@ -639,8 +733,9 @@ class AlarmRepository(
             else -> AlarmSyncStates.DIRTY
         }
 
-    private companion object {
-        const val DefaultDynamicVoiceContext = "wake_weather"
-        val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
+    companion object {
+        const val DEBUG_DEMO_ALARM_ID = "debug-demo-sia-voice-alarm"
+        private const val DefaultDynamicVoiceContext = "wake_weather"
+        private val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
     }
 }
