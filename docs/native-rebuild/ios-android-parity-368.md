@@ -165,7 +165,8 @@
 - iOS received-message read and voice-play actions now mirror Android's local
   row update behavior: they mark only the affected note as read after the
   backend call instead of running a full social refresh that can replace the
-  action context with a generic refresh status message.
+  action context with a generic refresh status message. Read-mark failures stay
+  quiet like Android and are reconciled by the next note refresh.
 - iOS billing now mirrors Android's voucher share behavior: plan cards with
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even

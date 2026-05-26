@@ -337,7 +337,7 @@ final class SocialFeatureViewModel: ObservableObject {
             let response = try await api.markNoteRead(id: note.id, token: token)
             applyNoteRead(id: note.id, readAt: response.readAt)
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지를 읽음 처리하지 못했어요")
+            // Android keeps mark-read failures quiet; the next note refresh reconciles state.
         }
     }
 
