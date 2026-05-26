@@ -404,7 +404,7 @@ private struct VoiceProfileRow: View {
     }
 
     private var statusPill: some View {
-        let status = profile.status ?? "unknown"
+        let status = normalizedStatus(profile.status)
         let bg: Color
         let fg: Color
         switch status {
@@ -412,6 +412,8 @@ private struct VoiceProfileRow: View {
             bg = VoiceAlarmTheme.accent.opacity(0.18); fg = VoiceAlarmTheme.accent
         case "processing":
             bg = VoiceAlarmTheme.secondary.opacity(0.18); fg = VoiceAlarmTheme.secondary
+        case "deleting":
+            bg = VoiceAlarmTheme.surfaceVariant; fg = VoiceAlarmTheme.textSecondary
         case "failed":
             bg = VoiceAlarmTheme.error.opacity(0.18); fg = VoiceAlarmTheme.error
         default:
@@ -438,9 +440,15 @@ private struct VoiceProfileRow: View {
         switch raw {
         case "ready": return "사용 가능"
         case "processing": return "학습 중"
+        case "deleting": return "삭제 중"
         case "failed": return "실패"
-        default: return raw
+        default: return "상태 확인 중"
         }
+    }
+
+    private func normalizedStatus(_ raw: String?) -> String {
+        let status = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return status.isEmpty ? "ready" : status
     }
 
     private func prettyDate(_ raw: String) -> String {

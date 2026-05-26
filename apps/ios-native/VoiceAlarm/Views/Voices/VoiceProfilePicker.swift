@@ -19,9 +19,25 @@ struct VoiceProfilePicker: View {
             Picker("사용할 목소리", selection: $voiceStudio.selectedProfileID) {
                 Text("선택 안 함").tag(String?.none)
                 ForEach(voiceStudio.profiles) { profile in
-                    Text("\(profile.name) \(profile.status ?? "")").tag(Optional(profile.id))
+                    Text(pickerLabel(for: profile)).tag(Optional(profile.id))
                 }
             }
+        }
+    }
+
+    private func pickerLabel(for profile: VoiceProfile) -> String {
+        let status = profile.status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch status {
+        case "", "ready":
+            return profile.name
+        case "processing":
+            return "\(profile.name) · 학습 중"
+        case "deleting":
+            return "\(profile.name) · 삭제 중"
+        case "failed":
+            return "\(profile.name) · 실패"
+        default:
+            return "\(profile.name) · 상태 확인 중"
         }
     }
 }

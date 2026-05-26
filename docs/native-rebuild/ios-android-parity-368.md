@@ -224,6 +224,10 @@
   wording, and the account card no longer shows the extra email row.
 - iOS voice management copy now consistently uses Android's user-facing
   `목소리` wording, including slot, selection, delete, and plan-gate text.
+- iOS voice profile rows and legacy picker labels now avoid raw backend status
+  values: blank/ready voices read as usable, processing/deleting/failed states
+  use Korean labels, and unknown future values fall back to a safe Korean
+  "상태 확인 중" label.
 - iOS voice sharing availability now mirrors Android's `canShareVoiceWithOthers`
   rule: couple/family access or another shared member is required before share
   toggles can be enabled, and received shared voices are hidden when sharing is
