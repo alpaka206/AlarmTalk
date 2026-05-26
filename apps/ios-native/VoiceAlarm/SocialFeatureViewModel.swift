@@ -330,11 +330,12 @@ final class SocialFeatureViewModel: ObservableObject {
         defer { isBusy = false }
 
         do {
+            let planLabel = Self.shareCodePlanLabel(subscription)
             let voucher = try await api.ensureFamilyShareCode(token: token)
             if !vouchers.contains(where: { $0.id == voucher.id }) {
                 vouchers.insert(voucher, at: 0)
             }
-            statusMessage = "가족 공유 코드를 준비했어요."
+            statusMessage = "\(planLabel) 공유 코드를 준비했어요."
             await refreshAll(session: session, force: true)
         } catch {
             statusMessage = error.localizedDescription
@@ -402,6 +403,24 @@ final class SocialFeatureViewModel: ObservableObject {
         let normalized = mode.trimmingCharacters(in: .whitespacesAndNewlines)
         if normalized == "at_period_end" { return "at_period_end" }
         return "immediate"
+    }
+
+    static func shareCodePlanLabel(_ response: BillingSubscriptionResponse?) -> String {
+        switch response?.plan?.key {
+        case "couple":
+            return "커플"
+        case "family":
+            return "가족"
+        default:
+            switch response?.plan?.planType {
+            case "couple":
+                return "커플"
+            case "family":
+                return "가족"
+            default:
+                return "공유"
+            }
+        }
     }
 
     // MARK: - Phase 3-C3: 멤버 액션, family alarm, 바우처 redeem, plan downgrade cascade

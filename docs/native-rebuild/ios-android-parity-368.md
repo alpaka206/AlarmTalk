@@ -250,6 +250,8 @@
   schedules it with AlarmKit, and removes the duplicate if scheduling fails.
 - iOS subscription cancellation now uses Android/backend's immediate-cancel
   request value (`immediate`) instead of the old UI-only `now` alias.
+- iOS share-code preparation messages now use Android's active-plan label
+  (`커플`, `가족`, or `공유`) instead of always saying "가족".
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
