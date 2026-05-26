@@ -302,7 +302,7 @@ final class AlarmEditDraftTests: XCTestCase {
         XCTAssertEqual(draft.snoozeMinutes, 5)
         XCTAssertEqual(draft.snoozeRepeatLimit, .three)
         XCTAssertEqual(draft.vibrationPattern, .default)
-        XCTAssertEqual(draft.alarmVolumePercent, 80)
+        XCTAssertEqual(draft.alarmVolumePercent, 100)
         XCTAssertTrue(draft.voiceRepeat)
         XCTAssertEqual(draft.voiceVolumePercent, 100)
         XCTAssertEqual(draft.repeatDaysMask, 0)

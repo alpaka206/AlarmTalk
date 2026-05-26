@@ -92,7 +92,7 @@ enum RemoteAlarmMapper {
             lastSyncedAtMillis: nowMillis,
             syncState: AlarmSyncState.synced.rawValue,
             origin: origin.rawValue,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             alarmSoundUri: nil,
             alarmSoundLabel: nil,
             enabled: remote.isActive ?? true,

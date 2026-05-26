@@ -95,7 +95,7 @@ final class RemoteAlarmPullSyncTests: XCTestCase {
         mapped.snoozeRepeatLimit = SnoozeRepeatLimit.three.rawValue
         mapped.voiceVolumePercent = 100
         mapped.holidayOff = false
-        mapped.alarmVolumePercent = 80
+        mapped.alarmVolumePercent = 100
         mapped.alarmSoundUri = nil
         mapped.alarmSoundLabel = nil
         mapped.createdAtMillis = 99999

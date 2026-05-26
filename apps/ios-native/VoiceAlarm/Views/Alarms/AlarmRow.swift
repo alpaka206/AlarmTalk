@@ -113,7 +113,7 @@ private extension LocalAlarmRecord {
             lastSyncedAtMillis: nil,
             syncState: AlarmSyncState.localOnly.rawValue,
             origin: AlarmOrigin.localOwned.rawValue,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             alarmSoundUri: nil,
             alarmSoundLabel: nil,
             enabled: true,

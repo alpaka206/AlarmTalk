@@ -223,7 +223,7 @@ final class AlarmKitViewModel: ObservableObject {
             snoozeEnabled: true,
             snoozeMinutes: 5,
             playMode: AlarmPlayMode.alarmOnly.rawValue,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             createdAtMillis: now,
             updatedAtMillis: now
         )
@@ -249,7 +249,7 @@ final class AlarmKitViewModel: ObservableObject {
             snoozeEnabled: true,
             snoozeMinutes: 5,
             playMode: AlarmPlayMode.alarmOnly.rawValue,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             createdAtMillis: now,
             updatedAtMillis: now
         )

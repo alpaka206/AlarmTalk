@@ -91,7 +91,7 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertNil(decoded.remoteAlarmId)
         XCTAssertEqual(decoded.syncState, AlarmSyncState.localOnly.rawValue)
         XCTAssertEqual(decoded.origin, AlarmOrigin.localOwned.rawValue)
-        XCTAssertEqual(decoded.alarmVolumePercent, 80)
+        XCTAssertEqual(decoded.alarmVolumePercent, 100)
         XCTAssertTrue(decoded.enabled)
         XCTAssertEqual(decoded.state, AlarmRuntimeState.idle.rawValue)
     }

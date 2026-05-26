@@ -140,7 +140,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         lastSyncedAtMillis: Int64? = nil,
         syncState: String = AlarmSyncState.localOnly.rawValue,
         origin: String = AlarmOrigin.localOwned.rawValue,
-        alarmVolumePercent: Int = 80,
+        alarmVolumePercent: Int = 100,
         alarmSoundUri: String? = nil,
         alarmSoundLabel: String? = nil,
         enabled: Bool = true,
@@ -349,7 +349,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         }
 
         self.origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? AlarmOrigin.localOwned.rawValue
-        self.alarmVolumePercent = try c.decodeIfPresent(Int.self, forKey: .alarmVolumePercent) ?? 80
+        self.alarmVolumePercent = try c.decodeIfPresent(Int.self, forKey: .alarmVolumePercent) ?? 100
         self.alarmSoundUri = try c.decodeIfPresent(String.self, forKey: .alarmSoundUri)
         self.alarmSoundLabel = try c.decodeIfPresent(String.self, forKey: .alarmSoundLabel)
         self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true

@@ -48,7 +48,7 @@ struct AlarmEditDraft: Equatable {
             snoozeMinutes: 5,
             snoozeRepeatLimit: .three,
             vibrationPattern: .default,
-            alarmVolumePercent: 80,
+            alarmVolumePercent: 100,
             voiceRandomPrompt: false,
             voiceRandomContext: RandomPromptContext.defaultContext.rawValue,
             voiceWeatherCountry: "",
