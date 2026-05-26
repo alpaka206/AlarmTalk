@@ -227,6 +227,10 @@
   BGAppRefresh sync all scan due repeating random voice alarms, generate fresh
   TTS, cache it locally, update the alarm audio fields, and mark the current
   fire time as prepared.
+- iOS TTS audio cache keys now mirror Android's `AlarmAudioStore.ttsCacheKey`
+  rule: server-provided `cacheKey` wins, otherwise the key is derived from
+  `tts-v2|profileId|normalizedText|category|language`. Alarm TTS, shared-voice
+  preview, and dynamic voice refresh all use this Android-compatible key.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

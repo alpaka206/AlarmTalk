@@ -410,7 +410,14 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
-            let cached = try AudioCacheStore.cache(tts: response)
+            let cacheKey = AudioCacheStore.ttsCacheKey(
+                profileId: profileId,
+                text: response.text,
+                category: "custom",
+                language: "ko",
+                serverCacheKey: response.cacheKey
+            )
+            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
             try previewPlayer.play(url: AudioCacheStore.url(for: cached.fileName))
             statusMessage = "미리듣기를 재생하고 있어요."
         } catch {
@@ -575,11 +582,12 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             let shouldTranslate = !randomPrompt && translateText
             let activeLanguage = randomPrompt || shouldTranslate ? ttsLanguage : "ko"
+            let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
                     text: randomPrompt ? "" : ttsText,
-                    category: randomPrompt ? promptContext.ttsCategory : "custom",
+                    category: activeCategory,
                     language: activeLanguage,
                     translate: shouldTranslate,
                     random: randomPrompt,
@@ -596,7 +604,14 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
-            let cached = try AudioCacheStore.cache(tts: response)
+            let cacheKey = AudioCacheStore.ttsCacheKey(
+                profileId: profileID,
+                text: response.text,
+                category: activeCategory,
+                language: activeLanguage,
+                serverCacheKey: response.cacheKey
+            )
+            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
             let prepared = PreparedVoiceAlarm(
                 messageID: response.messageId,
                 voiceProfileID: response.voiceProfileId,

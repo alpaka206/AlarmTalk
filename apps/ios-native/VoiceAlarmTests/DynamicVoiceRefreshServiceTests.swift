@@ -60,12 +60,12 @@ final class DynamicVoiceRefreshServiceTests: XCTestCase {
         let service = DynamicVoiceRefreshService(
             api: api,
             store: store,
-            cacheTTS: { response in
+            cacheTTS: { response, cacheKey in
                 CachedVoiceAudio(
                     url: URL(fileURLWithPath: "/tmp/\(response.messageId).mp3"),
                     fileName: "\(response.messageId).mp3",
                     format: "mp3",
-                    cacheKey: response.cacheKey ?? "fallback-key"
+                    cacheKey: cacheKey
                 )
             }
         )
@@ -94,6 +94,52 @@ final class DynamicVoiceRefreshServiceTests: XCTestCase {
         XCTAssertEqual(updated?.voiceText, "오늘도 좋은 하루예요.")
         XCTAssertEqual(updated?.ttsMessageId, "message-new")
         XCTAssertEqual(updated?.dynamicVoicePreparedForFireAtMillis, fireAt)
+    }
+
+    func test_refreshDue_usesAndroidTtsCacheKeyFallback() async {
+        let store = makeStore()
+        let fireAt = millis(2026, 5, 20, 8, 0)
+        let alarm = dynamicAlarm(fireAtMillis: fireAt)
+        store.upsert(alarm)
+
+        let api = FakeDynamicVoiceAPI(response: TtsGenerateResponse(
+            messageId: "message-fallback",
+            audioBase64: "AA==",
+            audioFormat: "mp3",
+            audioUrl: nil,
+            audioObjectKey: "tts/message-fallback.mp3",
+            text: "점심 맛있게 드세요.",
+            voiceProfileId: "voice-1",
+            cacheKey: nil,
+            cacheHit: false,
+            provider: "fake",
+            randomContext: RandomPromptContext.meal.rawValue
+        ))
+        let expectedCacheKey = AudioCacheStore.ttsCacheKey(
+            profileId: "voice-1",
+            text: "점심 맛있게 드세요.",
+            category: "lunch",
+            language: "ko"
+        )
+        let service = DynamicVoiceRefreshService(
+            api: api,
+            store: store,
+            cacheTTS: { response, cacheKey in
+                return CachedVoiceAudio(
+                    url: URL(fileURLWithPath: "/tmp/\(response.messageId).mp3"),
+                    fileName: "\(response.messageId).mp3",
+                    format: "mp3",
+                    cacheKey: cacheKey
+                )
+            }
+        )
+
+        _ = await service.refreshDue(
+            token: "token",
+            nowMillis: millis(2026, 5, 19, 22, 0)
+        )
+
+        XCTAssertEqual(store.record(id: alarm.id)?.audioCacheKey, expectedCacheKey)
     }
 
     private func dynamicAlarm(

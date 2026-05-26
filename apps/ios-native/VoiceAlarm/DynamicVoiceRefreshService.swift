@@ -17,14 +17,14 @@ final class DynamicVoiceRefreshService {
     private let api: DynamicVoiceTTSGenerating
     private let store: LocalAlarmStore
     private let audioCache: AudioCacheStore
-    private let cacheTTS: (TtsGenerateResponse) throws -> CachedVoiceAudio
+    private let cacheTTS: @MainActor (TtsGenerateResponse, String) throws -> CachedVoiceAudio
 
     init(
         api: DynamicVoiceTTSGenerating = VoiceAlarmAPI.shared,
         store: LocalAlarmStore,
         audioCache: AudioCacheStore = .shared,
-        cacheTTS: @escaping (TtsGenerateResponse) throws -> CachedVoiceAudio = { response in
-            try AudioCacheStore.cache(tts: response)
+        cacheTTS: @escaping @MainActor (TtsGenerateResponse, String) throws -> CachedVoiceAudio = { response, cacheKey in
+            try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
         }
     ) {
         self.api = api
@@ -50,12 +50,14 @@ final class DynamicVoiceRefreshService {
             }
 
             do {
+                let requestCategory = alarm.voiceCategory ?? Self.ttsCategory(for: alarm.voiceRandomContext)
+                let requestLanguage = alarm.voiceLanguage ?? "ko"
                 let response = try await api.generateTTS(
                     TtsGenerateRequest(
                         voiceProfileId: profileID,
                         text: "",
-                        category: alarm.voiceCategory ?? Self.ttsCategory(for: alarm.voiceRandomContext),
-                        language: alarm.voiceLanguage ?? "ko",
+                        category: requestCategory,
+                        language: requestLanguage,
                         translate: false,
                         random: true,
                         randomContext: alarm.voiceRandomContext ?? RandomPromptContext.defaultContext.rawValue,
@@ -69,7 +71,14 @@ final class DynamicVoiceRefreshService {
                     ),
                     token: token
                 )
-                let cached = try cacheTTS(response)
+                let cacheKey = AudioCacheStore.ttsCacheKey(
+                    profileId: profileID,
+                    text: response.text,
+                    category: alarm.voiceCategory ?? Self.ttsCategory(for: response.randomContext),
+                    language: requestLanguage,
+                    serverCacheKey: response.cacheKey
+                )
+                let cached = try cacheTTS(response, cacheKey)
                 let oldCacheKey = alarm.audioCacheKey
                 store.updateDynamicVoiceAudio(
                     id: alarm.id,

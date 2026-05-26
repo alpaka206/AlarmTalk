@@ -65,6 +65,10 @@ final class AudioCacheStore {
     /// 새 cacheKey 규칙을 사용하지만, 파일명에는 messageId 도 살려 두기 위해 audio 파일은
     /// 기존 위치(`VoiceAlarmAudio/<messageId>.<ext>`)에도 사본을 유지한다.
     static func cache(tts: TtsGenerateResponse) throws -> CachedVoiceAudio {
+        return try cache(tts: tts, cacheKey: nil)
+    }
+
+    static func cache(tts: TtsGenerateResponse, cacheKey overrideCacheKey: String?) throws -> CachedVoiceAudio {
         guard let data = Data(base64Encoded: tts.audioBase64) else {
             throw AudioCacheError.invalidBase64
         }
@@ -74,7 +78,7 @@ final class AudioCacheStore {
         try data.write(to: url, options: [.atomic])
 
         // 새 cacheKey 캐시에도 동시 저장 (위젯 공유 캐시 + cascade cleanup 대상).
-        let cacheKey = tts.cacheKey ?? Self.computeCacheKey(data)
+        let cacheKey = nonBlank(overrideCacheKey) ?? nonBlank(tts.cacheKey) ?? Self.computeCacheKey(data)
         _ = try? Self.shared.cacheBytes(
             data,
             cacheKey: cacheKey,
@@ -111,6 +115,25 @@ final class AudioCacheStore {
     static func computeCacheKey(text: String) -> String {
         let bytes = Data(text.utf8)
         return computeCacheKey(bytes)
+    }
+
+    /// Android `AlarmAudioStore.ttsCacheKey(...)` equivalent.
+    static func ttsCacheKey(
+        profileId: String,
+        text: String,
+        category: String,
+        language: String,
+        serverCacheKey: String? = nil
+    ) -> String {
+        if let serverKey = nonBlank(serverCacheKey) {
+            return serverKey
+        }
+        let normalizedText = text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return computeCacheKey(text: ["tts-v2", profileId, normalizedText, category, language].joined(separator: "|"))
     }
 
     /// bytes 를 cacheKey 기반 위치에 기록하고 메타 사이드카를 생성한다.
@@ -270,6 +293,14 @@ final class AudioCacheStore {
         let s = String(sanitized)
         if s.count <= 96 { return s }
         return String(s.prefix(96))
+    }
+
+    private static func nonBlank(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     /// "abc.meta.json" → ("abc", "meta.json"), "abc.mp3" → ("abc", "mp3").
