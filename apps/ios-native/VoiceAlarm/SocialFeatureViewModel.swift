@@ -214,6 +214,18 @@ final class SocialFeatureViewModel: ObservableObject {
         playingNoteID = state.playingNoteID
     }
 
+    private func applyNoteRead(id: String, readAt: String?) {
+        let fallbackReadAt = ISO8601DateFormatter().string(from: Date())
+        let normalizedReadAt = readAt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let nextReadAt = normalizedReadAt.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackReadAt
+        receivedNotes = receivedNotes.map { note in
+            guard note.id == id, note.readAt == nil else { return note }
+            var next = note
+            next.readAt = nextReadAt
+            return next
+        }
+    }
+
     static func receivedNoteRefreshState(
         notes: [ReceivedNote],
         unavailableAudioNoteIDs: Set<String>,
@@ -322,8 +334,8 @@ final class SocialFeatureViewModel: ObservableObject {
     func markRead(_ note: ReceivedNote, session: AuthSession?) async {
         guard let token = session?.token else { return }
         do {
-            _ = try await api.markNoteRead(id: note.id, token: token)
-            await refreshAll(session: session, force: true)
+            let response = try await api.markNoteRead(id: note.id, token: token)
+            applyNoteRead(id: note.id, readAt: response.readAt)
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지를 읽음 처리하지 못했어요")
         }
@@ -361,8 +373,8 @@ final class SocialFeatureViewModel: ObservableObject {
             try notePreviewPlayer.play(url: url)
             playingNoteID = note.id
             revealedNoteIDs.insert(note.id)
-            _ = try? await api.markNoteRead(id: note.id, token: token)
-            await refreshAll(session: session, force: true)
+            let response = try? await api.markNoteRead(id: note.id, token: token)
+            applyNoteRead(id: note.id, readAt: response?.readAt)
         } catch {
             if isMissingNoteAudio(error) {
                 unavailableAudioNoteIDs.insert(note.id)

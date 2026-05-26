@@ -162,6 +162,10 @@
   messages after the follow-up refresh, matching Android's snackbar behavior
   where the action result remains visible instead of being replaced by a generic
   refresh message.
+- iOS received-message read and voice-play actions now mirror Android's local
+  row update behavior: they mark only the affected note as read after the
+  backend call instead of running a full social refresh that can replace the
+  action context with a generic refresh status message.
 - iOS billing now mirrors Android's voucher share behavior: plan cards with
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even
