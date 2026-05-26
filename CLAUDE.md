@@ -1,6 +1,6 @@
 # Project Context for Claude Code
 
-This repository is being rewritten from a React Native/Expo prototype into a native voice-alarm app called **Naro**.
+This repository is being rewritten from a React Native/Expo prototype into a native voice-alarm app called **AlarmTalk**.
 
 Claude and other coding agents must read `AGENTS.md` first, then:
 

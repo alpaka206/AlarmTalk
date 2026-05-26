@@ -4,7 +4,9 @@
 
 ## 1. 공개 URL
 
+<!-- TODO(rebrand): waker.com 도메인은 실제 도메인 확정 후 교체 -->
 - Privacy Policy URL: `https://waker.com/ko/privacy/` 또는 최종 도메인
+<!-- TODO(rebrand): waker.com 도메인은 실제 도메인 확정 후 교체 -->
 - Terms URL: `https://waker.com/ko/terms/` 또는 최종 도메인
 - Support URL: 출시 전 확정 필수
 - Account deletion URL 또는 앱 내 경로: 앱 설정 > 계정 > 계정 삭제

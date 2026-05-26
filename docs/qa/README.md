@@ -1,6 +1,6 @@
 # QA
 
-Test plan, test cases, test scenarios, bug-report template, and QA report shape for Naro.
+Test plan, test cases, test scenarios, bug-report template, and QA report shape for AlarmTalk.
 
 ## 1. Goal
 

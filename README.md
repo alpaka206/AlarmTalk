@@ -1,12 +1,12 @@
-# Naro
+# AlarmTalk
 
 > [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-**Naro** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, an uploaded clip, a voice shared by family or a partner, or a voice cloned by AI.
+**AlarmTalk** is an OS-native voice alarm app. At the scheduled time, it rings a real alarm using a voice the user picked — a recorded one, an uploaded clip, a voice shared by family or a partner, or a voice cloned by AI.
 
 ## Why a "real" alarm
 
-Most voice-alarm apps depend on push notifications or server cron, which can silently fail on flight mode, Doze, or weak networks. Naro rings from the OS-native alarm scheduler and plays only locally cached audio, so the ring path never needs the network.
+Most voice-alarm apps depend on push notifications or server cron, which can silently fail on flight mode, Doze, or weak networks. AlarmTalk rings from the OS-native alarm scheduler and plays only locally cached audio, so the ring path never needs the network.
 
 ## Status
 

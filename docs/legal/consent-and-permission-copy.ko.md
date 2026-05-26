@@ -7,7 +7,7 @@
 제목: 서비스 이용을 시작하기 전에 확인해 주세요
 
 본문:
-Naro는 알람 설정, 계정 동기화, 음성 알람 생성, 가족/파트너 공유 기능을 제공하기 위해 필요한 정보를 처리합니다. 자세한 내용은 개인정보 처리방침과 이용약관에서 확인할 수 있습니다.
+알람톡은 알람 설정, 계정 동기화, 음성 알람 생성, 가족/파트너 공유 기능을 제공하기 위해 필요한 정보를 처리합니다. 자세한 내용은 개인정보 처리방침과 이용약관에서 확인할 수 있습니다.
 
 체크박스:
 - [필수] 만 14세 이상이며, 이용약관에 동의합니다.
@@ -22,13 +22,13 @@ Naro는 알람 설정, 계정 동기화, 음성 알람 생성, 가족/파트너 
 제목: 알람 음성을 만들기 전에 동의가 필요해요
 
 본문:
-Naro는 사용자가 녹음하거나 업로드한 음성을 분석하여 알람용 음성 프로필을 만들고, 선택한 문구를 해당 목소리로 생성합니다. 음성에는 개인의 목소리 특성이 포함될 수 있어 민감도가 높은 정보로 보호합니다.
+알람톡은 사용자가 녹음하거나 업로드한 음성을 분석하여 알람용 음성 프로필을 만들고, 선택한 문구를 해당 목소리로 생성합니다. 음성에는 개인의 목소리 특성이 포함될 수 있어 민감도가 높은 정보로 보호합니다.
 
 필수 고지:
 - 내 목소리 또는 동의를 받은 사람의 목소리만 등록할 수 있습니다.
 - 음성 파일은 음성 프로필 생성, TTS 생성, 알람 재생, 로컬 캐싱에 사용됩니다.
 - 음성 생성 과정에서 Cloudflare, Turso/libSQL, ElevenLabs, Perso.ai 등 외부 처리자가 데이터를 처리할 수 있습니다.
-- Naro는 음성을 공개 검색, 광고 타게팅, 데이터 판매, 범용 AI 학습 목적으로 사용하지 않습니다.
+- 알람톡은 음성을 공개 검색, 광고 타게팅, 데이터 판매, 범용 AI 학습 목적으로 사용하지 않습니다.
 - 음성 프로필은 언제든지 삭제할 수 있습니다.
 
 체크박스:
@@ -45,7 +45,7 @@ Naro는 사용자가 녹음하거나 업로드한 음성을 분석하여 알람�
 제목: 마이크 접근이 필요해요
 
 본문:
-직접 녹음으로 알람 음성을 만들 때만 마이크를 사용합니다. Naro는 사용자가 녹음 버튼을 누른 동안에만 음성을 녹음하며, 백그라운드에서 몰래 녹음하지 않습니다.
+직접 녹음으로 알람 음성을 만들 때만 마이크를 사용합니다. 알람톡은 사용자가 녹음 버튼을 누른 동안에만 음성을 녹음하며, 백그라운드에서 몰래 녹음하지 않습니다.
 
 버튼:
 - 마이크 권한 허용하기
@@ -56,7 +56,7 @@ Naro는 사용자가 녹음하거나 업로드한 음성을 분석하여 알람�
 제목: 오디오 파일을 선택할 수 있게 허용해 주세요
 
 본문:
-사용자가 선택한 오디오 파일을 알람 음성으로 등록하기 위해 파일 선택 권한이 필요합니다. Naro는 사용자가 직접 선택한 파일만 읽습니다.
+사용자가 선택한 오디오 파일을 알람 음성으로 등록하기 위해 파일 선택 권한이 필요합니다. 알람톡은 사용자가 직접 선택한 파일만 읽습니다.
 
 버튼:
 - 파일 선택하기
@@ -67,7 +67,7 @@ Naro는 사용자가 녹음하거나 업로드한 음성을 분석하여 알람�
 제목: 정해진 시간에 울리려면 정확한 알람 권한이 필요해요
 
 본문:
-Naro는 푸시 알림이 아니라 Android의 OS 알람 기능으로 알람을 예약합니다. 정확한 알람 권한을 허용해야 화면이 꺼져 있거나 절전 상태여도 예약한 시간에 더 안정적으로 울릴 수 있습니다.
+알람톡은 푸시 알림이 아니라 Android의 OS 알람 기능으로 알람을 예약합니다. 정확한 알람 권한을 허용해야 화면이 꺼져 있거나 절전 상태여도 예약한 시간에 더 안정적으로 울릴 수 있습니다.
 
 버튼:
 - 설정으로 이동
@@ -158,7 +158,7 @@ Naro는 푸시 알림이 아니라 Android의 OS 알람 기능으로 알람을 �
 
 ## 13. 마케팅 수신 동의
 
-제목: Naro 소식을 받아볼까요?
+제목: 알람톡 소식을 받아볼까요?
 
 본문:
 새 기능, 이벤트, 이용권 혜택 안내를 이메일 또는 앱 알림으로 받을 수 있습니다. 동의하지 않아도 서비스 이용에는 영향이 없으며, 언제든지 설정에서 철회할 수 있습니다.
@@ -168,4 +168,4 @@ Naro는 푸시 알림이 아니라 Android의 OS 알람 기능으로 알람을 �
 
 ## 14. 스토어 심사 노트용 설명
 
-Naro is a native alarm app. The alarm ring path uses Android AlarmManager and local audio files. Push notifications, server cron, or live network access are not required at ring time. Voice recording/upload and AI voice generation are initiated only by explicit user action. Voice data is used for alarm voice profiles, TTS generation, local caching, and family/partner sharing inside the user's group. External public sharing or download is not provided.
+AlarmTalk is a native alarm app. The alarm ring path uses Android AlarmManager and local audio files. Push notifications, server cron, or live network access are not required at ring time. Voice recording/upload and AI voice generation are initiated only by explicit user action. Voice data is used for alarm voice profiles, TTS generation, local caching, and family/partner sharing inside the user's group. External public sharing or download is not provided.
