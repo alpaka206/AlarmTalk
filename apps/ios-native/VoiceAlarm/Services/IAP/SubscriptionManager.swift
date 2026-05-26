@@ -29,6 +29,7 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedProductIDs: Set<String> = []
     @Published private(set) var currentTier: PlanTier = .free
+    @Published private(set) var hasLoadedEntitlements: Bool = false
     @Published private(set) var isLoadingProducts: Bool = false
     @Published private(set) var isPurchasing: Bool = false
     @Published private(set) var lastError: String? = nil
@@ -143,6 +144,7 @@ final class SubscriptionManager: ObservableObject {
         }
         self.purchasedProductIDs = newSet
         self.currentTier = maxTier
+        self.hasLoadedEntitlements = true
     }
 
     /// 결제 동기화 재시도 — 백엔드가 일시적으로 다운돼 sync 가 실패한 직후,

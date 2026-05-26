@@ -101,6 +101,9 @@ struct VoiceAlarmApp: App {
                         voiceStudio.clearUserScopedRemoteState()
                         socialFeatures.restoreAccessSnapshot(session: auth.session)
                     }
+                    .task(id: freePlanVoiceLockKey) {
+                        await applyFreePlanVoiceLockIfNeeded()
+                    }
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore)
@@ -153,6 +156,40 @@ struct VoiceAlarmApp: App {
         guard let token = auth.session?.token else { return }
         let refresh = DynamicVoiceRefreshService(store: alarmStore)
         _ = await refresh.refreshDue(token: token)
+    }
+
+    private var freePlanVoiceLockKey: String {
+        [
+            auth.session?.user.id ?? "anonymous",
+            alarmStore.hasLoadedFromDisk ? "loaded" : "loading",
+            socialFeatures.subscription?.subscription?.id ?? "no-subscription-id",
+            socialFeatures.subscription?.subscription?.status ?? "no-subscription-status",
+            socialFeatures.subscription?.plan?.key ?? "no-plan-key",
+            socialFeatures.subscription?.plan?.planType ?? "no-plan-type",
+            subscriptions.currentTier.rawValue,
+            subscriptions.hasLoadedEntitlements ? "entitlements-loaded" : "entitlements-loading"
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func applyFreePlanVoiceLockIfNeeded() async {
+        guard auth.session != nil,
+              alarmStore.hasLoadedFromDisk,
+              subscriptions.hasLoadedEntitlements,
+              socialFeatures.subscription != nil else {
+            return
+        }
+        let currentPlan = PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
+        guard !currentPlan.meetsOrExceeds(.personal) else { return }
+        _ = await socialFeatures.applyFreePlanVoiceLock(
+            alarmStore: alarmStore,
+            alarmKit: alarmKit,
+            voiceStudio: voiceStudio
+        )
     }
 }
 

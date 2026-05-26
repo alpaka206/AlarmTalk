@@ -93,6 +93,15 @@ final class VoiceStudioViewModel: ObservableObject {
         preparedAlarm = nil
     }
 
+    func clearPaidVoiceState() {
+        previewPlayer.stop()
+        profiles = []
+        familyVoices = []
+        messages = []
+        selectedProfileID = nil
+        preparedAlarm = nil
+    }
+
     private var selectedListenerTitle: String? {
         if let listener = selectedProfile?.listenerTitle, let trimmed = nonEmpty(listener) {
             return trimmed

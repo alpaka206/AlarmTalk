@@ -524,16 +524,36 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    /// Free 플랜 다운그레이드 시 paid 자산들을 잠그는 cascade 트리거.
-    ///
-    /// Android `MainViewModelGrowthBillingActions.applyFreePlanVoiceLock` 와 동등.
-    /// 백엔드가 한 endpoint 로 처리 (소유한 voice profile / family share 등을
-    /// free 사용자가 사용 불가 상태로 마킹) 한다. 현재 단계에서는 별도 dedicated
-    /// endpoint 없이 `redeemVoucher` 또는 `changePlan` 흐름이 호출하므로, 여기서
-    /// 는 SwiftUI 클라이언트가 다운그레이드 직후 `refreshAll` 만 다시 돌려 최신
-    /// 상태로 화면을 동기화한다.
-    func applyFreePlanVoiceLock(session: AuthSession?) async {
-        await refreshAll(session: session, force: true)
+    /// Android `MainViewModelGrowthBillingActions.applyFreePlanVoiceLock` equivalent.
+    /// When paid voice access is gone, remove local voice alarms and clear paid voice state.
+    @discardableResult
+    func applyFreePlanVoiceLock(
+        alarmStore: LocalAlarmStore,
+        alarmKit: AlarmKitViewModel,
+        voiceStudio: VoiceStudioViewModel
+    ) async -> Int {
+        let targets = alarmStore.paidVoiceAlarms()
+        for record in targets {
+            await alarmKit.cancel(record: record, store: alarmStore)
+        }
+
+        voiceStudio.clearPaidVoiceState()
+        clearPaidVoiceState(deletedAlarmCount: targets.count)
+        return targets.count
+    }
+
+    func clearPaidVoiceState(deletedAlarmCount: Int = 0) {
+        notePreviewPlayer.stop()
+        familyVoices = []
+        receivedNotes = []
+        selectedReceiverID = nil
+        loadingNoteID = nil
+        playingNoteID = nil
+        unavailableAudioNoteIDs = []
+        revealedNoteIDs = []
+        if deletedAlarmCount > 0 {
+            statusMessage = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
+        }
     }
 
     /// 일반 코드(=plan voucher) 사용. Android `BillingApi.redeem`.

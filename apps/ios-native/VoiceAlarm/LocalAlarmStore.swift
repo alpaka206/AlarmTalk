@@ -66,6 +66,14 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         ttsMessageId != nil || rawAudioUri != nil || localAudioUri != nil
     }
 
+    var usesPaidVoiceFeatures: Bool {
+        playModeEnum != .alarmOnly ||
+            !(localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) ||
+            !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
     var canSnooze: Bool {
         snoozeEnabled &&
             (snoozeRepeatLimit == SnoozeRepeatLimit.unlimited.rawValue ||
@@ -501,6 +509,10 @@ final class LocalAlarmStore: ObservableObject {
 
     func recordsBy(origin: AlarmOrigin) -> [LocalAlarmRecord] {
         alarms.filter { $0.originEnum == origin }
+    }
+
+    func paidVoiceAlarms() -> [LocalAlarmRecord] {
+        alarms.filter(\.usesPaidVoiceFeatures)
     }
 
     func countByAudioCacheKey(_ key: String) -> Int {
