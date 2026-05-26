@@ -29,10 +29,11 @@ struct BillingPanel: View {
     @State private var voucherShareTargets: [VoucherItem] = []
 
     private var currentTier: PlanTier {
-        // StoreKit currentEntitlements 가 권위. 백엔드 plan key 는 fallback.
-        let storeTier = subscriptions.currentTier
-        if storeTier != .free { return storeTier }
-        return PlanTier.from(socialFeatures.subscription?.plan?.key)
+        PlanTier.bestKnown(
+            serverSubscription: socialFeatures.subscription,
+            storeTier: subscriptions.currentTier,
+            userPlan: auth.session?.user.plan
+        )
     }
 
     private var isSharedMember: Bool {

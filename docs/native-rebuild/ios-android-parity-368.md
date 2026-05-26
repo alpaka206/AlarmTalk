@@ -242,6 +242,9 @@
   once StoreKit entitlements have loaded and the best-known plan is confirmed
   below personal, local voice alarms are canceled/deleted and paid
   voice/message state is cleared.
+- iOS billing-panel current-plan display now uses the same best-known plan
+  resolver as the rest of the app, so inactive server subscription rows do not
+  make the pass UI look paid.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
