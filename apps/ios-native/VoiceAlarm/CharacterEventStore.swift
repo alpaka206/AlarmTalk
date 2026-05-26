@@ -247,6 +247,7 @@ final class CharacterEventStore: ObservableObject {
     /// 알고리즘 (구분자만 `-` 로 통일 — AlarmAppContext 가 `record.id-stop-...` 형식을
     /// 쓰는 것과 시각적으로 호환). 멱등성 자체는 store 가 `events.contains(where:)`
     /// 로 보장하므로 구분자 차이는 무관.
+    /// Android parity: returns `event:alarmId:localDate`.
     static func buildClientNonce(
         alarmID: String,
         eventType: CharacterEventType,
@@ -263,7 +264,7 @@ final class CharacterEventStore: ObservableObject {
             comps.month ?? 1,
             comps.day ?? 1
         )
-        return "\(alarmID)-\(eventType.rawValue)-\(local)"
+        return "\(eventType.rawValue):\(alarmID):\(local)"
     }
 
     private func formatLocalDate(occurredAtMillis: Int64) -> String {

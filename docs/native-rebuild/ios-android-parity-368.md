@@ -124,6 +124,9 @@
   uses `LV.n 단계명`, stat tiles use `성실함/꾸준함/건강/애정도`, recent records
   show time plus XP only, and the iOS-only manual XP button/achievement/extra XP
   rows are no longer shown in the growth panel.
+- iOS alarm completion/snooze XP events now use Android's
+  `event:alarmId:localDate` client nonce format, so server idempotency and
+  same-day duplicate handling match Android.
 - Member management now exposes the family-alarm permission and quiet-window
   editor used by Android's shared-plan screen. The shared-pass screen is now
   routed from home/settings when a group exists, keeps code registration as the
