@@ -70,10 +70,7 @@ struct AlarmsListView: View {
                             Task { await copyAlarm(alarm) }
                         },
                         onDelete: {
-                            Task {
-                                await remoteSync.deleteRemote(record: alarm, session: auth.session)
-                                await alarmKit.cancel(record: alarm, store: store)
-                            }
+                            Task { await deleteAlarm(alarm) }
                         }
                     )
                 }
@@ -111,16 +108,19 @@ struct AlarmsListView: View {
             let scheduled = await alarmKit.schedule(record: updated, store: store)
             if !scheduled {
                 store.markFailed(id: updated.id)
+                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
                 return
             }
             if store.record(id: updated.id)?.remoteAlarmId != nil,
                let synced = store.record(id: updated.id) {
                 await remoteSync.push(record: synced, store: store, session: auth.session)
             }
+            actionMessage = nil
         } else {
             let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
             guard canceled else {
                 store.markFailed(id: alarm.id)
+                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
                 return
             }
             store.setEnabled(id: alarm.id, enabled: false)
@@ -128,6 +128,18 @@ struct AlarmsListView: View {
                let updated = store.record(id: alarm.id) {
                 await remoteSync.push(record: updated, store: store, session: auth.session)
             }
+            actionMessage = nil
+        }
+    }
+
+    @MainActor
+    private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
+        await remoteSync.deleteRemote(record: alarm, session: auth.session)
+        let deleted = await alarmKit.cancel(record: alarm, store: store)
+        if deleted {
+            actionMessage = "알람을 삭제했어요."
+        } else {
+            actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
         }
     }
 
@@ -146,7 +158,10 @@ struct AlarmsListView: View {
                 actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
             }
         } catch {
-            actionMessage = error.localizedDescription
+            actionMessage = RemoteAlarmSyncViewModel.userFacingErrorMessage(
+                error,
+                fallback: "알람 복사에 실패했어요."
+            )
         }
     }
 }

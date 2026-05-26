@@ -348,6 +348,10 @@
 - iOS alarm rows now expose Android's local copy behavior: copying an alarm
   creates a local-owned duplicate 10 minutes later, clears remote sync identity,
   schedules it with AlarmKit, and removes the duplicate if scheduling fails.
+- iOS alarm-row toggle/delete/copy feedback now mirrors Android's action
+  snackbar behavior by clearing stale success text after successful toggles,
+  showing a Korean delete-success message, and replacing non-Korean system copy
+  errors with the Android-style Korean fallback.
 - iOS subscription cancellation now uses Android/backend's immediate-cancel
   request value (`immediate`) instead of the old UI-only `now` alias.
 - iOS share-code preparation messages now use Android's active-plan label
