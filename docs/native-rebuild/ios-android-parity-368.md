@@ -174,6 +174,9 @@
   unused issued/active/pending vouchers expose "이용권 코드 공유", refresh the
   subscription/voucher state before opening, and show a selection sheet even
   when only one code is available.
+- iOS billing now also exposes Android's personal-pass gift flow: the personal
+  plan card can create a backend gift voucher, refresh voucher/subscription
+  state, and open the same code share sheet after the voucher is issued.
 - iOS billing cancellation now opens an Android-style choice sheet and passes
   `at_period_end` or `immediate` to the backend instead of immediately
   scheduling a period-end cancellation from the button.

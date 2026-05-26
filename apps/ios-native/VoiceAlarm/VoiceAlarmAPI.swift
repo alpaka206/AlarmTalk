@@ -1395,6 +1395,15 @@ final class VoiceAlarmAPI {
         )
     }
 
+    func createGiftVoucher(planKey: String, token: String) async throws -> CheckoutResponse {
+        try await request(
+            "billing/checkout",
+            method: "POST",
+            token: token,
+            body: CheckoutRequest(planKey: planKey, gift: true)
+        )
+    }
+
     /// Phase 4-D1: Apple StoreKit2 영수증을 백엔드로 보내 entitlement 동기화.
     ///
     /// 백엔드는 transactionId/originalTransactionId 를 Apple App Store Server API

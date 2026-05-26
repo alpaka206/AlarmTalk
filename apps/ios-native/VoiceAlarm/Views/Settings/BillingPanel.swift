@@ -26,6 +26,7 @@ struct BillingPanel: View {
     @State private var purchaseFeedback: String?
     @State private var showLeaveSharedPassConfirm = false
     @State private var showCancelSubscriptionSheet = false
+    @State private var showPersonalGiftSheet = false
     @State private var voucherShareTargets: [VoucherItem] = []
 
     private var currentTier: PlanTier {
@@ -66,9 +67,13 @@ struct BillingPanel: View {
                 PlanCard(
                     tier: tier,
                     isCurrent: tier == currentTier,
+                    isBusy: socialFeatures.isBusy,
                     vouchers: shareableVouchers,
                     onPurchase: { product in
                         Task { await purchase(product) }
+                    },
+                    onGiftPersonal: {
+                        showPersonalGiftSheet = true
                     },
                     onShareVouchers: {
                         Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
@@ -158,6 +163,16 @@ struct BillingPanel: View {
             )
             .presentationDetents([.medium])
         }
+        .sheet(isPresented: $showPersonalGiftSheet) {
+            PersonalGiftPassSheet(
+                onDismiss: { showPersonalGiftSheet = false },
+                onConfirm: {
+                    showPersonalGiftSheet = false
+                    Task { await giftPersonalPass() }
+                }
+            )
+            .presentationDetents([.medium])
+        }
         .sheet(
             isPresented: Binding(
                 get: { !voucherShareTargets.isEmpty },
@@ -199,6 +214,20 @@ struct BillingPanel: View {
             // 백엔드 plan/구독 row 도 함께 새로고침해 UI 일관성 유지.
             await auth.refreshUser()
             await socialFeatures.refreshAll(session: auth.session, force: true)
+        }
+    }
+
+    private func giftPersonalPass() async {
+        let success = await socialFeatures.giftPersonalPass(session: auth.session)
+        await auth.refreshUser()
+        guard success else { return }
+
+        let refreshedTargets = shareableVouchersForPlan(
+            socialFeatures.vouchers,
+            planKey: "personal"
+        )
+        if !refreshedTargets.isEmpty {
+            voucherShareTargets = refreshedTargets
         }
     }
 
@@ -386,8 +415,10 @@ struct PlanCard: View {
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
     let isCurrent: Bool
+    let isBusy: Bool
     let vouchers: [VoucherItem]
     let onPurchase: (SubscriptionProduct) -> Void
+    let onGiftPersonal: () -> Void
     let onShareVouchers: () -> Void
 
     var body: some View {
@@ -426,6 +457,17 @@ struct PlanCard: View {
                 purchaseButtons
             }
 
+            if tier == .personal {
+                Button(action: onGiftPersonal) {
+                    Label("개인 이용권 선물하기", systemImage: "gift")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isBusy || subscriptions.isPurchasing)
+            }
+
             if !vouchers.isEmpty {
                 Button(action: onShareVouchers) {
                     Label("이용권 코드 공유", systemImage: "square.and.arrow.up")
@@ -434,7 +476,7 @@ struct PlanCard: View {
                         .padding(.vertical, 6)
                 }
                 .buttonStyle(.bordered)
-                .disabled(subscriptions.isPurchasing)
+                .disabled(isBusy || subscriptions.isPurchasing)
             }
         }
         .padding(12)
@@ -475,7 +517,7 @@ struct PlanCard: View {
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)
             .foregroundStyle(.white)
-            .disabled(subscriptions.isPurchasing || isCurrent)
+            .disabled(isBusy || subscriptions.isPurchasing || isCurrent)
         } else {
             // 제품이 아직 로드되지 않았거나 App Store Connect 에 등록되지 않은 경우.
             Button {
@@ -498,10 +540,51 @@ struct PlanCard: View {
     private static func description(for tier: PlanTier) -> String {
         switch tier {
         case .free:     return "기본 알람과 무료 목소리 한 슬롯"
-        case .personal: return "목소리 슬롯 무제한, 광고 제거"
+        case .personal: return "목소리 슬롯 무제한, 광고 제거, 개인 이용권 선물"
         case .couple:   return "두 사람의 알람과 메시지 공유"
         case .family:   return "최대 6인 가족 공유 알람"
         }
+    }
+}
+
+private struct PersonalGiftPassSheet: View {
+    let onDismiss: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("개인 이용권 선물하기")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(VoiceAlarmTheme.text)
+                    Text("받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요.")
+                        .font(.footnote)
+                        .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("닫기")
+            }
+
+            Button(action: onConfirm) {
+                Text("선물 코드 만들기")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(VoiceAlarmTheme.primary)
+            .foregroundStyle(.white)
+        }
+        .padding(20)
+        .background(VoiceAlarmTheme.background)
     }
 }
 
