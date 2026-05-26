@@ -330,6 +330,9 @@
 - iOS billing/code mutation failures now map backend `error_code` values to
   the same Korean user-facing messages Android uses for plan, checkout, cancel,
   and voucher failures.
+- iOS voucher/code rows now mirror Android's label helpers by rendering shared
+  pass roles and voucher statuses as Korean user-facing labels instead of raw
+  backend values such as `owner`, `member`, or `issued`.
 - iOS StoreKit purchase failures now also avoid surfacing raw English
   `localizedDescription` text; Korean App Store messages are preserved and
   non-Korean system errors fall back to Korean billing copy.
