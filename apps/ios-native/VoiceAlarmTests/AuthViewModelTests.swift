@@ -112,7 +112,7 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertEqual(vm.lastNetworkError, "이 계정으로는 접근할 수 없는 기능이 있어요.")
     }
 
-    func test_refreshUser_with500_keepsSessionAndSetsLastNetworkError() async {
+    func test_refreshUser_with500_keepsSessionAndUsesKoreanFallbackForEnglishServerMessage() async {
         let api = MockAuthAPI()
         api.meResult = .failure(.server(status: 500, message: "internal", errorCode: nil))
         let vm = AuthViewModel(api: api, appleCredentialProvider: MockAppleCredentialProvider())
@@ -121,7 +121,7 @@ final class AuthViewModelTests: XCTestCase {
         await vm.refreshUser()
 
         XCTAssertNotNil(vm.session, "5xx 일시 오류는 세션을 유지해야 한다")
-        XCTAssertEqual(vm.lastNetworkError, "internal")
+        XCTAssertEqual(vm.lastNetworkError, "서버에 일시적으로 연결할 수 없어요.")
     }
 
     func test_refreshUser_with500_blankMessage_fallsBackToGenericCopy() async {
@@ -158,6 +158,24 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertNotNil(vm.session)
         XCTAssertEqual(vm.lastNetworkError, "서버 응답을 해석하지 못했어요.")
+    }
+
+    func test_userFacingErrorMessage_hidesEnglishServerMessageLikeAndroid() {
+        let error = APIError.server(status: 500, message: "Internal Server Error", errorCode: nil)
+
+        XCTAssertEqual(
+            AuthViewModel.userFacingErrorMessage(error, fallback: "로그인에 실패했어요"),
+            "로그인에 실패했어요"
+        )
+    }
+
+    func test_userFacingErrorMessage_keepsKoreanServerMessageLikeAndroid() {
+        let error = APIError.server(status: 400, message: "이미 가입된 이메일이에요", errorCode: nil)
+
+        XCTAssertEqual(
+            AuthViewModel.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요"),
+            "이미 가입된 이메일이에요"
+        )
     }
 
     func test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId() async {

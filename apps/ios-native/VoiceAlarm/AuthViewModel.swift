@@ -129,7 +129,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        statusMessage = "Apple 로그인에 실패했어요: \(error.localizedDescription)"
+        statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
     }
 
     func loginWithApple(
@@ -161,7 +161,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
         }
     }
 
@@ -177,7 +177,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await VoiceAlarmAPI.shared.requestEmailVerification(email: email)
             statusMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
         }
     }
 
@@ -198,7 +198,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "이메일 인증이 완료됐어요."
             return true
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요")
             return false
         }
     }
@@ -216,7 +216,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
         }
     }
 
@@ -243,7 +243,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
         }
     }
 
@@ -266,18 +266,18 @@ final class AuthViewModel: ObservableObject {
             lastNetworkError = nil
         } catch let apiError as APIError {
             switch apiError {
-            case .server(let status, let message, _):
+            case .server(let status, _, _):
                 if status == 401 {
                     signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
                     lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
                 } else {
-                    // 5xx, 4xx 기타 — 세션 보존, 일시 오류 표시
-                    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                    lastNetworkError = trimmed.isEmpty
-                        ? "서버에 일시적으로 연결할 수 없어요."
-                        : trimmed
+                    // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
+                    lastNetworkError = Self.userFacingErrorMessage(
+                        apiError,
+                        fallback: "서버에 일시적으로 연결할 수 없어요."
+                    )
                 }
             case .invalidResponse:
                 lastNetworkError = "서버 응답을 해석하지 못했어요."
@@ -366,7 +366,7 @@ final class AuthViewModel: ObservableObject {
             await refreshUser()
             statusMessage = "프로필을 저장했어요."
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요")
         }
     }
 
@@ -415,7 +415,7 @@ final class AuthViewModel: ObservableObject {
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요")
         }
     }
 
@@ -430,6 +430,19 @@ final class AuthViewModel: ObservableObject {
         let value = PersonNameComponentsFormatter().string(from: components)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
+        guard let apiError = error as? APIError else {
+            let message = error.localizedDescription
+            return message.containsKorean ? message : fallback
+        }
+        switch apiError {
+        case .invalidResponse:
+            return fallback
+        case .server(_, let message, _):
+            return message.containsKorean ? message : fallback
+        }
     }
 
     // MARK: - Testing support
@@ -454,6 +467,16 @@ private extension Optional where Wrapped == String {
             return trimmed.isEmpty ? nil : trimmed
         case .none:
             return nil
+        }
+    }
+}
+
+private extension String {
+    var containsKorean: Bool {
+        contains { character in
+            character.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(Int(scalar.value))
+            }
         }
     }
 }

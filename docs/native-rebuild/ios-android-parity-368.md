@@ -311,6 +311,9 @@
 - iOS voice segment preview now mirrors Android's visible failure behavior by
   showing the Korean "preview playback failed" message instead of silently
   ignoring AVAudioPlayer errors during clone/separation preview.
+- iOS auth/profile/account mutation errors now mirror Android's
+  `userFacingError` behavior by preserving Korean backend messages and replacing
+  English server/system errors with Korean fallback copy.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.
