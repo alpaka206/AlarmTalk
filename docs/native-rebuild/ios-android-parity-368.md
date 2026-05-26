@@ -342,6 +342,9 @@
 - iOS remote-alarm refresh, push, full-sync, and delete errors now use the same
   Android-style Korean fallback behavior instead of exposing raw server/system
   error text.
+- iOS family-alarm create failures now use the same Korean fallback mapping
+  before showing the validation alert, so backend/system English messages are
+  not exposed from the alarm editor.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

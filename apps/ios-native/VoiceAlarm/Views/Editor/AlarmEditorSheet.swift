@@ -894,7 +894,10 @@ struct AlarmEditorSheet: View {
         } catch {
             validationAlert = ValidationAlertContent(
                 title: "상대 알람 설정에 실패했어요",
-                message: error.localizedDescription
+                message: RemoteAlarmSyncViewModel.userFacingErrorMessage(
+                    error,
+                    fallback: "상대 알람 설정에 실패했어요."
+                )
             )
         }
     }
