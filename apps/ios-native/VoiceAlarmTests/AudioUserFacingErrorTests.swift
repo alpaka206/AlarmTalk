@@ -1,3 +1,4 @@
+import Foundation
 import UniformTypeIdentifiers
 import XCTest
 @testable import VoiceAlarm
@@ -47,5 +48,29 @@ final class AudioUserFacingErrorTests: XCTestCase {
     func test_profileTrainingPickerAcceptsAudioAndMovie() {
         XCTAssertTrue(VoiceImportContentTypes.profileTraining.contains(.audio))
         XCTAssertTrue(VoiceImportContentTypes.profileTraining.contains(.movie))
+    }
+
+    func test_audioCropperExportsFullVideoAsAudioOnlyBeforeUpload() {
+        let videoURL = URL(fileURLWithPath: "/tmp/clip.mp4")
+        let audioURL = URL(fileURLWithPath: "/tmp/clip.m4a")
+
+        XCTAssertTrue(AudioCropper.shouldExportAudioOnly(
+            source: videoURL,
+            startMs: 0,
+            endMs: 90_000,
+            sourceDurationMs: 90_000
+        ))
+        XCTAssertFalse(AudioCropper.shouldExportAudioOnly(
+            source: audioURL,
+            startMs: 0,
+            endMs: 90_000,
+            sourceDurationMs: 90_000
+        ))
+        XCTAssertTrue(AudioCropper.shouldExportAudioOnly(
+            source: audioURL,
+            startMs: 10_000,
+            endMs: 90_000,
+            sourceDurationMs: 120_000
+        ))
     }
 }

@@ -618,11 +618,16 @@ struct VoiceCloneUploadFlow: View {
         guard durationMs <= VoiceProfileLimits.maxDurationMs else {
             throw AudioCropper.CropperError.invalidRange
         }
-        if cropStartMs == 0 && endMs == sourceDuration {
+        guard AudioCropper.shouldExportAudioOnly(
+            source: source,
+            startMs: cropStartMs,
+            endMs: endMs,
+            sourceDurationMs: sourceDuration
+        ) else {
             return (source, durationMs)
         }
-        let cropped = try await AudioCropper.crop(source: source, startMs: cropStartMs, endMs: endMs)
-        return (cropped, durationMs)
+        let audioOnly = try await AudioCropper.crop(source: source, startMs: cropStartMs, endMs: endMs)
+        return (audioOnly, durationMs)
     }
 
     private func copyImportedAudio(_ source: URL) throws -> URL {

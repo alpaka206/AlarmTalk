@@ -221,6 +221,9 @@
   and video imports like Android's `audio/*` + `video/*` picker, reject files
   without an audio track, and keep local audio preparation failures behind
   Korean user-facing fallback messages.
+- iOS profile-training video imports now also mirror Android's forced audio
+  extraction path: even when the selected range spans the full file, video
+  containers are exported to audio-only files before voice upload/clone calls.
 - iOS voice clone requests now mirror Android's multipart shape: profile name is
   trimmed, relationship/listener fields are always included, `isDraft=false` is
   sent by default, and ViewModel clone/update paths validate relationship and

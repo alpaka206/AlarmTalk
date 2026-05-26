@@ -632,11 +632,16 @@ struct SpeakerSeparationFlow: View {
             localError = "2분 이하 구간만 사용할 수 있어요."
             throw AudioCropper.CropperError.invalidRange
         }
-        if cropStartMs == 0 && endMs == sourceDuration {
+        guard AudioCropper.shouldExportAudioOnly(
+            source: source,
+            startMs: cropStartMs,
+            endMs: endMs,
+            sourceDurationMs: sourceDuration
+        ) else {
             return (source, durationMs)
         }
-        let cropped = try await cropAudio(source: source, startMs: cropStartMs, endMs: endMs)
-        return (cropped, durationMs)
+        let audioOnly = try await cropAudio(source: source, startMs: cropStartMs, endMs: endMs)
+        return (audioOnly, durationMs)
     }
 
     private func copyImportedAudio(_ source: URL) throws -> URL {
