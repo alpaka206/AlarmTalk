@@ -189,6 +189,10 @@
   voice entry requests microphone permission before opening the voice tab when
   the paid plan is available, and new/family alarm creation requests AlarmKit
   permission before opening the editor.
+- iOS no longer auto-presents the startup permission sheet after onboarding;
+  AlarmKit and microphone permission prompts stay tied to the home/alarm/voice
+  actions that actually need them, matching the agreed iOS-native on-demand
+  permission flow.
 - iOS alarm-tab creation now follows the same iOS-native on-demand permission
   flow: tapping "알람 만들기" requests AlarmKit authorization first and opens
   the editor only after authorization is available.

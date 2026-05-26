@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// 최상위 라우터. 인증 + 온보딩 + 권한 단계를 순서대로 게이팅한다.
+/// 최상위 라우터. 인증 + 온보딩 상태만 게이팅한다.
 ///
 /// 분기 모델 (Android `App.kt` 의 진입 흐름과 동등)
 ///   1. 세션 없음 → `AuthGateView()` (Landing → Login)
 ///   2. 세션 있고 온보딩 미완료 → `OnboardingView` 단독 노출.
 ///      완료 여부는 Android 처럼 사용자 ID별로 저장한다.
-///   3. 온보딩 완료 → `LoginPermissionGateView { MainTabsView() }`
-///      — 본문은 MainTabsView 이고, 권한 부족 시 시트로 안내된다.
+///   3. 온보딩 완료 → `MainTabsView()`.
+///      iOS 권한은 홈/알람/목소리 기능 진입 시점에 요청한다.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @State private var onboardingCompleted: Bool?
@@ -25,9 +25,7 @@ struct RootView: View {
                     OnboardingView(onComplete: completeOnboarding)
                 }
             } else {
-                LoginPermissionGateView {
-                    MainTabsView()
-                }
+                MainTabsView()
             }
         }
         .task(id: auth.session?.user.id) {
