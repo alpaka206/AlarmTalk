@@ -245,6 +245,9 @@
 - iOS billing-panel current-plan display now uses the same best-known plan
   resolver as the rest of the app, so inactive server subscription rows do not
   make the pass UI look paid.
+- iOS alarm rows now expose Android's local copy behavior: copying an alarm
+  creates a local-owned duplicate 10 minutes later, clears remote sync identity,
+  schedules it with AlarmKit, and removes the duplicate if scheduling fails.
 - Follow-up verification still requires macOS/Xcode because this Windows
   workspace cannot run Swift, XcodeGen, simulator, or physical-device AlarmKit
   checks.

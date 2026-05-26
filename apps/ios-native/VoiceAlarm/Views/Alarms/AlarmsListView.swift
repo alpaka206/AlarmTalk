@@ -9,6 +9,8 @@ struct AlarmsListView: View {
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
+    @StateObject private var holidayStore = HolidayStore()
+    @State private var actionMessage: String?
 
     let openEditor: (AlarmEditorTarget) -> Void
 
@@ -29,6 +31,12 @@ struct AlarmsListView: View {
 
             if !alarmKit.alarmAuthorized {
                 AlarmPermissionSection()
+            }
+            if let actionMessage {
+                Text(actionMessage)
+                    .font(.footnote)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    .padding(.horizontal, 4)
             }
             localAlarmSection
         }
@@ -57,6 +65,9 @@ struct AlarmsListView: View {
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
                             Task { await setAlarm(alarm, enabled: enabled) }
+                        },
+                        onCopy: {
+                            Task { await copyAlarm(alarm) }
                         },
                         onDelete: {
                             Task {
@@ -104,6 +115,25 @@ struct AlarmsListView: View {
                let updated = store.record(id: alarm.id) {
                 await remoteSync.push(record: updated, store: store, session: auth.session)
             }
+        }
+    }
+
+    @MainActor
+    private func copyAlarm(_ alarm: LocalAlarmRecord) async {
+        do {
+            let copied = try store.copyAlarm(
+                id: alarm.id,
+                isHoliday: holidayStore.holidayPredicate()
+            )
+            let scheduled = await alarmKit.schedule(record: copied, store: store)
+            if scheduled {
+                actionMessage = "알람을 10분 뒤로 복사했어요. \(copied.timeString)"
+            } else {
+                _ = store.delete(copied)
+                actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
+            }
+        } catch {
+            actionMessage = error.localizedDescription
         }
     }
 }

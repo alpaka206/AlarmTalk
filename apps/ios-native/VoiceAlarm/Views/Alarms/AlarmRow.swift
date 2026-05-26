@@ -9,6 +9,7 @@ struct AlarmRow: View {
     let alarm: LocalAlarmRecord
     let onTap: () -> Void
     let onToggleEnabled: (Bool) -> Void
+    let onCopy: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -38,6 +39,7 @@ struct AlarmRow: View {
                 .accessibilityLabel(Text(alarm.enabled ? "알람 끄기" : "알람 켜기"))
 
                 Menu {
+                    Button("복사", action: onCopy)
                     Button("삭제", role: .destructive, action: onDelete)
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -126,7 +128,7 @@ private extension LocalAlarmRecord {
 #Preview("AlarmRow (light)") {
     AlarmRow(
         alarm: .previewSample,
-        onTap: {}, onToggleEnabled: { _ in }, onDelete: {}
+        onTap: {}, onToggleEnabled: { _ in }, onCopy: {}, onDelete: {}
     )
     .padding()
 }
@@ -134,7 +136,7 @@ private extension LocalAlarmRecord {
 #Preview("AlarmRow (dark)") {
     AlarmRow(
         alarm: .previewSample,
-        onTap: {}, onToggleEnabled: { _ in }, onDelete: {}
+        onTap: {}, onToggleEnabled: { _ in }, onCopy: {}, onDelete: {}
     )
     .padding()
     .preferredColorScheme(.dark)
