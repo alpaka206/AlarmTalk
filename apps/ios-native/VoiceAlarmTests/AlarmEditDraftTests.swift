@@ -293,8 +293,10 @@ final class AlarmEditDraftTests: XCTestCase {
     // MARK: - New alarm without existing record
 
     func testNewAlarmInitialDefaults() {
-        let draft = AlarmEditDraft.newDefault(referenceDate: Date(timeIntervalSince1970: 0))
+        let draft = AlarmEditDraft.newDefault()
         XCTAssertFalse(draft.label.isEmpty)
+        XCTAssertEqual(draft.hour, 6)
+        XCTAssertEqual(draft.minute, 0)
         XCTAssertEqual(draft.playMode, .alarmOnly)
         XCTAssertTrue(draft.snoozeEnabled)
         XCTAssertEqual(draft.snoozeMinutes, 5)
@@ -308,10 +310,7 @@ final class AlarmEditDraftTests: XCTestCase {
     }
 
     func testNewAlarmCanUsePaidDefaultPlayMode() {
-        let draft = AlarmEditDraft.newDefault(
-            referenceDate: Date(timeIntervalSince1970: 0),
-            defaultPlayMode: .soundThenVoice
-        )
+        let draft = AlarmEditDraft.newDefault(defaultPlayMode: .soundThenVoice)
         XCTAssertEqual(draft.playMode, .soundThenVoice)
     }
 
