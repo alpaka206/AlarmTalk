@@ -318,6 +318,7 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool,
         session: AuthSession?,
         noiseRemoval: Bool = false,
+        uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil
     ) async -> VoiceProfile? {
@@ -349,6 +350,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: durationMs,
                 token: token,
                 noiseRemoval: noiseRemoval,
+                uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
                 listenerTitle: fields.listenerTitle
             )
@@ -502,6 +504,7 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool,
         durationMs: Int,
         audioFileURL: URL,
+        uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         session: AuthSession?
@@ -537,6 +540,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 isShared: isShared,
                 durationMs: durationMs,
                 token: token,
+                uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
                 listenerTitle: fields.listenerTitle
             )

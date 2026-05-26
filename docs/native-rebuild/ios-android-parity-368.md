@@ -224,6 +224,10 @@
 - iOS profile-training video imports now also mirror Android's forced audio
   extraction path: even when the selected range spans the full file, video
   containers are exported to audio-only files before voice upload/clone calls.
+- iOS direct voice-clone multipart uploads now keep the selected source file
+  name as the uploaded audio filename even when the app uses a copied or
+  cropped temporary file internally, matching Android's `CachedAlarmAudio`
+  `displayName` behavior.
 - iOS voice clone requests now mirror Android's multipart shape: profile name is
   trimmed, relationship/listener fields are always included, `isDraft=false` is
   sent by default, and ViewModel clone/update paths validate relationship and

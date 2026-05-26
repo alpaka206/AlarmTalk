@@ -548,6 +548,7 @@ struct VoiceCloneUploadFlow: View {
                     isShared: shouldShareVoice,
                     session: auth.session,
                     noiseRemoval: noiseRemovalEnabled,
+                    uploadFileName: prepared.uploadFileName,
                     relationshipLabel: trimmedRelationship,
                     listenerTitle: trimmedListener
                 )
@@ -605,11 +606,12 @@ struct VoiceCloneUploadFlow: View {
         }
     }
 
-    private func preparedFileAudio() async throws -> (url: URL, durationMs: Int) {
+    private func preparedFileAudio() async throws -> (url: URL, durationMs: Int, uploadFileName: String?) {
         guard let source = selectedFileURL,
               let sourceDuration = selectedFileDurationMs else {
             throw AudioCropper.CropperError.invalidRange
         }
+        let uploadFileName = selectedFileName ?? source.lastPathComponent
         let endMs = min(cropEndMs, sourceDuration)
         let durationMs = max(0, endMs - cropStartMs)
         guard durationMs >= VoiceProfileLimits.minDurationMs else {
@@ -624,10 +626,10 @@ struct VoiceCloneUploadFlow: View {
             endMs: endMs,
             sourceDurationMs: sourceDuration
         ) else {
-            return (source, durationMs)
+            return (source, durationMs, uploadFileName)
         }
         let audioOnly = try await AudioCropper.crop(source: source, startMs: cropStartMs, endMs: endMs)
-        return (audioOnly, durationMs)
+        return (audioOnly, durationMs, uploadFileName)
     }
 
     private func copyImportedAudio(_ source: URL) throws -> URL {

@@ -1050,6 +1050,7 @@ final class VoiceAlarmAPI {
         durationMs: Int,
         token: String,
         noiseRemoval: Bool = false,
+        uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
         isDraft: Bool? = nil
@@ -1071,7 +1072,7 @@ final class VoiceAlarmAPI {
             "voice/clone",
             token: token,
             fields: fields,
-            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL)]
+            files: [try multipartFile(fieldName: "audio", fileURL: audioFileURL, fileName: uploadFileName)]
         )
         return response.profile
     }
@@ -1674,10 +1675,14 @@ final class VoiceAlarmAPI {
         return (String(path[path.startIndex..<qIndex]), String(path[path.index(after: qIndex)...]))
     }
 
-    private func multipartFile(fieldName: String, fileURL: URL) throws -> MultipartFile {
+    static func multipartUploadFileName(fileURL: URL, originalName: String?) -> String {
+        originalName.nilIfBlank ?? fileURL.lastPathComponent
+    }
+
+    private func multipartFile(fieldName: String, fileURL: URL, fileName: String? = nil) throws -> MultipartFile {
         MultipartFile(
             fieldName: fieldName,
-            fileName: fileURL.lastPathComponent,
+            fileName: Self.multipartUploadFileName(fileURL: fileURL, originalName: fileName),
             mimeType: mimeType(for: fileURL),
             data: try Data(contentsOf: fileURL)
         )

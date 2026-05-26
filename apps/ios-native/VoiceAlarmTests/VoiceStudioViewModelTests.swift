@@ -219,4 +219,22 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(fields["noiseRemoval"], "true")
         XCTAssertEqual(fields["noise_removal"], "true")
     }
+
+    func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {
+        let fileURL = URL(fileURLWithPath: "/tmp/clone-import-123.m4a")
+
+        XCTAssertEqual(
+            VoiceAlarmAPI.multipartUploadFileName(fileURL: fileURL, originalName: "  gia.mov  "),
+            "gia.mov"
+        )
+    }
+
+    func test_multipartUploadFileName_fallsBackToPreparedURLName() {
+        let fileURL = URL(fileURLWithPath: "/tmp/clone-import-123.m4a")
+
+        XCTAssertEqual(
+            VoiceAlarmAPI.multipartUploadFileName(fileURL: fileURL, originalName: "   "),
+            "clone-import-123.m4a"
+        )
+    }
 }

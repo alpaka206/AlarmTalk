@@ -45,6 +45,10 @@ struct SpeakerSeparationFlow: View {
         selectedFileName ?? "최근 녹음"
     }
 
+    private var preparedUploadFileName: String {
+        selectedFileName ?? preparedSourceURL?.lastPathComponent ?? preparedSourceName
+    }
+
     private var preparedDurationMs: Int? {
         selectedFileDurationMs ?? voice.recorder.latestDurationMs
     }
@@ -486,7 +490,7 @@ struct SpeakerSeparationFlow: View {
         let id = await voice.uploadForSeparation(
             audioFileURL: prepared.url,
             durationMs: prepared.durationMs,
-            originalName: preparedSourceName,
+            originalName: preparedUploadFileName,
             session: auth.session
         )
         await MainActor.run {
@@ -578,6 +582,7 @@ struct SpeakerSeparationFlow: View {
                     isShared: shouldShareVoice,
                     durationMs: speaker.durationMs,
                     audioFileURL: cropped,
+                    uploadFileName: preparedUploadFileName,
                     relationshipLabel: trimmedRelationship,
                     listenerTitle: trimmedListener,
                     session: auth.session
