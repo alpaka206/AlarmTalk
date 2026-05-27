@@ -162,12 +162,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var themeMode by mutableStateOf(loadInitialThemeMode(themePrefs))
         internal set
 
-    internal val demoPrefs = application.getSharedPreferences("voice_alarm_demo", android.content.Context.MODE_PRIVATE)
-    var demoVoiceBusy by mutableStateOf(false)
-        internal set
-    var demoVoiceLocalUri by mutableStateOf(demoPrefs.getString("sia_demo_local_audio_uri", null))
-        internal set
-
     var nicknameEditDialogOpen by mutableStateOf(false)
         internal set
 

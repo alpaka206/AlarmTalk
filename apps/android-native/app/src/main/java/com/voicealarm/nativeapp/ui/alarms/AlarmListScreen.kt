@@ -93,8 +93,6 @@ internal fun AlarmListScreen(
     onDeleteAlarm: (String) -> Unit,
     onRequestPermissionGate: (PermissionTarget) -> Unit,
     onRequestAllPermissions: () -> Unit,
-    demoVoiceBusy: Boolean = false,
-    onRingSiaDemoVoiceNow: () -> Unit = {},
     profileMenu: (@Composable () -> Unit)? = null,
 ) {
     val sortedAlarms = remember(alarms) {
@@ -190,14 +188,6 @@ internal fun AlarmListScreen(
 
             NativeTab.Alarms -> {
                 item { AlarmsHeader(onCreateAlarm = onCreateAlarm, profileMenu = profileMenu) }
-                if (BuildConfig.DEBUG) {
-                    item {
-                        DemoVoiceAlarmCard(
-                            busy = demoVoiceBusy,
-                            onRingNow = onRingSiaDemoVoiceNow,
-                        )
-                    }
-                }
                 if (!permissions.alarmReady) {
                     item {
                         PermissionPanel(
