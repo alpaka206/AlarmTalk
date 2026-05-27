@@ -69,6 +69,14 @@ export function SiteFooter() {
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
+                  <Link
+                    href="/company"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkAbout")}
+                  </Link>
+                </li>
+                <li>
                   <a
                     href="https://github.com/perso-devrel/voice_alarm"
                     target="_blank"
@@ -79,9 +87,9 @@ export function SiteFooter() {
                   </a>
                 </li>
                 <li>
-                  {/* TODO: 새 도메인 확정 후 mailto 갱신 (waker.com → AlarmTalk 도메인) */}
+                  {/* TODO: /contact 페이지 도입 후 Link 로 교체 */}
                   <a
-                    href="mailto:hello@waker.com"
+                    href="mailto:hello@alarmtalk.app"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkContact")}

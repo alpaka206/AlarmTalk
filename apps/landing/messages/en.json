@@ -149,6 +149,7 @@
     "linkVoices": "Features",
     "linkHow": "How it works",
     "linkFaq": "FAQ",
+    "linkAbout": "Company",
     "linkGithub": "GitHub",
     "linkContact": "Contact",
     "linkPrivacy": "Privacy",
@@ -169,5 +170,68 @@
     "googlePlayEyebrow": "GET IT ON",
     "googlePlayLabel": "Google Play",
     "googlePlayAria": "Get AlarmTalk on Google Play"
+  },
+  "company": {
+    "meta": {
+      "title": "Company",
+      "description": "AlarmTalk redesigns the first second of every morning. Our mission, our principles, and what we're building."
+    },
+    "hero": {
+      "eyebrow": "Our mission",
+      "headline1": "We redesign",
+      "headline2": "people's mornings.",
+      "description": "The era of beeping awake has been long enough. AlarmTalk redefines an alarm as a person's voice — turning the first second of every morning into a warmer signal."
+    },
+    "principles": {
+      "headline": "Five principles we work by",
+      "description": "We are early — going from zero to one. That's exactly why clear principles matter more, not less.",
+      "items": [
+        {
+          "title": "Build something people want every day",
+          "body": "Not a one-time trick. The first thing people meet every morning."
+        },
+        {
+          "title": "Stay close to the core",
+          "body": "“Wake people on time, with a voice they love.” Any feature that breaks that sentence waits."
+        },
+        {
+          "title": "Ask for a 10× answer",
+          "body": "We don't chase 10% gains. We look for an answer that is 10× different. No me-too alarms."
+        },
+        {
+          "title": "Honest and clear",
+          "body": "Honest with teammates, users, and the market. We don't ship vague marketing lines."
+        },
+        {
+          "title": "Build globally from day one",
+          "body": "Not a Korea-only product. We assume a multilingual, multicultural user from the first commit."
+        }
+      ]
+    },
+    "products": {
+      "headline": "What we're building",
+      "description": "One product. Every decision is made in the name of AlarmTalk.",
+      "alarmtalk": {
+        "tag": "AlarmTalk",
+        "title": "A voice alarm app",
+        "body": "Your own voice, shared voices from family and partners, translated phrases for language practice — one recording becomes every morning's greeting.",
+        "cta": "Back to home"
+      }
+    },
+    "future": {
+      "headline": "Coming soon to this page",
+      "description": "Press, awards, and the team's story will land here at launch.",
+      "items": [
+        { "tag": "Press", "title": "Press", "body": "First coverage will live here once we launch." },
+        { "tag": "Team", "title": "Team & culture", "body": "Stories about the people building this — published at launch." },
+        { "tag": "Careers", "title": "Careers", "body": "Hiring runs through direct contact for now. Formal postings will follow launch." }
+      ]
+    },
+    "cta": {
+      "headline": "Want to make this dawn with us?",
+      "body": "Join the beta first, or reach out via contact.",
+      "primary": "Join the beta",
+      "secondary": "Contact us"
+    }
   }
 }
