@@ -7,6 +7,8 @@
     "voices": "Features",
     "how": "How it works",
     "faq": "FAQ",
+    "company": "Company",
+    "contact": "Contact",
     "cta": "Get early access"
   },
   "hero": {
@@ -16,6 +18,7 @@
     "headline2": "changes your morning.",
     "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time. A real native alarm, not a push notification.",
     "waitlistHint": "Before launch — join the beta waitlist",
+    "scrollHint": "Scroll",
     "phone": {
       "greetTop": "Good morning,",
       "greetBottom": "whose voice woke you up?",
@@ -104,6 +107,29 @@
         "body": "Today's sentence becomes tomorrow's alarm. Five seconds a day adds up to 35 minutes a week."
       }
     ]
+  },
+  "quotes": {
+    "eyebrow": "Voices behind AlarmTalk",
+    "headline": "Why we're building this",
+    "description": "Short notes from the people building AlarmTalk before launch. We'll swap these for real user quotes after launch.",
+    "items": [
+      {
+        "body": "I'd had enough mornings starting with a beep. Wanting to wake up to one line from someone I love — that was the start of this.",
+        "author": "Park",
+        "role": "Product designer"
+      },
+      {
+        "body": "If you've ever felt a push notification arrive late, you already see why AlarmTalk exists. We only build real alarms.",
+        "author": "Kim",
+        "role": "Android engineer"
+      },
+      {
+        "body": "I set Mom's voice as my alarm before a trip. From that morning on, the alarm stopped feeling like a notification — it felt like a promise.",
+        "author": "Lee",
+        "role": "Beta tester"
+      }
+    ],
+    "disclaimer": "These quotes are placeholders until launch. They will be replaced with real user quotes and ratings after we ship."
   },
   "faq": {
     "headline": "Frequently asked",

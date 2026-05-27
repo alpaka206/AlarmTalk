@@ -38,28 +38,28 @@ export function SiteFooter() {
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
-                  <a
-                    href="#voices"
+                  <Link
+                    href="/#voices"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkVoices")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#how"
+                  <Link
+                    href="/#how"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkHow")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#faq"
+                  <Link
+                    href="/#faq"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkFaq")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>

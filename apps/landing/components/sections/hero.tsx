@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PhonePreview } from "../phone-preview";
 import { StoreBadges } from "../store-badges";
@@ -41,6 +41,15 @@ export function Hero() {
           <PhonePreview />
         </div>
       </div>
+
+      <a
+        href="#voices"
+        aria-label={t("scrollHint")}
+        className="group absolute bottom-3 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-text-faint transition hover:text-text-muted md:flex"
+      >
+        {t("scrollHint")}
+        <ChevronDown className="h-4 w-4 animate-bounce text-text-faint group-hover:text-text-muted" />
+      </a>
     </section>
   );
 }
