@@ -171,6 +171,56 @@
     "googlePlayLabel": "Google Play",
     "googlePlayAria": "Google Playでアラームトークを入手"
   },
+  "contact": {
+    "meta": {
+      "title": "お問い合わせ",
+      "description": "サポート・ビジネス・採用・プレスまで、アラームトークとの4つの窓口。"
+    },
+    "hero": {
+      "eyebrow": "Contact",
+      "headline1": "どんな件で",
+      "headline2": "お困りですか?"   ,
+      "description": "用件に合う窓口を選んでメールでご連絡ください。通常、平日(KST)の営業時間内に返信します。"
+    },
+    "channels": {
+      "headline": "4つの窓口",
+      "description": "目的別に分けています。最初から正しい担当者にメールが届くように。",
+      "items": [
+        {
+          "tag": "サポート",
+          "title": "アプリ・アカウントの問い合わせ",
+          "body": "不具合、アラームが鳴らない、アカウント・課金に関する質問はこちらへ。",
+          "email": "support@alarmtalk.app",
+          "cta": "メールで送る"
+        },
+        {
+          "tag": "ビジネス",
+          "title": "提携・B2B のご相談",
+          "body": "チーム・企業導入、ライセンス、連携提案などはビジネス窓口へ。",
+          "email": "business@alarmtalk.app",
+          "cta": "メールで送る"
+        },
+        {
+          "tag": "採用・一般",
+          "title": "採用・その他のお問い合わせ",
+          "body": "一緒に働きたい方、上記のどれにも当てはまらないご相談はこちら。",
+          "email": "hello@alarmtalk.app",
+          "cta": "メールで送る"
+        },
+        {
+          "tag": "プレス",
+          "title": "取材・メディア",
+          "body": "取材、インタビュー、プレスキットなどはメディア窓口にお送りください。",
+          "email": "press@alarmtalk.app",
+          "cta": "メールで送る"
+        }
+      ]
+    },
+    "note": {
+      "headline": "返信について",
+      "body": "通常、営業日ベースで1〜3日以内に返信します。長文の回答が必要な場合は少し時間がかかることがあります。届かない場合は迷惑メールフォルダもご確認ください。"
+    }
+  },
   "company": {
     "meta": {
       "title": "会社紹介",

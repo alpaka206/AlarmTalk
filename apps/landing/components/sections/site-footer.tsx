@@ -87,13 +87,12 @@ export function SiteFooter() {
                   </a>
                 </li>
                 <li>
-                  {/* TODO: /contact 페이지 도입 후 Link 로 교체 */}
-                  <a
-                    href="mailto:hello@alarmtalk.app"
+                  <Link
+                    href="/contact"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkContact")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>

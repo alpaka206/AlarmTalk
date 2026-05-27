@@ -2,7 +2,7 @@
 import { routing } from "@/i18n/routing";
 import { SITE_URL } from "@/lib/site";
 
-const PAGES = ["", "company", "privacy", "terms"] as const;
+const PAGES = ["", "company", "contact", "privacy", "terms"] as const;
 
 export const dynamic = "force-static";
 

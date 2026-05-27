@@ -171,6 +171,56 @@
     "googlePlayLabel": "Google Play",
     "googlePlayAria": "Google Play에서 알람톡 받기"
   },
+  "contact": {
+    "meta": {
+      "title": "문의",
+      "description": "사용 문의·제휴·언론·채용까지 알람톡과 이야기하는 네 가지 경로."
+    },
+    "hero": {
+      "eyebrow": "Contact",
+      "headline1": "어떻게",
+      "headline2": "도와드릴까요?",
+      "description": "용건에 맞는 채널을 골라 메일로 보내주세요. 보통 평일 영업시간(KST) 안에 답장합니다."
+    },
+    "channels": {
+      "headline": "네 가지 문의 채널",
+      "description": "용도에 따라 분리해 두었습니다. 한 메일이 정확한 담당자에게 닿도록.",
+      "items": [
+        {
+          "tag": "고객 지원",
+          "title": "앱·계정 사용 문의",
+          "body": "버그, 알람이 안 울리는 문제, 계정·결제 관련 문의는 여기로 보내주세요.",
+          "email": "support@alarmtalk.app",
+          "cta": "메일 보내기"
+        },
+        {
+          "tag": "비즈니스",
+          "title": "제휴·B2B 문의",
+          "body": "팀·기업 단위 도입, 라이선스, 통합 제안은 비즈니스 라인으로 부탁드립니다.",
+          "email": "business@alarmtalk.app",
+          "cta": "메일 보내기"
+        },
+        {
+          "tag": "채용·일반",
+          "title": "팀 합류·일반 문의",
+          "body": "함께 일하고 싶거나, 위 채널에 해당하지 않는 일반 문의가 있다면 이쪽으로.",
+          "email": "hello@alarmtalk.app",
+          "cta": "메일 보내기"
+        },
+        {
+          "tag": "미디어",
+          "title": "언론·홍보 문의",
+          "body": "취재, 인터뷰, 보도자료 관련은 미디어 라인으로 보내주시면 빠르게 답변드립니다.",
+          "email": "press@alarmtalk.app",
+          "cta": "메일 보내기"
+        }
+      ]
+    },
+    "note": {
+      "headline": "응답 안내",
+      "body": "보통 영업일 기준 1–3일 안에 답장합니다. 긴 답이 필요한 문의는 조금 더 걸릴 수 있어요. 회신이 며칠 늦어진다면 스팸함도 한 번 확인해 주세요."
+    }
+  },
   "company": {
     "meta": {
       "title": "회사 소개",
