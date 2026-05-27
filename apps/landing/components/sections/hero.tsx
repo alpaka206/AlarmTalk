@@ -1,6 +1,7 @@
-import { ArrowRight, Smartphone } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PhonePreview } from "../phone-preview";
+import { StoreBadges } from "../store-badges";
 
 export function Hero() {
   const t = useTranslations("hero");
@@ -24,26 +25,15 @@ export function Hero() {
             {t("description")}
           </p>
 
-          <div className="mt-10 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-            <a href="#waitlist" className="btn btn-primary group">
-              {t("primary")}
-              <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-0.5" />
+          <div className="mt-10">
+            <StoreBadges />
+            <a
+              href="#waitlist"
+              className="group mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-text-muted transition hover:text-text"
+            >
+              {t("waitlistHint")}
+              <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
             </a>
-
-            {/* QR placeholder card */}
-            <div className="flex items-center gap-3 rounded-full border border-line bg-surface p-1.5 pr-5">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-raised text-text-muted">
-                <Smartphone className="h-4 w-4" />
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="whitespace-nowrap text-[12px] font-semibold text-text">
-                  {t("qrLabel")}
-                </span>
-                <span className="whitespace-nowrap text-[10.5px] text-text-faint">
-                  {t("qrCaption")}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
 

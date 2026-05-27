@@ -15,10 +15,7 @@
     "headline1": "The one alarm that",
     "headline2": "changes your morning.",
     "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time. A real native alarm, not a push notification.",
-    "primary": "Get early access",
-    "secondary": "How it works",
-    "qrLabel": "Scan to download",
-    "qrCaption": "Use this QR at launch",
+    "waitlistHint": "Before launch — join the beta waitlist",
     "phone": {
       "greetTop": "Good morning,",
       "greetBottom": "whose voice woke you up?",
@@ -164,5 +161,13 @@
     "ko": "한국어",
     "en": "English",
     "ja": "日本語"
+  },
+  "store": {
+    "appStoreEyebrow": "Download on",
+    "appStoreLabel": "App Store",
+    "appStoreAria": "Get AlarmTalk on the App Store",
+    "googlePlayEyebrow": "GET IT ON",
+    "googlePlayLabel": "Google Play",
+    "googlePlayAria": "Get AlarmTalk on Google Play"
   }
 }

@@ -3,10 +3,7 @@ import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
-
-// TODO: 새 도메인 확정 후 SITE_URL 갱신 (AlarmTalk 리브랜딩 — Phase 미정)
-const SITE_URL = "https://waker.com";
-const SITE_NAME = "AlarmTalk";
+import { ORGANIZATION, SITE_NAME, SITE_URL } from "@/lib/site";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -66,7 +63,23 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale);
 
+  const organizationLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: ORGANIZATION.name,
+    legalName: ORGANIZATION.legalName,
+    url: ORGANIZATION.url,
+    logo: ORGANIZATION.logo,
+    ...(ORGANIZATION.sameAs.length > 0 ? { sameAs: ORGANIZATION.sameAs } : {}),
+  };
+
   return (
-    <NextIntlClientProvider>{children}</NextIntlClientProvider>
+    <NextIntlClientProvider>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}
+      />
+      {children}
+    </NextIntlClientProvider>
   );
 }

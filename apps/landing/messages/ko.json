@@ -15,10 +15,7 @@
     "headline1": "당신의 아침을 바꾸는",
     "headline2": "단 하나의 알람.",
     "description": "삐— 소리는 잊으세요. 좋아하는 사람의 진짜 목소리가 정확한 시간에 울립니다. 푸시 알림이 아닌 진짜 알람으로요.",
-    "primary": "먼저 써보기",
-    "secondary": "어떻게 동작하나요",
-    "qrLabel": "QR로 내려받기",
-    "qrCaption": "출시되면 이 QR로",
+    "waitlistHint": "정식 출시 전, 베타 대기자로 먼저 등록하기",
     "phone": {
       "greetTop": "오늘 아침,",
       "greetBottom": "어떤 목소리로 깨어났나요?",
@@ -164,5 +161,13 @@
     "ko": "한국어",
     "en": "English",
     "ja": "日本語"
+  },
+  "store": {
+    "appStoreEyebrow": "Download on",
+    "appStoreLabel": "App Store",
+    "appStoreAria": "App Store에서 알람톡 받기",
+    "googlePlayEyebrow": "GET IT ON",
+    "googlePlayLabel": "Google Play",
+    "googlePlayAria": "Google Play에서 알람톡 받기"
   }
 }
