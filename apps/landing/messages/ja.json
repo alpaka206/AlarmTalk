@@ -189,6 +189,11 @@
     "en": "English",
     "ja": "日本語"
   },
+  "mobileMenu": {
+    "open": "メニューを開く",
+    "close": "メニューを閉じる",
+    "panelLabel": "サイトメニュー"
+  },
   "store": {
     "appStoreEyebrow": "Download on",
     "appStoreLabel": "App Store",

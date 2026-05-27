@@ -1,6 +1,7 @@
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
+import { MobileMenu } from "./mobile-menu";
 
 export function SiteHeader() {
   const t = useTranslations("nav");
@@ -53,9 +54,12 @@ export function SiteHeader() {
           </Link>
         </nav>
 
-        <Link href="/#waitlist" className="btn btn-primary btn-sm">
-          {t("cta")}
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/#waitlist" className="btn btn-primary btn-sm hidden sm:inline-flex">
+            {t("cta")}
+          </Link>
+          <MobileMenu />
+        </div>
       </div>
     </header>
   );
