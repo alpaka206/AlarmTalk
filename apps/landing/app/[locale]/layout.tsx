@@ -4,6 +4,7 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 import { ORGANIZATION, SITE_NAME, SITE_URL } from "@/lib/site";
+import { HtmlLangSync } from "@/components/html-lang-sync";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -32,9 +33,10 @@ export async function generateMetadata({
     applicationName: SITE_NAME,
     alternates: {
       canonical: `/${locale}`,
-      languages: Object.fromEntries(
-        routing.locales.map((l) => [l, `/${l}`])
-      ),
+      languages: {
+        ...Object.fromEntries(routing.locales.map((l) => [l, `/${l}`])),
+        "x-default": `/${routing.defaultLocale}`,
+      },
     },
     openGraph: {
       type: "website",
@@ -75,6 +77,7 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider>
+      <HtmlLangSync locale={locale} />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}

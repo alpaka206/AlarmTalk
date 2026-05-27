@@ -19,12 +19,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
         priority:
           page === "" ? (locale === routing.defaultLocale ? 1 : 0.8) : 0.5,
         alternates: {
-          languages: Object.fromEntries(
-            routing.locales.map((l) => [
-              l,
-              `${SITE_URL}/${page ? `${l}/${page}/` : `${l}/`}`,
-            ]),
-          ),
+          languages: {
+            ...Object.fromEntries(
+              routing.locales.map((l) => [
+                l,
+                `${SITE_URL}/${page ? `${l}/${page}/` : `${l}/`}`,
+              ]),
+            ),
+            "x-default": `${SITE_URL}/${page ? `${routing.defaultLocale}/${page}/` : `${routing.defaultLocale}/`}`,
+          },
         },
       };
     }),
