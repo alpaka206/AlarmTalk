@@ -225,28 +225,28 @@
           "tag": "サポート",
           "title": "アプリ・アカウントの問い合わせ",
           "body": "不具合、アラームが鳴らない、アカウント・課金に関する質問はこちらへ。",
-          "email": "support@alarmtalk.app",
+          "email": "support@alarm-talk.com",
           "cta": "メールで送る"
         },
         {
           "tag": "ビジネス",
           "title": "提携・B2B のご相談",
           "body": "チーム・企業導入、ライセンス、連携提案などはビジネス窓口へ。",
-          "email": "business@alarmtalk.app",
+          "email": "business@alarm-talk.com",
           "cta": "メールで送る"
         },
         {
           "tag": "採用・一般",
           "title": "採用・その他のお問い合わせ",
           "body": "一緒に働きたい方、上記のどれにも当てはまらないご相談はこちら。",
-          "email": "hello@alarmtalk.app",
+          "email": "hello@alarm-talk.com",
           "cta": "メールで送る"
         },
         {
           "tag": "プレス",
           "title": "取材・メディア",
           "body": "取材、インタビュー、プレスキットなどはメディア窓口にお送りください。",
-          "email": "press@alarmtalk.app",
+          "email": "press@alarm-talk.com",
           "cta": "メールで送る"
         }
       ]

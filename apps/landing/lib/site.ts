@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://alarmtalk.app";
+const DEFAULT_SITE_URL = "https://alarm-talk.com";
 
 function normalize(url: string): string {
   return url.replace(/\/+$/, "");

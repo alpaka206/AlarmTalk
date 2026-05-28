@@ -225,28 +225,28 @@
           "tag": "Support",
           "title": "App & account help",
           "body": "Bugs, alarms not ringing, account or billing questions belong here.",
-          "email": "support@alarmtalk.app",
+          "email": "support@alarm-talk.com",
           "cta": "Send email"
         },
         {
           "tag": "Business",
           "title": "Partnerships · B2B",
           "body": "Team or company rollouts, licensing, integration proposals — write to business.",
-          "email": "business@alarmtalk.app",
+          "email": "business@alarm-talk.com",
           "cta": "Send email"
         },
         {
           "tag": "Careers · General",
           "title": "Join us · general inquiries",
           "body": "Interested in joining the team, or have something that doesn't fit the other channels?",
-          "email": "hello@alarmtalk.app",
+          "email": "hello@alarm-talk.com",
           "cta": "Send email"
         },
         {
           "tag": "Press",
           "title": "Press & media",
           "body": "Coverage, interviews, press kits — the media line gets the fastest reply.",
-          "email": "press@alarmtalk.app",
+          "email": "press@alarm-talk.com",
           "cta": "Send email"
         }
       ]
