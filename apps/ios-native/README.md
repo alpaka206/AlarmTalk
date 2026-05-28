@@ -53,7 +53,7 @@ In Xcode:
 The app reads `VOICE_ALARM_API_BASE_URL` from `VoiceAlarm/Info.plist`. The default is production:
 
 ```text
-https://voice-alarm-api.voicealarm.workers.dev/api
+https://api.alarm-talk.com/api
 ```
 
 ## Backend Requirements

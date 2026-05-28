@@ -70,7 +70,7 @@ AlarmTalk
 |---|---|---|
 | `voicealarm://` | `invite/{code}` | Auto-fill family invite code |
 | `voicealarm://` | `voucher/{code}` | (Planned) Auto-fill voucher code |
-| `https://naro.app` | `invite/{code}` | Web fallback that opens the landing page <!-- TODO(rebrand): replace naro.app with final AlarmTalk domain --> |
+| `https://alarm-talk.com` | `invite/{code}` | Web fallback that opens the landing page |
 
 ### Permission order (Android)
 

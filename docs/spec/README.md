@@ -232,4 +232,4 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 - Alarm ring path: OS-native + local audio only. No push, no server cron, no fetch at ring time.
 - External voice-AI calls only on explicit user actions. Automated QA and tests must not trigger them.
 - Voice data: shared only inside a user's family/partner group. External download blocked.
-- Environment files (`.env`, `.dev.vars`, `local.properties`, signing keys) are never committed.
+- Environment files (`.env`, `.dev.vars*`, `local.properties`, signing keys) are never committed.

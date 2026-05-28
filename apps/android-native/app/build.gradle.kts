@@ -91,7 +91,7 @@ android {
     }
 
     val voiceAlarmApiBaseUrl = providers.gradleProperty("voiceAlarmApiBaseUrl")
-        .orElse("https://voice-alarm-api.voicealarm.workers.dev/api/")
+        .orElse("https://api.alarm-talk.com/api/")
         .get()
     val voiceAlarmGoogleWebClientId = providers.gradleProperty("voiceAlarmGoogleWebClientId")
         .orElse("")

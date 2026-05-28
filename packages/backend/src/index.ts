@@ -46,7 +46,12 @@ app.use('*', rateLimitMiddleware);
 app.use('*', bodyLimitMiddleware);
 
 // CORS
-const ALLOWED_ORIGINS = ['http://localhost:8081', 'exp://localhost:8081'];
+const ALLOWED_ORIGINS = [
+  'http://localhost:8081',
+  'exp://localhost:8081',
+  'https://alarm-talk.com',
+  'https://www.alarm-talk.com',
+];
 
 app.use(
   '*',
@@ -58,29 +63,42 @@ app.use(
   }),
 );
 
-// Health check with DB connectivity
-app.get('/', async (c) => {
+async function healthPayload(env: Env) {
   let dbStatus: 'ok' | 'error' = 'error';
   try {
-    const db = getDB(c.env);
+    const db = getDB(env);
     await db.execute('SELECT 1');
     dbStatus = 'ok';
   } catch {
     // DB unreachable — report but don't fail the health check
   }
-  return c.json({
+  return {
     name: 'VoiceAlarm API',
     version: '1.0.0',
     status: dbStatus === 'ok' ? 'ok' : 'degraded',
     db: dbStatus,
-  });
-});
+  };
+}
+
+// Health check with DB connectivity
+app.get('/', async (c) => c.json(await healthPayload(c.env)));
+app.get('/health', async (c) => c.json(await healthPayload(c.env)));
+
+function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | undefined } }) {
+  if (c.env.ENVIRONMENT !== 'production') return true;
+  const expected = c.env.INIT_DB_SECRET;
+  if (!expected) return false;
+  return c.req.header('x-init-db-secret') === expected;
+}
 
 // DB 초기화 엔드포인트 — Workers free plan caps subrequests per invocation
 // (~50), so we run migrations in small batches selected by query params:
 //   POST /api/init-db                    → run all (only safe if not over cap)
 //   POST /api/init-db?fromId=1&toId=10   → run migrations 1..10 inclusive
 app.post('/api/init-db', async (c) => {
+  if (!canRunInitDb(c)) {
+    return c.json({ error: 'Not found' }, 404);
+  }
   try {
     const fromId = c.req.query('fromId');
     const toId = c.req.query('toId');

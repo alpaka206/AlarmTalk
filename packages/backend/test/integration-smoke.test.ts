@@ -78,6 +78,27 @@ describe('Health & Public Routes', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
   });
+
+  it('POST /api/init-db → production에서는 secret 없으면 404', async () => {
+    const res = await worker.fetch(req('POST', '/api/init-db'), {
+      ...ENV,
+      ENVIRONMENT: 'production',
+    }, {} as ExecutionContext);
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/init-db → production에서는 x-init-db-secret 필요', async () => {
+    const request = new Request('http://localhost/api/init-db', {
+      method: 'POST',
+      headers: { 'x-init-db-secret': 'init-secret' },
+    });
+    const res = await worker.fetch(request, {
+      ...ENV,
+      ENVIRONMENT: 'production',
+      INIT_DB_SECRET: 'init-secret',
+    }, {} as ExecutionContext);
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('Auth Routes (인증 불필요)', () => {

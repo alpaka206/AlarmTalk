@@ -23,6 +23,7 @@ export interface Env {
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;
+  INIT_DB_SECRET?: string;
   SENTRY_DSN?: string;
   VOICE_BUCKET?: R2Bucket;
 }

@@ -34,13 +34,13 @@ The alarm ring path does not use push notifications, server cron, network fetch,
 The native app defaults to the deployed API used by the legacy mobile app:
 
 ```text
-https://voice-alarm-api.voicealarm.workers.dev/api/
+https://api.alarm-talk.com/api/
 ```
 
 Root health was verified with:
 
 ```powershell
-Invoke-RestMethod -Uri https://voice-alarm-api.voicealarm.workers.dev/
+Invoke-RestMethod -Uri https://api.alarm-talk.com/
 ```
 
 Expected response includes `status: ok` and `db: ok`.

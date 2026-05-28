@@ -5,7 +5,7 @@
  * 2. R2 버킷(voice-alarm-voices) 의 객체를 모두 삭제한다 (wrangler 가 PATH 에 있을 때만).
  *
  * 환경변수:
- *   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN  → packages/backend/.dev.vars 에서 자동 로드
+ *   TURSO_DATABASE_URL, TURSO_AUTH_TOKEN  → --env-file 값에서 자동 로드 (기본: .dev.vars.dev)
  *   R2_BUCKET (선택, 기본값 voice-alarm-voices)
  *
  * 사용:
@@ -22,7 +22,18 @@ import { stdin, stdout } from 'node:process';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(SCRIPT_DIR, '..');
-const DEV_VARS = resolve(BACKEND_DIR, '.dev.vars');
+
+function argValue(name: string): string | undefined {
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]!;
+    if (arg === name) return argv[i + 1];
+    if (arg.startsWith(`${name}=`)) return arg.slice(name.length + 1);
+  }
+  return undefined;
+}
+
+const DEV_VARS = resolve(BACKEND_DIR, argValue('--env-file') ?? '.dev.vars.dev');
 
 const PROTECTED_TABLES = new Set<string>([
   '_litestream_seq',
@@ -119,7 +130,7 @@ async function clearR2Bucket(bucket: string, env: Record<string, string>): Promi
   // 폴백: 자동화 불가. wrangler v4 에는 r2 object list 가 없어 일괄 삭제 CLI 가 부재.
   console.log('  R2 자동 정리를 건너뜁니다 — 다음 중 하나로 직접 비워 주세요:');
   console.log('    1) Cloudflare 대시보드 → R2 → 대상 버킷에서 일괄 삭제');
-  console.log('    2) .dev.vars 에 CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN');
+  console.log('    2) --env-file 값에 CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN');
   console.log('       (R2 Read+Write) 추가 후 본 스크립트 재실행');
   void bucket; // bucket 이름은 환경변수에서 오므로 평문 로그 회피.
 }
@@ -162,7 +173,7 @@ async function main(): Promise<void> {
   const tursoUrl = env.TURSO_DATABASE_URL;
   const tursoToken = env.TURSO_AUTH_TOKEN;
   if (!tursoUrl || !tursoToken) {
-    throw new Error('TURSO_DATABASE_URL / TURSO_AUTH_TOKEN missing — check .dev.vars');
+    throw new Error('TURSO_DATABASE_URL / TURSO_AUTH_TOKEN missing — check --env-file');
   }
   const bucket = env.R2_BUCKET ?? 'voice-alarm-voices';
 
