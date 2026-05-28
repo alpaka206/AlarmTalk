@@ -38,28 +38,28 @@ export function SiteFooter() {
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
-                  <a
-                    href="#voices"
+                  <Link
+                    href="/#voices"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkVoices")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#how"
+                  <Link
+                    href="/#how"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkHow")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#faq"
+                  <Link
+                    href="/#faq"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkFaq")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -68,6 +68,14 @@ export function SiteFooter() {
                 {t("company")}
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
+                <li>
+                  <Link
+                    href="/company"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkAbout")}
+                  </Link>
+                </li>
                 <li>
                   <a
                     href="https://github.com/perso-devrel/voice_alarm"
@@ -79,13 +87,12 @@ export function SiteFooter() {
                   </a>
                 </li>
                 <li>
-                  {/* TODO: 새 도메인 확정 후 mailto 갱신 (waker.com → AlarmTalk 도메인) */}
-                  <a
-                    href="mailto:hello@waker.com"
+                  <Link
+                    href="/contact"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkContact")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
