@@ -19,6 +19,6 @@ export const ORGANIZATION = {
   name: "AlarmTalk",
   legalName: "AlarmTalk",
   url: SITE_URL,
-  logo: `${SITE_URL}/icon.svg`,
+  logo: `${SITE_URL}/icon.png`,
   sameAs: [] as string[],
 } as const;

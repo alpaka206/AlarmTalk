@@ -19,8 +19,16 @@ async function getMobileDataUri() {
   return `data:image/jpeg;base64,${buffer.toString("base64")}`;
 }
 
+async function getIconDataUri() {
+  const buffer = await readFile(
+    join(process.cwd(), "public", "brand-icon.png"),
+  );
+  return `data:image/png;base64,${buffer.toString("base64")}`;
+}
+
 export default async function OpengraphImage() {
   const mobileSrc = await getMobileDataUri();
+  const iconSrc = await getIconDataUri();
 
   return new ImageResponse(
     (
@@ -48,22 +56,13 @@ export default async function OpengraphImage() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 64 64"
-              width="48"
-              height="48"
-            >
-              <rect width="64" height="64" rx="14" fill="#1A1248" />
-              <rect x="11" y="22" width="4" height="20" rx="2" fill="#F2934A" />
-              <rect x="49" y="22" width="4" height="20" rx="2" fill="#F2934A" />
-              <rect x="19" y="26" width="3" height="12" rx="1.5" fill="#FFF8EE" />
-              <rect x="24" y="22" width="3" height="20" rx="1.5" fill="#FFF8EE" />
-              <rect x="29" y="18" width="3" height="28" rx="1.5" fill="#FFF8EE" />
-              <rect x="34" y="22" width="3" height="20" rx="1.5" fill="#FFF8EE" />
-              <rect x="39" y="26" width="3" height="12" rx="1.5" fill="#FFF8EE" />
-              <rect x="44" y="29" width="3" height="6" rx="1.5" fill="#FFF8EE" />
-            </svg>
+            <img
+              src={iconSrc}
+              alt=""
+              width={48}
+              height={48}
+              style={{ borderRadius: 12 }}
+            />
             <div style={{ display: "flex", fontSize: 28, fontWeight: 700 }}>
               AlarmTalk
             </div>

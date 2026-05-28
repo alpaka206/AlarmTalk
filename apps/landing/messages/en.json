@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "AlarmTalk · Wake up to a voice you love",
-    "description": "Record once, around a minute. That voice greets you with a new line every morning — shared only inside your private family, couple, or friend group."
+    "description": "Register a voice once, then create alarms that read any line you write — in that voice. Shared only inside your private family, couple, or friend group."
   },
   "nav": {
     "voices": "Features",
@@ -16,7 +16,7 @@
     "badge": "Voice alarm, made in Korea",
     "headline1": "Wake up to",
     "headline2": "a voice you love.",
-    "description": "Record once — about a minute. That voice greets you with a different line every morning. Never the same sentence twice.",
+    "description": "Register a voice once, then freely create alarms that read any line you write — all in that voice.",
     "waitlistHint": "Before launch — join the beta waitlist",
     "scrollHint": "Scroll",
     "phone": {
@@ -40,13 +40,13 @@
     "items": [
       {
         "metric": "60s",
-        "title": "One recording",
-        "body": "Around a minute of audio is enough. That voice keeps generating new lines, every morning — never the same one twice."
+        "title": "One setup",
+        "body": "Around a minute of audio is all it takes to build a voice profile. Then create as many alarms as you like in that voice."
       },
       {
-        "metric": "6",
-        "title": "Daily contexts",
-        "body": "Wake & weather, fortune, meals, sleep, exercise, love. Each morning's line is shaped by today's context."
+        "metric": "TTS",
+        "title": "Any line you write",
+        "body": "Type any sentence and it's read in that voice. Optionally, auto-generate a fresh line daily from contexts like weather or fortune."
       },
       {
         "metric": "0",
@@ -58,11 +58,11 @@
   "voice": {
     "eyebrow": "Voice cloning",
     "headline1": "One minute of audio,",
-    "headline2": "a lifetime of mornings.",
-    "description": "Around a minute of a person's voice is enough. New sentences in that same voice are generated naturally — not a memorized loop, but a fresh line shaped by today's context.",
-    "bullet1": "Register a voice profile from ~60s of audio",
-    "bullet2": "Same voice, a different line every morning",
-    "bullet3": "Relationship-aware greetings — Mom → son, partner → partner"
+    "headline2": "as many alarms as you want.",
+    "description": "Around a minute of audio builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like.",
+    "bullet1": "Build a voice profile from ~60s of audio",
+    "bullet2": "Type any sentence, read back in that voice",
+    "bullet3": "Reuse one registered voice across many alarms"
   },
   "shared": {
     "eyebrow": "Family · partner · friends",
@@ -74,10 +74,10 @@
     "bullet3": "Far apart? Wake to a grandchild, child, or partner every morning"
   },
   "language": {
-    "eyebrow": "A different line every day",
-    "headline1": "Five seconds of alarm,",
-    "headline2": "a different story each day.",
-    "description": "Today's weather, this week's fortune, a meal reminder, a goodnight note. Six contexts shape a fresh line in that voice every morning. Language learning runs on the same engine.",
+    "eyebrow": "Auto-generate (optional)",
+    "headline1": "Too busy to type?",
+    "headline2": "Let it write itself.",
+    "description": "Don't feel like writing a line every time? Pick a context like weather or fortune, and a fresh greeting is generated daily in that voice. It's an optional mode you turn on when you want it.",
     "bullet1": "Today's weather and temperature, in that voice",
     "bullet2": "Weekly fortune, meals, sleep, exercise, love",
     "bullet3": "Language practice in Korean, English, Japanese and 5 more"
@@ -89,17 +89,17 @@
       {
         "tag": "Fandom",
         "title": "Wake up to your favorite idol's voice",
-        "body": "A short clip from a fan video is enough. That voice greets you with a new line every morning — one recording, used for a lifetime."
+        "body": "Register a short clip from a fan video once, then create as many alarms as you like that read any line in that voice."
       },
       {
         "tag": "Seniors",
         "title": "Parents waking to a grandchild's voice",
-        "body": "Sixty seconds from a far-away grandchild keeps arriving as a fresh greeting in that voice every morning."
+        "body": "Sixty seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
       },
       {
         "tag": "Couple",
         "title": "Apart every weekend",
-        "body": "“Good night. See you tomorrow morning.” Recorded once after work, played back as a new line each day in the same voice."
+        "body": "“Good night. See you tomorrow morning.” Use the recording as an alarm — or write more lines to read back in the same voice."
       },
       {
         "tag": "Living alone",
@@ -135,8 +135,8 @@
     "headline": "Frequently asked",
     "items": [
       {
-        "q": "How does one minute of audio turn into a new line every morning?",
-        "a": "Voice cloning learns the tone, pronunciation, and cadence of that voice, then reads new sentences in it naturally. It's not a memorized loop — each morning's line is generated against today's context (weather, fortune, meals, sleep, exercise, love)."
+        "q": "What can I do with one minute of audio?",
+        "a": "It builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like. You can also use a raw recording as-is, or optionally auto-generate a fresh line daily from contexts like weather or fortune."
       },
       {
         "q": "Where does my voice go after I record it?",
@@ -152,7 +152,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, daily contexts (weather, fortune, etc.), and the character system are part of paid plans."
+        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, auto-generated contexts (weather, fortune, etc.), and the character system are part of paid plans."
       },
       {
         "q": "Which devices are supported?",
@@ -172,7 +172,7 @@
     "agreement": "By submitting, you agree to our privacy policy."
   },
   "footer": {
-    "tagline": "Wake up to a voice you love. A new line in that voice, every morning.",
+    "tagline": "Wake up to a voice you love. Register once, then any line you write is read in that voice.",
     "product": "Product",
     "company": "Company",
     "legal": "Legal",
@@ -299,7 +299,7 @@
       "alarmtalk": {
         "tag": "AlarmTalk",
         "title": "A voice alarm app",
-        "body": "Around a minute of audio creates a voice profile, and that voice greets you with a different line every morning. Family, partner, and friend groups exchange voices privately.",
+        "body": "Around a minute of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
         "cta": "Back to home"
       }
     },
