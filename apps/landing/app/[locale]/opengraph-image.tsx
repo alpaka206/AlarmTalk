@@ -55,13 +55,14 @@ export default async function OpengraphImage() {
               height="48"
             >
               <rect width="64" height="64" rx="14" fill="#1A1248" />
-              <rect x="11" y="22" width="4" height="20" rx="2" fill="#A8D4FF" />
-              <rect x="49" y="22" width="4" height="20" rx="2" fill="#A8D4FF" />
+              <rect x="11" y="22" width="4" height="20" rx="2" fill="#F2934A" />
+              <rect x="49" y="22" width="4" height="20" rx="2" fill="#F2934A" />
               <rect x="19" y="26" width="3" height="12" rx="1.5" fill="#FFF8EE" />
               <rect x="24" y="22" width="3" height="20" rx="1.5" fill="#FFF8EE" />
               <rect x="29" y="18" width="3" height="28" rx="1.5" fill="#FFF8EE" />
               <rect x="34" y="22" width="3" height="20" rx="1.5" fill="#FFF8EE" />
               <rect x="39" y="26" width="3" height="12" rx="1.5" fill="#FFF8EE" />
+              <rect x="44" y="29" width="3" height="6" rx="1.5" fill="#FFF8EE" />
             </svg>
             <div style={{ display: "flex", fontSize: 28, fontWeight: 700 }}>
               AlarmTalk
