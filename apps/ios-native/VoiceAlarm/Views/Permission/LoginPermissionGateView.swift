@@ -5,26 +5,15 @@ import SwiftUI
 import AlarmKit
 #endif
 
-/// 로그인 직후 처음 본 앱을 열었을 때 한 번에 권한을 안내하는 게이트.
+/// 권한 상태 스냅샷과 선택적 안내 시트.
 ///
-/// Android `apps/android-native/.../ui/app/LoginPermissionGate.kt:32-106` 의
-/// 의도와 동등. iOS 에서 다루는 권한은 두 종류다:
+/// iOS 권한 프롬프트는 로그인 직후 자동으로 띄우지 않고, 홈/알람/목소리
+/// 기능 진입 시점에 요청한다. 이 파일의 스냅샷 타입은 해당 진입점들이
+/// 권한 상태를 읽을 때 공유한다. iOS 에서 다루는 권한은 두 종류다:
 ///   1. AlarmKit 권한 — 잠금화면 알람 예약 + ringing 능력. `AlarmManager.shared
 ///      .authorizationState == .authorized` 인지 확인.
 ///   2. 마이크 권한 — Voice Studio 녹음/클로닝의 전제. `AVAudioApplication
 ///      .shared.recordPermission == .granted`.
-///
-/// 둘 다 부족한 경우 사용자 입장에서 한 번에 안내받게 한다. 한쪽만 부족하면
-/// 해당 항목만 강조해 보여준다. "나중에" 누르면 본 시트가 닫히고, 본문 화면은
-/// 그대로 노출되되 각 기능 진입 시점에 다시 검사한다.
-///
-/// 사용법
-/// ```swift
-/// LoginPermissionGateView {
-///     MainTabsView()
-/// }
-/// ```
-/// `content` 가 본 화면이고, gate 가 필요한 경우 본 화면 위로 시트가 떠 안내한다.
 struct LoginPermissionGateView<Content: View>: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
@@ -134,7 +123,8 @@ struct LoginPermissionSnapshot: Equatable {
     @MainActor
     private static func isAlarmAuthorized(alarmKit: AlarmKitViewModel) -> Bool {
         #if canImport(AlarmKit)
-        return AlarmManager.shared.authorizationState == .authorized
+        alarmKit.refreshAuthorizationState()
+        return alarmKit.alarmAuthorized
         #else
         // AlarmKit 미사용 SDK 빌드는 게이트 통과로 간주.
         return true
@@ -164,7 +154,7 @@ enum PermissionTarget: String, Hashable {
     var description: String {
         switch self {
         case .alarmKit:
-            return "잠금 화면에서도 정확한 시간에 알람을 울리려면 AlarmKit 권한이 필요해요."
+            return "잠금 화면에서도 정확한 시간에 알람을 울리려면 알람 권한이 필요해요."
         case .microphone:
             return "내 목소리를 녹음해 클로닝하거나 미리듣기를 하려면 마이크 권한이 필요해요."
         }
@@ -189,13 +179,27 @@ private struct PermissionGateSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("알람 권한을 허용해 주세요")
-                    .font(theme.typography.titleLarge)
-                    .foregroundStyle(theme.palette.onSurface)
-                Text("정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("알람 권한을 허용해 주세요")
+                        .font(theme.typography.titleLarge)
+                        .foregroundStyle(theme.palette.onSurface)
+                    Text("정확한 시간에 알람을 울리고 잠금 화면에서 바로 열려면 아래 권한이 필요해요.")
+                        .font(theme.typography.bodyMedium)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                }
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.headline)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(width: 32, height: 32)
+                        .background(theme.palette.surfaceVariant, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("닫기"))
             }
 
             PermissionItemRow(
@@ -208,12 +212,6 @@ private struct PermissionGateSheet: View {
                 granted: snapshot.microphoneGranted,
                 onTap: onRequestMicrophone
             )
-
-            Button("나중에", action: onClose)
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.palette.onSurfaceVariant)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
         }
         .padding(18)
     }

@@ -13,7 +13,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
       <body className="bg-aurora min-h-screen">
         <div className="grain" aria-hidden="true" />
         <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 -z-0 h-[640px]" />

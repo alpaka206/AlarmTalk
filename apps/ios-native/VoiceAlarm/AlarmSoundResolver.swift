@@ -2,11 +2,12 @@ import Foundation
 
 #if canImport(AlarmKit)
 import AlarmKit
+import ActivityKit
 #endif
 
 // MARK: - AlarmSoundResolution
 //
-// Phase 2-B4 — playMode 와 캐싱된 보이스/TTS 의 존재 여부에 따라 어떤 사운드
+// Phase 2-B4 — playMode 와 캐싱된 목소리/TTS 의 존재 여부에 따라 어떤 사운드
 // 전략을 쓸지 결정한다.
 //
 // - systemDefault: AlarmKit `.default` 시스템 사운드 사용.
@@ -108,7 +109,9 @@ enum AlarmSoundResolver {
     #if canImport(AlarmKit)
     /// 결정된 resolution 을 AlarmKit 의 `AlertConfiguration.AlertSound` 로 변환한다.
     /// `.cachedAudio` 는 in-app 폴백 경로이므로 OS 알람음은 `.default` 로 둔다.
-    static func makeAlertSound(_ resolution: AlarmSoundResolution) -> AlertConfiguration.AlertSound {
+    /// `nonisolated` — 순수 변환 함수라서 enum 의 @MainActor 격리에 묶일 필요가 없고,
+    /// `AlarmKitViewModel.makeConfiguration`(nonisolated) 가 호출해야 하므로.
+    nonisolated static func makeAlertSound(_ resolution: AlarmSoundResolution) -> AlertConfiguration.AlertSound {
         switch resolution {
         case .systemDefault:
             return .default

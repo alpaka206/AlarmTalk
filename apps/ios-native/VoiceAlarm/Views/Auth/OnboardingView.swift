@@ -3,12 +3,11 @@ import SwiftUI
 /// 첫 로그인 후 노출되는 3페이지 페이저.
 ///
 /// Android `apps/android-native/.../ui/onboarding/OnboardingScreen.kt:63-179` 의
-/// 카피를 그대로 옮겼다. 첫 페이지 = 보이스, 두 번째 = 가족, 세 번째 = 캐릭터.
+/// 카피를 그대로 옮겼다. 첫 페이지 = 목소리, 두 번째 = 가족, 세 번째 = 캐릭터.
 /// dot indicator + skip + 다음/시작하기 버튼을 모두 포함한다.
 ///
 /// 사용처
-///   1. 로그인 직후 `RootView` 가 `onboarding_completed_v1` AppStorage 가 false 일
-///      때 push 한다.
+///   1. 로그인 직후 `RootView` 가 현재 사용자에게 완료 기록이 없을 때 push 한다.
 ///   2. 랜딩 화면에서 "계정 만들기" 흐름의 일부로도 진입 가능 (선택).
 ///
 /// 진행 모델
@@ -19,7 +18,7 @@ struct OnboardingView: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @Environment(\.dismiss) private var dismiss
 
-    /// 외부에서 완료를 받는 콜백. RootView 가 `@AppStorage` 변경을 담당하고,
+    /// 외부에서 완료를 받는 콜백. RootView 가 사용자별 완료 저장을 담당하고,
     /// LandingView 에서 "처음 사용" 진입 흐름에서는 navigation pop 을 한다.
     var onComplete: (() -> Void)?
 

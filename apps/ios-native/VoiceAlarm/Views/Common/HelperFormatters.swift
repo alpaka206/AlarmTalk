@@ -17,14 +17,29 @@ enum HelperFormatters {
         weekdays.first { $0.value == value }?.label ?? ""
     }
 
-    /// 캐릭터 단계 라벨(SP/FL/TR/SE)을 반환. nil/unknown 은 "SE".
-    static func characterStageLabel(_ stage: String?) -> String {
+    /// Android `stageEmoji` 와 같은 캐릭터 단계 이모지. nil/unknown 은 씨앗.
+    static func characterStageEmoji(_ stage: String?) -> String {
         switch stage {
-        case "sprout": return "SP"
-        case "flower": return "FL"
-        case "tree": return "TR"
-        default: return "SE"
+        case "sprout": return "🌱"
+        case "tree": return "🌳"
+        case "bloom", "flower": return "🌸"
+        default: return "🌰"
         }
+    }
+
+    /// Android `stageLabel` 과 같은 캐릭터 단계 이름. nil/unknown 은 씨앗.
+    static func characterStageName(_ stage: String?) -> String {
+        switch stage {
+        case "sprout": return "새싹"
+        case "tree": return "나무"
+        case "bloom", "flower": return "꽃"
+        default: return "씨앗"
+        }
+    }
+
+    /// 이전 화면 분해 코드 호환용. 새 화면은 `characterStageEmoji` 를 직접 쓴다.
+    static func characterStageLabel(_ stage: String?) -> String {
+        characterStageEmoji(stage)
     }
 
     /// 홈 화면 인사말. 시각대별로 두 줄로 갈라진 문구를 돌려준다.
@@ -63,13 +78,4 @@ enum HelperFormatters {
         return "\(days) \(first.start)-\(first.end)"
     }
 
-    /// 알람 한 줄 요약. 반복요일/재생모드/스누즈/오디오캐시/서버동기화 상태를 합친다.
-    static func alarmDetail(_ alarm: LocalAlarmRecord) -> String {
-        let repeatLabel = alarm.repeatWeekdays.isEmpty
-            ? "한 번"
-            : alarm.repeatWeekdays.sorted().map(weekdayLabel).joined(separator: " ")
-        let remoteLabel = alarm.remoteAlarmId == nil ? "서버 미저장" : "서버 저장됨"
-        let audioLabel = alarm.localAudioUri == nil ? "로컬 음성 없음" : "로컬 음성 캐시"
-        return "\(repeatLabel) · \(alarm.playModeEnum.label) · 다시 알림 \(alarm.snoozeMinutes)분 · \(audioLabel) · \(remoteLabel)"
-    }
 }

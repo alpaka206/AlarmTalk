@@ -7,6 +7,8 @@ import SwiftUI
 struct PeoplePanel: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
 
+    var onCodeRegistered: (CodeRegistrationDestination) -> Void = { _ in }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let group = socialFeatures.familyGroup?.group {
@@ -19,7 +21,7 @@ struct PeoplePanel: View {
                             .foregroundStyle(VoiceAlarmTheme.textSecondary)
                     }
                     Spacer()
-                    PermissionPill(text: socialFeatures.familyGroup?.role ?? "member")
+                    PermissionPill(text: sharedPassRoleLabel(socialFeatures.familyGroup?.role))
                 }
 
                 ForEach(socialFeatures.familyGroup?.members ?? []) { member in
@@ -32,7 +34,7 @@ struct PeoplePanel: View {
                                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
                         }
                         Spacer()
-                        Text(member.role)
+                        Text(sharedPassRoleLabel(member.role))
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(VoiceAlarmTheme.textSecondary)
                     }
@@ -48,7 +50,7 @@ struct PeoplePanel: View {
                 )
             }
 
-            CodeRegisterRow()
+            CodeRegisterRow(onCodeRegistered: onCodeRegistered)
 
             if socialFeatures.vouchers.isEmpty {
                 Text("발급된 공유 코드가 없어요.")
@@ -77,7 +79,7 @@ struct VoucherRow: View {
                 Text(voucher.code)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(VoiceAlarmTheme.text)
-                Text("\(voucher.planName) · \(voucher.status) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)")
+                Text("\(voucher.planName) · \(voucherStatusLabel(voucher.status)) · \(voucher.useCount ?? 0)/\(voucher.maxUses ?? 1)")
                     .font(.caption)
                     .foregroundStyle(VoiceAlarmTheme.textSecondary)
             }
@@ -88,6 +90,36 @@ struct VoucherRow: View {
         .padding(12)
         .background(VoiceAlarmTheme.surfaceVariant)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private func sharedPassRoleLabel(_ role: String?) -> String {
+    let trimmed = role?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    switch trimmed {
+    case "owner":
+        return "관리자"
+    case "member":
+        return "구성원"
+    default:
+        return trimmed.isEmpty ? "구성원" : trimmed
+    }
+}
+
+private func voucherStatusLabel(_ status: String?) -> String {
+    let trimmed = status?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    switch trimmed {
+    case "active", "issued":
+        return "사용 가능"
+    case "pending":
+        return "대기 중"
+    case "redeemed", "used":
+        return "사용됨"
+    case "expired":
+        return "만료됨"
+    case "revoked", "cancelled", "canceled":
+        return "취소됨"
+    default:
+        return trimmed.isEmpty ? "상태 없음" : trimmed
     }
 }
 

@@ -11,13 +11,17 @@ struct CharacterMiniCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
-                let character = socialFeatures.character?.character
-                let progress = socialFeatures.character?.progress.progressRatio ?? 0
-                let streak = socialFeatures.character?.streak.current ?? 0
+                let characterResponse = socialFeatures.character
+                let character = characterResponse?.character
+                let progressModel = characterResponse?.progress
+                let levelSpan = max(progressModel?.levelSpan ?? 100, 1)
+                let xpIntoLevel = min(max(progressModel?.xpIntoLevel ?? 0, 0), levelSpan)
+                let progress = Double(xpIntoLevel) / Double(levelSpan)
+                let streak = characterResponse?.streak.current ?? 0
                 ZStack {
                     Circle()
                         .fill(Color(red: 0.88, green: 0.94, blue: 0.82))
-                    Text(HelperFormatters.characterStageLabel(character?.stage))
+                    Text(HelperFormatters.characterStageEmoji(character?.stage))
                         .font(.caption.weight(.bold))
                         .foregroundStyle(VoiceAlarmTheme.text)
                 }

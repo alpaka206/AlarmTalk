@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Android `apps/android-native/.../ui/auth/LandingScreen.kt:60-105` 를 1:1 포팅했다.
 /// 구성 요소
-///   1. Waker 브랜드 헤더 (로고 + 슬로건)
+///   1. AlarmTalk 브랜드 헤더 (로고 + 슬로건)
 ///   2. 큰 카피 ("좋아하는 목소리로\n깨어나는 알람")
 ///   3. 알람 미리듣기 카드 — 32-bar 파형 + 재생 버튼. 번들 mp3 가 없을 때는
 ///      시각 시뮬레이션(5초 동안 progress 가 0→1) 으로 동작한다.
@@ -81,7 +81,7 @@ private struct WakerBrandHeader: View {
                 .frame(width: 42, height: 42)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("Waker")
+                Text("AlarmTalk")
                     .font(theme.typography.titleLarge)
                     .foregroundStyle(theme.palette.onBackground)
                 Text("Voice alarm")

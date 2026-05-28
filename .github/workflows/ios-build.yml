@@ -1,0 +1,75 @@
+name: iOS Build
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "feat/**"
+      - "fix/**"
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-build:
+    name: VoiceAlarm (iOS Simulator)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/ios-native
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Show toolchain / SDK info
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --show-sdk-version --sdk iphonesimulator
+          xcrun --show-sdk-path --sdk iphonesimulator
+          ls /Applications | grep -i Xcode || true
+
+      - name: Select latest installed Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$latest" ]; then
+            sudo xcode-select -s "$latest/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build VoiceAlarm
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VoiceAlarmNative.xcodeproj \
+            -scheme VoiceAlarm \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee xcodebuild.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-xcodebuild-log
+          path: apps/ios-native/xcodebuild.log
+          retention-days: 7
+          if-no-files-found: warn

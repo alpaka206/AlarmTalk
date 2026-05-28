@@ -9,7 +9,6 @@ import SwiftUI
 /// 분해 매핑:
 /// - 랜딩(브랜드/미리듣기/CTA): `Views/Auth/LandingView.swift`
 /// - 로그인/회원가입 폼: `Views/Auth/LoginView.swift`
-/// - 권한 게이트: `Views/Permission/LoginPermissionGateView.swift`
 struct AuthGateView: View {
     var body: some View {
         NavigationStack {

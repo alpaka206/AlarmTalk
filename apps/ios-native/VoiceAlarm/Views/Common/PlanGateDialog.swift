@@ -35,8 +35,25 @@ struct PlanGateDialog: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.headline)
+                        .foregroundStyle(theme.palette.onSurfaceVariant)
+                        .frame(width: 32, height: 32)
+                        .background(theme.palette.surfaceVariant, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("닫기"))
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 16)
+
             FeatureLockBadge(size: 58, iconSize: 27)
-                .padding(.top, 24)
+                .padding(.top, 2)
 
             VStack(spacing: 7) {
                 Text(state.title)
@@ -85,14 +102,6 @@ struct PlanGateDialog: View {
                 .foregroundStyle(theme.palette.onPrimary)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                Button(action: { dismiss() }) {
-                    Text(state.dismissLabel)
-                        .font(theme.typography.labelLarge)
-                        .frame(maxWidth: .infinity, minHeight: 46)
-                }
-                .buttonStyle(.bordered)
-                .foregroundStyle(theme.palette.onSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 22)
@@ -112,7 +121,6 @@ struct PlanGateState: Identifiable, Equatable {
     let title: String
     let body: String
     let confirmLabel: String
-    let dismissLabel: String
     let currentPlan: PlanTier
     let requiredPlan: PlanTier
 
@@ -120,14 +128,12 @@ struct PlanGateState: Identifiable, Equatable {
         title: String = "유료 기능이에요",
         message: String? = nil,
         confirmLabel: String = "요금제 변경하러 가기",
-        dismissLabel: String = "닫기",
         currentPlan: PlanTier,
         requiredPlan: PlanTier
     ) {
         self.title = title
         self.body = message ?? PlanGateState.defaultMessage(requiredPlan: requiredPlan)
         self.confirmLabel = confirmLabel
-        self.dismissLabel = dismissLabel
         self.currentPlan = currentPlan
         self.requiredPlan = requiredPlan
     }
@@ -137,7 +143,7 @@ struct PlanGateState: Identifiable, Equatable {
         case .free:
             return "이 기능은 무료 플랜에서도 사용할 수 있어요."
         case .personal:
-            return "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 더 많은 보이스 슬롯을 열어보세요."
+            return "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 더 많은 목소리 슬롯을 열어보세요."
         case .couple:
             return "이 기능은 커플 플랜에서 사용할 수 있어요. 두 사람의 알람을 함께 관리해 보세요."
         case .family:
@@ -198,6 +204,27 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
         default:
             return .free
         }
+    }
+
+    /// iOS 는 StoreKit entitlement, 백엔드 구독 응답, 세션의 마지막 plan 값이
+    /// 짧은 시간 서로 다를 수 있다. 화면 게이트는 가장 높은 "최근 확인 상태"를
+    /// 사용해 구매 직후 UI가 순간적으로 무료처럼 보이는 일을 줄인다.
+    static func bestKnown(
+        serverSubscription: BillingSubscriptionResponse?,
+        storeTier: PlanTier = .free,
+        userPlan: String? = nil
+    ) -> PlanTier {
+        var candidates = [storeTier]
+        if serverSubscription == nil {
+            candidates.append(PlanTier.from(userPlan))
+        }
+        if serverSubscription?.subscription?.status == "active" {
+            candidates.append(PlanTier.from(serverSubscription?.plan?.key))
+            candidates.append(PlanTier.from(serverSubscription?.plan?.planType))
+        }
+        return candidates.max { lhs, rhs in
+            (tierOrder[lhs] ?? 0) < (tierOrder[rhs] ?? 0)
+        } ?? .free
     }
 }
 

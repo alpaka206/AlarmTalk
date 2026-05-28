@@ -7,13 +7,15 @@ import SwiftUI
 /// `AlarmPlayMode` enum 으로 양방향 바인딩.
 struct VoicePlayModePicker: View {
     @Binding var mode: AlarmPlayMode
+    var voiceLocked: Bool = false
+    var onLockedVoiceClick: () -> Void = {}
 
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
         VStack(alignment: .leading, spacing: theme.spacing.xs) {
             HStack(spacing: 8) {
-                ForEach(AlarmPlayMode.allCases) { option in
+                ForEach(AlarmPlayMode.pickerCases) { option in
                     chip(for: option)
                 }
             }
@@ -28,6 +30,7 @@ struct VoicePlayModePicker: View {
     @ViewBuilder
     private func chip(for option: AlarmPlayMode) -> some View {
         let selected = option == mode
+        let locked = voiceLocked && option != .alarmOnly
         Button {
             commit(option)
         } label: {
@@ -36,6 +39,10 @@ struct VoicePlayModePicker: View {
                     .font(.system(size: 14, weight: .semibold))
                 Text(option.label)
                     .font(theme.typography.labelLarge)
+                if locked && !selected {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .bold))
+                }
             }
             .fontWeight(selected ? .bold : .semibold)
             .foregroundStyle(
@@ -48,7 +55,7 @@ struct VoicePlayModePicker: View {
                     .fill(
                         selected
                             ? theme.palette.primaryContainer
-                            : theme.palette.surfaceVariant.opacity(0.44)
+                            : theme.palette.surfaceVariant.opacity(locked ? 0.28 : 0.44)
                     )
             )
             .overlay(
@@ -62,12 +69,17 @@ struct VoicePlayModePicker: View {
             )
         }
         .buttonStyle(.plain)
+        .opacity(locked && !selected ? 0.62 : 1)
         .accessibilityLabel(Text("재생 방식 \(option.label)"))
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
     }
 
     private func commit(_ option: AlarmPlayMode) {
         guard option != mode else { return }
+        if voiceLocked && option != .alarmOnly {
+            onLockedVoiceClick()
+            return
+        }
         mode = option
         UISelectionFeedbackGenerator().selectionChanged()
     }

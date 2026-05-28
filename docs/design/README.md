@@ -1,6 +1,6 @@
 # Design
 
-Information architecture, screens, UI/UX guide, and flow/sequence diagrams for Naro.
+Information architecture, screens, UI/UX guide, and flow/sequence diagrams for AlarmTalk.
 
 ## 1. Information Architecture
 
@@ -14,7 +14,7 @@ Information architecture, screens, UI/UX guide, and flow/sequence diagrams for N
 ### Site map (Android)
 
 ```
-Naro
+AlarmTalk
 ├─ ⏰ Alarms (Home tab)
 │    ├─ Alarm list
 │    ├─ New alarm (AlarmEditor / new mode)
@@ -70,7 +70,7 @@ Naro
 |---|---|---|
 | `voicealarm://` | `invite/{code}` | Auto-fill family invite code |
 | `voicealarm://` | `voucher/{code}` | (Planned) Auto-fill voucher code |
-| `https://naro.app` | `invite/{code}` | Web fallback that opens the landing page |
+| `https://naro.app` | `invite/{code}` | Web fallback that opens the landing page <!-- TODO(rebrand): replace naro.app with final AlarmTalk domain --> |
 
 ### Permission order (Android)
 
@@ -93,7 +93,7 @@ When recording voice
 
 ```
 ┌─────────────────────────────────────┐
-│ Naro                          [+]   │
+│ AlarmTalk                     [+]   │
 │ Tomorrow morning at 6:30...         │
 ├─────────────────────────────────────┤
 │ ⏰ 06:30   Weekdays      [● ON]     │

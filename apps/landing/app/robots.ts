@@ -1,6 +1,5 @@
 ﻿import type { MetadataRoute } from "next";
-
-const SITE_URL = "https://waker.com";
+import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-static";
 

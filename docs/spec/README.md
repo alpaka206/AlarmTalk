@@ -1,6 +1,6 @@
 # Specifications
 
-Functional and non-functional requirements, user stories, use cases, and feature spec for Naro.
+Functional and non-functional requirements, user stories, use cases, and feature spec for AlarmTalk.
 
 ## Priorities
 

@@ -218,7 +218,7 @@ export async function generateDynamicAlarmTextWithVertex(
     return fallback;
   }
   const parsed = parseAlarmTextPreparation(raw);
-  const text = parsed.text.trim();
+  const text = polishDynamicAlarmText(parsed.text.trim(), context);
 
   if (
     !text ||
@@ -479,25 +479,31 @@ function alarmTextPrompt(args: {
 // 한국어일 때 관계 라벨에 맞는 어체(반말/해요체/합니다체) 가이드를 추가한다.
 // 알람 청자는 보통 부모/조부모 (어른) 이라는 가정을 기본으로 깔고, speaker(말하는 사람)
 // 가 어떤 관계냐에 따라 자연스러운 한국어 화법을 매핑한다.
+const YOUNGER_TO_ELDER_RELATIONSHIPS = ['손녀', '손자', '손주', '딸', '아들', '자식', '며느리', '사위', '조카'];
+const ELDER_TO_YOUNGER_RELATIONSHIPS = ['할머니', '할아버지', '엄마', '어머니', '아빠', '아버지', '부모', '이모', '고모', '삼촌', '외할머니', '외할아버지'];
+const GRANDCHILD_RELATIONSHIPS = ['손녀', '손자', '손주'];
+const SIBLING_RELATIONSHIPS = ['형제', '자매', '남매', '동생', '누나', '언니', '오빠', '형'];
+
 function koreanRegisterGuidance(relationshipLabel: string | null | undefined): string {
   if (!relationshipLabel) return '';
   const label = relationshipLabel.trim();
   if (!label) return '';
-  const youngerToElder = ['손녀', '손자', '손주', '딸', '아들', '자식', '며느리', '사위', '조카'];
-  const elderToYounger = ['할머니', '할아버지', '엄마', '어머니', '아빠', '아버지', '부모', '이모', '고모', '삼촌', '외할머니', '외할아버지'];
-  const peerOrIntimate = ['친구', '동생'];
+  const peerOrIntimate = ['친구', ...SIBLING_RELATIONSHIPS];
 
-  if (youngerToElder.some((k) => label.includes(k))) {
-    return ' Speaker is younger than the listener: write in warm 해요체 (e.g. "할머니, 일어나셨어요?", "오늘은 ~해요"). Do NOT use stiff 합니다체 like "~합니다", "~하십시오". Sound like family talking, not a TV news anchor.';
+  if (isGrandchildRelationship(label)) {
+    return ' Speaker is a grandchild speaking to a grandparent: write in warm, familiar 해요체 with respectful verb forms. Prefer "할머니, 일어나실 시간이에요" or "할아버지, 좋은 아침이에요"; never write casual elder-address phrases like "할머니, 일어날 시간이에요". It should sound like an actual grandchild speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
   }
-  if (elderToYounger.some((k) => label.includes(k))) {
+  if (isYoungerToElderRelationship(label)) {
+    return ' Speaker is younger than the listener: write in warm, familiar 해요체 that still shows respect (e.g. "할아버지, 일어나실 시간이에요", "나가실 때 우산 꼭 챙기세요"). It should sound like an actual granddaughter/grandson or child speaking beside the listener, not a scripted announcement. Use small caring phrases when natural, such as "조심히 다녀오세요" or "감기 조심하세요". Do NOT use stiff 합니다체 like "~합니다", "~하십시오".';
+  }
+  if (ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k))) {
     return ' Speaker is older than the listener: write in caring 반말 or 해요체 mixed style (e.g. "우리 딸, 잘 잤어?", "오늘도 화이팅이야"). Avoid 합니다체.';
   }
   if (isRomanticRelationship(label)) {
     return ' Speaker is a romantic partner or spouse: write in intimate 반말 that feels warm and a little heart-fluttering when heard from a boyfriend, girlfriend, wife, or husband. Use soft caring phrases like "자기야", "내 생각도 조금 해", "감기 걸리면 안 돼", or "오늘도 네 편이야" only when they fit. Avoid stiff 해요체/합니다체, childish baby talk, melodrama, or generic slogans as the main emotion.';
   }
   if (peerOrIntimate.some((k) => label.includes(k))) {
-    return ' Speaker and listener are peers/intimate: write in 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). Never use 합니다체.';
+    return ' Speaker and listener are peers/intimate: write in natural 반말 (e.g. "일어났어?", "오늘 뭐 입을까?"). For sibling labels such as 형제·자매, 누나, 언니, 오빠, 형, or 동생, avoid 존댓말/해요체 and sound like a real sibling; for bedtime, prefer a line like "누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자." Never use 합니다체.';
   }
   return ' Use a warm conversational tone — prefer 해요체 over 합니다체. Sound like a real person, not an announcement.';
 }
@@ -508,6 +514,24 @@ function isRomanticRelationship(relationshipLabel: string | null | undefined): b
   return ['연인', '여자친구', '남자친구', '애인', '여보', '자기', '아내', '남편', '배우자', '와이프', '신랑', '신부'].some((keyword) =>
     label.includes(keyword),
   );
+}
+
+function isYoungerToElderRelationship(relationshipLabel: string | null | undefined): boolean {
+  const label = relationshipLabel?.trim();
+  if (!label) return false;
+  return YOUNGER_TO_ELDER_RELATIONSHIPS.some((keyword) => label.includes(keyword));
+}
+
+function isGrandchildRelationship(relationshipLabel: string | null | undefined): boolean {
+  const label = relationshipLabel?.trim();
+  if (!label) return false;
+  return GRANDCHILD_RELATIONSHIPS.some((keyword) => label.includes(keyword));
+}
+
+function isSiblingRelationship(relationshipLabel: string | null | undefined): boolean {
+  const label = relationshipLabel?.trim();
+  if (!label) return false;
+  return SIBLING_RELATIONSHIPS.some((keyword) => label.includes(keyword));
 }
 
 function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
@@ -528,7 +552,7 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       : '';
   const modeInstruction = (() => {
     if (context.mode === 'wake_weather') {
-      return `Create a wake-up message. Start naturally like "일어나실 시간이에요" or "좋은 아침이에요" rather than describing whose voice it is. The weather context already comes as one or two short actionable suggestions, e.g. "비가 올 수 있어요. 우산 챙기세요", "미세먼지가 많아요. 외출할 땐 마스크 챙기세요", "날씨가 좋아요. 잠깐 산책 가기에도 딱이에요". Weave at most two of these suggestions into the line naturally. DO NOT recite raw numbers, temperatures, percentages, weather codes, or labels like "강수 확률 70%" or "최저 12도 최고 19도". DO NOT just describe the weather ("비가 와요" alone is not enough) — always pair it with a short action the listener can take (e.g. 우산 챙기기, 마스크 챙기기, 따뜻하게 입기, 산책 추천). For Korean, weather can sound like softly relayed information using endings such as "~대", "~대요", "~다네요", "~것 같아", or "~면 좋겠다" when natural, but do not force a lead-in like "예보 보니까" or repeat an explicit source phrase every time. Do not mention location names, city/country names, the exact date, or weekday. Ending is optional; if you add one, keep it short and relationship-appropriate. Weather context: ${context.weatherSummary || 'weather information is unavailable'}.`;
+      return `Create a wake-up message that sounds like one real person gently waking another person up. Start with the listener's title if one is provided, then a natural wake-up phrase like "일어나실 시간이에요" or "좋은 아침이에요"; do not describe whose voice it is. The weather context already comes as one or two short actionable suggestions, e.g. "비가 올 수 있어요. 우산 챙기세요", "미세먼지가 많아요. 외출할 땐 마스크 챙기세요", "날씨가 좋아요. 잠깐 산책 가기에도 딱이에요". Convert that context into conversational speech and weave at most two suggestions into the line naturally. DO NOT recite raw numbers, temperatures, percentages, weather codes, or labels like "강수 확률 70%" or "최저 12도 최고 19도". DO NOT just describe the weather ("비가 와요" alone is not enough) — always pair it with a short action the listener can take (e.g. 우산 챙기기, 마스크 챙기기, 따뜻하게 입기, 산책 추천). For Korean, prefer soft relayed phrasing such as "~대요", "~있대요", "~다네요", or "~면 좋겠어요" when natural. In respectful family speech, keep natural particles and spacing: prefer "비가 올 수 있대요" or "오늘은 비가 올 수 있대요"; avoid clipped wording like "비 올 수 있대요". Avoid robotic connector phrases like "예보 보니까" unless it truly sounds spoken. Do not mention location names, city/country names, the exact date, or weekday. End with a tiny human care phrase only when it fits the relationship. Weather context: ${context.weatherSummary || 'weather information is unavailable'}.`;
     }
     if (context.mode === 'wake_fortune') {
       return `Create a wake-up message with a light, entertainment-only daily fortune. If fortune input is available, infer only a gentle mood from gender, birth date, and birth time. Fortune input is internal only: ${context.fortuneProfile || 'fortune profile is unavailable'}. Never mention the listener's birth date, birthday, birth time, zodiac details, "born on", "birth date", "생년월일", "태어난 시간", "몇 월 며칠생", or any specific month/day/year/time from the input. Do not sound like a real prediction or guarantee. For Korean, make the fortune feel like a soft, playful reading rather than something the speaker personally knows for certain; endings like "~래", "~라네요", "~것 같아", or "~면 좋겠다" are good when they sound natural. If the speaker is a romantic partner or spouse, do not mention new relationships, romantic opportunities, attraction from others, flirting, jealousy, or dating luck; keep the fortune about mood, small luck, confidence, health, work, study, or daily energy.`;
@@ -537,7 +561,9 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
       return `Create a ${context.mealLabel || 'meal'} reminder. Ask naturally whether they have eaten and recommend one menu idea. Consider this weather if available, using soft relayed weather phrasing in Korean when natural without forcing a source lead-in: ${context.weatherSummary || 'weather information is unavailable'}.`;
     }
     if (context.mode === 'sleep') {
-      return 'Create a bedtime message that helps the listener wind down, put the phone away, and rest without sounding like a generic notification.';
+      return isSiblingRelationship(context.relationshipLabel)
+        ? 'Create a sibling-style bedtime message in natural 반말. Make it sound like a real brother or sister, not a polite notification. Good Korean example: "누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자." Avoid 해요체 like "잘 시간이에요", "쉬어요", or "주무세요" for sibling cases.'
+        : 'Create a bedtime message that helps the listener wind down, put the phone away, and rest without sounding like a generic notification.';
     }
     if (context.mode === 'exercise') {
       return `Create an exercise reminder. Make it energetic but not childish. If the weather suggests it, choose indoor strength training or outdoor cardio naturally. In Korean, weather can use soft reported phrasing when natural, but do not force an explicit source phrase. Weather context: ${context.weatherSummary || 'weather information is unavailable'}.`;
@@ -562,10 +588,10 @@ function dynamicAlarmTextPrompt(context: DynamicAlarmTextContext): string {
     'Do not announce the relationship or source of the voice. Avoid phrases like "손녀 목소리로 전해요"; the alarm should sound like a natural alarm line.',
     'Do not mention the exact date, weekday, alarm time, country, city, district, or saved location label unless the user explicitly wrote it as part of the alarm text.',
     context.targetLanguage === 'ko'
-      ? '한국어 어체 규칙: 가족·친구·연인·배우자 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀→조부모, 자식→부모 등 손아랫사람이 손윗사람에게 말할 때는 친근한 해요체 ("~해요", "~예요"). 부모→자식, 형/누나→동생 등은 다정한 반말 또는 해요체 혼용. 친구 사이는 반말. 연인·남자친구·여자친구·아내·남편·배우자는 사적인 반말과 따뜻하고 살짝 설레는 톤. 뉴스 앵커처럼 들리지 않게 진짜 사람이 옆에서 말하는 톤으로.'
+      ? '한국어 어체 규칙: 가족·친구·연인·배우자 관계에서는 절대 "~합니다", "~하십시오" 같은 합니다체를 쓰지 말 것. 손녀·손자·손주→조부모는 친근하지만 공손한 해요체와 존대 동사를 써서 "할머니, 일어나실 시간이에요"처럼 말하고, "할머니, 일어날 시간이에요"처럼 낮춰 들리는 표현은 피한다. 자식→부모는 친근한 해요체 ("~해요", "~예요"). 부모→자식은 다정한 반말 또는 해요체 혼용. 형제·자매·친구 사이는 반말. 연인·남자친구·여자친구·아내·남편·배우자는 사적인 반말과 따뜻하고 살짝 설레는 톤. 뉴스 앵커처럼 들리지 않게 진짜 사람이 옆에서 말하는 톤으로.'
       : '',
     context.targetLanguage === 'ko'
-      ? '문장 구조 예시 (wake_weather): "일어나실 시간이에요. 비가 올 수 있대요. 우산 꼭 챙기세요. 오늘도 화이팅!" / "좋은 아침이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." / "자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼." / "일어나실 시간이에요. 미세먼지가 많대요. 마스크 챙겨 나가세요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. "예보 보니까" 같은 출처 도입은 선택 사항이며, 강수확률·기온 숫자를 그대로 읽는 패턴은 금지.'
+      ? '문장 구조 예시 (wake_weather): "할아버지, 일어나실 시간이에요. 오늘은 비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요." / "할머니, 좋은 아침이에요. 미세먼지가 많대요. 외출하실 때 마스크 챙기세요." / "자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨, 감기 걸리면 안 돼." / "일어나실 시간이에요. 날씨가 좋대요. 잠깐 산책 가기에도 딱이에요." — 위치/날짜/관계/숫자 없이 시작해서, 날씨 상태와 그에 맞는 행동 권유를 한두 마디로 자연스럽게 묶고 짧게 마무리. "예보 보니까" 같은 출처 도입은 선택 사항이며, 강수확률·기온 숫자를 그대로 읽는 패턴은 금지. 손녀→할아버지처럼 손아랫사람이 손윗사람에게 말할 때는 "오늘은 비가 올 수 있대요", "나가실 때 우산 꼭 챙기세요"처럼 조사와 띄어쓰기가 살아 있는 다정한 말투를 우선한다.'
       : '',
     'Make it feel meaningfully different from a prerecorded fixed alarm.',
     'Do not include any brackets, delivery tags, [tag] markers, or stage directions in your output. A single delivery tag will be added in a later step.',
@@ -588,7 +614,11 @@ function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): str
         .slice(0, 200)
         .trim();
     }
-    return `${wakeOpener} ${stripTrailingPunctuation(context.weatherSummary)}. 오늘도 화이팅!`
+    const weatherTip = weatherSummaryForFallback(context.weatherSummary, false);
+    const careClosing = context.targetLanguage === 'ko' && isYoungerToElderRelationship(context.relationshipLabel)
+      ? ' 조심히 다녀오세요.'
+      : ' 오늘도 화이팅!';
+    return `${wakeOpener} ${weatherTip}.${careClosing}`
       .slice(0, 200)
       .trim();
   }
@@ -651,11 +681,50 @@ function dynamicAlarmTextReadableFallback(context: DynamicAlarmTextContext): str
     .trim();
 }
 
+function polishDynamicAlarmText(text: string, context: DynamicAlarmTextContext): string {
+  if (context.targetLanguage !== 'ko') return text;
+  let polished = text.trim();
+
+  if (isGrandchildRelationship(context.relationshipLabel)) {
+    const listener = context.listenerTitle?.trim();
+    const titlePattern = listener
+      ? escapeRegExp(listener)
+      : '할머니|할머님|할아버지|할아버님';
+    polished = polished.replace(
+      new RegExp(`(${titlePattern}),\\s*일어날\\s+시간(?:이에요|예요)`, 'g'),
+      '$1, 일어나실 시간이에요',
+    );
+  }
+
+  if (context.mode === 'sleep' && isSiblingRelationship(context.relationshipLabel)) {
+    const listener = context.listenerTitle?.trim();
+    if (listener && /(잘\s+시간(?:이에요|예요)|쉬어요|주무세요)/.test(polished)) {
+      return `${listener}, 잘 시간이야. 휴대폰 내려놓고 얼른 자.`;
+    }
+  }
+
+  if (context.mode !== 'wake_weather') return polished;
+  const respectful = !isRomanticRelationship(context.relationshipLabel);
+  if (!respectful) return polished;
+
+  return polished
+    .replace(/오늘\s+비\s+올\s+수\s+있대요/g, '오늘은 비가 올 수 있대요')
+    .replace(/오늘\s+비\s+올\s+수\s+있다네요/g, '오늘은 비가 올 수 있다네요')
+    .replace(/오늘\s+비\s+온대요/g, '오늘은 비가 온대요')
+    .replace(/비\s+올\s+수\s+있대요/g, '비가 올 수 있대요')
+    .replace(/비\s+올\s+수\s+있다네요/g, '비가 올 수 있다네요')
+    .replace(/비\s+온대요/g, '비가 온대요')
+    .trim();
+}
+
 function stripTrailingPunctuation(text: string): string {
   return text.trim().replace(/[.!?。]+$/g, '');
 }
 
 function weatherSummaryForFallback(summary: string, intimate: boolean): string {
+  const naturalSummary = naturalizeRawWeatherSummary(summary, intimate);
+  if (naturalSummary) return naturalSummary;
+
   const replacements: Array<[RegExp, string]> = intimate
     ? [
         [/비가 살짝 올 수 있어요/g, '비가 살짝 올 수 있대'],
@@ -685,11 +754,37 @@ function weatherSummaryForFallback(summary: string, intimate: boolean): string {
         [/낮엔 따뜻해요/g, '낮엔 따뜻하대요'],
         [/많이 쌀쌀해요/g, '많이 쌀쌀하대요'],
         [/쌀쌀해요/g, '쌀쌀하대요'],
+        [/우산을 챙기면 (?:좋아요|안심돼요)/g, '우산 꼭 챙기세요'],
       ];
   return replacements.reduce(
     (value, [pattern, replacement]) => value.replace(pattern, replacement),
     stripTrailingPunctuation(summary),
   );
+}
+
+function naturalizeRawWeatherSummary(summary: string, intimate: boolean): string | null {
+  const text = stripTrailingPunctuation(summary);
+  const hasRain = /(비|강수|우산|precipitation|rain)/i.test(text);
+  const hasSnow = /(눈|미끄럽|snow)/i.test(text);
+  const hasDust = /(미세먼지|초미세먼지|마스크|pm10|pm2\.?5)/i.test(text);
+  const hasCold = /(쌀쌀|추|최저|영하|겉옷|따뜻하게)/i.test(text);
+  const hasHeat = /(무더|더울|최고|물도|시원하게)/i.test(text);
+
+  if (intimate) {
+    if (hasSnow) return '눈 올 수 있대. 미끄럽지 않게 조심해';
+    if (hasRain) return '비 올 수 있대. 나가기 전에 우산 꼭 챙겨';
+    if (hasDust) return '미세먼지 많대. 나갈 땐 마스크 챙겨';
+    if (hasCold) return '쌀쌀하대. 겉옷 하나 챙겨';
+    if (hasHeat) return '낮에 많이 덥대. 물도 자주 마셔';
+    return null;
+  }
+
+  if (hasSnow) return '눈이 올 수 있대요. 미끄럽지 않게 조심하세요';
+  if (hasRain) return '비가 올 수 있대요. 나가실 때 우산 꼭 챙기세요';
+  if (hasDust) return '미세먼지가 많대요. 외출하실 때 마스크 챙기세요';
+  if (hasCold) return '쌀쌀하대요. 겉옷 하나 챙기세요';
+  if (hasHeat) return '낮에 많이 덥대요. 물도 자주 드세요';
+  return null;
 }
 
 function dynamicAlarmTextPreparationFallback(

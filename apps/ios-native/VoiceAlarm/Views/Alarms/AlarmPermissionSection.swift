@@ -23,7 +23,7 @@ struct AlarmPermissionSection: View {
             Button {
                 Task { await alarmKit.requestAuthorization() }
             } label: {
-                Label("AlarmKit 권한 허용", systemImage: "alarm.fill")
+                Label("알람 권한 허용", systemImage: "alarm.fill")
             }
             .buttonStyle(.borderedProminent)
             .tint(VoiceAlarmTheme.primary)

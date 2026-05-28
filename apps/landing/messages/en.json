@@ -1,24 +1,24 @@
-﻿{
+{
   "meta": {
-    "title": "Waker · The one alarm that changes your morning",
-    "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time, every time."
+    "title": "AlarmTalk · Wake up to a voice you love",
+    "description": "Register a voice once, then create alarms that read any line you write — in that voice. Shared only inside your private family, couple, or friend group."
   },
   "nav": {
     "voices": "Features",
     "how": "How it works",
     "faq": "FAQ",
+    "company": "Company",
+    "contact": "Contact",
     "cta": "Get early access"
   },
   "hero": {
     "tag": "Voice alarm",
-    "badge": "A voice alarm app, made in Korea",
-    "headline1": "The one alarm that",
-    "headline2": "changes your morning.",
-    "description": "Forget the beeping. Wake up to the real voice of someone you love — at the exact time. A real native alarm, not a push notification.",
-    "primary": "Get early access",
-    "secondary": "How it works",
-    "qrLabel": "Scan to download",
-    "qrCaption": "Use this QR at launch",
+    "badge": "Voice alarm, made in Korea",
+    "headline1": "Wake up to",
+    "headline2": "a voice you love.",
+    "description": "Register a voice once, then freely create alarms that read any line you write — all in that voice.",
+    "waitlistHint": "Before launch — join the beta waitlist",
+    "scrollHint": "Scroll",
     "phone": {
       "greetTop": "Good morning,",
       "greetBottom": "whose voice woke you up?",
@@ -36,100 +36,127 @@
     }
   },
   "trust": {
-    "headline": "Not just another alarm.",
+    "headline": "Not a louder alarm. A voice you actually want to hear.",
     "items": [
       {
-        "metric": "100%",
-        "title": "Native alarm",
-        "body": "Not a push notification. Rings on time even with the screen locked or in airplane mode."
+        "metric": "60s",
+        "title": "One setup",
+        "body": "Around a minute of audio is all it takes to build a voice profile. Then create as many alarms as you like in that voice."
+      },
+      {
+        "metric": "TTS",
+        "title": "Any line you write",
+        "body": "Type any sentence and it's read in that voice. Optionally, auto-generate a fresh line daily from contexts like weather or fortune."
       },
       {
         "metric": "0",
-        "title": "AI-generated voice",
-        "body": "A real recording from a real person. Not the polished perfection of synthetic voice — the living tone that wakes you."
-      },
-      {
-        "metric": "3",
-        "title": "kinds of voices",
-        "body": "Voices you record yourself, voices shared from someone, and translated phrases for language practice."
+        "title": "Forced missions",
+        "body": "No math problems, no photo missions. We wake your mind, not just your body."
       }
     ]
   },
   "voice": {
-    "eyebrow": "Your voice",
-    "headline1": "You can't ignore",
-    "headline2": "your mom's voice.",
-    "description": "Adding a hundred more bell sounds still gives you the same noise. The moment a real human voice wakes you up, everything changes.",
-    "bullet1": "Record a line for the day — workout, exam, or trip",
-    "bullet2": "Schedule a different voice for each context",
-    "bullet3": "Voices you record once get reused across alarms"
+    "eyebrow": "Voice cloning",
+    "headline1": "One minute of audio,",
+    "headline2": "as many alarms as you want.",
+    "description": "Around a minute of audio builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like.",
+    "bullet1": "Build a voice profile from ~60s of audio",
+    "bullet2": "Type any sentence, read back in that voice",
+    "bullet3": "Reuse one registered voice across many alarms"
   },
   "shared": {
-    "eyebrow": "Shared voice",
-    "headline1": "What if someone you love",
-    "headline2": "woke you every morning?",
-    "description": "Use a share code to collect voices from family, partner, or friends. A week of greetings, each in a slightly different tone, stack up in your library.",
-    "bullet1": "Share voices with family or partner via invite code",
-    "bullet2": "Received voices live safely in your own library",
-    "bullet3": "Distance disappears every morning"
+    "eyebrow": "Family · partner · friends",
+    "headline1": "Nothing ever leaves",
+    "headline2": "your private group.",
+    "description": "Create a private group with an invite code. Voices stay inside — recipients can only play them in their own library, never download or export. Voice cloning carries the weight of trust, and we treat it that way.",
+    "bullet1": "Invite-code groups — no strangers",
+    "bullet2": "Received voices play only in your library, never exported",
+    "bullet3": "Far apart? Wake to a grandchild, child, or partner every morning"
   },
   "language": {
-    "eyebrow": "Translated phrases",
-    "headline1": "Five seconds at the alarm",
-    "headline2": "becomes daily listening.",
-    "description": "Set today's memorized sentence as tomorrow's alarm. Five seconds groggily heard each day adds up to 35 minutes of practice a week.",
-    "bullet1": "Set foreign-language phrases in a native voice",
-    "bullet2": "Perfect for the month before a trip",
-    "bullet3": "Swap in new sentences as you progress"
+    "eyebrow": "Auto-generate (optional)",
+    "headline1": "Too busy to type?",
+    "headline2": "Let it write itself.",
+    "description": "Don't feel like writing a line every time? Pick a context like weather or fortune, and a fresh greeting is generated daily in that voice. It's an optional mode you turn on when you want it.",
+    "bullet1": "Today's weather and temperature, in that voice",
+    "bullet2": "Weekly fortune, meals, sleep, exercise, love",
+    "bullet3": "Language practice in Korean, English, Japanese and 5 more"
   },
   "scenarios": {
-    "headline": "Some people use it like this.",
-    "description": "Waker redesigns the first second of every morning, not just the alarm sound.",
+    "headline": "Opposite people. Same single insight.",
+    "description": "Fans and seniors look nothing alike — but they share one thing: there's one specific voice they want to hear every single day. That's the center of AlarmTalk.",
     "items": [
       {
+        "tag": "Fandom",
+        "title": "Wake up to your favorite idol's voice",
+        "body": "Register a short clip from a fan video once, then create as many alarms as you like that read any line in that voice."
+      },
+      {
+        "tag": "Seniors",
+        "title": "Parents waking to a grandchild's voice",
+        "body": "Sixty seconds from a far-away grandchild is enough to register their voice and set up a morning greeting alarm."
+      },
+      {
         "tag": "Couple",
-        "title": "Apart on weekends",
-        "body": "Recorded after work: “Good night. See you tomorrow morning.” Plays every day at 7:30 sharp."
+        "title": "Apart every weekend",
+        "body": "“Good night. See you tomorrow morning.” Use the recording as an alarm — or write more lines to read back in the same voice."
       },
       {
-        "tag": "Student",
-        "title": "A note to your future self",
-        "body": "“The you in three months is grateful for the you who got up today.” Recorded yesterday, played this morning."
-      },
-      {
-        "tag": "Family",
-        "title": "A grandmother waking her granddaughter",
-        "body": "She sends a fresh recording every week. Greetings stack up, each in a slightly different tone."
-      },
-      {
-        "tag": "Language",
-        "title": "Listening practice before a trip",
-        "body": "Today's sentence becomes tomorrow's alarm. Five seconds a day adds up to 35 minutes a week."
+        "tag": "Living alone",
+        "title": "A warmer first second",
+        "body": "Instead of a beep, your mother's voice. Human warmth in the most private second of the day."
       }
     ]
+  },
+  "quotes": {
+    "eyebrow": "Why AlarmTalk",
+    "headline": "Not a louder alarm. One you want to keep hearing.",
+    "description": "Short notes on the category AlarmTalk is trying to create.",
+    "items": [
+      {
+        "body": "A forced alarm wakes the body but breaks the mind. We wanted ‘emotional waking’ to be a real category — a third path next to mission-based alarms.",
+        "author": "Team",
+        "role": "Product"
+      },
+      {
+        "body": "Voices never leave the group. Voice cloning shares roots with voice phishing — if trust breaks, it's over. So we treat that weight as the heaviest constraint.",
+        "author": "Team",
+        "role": "Security"
+      },
+      {
+        "body": "Fans and seniors looked opposite. But they share one thing: there's a specific voice they want to hear every morning. That insight is the center of the product.",
+        "author": "Team",
+        "role": "Insight"
+      }
+    ],
+    "disclaimer": "These quotes are placeholders until launch. Real user quotes and ratings will replace them after we ship."
   },
   "faq": {
     "headline": "Frequently asked",
     "items": [
       {
-        "q": "Is it a push notification or a real alarm?",
-        "a": "A real native alarm. Even with the screen locked or in airplane mode, it rings exactly on time. No reliance on server pushes."
+        "q": "What can I do with one minute of audio?",
+        "a": "It builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like. You can also use a raw recording as-is, or optionally auto-generate a fresh line daily from contexts like weather or fortune."
       },
       {
-        "q": "Is my voice stored safely?",
-        "a": "Recordings stay tied to your account until you delete them. Voices you share live only in the recipient's library."
+        "q": "Where does my voice go after I record it?",
+        "a": "Nothing leaves the group. Family, partner, and friend groups are invite-code only. Recipients can play voices in their own library, but cannot export or download them."
       },
       {
-        "q": "Is it paid?",
-        "a": "Core alarm and voice features will be free. Some things — extra cloud storage, translation, premium voices — will be in a paid tier."
+        "q": "Are there forced missions, like math or photo challenges?",
+        "a": "No. AlarmTalk is built around emotional waking, not forced waking. The goal is to wake up to a voice you genuinely want to hear."
       },
       {
-        "q": "Which devices does it support?",
+        "q": "Who actually uses this?",
+        "a": "Two groups. Fans who want to wake up to their favorite idol, voice actor, or character — and seniors and long-distance families who want their child, grandchild, or partner's voice every morning. Both share one thing: a specific voice they want to hear daily."
+      },
+      {
+        "q": "Is it free?",
+        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, auto-generated contexts (weather, fortune, etc.), and the character system are part of paid plans."
+      },
+      {
+        "q": "Which devices are supported?",
         "a": "Android native first. iOS follows once we've validated AlarmKit separately."
-      },
-      {
-        "q": "How is it different from other alarm apps?",
-        "a": "Other apps add more sounds. Waker redefines an alarm as a person's voice. Who's speaking is the feature."
       }
     ]
   },
@@ -145,13 +172,14 @@
     "agreement": "By submitting, you agree to our privacy policy."
   },
   "footer": {
-    "tagline": "The one alarm that changes your morning. Wake up to a voice you love.",
+    "tagline": "Wake up to a voice you love. Register once, then any line you write is read in that voice.",
     "product": "Product",
     "company": "Company",
     "legal": "Legal",
     "linkVoices": "Features",
     "linkHow": "How it works",
     "linkFaq": "FAQ",
+    "linkAbout": "Company",
     "linkGithub": "GitHub",
     "linkContact": "Contact",
     "linkPrivacy": "Privacy",
@@ -164,5 +192,131 @@
     "ko": "한국어",
     "en": "English",
     "ja": "日本語"
+  },
+  "mobileMenu": {
+    "open": "Open menu",
+    "close": "Close menu",
+    "panelLabel": "Site menu"
+  },
+  "store": {
+    "appStoreEyebrow": "Download on",
+    "appStoreLabel": "App Store",
+    "appStoreAria": "Get AlarmTalk on the App Store",
+    "googlePlayEyebrow": "GET IT ON",
+    "googlePlayLabel": "Google Play",
+    "googlePlayAria": "Get AlarmTalk on Google Play"
+  },
+  "contact": {
+    "meta": {
+      "title": "Contact",
+      "description": "Four ways to talk to AlarmTalk — support, business, careers, and press."
+    },
+    "hero": {
+      "eyebrow": "Contact",
+      "headline1": "How can",
+      "headline2": "we help?",
+      "description": "Pick the channel that fits and email us. We usually reply within Korean business hours."
+    },
+    "channels": {
+      "headline": "Four contact channels",
+      "description": "Split by purpose so your email reaches the right person.",
+      "items": [
+        {
+          "tag": "Support",
+          "title": "App & account help",
+          "body": "Bugs, alarms not ringing, account or billing questions belong here.",
+          "email": "support@alarm-talk.com",
+          "cta": "Send email"
+        },
+        {
+          "tag": "Business",
+          "title": "Partnerships · B2B",
+          "body": "Team or company rollouts, licensing, integration proposals — write to business.",
+          "email": "business@alarm-talk.com",
+          "cta": "Send email"
+        },
+        {
+          "tag": "Careers · General",
+          "title": "Join us · general inquiries",
+          "body": "Interested in joining the team, or have something that doesn't fit the other channels?",
+          "email": "hello@alarm-talk.com",
+          "cta": "Send email"
+        },
+        {
+          "tag": "Press",
+          "title": "Press & media",
+          "body": "Coverage, interviews, press kits — the media line gets the fastest reply.",
+          "email": "press@alarm-talk.com",
+          "cta": "Send email"
+        }
+      ]
+    },
+    "note": {
+      "headline": "Response policy",
+      "body": "We usually reply within 1–3 business days. Longer answers can take a little more. If you don't hear back, please check your spam folder too."
+    }
+  },
+  "company": {
+    "meta": {
+      "title": "Company",
+      "description": "AlarmTalk redefines an alarm not as a sound, but as a relationship. Our mission, our principles, and what we're building."
+    },
+    "hero": {
+      "eyebrow": "Our mission",
+      "headline1": "Instead of a louder alarm,",
+      "headline2": "one you want to hear.",
+      "description": "AlarmTalk redefines an alarm as a relationship instead of a sound. Starting every morning's first second with a fresh line in a voice you love — that's our single job."
+    },
+    "principles": {
+      "headline": "Five principles we work by",
+      "description": "We are early — going from zero to one. That's exactly why clear principles matter more, not less.",
+      "items": [
+        {
+          "title": "Build something people want every day",
+          "body": "Not a one-time trick. The first thing people meet every morning."
+        },
+        {
+          "title": "Treat trust as the heaviest constraint",
+          "body": "Voice cloning shares roots with voice phishing. Closed sharing and no-export are non-negotiable."
+        },
+        {
+          "title": "Emotion over force",
+          "body": "Not a louder alarm — one you actually want to hear. We wake the mind, not just the body."
+        },
+        {
+          "title": "Ask for a 10× answer",
+          "body": "We don't chase 10% gains. We look for an answer that is 10× different — a third path beyond beeps and missions."
+        },
+        {
+          "title": "Build globally from day one",
+          "body": "Not a Korea-only product. We assume a multilingual, multicultural user from the first commit."
+        }
+      ]
+    },
+    "products": {
+      "headline": "What we're building",
+      "description": "One product. Every decision is made in the name of AlarmTalk.",
+      "alarmtalk": {
+        "tag": "AlarmTalk",
+        "title": "A voice alarm app",
+        "body": "Around a minute of audio creates a voice profile, then any sentence you write is read aloud in that voice across your alarms. Family, partner, and friend groups exchange voices privately.",
+        "cta": "Back to home"
+      }
+    },
+    "future": {
+      "headline": "Coming soon to this page",
+      "description": "Press, awards, and the team's story will land here at launch.",
+      "items": [
+        { "tag": "Press", "title": "Press", "body": "First coverage will live here once we launch." },
+        { "tag": "Team", "title": "Team & culture", "body": "Stories about the people building this — published at launch." },
+        { "tag": "Careers", "title": "Careers", "body": "Hiring runs through direct contact for now. Formal postings will follow launch." }
+      ]
+    },
+    "cta": {
+      "headline": "Want to make this dawn with us?",
+      "body": "Join the beta first, or reach out via contact.",
+      "primary": "Join the beta",
+      "secondary": "Contact us"
+    }
   }
 }

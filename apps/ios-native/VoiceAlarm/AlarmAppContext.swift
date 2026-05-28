@@ -93,7 +93,12 @@ final class AlarmAppContext {
         // 멱등 nonce: 같은 알람 + 같은 updatedAt 이면 두 경로가 같은 값을 만든다.
         // updatedAtMillis 는 markStopped 호출 직전 값을 쓰지 못하므로 record.id
         // 와 fireAtMillis (해당 회차 발화 시각) 의 조합으로 충돌 회피.
-        let nonce = "\(record.id)-stop-\(record.fireAtMillis)"
+        // Android parity: event:alarmId:localDate.
+        let nonce = CharacterEventStore.buildClientNonce(
+            alarmID: record.id,
+            eventType: .alarmCompleted,
+            occurredAtMillis: occurredAtMillis
+        )
         await queueing.queueAlarmEvent(
             eventType: .alarmCompleted,
             occurredAtMillis: occurredAtMillis,
@@ -131,7 +136,12 @@ final class AlarmAppContext {
         // 두 번 같은 snooze 가 들어와도 store.markSnoozed 가 두 번 +1 하면 nonce 가
         // 달라져 중복이 흘러갈 수 있는데, 사실상 OS 가 같은 countdown 을 두 번
         // 트리거하지 않으므로 (countdown 은 알람당 1회 큐) 실무적으로는 안전.
-        let nonce = "\(record.id)-snooze-\(record.snoozeCount + 1)"
+        // Android parity: event:alarmId:localDate.
+        let nonce = CharacterEventStore.buildClientNonce(
+            alarmID: record.id,
+            eventType: .alarmSnoozed,
+            occurredAtMillis: Int64(now.timeIntervalSince1970 * 1000)
+        )
 
         store.markSnoozed(
             id: record.id,

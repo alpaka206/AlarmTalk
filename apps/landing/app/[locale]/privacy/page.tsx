@@ -16,7 +16,7 @@ export async function generateMetadata({
 
   return {
     title: "개인정보 처리방침",
-    description: "Naro 음성 알람 서비스의 개인정보 처리방침입니다.",
+    description: "AlarmTalk 음성 알람 서비스의 개인정보 처리방침입니다.",
     alternates: { canonical: `/${locale}/privacy` },
     robots: { index: true, follow: true },
   };

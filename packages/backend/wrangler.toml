@@ -2,6 +2,16 @@ name = "voice-alarm-api"
 main = "src/index.ts"
 compatibility_date = "2024-12-01"
 
+# 커스텀 도메인. alarm-talk.com zone 이 Cloudflare 계정에 등록(추가)된 뒤 `wrangler deploy`
+# 시 api.alarm-talk.com 이 이 Worker 에 연결된다. zone 미등록 상태면 배포가 실패하므로,
+# 도메인 연결 전까지는 아래 routes 를 주석 처리하고 기본 *.workers.dev 를 사용한다.
+routes = [
+  { pattern = "api.alarm-talk.com", custom_domain = true }
+]
+
+# 계정 변경 시: wrangler 는 로그인된 계정을 사용한다. 특정 계정으로 고정하려면
+# account_id = "<your-account-id>" 를 추가한다.
+
 [vars]
 ENVIRONMENT = "development"
 

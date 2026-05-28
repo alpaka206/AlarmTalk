@@ -15,12 +15,12 @@ export function SiteFooter() {
           <div className="max-w-sm">
             <Link
               href="/"
-              aria-label="Waker"
+              aria-label="AlarmTalk"
               className="flex items-center gap-2.5 whitespace-nowrap"
             >
               <BrandMark size={32} className="rounded-[8px]" />
               <span className="text-[16px] font-bold tracking-tight text-text">
-                Waker
+                AlarmTalk
               </span>
             </Link>
             <p className="mt-4 text-[14px] leading-[1.65] text-text-muted">
@@ -38,28 +38,28 @@ export function SiteFooter() {
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
                 <li>
-                  <a
-                    href="#voices"
+                  <Link
+                    href="/#voices"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkVoices")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#how"
+                  <Link
+                    href="/#how"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkHow")}
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    href="#faq"
+                  <Link
+                    href="/#faq"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkFaq")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -68,6 +68,14 @@ export function SiteFooter() {
                 {t("company")}
               </p>
               <ul className="mt-4 space-y-2.5 text-[14px]">
+                <li>
+                  <Link
+                    href="/company"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkAbout")}
+                  </Link>
+                </li>
                 <li>
                   <a
                     href="https://github.com/perso-devrel/voice_alarm"
@@ -79,12 +87,12 @@ export function SiteFooter() {
                   </a>
                 </li>
                 <li>
-                  <a
-                    href="mailto:hello@waker.com"
+                  <Link
+                    href="/contact"
                     className="whitespace-nowrap text-text-muted hover:text-text"
                   >
                     {t("linkContact")}
-                  </a>
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -116,7 +124,7 @@ export function SiteFooter() {
 
         <div className="mt-14 flex flex-col gap-3 border-t border-line pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="whitespace-nowrap text-[12.5px] text-text-faint">
-            © {year} Waker · {t("rights")}
+            © {year} AlarmTalk · {t("rights")}
           </p>
           <p className="whitespace-nowrap text-[12.5px] text-text-faint">
             {t("made")}

@@ -117,8 +117,8 @@ enum LocalHolidayCalendar {
 /// 메인 스레드에서 호출하므로 디스크 I/O 는 actor 로 격리.
 @MainActor
 final class HolidayStore: ObservableObject {
-    static let defaultCountryCode = "KR"
-    static let defaultLookaheadDays = 370
+    nonisolated static let defaultCountryCode = "KR"
+    nonisolated static let defaultLookaheadDays = 370
 
     @Published private(set) var holidays: [HolidayEntity] = []
 

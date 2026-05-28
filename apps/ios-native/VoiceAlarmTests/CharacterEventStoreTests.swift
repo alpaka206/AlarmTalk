@@ -9,7 +9,7 @@ final class CharacterEventStoreTests: XCTestCase {
     // MARK: - buildClientNonce: deterministic / day boundary
 
     func test_buildClientNonce_isDeterministic_forSameInputs() {
-        let tz = TimeZone(identifier: "Asia/Seoul")!
+        let tz = TimeZone(identifier: "UTC")!
         let occurredAt: Int64 = 1_700_000_000_000
 
         let a = CharacterEventStore.buildClientNonce(
@@ -26,7 +26,7 @@ final class CharacterEventStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(a, b)
-        XCTAssertTrue(a.hasPrefix("alarm-A-alarm_completed-"))
+        XCTAssertEqual(a, "alarm_completed:alarm-A:2023-11-14")
     }
 
     func test_buildClientNonce_changesAcrossLocalDate() {
@@ -57,8 +57,8 @@ final class CharacterEventStoreTests: XCTestCase {
         )
 
         XCTAssertNotEqual(nonceA, nonceB)
-        XCTAssertTrue(nonceA.hasSuffix("-2024-01-01"))
-        XCTAssertTrue(nonceB.hasSuffix("-2024-01-02"))
+        XCTAssertTrue(nonceA.hasSuffix(":2024-01-01"))
+        XCTAssertTrue(nonceB.hasSuffix(":2024-01-02"))
     }
 
     // MARK: - queue idempotency
@@ -266,7 +266,7 @@ final class CharacterEventStoreTests: XCTestCase {
     private func makeSuccessResponse(grantedXp: Int) -> CharacterGrantResponse {
         CharacterGrantResponse(
             character: CharacterPayload(
-                id: "c", name: "Naro", level: 1, xp: grantedXp, affection: 0,
+                id: "c", name: "AlarmTalk", level: 1, xp: grantedXp, affection: 0,
                 stage: "egg", dailyXp: grantedXp
             ),
             progress: CharacterProgress(

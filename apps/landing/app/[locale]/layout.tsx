@@ -3,9 +3,8 @@ import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
-
-const SITE_URL = "https://waker.com";
-const SITE_NAME = "Waker";
+import { ORGANIZATION, SITE_NAME, SITE_URL } from "@/lib/site";
+import { HtmlLangSync } from "@/components/html-lang-sync";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -34,9 +33,10 @@ export async function generateMetadata({
     applicationName: SITE_NAME,
     alternates: {
       canonical: `/${locale}`,
-      languages: Object.fromEntries(
-        routing.locales.map((l) => [l, `/${l}`])
-      ),
+      languages: {
+        ...Object.fromEntries(routing.locales.map((l) => [l, `/${l}`])),
+        "x-default": `/${routing.defaultLocale}`,
+      },
     },
     openGraph: {
       type: "website",
@@ -65,7 +65,24 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale);
 
+  const organizationLd = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: ORGANIZATION.name,
+    legalName: ORGANIZATION.legalName,
+    url: ORGANIZATION.url,
+    logo: ORGANIZATION.logo,
+    ...(ORGANIZATION.sameAs.length > 0 ? { sameAs: ORGANIZATION.sameAs } : {}),
+  };
+
   return (
-    <NextIntlClientProvider>{children}</NextIntlClientProvider>
+    <NextIntlClientProvider>
+      <HtmlLangSync locale={locale} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationLd) }}
+      />
+      {children}
+    </NextIntlClientProvider>
   );
 }

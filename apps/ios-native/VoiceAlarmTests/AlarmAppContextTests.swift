@@ -71,7 +71,11 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(mockQueue.events[0].clientNonce, mockQueue.events[1].clientNonce)
         // 실제 dedup 은 CharacterEventStore (B5) 의 책임. 본 테스트는 nonce
         // 값이 stable 함만 보장한다.
-        let expectedNonce = "\(record.id)-stop-\(record.fireAtMillis)"
+        let expectedNonce = CharacterEventStore.buildClientNonce(
+            alarmID: record.id,
+            eventType: .alarmCompleted,
+            occurredAtMillis: Int64(fixedNow.timeIntervalSince1970 * 1000)
+        )
         XCTAssertEqual(mockQueue.events.first?.clientNonce, expectedNonce)
     }
 
@@ -118,7 +122,14 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(evt.context?["snoozeMinutes"], "7")
         XCTAssertEqual(evt.context?["snoozeCount"], "2")
         // nonce 는 호출 전 count 기준 +1.
-        XCTAssertEqual(evt.clientNonce, "\(record.id)-snooze-2")
+        XCTAssertEqual(
+            evt.clientNonce,
+            CharacterEventStore.buildClientNonce(
+                alarmID: record.id,
+                eventType: .alarmSnoozed,
+                occurredAtMillis: Int64(fixedNow.timeIntervalSince1970 * 1000)
+            )
+        )
     }
 
     func test_handleAlarmSnoozed_overridesSnoozeMinutes() async throws {

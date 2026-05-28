@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Waker</string>
+    <string name="app_name">AlarmTalk</string>
     <string name="ringing_notification_title">알람이 울려요</string>
     <string name="ringing_notification_text">일어날 시간이에요</string>
 </resources>

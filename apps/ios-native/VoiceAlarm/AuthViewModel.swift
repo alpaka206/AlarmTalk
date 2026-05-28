@@ -4,15 +4,19 @@ import Foundation
 /// `AuthViewModel` 이 의존하는 API 시그니처. 단위 테스트에서 mock 으로 주입하기 위해
 /// protocol 로 분리한다. `VoiceAlarmAPI` 가 conform.
 /// MainActor 제약을 두지 않아 `VoiceAlarmAPI` (non-isolated) 가 그대로 만족.
-protocol AuthAPIProviding: AnyObject {
+/// `Sendable` — MainActor 격리된 호출자가 async 컨텍스트로 self 인스턴스를 캡처할 때
+/// race 경고를 피하기 위해. 실제 conformer 인 `VoiceAlarmAPI` 는 `@unchecked Sendable`.
+protocol AuthAPIProviding: AnyObject, Sendable {
     func me(token: String) async throws -> AuthUser
+    func updateProfile(_ requestBody: UpdateProfileRequest, token: String) async throws -> UpdateProfileResponse
+    func deleteAccount(token: String) async throws -> DeleteAccountResponse
 }
 
 extension VoiceAlarmAPI: AuthAPIProviding {}
 
 /// Apple 자격 증명 상태를 조회하는 의존성. 단위 테스트에서 mock 가능.
 /// 실제 구현은 `ASAuthorizationAppleIDProvider.getCredentialState(forUserID:)` 를 호출.
-protocol AppleCredentialStateProviding {
+protocol AppleCredentialStateProviding: Sendable {
     func credentialState(forUserID userID: String) async throws -> ASAuthorizationAppleIDProvider.CredentialState
 }
 
@@ -43,6 +47,7 @@ final class AuthViewModel: ObservableObject {
 
     private let api: AuthAPIProviding
     private let appleCredentialProvider: AppleCredentialStateProviding
+    private let accessSnapshotStore: AccessSnapshotStore
     /// `addObserver(forName:object:queue:using:)` 가 반환한 토큰. deinit 시
     /// 명시 해제해야 NotificationCenter 내부 strong reference 가 풀린다.
     /// `nonisolated(unsafe)` — deinit 은 nonisolated 컨텍스트인데 본 프로퍼티는
@@ -55,10 +60,12 @@ final class AuthViewModel: ObservableObject {
 
     init(
         api: AuthAPIProviding = VoiceAlarmAPI.shared,
-        appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider()
+        appleCredentialProvider: AppleCredentialStateProviding = LiveAppleCredentialStateProvider(),
+        accessSnapshotStore: AccessSnapshotStore = AccessSnapshotStore()
     ) {
         self.api = api
         self.appleCredentialProvider = appleCredentialProvider
+        self.accessSnapshotStore = accessSnapshotStore
         session = KeychainStore.readSession()
 
         // Apple 자격 증명이 다른 디바이스에서 revoke 되면 시스템이 이 알림을 쏜다.
@@ -124,7 +131,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        statusMessage = "Apple 로그인에 실패했어요: \(error.localizedDescription)"
+        statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
     }
 
     func loginWithApple(
@@ -156,7 +163,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
         }
     }
 
@@ -172,7 +179,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await VoiceAlarmAPI.shared.requestEmailVerification(email: email)
             statusMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
         }
     }
 
@@ -193,7 +200,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "이메일 인증이 완료됐어요."
             return true
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요")
             return false
         }
     }
@@ -211,7 +218,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인됐어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
         }
     }
 
@@ -238,7 +245,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
         }
     }
 
@@ -261,18 +268,18 @@ final class AuthViewModel: ObservableObject {
             lastNetworkError = nil
         } catch let apiError as APIError {
             switch apiError {
-            case .server(let status, let message, _):
+            case .server(let status, _, _):
                 if status == 401 {
                     signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
                 } else if status == 403 {
                     // 권한 박탈 — 세션은 유지하되 사용자에게 알림
                     lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
                 } else {
-                    // 5xx, 4xx 기타 — 세션 보존, 일시 오류 표시
-                    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                    lastNetworkError = trimmed.isEmpty
-                        ? "서버에 일시적으로 연결할 수 없어요."
-                        : trimmed
+                    // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
+                    lastNetworkError = Self.userFacingErrorMessage(
+                        apiError,
+                        fallback: "서버에 일시적으로 연결할 수 없어요."
+                    )
                 }
             case .invalidResponse:
                 lastNetworkError = "서버 응답을 해석하지 못했어요."
@@ -326,30 +333,71 @@ final class AuthViewModel: ObservableObject {
     func updateProfile(
         name: String? = nil,
         allowFamilyAlarms: Bool? = nil,
-        quietWindows: [FamilyAlarmQuietWindow]? = nil
+        quietWindows: [FamilyAlarmQuietWindow]? = nil,
+        dynamicPromptSettings: DynamicPromptSettings? = nil
     ) async {
         guard let token else {
             statusMessage = "로그인이 필요해요."
             return
         }
+        let normalizedQuietWindows = quietWindows.map(Self.normalizedQuietWindows)
+        if let normalizedQuietWindows,
+           normalizedQuietWindows.contains(where: { !Self.isValidTimeText($0.start) || !Self.isValidTimeText($0.end) }) {
+            statusMessage = "시간은 HH:mm 형식으로 입력해 주세요."
+            return
+        }
+        let firstQuietWindow = normalizedQuietWindows?.first
+            ?? (quietWindows == nil ? nil : Self.defaultFamilyAlarmQuietWindow)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await VoiceAlarmAPI.shared.updateProfile(
+            _ = try await api.updateProfile(
                 UpdateProfileRequest(
                     name: name,
                     allowFamilyAlarms: allowFamilyAlarms,
-                    familyAlarmQuietWindows: quietWindows
+                    familyAlarmQuietDays: firstQuietWindow?.days,
+                    familyAlarmQuietStart: firstQuietWindow?.start,
+                    familyAlarmQuietEnd: firstQuietWindow?.end,
+                    familyAlarmQuietWindows: normalizedQuietWindows,
+                    dynamicPromptSettings: dynamicPromptSettings
                 ),
                 token: token
             )
             await refreshUser()
             statusMessage = "프로필을 저장했어요."
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요")
         }
+    }
+
+    private static let defaultFamilyAlarmQuietWindow = FamilyAlarmQuietWindow(
+        days: [1, 2, 3, 4, 5],
+        start: "09:00",
+        end: "18:30"
+    )
+
+    private static func normalizedQuietWindows(_ windows: [FamilyAlarmQuietWindow]) -> [FamilyAlarmQuietWindow] {
+        Array(
+            windows
+                .map { window in
+                    FamilyAlarmQuietWindow(
+                        days: Array(Set(window.days.filter { (0...6).contains($0) })).sorted(),
+                        start: window.start,
+                        end: window.end
+                    )
+                }
+                .filter { !$0.days.isEmpty }
+                .prefix(8)
+        )
+    }
+
+    private static func isValidTimeText(_ value: String) -> Bool {
+        value.range(
+            of: #"^([01]\d|2[0-3]):[0-5]\d$"#,
+            options: .regularExpression
+        ) != nil
     }
 
     func deleteAccount() async {
@@ -357,15 +405,19 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return
         }
+        let currentUserID = session?.user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
 
         do {
-            _ = try await VoiceAlarmAPI.shared.deleteAccount(token: token)
+            _ = try await api.deleteAccount(token: token)
+            if let currentUserID, !currentUserID.isEmpty {
+                accessSnapshotStore.clear(userID: currentUserID)
+            }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요")
         }
     }
 
@@ -380,6 +432,19 @@ final class AuthViewModel: ObservableObject {
         let value = PersonNameComponentsFormatter().string(from: components)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
+        guard let apiError = error as? APIError else {
+            let message = error.localizedDescription
+            return message.containsKorean ? message : fallback
+        }
+        switch apiError {
+        case .invalidResponse:
+            return fallback
+        case .server(_, let message, _):
+            return message.containsKorean ? message : fallback
+        }
     }
 
     // MARK: - Testing support
@@ -404,6 +469,16 @@ private extension Optional where Wrapped == String {
             return trimmed.isEmpty ? nil : trimmed
         case .none:
             return nil
+        }
+    }
+}
+
+private extension String {
+    var containsKorean: Bool {
+        contains { character in
+            character.unicodeScalars.contains { scalar in
+                (0xAC00...0xD7A3).contains(Int(scalar.value))
+            }
         }
     }
 }

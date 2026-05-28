@@ -19,7 +19,7 @@ Coding agents must read these files before making product or architecture change
 
 ## Non-negotiable Alarm Rules
 
-- Naro is a real alarm app, not a notification/reminder app.
+- AlarmTalk is a real alarm app, not a notification/reminder app.
 - The core alarm-ring path must not depend on push notifications, server cron, or live network access.
 - At ring time, the app uses local database state and local audio files only.
 - Android must use OS-native alarm mechanisms and be verified on a physical device.

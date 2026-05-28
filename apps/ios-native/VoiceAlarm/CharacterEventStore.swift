@@ -50,7 +50,9 @@ actor CharacterEventPersistence {
 //
 // API 의존성을 protocol 로 분리해 테스트 시 mock 주입을 자명하게 만든다.
 // 실제 구현은 `VoiceAlarmAPI` 의 extension 으로 conform.
-protocol CharacterXPGranting: AnyObject {
+// `Sendable` — MainActor 격리된 store 가 async 컨텍스트로 api 를 캡처할 때 race
+// 경고를 피하기 위해. 실제 conformer 인 `VoiceAlarmAPI` 는 `@unchecked Sendable`.
+protocol CharacterXPGranting: AnyObject, Sendable {
     func grantCharacterXP(
         event: String,
         clientNonce: String,
@@ -247,6 +249,7 @@ final class CharacterEventStore: ObservableObject {
     /// 알고리즘 (구분자만 `-` 로 통일 — AlarmAppContext 가 `record.id-stop-...` 형식을
     /// 쓰는 것과 시각적으로 호환). 멱등성 자체는 store 가 `events.contains(where:)`
     /// 로 보장하므로 구분자 차이는 무관.
+    /// Android parity: returns `event:alarmId:localDate`.
     static func buildClientNonce(
         alarmID: String,
         eventType: CharacterEventType,
@@ -263,7 +266,7 @@ final class CharacterEventStore: ObservableObject {
             comps.month ?? 1,
             comps.day ?? 1
         )
-        return "\(alarmID)-\(eventType.rawValue)-\(local)"
+        return "\(eventType.rawValue):\(alarmID):\(local)"
     }
 
     private func formatLocalDate(occurredAtMillis: Int64) -> String {

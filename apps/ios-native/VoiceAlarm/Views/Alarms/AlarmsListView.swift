@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// 알람 탭 본화면. 권한 카드 → 로컬 알람 리스트 → 서버 동기화 카드 순으로 쌓는다.
+/// 알람 탭 본화면. 권한 카드 → 로컬 알람 리스트 순으로 쌓는다.
 ///
-/// ContentView 의 `alarmsScreen` / `localAlarmSection` / `serverSection` 합본.
+/// ContentView 의 `alarmsScreen` / `localAlarmSection` 합본.
 /// 알람 추가 버튼/리스트 항목 액션은 부모(MainTabsView)가 넘긴 콜백을 호출한다.
 struct AlarmsListView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
+    @StateObject private var holidayStore = HolidayStore()
+    @State private var actionMessage: String?
 
     let openEditor: (AlarmEditorTarget) -> Void
 
@@ -18,18 +20,25 @@ struct AlarmsListView: View {
                 ScreenHeader(title: "알람")
                 Spacer()
                 Button {
-                    openEditor(.create())
+                    Task { await openCreateAlarm() }
                 } label: {
-                    Label("추가", systemImage: "plus")
+                    Label("알람 만들기", systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VoiceAlarmTheme.primary)
                 .foregroundStyle(VoiceAlarmTheme.text)
             }
 
-            AlarmPermissionSection()
+            if !alarmKit.alarmAuthorized {
+                AlarmPermissionSection()
+            }
+            if let actionMessage {
+                Text(actionMessage)
+                    .font(.footnote)
+                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
+                    .padding(.horizontal, 4)
+            }
             localAlarmSection
-            serverSection
         }
     }
 
@@ -37,32 +46,31 @@ struct AlarmsListView: View {
         VStack(alignment: .leading, spacing: 12) {
             if store.alarms.isEmpty {
                 EmptyStatePlaceholder(
-                    title: "아직 예약한 알람이 없어요.",
-                    subtitle: "새 알람을 만들면 iOS 로컬 저장소와 AlarmKit에 예약됩니다.",
+                    title: "아직 알람이 없어요.",
+                    subtitle: "",
                     icon: "alarm"
                 )
                 Button {
-                    openEditor(.create())
+                    Task { await openCreateAlarm() }
                 } label: {
-                    Label("알람 만들기", systemImage: "plus")
+                    Text("새 알람 만들기")
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(VoiceAlarmTheme.primary)
                 .foregroundStyle(VoiceAlarmTheme.text)
             } else {
-                ForEach(store.alarms.sorted { $0.nextFireDate < $1.nextFireDate }) { alarm in
+                ForEach(sortedAlarms) { alarm in
                     AlarmRow(
                         alarm: alarm,
                         onTap: { openEditor(.edit(alarm.id)) },
-                        onEdit: { openEditor(.edit(alarm.id)) },
-                        onPushRemote: {
-                            Task { await remoteSync.push(record: alarm, store: store, session: auth.session) }
+                        onToggleEnabled: { enabled in
+                            Task { await setAlarm(alarm, enabled: enabled) }
+                        },
+                        onCopy: {
+                            Task { await copyAlarm(alarm) }
                         },
                         onDelete: {
-                            Task {
-                                await remoteSync.deleteRemote(record: alarm, session: auth.session)
-                                await alarmKit.cancel(record: alarm, store: store)
-                            }
+                            Task { await deleteAlarm(alarm) }
                         }
                     )
                 }
@@ -71,35 +79,90 @@ struct AlarmsListView: View {
         .sectionSurface()
     }
 
-    private var serverSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("서버 동기화")
-                    .font(.headline)
-                Spacer()
-                Button("새로고침") {
-                    Task { await remoteSync.refresh(session: auth.session) }
-                }
-                .disabled(remoteSync.isBusy)
-            }
-
-            if let message = remoteSync.statusMessage {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
-
-            Text("서버 알람 \(remoteSync.remoteAlarms.count)개, 사용 가능 목소리 \(remoteSync.voiceProfiles.count)개")
-                .font(.subheadline)
-                .foregroundStyle(VoiceAlarmTheme.textSecondary)
-
-            ForEach(remoteSync.remoteAlarms.prefix(5)) { alarm in
-                Text("\(alarm.time ?? "--:--") \(alarm.wakeMode ?? "sound_then_voice")")
-                    .font(.caption)
-                    .foregroundStyle(VoiceAlarmTheme.textSecondary)
-            }
+    private var sortedAlarms: [LocalAlarmRecord] {
+        store.alarms.sorted { lhs, rhs in
+            if lhs.hour != rhs.hour { return lhs.hour < rhs.hour }
+            if lhs.minute != rhs.minute { return lhs.minute < rhs.minute }
+            return lhs.createdAtMillis < rhs.createdAtMillis
         }
-        .sectionSurface()
+    }
+
+    @MainActor
+    private func openCreateAlarm() async {
+        alarmKit.refreshAuthorizationState()
+        guard alarmKit.alarmAuthorized else {
+            await alarmKit.requestAuthorization()
+            alarmKit.refreshAuthorizationState()
+            guard alarmKit.alarmAuthorized else { return }
+            openEditor(.create())
+            return
+        }
+        openEditor(.create())
+    }
+
+    @MainActor
+    private func setAlarm(_ alarm: LocalAlarmRecord, enabled: Bool) async {
+        if enabled {
+            store.setEnabled(id: alarm.id, enabled: true)
+            guard let updated = store.record(id: alarm.id) else { return }
+            let scheduled = await alarmKit.schedule(record: updated, store: store)
+            if !scheduled {
+                store.markFailed(id: updated.id)
+                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                return
+            }
+            if store.record(id: updated.id)?.remoteAlarmId != nil,
+               let synced = store.record(id: updated.id) {
+                await remoteSync.push(record: synced, store: store, session: auth.session)
+            }
+            actionMessage = nil
+        } else {
+            let canceled = await alarmKit.cancelScheduledAlarm(record: alarm)
+            guard canceled else {
+                store.markFailed(id: alarm.id)
+                actionMessage = alarmKit.statusMessage ?? "알람 상태 변경에 실패했어요."
+                return
+            }
+            store.setEnabled(id: alarm.id, enabled: false)
+            if store.record(id: alarm.id)?.remoteAlarmId != nil,
+               let updated = store.record(id: alarm.id) {
+                await remoteSync.push(record: updated, store: store, session: auth.session)
+            }
+            actionMessage = nil
+        }
+    }
+
+    @MainActor
+    private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
+        await remoteSync.deleteRemote(record: alarm, session: auth.session)
+        let deleted = await alarmKit.cancel(record: alarm, store: store)
+        if deleted {
+            actionMessage = "알람을 삭제했어요."
+        } else {
+            actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
+        }
+    }
+
+    @MainActor
+    private func copyAlarm(_ alarm: LocalAlarmRecord) async {
+        do {
+            let copied = try store.copyAlarm(
+                id: alarm.id,
+                isHoliday: holidayStore.holidayPredicate()
+            )
+            let scheduled = await alarmKit.schedule(record: copied, store: store)
+            if scheduled {
+                actionMessage = "알람을 10분 뒤로 복사했어요. \(copied.timeString)"
+            } else {
+                _ = store.delete(copied)
+                actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
+            }
+        } catch {
+            actionMessage = RemoteAlarmSyncViewModel.userFacingErrorMessage(
+                error,
+                fallback: "알람 복사에 실패했어요."
+            )
+        }
     }
 }
 

@@ -4,7 +4,7 @@
 
 > "Wake up to the voice you want to hear."
 
-Naro replaces beep-style mechanical alarms with a voice the user picked — recorded, uploaded, shared by family or partner, or generated from an AI voice clone. The product treats the alarm as an emotional, relational moment, not just a reminder.
+AlarmTalk replaces beep-style mechanical alarms with a voice the user picked — recorded, uploaded, shared by family or partner, or generated from an AI voice clone. The product treats the alarm as an emotional, relational moment, not just a reminder.
 
 ## Core Values
 

@@ -12,7 +12,7 @@ import AVFoundation
 //   1. 메인 앱 번들 리소스
 //   2. 앱 컨테이너의 `Library/Sounds/`
 //
-// 사용자 보이스 / TTS 캐시는 `AudioCacheStore` 의 App Group 컨테이너 (`audio-cache/`)
+// 사용자 목소리 / TTS 캐시는 `AudioCacheStore` 의 App Group 컨테이너 (`audio-cache/`)
 // 에 보관되므로 AlarmKit 가 직접 인식하지 못한다. 그래서 본 staging 단계가
 // `Library/Sounds/voice-<safeKey>.<ext>` 로 복사 (필요시 트랜스코드) 한 뒤
 // "voice-<safeKey>" 라는 base name 만 반환한다. 호출자는 그 base name 을

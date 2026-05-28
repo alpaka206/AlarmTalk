@@ -52,7 +52,7 @@ dumpsys-*.txt
 
 # Local-only articles/drafts (not shared)
 articles/
-!articles/waker_pt_onepage.html
+!articles/alarmtalk_pt_onepage.html
 
 # Test audio files (사용자가 로컬에 두는 음성 파일들 - 커밋 금지)
 test/*

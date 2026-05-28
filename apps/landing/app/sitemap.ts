@@ -1,8 +1,8 @@
 ﻿import type { MetadataRoute } from "next";
 import { routing } from "@/i18n/routing";
+import { SITE_URL } from "@/lib/site";
 
-const SITE_URL = "https://waker.com";
-const PAGES = ["", "privacy", "terms"] as const;
+const PAGES = ["", "company", "contact", "privacy", "terms"] as const;
 
 export const dynamic = "force-static";
 
@@ -19,12 +19,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
         priority:
           page === "" ? (locale === routing.defaultLocale ? 1 : 0.8) : 0.5,
         alternates: {
-          languages: Object.fromEntries(
-            routing.locales.map((l) => [
-              l,
-              `${SITE_URL}/${page ? `${l}/${page}/` : `${l}/`}`,
-            ]),
-          ),
+          languages: {
+            ...Object.fromEntries(
+              routing.locales.map((l) => [
+                l,
+                `${SITE_URL}/${page ? `${l}/${page}/` : `${l}/`}`,
+              ]),
+            ),
+            "x-default": `${SITE_URL}/${page ? `${routing.defaultLocale}/${page}/` : `${routing.defaultLocale}/`}`,
+          },
         },
       };
     }),
