@@ -75,8 +75,24 @@
 - [ ] `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
 
 ### Google / Apple 로그인 (Firebase 아님)
-- [ ] Google Cloud Console에서 OAuth Client ID 발급: Web(백엔드 audience) + Android + iOS, 환경별
+
+> ⚠️ Google도 **새 계정으로 이전**한다. 현재 `gradle.properties`/시크릿에 박힌 client ID는 옛 프로젝트
+> (번호 `869967951972`) 소속이라 새 계정에선 **무효** → 새 프로젝트에서 다시 발급해 교체해야 한다.
+
+- [ ] dev / prod **별도 GCP 프로젝트** 생성 (동의 화면이 프로젝트 단위 — prod는 게시/검증, dev는 테스트 모드)
+- [ ] 각 프로젝트에서 OAuth client 발급: **Web(백엔드 audience)** + **Android(패키지+SHA-1)** + iOS(나중)
+- [ ] 발급한 **Web client ID**로 교체: `gradle.properties`의 `voiceAlarmGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)
 - [ ] Apple Developer: Sign in with Apple 설정(`APPLE_CLIENT_ID`, `APPLE_SHARED_SECRET`)
+
+**서명 인증서 SHA-1 (Android OAuth client에 등록 — 지문은 비밀 아님)**
+
+| 환경 | 패키지 | SHA-1 | 출처 |
+|---|---|---|---|
+| dev | `com.voicealarm.nativeapp.dev` | _(메인 개발 PC에서 추출해 기입)_ | dev 빌드는 **메인 컴퓨터**에서 함. 그 PC의 debug.keystore SHA-1을 써야 한다 (이 원격 머신 값 아님). 메인 PC에서 `keytool -list -v -alias androiddebugkey -keystore "%USERPROFILE%\.android\debug.keystore" -storepass android -keypass android` 로 추출 |
+| prod | `com.voicealarm.nativeapp` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | release 키스토어 `alarmtalk-release.jks` |
+
+> Play App Signing 사용 시: 위 release 키는 *업로드 키*가 되고, 실제 배포본은 Google이 *앱 서명 키*로 재서명한다.
+> → **Play Console "앱 서명 키" SHA-1도 prod Android client에 추가 등록**해야 스토어 배포본 로그인이 된다.
 
 > 로그인 인증은 Firebase를 쓰지 않는다. 백엔드가 Google/Apple ID 토큰을 직접 검증한다
 > (`lib/oauth.ts`의 `verifyGoogleIdToken`이 `oauth2.googleapis.com/tokeninfo` 호출).
