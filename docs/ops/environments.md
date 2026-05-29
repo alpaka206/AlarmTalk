@@ -88,11 +88,11 @@
 
 | 환경 | 패키지 | SHA-1 | 출처 |
 |---|---|---|---|
-| dev | `com.voicealarm.nativeapp.dev` | _(메인 개발 PC에서 추출해 기입)_ | dev 빌드는 **메인 컴퓨터**에서 함. 그 PC의 debug.keystore SHA-1을 써야 한다 (이 원격 머신 값 아님). 메인 PC에서 `keytool -list -v -alias androiddebugkey -keystore "%USERPROFILE%\.android\debug.keystore" -storepass android -keypass android` 로 추출 |
-| prod | `com.voicealarm.nativeapp` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | release 키스토어 `alarmtalk-release.jks` |
+| dev | `com.voicealarm.nativeapp.dev` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | **메인 개발 PC**의 debug.keystore (dev 빌드는 메인 PC에서). 다른 PC에서도 빌드하면 그 PC SHA-1 추가 등록 |
+| prod | `com.voicealarm.nativeapp` | _(Play 앱 서명 키 SHA-1 — 출시 후 기입)_ | **Play App Signing 사용.** 출시 후 Play Console → 설정 → 앱 무결성 → "앱 서명 키 인증서" SHA-1 복사해 등록 |
 
-> Play App Signing 사용 시: 위 release 키는 *업로드 키*가 되고, 실제 배포본은 Google이 *앱 서명 키*로 재서명한다.
-> → **Play Console "앱 서명 키" SHA-1도 prod Android client에 추가 등록**해야 스토어 배포본 로그인이 된다.
+> prod는 **Play App Signing**을 쓴다: AAB는 *업로드 키*(release 키스토어)로 서명해 올리고, 배포본은 Google이 *앱 서명 키*로 재서명한다.
+> → **스토어 배포본 로그인에 필요한 건 "앱 서명 키" SHA-1**(위 prod 행, 출시 후 확보). 로컬에서 prod 빌드를 직접 설치해 로그인 테스트하려면 업로드 키 SHA-1도 추가 등록하면 된다.
 
 > 로그인 인증은 Firebase를 쓰지 않는다. 백엔드가 Google/Apple ID 토큰을 직접 검증한다
 > (`lib/oauth.ts`의 `verifyGoogleIdToken`이 `oauth2.googleapis.com/tokeninfo` 호출).
