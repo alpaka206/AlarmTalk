@@ -34,7 +34,7 @@
             android:resizeableActivity="false"
             android:screenOrientation="portrait"
             android:showWhenLocked="true"
-            android:taskAffinity="com.voicealarm.nativeapp.ringing"
+            android:taskAffinity="com.alarmtalk.app.ringing"
             android:turnScreenOn="true"
             android:theme="@style/Theme.VoiceAlarm.Ringing" />
 
@@ -65,7 +65,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="com.voicealarm.nativeapp.action.DEBUG_RESTORE_ALARMS" />
+                <action android:name="com.alarmtalk.app.action.DEBUG_RESTORE_ALARMS" />
             </intent-filter>
         </receiver>
     </application>

@@ -10,7 +10,8 @@
 - **현재 코드 상태**:
   - `docs/ops/environments.md`에 목표 구조 + "직접 해야 할 일" 체크리스트 정리 완료.
   - ✅ **백엔드 환경 분리 스캐폴딩 완료**(이 브랜치): `packages/backend/wrangler.toml`에 `account_id` 고정 + `[env.dev]`/`[env.production]`(워커명·R2 버킷·커스텀 도메인·crons 분리), `deploy-backend.yml` 환경별 배포, `.dev.vars.example`, `scripts/sync-worker-secrets.ts`·`run-remote-migrations.ts`.
-  - ⏳ 남은 코드: Android `productFlavors`(dev/prod), iOS `xcconfig`, 랜딩 Pages 설정, **Web client ID 교체**(아래).
+  - ✅ Android `productFlavors`(dev/prod), 앱 ID `com.alarmtalk.app.dev` / `com.alarmtalk.app`, flavor별 API base URL / Web client ID 반영.
+  - ⏳ 남은 코드: iOS `xcconfig`, 랜딩 Pages 설정, release 서명 키스토어 연결.
 
 ## 확정된 결정 사항
 
@@ -22,7 +23,7 @@
 - **Google OAuth (새 계정으로 이전)**: 현재 `gradle.properties`/시크릿의 client ID는 옛 프로젝트(번호 `869967951972`) 소속이라 새 계정에선 무효 → 새로 발급해 교체해야 함.
   - **dev / prod 별도 GCP 프로젝트** 2개. 각 프로젝트에 Web(audience) + Android(패키지+SHA-1) + iOS(나중) client.
   - **SHA-1 매핑**(자세한 건 `environments.md`): dev=`8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31`(메인 PC debug, ✅확정) / prod=Play 앱 서명 키 SHA-1(⏳출시 후 Play Console에서 받아 등록).
-  - 받은 **Web client ID**는 `gradle.properties`의 `voiceAlarmGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)에 넣는다. (Android client ID는 코드에 안 들어감)
+  - 받은 **Web client ID**는 `gradle.properties`의 `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)에 넣는다. (Android client ID는 코드에 안 들어감)
 
 ## 다음 할 일
 
@@ -39,8 +40,8 @@
 
 ### B. 코드 스캐폴딩
 1. ~~`wrangler.toml` 환경 분리 + `deploy-backend.yml` 환경별 배포~~ ✅ 완료(이 브랜치).
-2. **Web client ID 교체**(새 GCP 프로젝트에서 발급 후): `gradle.properties`의 `voiceAlarmGoogleWebClientId` + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`).
-3. Android `productFlavors { dev; prod }` + `applicationIdSuffix .dev` + flavor별 API base URL / Web client ID. release 서명 키스토어를 `signingConfig`에 연결(현재 미설정).
+2. **Web client ID 교체**(새 GCP 프로젝트에서 발급 후): `gradle.properties`의 `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId` + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`).
+3. ~~Android `productFlavors { dev; prod }` + `applicationIdSuffix .dev` + flavor별 API base URL / Web client ID~~ ✅ 완료. release 서명 키스토어를 `signingConfig`에 연결(현재 미설정).
 4. iOS `xcconfig`(Dev/Prod) + scheme 분리 + bundle ID suffix `.dev`.
 5. 랜딩 Cloudflare Pages 환경변수 정리(Production=main, Preview=develop).
 

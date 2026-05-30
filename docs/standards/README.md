@@ -132,8 +132,8 @@ Cloudflare Worker secrets:
 
 Android Gradle properties (override via `local.properties` or `-P`):
 
-- `voiceAlarmApiBaseUrl`
-- `voiceAlarmGoogleWebClientId`
+- `voiceAlarmDevApiBaseUrl` / `voiceAlarmProdApiBaseUrl`
+- `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`
 
 iOS uses Xcode Build Settings (`INFOPLIST_KEY_*`) for environment-specific values.
 

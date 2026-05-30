@@ -81,15 +81,15 @@
 
 - [ ] dev / prod **별도 GCP 프로젝트** 생성 (동의 화면이 프로젝트 단위 — prod는 게시/검증, dev는 테스트 모드)
 - [ ] 각 프로젝트에서 OAuth client 발급: **Web(백엔드 audience)** + **Android(패키지+SHA-1)** + iOS(나중)
-- [ ] 발급한 **Web client ID**로 교체: `gradle.properties`의 `voiceAlarmGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)
+- [ ] 발급한 **Web client ID**로 교체: `gradle.properties`의 `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)
 - [ ] Apple Developer: Sign in with Apple 설정(`APPLE_CLIENT_ID`, `APPLE_SHARED_SECRET`)
 
 **서명 인증서 SHA-1 (Android OAuth client에 등록 — 지문은 비밀 아님)**
 
 | 환경 | 패키지 | SHA-1 | 출처 |
 |---|---|---|---|
-| dev | `com.voicealarm.nativeapp.dev` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | **메인 개발 PC**의 debug.keystore (dev 빌드는 메인 PC에서). 다른 PC에서도 빌드하면 그 PC SHA-1 추가 등록 |
-| prod | `com.voicealarm.nativeapp` | _(Play 앱 서명 키 SHA-1 — 출시 후 기입)_ | **Play App Signing 사용.** 출시 후 Play Console → 설정 → 앱 무결성 → "앱 서명 키 인증서" SHA-1 복사해 등록 |
+| dev | `com.alarmtalk.app.dev` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | **메인 개발 PC**의 debug.keystore (dev 빌드는 메인 PC에서). 다른 PC에서도 빌드하면 그 PC SHA-1 추가 등록 |
+| prod | `com.alarmtalk.app` | _(Play 앱 서명 키 SHA-1 — 출시 후 기입)_ | **Play App Signing 사용.** 출시 후 Play Console → 설정 → 앱 무결성 → "앱 서명 키 인증서" SHA-1 복사해 등록 |
 
 > prod는 **Play App Signing**을 쓴다: AAB는 *업로드 키*(release 키스토어)로 서명해 올리고, 배포본은 Google이 *앱 서명 키*로 재서명한다.
 > → **스토어 배포본 로그인에 필요한 건 "앱 서명 키" SHA-1**(위 prod 행, 출시 후 확보). 로컬에서 prod 빌드를 직접 설치해 로그인 테스트하려면 업로드 키 SHA-1도 추가 등록하면 된다.
@@ -102,7 +102,7 @@
 - [ ] Play Console: 앱 등록, 내부테스트 트랙(베타) / 프로덕션 트랙
 
 ### iOS / Apple
-- [ ] Apple Developer: bundle ID 등록 — `com.voicealarm.nativeapp` + `.dev`
+- [ ] Apple Developer: bundle ID 등록 — `com.alarmtalk.app` + `.dev`
 - [ ] 배포 인증서 + 프로비저닝 프로파일
 - [ ] App Store Connect: 앱 등록, TestFlight(베타)
 
