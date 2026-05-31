@@ -1,11 +1,11 @@
 ﻿# Legal / Privacy Release Pack
 
-This folder contains launch-review drafts for AlarmTalk's legal and privacy surfaces.
+This folder contains release-review documents for AlarmTalk's legal and privacy surfaces.
 They are written for Korean launch first, with Android first and iOS later.
 
-These drafts are not a substitute for review by counsel. Before public release,
-replace every `출시 전 확정 필수` item with the actual operator, contact, address,
-business registration, payment, and processor details.
+These documents are not a substitute for review by counsel. Before public release,
+confirm that the public developer name, operator contact, business registration,
+payment details, and processor list match the final production setup.
 
 ## Where These Must Appear
 
@@ -34,7 +34,7 @@ business registration, payment, and processor details.
   mail-order business registration if paid plans are sold directly.
 - Confirm support/privacy email domains are live.
 - Confirm third-party processors and countries:
-  Cloudflare, Turso/libSQL, ElevenLabs, Perso.ai, Sentry, Resend, Google, Apple,
+  Cloudflare, Turso/libSQL, ElevenLabs, Sentry, Google, Apple, email providers,
   payment providers.
 - Confirm whether voice data is treated as biometric information under the final
   product flow and jurisdiction review. These drafts conservatively treat user

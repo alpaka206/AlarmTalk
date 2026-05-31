@@ -69,6 +69,9 @@ val generateAlarmTone = tasks.register<GenerateAlarmToneTask>("generateAlarmTone
     outputDir.set(layout.buildDirectory.dir("generated/res/alarmTone"))
 }
 
+fun String.asBuildConfigString(): String =
+    "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
 android {
     namespace = "com.alarmtalk.app"
     compileSdk = 35
@@ -77,7 +80,7 @@ android {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = 4
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -102,27 +105,67 @@ android {
     val voiceAlarmProdGoogleWebClientId = providers.gradleProperty("voiceAlarmProdGoogleWebClientId")
         .orElse("")
         .get()
+    val voiceAlarmDevSentryDsn = providers.gradleProperty("voiceAlarmDevSentryDsn")
+        .orElse("")
+        .get()
+    val voiceAlarmProdSentryDsn = providers.gradleProperty("voiceAlarmProdSentryDsn")
+        .orElse("")
+        .get()
 
     flavorDimensions += "environment"
     productFlavors {
         create("dev") {
             dimension = "environment"
             applicationIdSuffix = ".dev"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmDevApiBaseUrl\"")
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmDevApiBaseUrl.asBuildConfigString())
             buildConfigField(
                 "String",
                 "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                "\"$voiceAlarmDevGoogleWebClientId\"",
+                voiceAlarmDevGoogleWebClientId.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_DSN",
+                voiceAlarmDevSentryDsn.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_ENVIRONMENT",
+                "development".asBuildConfigString(),
             )
         }
         create("prod") {
             dimension = "environment"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmProdApiBaseUrl\"")
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmProdApiBaseUrl.asBuildConfigString())
             buildConfigField(
                 "String",
                 "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                "\"$voiceAlarmProdGoogleWebClientId\"",
+                voiceAlarmProdGoogleWebClientId.asBuildConfigString(),
             )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_DSN",
+                voiceAlarmProdSentryDsn.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_ENVIRONMENT",
+                "production".asBuildConfigString(),
+            )
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
     }
 
@@ -161,6 +204,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("io.sentry:sentry-android-core:8.43.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
