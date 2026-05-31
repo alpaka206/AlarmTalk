@@ -24,11 +24,10 @@ Coding conventions, git workflow, security policy, XP rules, and key architectur
 .
 ├── README.md           # English root README (+ README.ko.md / README.ja.md)
 ├── AGENTS.md           # AI agent entrypoint
-├── CLAUDE.md           # Claude Code instructions
-├── NATIVE_REBUILD_PROMPT.md
 ├── SECURITY.md
 ├── docs/
 │   ├── README.md
+│   ├── assets/
 │   ├── product/
 │   ├── spec/
 │   ├── design/
@@ -36,7 +35,8 @@ Coding conventions, git workflow, security policy, XP rules, and key architectur
 │   ├── standards/      # this file
 │   ├── qa/
 │   ├── manual/
-│   └── native-rebuild/
+│   ├── legal/
+│   └── ops/
 ├── apps/
 │   ├── android-native/
 │   ├── ios-native/
@@ -134,6 +134,7 @@ Android Gradle properties (override via `local.properties` or `-P`):
 
 - `voiceAlarmDevApiBaseUrl` / `voiceAlarmProdApiBaseUrl`
 - `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`
+- `voiceAlarmDevSentryDsn` / `voiceAlarmProdSentryDsn` (blank disables client reporting)
 
 iOS uses Xcode Build Settings (`INFOPLIST_KEY_*`) for environment-specific values.
 

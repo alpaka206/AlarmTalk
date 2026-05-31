@@ -16,7 +16,7 @@ This documentation is intended for contributors and developers reading the sourc
 | [qa/](qa/README.md) | Test plan, cases, scenarios, bug report template, QA report |
 | [manual/](manual/README.md) | End-user manual |
 | [legal/](legal/README.md) | Privacy policy, terms, consent copy, store disclosure checklist |
-| [native-rebuild/](native-rebuild/README.md) | Phase-by-phase Android/iOS native rebuild prompts |
+| [ops/](ops/environments.md) | Environment separation, deploy configuration, release operations |
 
 ## Conventions
 

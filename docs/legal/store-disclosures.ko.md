@@ -6,7 +6,7 @@
 
 - Privacy Policy URL: `https://alarm-talk.com/ko/privacy/`
 - Terms URL: `https://alarm-talk.com/ko/terms/`
-- Support URL: 출시 전 확정 필수
+- Support URL: `https://alarm-talk.com/ko/contact/`
 - Account deletion URL 또는 앱 내 경로: 앱 설정 > 계정 > 계정 삭제
 
 ## 2. Google Play Data safety 예상 항목
@@ -32,7 +32,7 @@
 
 공유 여부:
 
-- Cloudflare, Turso, ElevenLabs, Perso.ai, Sentry, Resend, Google, Apple, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
+- Cloudflare, Turso, ElevenLabs, Sentry, Google, Apple, 이메일 발송 제공자, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
 - 광고 네트워크 또는 데이터 브로커에 제공하지 않는다면 "advertising or marketing sharing"은 아니라고 보는 방향이 합리적입니다.
 
 보안:
@@ -84,6 +84,8 @@ Voice feature:
 
 - Separate voice/AI consent before recording, upload, speaker separation, clone, or TTS
 - Statement that the user must own or have permission to use the voice
+- Statement that voice recordings, scripts, and generated voice rights remain with the user or original rights holder
+- Statement that the user is responsible for unauthorized voice registration, copyright/personality-right violations, impersonation, fraud, harassment, and illegal use
 - Statement that generated voices must not be used for impersonation, fraud, harassment, or illegal acts
 
 Settings:
@@ -103,7 +105,7 @@ Account deletion:
 
 - Is the final app targeted to users under 14 or likely to be used by children?
 - Is voice data legally treated as biometric information in the launch jurisdictions?
-- Does ElevenLabs or Perso.ai use submitted voice/audio for provider-side model training, quality improvement, or abuse monitoring?
+- Does ElevenLabs use submitted voice/audio for provider-side model training, quality improvement, or abuse monitoring?
 - Are all provider DPAs and cross-border transfer notices in place?
 - Does account deletion delete R2 objects and provider-side cloned voice IDs?
 - Does the app provide a way to withdraw voice sharing consent?
