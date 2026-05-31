@@ -232,6 +232,6 @@ enum RemoteAlarmMapper {
     /// Android `RemoteAlarmMapper.isRemoteAudioUrl` 동일.
     static func isRemoteAudioUrl(_ value: String) -> Bool {
         let lower = value.lowercased()
-        return lower.hasPrefix("https://") || lower.hasPrefix("http://") || lower.hasPrefix("r2://")
+        return lower.hasPrefix("https://") || lower.hasPrefix("r2://")
     }
 }

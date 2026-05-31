@@ -48,6 +48,19 @@ class RemoteAlarmMapperTest {
     }
 
     @Test
+    fun cleartextRemoteAudioUrlIsNotReferenced() {
+        val alarm = alarm(
+            playMode = AlarmPlayModes.ALARM_VOICE,
+            rawAudioUri = "http://cdn.example.com/alarm.m4a",
+        )
+
+        val request = RemoteAlarmMapper.toWriteRequest(alarm)
+
+        assertEquals("sound-only", request.mode)
+        assertNull(request.rawAudioUrl)
+    }
+
+    @Test
     fun generatedTtsUsesMessageIdInsteadOfRawR2Url() {
         val alarm = alarm(
             playMode = AlarmPlayModes.ALARM_VOICE,
