@@ -5,7 +5,8 @@ node_modules/
 .env.local
 .env.*.local
 .env.production
-.dev.vars
+.dev.vars*
+!packages/backend/.dev.vars.example
 
 # Build outputs
 dist/

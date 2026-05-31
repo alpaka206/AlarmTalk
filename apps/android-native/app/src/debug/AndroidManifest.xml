@@ -6,8 +6,8 @@
             android:name=".debug.DebugAlarmReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.voicealarm.nativeapp.action.DEBUG_CREATE_TEST_ALARM" />
-                <action android:name="com.voicealarm.nativeapp.action.DEBUG_DISMISS_LAST_ALARM" />
+                <action android:name="com.alarmtalk.app.action.DEBUG_CREATE_TEST_ALARM" />
+                <action android:name="com.alarmtalk.app.action.DEBUG_DISMISS_LAST_ALARM" />
             </intent-filter>
         </receiver>
     </application>

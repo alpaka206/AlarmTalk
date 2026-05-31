@@ -70,11 +70,11 @@ val generateAlarmTone = tasks.register<GenerateAlarmToneTask>("generateAlarmTone
 }
 
 android {
-    namespace = "com.voicealarm.nativeapp"
+    namespace = "com.alarmtalk.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.voicealarm.nativeapp"
+        applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -90,16 +90,40 @@ android {
         buildConfig = true
     }
 
-    val voiceAlarmApiBaseUrl = providers.gradleProperty("voiceAlarmApiBaseUrl")
-        .orElse("https://voice-alarm-api.voicealarm.workers.dev/api/")
+    val voiceAlarmDevApiBaseUrl = providers.gradleProperty("voiceAlarmDevApiBaseUrl")
+        .orElse("https://api-dev.alarm-talk.com/api/")
         .get()
-    val voiceAlarmGoogleWebClientId = providers.gradleProperty("voiceAlarmGoogleWebClientId")
+    val voiceAlarmProdApiBaseUrl = providers.gradleProperty("voiceAlarmProdApiBaseUrl")
+        .orElse("https://api.alarm-talk.com/api/")
+        .get()
+    val voiceAlarmDevGoogleWebClientId = providers.gradleProperty("voiceAlarmDevGoogleWebClientId")
+        .orElse("")
+        .get()
+    val voiceAlarmProdGoogleWebClientId = providers.gradleProperty("voiceAlarmProdGoogleWebClientId")
         .orElse("")
         .get()
 
-    buildTypes.configureEach {
-        buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmApiBaseUrl\"")
-        buildConfigField("String", "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID", "\"$voiceAlarmGoogleWebClientId\"")
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmDevApiBaseUrl\"")
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
+                "\"$voiceAlarmDevGoogleWebClientId\"",
+            )
+        }
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", "\"$voiceAlarmProdApiBaseUrl\"")
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
+                "\"$voiceAlarmProdGoogleWebClientId\"",
+            )
+        }
     }
 
     compileOptions {

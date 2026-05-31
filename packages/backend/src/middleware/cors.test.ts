@@ -5,6 +5,8 @@ import { cors } from 'hono/cors';
 const ALLOWED_ORIGINS = [
   'http://localhost:8081',
   'exp://localhost:8081',
+  'https://alarm-talk.com',
+  'https://www.alarm-talk.com',
 ];
 
 function createApp() {
@@ -41,6 +43,15 @@ describe('CORS configuration', () => {
       headers: { Origin: 'exp://localhost:8081' },
     });
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('exp://localhost:8081');
+  });
+
+  it('returns correct headers for production landing origin', async () => {
+    const app = createApp();
+    const res = await app.request('/test', {
+      method: 'GET',
+      headers: { Origin: 'https://alarm-talk.com' },
+    });
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://alarm-talk.com');
   });
 
   it('falls back to first allowed origin for unknown origin', async () => {

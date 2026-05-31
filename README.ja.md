@@ -52,12 +52,12 @@
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev
+npm run dev        # wrangler dev --env dev
 npm test           # vitest
-npm run deploy     # wrangler deploy
+npm run deploy     # wrangler deploy --env production
 ```
 
-シークレットはローカルの `packages/backend/.dev.vars` にのみ置きます(コミット禁止)。詳細は [`docs/tech/`](docs/tech/README.md) を参照。
+シークレットはローカルの `packages/backend/.dev.vars.dev` と `packages/backend/.dev.vars.prod` にのみ置きます(コミット禁止)。詳細は [`docs/tech/`](docs/tech/README.md) を参照。
 
 ### Android
 

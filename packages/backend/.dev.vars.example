@@ -1,0 +1,38 @@
+# Local template for Cloudflare Worker secrets.
+# Copy to `.dev.vars.dev` and `.dev.vars.prod`.
+# Do not commit real values.
+
+ENVIRONMENT=development
+
+# Cloudflare API credentials used only by local scripts.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+
+# AI providers.
+PERSO_API_KEY=
+ELEVENLABS_API_KEY=
+GEMINI_API_KEY=
+GOOGLE_VERTEX_API_KEY=
+GOOGLE_VERTEX_CREDENTIALS_JSON=
+GOOGLE_VERTEX_LOCATION=global
+GOOGLE_VERTEX_MODEL=gemini-2.5-flash
+
+# Turso DB. Use a separate database/token per environment.
+TURSO_DATABASE_URL=libsql://your-env-db.turso.io
+TURSO_AUTH_TOKEN=
+
+# Auth.
+GOOGLE_CLIENT_ID=
+JWT_SECRET=
+PASSWORD_PEPPER=
+# Required only when running POST /api/init-db against production.
+INIT_DB_SECRET=
+
+# Optional.
+APPLE_CLIENT_ID=
+APPLE_SHARED_SECRET=
+RESEND_API_KEY=
+AUTH_EMAIL_FROM=AlarmTalk <no-reply@alarm-talk.com>
+AUTH_EMAIL_REPLY_TO=
+FIREBASE_PROJECT_ID=
+SENTRY_DSN=

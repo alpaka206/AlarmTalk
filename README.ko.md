@@ -52,12 +52,12 @@
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev
+npm run dev        # wrangler dev --env dev
 npm test           # vitest
-npm run deploy     # wrangler deploy
+npm run deploy     # wrangler deploy --env production
 ```
 
-시크릿은 `packages/backend/.dev.vars`에 로컬로만 두세요(커밋 금지). 전체 목록은 [`docs/tech/`](docs/tech/README.md) 참조.
+시크릿은 `packages/backend/.dev.vars.dev`와 `packages/backend/.dev.vars.prod`에 로컬로만 두세요(커밋 금지). 전체 목록은 [`docs/tech/`](docs/tech/README.md) 참조.
 
 ### Android
 
