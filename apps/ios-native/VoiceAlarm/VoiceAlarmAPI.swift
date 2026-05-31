@@ -500,7 +500,7 @@ extension TtsGenerateResponse {
             return nil
         }
         let lower = key.lowercased()
-        if lower.hasPrefix("r2://") || lower.hasPrefix("https://") || lower.hasPrefix("http://") {
+        if lower.hasPrefix("r2://") || lower.hasPrefix("https://") {
             return key
         }
         return "r2://\(key)"
@@ -1661,7 +1661,8 @@ final class VoiceAlarmAPI: @unchecked Sendable {
 
     private static func defaultBaseURL() -> URL {
         if let value = Bundle.main.object(forInfoDictionaryKey: "VOICE_ALARM_API_BASE_URL") as? String,
-           let url = URL(string: value) {
+           let url = URL(string: value),
+           url.scheme == "https" {
             return url
         }
         return URL(string: "https://api.alarm-talk.com/api")!

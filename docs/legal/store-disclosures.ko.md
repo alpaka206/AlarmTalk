@@ -7,7 +7,8 @@
 - Privacy Policy URL: `https://alarm-talk.com/ko/privacy/`
 - Terms URL: `https://alarm-talk.com/ko/terms/`
 - Support URL: `https://alarm-talk.com/ko/contact/`
-- Account deletion URL 또는 앱 내 경로: 앱 설정 > 계정 > 계정 삭제
+- Account deletion URL: `https://alarm-talk.com/ko/account-deletion/`
+- App account deletion path: 앱 설정 > 계정 > 회원 탈퇴
 
 ## 2. Google Play Data safety 예상 항목
 

@@ -38,7 +38,7 @@ notes.post('/', async (c) => {
   if (receiverId === senderPk) return c.json({ error: '자기 자신에게는 보낼 수 없습니다', error_code: 'SELF_NOTE' }, 400);
 
   if (audioUrl && !isValidAudioUrl(audioUrl)) {
-    return c.json({ error: 'audio_url must be r2://, http://, or https://', error_code: 'INVALID_AUDIO_URL' }, 400);
+    return c.json({ error: 'audio_url must be r2:// or https://', error_code: 'INVALID_AUDIO_URL' }, 400);
   }
 
   const receiverRes = await db.execute({
@@ -268,7 +268,6 @@ function isValidAudioUrl(audioUrl: string): boolean {
   return audioUrl.length <= MAX_NOTE_AUDIO_URL_LENGTH &&
     (
       audioUrl.startsWith('r2://') ||
-      audioUrl.startsWith('http://') ||
       audioUrl.startsWith('https://')
     );
 }

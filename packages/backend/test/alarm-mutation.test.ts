@@ -52,6 +52,14 @@ describe('POST /alarms', () => {
     expect((await res.json()).error_code).toBe('INVALID_ALARM_MODE');
   });
 
+  it('cleartext raw_audio_url이면 400', async () => {
+    const res = await buildApp().request(
+      jsonReq('POST', '/alarms', { time: '07:30', raw_audio_url: 'http://cdn.example.com/alarm.m4a' }),
+    );
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_RAW_AUDIO_URL');
+  });
+
   it('target_user_id 가 친구 아닌 경우 403 NOT_FRIENDS', async () => {
     // friendship query → no rows
     mockDB.pushResult([]);

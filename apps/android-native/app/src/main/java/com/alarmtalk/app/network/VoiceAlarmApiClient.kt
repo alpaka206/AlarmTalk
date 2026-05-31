@@ -3,6 +3,7 @@ package com.alarmtalk.app.network
 import com.alarmtalk.app.BuildConfig
 import java.util.concurrent.TimeUnit
 import okhttp3.Authenticator
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -51,8 +52,12 @@ object VoiceAlarmApiClient {
 
     fun bearer(token: String): String = "Bearer $token"
 
-    private fun normalizeBaseUrl(baseUrl: String): String =
-        if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+    private fun normalizeBaseUrl(baseUrl: String): String {
+        val normalized = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+        val parsed = normalized.toHttpUrl()
+        require(parsed.isHttps) { "VOICE_ALARM_API_BASE_URL must use https." }
+        return normalized
+    }
 
     /**
      * 401 응답을 받으면 한 번만 콜백을 호출하고 재시도 없이 응답을 그대로 흘려보낸다.

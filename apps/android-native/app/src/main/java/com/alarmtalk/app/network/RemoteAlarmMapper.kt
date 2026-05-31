@@ -35,6 +35,5 @@ object RemoteAlarmMapper {
 
     fun isRemoteAudioUrl(value: String): Boolean =
         value.startsWith("https://", ignoreCase = true) ||
-            value.startsWith("http://", ignoreCase = true) ||
             value.startsWith("r2://", ignoreCase = true)
 }
