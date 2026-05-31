@@ -68,13 +68,13 @@ Google sign-in needs a Web OAuth client ID for `requestIdToken()`. Android OAuth
 ```text
 Dev applicationId: com.alarmtalk.app.dev
 Prod applicationId: com.alarmtalk.app
-Dev Web client ID: 677878444839-321tg0ii4og4pa1tk0rpi72erddbvl50.apps.googleusercontent.com
-Prod Web client ID: 504825419212-uq7dps7fi1duk4jdikciapli3e2l4e30.apps.googleusercontent.com
+Dev Web client ID: set with voiceAlarmDevGoogleWebClientId
+Prod Web client ID: set with voiceAlarmProdGoogleWebClientId
 ```
 
 Register Android OAuth clients in Google Cloud Console for each package name and signing certificate SHA-1. The app does not read Android client IDs at runtime.
 
-Override the Web client ID with a Gradle property when needed:
+Keep real OAuth client IDs in Gradle property sources, CI secrets, or local ignored files. Do not duplicate them in README files. Override the Web client ID with a Gradle property when needed:
 
 ```powershell
 .\gradlew.bat -PvoiceAlarmDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
@@ -85,7 +85,7 @@ Override the Web client ID with a Gradle property when needed:
 Android crash and ANR reporting is disabled by default. Set a flavor-specific DSN only when the target Sentry project is ready:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmProdSentryDsn="https://PUBLIC_KEY@o0.ingest.sentry.io/0" :app:bundleProdRelease
+.\gradlew.bat -PvoiceAlarmProdSentryDsn="<SENTRY_DSN>" :app:bundleProdRelease
 ```
 
 When the DSN is blank, the app does not initialize the Sentry SDK. Release bundles include native debug symbol metadata where available.

@@ -24,11 +24,10 @@ Coding conventions, git workflow, security policy, XP rules, and key architectur
 .
 ├── README.md           # English root README (+ README.ko.md / README.ja.md)
 ├── AGENTS.md           # AI agent entrypoint
-├── CLAUDE.md           # Claude Code instructions
-├── NATIVE_REBUILD_PROMPT.md
 ├── SECURITY.md
 ├── docs/
 │   ├── README.md
+│   ├── assets/
 │   ├── product/
 │   ├── spec/
 │   ├── design/
@@ -36,7 +35,8 @@ Coding conventions, git workflow, security policy, XP rules, and key architectur
 │   ├── standards/      # this file
 │   ├── qa/
 │   ├── manual/
-│   └── native-rebuild/
+│   ├── legal/
+│   └── ops/
 ├── apps/
 │   ├── android-native/
 │   ├── ios-native/

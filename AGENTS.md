@@ -6,16 +6,17 @@ Coding agents must read these files before making product or architecture change
 
 - `README.md`
 - `docs/README.md` — full documentation index
-- `docs/native-rebuild/00_GOAL.md`
-- `docs/native-rebuild/01_ROADMAP.md`
-- `NATIVE_REBUILD_PROMPT.md`
+- `docs/product/README.md`
+- `docs/spec/README.md`
+- `docs/tech/README.md`
+- `docs/standards/README.md`
 
 ## Current Direction
 
 - **Android first**: Kotlin + Jetpack Compose + native `AlarmManager`.
 - **iOS later**: SwiftUI + AlarmKit. Run a feasibility PoC first; do not assume Critical Alert entitlement is the answer until AlarmKit limits are documented on physical iOS 26+ devices.
 - **Backend reuse**: keep the existing Cloudflare Workers + Hono + Turso backend as the API and domain reference.
-- **Legacy app reference**: the old `apps/mobile` source has been removed. Use `docs/native-rebuild/09_LEGACY_REFERENCE_EXTRACT.md` plus the current native and backend code as the remaining references. Do not rebuild or extend the old React Native alarm runtime.
+- **Legacy app reference**: the old `apps/mobile` source has been removed. Use the current native app, backend code, and docs as references. Do not rebuild or extend the old React Native alarm runtime.
 
 ## Non-negotiable Alarm Rules
 
@@ -36,7 +37,7 @@ Coding agents must read these files before making product or architecture change
 6. Character, streak, and billing
 7. iOS AlarmKit PoC and native implementation
 
-Do not start login, social, character, or billing work until the Android alarm engine is verified on a real device.
+Do not weaken the verified Android alarm engine while extending login, social, character, or billing features.
 
 ## Git Hygiene
 

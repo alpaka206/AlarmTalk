@@ -1,140 +1,86 @@
-# 환경 분리 전략 (dev / prod)
+# 환경 및 배포 운영
 
-> 실서비스 전환을 위해 백엔드·랜딩·앱(Android/iOS)을 두 환경으로 분리한다.
-> 현재 상태는 **전부 단일 dev 환경**이며, 이 문서는 목표 구조와 *직접 해야 할 작업*을 정리한다.
-> staging은 운영 병목이 커서 제외하고 **dev + prod 2단계**로 간다. (필요해지면 나중에 staging을 끼워 넣을 수 있게 구조는 열어둔다.)
+AlarmTalk는 `dev`와 `prod` 두 환경으로 운영한다. 이 문서는 실제 계정 값이나 secret을 보관하지 않고, 어디에 무엇을 설정해야 하는지만 정리한다.
 
-## 1. 환경 정의
+## 환경 정의
 
-| 환경 | 용도 | 브랜치 | 사용자 |
+| 환경 | 용도 | 브랜치 | 앱 패키지 |
 |---|---|---|---|
-| **dev** | 개발·통합 테스트·내부 확인 | `develop` | 개발자 + 내부 테스터 |
-| **prod** | 실서비스 | `main` | 일반 사용자 |
+| `dev` | 개발, 통합 테스트, 내부 확인 | `develop` | `com.alarmtalk.app.dev` |
+| `prod` | Play 내부테스트, 실제 배포 | `main` | `com.alarmtalk.app` |
 
-> 베타 테스트는 별도 staging 없이 **앱 스토어의 내부테스트 트랙(Play 내부테스트 / iOS TestFlight)** 으로 prod 빌드를 배포해 진행한다.
+별도 staging은 두지 않는다. 베타 검증은 Play 내부테스트와 TestFlight 같은 스토어 트랙으로 처리한다.
 
-## 2. 도메인 매핑 (alarm-talk.com)
+## 공개 문서 원칙
 
-| 컴포넌트 | dev | prod |
-|---|---|---|
-| 랜딩 | 미리보기 배포(또는 `dev.alarm-talk.com`) | `alarm-talk.com` |
-| 백엔드 API | `api-dev.alarm-talk.com` (또는 새 계정의 `*.workers.dev`) | `api.alarm-talk.com` |
+다음 값은 README, 이슈, PR, 운영 문서에 실제 값을 적지 않는다.
 
-## 3. 컴포넌트별 분리 방법
+- OAuth client ID
+- Sentry DSN
+- Cloudflare API token, account ID
+- Turso URL/token
+- JWT secret, password pepper, init secret
+- Apple shared secret
+- keystore 경로, alias, 비밀번호
+- Play Console 또는 Google Cloud Console의 인증서 지문 값
 
-### 백엔드 (Cloudflare Workers)
-- `wrangler.toml`에 `[env.production]` 추가 (top-level = dev 기본)
-- 환경별로 분리: **Worker 이름**, **R2 버킷**, **Turso DB(secret)**, **커스텀 도메인**, **secrets**
-- 배포: `wrangler deploy`(dev) / `wrangler deploy --env production`(prod)
-- 코드 변경 필요 → *인프라(R2·DB) 준비 후* 스캐폴딩 제공 예정
+OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공개 식별자에 가깝지만, 문서에 중복 기재하면 오래된 값과 혼동이 생긴다. 실제 값은 빌드 설정, CI secret, 로컬 ignored 파일, 콘솔에만 둔다.
 
-### 랜딩 (Cloudflare Pages 권장)
-- Production 브랜치 = `main`, Preview 브랜치 = `develop`
-- 환경변수(`NEXT_PUBLIC_SITE_URL`, 스토어 링크)를 플랫폼에서 환경별 설정
-- 이미 env 기반이라 코드 변경 최소
+## 설정 위치
 
 ### Android
-- `productFlavors { dev; prod }` + `applicationIdSuffix`(`.dev`)로 **한 기기에 dev/prod 동시 설치**
-- flavor별 API base URL, Google OAuth client ID
-- `buildTypes`: debug/release, release 서명용 키스토어
-- 코드 변경 필요 → 키스토어 준비 후 스캐폴딩 제공 예정
 
-### iOS
-- `xcconfig` 파일(Dev/Prod) + scheme 분리
-- bundle ID suffix(`.dev`), 환경별 `VOICE_ALARM_API_BASE_URL`, Google/Apple client ID
-- 코드 변경 필요 → Apple Developer 준비 후 스캐폴딩 제공 예정
+- 환경별 API base URL과 Google Web OAuth client ID는 Gradle property로 주입한다.
+- 기본 property 이름:
+  - `voiceAlarmDevApiBaseUrl`
+  - `voiceAlarmProdApiBaseUrl`
+  - `voiceAlarmDevGoogleWebClientId`
+  - `voiceAlarmProdGoogleWebClientId`
+  - `voiceAlarmDevSentryDsn`
+  - `voiceAlarmProdSentryDsn`
+- release AAB는 업로드 키로 서명해 Play Console에 올린다.
 
----
+### Backend
 
-## 4. ✅ 직접 해야 할 일 (계정·인프라 — 코드로 안 됨)
+- Cloudflare Worker secret은 `wrangler secret put <KEY>` 또는 `wrangler secret put <KEY> --env production`으로 설정한다.
+- 로컬 개발 값은 ignored 파일인 `packages/backend/.dev.vars.dev`, `packages/backend/.dev.vars.prod`에 둔다.
+- GitHub Actions 배포에 필요한 값은 GitHub Secrets에 둔다.
 
-### Cloudflare (⚠️ 완전히 새 계정으로 시작 — 기존 계정은 폐기)
+### Landing
 
-> 도메인을 새로 구매하고 네임서버를 **새 Cloudflare 계정**으로 변경했다. R2·Workers·Pages·Email을
-> 전부 이 새 계정 하나로 일원화한다. 기존 계정의 리소스(`voice-alarm-voices` 버킷, `voice-alarm-api`
-> 워커, 커스텀 도메인 바인딩)는 **자동으로 넘어오지 않는다.** 전부 새로 만들고, 컷오버 검증 후 옛 계정을 정리한다.
+- 프로덕션 배포는 `main`, 프리뷰 배포는 `develop` 기준으로 둔다.
+- 사이트 URL, 스토어 링크 같은 공개 값은 배포 플랫폼의 환경 변수로 관리한다.
 
-- [ ] `alarm-talk.com` zone이 새 계정에서 **Active 상태인지 확인** (`dig NS alarm-talk.com`이 Cloudflare NS를 가리키면 전파 완료). zone이 Active가 아니면 `wrangler.toml`의 `api.alarm-talk.com` 커스텀 도메인 때문에 `wrangler deploy`가 실패한다.
-- [ ] R2 버킷 **새로 2개 생성**: `voice-alarm-voices`(dev) + `voice-alarm-voices-prod`(prod) — 이름은 같아도 옛 계정 데이터는 안 넘어옴
-- [ ] Workers: 새 계정엔 워커가 없으므로 **첫 `wrangler deploy`가 `voice-alarm-api`를 생성**. 시크릿도 새 계정에 전부 다시 `wrangler secret put` (마이그레이션 안 됨)
-- [ ] Workers 커스텀 도메인 연결: `api.alarm-talk.com`(prod) / `api-dev.alarm-talk.com`(dev) — 둘 다 새 계정 zone에
-- [ ] Cloudflare Pages 프로젝트 생성(랜딩) — Root Directory `apps/landing`, Build `npm run build`, Output `out`
-- [ ] **GitHub Secret 재설정(필수)**: 새 계정에서 `CLOUDFLARE_API_TOKEN` 발급, `CLOUDFLARE_ACCOUNT_ID`를 새 값으로 교체 — 안 하면 CI가 죽은 옛 계정으로 배포를 시도한다
-- [ ] (선택·권장) `wrangler.toml`에 `account_id = <새 계정 ID>` 고정 — 옛 계정으로 오배포 방지
+## Google 로그인
 
-### DB (Turso)
-- [ ] dev / prod 데이터베이스 각각 생성
-- [ ] 환경별 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` 확보
+Firebase Auth를 쓰지 않는다. 앱은 Google Sign-In에서 ID token을 받고, 백엔드가 Google/Apple ID token을 직접 검증한다.
 
-### 백엔드 시크릿 (환경별 — prod는 `wrangler secret put <KEY> --env production`)
-- [ ] `PERSO_API_KEY`, `ELEVENLABS_API_KEY`, `GEMINI_API_KEY`
-- [ ] `GOOGLE_VERTEX_API_KEY` / `GOOGLE_VERTEX_CREDENTIALS_JSON` / `GOOGLE_VERTEX_LOCATION` / `GOOGLE_VERTEX_MODEL`
-- [ ] `JWT_SECRET`(dev/prod 다르게), `PASSWORD_PEPPER`
-- [ ] `GOOGLE_CLIENT_ID`(환경별), `APPLE_CLIENT_ID`, `APPLE_SHARED_SECRET`
-- [ ] `RESEND_API_KEY`, `AUTH_EMAIL_FROM`, `AUTH_EMAIL_REPLY_TO`
-- [ ] `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
+Android 앱 코드가 런타임에 읽는 값은 Web OAuth client ID다. `requestIdToken()`의 audience와 백엔드 `GOOGLE_CLIENT_ID`가 같은 Web client ID여야 한다.
 
-### Google / Apple 로그인 (Firebase 아님)
+Android OAuth client ID는 Google Cloud Console에 등록만 한다. 앱 코드나 AAB env에 넣지 않는다. 등록 기준은 다음과 같다.
 
-> ⚠️ Google도 **새 계정으로 이전**한다. 현재 `gradle.properties`/시크릿에 박힌 client ID는 옛 프로젝트
-> (번호 `869967951972`) 소속이라 새 계정에선 **무효** → 새 프로젝트에서 다시 발급해 교체해야 한다.
+- dev: `com.alarmtalk.app.dev` + 개발/디버그 서명 인증서 SHA-1
+- prod: `com.alarmtalk.app` + Play App Signing의 앱 서명 키 SHA-1
+- 로컬에서 prod release를 직접 설치해 로그인 테스트할 때만 업로드 키 SHA-1도 추가 등록
 
-- [ ] dev / prod **별도 GCP 프로젝트** 생성 (동의 화면이 프로젝트 단위 — prod는 게시/검증, dev는 테스트 모드)
-- [ ] 각 프로젝트에서 OAuth client 발급: **Web(백엔드 audience)** + **Android(패키지+SHA-1)** + iOS(나중)
-- [ ] 발급한 **Web client ID**로 교체: `gradle.properties`의 `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`(flavor별) + 백엔드 `GOOGLE_CLIENT_ID`(`--env dev|production`)
-- [ ] Apple Developer: Sign in with Apple 설정(`APPLE_CLIENT_ID`, `APPLE_SHARED_SECRET`)
+## Android 배포 순서
 
-**서명 인증서 SHA-1 (Android OAuth client에 등록 — 지문은 비밀 아님)**
+1. prod Web OAuth client ID가 Android Gradle property와 backend `GOOGLE_CLIENT_ID`에 같은 값으로 설정되어 있는지 확인한다.
+2. prod Android OAuth client가 Google Cloud Console에 등록되어 있는지 확인한다.
+3. `versionCode`를 이전 Play 업로드보다 크게 올린다.
+4. prod release AAB를 빌드한다.
+5. 업로드 키로 AAB를 서명한다.
+6. Play Console 내부테스트 트랙에 업로드한다.
+7. Play Console에서 앱 서명 키 SHA-1을 확인하고 Google Cloud Console의 prod Android OAuth client에 반영한다.
 
-| 환경 | 패키지 | SHA-1 | 출처 |
-|---|---|---|---|
-| dev | `com.alarmtalk.app.dev` | `8E:05:92:D1:40:78:5B:DF:E8:F1:E1:05:CD:DD:A2:81:A5:B1:3D:31` | **메인 개발 PC**의 debug.keystore (dev 빌드는 메인 PC에서). 다른 PC에서도 빌드하면 그 PC SHA-1 추가 등록 |
-| prod | `com.alarmtalk.app` | _(Play 앱 서명 키 SHA-1 — 출시 후 기입)_ | **Play App Signing 사용.** 출시 후 Play Console → 설정 → 앱 무결성 → "앱 서명 키 인증서" SHA-1 복사해 등록 |
+## 오류 수집
 
-> prod는 **Play App Signing**을 쓴다: AAB는 *업로드 키*(release 키스토어)로 서명해 올리고, 배포본은 Google이 *앱 서명 키*로 재서명한다.
-> → **스토어 배포본 로그인에 필요한 건 "앱 서명 키" SHA-1**(위 prod 행, 출시 후 확보). 로컬에서 prod 빌드를 직접 설치해 로그인 테스트하려면 업로드 키 SHA-1도 추가 등록하면 된다.
+- Android Sentry DSN은 release 빌드 시 Gradle property로 주입한다.
+- Backend Sentry DSN은 Worker secret으로만 설정한다.
+- Sentry DSN은 앱에 포함될 수 있지만, README와 운영 문서에는 실제 값을 적지 않는다.
 
-> 로그인 인증은 Firebase를 쓰지 않는다. 백엔드가 Google/Apple ID 토큰을 직접 검증한다
-> (`lib/oauth.ts`의 `verifyGoogleIdToken`이 `oauth2.googleapis.com/tokeninfo` 호출).
+## 알람 동작 원칙
 
-### Android 배포
-- [ ] release 서명 키스토어 생성 + **안전 보관**(비밀번호·alias 분실 시 앱 업데이트 불가)
-- [ ] Play Console: 앱 등록, 내부테스트 트랙(베타) / 프로덕션 트랙
+받은 알람이나 공유 알람도 실제 울림 전에는 로컬 `AlarmManager`에 등록되어야 한다. 알람 발화는 푸시, 서버 cron, 실시간 네트워크 연결에 의존하지 않는다.
 
-### iOS / Apple
-- [ ] Apple Developer: bundle ID 등록 — `com.alarmtalk.app` + `.dev`
-- [ ] 배포 인증서 + 프로비저닝 프로파일
-- [ ] App Store Connect: 앱 등록, TestFlight(베타)
-
-### 이메일 (alarm-talk.com)
-- [ ] Cloudflare Email Routing: `support@`/`business@`/`hello@`/`press@` 포워딩
-- [ ] Resend: 도메인 인증(SPF/DKIM), `no-reply@alarm-talk.com` 발신
-
----
-
-## 5. 소셜 알림 / FCM 방향 (확정)
-
-- **받은 알람(소셜 공유 알람)** 은 어떤 경우에도 **미리 로컬 `AlarmManager`에 선등록**한다. 알람 발화는 푸시·서버 cron에 의존하지 않는다 (CLAUDE.md 원칙).
-- 현재는 **Pull Sync(약 15분 주기 폴링)** 로 받은 알람·음성 메시지를 당겨온다. `fcm.ts`는 목업(미발송).
-- **FCM(실시간 소셜 푸시) 은 추후 구현 예정.** 구현해도 **Pull Sync를 제거하지 않는다.**
-  - FCM = 데이터 변경 시 즉시 "당겨와" 트리거(실시간성↑)
-  - Pull Sync = 푸시 누락/지연 대비 **안전망**(주기는 완화 가능)
-- FCM 구현 시 필요해지는 것: **Firebase 프로젝트 + service account**, `FIREBASE_PROJECT_ID`(현재는 미사용 잔재이나 FCM용으로 되살아남), Android `google-services.json` / iOS `GoogleService-Info.plist`.
-  → FCM 구현 예정이므로 `FIREBASE_PROJECT_ID` 잔재는 **삭제하지 않고 유지**한다.
-
-## 6. 코드 작업 계획 (인프라 준비 후 단계적으로)
-
-1. `wrangler.toml` 환경 분리(`[env.production]`) + `deploy-backend.yml` 환경별 배포(main→prod, develop→dev)
-2. Android `productFlavors`(dev/prod) + flavor별 설정 주입
-3. iOS `xcconfig` + scheme 분리(Dev/Prod)
-4. 랜딩 환경변수 플랫폼 설정 정리
-
-## 7. 권장 진행 순서
-
-1. **도메인 zone을 Cloudflare에 등록** (모든 것의 전제)
-2. **prod 먼저 완성** → 동작 확인 → dev 설정 정리
-3. 백엔드(서버) → 앱(클라이언트) 순서. 앱 base URL은 백엔드 도메인이 실제 연결된 뒤 교체
-4. 키스토어·인증서·시크릿은 비밀 관리 도구(1Password 등)에 백업
-5. **옛 Cloudflare 계정은 새 계정 동작 확인 전까지 건드리지 말 것.** 컷오버 검증 후 옛 워커/버킷 삭제(비용·혼선 방지). 옛 버킷의 음성 파일이 필요하면 삭제 전 복사.
-
-> 각 단계의 코드 변경은 해당 인프라가 준비되면 요청하세요. 리소스 없이 환경 배포를 시도하면 빌드가 깨집니다.
+FCM 같은 실시간 알림을 나중에 붙이더라도 동기화 트리거로만 사용하고, 로컬 알람 등록 경로를 대체하지 않는다.
