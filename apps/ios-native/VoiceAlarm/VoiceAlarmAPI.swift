@@ -1664,7 +1664,7 @@ final class VoiceAlarmAPI: @unchecked Sendable {
            let url = URL(string: value) {
             return url
         }
-        return URL(string: "https://voice-alarm-api.voicealarm.workers.dev/api")!
+        return URL(string: "https://api.alarm-talk.com/api")!
     }
 
     private func endpoint(_ path: String) -> URL {

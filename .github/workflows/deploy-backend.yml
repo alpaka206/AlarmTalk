@@ -2,7 +2,7 @@ name: Deploy Backend (Cloudflare Workers)
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'packages/backend/**'
       - '.github/workflows/deploy-backend.yml'
@@ -30,10 +30,30 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Deploy to Cloudflare Workers
+      - name: Deploy dev to Cloudflare Workers
+        if: github.ref_name == 'develop'
         uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/backend
-          command: deploy
+          command: deploy --env dev
+
+      - name: Run dev DB migrations
+        if: github.ref_name == 'develop'
+        run: npm run migrate:dev
+
+      - name: Deploy production to Cloudflare Workers
+        if: github.ref_name == 'main'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/backend
+          command: deploy --env production
+
+      - name: Run production DB migrations
+        if: github.ref_name == 'main'
+        env:
+          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET }}
+        run: npm run migrate:prod

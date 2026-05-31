@@ -14,7 +14,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
               │ HTTPS                  │                      │
               ▼                        ▼                      ▼
 ┌────────────────────────────────────────────────────────────────┐
-│              Cloudflare Workers — voice-alarm-api               │
+│              Cloudflare Workers — voice-alarm-api                │
 │ securityHeaders → sentry → logger → rateLimit → bodyLimit      │
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
@@ -138,7 +138,8 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 
 | Target | Command / tool |
 |---|---|
-| Backend | `npm run deploy --workspace=backend` (wrangler) |
+| Backend dev | `npm run deploy:dev --workspace=backend` (wrangler) |
+| Backend production | `npm run deploy:prod --workspace=backend` (wrangler) |
 | Android | `./gradlew :app:bundleRelease` → Play Console internal track |
 | iOS | Xcode → TestFlight (macOS workstation) |
 | Landing | Static deploy (Cloudflare Pages or any static host) |
@@ -151,9 +152,18 @@ Backend secrets are managed as Cloudflare Worker secrets:
 - `SENTRY_DSN`
 - `GOOGLE_CLIENT_ID`, `APPLE_CLIENT_ID`
 
-R2 binding: `VOICE_BUCKET → voice-alarm-voices`.
+R2 binding: `VOICE_BUCKET → voice-alarm-voices` in dev and `VOICE_BUCKET → voice-alarm-voices-prod` in production.
 
-Cron: `* * * * *` (1-minute interval) handles subscription expiry and downgrade.
+Turso must also be split by environment:
+
+- dev Worker `voice-alarm-api-dev` uses a dev-only `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`.
+- production Worker `voice-alarm-api` uses a production-only `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`.
+- Store local values in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`.
+- Sync secrets with `npm run secrets:sync:dev --workspace=backend` and `npm run secrets:sync:prod --workspace=backend`.
+- After creating a fresh DB, run migrations with `POST /api/init-db`. In production, include `x-init-db-secret`.
+- CI deploys and migrates dev from `develop`, and deploys and migrates production from `main`.
+
+Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrade.
 
 ## 2. Database
 
@@ -328,7 +338,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 
 ## 3. HTTP API
 
-- **Base URL** (production): `https://voice-alarm-api.voicealarm.workers.dev/api`
+- **Base URL** (production): `https://api.alarm-talk.com/api`
 - **Auth**: `Authorization: Bearer <JWT | google_id_token | apple_id_token>`
 - **Response shape**:
   ```

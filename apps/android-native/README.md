@@ -31,16 +31,16 @@ The alarm ring path does not use push notifications, server cron, network fetch,
 
 ## Backend API
 
-The native app defaults to the deployed API used by the legacy mobile app:
+The native app debug build defaults to the deployed dev API:
 
 ```text
-https://voice-alarm-api.voicealarm.workers.dev/api/
+https://api-dev.alarm-talk.com/api/
 ```
 
 Root health was verified with:
 
 ```powershell
-Invoke-RestMethod -Uri https://voice-alarm-api.voicealarm.workers.dev/
+Invoke-RestMethod -Uri https://api-dev.alarm-talk.com/health
 ```
 
 Expected response includes `status: ok` and `db: ok`.
@@ -63,27 +63,29 @@ Provider-costing endpoints are only called from explicit user actions such as sa
 
 ### Google Sign-In Config
 
-Google sign-in needs a Web OAuth client ID for `requestIdToken()`. The current debug build uses:
+Google sign-in needs a Web OAuth client ID for `requestIdToken()`. Android OAuth clients are console registrations for package name + SHA-1 and are not read by app code.
 
 ```text
-Web client ID: 869967951972-6honvq43o8knpe8r71auengnd33rt5pb.apps.googleusercontent.com
-Android client ID: 869967951972-a66elsu635bd8klj123ac16kc5m3hba0.apps.googleusercontent.com
+Dev applicationId: com.alarmtalk.app.dev
+Prod applicationId: com.alarmtalk.app
+Dev Web client ID: 677878444839-321tg0ii4og4pa1tk0rpi72erddbvl50.apps.googleusercontent.com
+Prod Web client ID: 504825419212-uq7dps7fi1duk4jdikciapli3e2l4e30.apps.googleusercontent.com
 ```
 
 Override the Web client ID with a Gradle property when needed:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDebug
+.\gradlew.bat -PvoiceAlarmDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
 ```
 
 ## Build
 
 ```powershell
 cd apps/android-native
-.\gradlew.bat :app:assembleDebug
-.\gradlew.bat :app:testDebugUnitTest
-.\gradlew.bat :app:lintDebug
-.\gradlew.bat :app:installDebug
+.\gradlew.bat :app:assembleDevDebug
+.\gradlew.bat :app:testDevDebugUnitTest
+.\gradlew.bat :app:lintDevDebug
+.\gradlew.bat :app:installDevDebug
 ```
 
 If Android SDK is not auto-detected, create an ignored `local.properties`:
@@ -104,9 +106,9 @@ adb logcat | findstr VoiceAlarm
 Grant or open required permissions:
 
 ```powershell
-adb shell pm grant com.voicealarm.nativeapp android.permission.POST_NOTIFICATIONS
-adb shell appops set com.voicealarm.nativeapp SCHEDULE_EXACT_ALARM allow
-adb shell cmd notification allow_full_screen_intent com.voicealarm.nativeapp
+adb shell pm grant com.alarmtalk.app.dev android.permission.POST_NOTIFICATIONS
+adb shell appops set com.alarmtalk.app.dev SCHEDULE_EXACT_ALARM allow
+adb shell cmd notification allow_full_screen_intent com.alarmtalk.app.dev
 ```
 
 Some devices do not expose every command above. In that case, use the app's permission rows:
@@ -128,7 +130,7 @@ Current verified device:
 3. Confirm OS registration:
 
 ```powershell
-adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
+adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
 Expected: `VoiceAlarm` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
@@ -138,9 +140,9 @@ For locked-device or CI-style debug verification where UI tapping is not availab
 ```powershell
 adb logcat -c
 adb shell input keyevent KEYCODE_SLEEP
-adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_CREATE_TEST_ALARM -n com.voicealarm.nativeapp/.debug.DebugAlarmReceiver --ei delay_minutes 1
+adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_CREATE_TEST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver --ei delay_minutes 1
 adb logcat | findstr VoiceAlarm
-adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_DISMISS_LAST_ALARM -n com.voicealarm.nativeapp/.debug.DebugAlarmReceiver
+adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_DISMISS_LAST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver
 ```
 
 Expected logs include `Scheduled alarm clock`, `Debug test alarm created`, `Alarm received`, `Starting ringing audio`, `Ringing started`, and `Alarm dismissed`.
@@ -168,7 +170,7 @@ Schedule an alarm first, then force idle:
 ```powershell
 adb shell dumpsys battery unplug
 adb shell dumpsys deviceidle force-idle
-adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
+adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
 Wait for the alarm. After testing, restore the device:
@@ -190,7 +192,7 @@ Use only local app controls and local storage:
 4. Confirm the next fire time is registered with the OS:
 
 ```powershell
-adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
+adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
 5. Edit the alarm and confirm the OS registration changes.
@@ -346,7 +348,7 @@ Expected:
 3. Confirm the next alarm is registered:
 
 ```powershell
-adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
+adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
 4. Let it ring again and tap Dismiss.
@@ -360,9 +362,9 @@ For a repeating alarm, Dismiss keeps the alarm enabled and schedules the next se
 Create a future alarm, then send the receiver broadcast. On some Android builds, including Samsung Android 13, shell cannot send the protected `BOOT_COMPLETED` action. Use the debug restore action for adb verification in that case; real reboot still uses `BOOT_COMPLETED`.
 
 ```powershell
-adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n com.voicealarm.nativeapp/.alarm.BootCompletedReceiver
-adb shell am broadcast -a com.voicealarm.nativeapp.action.DEBUG_RESTORE_ALARMS -n com.voicealarm.nativeapp/.alarm.BootCompletedReceiver
-adb shell dumpsys alarm | findstr com.voicealarm.nativeapp
+adb shell am broadcast -a android.intent.action.BOOT_COMPLETED -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.BootCompletedReceiver
+adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_RESTORE_ALARMS -n com.alarmtalk.app.dev/com.alarmtalk.app.alarm.BootCompletedReceiver
+adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
 Expected: logs show `Restore receiver invoked` and `Boot restore complete`; pending local alarms are registered again with `AlarmManager`.

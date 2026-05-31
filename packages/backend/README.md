@@ -45,8 +45,9 @@ Cloudflare Workers + Hono 기반 API 서버.
 
 ```bash
 cd packages/backend
-cp .dev.vars.example .dev.vars   # 환경 변수 설정
-npm run dev                       # wrangler dev (localhost:8787)
+cp .dev.vars.example .dev.vars.dev   # dev 환경 변수 설정
+cp .dev.vars.example .dev.vars.prod  # production 환경 변수 설정
+npm run dev                          # wrangler dev --env dev (localhost:8787)
 ```
 
 ## 마이그레이션

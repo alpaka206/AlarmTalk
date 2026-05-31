@@ -10,7 +10,7 @@ export const INVITE_CODE_LENGTH =
   INVITE_CODE_GROUP_COUNT * INVITE_CODE_GROUP_SIZE +
   (INVITE_CODE_GROUP_COUNT - 1);
 export const INVITE_TTL_MINUTES = 10;
-export const INVITE_WEB_HOST = 'https://voicealarm.pages.dev';
+export const INVITE_WEB_HOST = 'https://alarm-talk.com';
 export const INVITE_APP_SCHEME = 'voicealarm';
 
 const INVITE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -73,7 +73,7 @@ export function buildInviteDeepLink(code: string): string {
   return `${INVITE_APP_SCHEME}://invite/${code}`;
 }
 
-/** 웹 fallback URL (`https://voicealarm.pages.dev/invite/INV-XXXX-XXXX-XXXX`) */
+/** 웹 fallback URL (`https://alarm-talk.com/invite/INV-XXXX-XXXX-XXXX`) */
 export function buildInviteWebUrl(code: string): string {
   return `${INVITE_WEB_HOST}/invite/${code}`;
 }

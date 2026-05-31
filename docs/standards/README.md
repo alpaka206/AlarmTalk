@@ -118,7 +118,7 @@ External providers (ElevenLabs, Perso, FCM) must be stubbed in tests. Automated 
 Never commit:
 
 - `.env`, `.env.*`
-- `packages/backend/.dev.vars`
+- `packages/backend/.dev.vars*`
 - `apps/android-native/local.properties`
 - `service-account*.json`
 - `*.keystore`, `*.jks`, `*.p8`
@@ -132,8 +132,8 @@ Cloudflare Worker secrets:
 
 Android Gradle properties (override via `local.properties` or `-P`):
 
-- `voiceAlarmApiBaseUrl`
-- `voiceAlarmGoogleWebClientId`
+- `voiceAlarmDevApiBaseUrl` / `voiceAlarmProdApiBaseUrl`
+- `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`
 
 iOS uses Xcode Build Settings (`INFOPLIST_KEY_*`) for environment-specific values.
 
@@ -333,7 +333,7 @@ Server reads `alreadyEarnedToday` (from `characters.daily_xp` or `character_xp_l
 
 ### A3. Family invite: 6-digit code + deep link
 
-- **Choice**: numeric 6-digit code, 10-minute TTL, single-use. Optional deep link `voicealarm://invite/{code}` + web fallback `https://naro.app/invite/{code}`.
+- **Choice**: numeric 6-digit code, 10-minute TTL, single-use. Optional deep link `voicealarm://invite/{code}` + web fallback `https://alarm-talk.com/invite/{code}`.
 - **Rejected**: email invites, link-only invites.
 - **Why**: works without collecting email, can be passed verbally / via any chat app, brute-force resistant given short TTL and a rate limit.
 - **Schema**: see `plan_group_invites` in [tech/README.md](../tech/README.md) §2.

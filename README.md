@@ -52,12 +52,12 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 ```bash
 cd packages/backend
 npm install
-npm run dev        # wrangler dev
+npm run dev        # wrangler dev --env dev
 npm test           # vitest
-npm run deploy     # wrangler deploy
+npm run deploy     # wrangler deploy --env production
 ```
 
-Set up secrets locally in `packages/backend/.dev.vars` (never commit). See [`docs/tech/`](docs/tech/README.md) for the full list.
+Set up local secrets in ignored files: `packages/backend/.dev.vars.dev` and `packages/backend/.dev.vars.prod`. See [`docs/tech/`](docs/tech/README.md) for the full list.
 
 ### Android
 

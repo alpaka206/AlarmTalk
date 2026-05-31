@@ -30,4 +30,15 @@ describe('GET / — health check', () => {
     const data = await res.json();
     expect(data.version).toBe('1.0.0');
   });
+
+  it('GET /health 도 같은 health payload 를 반환', async () => {
+    const res = await app.fetch(new Request('http://localhost/health'), {
+      TURSO_DATABASE_URL: 'mock',
+      TURSO_AUTH_TOKEN: 'mock',
+    } as never);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.status).toBe('ok');
+    expect(data.db).toBe('ok');
+  });
 });

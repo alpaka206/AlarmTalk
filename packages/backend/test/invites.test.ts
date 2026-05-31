@@ -74,9 +74,9 @@ describe('buildInviteDeepLink / buildInviteWebUrl', () => {
       'voicealarm://invite/INV-ABCD-1234-EFGH',
     );
   });
-  it('웹 URL 은 voicealarm.pages.dev 호스트 + /invite/{code}', () => {
+  it('웹 URL 은 alarm-talk.com 호스트 + /invite/{code}', () => {
     expect(buildInviteWebUrl('INV-ABCD-1234-EFGH')).toBe(
-      'https://voicealarm.pages.dev/invite/INV-ABCD-1234-EFGH',
+      'https://alarm-talk.com/invite/INV-ABCD-1234-EFGH',
     );
   });
 });

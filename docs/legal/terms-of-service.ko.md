@@ -4,8 +4,7 @@
 최종 개정일: 출시 전 확정 필수
 서비스명: AlarmTalk(알람톡)
 운영자: 출시 전 확정 필수
-<!-- TODO(rebrand): waker.com 도메인은 실제 도메인 확정 후 교체 -->
-문의: hello@waker.com 또는 출시 전 확정 필수
+문의: hello@alarm-talk.com
 
 ## 제1조 목적
 
