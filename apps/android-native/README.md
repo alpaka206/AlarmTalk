@@ -70,8 +70,9 @@ Dev applicationId: com.alarmtalk.app.dev
 Prod applicationId: com.alarmtalk.app
 Dev Web client ID: 677878444839-321tg0ii4og4pa1tk0rpi72erddbvl50.apps.googleusercontent.com
 Prod Web client ID: 504825419212-uq7dps7fi1duk4jdikciapli3e2l4e30.apps.googleusercontent.com
-Prod Android client ID: 504825419212-nlk9lqshr5bq3caebuavae3m871hf1r3.apps.googleusercontent.com
 ```
+
+Register Android OAuth clients in Google Cloud Console for each package name and signing certificate SHA-1. The app does not read Android client IDs at runtime.
 
 Override the Web client ID with a Gradle property when needed:
 
