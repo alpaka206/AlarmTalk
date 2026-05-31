@@ -117,6 +117,14 @@ export function SiteFooter() {
                     {t("linkTerms")}
                   </Link>
                 </li>
+                <li>
+                  <Link
+                    href="/account-deletion"
+                    className="whitespace-nowrap text-text-muted hover:text-text"
+                  >
+                    {t("linkAccountDeletion")}
+                  </Link>
+                </li>
               </ul>
             </div>
           </div>

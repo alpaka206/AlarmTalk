@@ -393,7 +393,9 @@ internal fun VoiceMessagePanel(
             loadingNoteId = note.id
             runCatching {
                 val directUrl = note.audioUrl?.takeIf {
-                    it.startsWith("http") || it.startsWith("file:") || it.startsWith("content:")
+                    it.startsWith("https://", ignoreCase = true) ||
+                        it.startsWith("file:", ignoreCase = true) ||
+                        it.startsWith("content:", ignoreCase = true)
                 }
                 if (directUrl != null) {
                     MediaPlayer.create(context, Uri.parse(directUrl))

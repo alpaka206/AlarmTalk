@@ -201,6 +201,18 @@ describe('POST /notes — 쪽지 전송', () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_AUDIO_URL');
   });
+
+  it('rejects cleartext audio_url schemes', async () => {
+    mockDB.pushResult([{ id: 'pk1' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('POST', '/notes', {
+      receiver_id: 'pk2',
+      text: 'voice note',
+      audio_url: 'http://example.com/audio.mp3',
+    }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('INVALID_AUDIO_URL');
+  });
 });
 
 /* ------------------------------------------------------------------ */

@@ -6,6 +6,7 @@ export const VIBRATION_PATTERNS = ['default', 'strong', 'none'] as const;
 export type VibrationPattern = (typeof VIBRATION_PATTERNS)[number];
 export const WAKE_MODES = ['sound_then_voice', 'voice_only'] as const;
 export type WakeMode = (typeof WAKE_MODES)[number];
+const MAX_REMOTE_AUDIO_URL_LENGTH = 2048;
 
 export type AlarmRow = Record<string, unknown> & {
   repeat_days?: unknown;
@@ -94,6 +95,7 @@ export function validateAlarmFields(body: {
   message_id?: string | null;
   is_active?: boolean;
   target_user_id?: string;
+  raw_audio_url?: string | null;
 }): FieldError | null {
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
@@ -101,6 +103,12 @@ export function validateAlarmFields(body: {
 
   if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {
     return { error: 'Invalid target_user_id', error_code: 'INVALID_TARGET_USER' };
+  }
+
+  if (body.raw_audio_url !== undefined && body.raw_audio_url !== null) {
+    if (typeof body.raw_audio_url !== 'string' || !isEncryptedRemoteAudioUrl(body.raw_audio_url.trim())) {
+      return { error: 'raw_audio_url must be r2:// or https://', error_code: 'INVALID_RAW_AUDIO_URL' };
+    }
   }
 
   if (body.mode !== undefined && !ALARM_MODES.includes(body.mode as AlarmMode)) {
@@ -152,4 +160,9 @@ export function validateAlarmFields(body: {
   }
 
   return null;
+}
+
+export function isEncryptedRemoteAudioUrl(value: string): boolean {
+  return value.length <= MAX_REMOTE_AUDIO_URL_LENGTH &&
+    (value.startsWith('r2://') || value.startsWith('https://'));
 }

@@ -25,7 +25,7 @@ export async function loadAudioBytes(
     if (!stored) return null;
     bytes = stored.bytes;
     format = audioFormatFromMime(stored.meta.mimeType) ?? format;
-  } else if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+  } else if (audioUrl.startsWith('https://')) {
     const audioRes = await fetch(audioUrl);
     if (!audioRes.ok) return null;
     bytes = new Uint8Array(await audioRes.arrayBuffer());
