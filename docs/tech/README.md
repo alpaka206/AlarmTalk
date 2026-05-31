@@ -112,7 +112,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | ElevenLabs | Voice clone + TTS | HTTPS REST |
 | Google JWKS | ID token verification | HTTPS |
 | Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
-| Sentry | Error capture | toucan-js (server) + client SDK (optional) |
+| Sentry | Error capture | toucan-js (server) + Android client SDK (DSN-gated) |
 
 ### Failure domains
 

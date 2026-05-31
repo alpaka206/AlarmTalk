@@ -78,6 +78,16 @@ Override the Web client ID with a Gradle property when needed:
 .\gradlew.bat -PvoiceAlarmDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
 ```
 
+### Sentry Error Reporting
+
+Android crash and ANR reporting is disabled by default. Set a flavor-specific DSN only when the target Sentry project is ready:
+
+```powershell
+.\gradlew.bat -PvoiceAlarmProdSentryDsn="https://PUBLIC_KEY@o0.ingest.sentry.io/0" :app:bundleProdRelease
+```
+
+When the DSN is blank, the app does not initialize the Sentry SDK. Release bundles include native debug symbol metadata where available.
+
 ## Build
 
 ```powershell

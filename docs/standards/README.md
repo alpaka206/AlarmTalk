@@ -134,6 +134,7 @@ Android Gradle properties (override via `local.properties` or `-P`):
 
 - `voiceAlarmDevApiBaseUrl` / `voiceAlarmProdApiBaseUrl`
 - `voiceAlarmDevGoogleWebClientId` / `voiceAlarmProdGoogleWebClientId`
+- `voiceAlarmDevSentryDsn` / `voiceAlarmProdSentryDsn` (blank disables client reporting)
 
 iOS uses Xcode Build Settings (`INFOPLIST_KEY_*`) for environment-specific values.
 
