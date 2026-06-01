@@ -458,6 +458,21 @@ Auto-detects format:
 
 Errors: `INVALID_FORMAT` `EXPIRED` `ALREADY_USED` `NOT_FOUND` `SELF_INVITE` `GROUP_FULL`.
 
+#### `POST /billing/test-codes`
+
+Internal closed-test helper. Authenticated issuer emails from
+`TEST_CODE_ISSUER_EMAILS` (defaults to `gyuwon05@gmail.com`) can issue free
+test access codes while real Google Play Billing is not connected.
+
+```json
+Req: { "plan_key": "personal" | "couple" | "family", "count": 1, "days": 30 }
+Res: { "success": true, "first_redeemer_becomes_owner": true, "codes": [...] }
+```
+
+For `personal`, codes use `GIFT-XXXX-XXXX-XXXX`. For `couple` and `family`,
+codes use `INV-XXXX-XXXX-XXXX`; the first user who registers the code becomes
+the owner of the new shared plan group. These bootstrap codes are single-use.
+
 ### Public endpoints
 
 - `GET /` — health check (returns DB connectivity).
