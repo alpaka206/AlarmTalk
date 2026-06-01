@@ -193,6 +193,23 @@ private fun billingFailureMessage(errorCode: String?, fallback: String): String 
         "PLAN_INACTIVE" -> "지금은 선택할 수 없는 이용권이에요"
         "FREE_NOT_BILLABLE" -> "무료 이용권은 여기에서 적용할 수 없어요"
         "GIFT_PERSONAL_ONLY" -> "선물하기는 개인 이용권에서만 사용할 수 있어요"
+        "CHECKOUT_DISABLED" -> "테스트 버전에서는 초대 코드를 등록해 주세요"
+        "USER_NOT_FOUND" -> "로그인 정보를 다시 확인해 주세요"
+        else -> fallback
+    }
+
+private fun codeRegistrationFailureMessage(errorCode: String?, fallback: String): String =
+    when (errorCode) {
+        "CODE_REQUIRED" -> "코드를 입력해 주세요"
+        "INVALID_FORMAT" -> "코드 형식을 확인해 주세요"
+        "CODE_NOT_FOUND" -> "등록할 수 없는 코드예요"
+        "CODE_EXPIRED" -> "만료된 코드예요"
+        "CODE_ALREADY_USED" -> "이미 사용된 코드예요"
+        "CODE_ALREADY_REDEEMED_BY_YOU" -> "이미 등록한 코드예요"
+        "SELF_ISSUED" -> "본인이 발급한 코드는 등록할 수 없어요"
+        "GROUP_FULL" -> "이미 정원이 찬 코드예요"
+        "INVALID_GIFT_PLAN", "INVALID_INVITE_PLAN" -> "코드와 이용권 종류가 맞지 않아요"
+        "PLAN_NOT_FOUND" -> "코드의 이용권 정보를 찾지 못했어요"
         "USER_NOT_FOUND" -> "로그인 정보를 다시 확인해 주세요"
         else -> fallback
     }
@@ -239,7 +256,10 @@ internal fun MainViewModel.registerCode(code: String) {
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to register code", error)
-            message = userFacingError(error, "코드 등록에 실패했어요")
+            message = codeRegistrationFailureMessage(
+                apiErrorCode(error),
+                userFacingError(error, "코드 등록에 실패했어요"),
+            )
         }
         billingBusy = false
     }

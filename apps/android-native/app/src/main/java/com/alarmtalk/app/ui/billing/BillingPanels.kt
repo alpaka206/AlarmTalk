@@ -25,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -76,6 +77,7 @@ internal fun SubscriptionPanel(
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
+    var testCodeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
@@ -181,9 +183,9 @@ internal fun SubscriptionPanel(
                     hasActiveSubscription = hasActive,
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
-                    onPurchase = { checkoutTarget = CheckoutSelection(option = option, gift = false) },
-                    onGift = { checkoutTarget = CheckoutSelection(option = option, gift = true) },
-                    onChange = { changeTarget = option },
+                    onPurchase = { testCodeTarget = option },
+                    onGift = { testCodeTarget = option },
+                    onChange = { testCodeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
             }
@@ -206,6 +208,18 @@ internal fun SubscriptionPanel(
                 )
             }
         }
+    }
+
+    testCodeTarget?.let { option ->
+        TestInviteCodeDialog(
+            target = option,
+            busy = billingBusy,
+            onDismiss = { testCodeTarget = null },
+            onRegisterCode = { code ->
+                testCodeTarget = null
+                onRegisterCode(code)
+            },
+        )
     }
 
     if (showCancelDialog) {
@@ -296,6 +310,52 @@ internal fun SubscriptionPanel(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TestInviteCodeDialog(
+    target: SubscriptionPlanOption,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onRegisterCode: (String) -> Unit,
+) {
+    var code by remember(target.key) { mutableStateOf("") }
+    val prefix = if (target.key == "personal") "GIFT" else "INV"
+    val maxCodeLength = if (prefix == "GIFT") 19 else 18
+
+    BillingActionDialog(
+        title = "${target.name} 테스트 코드 등록",
+        description = "테스트 버전이므로 초대 코드를 등록해주세요.",
+        onDismiss = onDismiss,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                value = code,
+                onValueChange = { value ->
+                    code = value
+                        .uppercase()
+                        .filter { it.isLetterOrDigit() || it == '-' }
+                        .take(maxCodeLength)
+                },
+                placeholder = { Text("$prefix-XXXX-XXXX-XXXX") },
+                singleLine = true,
+                enabled = !busy,
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            BillingDialogButton(
+                label = "코드 등록",
+                primary = true,
+                onClick = {
+                    val trimmed = code.trim()
+                    if (trimmed.isNotBlank()) {
+                        onRegisterCode(trimmed)
+                    }
+                },
+            )
         }
     }
 }
