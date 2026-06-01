@@ -24,6 +24,8 @@ export interface Env {
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;
   INIT_DB_SECRET?: string;
+  BILLING_STUB_ENABLED?: string;
+  TEST_CODE_ISSUER_EMAILS?: string;
   SENTRY_DSN?: string;
   VOICE_BUCKET?: R2Bucket;
 }

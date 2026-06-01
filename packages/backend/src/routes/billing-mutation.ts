@@ -76,6 +76,54 @@ type FamilyShareCodeResult =
       };
     };
 
+interface TestCodeVoucher {
+  id: string;
+  code: string;
+  plan_id: string;
+  plan_key: string;
+  plan_name: string;
+  plan_type: string;
+  status: 'issued';
+  issued_at: string;
+  expires_at: string;
+  max_uses: number;
+  use_count: number;
+}
+
+function isBillingStubEnabled(env: Partial<AppEnv['Bindings']> | undefined): boolean {
+  if (env?.BILLING_STUB_ENABLED === 'true' || env?.BILLING_STUB_ENABLED === '1') return true;
+  if (env?.BILLING_STUB_ENABLED === 'false' || env?.BILLING_STUB_ENABLED === '0') return false;
+  return env?.ENVIRONMENT !== 'production';
+}
+
+function checkoutDisabledResponse() {
+  return {
+    error: 'Checkout is disabled for this test build. Register an invite code.',
+    error_code: 'CHECKOUT_DISABLED',
+  };
+}
+
+function allowedTestCodeIssuerEmails(env: Partial<AppEnv['Bindings']> | undefined): Set<string> {
+  const raw = env?.TEST_CODE_ISSUER_EMAILS?.trim() || 'gyuwon05@gmail.com';
+  return new Set(
+    raw
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function isTestCodeIssuer(env: Partial<AppEnv['Bindings']> | undefined, email: string): boolean {
+  return allowedTestCodeIssuerEmails(env).has(email.trim().toLowerCase());
+}
+
+function readInteger(value: unknown, fallback: number): number | null {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'number' && Number.isInteger(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number(value.trim());
+  return null;
+}
+
 function normalizeBillablePlan(row: Record<string, unknown>): BillablePlan {
   return {
     id: String(row.id),
@@ -183,6 +231,10 @@ async function createPaidSubscriptionArtifacts(
 }
 
 billingMutation.post('/checkout', async (c) => {
+  if (!isBillingStubEnabled(c.env)) {
+    return c.json(checkoutDisabledResponse(), 409);
+  }
+
   const db = getDB(c.env);
 
   const body = await c.req
@@ -266,6 +318,102 @@ billingMutation.post('/checkout', async (c) => {
     plan: planResponse(billablePlan),
     plan_group: checkoutResult.plan_group,
     voucher: checkoutResult.voucher,
+  });
+});
+
+billingMutation.post('/test-codes', async (c) => {
+  const userEmail = c.get('userEmail') || '';
+  if (!isTestCodeIssuer(c.env, userEmail)) {
+    return c.json({ error: 'Test code issuer access is required', error_code: 'FORBIDDEN' }, 403);
+  }
+
+  const issuerUserPk = await resolveUserPk(c);
+  if (!issuerUserPk) {
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const body = await c.req
+    .json<{ plan_key?: unknown; count?: unknown; days?: unknown }>()
+    .catch((): { plan_key?: unknown; count?: unknown; days?: unknown } => ({
+      plan_key: undefined,
+      count: undefined,
+      days: undefined,
+    }));
+
+  const planKey = typeof body.plan_key === 'string' ? body.plan_key.trim() : '';
+  const count = readInteger(body.count, 1);
+  const days = readInteger(body.days, 30);
+
+  if (!planKey) {
+    return c.json({ error: 'plan_key is required', error_code: 'PLAN_KEY_REQUIRED' }, 400);
+  }
+  if (count === null || count < 1 || count > 50) {
+    return c.json({ error: 'count must be between 1 and 50', error_code: 'INVALID_COUNT' }, 400);
+  }
+  if (days === null || days < 1 || days > 365) {
+    return c.json({ error: 'days must be between 1 and 365', error_code: 'INVALID_DAYS' }, 400);
+  }
+
+  const db = getDB(c.env);
+  const planRes = await db.execute({
+    sql: `SELECT id, key, name, plan_type, period_days, max_members, price_krw, is_active
+          FROM plans WHERE key = ?`,
+    args: [planKey],
+  });
+  if (planRes.rows.length === 0) {
+    return c.json({ error: 'Plan not found', error_code: 'PLAN_NOT_FOUND' }, 400);
+  }
+
+  const plan = planRes.rows[0]!;
+  if (Number(plan.is_active) !== 1) {
+    return c.json({ error: 'Plan is inactive', error_code: 'PLAN_INACTIVE' }, 400);
+  }
+
+  const planType = String(plan.plan_type);
+  if (!PAID_PLAN_TYPES.has(planType)) {
+    return c.json({ error: 'Free plan is not supported for test codes', error_code: 'FREE_NOT_BILLABLE' }, 400);
+  }
+
+  const billablePlan = normalizeBillablePlan(plan);
+  const kind = billablePlan.plan_type === 'personal' ? 'gift' : 'invite';
+  const issuedAt = new Date();
+  const issuedAtIso = issuedAt.toISOString();
+  const expiresAtIso = new Date(issuedAt.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+
+  const codes = await withWriteTransaction(db, async (tx) => {
+    const issuedCodes: TestCodeVoucher[] = [];
+    for (let i = 0; i < count; i++) {
+      const issued = await issueVoucherCode(tx, {
+        kind,
+        planId: billablePlan.id,
+        issuerUserId: issuerUserPk,
+        issuerSubscriptionId: null,
+        issuedAt: issuedAtIso,
+        expiresAt: expiresAtIso,
+        maxUses: 1,
+      });
+      issuedCodes.push({
+        id: issued.id,
+        code: issued.code,
+        plan_id: billablePlan.id,
+        plan_key: billablePlan.key,
+        plan_name: billablePlan.name,
+        plan_type: billablePlan.plan_type,
+        status: 'issued',
+        issued_at: issuedAtIso,
+        expires_at: issued.expires_at,
+        max_uses: issued.max_uses,
+        use_count: issued.use_count,
+      });
+    }
+    return issuedCodes;
+  });
+
+  return c.json({
+    success: true,
+    plan: planResponse(billablePlan),
+    first_redeemer_becomes_owner: billablePlan.plan_type === 'family',
+    codes,
   });
 });
 
@@ -464,6 +612,10 @@ billingMutation.post('/cancel', async (c) => {
 });
 
 billingMutation.post('/change-plan', async (c) => {
+  if (!isBillingStubEnabled(c.env)) {
+    return c.json(checkoutDisabledResponse(), 409);
+  }
+
   const userPk = await resolveUserPk(c);
   if (!userPk) {
     return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
