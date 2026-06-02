@@ -387,9 +387,28 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 #### `POST /auth/register`
 
 ```json
-Req:  { "email": "u@x.com", "password": "********", "name": "Sue" }
+Req:  { "email": "u@x.com", "password": "********", "name": "Sue", "email_verification_code": "123456" }
 Res:  { "token": "...", "user": { "id": "...", "email": "u@x.com", "name": "Sue", "plan": "free" } }
 ```
+
+Registration requires a current 6-digit email verification code. The code is requested with:
+
+```json
+POST /auth/email-code
+Req: { "email": "u@x.com" }
+Res: { "success": true, "expires_in_seconds": 600 }
+```
+
+The client may pre-check the code before submitting the full registration form:
+
+```json
+POST /auth/email-code/verify
+Req: { "email": "u@x.com", "code": "123456" }
+Res: { "success": true }
+```
+
+Production delivery uses Resend. Configure `RESEND_API_KEY` and
+`AUTH_EMAIL_FROM` as Worker secrets after verifying the sending domain.
 
 #### `POST /auth/apple`
 
