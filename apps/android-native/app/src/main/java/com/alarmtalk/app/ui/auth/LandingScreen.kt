@@ -2,9 +2,12 @@ package com.alarmtalk.app
 
 import android.media.MediaPlayer
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,12 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -42,20 +45,51 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-private val LandingBackground = Color(0xFF090A0F)
-private val LandingSurface = Color(0xFF14161E)
-private val LandingSurfaceRaised = Color(0xFF191C25)
-private val LandingLine = Color(0xFF2D313D)
-private val LandingText = Color(0xFFF7F7FA)
-private val LandingMuted = Color(0xFFA8AEBA)
-private val LandingAccent = Color(0xFFA8D4FF)
-private val LandingAccentText = Color(0xFF08243C)
-private val LandingBlue = Color(0xFFC7E5D6)
+private data class LandingPalette(
+    val background: Color,
+    val surface: Color,
+    val surfaceRaised: Color,
+    val line: Color,
+    val text: Color,
+    val muted: Color,
+    val accent: Color,
+    val accentText: Color,
+)
+
+@Composable
+private fun landingPalette(): LandingPalette {
+    val scheme = MaterialTheme.colorScheme
+    val isDark = scheme.background.luminance() < 0.5f
+    return if (isDark) {
+        LandingPalette(
+            background = Color(0xFF090A0F),
+            surface = Color(0xFF14161E),
+            surfaceRaised = Color(0xFF191C25),
+            line = Color(0xFF2D313D),
+            text = Color(0xFFF7F7FA),
+            muted = Color(0xFFA8AEBA),
+            accent = Color(0xFFA8D4FF),
+            accentText = Color(0xFF08243C),
+        )
+    } else {
+        LandingPalette(
+            background = scheme.background,
+            surface = scheme.surface,
+            surfaceRaised = Color(0xFFFFFFFF),
+            line = scheme.outlineVariant,
+            text = scheme.onBackground,
+            muted = scheme.onSurfaceVariant,
+            accent = scheme.primary,
+            accentText = scheme.onPrimary,
+        )
+    }
+}
 
 @Composable
 internal fun LandingScreen(
@@ -65,36 +99,42 @@ internal fun LandingScreen(
     onGoToRegister: () -> Unit,
     onGoogleSignIn: () -> Unit,
 ) {
-    Box(
+    val colors = landingPalette()
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(LandingBackground)
+            .background(colors.background)
             .padding(contentPadding),
     ) {
+        val compact = maxHeight < 840.dp
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 22.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.Top,
+                .fillMaxWidth()
+                .heightIn(min = maxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    horizontal = 22.dp,
+                    vertical = if (compact) 16.dp else 22.dp,
+                ),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            WakerBrandHeader()
-            Spacer(Modifier.height(48.dp))
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(34.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
+                WakerBrandHeader(colors = colors)
+                Spacer(Modifier.height(if (compact) 28.dp else 48.dp))
                 Text(
                     text = "좋아하는 목소리로\n깨어나는 알람",
                     style = MaterialTheme.typography.displaySmall,
-                    color = LandingText,
+                    color = colors.text,
                     fontWeight = FontWeight.Bold,
                 )
-                AlarmIdentityPreview()
+                Spacer(Modifier.height(if (compact) 24.dp else 34.dp))
+                AlarmIdentityPreview(colors = colors)
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(if (compact) 24.dp else 36.dp))
             LandingAuthPanel(
+                colors = colors,
                 busy = busy,
                 onGoToLogin = onGoToLogin,
                 onGoToRegister = onGoToRegister,
@@ -105,7 +145,7 @@ internal fun LandingScreen(
 }
 
 @Composable
-private fun WakerBrandHeader() {
+private fun WakerBrandHeader(colors: LandingPalette) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -123,20 +163,20 @@ private fun WakerBrandHeader() {
             Text(
                 text = "AlarmTalk",
                 style = MaterialTheme.typography.titleLarge,
-                color = LandingText,
+                color = colors.text,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "Voice alarm",
                 style = MaterialTheme.typography.labelMedium,
-                color = LandingMuted,
+                color = colors.muted,
             )
         }
     }
 }
 
 @Composable
-private fun AlarmIdentityPreview() {
+private fun AlarmIdentityPreview(colors: LandingPalette) {
     val context = LocalContext.current
     val previewPlayer = remember(context) {
         MediaPlayer.create(context, R.raw.landing_voice_preview)
@@ -181,8 +221,8 @@ private fun AlarmIdentityPreview() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        color = LandingSurface,
-        border = BorderStroke(1.dp, LandingLine),
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.line),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -197,12 +237,12 @@ private fun AlarmIdentityPreview() {
                     Text(
                         text = "내일 아침",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = LandingMuted,
+                        color = colors.muted,
                     )
                     Text(
                         text = "07:30",
                         style = MaterialTheme.typography.displaySmall,
-                        color = LandingText,
+                        color = colors.text,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -210,9 +250,9 @@ private fun AlarmIdentityPreview() {
                     onClick = ::togglePreview,
                     modifier = Modifier.size(54.dp),
                     shape = RoundedCornerShape(999.dp),
-                    color = LandingAccent.copy(alpha = 0.14f),
-                    contentColor = LandingAccent,
-                    border = BorderStroke(1.dp, LandingAccent.copy(alpha = 0.28f)),
+                    color = colors.accent.copy(alpha = 0.14f),
+                    contentColor = colors.accent,
+                    border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -224,6 +264,7 @@ private fun AlarmIdentityPreview() {
                 }
             }
             LandingPreviewWaveform(
+                colors = colors,
                 progress = playbackProgress,
                 isPlaying = isPlaying,
             )
@@ -233,6 +274,7 @@ private fun AlarmIdentityPreview() {
 
 @Composable
 private fun LandingPreviewWaveform(
+    colors: LandingPalette,
     progress: Float,
     isPlaying: Boolean,
 ) {
@@ -252,7 +294,7 @@ private fun LandingPreviewWaveform(
         levels.forEachIndexed { index, level ->
             val barProgress = index / levels.lastIndex.toFloat()
             val played = progress > 0f && barProgress <= progress
-            val color = if (played) LandingAccent else LandingLine
+            val color = if (played) colors.accent else colors.line
             Box(
                 modifier = Modifier
                     .width(2.dp)
@@ -268,6 +310,7 @@ private fun LandingPreviewWaveform(
 
 @Composable
 private fun LandingAuthPanel(
+    colors: LandingPalette,
     busy: Boolean,
     onGoToLogin: () -> Unit,
     onGoToRegister: () -> Unit,
@@ -276,8 +319,8 @@ private fun LandingAuthPanel(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(30.dp),
-        color = LandingSurfaceRaised,
-        border = BorderStroke(1.dp, LandingLine),
+        color = colors.surfaceRaised,
+        border = BorderStroke(1.dp, colors.line),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -290,13 +333,13 @@ private fun LandingAuthPanel(
                 Text(
                     text = "시작하기",
                     style = MaterialTheme.typography.titleMedium,
-                    color = LandingText,
+                    color = colors.text,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = "로그인하면 목소리 알람을 만들 수 있어요.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = LandingMuted,
+                    color = colors.muted,
                 )
             }
             Column(
@@ -316,16 +359,16 @@ private fun LandingAuthPanel(
                         .height(56.dp),
                     shape = WakerButtonShape,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = LandingAccent,
-                        contentColor = LandingAccentText,
-                        disabledContainerColor = LandingAccent.copy(alpha = 0.28f),
-                        disabledContentColor = LandingAccentText.copy(alpha = 0.45f),
+                        containerColor = colors.accent,
+                        contentColor = colors.accentText,
+                        disabledContainerColor = colors.accent.copy(alpha = 0.28f),
+                        disabledContentColor = colors.accentText.copy(alpha = 0.45f),
                     ),
                 ) {
                     Text("이메일로 로그인")
                 }
             }
-            HorizontalDivider(color = LandingLine)
+            HorizontalDivider(color = colors.line)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -336,16 +379,16 @@ private fun LandingAuthPanel(
                 Text(
                     text = "처음 사용하시나요?",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = LandingMuted,
+                    color = colors.muted,
                 )
                 OutlinedButton(
                     onClick = onGoToRegister,
                     enabled = !busy,
                     shape = WakerButtonShape,
-                    border = BorderStroke(1.dp, LandingLine),
+                    border = BorderStroke(1.dp, colors.line),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = LandingText,
-                        disabledContentColor = LandingMuted.copy(alpha = 0.45f),
+                        contentColor = colors.text,
+                        disabledContentColor = colors.muted.copy(alpha = 0.45f),
                     ),
                 ) {
                     Text("계정 만들기")

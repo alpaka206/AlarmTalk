@@ -20,7 +20,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-1.3 | Google ID-token login (`requestIdToken`) | P0 | ✅ |
 | FR-1.4 | Apple ID-token login (iOS required) | P1 | 🔧 backend accepts, JWKS hardening pending |
 | FR-1.5 | Account deletion with cascading data removal | P1 | ✅ |
-| FR-1.6 | Email verification / resend on sign-up | P2 | 🚧 |
+| FR-1.6 | Email verification / resend on sign-up | P2 | ✅ backend/UI, prod mail secret pending |
 
 ### FR-2. Voice Profile
 

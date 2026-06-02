@@ -46,6 +46,14 @@ OAuth client ID와 Sentry DSN은 일반적으로 앱에 포함될 수 있는 공
 - 로컬 개발 값은 ignored 파일인 `packages/backend/.dev.vars.dev`, `packages/backend/.dev.vars.prod`에 둔다.
 - GitHub Actions 배포에 필요한 값은 GitHub Secrets에 둔다.
 
+### Email verification
+
+Production email verification delivery requires a verified sender domain and these Worker secrets:
+
+- `RESEND_API_KEY`
+- `AUTH_EMAIL_FROM` (for example `AlarmTalk <no-reply@alarm-talk.com>`)
+- `AUTH_EMAIL_REPLY_TO` (optional)
+
 ### Landing
 
 - 프로덕션 배포는 `main`, 프리뷰 배포는 `develop` 기준으로 둔다.

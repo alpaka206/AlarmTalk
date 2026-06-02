@@ -53,9 +53,9 @@ export async function sendEmailVerificationCode(
       from: env.AUTH_EMAIL_FROM,
       to: [email],
       reply_to: env.AUTH_EMAIL_REPLY_TO || undefined,
-      subject: 'Voice Alarm 이메일 인증 코드',
-      text: `Voice Alarm 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
-      html: `<p>Voice Alarm 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
+      subject: 'AlarmTalk 이메일 인증 코드',
+      text: `AlarmTalk 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
+      html: `<p>AlarmTalk 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
     }),
   });
 
