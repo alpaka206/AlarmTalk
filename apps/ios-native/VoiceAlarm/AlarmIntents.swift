@@ -59,10 +59,13 @@ struct StopAlarmIntent: LiveActivityIntent {
 
 // MARK: - SnoozeAlarmIntent
 //
-// secondaryButtonBehavior = .countdown 일 때 OS 가 자동으로 호출.
-// `AlarmManager/countdown(id:)` — https://developer.apple.com/documentation/AlarmKit/AlarmManager/countdown(id:)
-// AlarmKitViewModel.makeConfiguration 에서 `countdownDuration.postAlert =
-// snoozeMinutes * 60` 로 등록했기 때문에 OS 가 그 만큼 countdown 후 다시 alert.
+// secondaryButtonBehavior = .custom 이라 OS 는 자동 재무장하지 않고 이 intent 만
+// 호출한다. 한도(canSnooze) 를 확인해 분기한다:
+//  - 다시 울림 가능: `AlarmManager/countdown(id:)` 로 직접 재무장.
+//    https://developer.apple.com/documentation/AlarmKit/AlarmManager/countdown(id:)
+//    makeConfiguration 의 `countdownDuration.postAlert = snoozeMinutes * 60` 만큼
+//    countdown 후 다시 alert.
+//  - 한도 도달 / 비활성: Android AlarmRepository.snooze() 처럼 stop(id:) 로 종료.
 //
 // snoozeMinutes 파라미터는 OS UI 에서 노출되지 않으나, App Intent shortcut
 // 으로 직접 호출될 가능성과 우리 측 markSnoozed(newFireAtMillis:) 계산을 위해
@@ -92,14 +95,31 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
-        do {
-            try AlarmManager.shared.countdown(id: uuid)
-        } catch {
-            // ignored
-        }
-        if let ctx = AlarmAppContext.shared,
-           ctx.canSnooze(alarmKitIDString: uuid.uuidString) {
-            await ctx.handleAlarmSnoozed(
+        // Android AlarmRepository.snooze() 와 동일하게 한도를 먼저 확인한다.
+        // 다시 울림이 꺼져 있거나 snoozeRepeatLimit 에 도달했다면 countdown 으로
+        // 재무장하지 않고 알람을 종료시켜야 한다.
+        //
+        // ctx 가 nil 인 경우(락스크린에서 콜드 부팅 직후 Scene .task 미실행)에는
+        // 한도를 판단할 수 없으므로 종료가 아니라 다시 울림을 기본값으로 둔다.
+        // 종료는 ctx 가 존재하고 명시적으로 canSnooze == false 일 때만 수행한다.
+        // (잘못 종료하면 사용자가 의도한 다시 울림이 사라지는 회귀가 되므로.)
+        let ctx = AlarmAppContext.shared
+        let limitReached = ctx?.canSnooze(alarmKitIDString: uuid.uuidString) == false
+        if limitReached {
+            // 한도 도달 / 다시 울림 비활성 — Android 처럼 알람을 끝낸다.
+            do {
+                try AlarmManager.shared.stop(id: uuid)
+            } catch {
+                // ignored
+            }
+            await ctx?.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
+        } else {
+            do {
+                try AlarmManager.shared.countdown(id: uuid)
+            } catch {
+                // ignored
+            }
+            await ctx?.handleAlarmSnoozed(
                 alarmKitIDString: uuid.uuidString,
                 snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
             )
