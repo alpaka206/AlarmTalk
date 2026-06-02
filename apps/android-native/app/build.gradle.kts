@@ -1,4 +1,5 @@
 import java.io.DataOutputStream
+import java.util.Properties
 import kotlin.math.PI
 import kotlin.math.sin
 import org.gradle.api.DefaultTask
@@ -72,6 +73,12 @@ val generateAlarmTone = tasks.register<GenerateAlarmToneTask>("generateAlarmTone
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
+val releaseKeystoreProps = rootProject.file("keystore.properties")
+    .takeIf { it.exists() }
+    ?.let { propsFile ->
+        Properties().apply { propsFile.inputStream().use { load(it) } }
+    }
+
 android {
     namespace = "com.alarmtalk.app"
     compileSdk = 35
@@ -80,7 +87,7 @@ android {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
+        versionCode = 6
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -155,8 +162,22 @@ android {
         }
     }
 
+    signingConfigs {
+        if (releaseKeystoreProps != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystoreProps.getProperty("storeFile"))
+                storePassword = releaseKeystoreProps.getProperty("storePassword")
+                keyAlias = releaseKeystoreProps.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseKeystoreProps != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

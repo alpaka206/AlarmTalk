@@ -27,6 +27,7 @@ apps/android-native/.idea/
 apps/android-native/*.iml
 *.jks
 *.keystore
+apps/android-native/keystore.properties
 
 # Native iOS local/generated files
 apps/ios-native/DerivedData/
