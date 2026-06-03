@@ -399,12 +399,20 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
   it('ElevenLabs 실패 → 500 VOICE_CLONING_FAILED', async () => {
     mockDB.pushResult([{ count: 0 }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
     mockCreateInstantClone.mockRejectedValue(new Error('API down'));
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), 'test'));
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error_code).toBe('VOICE_CLONING_FAILED');
     expect(body.detail).toBe('API down');
+
+    // 클론 실패 시 stuck 'processing' 방지: 해당 row 를 'failed' 로 정리해야 한다.
+    const insertCall = mockDB.calls[1]!;
+    const insertedId = insertCall.args[0];
+    const failedCall = mockDB.calls.find((call) => call.sql.includes("status = 'failed'"));
+    expect(failedCall).toBeDefined();
+    expect(failedCall!.args).toContain(insertedId);
   });
 
   it('ElevenLabs 에 audioBuffer 전달 확인', async () => {
