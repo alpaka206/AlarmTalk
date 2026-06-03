@@ -722,19 +722,11 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (!voiceId) throw lastError;
 
-    if (provider === 'perso') {
-      await db.execute({
-        sql: `UPDATE voice_profiles SET perso_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [voiceId, profileId],
-      });
-    } else {
-      await db.execute({
-        sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [voiceId, profileId],
-      });
-    }
+    await db.execute({
+      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [voiceId, profileId],
+    });
 
     return c.json(
       {

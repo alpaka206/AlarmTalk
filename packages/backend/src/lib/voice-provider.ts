@@ -31,7 +31,6 @@ export interface VoiceProviderAttempt {
 }
 
 export interface VoiceProviderProfile {
-  perso_voice_id?: string | null;
   elevenlabs_voice_id?: string | null;
 }
 
@@ -60,20 +59,6 @@ export function createEnrollmentAttempts(params: {
   audioFileName?: string | null;
 }): VoiceProviderEnrollAttempt[] {
   const attempts: VoiceProviderEnrollAttempt[] = [];
-
-  if (params.env.PERSO_API_KEY) {
-    attempts.push({
-      provider: 'perso',
-      enroll: async () => {
-        // The current Perso codepath in this repository targets upload/dubbing
-        // projects. Keep Perso first in the chain, but do not call an uncertain
-        // paid endpoint until the direct voice cloning API contract is proven.
-        throw new UnsupportedVoiceProviderError(
-          'Perso direct voice clone is not available in this backend yet.',
-        );
-      },
-    });
-  }
 
   if (params.env.ELEVENLABS_API_KEY) {
     attempts.push({
@@ -105,24 +90,6 @@ export function createSynthesisAttempts(params: {
   category?: string;
 }): VoiceProviderAttempt[] {
   const attempts: VoiceProviderAttempt[] = [];
-
-  if (params.profile.perso_voice_id) {
-    attempts.push({
-      provider: 'perso',
-      providerVoiceId: params.profile.perso_voice_id,
-      modelId: 'perso-direct-tts',
-      outputFormat: 'mp3',
-      synthesize: async () => {
-        // The currently documented/implemented Perso integration in this repo
-        // is video dubbing oriented, not direct voice-id TTS. Keep this attempt
-        // in the chain so Perso can become primary once that API is available,
-        // but fall back without charging a provider request today.
-        throw new UnsupportedVoiceProviderError(
-          'Perso direct voice-id TTS is not available in this backend yet.',
-        );
-      },
-    });
-  }
 
   if (params.profile.elevenlabs_voice_id && params.env.ELEVENLABS_API_KEY) {
     attempts.push({

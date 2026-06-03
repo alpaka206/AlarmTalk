@@ -21,7 +21,6 @@ vi.mock('../src/lib/elevenlabs', () => ({
 }));
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'test-key',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
@@ -177,7 +176,7 @@ describe('POST /tts/generate — TTS 생성', () => {
     const today = new Date().toISOString().split('T')[0];
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today }]);
     mockDB.pushResult([
-      { id: V1, status: 'processing', perso_voice_id: null, elevenlabs_voice_id: null },
+      { id: V1, status: 'processing', elevenlabs_voice_id: null },
     ]);
     const app = buildApp();
     const res = await app.request(
@@ -490,7 +489,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(mockDB.calls.some((c) => c.sql.includes('INSERT INTO messages'))).toBe(false);
   });
 
-  it('checks all provider cache keys before enforcing the daily generation limit', async () => {
+  it('checks the provider cache key before enforcing the daily generation limit', async () => {
     const objectKey = 'generated-tts/user-1/eleven-cached.mp3';
     const r2 = createMockR2Bucket({ [objectKey]: new Uint8Array([69, 76]) });
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 3, daily_tts_reset_at: today() }]);
@@ -498,11 +497,9 @@ describe('POST /tts/generate — edge cases', () => {
       {
         id: V1,
         status: 'ready',
-        perso_voice_id: 'perso-voice-1',
         elevenlabs_voice_id: 'el-voice-1',
       },
     ]);
-    mockDB.pushResult([]); // Perso cache miss.
     mockDB.pushResult([
       {
         message_id: M1,

@@ -14,7 +14,6 @@ vi.mock('../src/lib/db', () => ({
 const { default: worker } = await import('../src/index');
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'x',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',

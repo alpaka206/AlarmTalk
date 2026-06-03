@@ -7,7 +7,6 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(SCRIPT_DIR, '..');
 
 const WORKER_SECRET_KEYS = [
-  'PERSO_API_KEY',
   'ELEVENLABS_API_KEY',
   'TURSO_DATABASE_URL',
   'TURSO_AUTH_TOKEN',

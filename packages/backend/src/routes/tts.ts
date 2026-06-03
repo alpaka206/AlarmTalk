@@ -790,7 +790,6 @@ tts.post('/generate', async (c) => {
     const attempts = createSynthesisAttempts({
       env: c.env,
       profile: {
-        perso_voice_id: vp.perso_voice_id as string | null | undefined,
         elevenlabs_voice_id: vp.elevenlabs_voice_id as string | null | undefined,
       },
       text: synthesisText,
