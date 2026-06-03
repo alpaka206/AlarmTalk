@@ -24,7 +24,6 @@ vi.mock('../src/lib/elevenlabs', () => ({
 import voiceUpload from '../src/routes/voice-upload';
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'test-key',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',

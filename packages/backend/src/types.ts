@@ -1,5 +1,4 @@
 export interface Env {
-  PERSO_API_KEY: string;
   ELEVENLABS_API_KEY: string;
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;

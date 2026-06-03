@@ -25,7 +25,6 @@ vi.mock('../src/lib/elevenlabs', () => ({
 import voiceProfile from '../src/routes/voice-profile';
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'test-key',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',

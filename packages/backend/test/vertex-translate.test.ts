@@ -9,7 +9,6 @@ import {
 const mockFetch = vi.fn();
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'x',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
