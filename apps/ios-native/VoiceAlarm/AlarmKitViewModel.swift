@@ -356,11 +356,16 @@ final class AlarmKitViewModel: ObservableObject {
         typealias AlarmConfiguration = AlarmManager.AlarmConfiguration<VoiceAlarmMetadata>
         let stopButton = AlarmButton(text: "알람 끄기", textColor: .white, systemImageName: "stop.fill")
         let snoozeButton = AlarmButton(text: "다시 울리기", textColor: .white, systemImageName: "moon.zzz.fill")
+        // .custom 으로 두어 다시 울림 분기 전체를 SnoozeAlarmIntent 가 결정하게 한다.
+        // .countdown 이면 OS 가 secondaryIntent 와 별개로 postAlert countdown 을
+        // 자동 재무장하므로, snoozeRepeatLimit 도달 시에도 알람이 계속 되살아난다
+        // (Android AlarmRepository.snooze() 의 한도 종료 동작과 어긋남). .custom 은
+        // OS 자동 동작을 끄고 우리 intent 가 countdown(id:) / stop(id:) 을 직접 호출.
         let alert = AlarmPresentation.Alert(
             title: LocalizedStringResource(stringLiteral: record.label),
             stopButton: stopButton,
             secondaryButton: snoozeButton,
-            secondaryButtonBehavior: .countdown
+            secondaryButtonBehavior: .custom
         )
         let countdown = AlarmPresentation.Countdown(
             title: LocalizedStringResource(stringLiteral: "\(record.label) 다시 울릴 준비 중")
