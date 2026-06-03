@@ -199,15 +199,13 @@ describe('POST /alarm — 알람 생성', () => {
     expect(res.status).toBe(403);
   });
 
-  it('���료 플랜 알람 2개 초과면 403', async () => {
+  it('���료 플랜 무료 플랜도 알람 개수 제한 없이 201', async () => {
     mockDB.pushResult([{ plan: 'free' }]); // user plan
-    mockDB.pushResult([{ count: 2 }]); // alarm count
+    mockDB.pushResult([{ id: ID.message }]); // message exists
+    mockDB.pushResult([], 1); // insert alarm
     const app = buildApp();
     const res = await app.request(jsonReq('POST', '/alarm', { message_id: ID.message, time: '07:00' }));
-    expect(res.status).toBe(403);
-    const body = await res.json();
-    expect(body.error).toContain('무료 플랜');
-    expect(body.error_code).toBe('FREE_PLAN_LIMIT');
+    expect(res.status).toBe(201);
   });
 
   it('메시지가 존재하지 않으면 404', async () => {
