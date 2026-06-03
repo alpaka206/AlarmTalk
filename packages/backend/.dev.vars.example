@@ -16,10 +16,8 @@ PASSWORD_PEPPER=
 # === AI providers ===
 ELEVENLABS_API_KEY=
 
-# Translation (Vertex). Use service-account JSON, or one of the API-key
-# fallbacks below (GOOGLE_VERTEX_API_KEY > GEMINI_API_KEY > GOOGLE_API_KEY).
+# Translation (Vertex). Requires a service-account JSON.
 GOOGLE_VERTEX_CREDENTIALS_JSON=
-GOOGLE_VERTEX_API_KEY=
 GOOGLE_VERTEX_LOCATION=global
 GOOGLE_VERTEX_MODEL=gemini-2.5-flash
 

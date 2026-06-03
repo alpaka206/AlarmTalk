@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/types';
 import {
   AlarmTextPreparationInvalidError,
@@ -8,12 +8,14 @@ import {
 
 const mockFetch = vi.fn();
 
+const TOKEN_URI = 'https://oauth2.example.com/token';
+
 const ENV: Env = {
   ELEVENLABS_API_KEY: 'x',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
   GOOGLE_CLIENT_ID: 'x',
-  GOOGLE_VERTEX_API_KEY: 'gemini-key',
+  GOOGLE_VERTEX_CREDENTIALS_JSON: '',
   JWT_SECRET: 'test-secret-32-chars-or-longer!',
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
@@ -38,14 +40,65 @@ function geminiText(text: string) {
   });
 }
 
+function toPem(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]!);
+  const base64 = btoa(binary).replace(/(.{64})/g, '$1\n');
+  return `-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`;
+}
+
+beforeAll(async () => {
+  const keyPair = (await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  )) as CryptoKeyPair;
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+  ENV.GOOGLE_VERTEX_CREDENTIALS_JSON = JSON.stringify({
+    client_email: 'svc@test.iam.gserviceaccount.com',
+    private_key: toPem(pkcs8),
+    project_id: 'test-project',
+    token_uri: TOKEN_URI,
+  });
+});
+
+// Vertex synthesis runs two fetches per call: an OAuth token exchange, then the
+// generateContent request. The token endpoint is auto-answered; tests queue only
+// the content responses they care about.
+let contentResponses: Response[];
+
+function queueContent(response: Response) {
+  contentResponses.push(response);
+}
+
+function contentRequestBody(): { contents: { parts: { text: string }[] }[] } {
+  const call = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
+  return JSON.parse(String(call?.[1]?.body));
+}
+
 beforeEach(() => {
+  contentResponses = [];
   mockFetch.mockReset();
+  mockFetch.mockImplementation(async (url: unknown) => {
+    if (String(url) === TOKEN_URI) {
+      return okJson({ access_token: 'test-access-token' });
+    }
+    const next = contentResponses.shift();
+    if (!next) throw new Error('no content response queued');
+    return next;
+  });
   vi.stubGlobal('fetch', mockFetch);
 });
 
 describe('prepareAlarmTextWithVertex', () => {
   it('falls back to local tagging when Gemini returns only JSON helper text', async () => {
-    mockFetch.mockResolvedValueOnce(geminiText('Here Is the json requested:'));
+    queueContent(geminiText('Here Is the json requested:'));
 
     const prepared = await prepareAlarmTextWithVertex(ENV, 'Good morning. Wake up.', {
       targetLanguage: 'en',
@@ -60,7 +113,7 @@ describe('prepareAlarmTextWithVertex', () => {
   });
 
   it('parses JSON even when Gemini adds a short preamble', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('Here is the JSON requested:\n{"text":"[warmly] Hello","tags":["warmly"]}'),
     );
 
@@ -77,7 +130,7 @@ describe('prepareAlarmTextWithVertex', () => {
 
   it('keeps same-language auto-tagging to one leading tag without changing the text', async () => {
     const text = 'Today is your stage. Wake up with confidence.';
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText(
         '{"text":"[warmly] Today is your stage. [brightly] Wake up with confidence.","tags":["warmly","brightly"]}',
       ),
@@ -96,7 +149,7 @@ describe('prepareAlarmTextWithVertex', () => {
 
   it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {
     const text = 'Today is your stage. Wake up with confidence.';
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText(
         '{"text":"[brightly] Today is your stage. Fans are waiting, so hurry out.","tags":["brightly"]}',
       ),
@@ -114,7 +167,7 @@ describe('prepareAlarmTextWithVertex', () => {
   });
 
   it('does not synthesize malformed translation output', async () => {
-    mockFetch.mockResolvedValueOnce(geminiText('Here Is the json requested:'));
+    queueContent(geminiText('Here Is the json requested:'));
 
     await expect(
       prepareAlarmTextWithVertex(ENV, '좋은 아침이에요', {
@@ -127,7 +180,7 @@ describe('prepareAlarmTextWithVertex', () => {
   });
 
   it('tags plain user-typed Korean text when autoTag is true', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"[gentle] 오늘도 화이팅","tags":["gentle"]}'),
     );
 
@@ -158,7 +211,7 @@ describe('prepareAlarmTextWithVertex', () => {
   });
 
   it('tags translated output when both translate and autoTag are true', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"[brightly] Good morning!","tags":["brightly"]}'),
     );
 
@@ -177,7 +230,7 @@ describe('prepareAlarmTextWithVertex', () => {
 
 describe('generateDynamicAlarmTextWithVertex', () => {
   it('falls back to readable dynamic text when Gemini returns helper text only', async () => {
-    mockFetch.mockResolvedValueOnce(geminiText('Here Is the json requested:'));
+    queueContent(geminiText('Here Is the json requested:'));
 
     const generated = await generateDynamicAlarmTextWithVertex(ENV, {
       mode: 'wake_weather',
@@ -199,7 +252,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini guesses a listener family title from the speaker relationship', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"할머니, 5월 20일 수요일이에요. 서울엔 비가 오니 우산 챙기세요."}'),
     );
 
@@ -224,7 +277,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('accepts an explicit listener title even when it is a family title', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"할아버지, 일어나실 시간이에요. 오늘 비 올 수 있대요. 나가실 때 우산 꼭 챙기세요."}'),
     );
 
@@ -239,9 +292,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = contentRequestBody();
     const prompt = requestBody.contents[0].parts[0].text;
-    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.provider).toBe('vertex');
     expect(generated.text).toContain('할아버지');
     expect(generated.text).toContain('오늘은 비가 올 수 있대요');
     expect(generated.text).not.toContain('오늘 비 올 수 있대요');
@@ -253,7 +306,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('polishes grandchild to grandparent wake wording into respectful verb forms', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"할머니, 일어날 시간이에요! 오늘은 천천히 움직이면 컨디션이 좋대요."}'),
     );
 
@@ -267,9 +320,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       fortuneProfile: 'gender=여성, birth date=1954-01-05, birth time=05:30',
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = contentRequestBody();
     const prompt = requestBody.contents[0].parts[0].text;
-    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.provider).toBe('vertex');
     expect(generated.text).toContain('할머니, 일어나실 시간이에요');
     expect(generated.text).not.toContain('할머니, 일어날 시간이에요');
     expect(prompt).toContain('Speaker is a grandchild speaking to a grandparent');
@@ -277,7 +330,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('keeps sibling bedtime messages in natural banmal', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"누나, 벌써 잘 시간이에요. 휴대폰은 내려놓고 편안하게 쉬어요."}'),
     );
 
@@ -291,16 +344,16 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       listenerTitle: '누나',
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = contentRequestBody();
     const prompt = requestBody.contents[0].parts[0].text;
-    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.provider).toBe('vertex');
     expect(generated.text).toBe('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
     expect(prompt).toContain('Create a sibling-style bedtime message in natural 반말');
     expect(prompt).toContain('누나, 잘 시간이야. 휴대폰 내려놓고 얼른 자.');
   });
 
   it('prompts romantic partner cases with warm tone and flexible weather relay wording', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"자기야, 일어나자. 비 온대. 나가기 전에 우산 챙겨."}'),
     );
 
@@ -315,9 +368,9 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = contentRequestBody();
     const prompt = requestBody.contents[0].parts[0].text;
-    expect(generated.provider).toBe('gemini-api-key');
+    expect(generated.provider).toBe('vertex');
     expect(prompt).toContain('Romantic partner/spouse tone');
     expect(prompt).toContain('heart-fluttering');
     expect(prompt).toContain('Avoid robotic connector phrases like "예보 보니까"');
@@ -328,7 +381,6 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     const generated = await generateDynamicAlarmTextWithVertex(
       {
         ...ENV,
-        GOOGLE_VERTEX_API_KEY: undefined,
         GOOGLE_VERTEX_CREDENTIALS_JSON: undefined,
       },
       {
@@ -354,7 +406,6 @@ describe('generateDynamicAlarmTextWithVertex', () => {
     const generated = await generateDynamicAlarmTextWithVertex(
       {
         ...ENV,
-        GOOGLE_VERTEX_API_KEY: undefined,
         GOOGLE_VERTEX_CREDENTIALS_JSON: undefined,
       },
       {
@@ -377,7 +428,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when romantic output uses stiff register or jealousy-triggering fortune', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"자기야, 일어나세요. 오늘은 새로운 인연을 만날 수도 있대요."}'),
     );
 
@@ -399,7 +450,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini mentions the speaker relationship as the source', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"할머니, 손녀 목소리로 전해요. 일어나실 시간이에요."}'),
     );
 
@@ -419,7 +470,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini writes as the speaker relationship', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"민지야, 실내에서 가볍게 운동하자. 엄마가 응원할게!"}'),
     );
 
@@ -438,7 +489,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini includes delivery tags or stage directions', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"[warmly] 일어나실 시간이에요. 오늘도 화이팅!"}'),
     );
 
@@ -456,7 +507,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini mentions the internal alarm time or date', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"7시 30분이에요. 5월 20일 수요일이라 비가 올 수 있대요."}'),
     );
 
@@ -477,7 +528,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when Gemini mentions the internal alarm time as a Korean 12-hour label', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText('{"text":"할아버지, 오후 5시 30분이에요. 실내에서 가볍게 운동해요."}'),
     );
 
@@ -497,7 +548,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
   });
 
   it('falls back when wake_fortune repeats birth date details', async () => {
-    mockFetch.mockResolvedValueOnce(
+    queueContent(
       geminiText(
         '{"text":"일어나실 시간이에요. 5월 19일생이군요. 오늘은 작은 선택에 좋은 기운이 따라요."}',
       ),

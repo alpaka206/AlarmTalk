@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
@@ -29,6 +29,37 @@ const ENV: Env = {
   PASSWORD_PEPPER: 'pepper',
   ENVIRONMENT: 'test',
 };
+
+const TOKEN_URI = 'https://oauth2.example.com/token';
+let VERTEX_CREDENTIALS_JSON = '';
+
+function toPem(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]!);
+  const base64 = btoa(binary).replace(/(.{64})/g, '$1\n');
+  return `-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`;
+}
+
+beforeAll(async () => {
+  const keyPair = (await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  )) as CryptoKeyPair;
+  const pkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
+  VERTEX_CREDENTIALS_JSON = JSON.stringify({
+    client_email: 'svc@test.iam.gserviceaccount.com',
+    private_key: toPem(pkcs8),
+    project_id: 'test-project',
+    token_uri: TOKEN_URI,
+  });
+});
 
 function createMockR2Bucket(initial: Record<string, Uint8Array> = {}) {
   const store = new Map<
@@ -734,13 +765,21 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('random_context=wake_fortune can use target user dynamic prompt settings', async () => {
-    const mockFetch = vi.fn()
-      .mockResolvedValueOnce(
-        geminiText('{"text":"자기야, 오늘은 작은 행운이 온대."}'),
-      )
-      .mockResolvedValueOnce(
-        geminiText('{"text":"[warmly] 자기야, 오늘은 작은 행운이 온대.","tags":["warmly"]}'),
-      );
+    const contentResponses = [
+      geminiText('{"text":"자기야, 오늘은 작은 행운이 온대."}'),
+      geminiText('{"text":"[warmly] 자기야, 오늘은 작은 행운이 온대.","tags":["warmly"]}'),
+    ];
+    const mockFetch = vi.fn(async (url: unknown) => {
+      if (String(url) === TOKEN_URI) {
+        return new Response(JSON.stringify({ access_token: 'test-access-token' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const next = contentResponses.shift();
+      if (!next) throw new Error('no content response queued');
+      return next;
+    });
     vi.stubGlobal('fetch', mockFetch);
     try {
       mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
@@ -781,11 +820,12 @@ describe('POST /tts/generate — edge cases', () => {
           listener_title: '자기야',
         }),
         undefined,
-        { ...ENV, GOOGLE_VERTEX_API_KEY: 'gemini-key' },
+        { ...ENV, GOOGLE_VERTEX_CREDENTIALS_JSON: VERTEX_CREDENTIALS_JSON },
       );
 
       expect(res.status).toBe(201);
-      const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+      const contentCall = mockFetch.mock.calls.find((c) => String(c[0]) !== TOKEN_URI);
+      const requestBody = JSON.parse(String(contentCall?.[1]?.body));
       const prompt = requestBody.contents[0].parts[0].text;
       expect(prompt).toContain('birth date=1995-05-20');
       expect(prompt).toContain('birth time=07:30');

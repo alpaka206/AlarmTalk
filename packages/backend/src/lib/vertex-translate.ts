@@ -27,7 +27,7 @@ export type AlarmTextPreparation = {
   text: string;
   translated: boolean;
   tags: string[];
-  provider: 'vertex' | 'gemini-api-key' | 'local';
+  provider: 'vertex' | 'local';
 };
 
 export type DynamicAlarmTextMode =
@@ -147,7 +147,7 @@ export async function prepareAlarmTextWithVertex(
     shouldTranslate,
     shouldTag,
   });
-  const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
+  const provider = 'vertex';
   let raw: string;
   try {
     raw = await generateContentText(env, prompt, {
@@ -207,7 +207,7 @@ export async function generateDynamicAlarmTextWithVertex(
   }
 
   const prompt = dynamicAlarmTextPrompt(context);
-  const provider = readGeminiApiKey(env) ? 'gemini-api-key' : 'vertex';
+  const provider = 'vertex';
   let raw: string;
   try {
     raw = await generateContentText(env, prompt, {
@@ -379,11 +379,6 @@ async function generateContentText(
   prompt: string,
   config: { temperature: number; maxOutputTokens: number },
 ): Promise<string> {
-  const apiKey = readGeminiApiKey(env);
-  if (apiKey) {
-    return generateContentWithApiKey(env, apiKey, prompt, config);
-  }
-
   const credentials = readVertexCredentials(env);
   const accessToken = await createAccessToken(credentials);
   const location = env.GOOGLE_VERTEX_LOCATION || DEFAULT_VERTEX_LOCATION;
@@ -394,20 +389,6 @@ async function generateContentText(
   return generateContentAtEndpoint(endpoint, prompt, config, {
     authorization: `Bearer ${accessToken}`,
   });
-}
-
-async function generateContentWithApiKey(
-  env: Env,
-  apiKey: string,
-  prompt: string,
-  config: { temperature: number; maxOutputTokens: number },
-): Promise<string> {
-  const rawModel = env.GOOGLE_VERTEX_MODEL || DEFAULT_VERTEX_MODEL;
-  const model = rawModel.startsWith('models/') ? rawModel : `models/${rawModel}`;
-  const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent` +
-    `?key=${encodeURIComponent(apiKey)}`;
-  return generateContentAtEndpoint(endpoint, prompt, config);
 }
 
 async function generateContentAtEndpoint(
@@ -1029,11 +1010,7 @@ function isMetaJsonResponse(text: string): boolean {
 }
 
 function hasGeminiConfiguration(env: Env | undefined): boolean {
-  return Boolean(readGeminiApiKey(env) || env?.GOOGLE_VERTEX_CREDENTIALS_JSON);
-}
-
-function readGeminiApiKey(env: Env | undefined): string | undefined {
-  return env?.GOOGLE_VERTEX_API_KEY || env?.GEMINI_API_KEY || env?.GOOGLE_API_KEY;
+  return Boolean(env?.GOOGLE_VERTEX_CREDENTIALS_JSON);
 }
 
 function extractTags(text: string): string[] {
