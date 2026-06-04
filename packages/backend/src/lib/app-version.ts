@@ -15,7 +15,7 @@ export interface AppVersionPolicy {
 
 const ANDROID: AppVersionPolicy = {
   minSupported: 1,
-  latest: 6,
+  latest: 7,
   storeUrl: 'https://play.google.com/store/apps/details?id=com.alarmtalk.app',
 };
 
