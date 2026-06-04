@@ -187,6 +187,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var needsConsent by mutableStateOf(false)
         internal set
 
+    // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
+    var pendingDeletion by mutableStateOf(false)
+        internal set
+
     // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
     var updateRequired by mutableStateOf(false)
         internal set
