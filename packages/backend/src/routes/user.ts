@@ -3,7 +3,7 @@ import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
-import { purgeUserAccount } from '../lib/account-deletion';
+import { purgeUserAccount, pseudonymizeBillingForRetention } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   familyAlarmSettingsFromRow,
@@ -321,7 +321,16 @@ user.delete('/me', async (c) => {
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
-    await withWriteTransaction(db, (tx) => purgeUserAccount(tx, userPk, userId));
+    // 즉시 hard delete 경로에서도 전자상거래법(5년) 결제·구독 기록 가명보존을 먼저 수행한다.
+    // (cron 유예 파기 경로와 동일하게 보존 후 파기 — 어느 경로든 보존 누락이 없도록)
+    const now = new Date();
+    const pepper = c.env?.PASSWORD_PEPPER ?? '';
+    await withWriteTransaction(db, async (tx) => {
+      if (userPk) {
+        await pseudonymizeBillingForRetention(tx, userPk, pepper, now);
+      }
+      await purgeUserAccount(tx, userPk, userId);
+    });
 
     return c.json({ success: true });
   } catch (err) {

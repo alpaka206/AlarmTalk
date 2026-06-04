@@ -252,6 +252,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
             viewModel.checkOnboardingFor(authSession.user.id)
+            viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
@@ -376,8 +377,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     fun deleteAccount() {
-        viewModel.deleteAccount {
-            revokeGoogleAccountAccess(context)
+        // 즉시 삭제가 아니라 30일 유예(POST /me/deletion) 신청. 구글은 revoke 하지 않고
+        // 로컬 세션만 정리(유예 중 다시 로그인해 철회 가능해야 하므로).
+        viewModel.requestAccountDeletion {
+            signOutGoogleAccount(context)
         }
     }
 
@@ -466,7 +469,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         bottomBar = {
-            if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired && currentTab != null) {
+            if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired &&
+                !viewModel.pendingDeletion && currentTab != null
+            ) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
@@ -515,6 +520,15 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                   onGoogleSignIn = ::launchGoogleSignIn,
               )
           }
+          return@Scaffold
+      }
+      if (viewModel.pendingDeletion) {
+          AccountPendingDeletionScreen(
+              contentPadding = padding,
+              busy = authBusy,
+              onRecover = viewModel::cancelAccountDeletion,
+              onLogout = ::logout,
+          )
           return@Scaffold
       }
       if (viewModel.needsConsent) {

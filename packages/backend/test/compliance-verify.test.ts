@@ -52,6 +52,8 @@ beforeAll(async () => {
   // 이전 실행에서 파일이 남아있을 수 있어(클라이언트가 파일을 잡고 있으면 rmSync 불가)
   // 테이블을 비워 항상 깨끗한 상태에서 시작한다.
   await db.execute('DELETE FROM user_consents');
+  await db.execute('DELETE FROM retained_billing_records');
+  await db.execute('DELETE FROM subscriptions');
   await db.execute('DELETE FROM users');
   await db.execute({
     sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
@@ -214,5 +216,42 @@ describe('탈퇴 30일 유예 / 철회', () => {
     const res = await app.request(req('DELETE', '/user/me/deletion'));
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('NO_PENDING_DELETION');
+  });
+});
+
+describe('즉시 회원탈퇴(DELETE /me) — 결제기록 5년 가명보존', () => {
+  const SUB3 = 'hard-del-sub';
+  const PK3 = 'hard-del-pk';
+  const PERSONAL_PLAN = '70000000-0000-4000-8000-000000000002';
+
+  it('구독이 있으면 retained_billing_records 로 가명보존한 뒤 계정을 파기한다', async () => {
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK3, SUB3, 'harddel@test.com', 'Hard Delete'],
+    });
+    await db.execute({
+      sql: `INSERT INTO subscriptions (id, user_id, plan_id, status, starts_at, expires_at)
+            VALUES (?, ?, ?, 'active', '2026-01-01', '2030-01-01')`,
+      args: ['sub-hard-1', PK3, PERSONAL_PLAN],
+    });
+
+    const app = buildApp(SUB3, PK3);
+    // DELETE /me 는 c.env.PASSWORD_PEPPER 를 쓰므로 env 를 넘긴다.
+    const res = await app.request(req('DELETE', '/user/me'), undefined, {
+      PASSWORD_PEPPER: 'pep',
+    } as unknown as Record<string, unknown>);
+    expect(res.status).toBe(200);
+
+    const retained = await db.execute({
+      sql: `SELECT pseudonym, plan_id, retained_reason FROM retained_billing_records WHERE plan_id = ?`,
+      args: [PERSONAL_PLAN],
+    });
+    console.log('[DELETE /me retained]', JSON.stringify(retained.rows));
+    expect(retained.rows.length).toBe(1);
+    expect(String(retained.rows[0]!.pseudonym)).toHaveLength(64); // SHA-256 hex
+    expect(retained.rows[0]!.retained_reason).toBe('ecommerce_act_5y');
+
+    const userGone = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [PK3] });
+    expect(userGone.rows.length).toBe(0);
   });
 });

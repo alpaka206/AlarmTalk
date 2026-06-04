@@ -50,6 +50,7 @@ data class AuthUser(
         listOf(FamilyAlarmQuietWindow()),
     @SerializedName("dynamic_prompt_settings") val dynamicPromptSettings: DynamicPromptSettings =
         DynamicPromptSettings(),
+    @SerializedName("deletion_status") val deletionStatus: String = "active",
 )
 
 data class AuthTokenResponse(
@@ -121,6 +122,18 @@ data class DeleteAccountResponse(
     val success: Boolean,
 )
 
+data class AccountDeletionResponse(
+    val success: Boolean = false,
+    val status: String = "pending_deletion",
+    @SerializedName("purge_at") val purgeAt: String? = null,
+    @SerializedName("grace_days") val graceDays: Int = 30,
+)
+
+data class CancelDeletionResponse(
+    val success: Boolean = false,
+    val status: String = "active",
+)
+
 data class ConsentItemRequest(
     val type: String,
     val agreed: Boolean,
@@ -179,6 +192,16 @@ interface AuthApi {
 
     @DELETE("user/me")
     suspend fun deleteAccount(@Header("Authorization") authorization: String): DeleteAccountResponse
+
+    @POST("user/me/deletion")
+    suspend fun requestAccountDeletion(
+        @Header("Authorization") authorization: String,
+    ): AccountDeletionResponse
+
+    @DELETE("user/me/deletion")
+    suspend fun cancelAccountDeletion(
+        @Header("Authorization") authorization: String,
+    ): CancelDeletionResponse
 
     @GET("user/consents/status")
     suspend fun consentStatus(@Header("Authorization") authorization: String): ConsentStatusResponse
