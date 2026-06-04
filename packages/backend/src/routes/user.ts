@@ -388,8 +388,10 @@ user.get('/consents', async (c) => {
   const db = getDB(c.env);
   try {
     const res = await db.execute({
+      // created_at 은 초 단위라 같은 초에 토글하면 동점이 된다. rowid(삽입 순서)를
+      // 보조 정렬로 두어 같은 초여도 항상 마지막 삽입을 최신으로 선택한다.
       sql: `SELECT consent_type, policy_version, agreed, agreed_at
-            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC`,
+            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
       args: [userPk],
     });
     const latest = new Map<
