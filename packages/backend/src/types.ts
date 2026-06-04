@@ -1,5 +1,4 @@
 export interface Env {
-  PERSO_API_KEY: string;
   ELEVENLABS_API_KEY: string;
   TURSO_DATABASE_URL: string;
   TURSO_AUTH_TOKEN: string;
@@ -12,9 +11,6 @@ export interface Env {
    */
   APPLE_SHARED_SECRET?: string;
   GOOGLE_VERTEX_CREDENTIALS_JSON?: string;
-  GOOGLE_VERTEX_API_KEY?: string;
-  GEMINI_API_KEY?: string;
-  GOOGLE_API_KEY?: string;
   GOOGLE_VERTEX_LOCATION?: string;
   GOOGLE_VERTEX_MODEL?: string;
   RESEND_API_KEY?: string;

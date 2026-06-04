@@ -84,22 +84,9 @@ describe('POST /alarms', () => {
     expect(res.status).toBe(201);
   });
 
-  it('무료 플랜 2개 제한 — 3번째 알람 거부', async () => {
+  it('무료 플랜도 알람 개수 제한 없이 생성 허용', async () => {
     // user plan → free
     mockDB.pushResult([{ plan: 'free' }]);
-    // alarm count → 2
-    mockDB.pushResult([{ count: 2 }]);
-
-    const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('FREE_PLAN_LIMIT');
-  });
-
-  it('무료 플랜 2개 미만이면 생성 허용', async () => {
-    // user plan → free
-    mockDB.pushResult([{ plan: 'free' }]);
-    // alarm count → 1
-    mockDB.pushResult([{ count: 1 }]);
     // message check → found
     mockDB.pushResult([{ id: ID.message }]);
     // INSERT
@@ -374,15 +361,6 @@ describe('POST /alarms', () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_REPEAT_DAYS');
-  });
-
-  it('무료 플랜 count 문자열 "2" → Number() 변환 후 거부', async () => {
-    mockDB.pushResult([{ plan: 'free' }]);
-    mockDB.pushResult([{ count: '2' }]);
-
-    const res = await buildApp().request(jsonReq('POST', '/alarms', validBody));
-    expect(res.status).toBe(403);
-    expect((await res.json()).error_code).toBe('FREE_PLAN_LIMIT');
   });
 
   it('time "00:00" 경계값 허용', async () => {

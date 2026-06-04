@@ -1,38 +1,42 @@
 # Local template for Cloudflare Worker secrets.
-# Copy to `.dev.vars.dev` and `.dev.vars.prod`.
-# Do not commit real values.
+# Copy to `.dev.vars.dev` and fill in real values. Do not commit real values.
+#
+# Keys map to scripts/sync-worker-secrets.ts (WORKER_SECRET_KEYS).
+# REQUIRED keys must be set or the Worker will fail to start.
 
 ENVIRONMENT=development
 
-# Cloudflare API credentials used only by local scripts.
-CLOUDFLARE_ACCOUNT_ID=
-CLOUDFLARE_API_TOKEN=
+# === Required ===
+TURSO_DATABASE_URL=libsql://your-env-db.turso.io
+TURSO_AUTH_TOKEN=
+GOOGLE_CLIENT_ID=
+JWT_SECRET=
+PASSWORD_PEPPER=
 
-# AI providers.
-PERSO_API_KEY=
+# === AI providers ===
 ELEVENLABS_API_KEY=
-GEMINI_API_KEY=
-GOOGLE_VERTEX_API_KEY=
+
+# Translation (Vertex). Requires a service-account JSON.
 GOOGLE_VERTEX_CREDENTIALS_JSON=
 GOOGLE_VERTEX_LOCATION=global
 GOOGLE_VERTEX_MODEL=gemini-2.5-flash
 
-# Turso DB. Use a separate database/token per environment.
-TURSO_DATABASE_URL=libsql://your-env-db.turso.io
-TURSO_AUTH_TOKEN=
-
-# Auth.
-GOOGLE_CLIENT_ID=
-JWT_SECRET=
-PASSWORD_PEPPER=
-# Required only when running POST /api/init-db against production.
-INIT_DB_SECRET=
-
-# Optional.
+# === Optional: Apple Sign-In ===
 APPLE_CLIENT_ID=
 APPLE_SHARED_SECRET=
+
+# === Optional: transactional email (Resend) ===
 RESEND_API_KEY=
 AUTH_EMAIL_FROM=AlarmTalk <no-reply@alarm-talk.com>
 AUTH_EMAIL_REPLY_TO=
-FIREBASE_PROJECT_ID=
+
+# === Optional: observability / misc ===
 SENTRY_DSN=
+FIREBASE_PROJECT_ID=
+# Required only when running POST /api/init-db.
+INIT_DB_SECRET=
+
+# === Local scripts only (not pushed as Worker secrets) ===
+# Used by sync-worker-secrets.ts and reset-test-data.ts.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=

@@ -38,7 +38,6 @@ crons = ["*/5 * * * *"]
 # Set real values with `wrangler secret put <KEY> --env <dev|production>`
 # or `wrangler secret bulk --env <dev|production>`.
 # Required:
-# PERSO_API_KEY
 # ELEVENLABS_API_KEY
 # TURSO_DATABASE_URL
 # TURSO_AUTH_TOKEN
@@ -50,9 +49,6 @@ crons = ["*/5 * * * *"]
 # INIT_DB_SECRET
 # APPLE_CLIENT_ID
 # APPLE_SHARED_SECRET
-# GEMINI_API_KEY
-# GOOGLE_API_KEY
-# GOOGLE_VERTEX_API_KEY
 # GOOGLE_VERTEX_CREDENTIALS_JSON
 # GOOGLE_VERTEX_LOCATION
 # GOOGLE_VERTEX_MODEL

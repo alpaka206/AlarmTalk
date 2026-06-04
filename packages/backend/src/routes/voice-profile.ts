@@ -575,6 +575,9 @@ voiceProfile.post('/clone', async (c) => {
   const resolvedUserPk = c.get('userIdPK');
   const userPk = resolvedUserPk || userId;
   const db = getDB(c.env);
+  // INSERT 후 클론이 실패하면 catch 에서 이 row 를 'failed' 로 정리해야 한다.
+  // 그렇지 않으면 status 가 'processing' 에 영구히 갇혀 앱이 "생성중" 으로 표시된다.
+  let insertedProfileId: string | null = null;
 
   try {
     if (resolvedUserPk) {
@@ -693,6 +696,7 @@ voiceProfile.post('/clone', async (c) => {
         listenerTitle,
       ],
     });
+    insertedProfileId = profileId;
 
     const attempts = createEnrollmentAttempts({
       env: c.env,
@@ -718,19 +722,11 @@ voiceProfile.post('/clone', async (c) => {
     }
     if (!voiceId) throw lastError;
 
-    if (provider === 'perso') {
-      await db.execute({
-        sql: `UPDATE voice_profiles SET perso_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [voiceId, profileId],
-      });
-    } else {
-      await db.execute({
-        sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
-              WHERE id = ?`,
-        args: [voiceId, profileId],
-      });
-    }
+    await db.execute({
+      sql: `UPDATE voice_profiles SET elevenlabs_voice_id = ?, status = 'ready', updated_at = datetime('now')
+            WHERE id = ?`,
+      args: [voiceId, profileId],
+    });
 
     return c.json(
       {
@@ -751,6 +747,19 @@ voiceProfile.post('/clone', async (c) => {
   } catch (err) {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : 'Unknown error';
+
+    // 'processing' 으로 INSERT 된 row 가 있으면 'failed' 로 종료시켜 stuck 방지.
+    if (insertedProfileId) {
+      try {
+        await db.execute({
+          sql: `UPDATE voice_profiles SET status = 'failed', updated_at = datetime('now')
+                WHERE id = ? AND status = 'processing'`,
+          args: [insertedProfileId],
+        });
+      } catch (markErr) {
+        logRouteError(c, markErr);
+      }
+    }
 
     if (isVoiceSlotExhaustedError(detail)) {
       return c.json(

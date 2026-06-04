@@ -178,19 +178,6 @@ alarmMutation.post('/', async (c) => {
     );
   }
 
-  if (user.rows.length > 0 && user.rows[0]!.plan === 'free') {
-    const alarmCount = await db.execute({
-      sql: 'SELECT COUNT(*) as count FROM alarms WHERE user_id = ? OR target_user_id = ?',
-      args: [alarmOwner, alarmOwner],
-    });
-    if (Number(alarmCount.rows[0]!.count) >= 2) {
-      return c.json(
-        { error: '무료 플랜은 최대 2개의 알람만 설정 가능합니다.', error_code: 'FREE_PLAN_LIMIT' },
-        403,
-      );
-    }
-  }
-
   // Raw-audio alarms have no real TTS message but the schema still requires
   // message_id (NOT NULL). Insert a "raw" placeholder message that points at
   // the same audio URL so the alarm row is satisfied. We attach it to the

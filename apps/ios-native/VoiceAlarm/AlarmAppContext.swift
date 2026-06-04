@@ -114,9 +114,20 @@ final class AlarmAppContext {
 
     // MARK: - Snooze
 
-    func canSnooze(alarmKitIDString: String) -> Bool {
-        guard let record = store?.recordByAlarmKitID(alarmKitIDString) else { return false }
-        return record.canSnooze
+    /// 스누즈 가부를 3-state 로 구분한다.
+    /// - `.allow`: 기록이 로드돼 있고 다시 울림 가능.
+    /// - `.deny` : 기록이 로드돼 있고 한도 도달 / 다시 울림 비활성.
+    /// - `.unknown`: store 미주입이거나 디스크 로드 전, 또는 기록을 찾지 못함 —
+    ///   판단 근거가 없으므로 호출 측은 안전한 기본값(다시 울림)으로 처리해야 한다.
+    ///
+    /// 콜드 부팅으로 `LocalAlarmStore` 의 async 디스크 로드가 끝나기 전 스누즈가
+    /// 들어오면 `recordByAlarmKitID` 가 nil 이라, 단순 Bool 로는 "한도 도달" 과
+    /// 구분되지 않아 알람을 꺼버리는 회귀가 있었다. `hasLoadedFromDisk` 와 기록
+    /// 존재 여부를 `.deny` 판단에서 분리해 그 회귀를 막는다.
+    func snoozeDecision(alarmKitIDString: String) -> AlarmSnoozeDecision {
+        guard let store, store.hasLoadedFromDisk else { return .unknown }
+        guard let record = store.recordByAlarmKitID(alarmKitIDString) else { return .unknown }
+        return record.canSnooze ? .allow : .deny
     }
 
     /// LiveActivity 의 Snooze 버튼이 눌렸을 때 호출.
@@ -162,6 +173,15 @@ final class AlarmAppContext {
             ]
         )
     }
+}
+
+/// 스누즈 인텐트가 알람을 종료(한도 도달)할지, 다시 울릴지 판단한 결과.
+/// `.unknown` 은 store 미로딩/기록없음 등 판단 불가 상태로, 호출 측에서는
+/// 안전하게 다시 울림으로 처리한다.
+enum AlarmSnoozeDecision {
+    case allow
+    case deny
+    case unknown
 }
 
 // MARK: - LocalAlarmStore convenience

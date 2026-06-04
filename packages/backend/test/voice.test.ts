@@ -28,7 +28,6 @@ vi.mock('../src/lib/elevenlabs', () => ({
 import voiceRoutes from '../src/routes/voice';
 
 const ENV: Env = {
-  PERSO_API_KEY: 'x',
   ELEVENLABS_API_KEY: 'test-key',
   TURSO_DATABASE_URL: 'x',
   TURSO_AUTH_TOKEN: 'x',
@@ -591,7 +590,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
 
   it('연관 메시지가 있어도 프로필만 숨김 처리', async () => {
     mockDB.pushResult([
-      { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
+      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
     ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -604,7 +603,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
 
   it('force=true로 요청해도 메시지와 알람은 삭제하지 않음', async () => {
     mockDB.pushResult([
-      { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
+      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
     ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
@@ -617,7 +616,7 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
 
   it('연관 메시지가 없어도 소프트 삭제', async () => {
     mockDB.pushResult([
-      { id: V1, name: 'Voice A', perso_voice_id: null, elevenlabs_voice_id: null },
+      { id: V1, name: 'Voice A', elevenlabs_voice_id: null },
     ]);
     mockDB.pushResult([], 1);
     const app = buildApp();
