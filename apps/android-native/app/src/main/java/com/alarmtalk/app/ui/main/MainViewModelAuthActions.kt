@@ -213,7 +213,80 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         authSessionStore.clear()
         clearUserScopedRemoteState()
         authSession = null
+        needsConsent = false
+        pendingDeletion = false
         message = "로그아웃했어요"
+        authBusy = false
+    }
+}
+
+// 회원 탈퇴(유예) 신청 — 즉시 삭제 대신 POST /me/deletion 으로 30일 유예 상태로 둔다.
+// 유예 기간 내 다시 로그인해 철회하면 복구된다. 신청 후에는 로그아웃 처리한다(구글 revoke 안 함).
+internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> Unit = {}) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
+    viewModelScope.launch {
+        authBusy = true
+        try {
+            api.requestAccountDeletion(authorization)
+            if (shouldSignOutGoogle) {
+                runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
+            }
+            authSessionStore.clear()
+            clearUserScopedRemoteState()
+            authSession = null
+            pendingDeletion = false
+            dismissDeleteAccount()
+            message = "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to request account deletion", error)
+            message = userFacingError(error, "회원 탈퇴 신청에 실패했어요")
+        } finally {
+            authBusy = false
+        }
+    }
+}
+
+// 로그인 후 탈퇴 유예 상태인지 확인한다. pending_deletion 이면 복구 화면을 띄운다.
+// (GET /me 는 유예 상태에서도 허용되는 엔드포인트) 실패 시 앱 진입을 막지 않는다.
+internal fun MainViewModel.checkAccountStatus() {
+    val session = authSession ?: return
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.me(authorization)
+        }.onSuccess { response ->
+            pendingDeletion = response.user.deletionStatus == "pending_deletion"
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to check account status", error)
+        }
+    }
+}
+
+// 유예 기간 내 탈퇴 철회 → 계정 복구. 성공 시 복구 화면을 닫고 정상 진입한다.
+internal fun MainViewModel.cancelAccountDeletion() {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.cancelAccountDeletion(authorization)
+        }.onSuccess {
+            pendingDeletion = false
+            message = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to cancel account deletion", error)
+            message = userFacingError(error, "탈퇴 취소에 실패했어요. 다시 시도해 주세요")
+        }
         authBusy = false
     }
 }
@@ -362,6 +435,74 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
         } finally {
             authBusy = false
         }
+    }
+}
+
+// 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
+// 두어 VoiceAlarmApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
+// 네트워크 실패 시에는 앱 사용을 막지 않는다.
+internal fun MainViewModel.checkAppVersion() {
+    viewModelScope.launch {
+        runCatching {
+            api.appVersion("android")
+        }.onSuccess { policy ->
+            updateStoreUrl = policy.storeUrl
+            updateRequired = appVersionCode in 1 until policy.minSupportedVersion
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to check app version", error)
+            updateRequired = false
+        }
+    }
+}
+
+// 로그인 후 필수 동의 여부를 서버에 확인한다. 미동의면 needsConsent=true 로 두어
+// VoiceAlarmApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
+internal fun MainViewModel.checkConsentStatus() {
+    val session = authSession ?: return
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.consentStatus(authorization)
+        }.onSuccess { status ->
+            needsConsent = status.needsConsent
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to check consent status", error)
+            needsConsent = false
+        }
+    }
+}
+
+// 동의 화면 제출. 필수(terms/privacy/age14)는 항상 동의로, marketing(광고성 정보 수신)은
+// 사용자 선택값으로 기록한다. 성공 시 동의 화면을 닫는다.
+internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed),
+                    ),
+                ),
+            )
+        }.onSuccess {
+            needsConsent = false
+            message = "동의가 완료됐어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to record consents", error)
+            message = userFacingError(error, "동의 기록에 실패했어요. 다시 시도해 주세요")
+        }
+        authBusy = false
     }
 }
 

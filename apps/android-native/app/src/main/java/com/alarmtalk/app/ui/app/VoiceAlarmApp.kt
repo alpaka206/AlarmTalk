@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -201,6 +202,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         bulkOpenedSettingsTargets = emptySet()
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.checkAppVersion()
+    }
+
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(currentMessage)
@@ -247,6 +252,8 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
             viewModel.checkOnboardingFor(authSession.user.id)
+            viewModel.checkAccountStatus()
+            viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
@@ -370,8 +377,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     }
 
     fun deleteAccount() {
-        viewModel.deleteAccount {
-            revokeGoogleAccountAccess(context)
+        // 즉시 삭제가 아니라 30일 유예(POST /me/deletion) 신청. 구글은 revoke 하지 않고
+        // 로컬 세션만 정리(유예 중 다시 로그인해 철회 가능해야 하므로).
+        viewModel.requestAccountDeletion {
+            signOutGoogleAccount(context)
         }
     }
 
@@ -460,7 +469,9 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         bottomBar = {
-            if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
+            if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired &&
+                !viewModel.pendingDeletion && currentTab != null
+            ) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
@@ -470,6 +481,18 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
     ) { padding ->
+      if (viewModel.updateRequired) {
+          UpdateRequiredScreen(
+              contentPadding = padding,
+              onUpdate = {
+                  val url = viewModel.updateStoreUrl.ifBlank {
+                      "https://play.google.com/store/apps/details?id=com.alarmtalk.app"
+                  }
+                  context.openWebUrl(url)
+              },
+          )
+          return@Scaffold
+      }
       if (authSession == null) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
@@ -497,6 +520,25 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
                   onGoogleSignIn = ::launchGoogleSignIn,
               )
           }
+          return@Scaffold
+      }
+      if (viewModel.pendingDeletion) {
+          AccountPendingDeletionScreen(
+              contentPadding = padding,
+              busy = authBusy,
+              onRecover = viewModel::cancelAccountDeletion,
+              onLogout = ::logout,
+          )
+          return@Scaffold
+      }
+      if (viewModel.needsConsent) {
+          ConsentScreen(
+              contentPadding = padding,
+              busy = authBusy,
+              onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
+              onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
+              onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
+          )
           return@Scaffold
       }
       if (viewModel.showOnboarding) {
@@ -743,6 +785,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
               PrettySnackbar(message = data.visuals.message)
           }
       }
+    }
+}
+
+private fun Context.openWebUrl(url: String) {
+    runCatching {
+        startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
 

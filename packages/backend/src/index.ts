@@ -129,6 +129,19 @@ app.get('/api/tts/presets', noStore, async (c) => {
   return c.json({ presets: await loadTtsPresets(c.env) });
 });
 
+// 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
+app.get('/api/app/version', noStore, async (c) => {
+  const { appVersionPolicy } = await import('./lib/app-version');
+  const platform = c.req.query('platform') || c.req.header('X-App-Platform') || 'android';
+  const policy = appVersionPolicy(platform);
+  return c.json({
+    platform: (platform || 'android').toLowerCase(),
+    min_supported_version: policy.minSupported,
+    latest_version: policy.latest,
+    store_url: policy.storeUrl,
+  });
+});
+
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
 app.route('/api/auth', authRoutes);
 
@@ -174,6 +187,36 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     await processSubscriptionExpiry(db, now);
   } catch (err) {
     logStructured('error', { at: 'scheduled.subscription_expiry', error: String(err) });
+  }
+
+  // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
+  // 전자상거래법(5년) 보존을 위해 가명처리해 분리 테이블로 옮긴다.
+  try {
+    const { purgeUserAccount, pseudonymizeBillingForRetention } = await import(
+      './lib/account-deletion'
+    );
+    const { withWriteTransaction } = await import('./lib/transactions');
+    const due = await db.execute({
+      sql: `SELECT id, google_id FROM users
+            WHERE deletion_status = 'pending_deletion'
+              AND deletion_purge_at IS NOT NULL
+              AND deletion_purge_at <= ?
+            LIMIT 50`,
+      args: [now.toISOString()],
+    });
+    for (const row of due.rows) {
+      const userPk = String(row.id);
+      const userId = (row.google_id as string | null) ?? userPk;
+      await withWriteTransaction(db, async (tx) => {
+        await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+        await purgeUserAccount(tx, userPk, userId);
+      });
+    }
+    if (due.rows.length > 0) {
+      logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
+    }
+  } catch (err) {
+    logStructured('error', { at: 'scheduled.account_purge', error: String(err) });
   }
 
   const result = await db.execute(

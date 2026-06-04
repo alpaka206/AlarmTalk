@@ -838,6 +838,53 @@ export const migrations: Migration[] = [
       `ALTER TABLE users ADD COLUMN dynamic_prompt_settings_json TEXT NOT NULL DEFAULT '{}'`,
     ],
   },
+  {
+    // 개인정보보호법 컴플라이언스(이슈 #426).
+    //  - user_consents: 가입/이용 중 동의 사실을 (유형, 정책 버전, 동의 여부, 시각) 으로
+    //    파기 시까지 보관. consent_type: 'terms'(이용약관·필수), 'privacy'(개인정보·필수),
+    //    'marketing'(마케팅·선택), 'age14'(만14세이상·필수) 등. 동일 (user_id, consent_type)
+    //    의 최신 행이 현재 동의 상태이며, 이력은 누적 INSERT 로 남긴다.
+    //  - users 탈퇴 유예 컬럼: deletion_requested_at(탈퇴 신청 시각),
+    //    deletion_status('active'|'pending_deletion'), deletion_purge_at(영구파기 예정 시각).
+    //    pending_deletion 이면 로그인/이용을 차단하고, purge_at 경과분을 cron 이 영구파기.
+    id: 41,
+    name: 'privacy-consents-and-withdrawal',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS user_consents (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        consent_type TEXT NOT NULL,
+        policy_version TEXT NOT NULL DEFAULT '1',
+        agreed INTEGER NOT NULL DEFAULT 0,
+        agreed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_user_consents_user
+        ON user_consents(user_id, consent_type, created_at DESC)`,
+      `ALTER TABLE users ADD COLUMN deletion_requested_at TEXT`,
+      `ALTER TABLE users ADD COLUMN deletion_status TEXT NOT NULL DEFAULT 'active'
+        CHECK(deletion_status IN ('active','pending_deletion'))`,
+      `ALTER TABLE users ADD COLUMN deletion_purge_at TEXT`,
+      // 법정 보존(전자상거래법 5년) 대상 결제·구독 기록의 가명처리 분리보관 테이블.
+      // pseudonym = SHA-256(user_id + RETENTION_SALT). 원본 식별자와 직접 조인 불가.
+      `CREATE TABLE IF NOT EXISTS retained_billing_records (
+        id TEXT PRIMARY KEY,
+        pseudonym TEXT NOT NULL,
+        plan_id TEXT,
+        status TEXT,
+        starts_at TEXT,
+        expires_at TEXT,
+        amount_krw INTEGER,
+        retained_reason TEXT NOT NULL DEFAULT 'ecommerce_act_5y',
+        retain_until TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_retained_billing_pseudonym
+        ON retained_billing_records(pseudonym)`,
+      `CREATE INDEX IF NOT EXISTS idx_retained_billing_until
+        ON retained_billing_records(retain_until)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

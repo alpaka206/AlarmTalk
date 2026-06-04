@@ -79,12 +79,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       const db = getDB(c.env);
       const isApple = verified.iss === 'https://appleid.apple.com';
       const found = await db.execute({
-        sql: 'SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
+        sql: 'SELECT id, deletion_status FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
         args: [verified.sub, isApple ? verified.sub : null, verified.sub],
       });
       let pk: string;
+      let deletionStatus = 'active';
       if (found.rows.length > 0) {
         pk = String(found.rows[0]!.id);
+        deletionStatus = String(found.rows[0]!.deletion_status ?? 'active');
       } else {
         await db.execute({
           sql: `INSERT INTO users (id, google_id, apple_id, email, name, picture)
@@ -103,6 +105,25 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
       c.set('userIdPK', pk);
       // eslint-disable-next-line no-console
       console.log('[AUTH user-resolve OK]', 'sub=', verified.sub, '→ usersId=', pk);
+
+      // 탈퇴 유예(pending_deletion) 계정은 본인정보 조회(GET /user/me)와 탈퇴 철회
+      // (DELETE /user/me/deletion) 외의 인증 API 사용을 차단한다(개인정보보호법 제21조,
+      // migrations #41 주석). 클라이언트는 이 코드를 받으면 복구 화면으로 유도한다.
+      if (deletionStatus === 'pending_deletion') {
+        const path = c.req.path;
+        const method = c.req.method;
+        const isCancelDeletion = method === 'DELETE' && path.endsWith('/user/me/deletion');
+        const isReadMe = method === 'GET' && path.endsWith('/user/me');
+        if (!isCancelDeletion && !isReadMe) {
+          return c.json(
+            {
+              error: 'Account is scheduled for deletion',
+              error_code: 'ACCOUNT_PENDING_DELETION',
+            },
+            403,
+          );
+        }
+      }
     } catch (err) {
       c.set('userIdPK', verified.sub);
       // eslint-disable-next-line no-console
