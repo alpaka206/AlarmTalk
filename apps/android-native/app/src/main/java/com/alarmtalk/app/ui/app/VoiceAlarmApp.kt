@@ -202,6 +202,10 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
         bulkOpenedSettingsTargets = emptySet()
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.checkAppVersion()
+    }
+
     LaunchedEffect(message) {
         val currentMessage = message ?: return@LaunchedEffect
         snackbarHostState.showSnackbar(currentMessage)
@@ -462,7 +466,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         bottomBar = {
-            if (authSession != null && !viewModel.showOnboarding && currentTab != null) {
+            if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired && currentTab != null) {
                 VoiceAlarmBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
@@ -472,6 +476,18 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             }
         },
     ) { padding ->
+      if (viewModel.updateRequired) {
+          UpdateRequiredScreen(
+              contentPadding = padding,
+              onUpdate = {
+                  val url = viewModel.updateStoreUrl.ifBlank {
+                      "https://play.google.com/store/apps/details?id=com.alarmtalk.app"
+                  }
+                  context.openWebUrl(url)
+              },
+          )
+          return@Scaffold
+      }
       if (authSession == null) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(

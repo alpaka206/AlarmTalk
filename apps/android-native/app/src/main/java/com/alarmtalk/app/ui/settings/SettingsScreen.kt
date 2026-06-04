@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -130,6 +133,22 @@ internal fun SettingsScreen(
                         promptPreferences.fortuneBirthTime,
                     ),
                     onClick = { showFortuneInfoDialog = true },
+                )
+            }
+        }
+
+        item {
+            SettingsCard(title = "약관 및 정책") {
+                SettingsRow(
+                    label = "서비스 이용약관",
+                    value = null,
+                    onClick = { context.openExternalUrl("https://alarm-talk.com/ko/terms") },
+                )
+                HorizontalDivider()
+                SettingsRow(
+                    label = "개인정보 처리방침",
+                    value = null,
+                    onClick = { context.openExternalUrl("https://alarm-talk.com/ko/privacy") },
                 )
             }
         }
@@ -769,6 +788,14 @@ private fun quietDaysLabel(days: List<Int>): String {
 }
 
 private fun dayLabels(): List<String> = listOf("일", "월", "화", "수", "목", "금", "토")
+
+private fun Context.openExternalUrl(url: String) {
+    runCatching {
+        startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
 
 private fun isHourText(value: String): Boolean =
     value.toIntOrNull()?.let { it in 0..23 } == true

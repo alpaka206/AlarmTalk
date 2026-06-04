@@ -24,6 +24,7 @@ object VoiceAlarmApiClient {
     fun create(
         baseUrl: String = BuildConfig.VOICE_ALARM_API_BASE_URL,
         unauthorizedHandler: UnauthorizedHandler? = null,
+        appVersionCode: Int = 0,
     ): VoiceAlarmApi {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
@@ -32,10 +33,20 @@ object VoiceAlarmApiClient {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
+        // 모든 요청에 앱 버전/플랫폼을 실어 보내 백엔드가 버전별로 응답을 분기하거나
+        // 로그·통계에 활용할 수 있게 한다. (구버전 앱 식별 → 강제/권장 업데이트 판단의 토대)
+        val versionHeader = okhttp3.Interceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("X-App-Platform", "android")
+                .header("X-App-Version", appVersionCode.toString())
+                .build()
+            chain.proceed(request)
+        }
         val builder = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
+            .addInterceptor(versionHeader)
             .addInterceptor(logging)
         if (unauthorizedHandler != null) {
             builder.authenticator(UnauthorizedAuthenticator(unauthorizedHandler))
