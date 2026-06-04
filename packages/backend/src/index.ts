@@ -129,6 +129,19 @@ app.get('/api/tts/presets', noStore, async (c) => {
   return c.json({ presets: await loadTtsPresets(c.env) });
 });
 
+// 앱 버전 정책 (인증 불필요) — 구버전 앱이 로그인 전에도 강제/권장 업데이트를 판단한다.
+app.get('/api/app/version', noStore, async (c) => {
+  const { appVersionPolicy } = await import('./lib/app-version');
+  const platform = c.req.query('platform') || c.req.header('X-App-Platform') || 'android';
+  const policy = appVersionPolicy(platform);
+  return c.json({
+    platform: (platform || 'android').toLowerCase(),
+    min_supported_version: policy.minSupported,
+    latest_version: policy.latest,
+    store_url: policy.storeUrl,
+  });
+});
+
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
 app.route('/api/auth', authRoutes);
 

@@ -62,6 +62,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ?.takeIf { it.isNotBlank() }
         ?.let(accessSnapshotStore::read)
         ?: AccessSnapshot()
+    // 현재 설치된 앱의 versionCode. 모든 요청 헤더(X-App-Version)와 강제 업데이트 판단에 사용.
+    internal val appVersionCode: Int = runCatching {
+        val info = application.packageManager.getPackageInfo(application.packageName, 0)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            info.longVersionCode.toInt()
+        } else {
+            @Suppress("DEPRECATION") info.versionCode
+        }
+    }.getOrDefault(0)
+
     internal val api = VoiceAlarmApiClient.create(
         unauthorizedHandler = object : VoiceAlarmApiClient.UnauthorizedHandler {
             override fun onUnauthorized() {
@@ -70,6 +80,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 handleUnauthorized()
             }
         },
+        appVersionCode = appVersionCode,
     )
 
     /**
@@ -174,6 +185,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
     var needsConsent by mutableStateOf(false)
+        internal set
+
+    // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
+    var updateRequired by mutableStateOf(false)
+        internal set
+    var updateStoreUrl by mutableStateOf("")
         internal set
 
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)

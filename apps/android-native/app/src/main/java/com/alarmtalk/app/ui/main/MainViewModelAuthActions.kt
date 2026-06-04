@@ -366,6 +366,23 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
     }
 }
 
+// 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
+// 두어 VoiceAlarmApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
+// 네트워크 실패 시에는 앱 사용을 막지 않는다.
+internal fun MainViewModel.checkAppVersion() {
+    viewModelScope.launch {
+        runCatching {
+            api.appVersion("android")
+        }.onSuccess { policy ->
+            updateStoreUrl = policy.storeUrl
+            updateRequired = appVersionCode in 1 until policy.minSupportedVersion
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to check app version", error)
+            updateRequired = false
+        }
+    }
+}
+
 // 로그인 후 필수 동의 여부를 서버에 확인한다. 미동의면 needsConsent=true 로 두어
 // VoiceAlarmApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
 internal fun MainViewModel.checkConsentStatus() {

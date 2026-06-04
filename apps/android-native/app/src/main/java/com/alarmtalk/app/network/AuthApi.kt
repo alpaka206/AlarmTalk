@@ -7,6 +7,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Query
 
 data class FamilyAlarmQuietWindow(
     val days: List<Int> = listOf(1, 2, 3, 4, 5),
@@ -142,6 +143,13 @@ data class ConsentStatusResponse(
     @SerializedName("policy_version") val policyVersion: String = "1",
 )
 
+data class AppVersionResponse(
+    val platform: String = "android",
+    @SerializedName("min_supported_version") val minSupportedVersion: Int = 1,
+    @SerializedName("latest_version") val latestVersion: Int = 1,
+    @SerializedName("store_url") val storeUrl: String = "",
+)
+
 interface AuthApi {
     @POST("auth/email-code")
     suspend fun requestEmailVerification(@Body request: EmailVerificationRequest): EmailVerificationResponse
@@ -180,4 +188,7 @@ interface AuthApi {
         @Header("Authorization") authorization: String,
         @Body request: RecordConsentsRequest,
     ): RecordConsentsResponse
+
+    @GET("app/version")
+    suspend fun appVersion(@Query("platform") platform: String = "android"): AppVersionResponse
 }
