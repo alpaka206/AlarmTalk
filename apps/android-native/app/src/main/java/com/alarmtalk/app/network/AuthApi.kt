@@ -120,6 +120,28 @@ data class DeleteAccountResponse(
     val success: Boolean,
 )
 
+data class ConsentItemRequest(
+    val type: String,
+    val agreed: Boolean,
+    val version: String? = null,
+)
+
+data class RecordConsentsRequest(
+    val consents: List<ConsentItemRequest>,
+)
+
+data class RecordConsentsResponse(
+    val success: Boolean = false,
+    val recorded: Int = 0,
+)
+
+data class ConsentStatusResponse(
+    @SerializedName("needs_consent") val needsConsent: Boolean = false,
+    val required: List<String> = emptyList(),
+    val missing: List<String> = emptyList(),
+    @SerializedName("policy_version") val policyVersion: String = "1",
+)
+
 interface AuthApi {
     @POST("auth/email-code")
     suspend fun requestEmailVerification(@Body request: EmailVerificationRequest): EmailVerificationResponse
@@ -149,4 +171,13 @@ interface AuthApi {
 
     @DELETE("user/me")
     suspend fun deleteAccount(@Header("Authorization") authorization: String): DeleteAccountResponse
+
+    @GET("user/consents/status")
+    suspend fun consentStatus(@Header("Authorization") authorization: String): ConsentStatusResponse
+
+    @POST("user/consents")
+    suspend fun recordConsents(
+        @Header("Authorization") authorization: String,
+        @Body request: RecordConsentsRequest,
+    ): RecordConsentsResponse
 }

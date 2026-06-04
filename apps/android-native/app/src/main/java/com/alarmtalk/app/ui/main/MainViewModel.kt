@@ -172,6 +172,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var showOnboarding by mutableStateOf(false)
         internal set
 
+    // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
+    var needsConsent by mutableStateOf(false)
+        internal set
+
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
         internal set
 

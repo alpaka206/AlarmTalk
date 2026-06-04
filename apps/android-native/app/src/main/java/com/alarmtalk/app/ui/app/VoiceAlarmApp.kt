@@ -2,6 +2,7 @@ package com.alarmtalk.app
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -247,6 +248,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
             viewModel.checkOnboardingFor(authSession.user.id)
+            viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
@@ -499,6 +501,16 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
           }
           return@Scaffold
       }
+      if (viewModel.needsConsent) {
+          ConsentScreen(
+              contentPadding = padding,
+              busy = authBusy,
+              onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
+              onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
+              onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
+          )
+          return@Scaffold
+      }
       if (viewModel.showOnboarding) {
           OnboardingScreen(
               contentPadding = padding,
@@ -743,6 +755,14 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
               PrettySnackbar(message = data.visuals.message)
           }
       }
+    }
+}
+
+private fun Context.openWebUrl(url: String) {
+    runCatching {
+        startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }
 
