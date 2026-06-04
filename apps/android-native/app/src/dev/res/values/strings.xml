@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- dev 플레이버 전용 런처 라벨. prod(릴리스)는 main 의 "AlarmTalk" 를 그대로 사용하고,
+         dev 빌드만 "dev" 로 표시해 플레이스토어 설치본과 구분한다. -->
+    <string name="app_name">dev</string>
+</resources>
