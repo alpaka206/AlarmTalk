@@ -176,6 +176,36 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     logStructured('error', { at: 'scheduled.subscription_expiry', error: String(err) });
   }
 
+  // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
+  // 전자상거래법(5년) 보존을 위해 가명처리해 분리 테이블로 옮긴다.
+  try {
+    const { purgeUserAccount, pseudonymizeBillingForRetention } = await import(
+      './lib/account-deletion'
+    );
+    const { withWriteTransaction } = await import('./lib/transactions');
+    const due = await db.execute({
+      sql: `SELECT id, google_id FROM users
+            WHERE deletion_status = 'pending_deletion'
+              AND deletion_purge_at IS NOT NULL
+              AND deletion_purge_at <= ?
+            LIMIT 50`,
+      args: [now.toISOString()],
+    });
+    for (const row of due.rows) {
+      const userPk = String(row.id);
+      const userId = (row.google_id as string | null) ?? userPk;
+      await withWriteTransaction(db, async (tx) => {
+        await pseudonymizeBillingForRetention(tx, userPk, env.PASSWORD_PEPPER, now);
+        await purgeUserAccount(tx, userPk, userId);
+      });
+    }
+    if (due.rows.length > 0) {
+      logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
+    }
+  } catch (err) {
+    logStructured('error', { at: 'scheduled.account_purge', error: String(err) });
+  }
+
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
             mode, voice_profile_id, speaker_id

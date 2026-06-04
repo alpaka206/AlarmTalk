@@ -2,8 +2,8 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
-import { cancelActiveSubscriptionsForUser } from '../lib/billing-cancel';
 import { deletePaidVoiceDataForUser } from '../lib/paid-voice-cleanup';
+import { purgeUserAccount } from '../lib/account-deletion';
 import { withWriteTransaction } from '../lib/transactions';
 import {
   familyAlarmSettingsFromRow,
@@ -321,152 +321,150 @@ user.delete('/me', async (c) => {
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
-    await withWriteTransaction(db, async (tx) => {
-      if (userPk) {
-        const userIds = [userPk, userId];
-        await cancelActiveSubscriptionsForUser(tx, userPk);
-
-        await tx.execute({
-          sql: `DELETE FROM voucher_redemptions
-                WHERE user_id = ?
-                   OR voucher_id IN (
-                     SELECT id FROM voucher_codes WHERE issuer_user_id = ?
-                   )`,
-          args: [userPk, userPk],
-        });
-        await tx.execute({
-          sql: `UPDATE voucher_codes
-                SET redeemed_by_user_id = NULL
-                WHERE redeemed_by_user_id = ?`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM voucher_codes WHERE issuer_user_id = ?`,
-          args: [userPk],
-        });
-
-        await tx.execute({
-          sql: `DELETE FROM plan_group_invites
-                WHERE inviter_user_id = ?
-                   OR used_by_user_id = ?
-                   OR plan_group_id IN (
-                     SELECT id FROM plan_groups WHERE owner_user_id = ?
-                   )`,
-          args: [userPk, userPk, userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM plan_group_members WHERE user_id = ?`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM plan_group_members
-                WHERE plan_group_id IN (SELECT id FROM plan_groups WHERE owner_user_id = ?)`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM plan_groups WHERE owner_user_id = ?`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM subscriptions WHERE user_id = ?`,
-          args: [userPk],
-        });
-
-        await tx.execute({
-          sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,
-          args: [userPk, userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM push_tokens WHERE user_id = ?`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM character_xp_logs
-                WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM character_stats
-                WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM streak_achievements
-                WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM characters WHERE user_id = ?`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM voice_speakers
-                WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id = ?)`,
-          args: [userPk],
-        });
-        await tx.execute({
-          sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
-          args: [userPk],
-        });
-
-        await tx.execute({
-          sql: `DELETE FROM generated_audio_assets
-                WHERE user_id IN (?, ?)
-                   OR voice_profile_id IN (
-                     SELECT id FROM voice_profiles WHERE user_id IN (?, ?)
-                   )
-                   OR message_id IN (
-                     SELECT id FROM messages WHERE user_id IN (?, ?)
-                   )`,
-          args: [...userIds, ...userIds, ...userIds],
-        });
-        await tx.execute({
-          sql: `DELETE FROM alarms
-                WHERE user_id IN (?, ?) OR target_user_id IN (?, ?)`,
-          args: [...userIds, ...userIds],
-        });
-        await tx.execute({
-          sql: `DELETE FROM message_library
-                WHERE user_id IN (?, ?)
-                   OR message_id IN (
-                     SELECT id FROM messages WHERE user_id IN (?, ?)
-                   )`,
-          args: [...userIds, ...userIds],
-        });
-        await tx.execute({
-          sql: `DELETE FROM gifts
-                WHERE sender_id IN (?, ?)
-                   OR recipient_id IN (?, ?)
-                   OR message_id IN (
-                     SELECT id FROM messages WHERE user_id IN (?, ?)
-                   )`,
-          args: [...userIds, ...userIds, ...userIds],
-        });
-        await tx.execute({
-          sql: `DELETE FROM messages WHERE user_id IN (?, ?)`,
-          args: userIds,
-        });
-        await tx.execute({
-          sql: `DELETE FROM voice_profiles WHERE user_id IN (?, ?)`,
-          args: userIds,
-        });
-        await tx.execute({
-          sql: `DELETE FROM friendships
-                WHERE user_a IN (?, ?) OR user_b IN (?, ?)`,
-          args: [...userIds, ...userIds],
-        });
-      }
-
-      await tx.execute({
-        sql: `DELETE FROM users WHERE id = ? OR google_id = ?`,
-        args: [userPk ?? userId, userId],
-      });
-    });
+    await withWriteTransaction(db, (tx) => purgeUserAccount(tx, userPk, userId));
 
     return c.json({ success: true });
   } catch (err) {
     logRouteError(c, err);
     return c.json({ error: 'Failed to delete account', error_code: 'DELETE_ACCOUNT_FAILED' }, 500);
+  }
+});
+
+// 동의 기록 (개인정보보호법 제22조). 가입/이용 중 동의 사실을 누적 INSERT 로 보관한다.
+// consent_type: 'terms'(이용약관·필수), 'privacy'(개인정보·필수), 'marketing'(마케팅·선택),
+// 'age14'(만14세이상·필수). 동일 (user_id, consent_type) 최신 행이 현재 동의 상태.
+const ALLOWED_CONSENT_TYPES = new Set(['terms', 'privacy', 'marketing', 'age14']);
+const DELETION_GRACE_DAYS = 30;
+
+user.post('/consents', async (c) => {
+  const userPk = c.get('userIdPK');
+  const db = getDB(c.env);
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON', error_code: 'INVALID_JSON' }, 400);
+  }
+  const list = (body as { consents?: unknown }).consents;
+  if (!Array.isArray(list) || list.length === 0) {
+    return c.json({ error: 'consents required', error_code: 'CONSENTS_REQUIRED' }, 400);
+  }
+  const rows: Array<{ type: string; version: string; agreed: boolean }> = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Record<string, unknown>;
+    const type = typeof item.type === 'string' ? item.type.trim() : '';
+    if (!ALLOWED_CONSENT_TYPES.has(type)) {
+      return c.json({ error: `Unknown consent type: ${type}`, error_code: 'INVALID_CONSENT_TYPE' }, 400);
+    }
+    rows.push({
+      type,
+      version:
+        typeof item.version === 'string' && item.version.trim()
+          ? item.version.trim().slice(0, 40)
+          : '1',
+      agreed: item.agreed === true || item.agreed === 1 || item.agreed === '1',
+    });
+  }
+  try {
+    await withWriteTransaction(db, async (tx) => {
+      for (const r of rows) {
+        await tx.execute({
+          sql: `INSERT INTO user_consents (id, user_id, consent_type, policy_version, agreed)
+                VALUES (?, ?, ?, ?, ?)`,
+          args: [crypto.randomUUID(), userPk, r.type, r.version, r.agreed ? 1 : 0],
+        });
+      }
+    });
+    return c.json({ success: true, recorded: rows.length });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to record consents', error_code: 'CONSENT_RECORD_FAILED' }, 500);
+  }
+});
+
+user.get('/consents', async (c) => {
+  const userPk = c.get('userIdPK');
+  const db = getDB(c.env);
+  try {
+    const res = await db.execute({
+      sql: `SELECT consent_type, policy_version, agreed, agreed_at
+            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC`,
+      args: [userPk],
+    });
+    const latest = new Map<
+      string,
+      { consent_type: string; policy_version: string; agreed: boolean; agreed_at: string }
+    >();
+    for (const row of res.rows) {
+      const type = String(row.consent_type);
+      if (latest.has(type)) continue;
+      latest.set(type, {
+        consent_type: type,
+        policy_version: String(row.policy_version),
+        agreed: Number(row.agreed) === 1,
+        agreed_at: String(row.agreed_at),
+      });
+    }
+    return c.json({ consents: Array.from(latest.values()) });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to load consents', error_code: 'CONSENT_LOAD_FAILED' }, 500);
+  }
+});
+
+// 탈퇴 유예 (개인정보보호법 제21조). 신청 즉시 pending_deletion 으로 두고 30일 후
+// cron 이 영구파기한다. 유예 기간 내 DELETE /me/deletion 으로 철회 가능.
+user.post('/me/deletion', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  const now = new Date();
+  const purgeAt = new Date(now.getTime() + DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000);
+  try {
+    const res = await db.execute({
+      sql: `UPDATE users
+            SET deletion_status = 'pending_deletion',
+                deletion_requested_at = ?,
+                deletion_purge_at = ?,
+                updated_at = datetime('now')
+            WHERE google_id = ? OR id = ?`,
+      args: [now.toISOString(), purgeAt.toISOString(), userId, userId],
+    });
+    if (res.rowsAffected === 0) {
+      return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+    }
+    return c.json({
+      success: true,
+      status: 'pending_deletion',
+      purge_at: purgeAt.toISOString(),
+      grace_days: DELETION_GRACE_DAYS,
+    });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to request deletion', error_code: 'DELETION_REQUEST_FAILED' }, 500);
+  }
+});
+
+user.delete('/me/deletion', async (c) => {
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  try {
+    const res = await db.execute({
+      sql: `UPDATE users
+            SET deletion_status = 'active',
+                deletion_requested_at = NULL,
+                deletion_purge_at = NULL,
+                updated_at = datetime('now')
+            WHERE (google_id = ? OR id = ?) AND deletion_status = 'pending_deletion'`,
+      args: [userId, userId],
+    });
+    if (res.rowsAffected === 0) {
+      return c.json({ error: 'No pending deletion', error_code: 'NO_PENDING_DELETION' }, 404);
+    }
+    return c.json({ success: true, status: 'active' });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to cancel deletion', error_code: 'DELETION_CANCEL_FAILED' }, 500);
   }
 });
 
