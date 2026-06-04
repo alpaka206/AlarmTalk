@@ -99,13 +99,15 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         // 다시 울림이 꺼져 있거나 snoozeRepeatLimit 에 도달했다면 countdown 으로
         // 재무장하지 않고 알람을 종료시켜야 한다.
         //
-        // ctx 가 nil 인 경우(락스크린에서 콜드 부팅 직후 Scene .task 미실행)에는
-        // 한도를 판단할 수 없으므로 종료가 아니라 다시 울림을 기본값으로 둔다.
-        // 종료는 ctx 가 존재하고 명시적으로 canSnooze == false 일 때만 수행한다.
-        // (잘못 종료하면 사용자가 의도한 다시 울림이 사라지는 회귀가 되므로.)
+        // 판단은 3-state 로 한다. 락스크린 콜드 부팅 직후(Scene .task 미실행으로
+        // ctx 가 nil 이거나, ctx 는 있어도 LocalAlarmStore 의 디스크 로드 전이라
+        // 기록을 못 찾는 경우)에는 한도를 알 수 없으므로 .unknown 이 되고, 종료가
+        // 아니라 다시 울림을 기본값으로 둔다. 종료는 기록이 로드돼 한도 도달/비활성이
+        // 명확한 .deny 일 때만 수행한다. (잘못 종료하면 사용자가 의도한 다시 울림이
+        // 사라지는 회귀가 되므로.)
         let ctx = AlarmAppContext.shared
-        let limitReached = ctx?.canSnooze(alarmKitIDString: uuid.uuidString) == false
-        if limitReached {
+        let decision = ctx?.snoozeDecision(alarmKitIDString: uuid.uuidString) ?? .unknown
+        if decision == .deny {
             // 한도 도달 / 다시 울림 비활성 — Android 처럼 알람을 끝낸다.
             do {
                 try AlarmManager.shared.stop(id: uuid)
