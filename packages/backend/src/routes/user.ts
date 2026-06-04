@@ -334,6 +334,10 @@ user.delete('/me', async (c) => {
 // consent_type: 'terms'(이용약관·필수), 'privacy'(개인정보·필수), 'marketing'(마케팅·선택),
 // 'age14'(만14세이상·필수). 동일 (user_id, consent_type) 최신 행이 현재 동의 상태.
 const ALLOWED_CONSENT_TYPES = new Set(['terms', 'privacy', 'marketing', 'age14']);
+// 가입/이용에 반드시 필요한 필수 동의. marketing(광고성 정보 수신) 은 선택이라 제외.
+const REQUIRED_CONSENT_TYPES = ['terms', 'privacy', 'age14'] as const;
+// 처리방침/약관 버전. 정책을 개정하면 이 값을 올려 기존 가입자 재동의를 유도한다.
+const CURRENT_POLICY_VERSION = '1';
 const DELETION_GRACE_DAYS = 30;
 
 user.post('/consents', async (c) => {
@@ -412,6 +416,39 @@ user.get('/consents', async (c) => {
   } catch (err) {
     logRouteError(c, err);
     return c.json({ error: 'Failed to load consents', error_code: 'CONSENT_LOAD_FAILED' }, 500);
+  }
+});
+
+// 동의 상태 조회. 기존 가입자/신규 가입자 모두 로그인 후 이 결과로 재동의 화면을 띄운다.
+// needs_consent = 필수 동의 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
+user.get('/consents/status', async (c) => {
+  const userPk = c.get('userIdPK');
+  const db = getDB(c.env);
+  try {
+    const res = await db.execute({
+      sql: `SELECT consent_type, policy_version, agreed
+            FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
+      args: [userPk],
+    });
+    const latest = new Map<string, { agreed: boolean; version: string }>();
+    for (const row of res.rows) {
+      const type = String(row.consent_type);
+      if (latest.has(type)) continue; // 유형별 최신 1건만
+      latest.set(type, { agreed: Number(row.agreed) === 1, version: String(row.policy_version) });
+    }
+    const missing = REQUIRED_CONSENT_TYPES.filter((type) => {
+      const cur = latest.get(type);
+      return !cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION;
+    });
+    return c.json({
+      needs_consent: missing.length > 0,
+      required: REQUIRED_CONSENT_TYPES,
+      missing,
+      policy_version: CURRENT_POLICY_VERSION,
+    });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json({ error: 'Failed to load consent status', error_code: 'CONSENT_STATUS_FAILED' }, 500);
   }
 });
 

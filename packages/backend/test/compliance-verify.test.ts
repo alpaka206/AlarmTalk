@@ -34,9 +34,9 @@ function authAs(userId = SUB, userPk = PK) {
   };
 }
 
-function buildApp() {
+function buildApp(userId = SUB, userPk = PK) {
   const app = new Hono<AppEnv>();
-  app.use('*', authAs());
+  app.use('*', authAs(userId, userPk));
   app.route('/user', userRoutes);
   return app;
 }
@@ -116,6 +116,68 @@ describe('동의 기록 — 마케팅(광고성 정보 수신) 포함', () => {
     const res = await app.request(req('POST', '/user/consents', { consents: [{ type: 'sell_my_data', agreed: true }] }));
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('INVALID_CONSENT_TYPE');
+  });
+});
+
+describe('동의 상태 — 기존/신규 가입자 재동의 판단', () => {
+  const NEW_SUB = 'no-consent-sub';
+  const NEW_PK = 'no-consent-pk';
+
+  it('동의 기록이 없는 사용자는 needs_consent=true, 필수 3종 모두 missing', async () => {
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [NEW_PK, NEW_SUB, 'noconsent@test.com', 'No Consent'],
+    });
+    const app = buildApp(NEW_SUB, NEW_PK);
+    const res = await app.request(req('GET', '/user/consents/status'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    console.log('[GET /consents/status — 미동의]', JSON.stringify(body));
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing.sort()).toEqual(['age14', 'privacy', 'terms']);
+  });
+
+  it('필수 3종 동의 기록 후 needs_consent=false (marketing 미동의여도 무관)', async () => {
+    const app = buildApp(NEW_SUB, NEW_PK);
+    await app.request(
+      req('POST', '/user/consents', {
+        consents: [
+          { type: 'terms', agreed: true },
+          { type: 'privacy', agreed: true },
+          { type: 'age14', agreed: true },
+          { type: 'marketing', agreed: false },
+        ],
+      }),
+    );
+    const res = await app.request(req('GET', '/user/consents/status'));
+    const body = await res.json();
+    console.log('[GET /consents/status — 동의완료]', JSON.stringify(body));
+    expect(body.needs_consent).toBe(false);
+    expect(body.missing).toEqual([]);
+  });
+
+  it('필수 중 하나(privacy)만 미동의면 needs_consent=true, missing=[privacy]', async () => {
+    const SUB2 = 'partial-sub';
+    const PK2 = 'partial-pk';
+    await db.execute({
+      sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,
+      args: [PK2, SUB2, 'partial@test.com', 'Partial'],
+    });
+    const app = buildApp(SUB2, PK2);
+    await app.request(
+      req('POST', '/user/consents', {
+        consents: [
+          { type: 'terms', agreed: true },
+          { type: 'privacy', agreed: false },
+          { type: 'age14', agreed: true },
+        ],
+      }),
+    );
+    const res = await app.request(req('GET', '/user/consents/status'));
+    const body = await res.json();
+    console.log('[GET /consents/status — 부분동의]', JSON.stringify(body));
+    expect(body.needs_consent).toBe(true);
+    expect(body.missing).toEqual(['privacy']);
   });
 });
 

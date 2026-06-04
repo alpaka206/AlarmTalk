@@ -213,6 +213,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         authSessionStore.clear()
         clearUserScopedRemoteState()
         authSession = null
+        needsConsent = false
         message = "로그아웃했어요"
         authBusy = false
     }
@@ -362,6 +363,57 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
         } finally {
             authBusy = false
         }
+    }
+}
+
+// 로그인 후 필수 동의 여부를 서버에 확인한다. 미동의면 needsConsent=true 로 두어
+// VoiceAlarmApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
+internal fun MainViewModel.checkConsentStatus() {
+    val session = authSession ?: return
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.consentStatus(authorization)
+        }.onSuccess { status ->
+            needsConsent = status.needsConsent
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to check consent status", error)
+            needsConsent = false
+        }
+    }
+}
+
+// 동의 화면 제출. 필수(terms/privacy/age14)는 항상 동의로, marketing(광고성 정보 수신)은
+// 사용자 선택값으로 기록한다. 성공 시 동의 화면을 닫는다.
+internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
+    val session = authSession
+    if (session == null) {
+        message = "로그인 후 사용할 수 있어요"
+        return
+    }
+    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed),
+                    ),
+                ),
+            )
+        }.onSuccess {
+            needsConsent = false
+            message = "동의가 완료됐어요"
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to record consents", error)
+            message = userFacingError(error, "동의 기록에 실패했어요. 다시 시도해 주세요")
+        }
+        authBusy = false
     }
 }
 
