@@ -51,11 +51,16 @@ npx vitest run test/user.test.ts test/migrations.test.ts   # 54 passed
 
 ## 남은 작업 (별도 PR 권장 — 네이티브는 빌드 검증 필요)
 
-### A. 가입 동의 UI + 연동
-- [ ] 웹(랜딩/웹앱) 회원가입에 필수/선택 동의 체크박스 + 약관·처리방침 링크
-- [ ] Android `ui/auth/AuthScreen.kt` 동의 체크박스
-- [ ] iOS `AuthViewModel`/가입 플로우 동의
-- [ ] 가입 직후 `POST /api/user/consents` 호출로 동의 기록 (terms/privacy 필수, marketing 선택, age14)
+### A. 가입/기존 가입자 동의 UI + 연동
+- [x] **백엔드 동의 상태 API** `GET /api/user/consents/status` — 필수(terms/privacy/age14)
+      미기록·미동의·정책버전 불일치 시 `needs_consent=true`+`missing[]`. 정책 개정 시
+      `user.ts` 의 `CURRENT_POLICY_VERSION` 만 올리면 기존 가입자 재동의 유도. (PR #429)
+- [x] **Android 동의 게이트** `ui/auth/ConsentScreen.kt` — 로그인 후 `consents/status` 조회해
+      미동의면 게이트 표시(온보딩보다 우선). 필수 3종 + 선택(marketing) 체크박스, 약관/처리방침
+      웹 링크, 동의 시 `POST /api/user/consents` 기록. **기존 가입자도 로그인 시 동의받음.** (PR #429)
+- [ ] 웹(랜딩/웹앱) 회원가입/로그인에 동일 동의 게이트 (필수/선택 체크박스 + 약관·처리방침 링크)
+- [ ] iOS `AuthViewModel`/로그인 플로우에 동일 동의 게이트 (`consents/status` → 동의 화면 → `POST consents`)
+- [ ] (선택) 가입 화면 `AuthScreen.kt` 자체에 인라인 체크박스 — 현재는 로그인 후 게이트로 일괄 처리
 
 ### B. GPS 제거 + 도시 선택기 (KR/US/JP)
 - [ ] Android `location/WeatherLocationProvider.kt` 제거, `AndroidManifest.xml`의 `ACCESS_FINE/COARSE_LOCATION` 권한 제거
