@@ -189,7 +189,13 @@ class AuthSessionStore(context: Context) {
         )
         val firstQuietWindow = quietWindows.firstOrNull()
             ?: FamilyAlarmQuietWindow(days = legacyDays, start = legacyStart, end = legacyEnd)
+        // Gson 은 Kotlin 기본값을 무시하고 JSON 에 없는 필드를 null 로 남긴다. 백엔드
+        // 응답(특히 Google 로그인)이나 구버전이 저장한 세션에 일부 필드가 빠지면
+        // non-null 프로퍼티가 null 이 되고, copy() 생성자의 null 체크에서 NPE 가 난다.
+        // 누락 가능한 non-null 필드를 모두 null-안전하게 채워 넘긴다.
         return user.copy(
+            id = runCatching { user.id }.getOrNull().orEmpty(),
+            email = runCatching { user.email }.getOrNull().orEmpty(),
             name = runCatching { user.name }.getOrNull().orEmpty(),
             plan = runCatching { user.plan }.getOrNull()?.takeIf { it.isNotBlank() } ?: "free",
             familyAlarmQuietDays = firstQuietWindow.days,
@@ -199,6 +205,8 @@ class AuthSessionStore(context: Context) {
             dynamicPromptSettings = normalizeDynamicPromptSettings(
                 runCatching { user.dynamicPromptSettings }.getOrNull(),
             ),
+            deletionStatus = runCatching { user.deletionStatus }.getOrNull()
+                ?.takeIf { it.isNotBlank() } ?: "active",
         )
     }
 
