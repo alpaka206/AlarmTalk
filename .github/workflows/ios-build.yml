@@ -112,25 +112,13 @@ jobs:
       - name: Resolve newest iPhone simulator
         id: sim
         run: |
-          # 설치된 시뮬레이터 중 iOS 런타임이 가장 높은 사용 가능한 iPhone 의 UDID 를 고른다.
-          # (앱 deploymentTarget 이 높으므로 구형 런타임을 피해야 테스트가 부팅된다.)
-          UDID=$(xcrun simctl list devices available --json | python3 -c '
-import json, sys
-data = json.load(sys.stdin)["devices"]
-best, best_ver = "", (-1, -1)
-for runtime, devices in data.items():
-    if "iOS" not in runtime:
-        continue
-    tail = runtime.split("iOS-")[-1].split("-")
-    try:
-        ver = (int(tail[0]), int(tail[1]) if len(tail) > 1 else 0)
-    except ValueError:
-        continue
-    for d in devices:
-        if d.get("isAvailable") and "iPhone" in d["name"] and ver > best_ver:
-            best_ver, best = ver, d["udid"]
-print(best)
-')
+          # 사용 가능한 iPhone 시뮬레이터 중 가장 최신 런타임의 UDID 를 고른다.
+          # simctl 은 런타임을 오름차순으로 나열하므로 마지막 iPhone 이 최신 iOS 다.
+          # (앱 deploymentTarget 이 높아 구형 런타임을 피해야 테스트가 부팅된다.)
+          UDID=$(xcrun simctl list devices available \
+            | grep -E "iPhone" \
+            | grep -oE "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}" \
+            | tail -1)
           if [ -z "$UDID" ]; then
             echo "No available iPhone simulator found"
             xcrun simctl list devices available
