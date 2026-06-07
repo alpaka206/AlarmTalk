@@ -171,7 +171,8 @@ private struct NicknameEditSheet: View {
                 }
             }
 
-            Button("저장") {
+            // Android `NicknameEditDialog` 처럼 저장 중에는 "저장 중" 으로 표시.
+            Button(isBusy ? "저장 중" : "저장") {
                 submitted = true
                 guard canSave else { return }
                 onSave(trimmedName)

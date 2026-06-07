@@ -119,7 +119,8 @@ enum SocialNotificationTracker {
         return SocialNotificationRequest(
             noteID: alarmID,
             title: trimmedTitle.isEmpty ? "상대가 보낸 알람" : trimmedTitle,
-            body: trimmedTime.isEmpty ? "상대가 내 알람을 맞췄어요." : "\(trimmedTime)에 울려요."
+            // Android `SocialNotificationFactory.kt:35` 과 동일 문구(마침표 없음).
+            body: trimmedTime.isEmpty ? "상대가 내 알람을 설정했어요" : "\(trimmedTime)에 울려요"
         )
     }
 
@@ -139,7 +140,8 @@ enum SocialNotificationTracker {
         return SocialNotificationRequest(
             noteID: note.id,
             title: sender.isEmpty ? "새 메시지" : sender,
-            body: text.isEmpty ? "새 메시지가 도착했어요." : String(text.prefix(80))
+            // Android `SocialNotificationFactory.kt:27` 과 동일 문구(마침표 없음).
+            body: text.isEmpty ? "새 메시지가 도착했어요" : String(text.prefix(80))
         )
     }
 

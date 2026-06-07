@@ -126,7 +126,7 @@ final class SocialFeatureViewModelTests: XCTestCase {
         XCTAssertEqual(plan.requests[0].title, "김규원")
         XCTAssertEqual(plan.requests[0].body, "오늘 점심 맛있게 먹어")
         XCTAssertEqual(plan.requests[1].title, "새 메시지")
-        XCTAssertEqual(plan.requests[1].body, "새 메시지가 도착했어요.")
+        XCTAssertEqual(plan.requests[1].body, "새 메시지가 도착했어요")
         XCTAssertEqual(plan.nextSeenNoteIDs, ["seen", "read", "new-1", "new-2", "new-3", "new-4"])
     }
 
@@ -139,7 +139,7 @@ final class SocialFeatureViewModelTests: XCTestCase {
 
         XCTAssertEqual(request.noteID, "alarm-1")
         XCTAssertEqual(request.title, "김규원님이 보낸 알람")
-        XCTAssertEqual(request.body, "07:30에 울려요.")
+        XCTAssertEqual(request.body, "07:30에 울려요")
     }
 
     private func member(userId: String, email: String?) -> FamilyGroupMember {
