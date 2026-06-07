@@ -11,6 +11,9 @@ struct VoiceAlarmApp: App {
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = VoiceStudioViewModel()
     @StateObject private var socialFeatures = SocialFeatureViewModel()
+    /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
+    /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
+    @StateObject private var versionGate = AppVersionGate()
     /// Phase 2-B5: 알람 dismiss/snooze 시 자동 emit 되는 캐릭터 XP 이벤트 큐.
     /// tokenProvider 는 Keychain 직읽기로 둔다 — 클로저가 self.auth 를 capture
     /// 할 수 없는 init 단계라 안전한 source-of-truth 가 Keychain 이다. flush
@@ -45,10 +48,15 @@ struct VoiceAlarmApp: App {
                     .environmentObject(socialFeatures)
                     .environmentObject(characterEvents)
                     .environmentObject(subscriptions)
+                    .environmentObject(versionGate)
                     .task {
                         // Phase 4-D1: StoreKit 제품 fetch + currentEntitlements 동기화.
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
                         await subscriptions.bootstrap()
+                    }
+                    .task {
+                        // 앱 시작 시 최소지원버전 정책 조회 (로그인 무관). Android `checkAppVersion()`.
+                        await versionGate.checkAppVersion()
                     }
                     .task {
                         // AlarmAppContext: LiveActivity Intent 가 perform() 시점에

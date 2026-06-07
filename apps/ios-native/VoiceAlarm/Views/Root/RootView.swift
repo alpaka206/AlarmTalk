@@ -10,6 +10,7 @@ import SwiftUI
 ///      iOS 권한은 홈/알람/목소리 기능 진입 시점에 요청한다.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var versionGate: AppVersionGate
     @Environment(\.openURL) private var openURL
     @State private var onboardingCompleted: Bool?
 
@@ -19,7 +20,11 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if !auth.isAuthenticated {
+            if versionGate.updateRequired {
+                // 최소지원버전 미만 — 로그인 여부와 무관하게 앱 진입을 막고 업데이트만 유도.
+                // Android `UpdateRequiredScreen` 게이팅과 동등.
+                UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
+            } else if !auth.isAuthenticated {
                 AuthGateView()
             } else if auth.pendingDeletion {
                 // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.

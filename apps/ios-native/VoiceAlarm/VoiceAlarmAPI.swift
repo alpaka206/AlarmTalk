@@ -898,6 +898,14 @@ struct ConsentStatusResponse: Decodable, Equatable {
     var policyVersion: String = "1"
 }
 
+/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:159` `AppVersionResponse`.
+struct AppVersionResponse: Decodable, Equatable {
+    var platform: String = "ios"
+    var minSupportedVersion: Int = 1
+    var latestVersion: Int = 1
+    var storeUrl: String = ""
+}
+
 // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처 + 검색
 
 struct RequestEmailVerificationRequest: Encodable {
@@ -1367,6 +1375,11 @@ final class VoiceAlarmAPI: @unchecked Sendable {
     /// 약관 동의 기록. Android `AuthApi.kt:209`.
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         try await request("user/consents", method: "POST", token: token, body: requestBody)
+    }
+
+    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:215` (`platform` 만 ios).
+    func appVersion(platform: String = "ios") async throws -> AppVersionResponse {
+        try await request("app/version?platform=\(platform)")
     }
 
     func getFamilyGroup(token: String) async throws -> FamilyGroupCurrentResponse {
