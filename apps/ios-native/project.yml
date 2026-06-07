@@ -52,6 +52,9 @@ targets:
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
       storeKitConfiguration: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
+      # `xcodebuild -scheme VoiceAlarm test` 가 단위 테스트를 실행하도록 test action 에 포함.
+      testTargets:
+        - VoiceAlarmTests
   VoiceAlarmWidget:
     type: app-extension
     platform: iOS
