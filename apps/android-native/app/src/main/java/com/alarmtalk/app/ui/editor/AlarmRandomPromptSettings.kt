@@ -543,5 +543,3 @@ internal fun WeatherLocationDialog(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)

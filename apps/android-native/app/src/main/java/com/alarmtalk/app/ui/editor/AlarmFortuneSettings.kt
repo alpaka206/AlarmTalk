@@ -86,6 +86,7 @@ import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun FortuneInfoDialog(
     gender: String,
