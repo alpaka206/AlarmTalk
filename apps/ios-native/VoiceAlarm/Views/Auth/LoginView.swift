@@ -81,9 +81,10 @@ struct LoginView: View {
                     ModePicker(mode: $mode, onChange: handleModeChange)
                         .padding(.top, 6)
 
+                    // Android `AuthScreen.kt:111` 과 동일한 문구.
                     Text(mode == .login
-                         ? "좋아하는 목소리 알람을 다시 불러오세요."
-                         : "좋아하는 목소리 알람을 만들 계정을 준비해요.")
+                         ? "좋아하는 목소리 알람을 다시 불러올게요."
+                         : "목소리 알람을 만들 계정을 준비해요.")
                         .font(theme.typography.bodyMedium)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
 

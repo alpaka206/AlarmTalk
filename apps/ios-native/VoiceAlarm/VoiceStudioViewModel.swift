@@ -586,7 +586,8 @@ final class VoiceStudioViewModel: ObservableObject {
         do {
             let profile = try await api.promoteDraftVoice(profileId: profileId, token: token)
             selectedProfileID = profile.id
-            statusMessage = "목소리를 등록했어요."
+            // Android `VoiceProfileManagementPanel.kt:647` 과 동일 문구.
+            statusMessage = "목소리로 등록했어요"
             await refresh(session: session, force: true, successMessage: nil)
             return profile
         } catch {

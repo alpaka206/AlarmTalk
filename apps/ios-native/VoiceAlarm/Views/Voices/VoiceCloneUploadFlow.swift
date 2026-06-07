@@ -399,7 +399,7 @@ struct VoiceCloneUploadFlow: View {
             }
             .frame(height: 8)
 
-            Text(sourceMode == .record ? "1분 이상 2분 이내로 녹음해 주세요. 1분 30초를 권장해요." : "1분 이상 2분 이내 구간만 사용할 수 있어요.")
+            Text(sourceMode == .record ? "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요." : "1분 이상 2분 이하 구간만 사용할 수 있어요.")
                 .font(.footnote)
                 .foregroundStyle(VoiceAlarmTheme.textSecondary)
             if !isInValidRange && activeDurationMs > 0 {

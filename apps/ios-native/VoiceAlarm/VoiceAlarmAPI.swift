@@ -160,6 +160,13 @@ struct AuthUser: Codable, Equatable, Identifiable {
     /// legacy 세션(키 없음)도 디코드 가능하도록 옵셔널.
     var appleUserId: String? = nil
     var dynamicPromptSettings: DynamicPromptSettings? = nil
+    /// 계정 탈퇴 유예 상태. `"active"` | `"pending_deletion"`.
+    /// 백엔드 `/auth/me` 가 `deletion_status` 키로 전달한다. legacy 세션(키 없음)
+    /// 호환을 위해 기본값 `"active"`. Android `AuthApi.kt:53`.
+    var deletionStatus: String = "active"
+
+    /// 30일 유예 탈퇴 진행 중인지. RootView 게이팅에 사용. Android `pendingDeletion`.
+    var isPendingDeletion: Bool { deletionStatus == "pending_deletion" }
 
     init(
         id: String,
@@ -172,7 +179,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
         familyAlarmQuietEnd: String? = nil,
         familyAlarmQuietWindows: [FamilyAlarmQuietWindow]? = nil,
         appleUserId: String? = nil,
-        dynamicPromptSettings: DynamicPromptSettings? = nil
+        dynamicPromptSettings: DynamicPromptSettings? = nil,
+        deletionStatus: String = "active"
     ) {
         let legacyDays = Self.normalizedQuietDays(familyAlarmQuietDays)
         let legacyStart = Self.normalizedQuietTime(familyAlarmQuietStart, fallback: "09:00")
@@ -192,6 +200,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.familyAlarmQuietWindows = quietWindows
         self.appleUserId = Self.clean(appleUserId)
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
+        let trimmedDeletion = deletionStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.deletionStatus = trimmedDeletion.isEmpty ? "active" : trimmedDeletion
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -206,6 +216,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         case familyAlarmQuietWindows
         case appleUserId
         case dynamicPromptSettings
+        case deletionStatus
     }
 
     init(from decoder: Decoder) throws {
@@ -221,7 +232,8 @@ struct AuthUser: Codable, Equatable, Identifiable {
             familyAlarmQuietEnd: try container.decodeIfPresent(String.self, forKey: .familyAlarmQuietEnd),
             familyAlarmQuietWindows: try container.decodeIfPresent([FamilyAlarmQuietWindow].self, forKey: .familyAlarmQuietWindows),
             appleUserId: try container.decodeIfPresent(String.self, forKey: .appleUserId),
-            dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings)
+            dynamicPromptSettings: try container.decodeIfPresent(DynamicPromptSettings.self, forKey: .dynamicPromptSettings),
+            deletionStatus: try container.decodeIfPresent(String.self, forKey: .deletionStatus) ?? "active"
         )
     }
 
@@ -846,6 +858,54 @@ struct DeleteAccountResponse: Decodable, Equatable {
     var success: Bool
 }
 
+/// 30일 유예 탈퇴 신청 응답. Android `AuthApi.kt:125` `AccountDeletionResponse`.
+struct AccountDeletionResponse: Decodable, Equatable {
+    var success: Bool = false
+    var status: String = "pending_deletion"
+    var purgeAt: String? = nil
+    var graceDays: Int = 30
+}
+
+/// 유예 탈퇴 철회(복구) 응답. Android `AuthApi.kt:132` `CancelDeletionResponse`.
+struct CancelDeletionResponse: Decodable, Equatable {
+    var success: Bool = false
+    var status: String = "active"
+}
+
+/// 약관 동의 항목 1건. Android `AuthApi.kt:137` `ConsentItemRequest`.
+struct ConsentItemRequest: Encodable, Equatable {
+    var type: String
+    var agreed: Bool
+    var version: String? = nil
+}
+
+/// 약관 동의 기록 요청. Android `AuthApi.kt:143` `RecordConsentsRequest`.
+struct RecordConsentsRequest: Encodable, Equatable {
+    var consents: [ConsentItemRequest]
+}
+
+/// 약관 동의 기록 응답. Android `AuthApi.kt:147` `RecordConsentsResponse`.
+struct RecordConsentsResponse: Decodable, Equatable {
+    var success: Bool = false
+    var recorded: Int = 0
+}
+
+/// 약관 동의 필요 여부 응답. Android `AuthApi.kt:152` `ConsentStatusResponse`.
+struct ConsentStatusResponse: Decodable, Equatable {
+    var needsConsent: Bool = false
+    var required: [String] = []
+    var missing: [String] = []
+    var policyVersion: String = "1"
+}
+
+/// 앱 최소지원버전 정책 응답. Android `AuthApi.kt:159` `AppVersionResponse`.
+struct AppVersionResponse: Decodable, Equatable {
+    var platform: String = "ios"
+    var minSupportedVersion: Int = 1
+    var latestVersion: Int = 1
+    var storeUrl: String = ""
+}
+
 // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처 + 검색
 
 struct RequestEmailVerificationRequest: Encodable {
@@ -1295,6 +1355,31 @@ final class VoiceAlarmAPI: @unchecked Sendable {
 
     func deleteAccount(token: String) async throws -> DeleteAccountResponse {
         try await request("user/me", method: "DELETE", token: token)
+    }
+
+    /// 30일 유예 탈퇴 신청. 즉시 삭제 대신 유예 상태로 전환. Android `AuthApi.kt:197`.
+    func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse {
+        try await request("user/me/deletion", method: "POST", token: token)
+    }
+
+    /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:202`.
+    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
+        try await request("user/me/deletion", method: "DELETE", token: token)
+    }
+
+    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:206`.
+    func consentStatus(token: String) async throws -> ConsentStatusResponse {
+        try await request("user/consents/status", token: token)
+    }
+
+    /// 약관 동의 기록. Android `AuthApi.kt:209`.
+    func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
+        try await request("user/consents", method: "POST", token: token, body: requestBody)
+    }
+
+    /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:215` (`platform` 만 ios).
+    func appVersion(platform: String = "ios") async throws -> AppVersionResponse {
+        try await request("app/version?platform=\(platform)")
     }
 
     func getFamilyGroup(token: String) async throws -> FamilyGroupCurrentResponse {

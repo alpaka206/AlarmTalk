@@ -171,7 +171,8 @@ private struct NicknameEditSheet: View {
                 }
             }
 
-            Button("저장") {
+            // Android `NicknameEditDialog` 처럼 저장 중에는 "저장 중" 으로 표시.
+            Button(isBusy ? "저장 중" : "저장") {
                 submitted = true
                 guard canSave else { return }
                 onSave(trimmedName)
@@ -195,14 +196,12 @@ private struct NicknameEditSheet: View {
 struct DeleteAccountPanel: View {
     @EnvironmentObject private var auth: AuthViewModel
     let onDeleted: () -> Void
+    @State private var confirming = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button(role: .destructive) {
-                Task {
-                    await auth.deleteAccount()
-                    onDeleted()
-                }
+                confirming = true
             } label: {
                 HStack {
                     Text("회원 탈퇴")
@@ -215,8 +214,24 @@ struct DeleteAccountPanel: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.plain)
+            .disabled(auth.isBusy)
         }
         .settingsCard(title: nil)
+        // Android `DeleteAccountDialog` (HomeComponents.kt:480) 와 동일한 안내 + 30일 유예 탈퇴.
+        .alert("회원 탈퇴", isPresented: $confirming) {
+            Button("탈퇴", role: .destructive) {
+                Task {
+                    await auth.requestAccountDeletion()
+                    onDeleted()
+                }
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text(
+                "정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 음성, 메시지 등 모든 데이터가 "
+                    + "영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요."
+            )
+        }
     }
 }
 

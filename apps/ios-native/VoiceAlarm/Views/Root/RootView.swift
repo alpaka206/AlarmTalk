@@ -10,12 +10,41 @@ import SwiftUI
 ///      iOS 권한은 홈/알람/목소리 기능 진입 시점에 요청한다.
 struct RootView: View {
     @EnvironmentObject private var auth: AuthViewModel
+    @EnvironmentObject private var versionGate: AppVersionGate
+    @Environment(\.openURL) private var openURL
     @State private var onboardingCompleted: Bool?
+
+    // 약관/개인정보 처리방침 외부 링크. Android `VoiceAlarmApp.kt:539`.
+    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
+    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
 
     var body: some View {
         Group {
-            if !auth.isAuthenticated {
+            if versionGate.updateRequired {
+                // 최소지원버전 미만 — 로그인 여부와 무관하게 앱 진입을 막고 업데이트만 유도.
+                // Android `UpdateRequiredScreen` 게이팅과 동등.
+                UpdateRequiredView(onUpdate: { openURL(versionGate.storeURL) })
+            } else if !auth.isAuthenticated {
                 AuthGateView()
+            } else if auth.pendingDeletion {
+                // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.
+                // Android `AccountPendingDeletionScreen` 게이팅과 동등.
+                AccountPendingDeletionView(
+                    busy: auth.isBusy,
+                    onRecover: { Task { await auth.cancelAccountDeletion() } },
+                    onLogout: { auth.signOut() }
+                )
+            } else if auth.needsConsent {
+                // 필수 약관 미동의 — 동의 전까지 앱 진입을 막는다.
+                // Android `ConsentScreen` 게이팅과 동등.
+                ConsentView(
+                    busy: auth.isBusy,
+                    onAgree: { marketingAgreed in
+                        Task { await auth.submitConsents(marketingAgreed: marketingAgreed) }
+                    },
+                    onOpenTerms: { openURL(Self.termsURL) },
+                    onOpenPrivacy: { openURL(Self.privacyURL) }
+                )
             } else if onboardingCompleted == nil {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
