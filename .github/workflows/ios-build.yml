@@ -142,6 +142,7 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=YES \
+            GENERATE_INFOPLIST_FILE=YES \
             test 2>&1 | tee xcodebuild-test.log
 
       - name: Upload test log
