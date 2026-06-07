@@ -309,9 +309,9 @@ internal fun FortuneInfoDialog(
     }
 }
 
-private const val FortuneGenderMale = "남성"
-private const val FortuneGenderFemale = "여성"
-private const val FortuneBirthTimeUnknown = "시간 모름"
+internal const val FortuneGenderMale = "남성"
+internal const val FortuneGenderFemale = "여성"
+internal const val FortuneBirthTimeUnknown = "시간 모름"
 
 internal val FortuneBirthTimeChoices = listOf(
     FortuneBirthTimeUnknown to "시간 모름",

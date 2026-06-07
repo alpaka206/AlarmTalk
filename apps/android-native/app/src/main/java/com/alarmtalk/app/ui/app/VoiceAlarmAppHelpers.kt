@@ -143,21 +143,21 @@ internal fun NavHostController.popBackStackOrHome() {
     }
 }
 
-private suspend fun signOutGoogleAccount(context: Context) {
+internal suspend fun signOutGoogleAccount(context: Context) {
     GoogleSignIn
         .getClient(context.applicationContext, buildGoogleSignInOptions())
         .signOut()
         .awaitCompletion()
 }
 
-private suspend fun revokeGoogleAccountAccess(context: Context) {
+internal suspend fun revokeGoogleAccountAccess(context: Context) {
     GoogleSignIn
         .getClient(context.applicationContext, buildGoogleSignInOptions())
         .revokeAccess()
         .awaitCompletion()
 }
 
-private suspend fun Task<Void>.awaitCompletion() {
+internal suspend fun Task<Void>.awaitCompletion() {
     suspendCancellableCoroutine { continuation ->
         addOnCompleteListener { task ->
             if (!continuation.isActive) return@addOnCompleteListener
@@ -174,7 +174,7 @@ private suspend fun Task<Void>.awaitCompletion() {
     }
 }
 
-private sealed interface AuthRoute {
+internal sealed interface AuthRoute {
     data object Landing : AuthRoute
     data class Auth(val mode: AuthMode) : AuthRoute
 }

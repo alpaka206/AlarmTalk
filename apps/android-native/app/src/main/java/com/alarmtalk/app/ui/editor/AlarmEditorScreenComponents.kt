@@ -519,7 +519,7 @@ internal fun FamilyAlarmTargetStatus(
     MutedText("받지 않는 시간: $quietLabel")
 }
 
-private const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
+internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
