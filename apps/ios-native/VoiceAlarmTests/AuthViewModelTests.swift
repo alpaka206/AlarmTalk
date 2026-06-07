@@ -402,6 +402,66 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertNil(snapshotStore.read(userID: "user-1").subscriptionResponse)
         XCTAssertEqual(snapshotStore.read(userID: "user-2").subscriptionResponse?.plan?.key, "personal")
     }
+
+    func test_requestAccountDeletion_signsOutAndClearsSnapshot() async {
+        let suiteName = "AuthViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let snapshotStore = AccessSnapshotStore(defaults: defaults)
+        snapshotStore.updateSubscription(userID: "user-1", response: subscription(planKey: "family"))
+
+        let api = MockAuthAPI()
+        api.requestAccountDeletionResult = .success(AccountDeletionResponse(success: true))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: snapshotStore
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.requestAccountDeletion()
+
+        XCTAssertNil(vm.session)
+        XCTAssertEqual(api.requestAccountDeletionCallCount, 1)
+        XCTAssertFalse(vm.pendingDeletion)
+        XCTAssertNil(snapshotStore.read(userID: "user-1").subscriptionResponse)
+    }
+
+    func test_cancelAccountDeletion_clearsPendingFlag() async {
+        let api = MockAuthAPI()
+        api.cancelAccountDeletionResult = .success(CancelDeletionResponse(success: true, status: "active"))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "cancel-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.cancelAccountDeletion()
+
+        XCTAssertEqual(api.cancelAccountDeletionCallCount, 1)
+        XCTAssertFalse(vm.pendingDeletion)
+        XCTAssertNotNil(vm.session)
+    }
+
+    func test_refreshUser_setsPendingDeletion_whenStatusPending() async {
+        let api = MockAuthAPI()
+        api.meResult = .success(
+            AuthUser(id: "user-1", email: "a@b.com", name: "A", plan: "free", deletionStatus: "pending_deletion")
+        )
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "pending-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.refreshUser()
+
+        XCTAssertTrue(vm.pendingDeletion)
+    }
 }
 
 // MARK: - Mocks
@@ -429,10 +489,14 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         )
     )
     var deleteAccountResult: Result<DeleteAccountResponse, Error> = .success(DeleteAccountResponse(success: true))
+    var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
+    var cancelAccountDeletionResult: Result<CancelDeletionResponse, Error> = .success(CancelDeletionResponse(success: true))
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
     private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
     private(set) var deleteAccountCallCount = 0
+    private(set) var requestAccountDeletionCallCount = 0
+    private(set) var cancelAccountDeletionCallCount = 0
 
     func me(token: String) async throws -> AuthUser {
         meCallCount += 1
@@ -460,6 +524,26 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func deleteAccount(token: String) async throws -> DeleteAccountResponse {
         deleteAccountCallCount += 1
         switch deleteAccountResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse {
+        requestAccountDeletionCallCount += 1
+        switch requestAccountDeletionResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
+        cancelAccountDeletionCallCount += 1
+        switch cancelAccountDeletionResult {
         case .success(let response):
             return response
         case .failure(let error):

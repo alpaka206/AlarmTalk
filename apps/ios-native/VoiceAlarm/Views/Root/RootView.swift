@@ -16,6 +16,14 @@ struct RootView: View {
         Group {
             if !auth.isAuthenticated {
                 AuthGateView()
+            } else if auth.pendingDeletion {
+                // 탈퇴 유예 상태 — 복구하거나 로그아웃하기 전까지 앱 진입을 막는다.
+                // Android `AccountPendingDeletionScreen` 게이팅과 동등.
+                AccountPendingDeletionView(
+                    busy: auth.isBusy,
+                    onRecover: { Task { await auth.cancelAccountDeletion() } },
+                    onLogout: { auth.signOut() }
+                )
             } else if onboardingCompleted == nil {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
