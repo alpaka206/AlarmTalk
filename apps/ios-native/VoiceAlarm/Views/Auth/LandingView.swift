@@ -283,7 +283,8 @@ private struct LandingAuthPanel: View {
                 Text("시작하기")
                     .font(theme.typography.titleMedium)
                     .foregroundStyle(theme.palette.onSurface)
-                Text("목소리 알람을 만들려면 로그인이 필요해요.")
+                // Android `LandingScreen.kt:340` 과 동일한 문구.
+                Text("로그인하면 목소리 알람을 만들 수 있어요.")
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
                     .multilineTextAlignment(.leading)

@@ -46,12 +46,13 @@ enum HelperFormatters {
     static func homeGreeting(now: Date = Date(), calendar: Calendar = .current) -> (top: String, bottom: String) {
         let hour = calendar.component(.hour, from: now)
         switch hour {
+        // Android `HomeComponents.kt:53` HomeHeader 와 동일한 시각대별 인사말.
         case ..<6:
             return ("좋아하는 목소리로", "깨워드릴게요")
         case ..<12:
-            return ("오늘 아침,", "어떤 목소리로 깨어났나요?")
+            return ("오늘 아침,", "잘 일어나셨나요?")
         case ..<17:
-            return ("내일의 목소리 알람을", "준비해요")
+            return ("내일 알람을", "준비해요")
         case ..<21:
             return ("서로의 목소리로", "아침을 예약해요")
         default:
@@ -59,23 +60,39 @@ enum HelperFormatters {
         }
     }
 
-    /// 가족 알람 quiet schedule 라벨. 비어있으면 기본값(평일 09:00-18:30) 반환.
+    /// 가족 알람 quiet schedule 라벨. Android `quietScheduleLabel` (SettingsScreen.kt:746) 1:1.
+    /// 앞 2개 윈도우만 표시하고 나머지는 "외 N개" 로 축약한다. 비어 있으면 "없음".
     static func quietScheduleLabel(_ windows: [FamilyAlarmQuietWindow]?) -> String {
-        guard let first = windows?.first else {
-            return "평일 09:00-18:30"
-        }
-        let days = first.days.map { day -> String in
-            switch day {
-            case 0, 1: return "일"
-            case 2: return "월"
-            case 3: return "화"
-            case 4: return "수"
-            case 5: return "목"
-            case 6: return "금"
-            default: return "토"
-            }
-        }.joined()
-        return "\(days) \(first.start)-\(first.end)"
+        let list = windows ?? []
+        if list.isEmpty { return "없음" }
+        let visible = list.prefix(2).map(quietWindowLabel).joined(separator: " · ")
+        let hidden = list.count - 2
+        return hidden > 0 ? "\(visible) 외 \(hidden)개" : visible
     }
 
+    private static func quietWindowLabel(_ window: FamilyAlarmQuietWindow) -> String {
+        "\(quietDaysLabel(window.days)) \(formatQuietTime(window.start)) ~ \(formatQuietTime(window.end))"
+    }
+
+    /// "07:00" → "7:00" (시각 앞자리 0 제거, 분은 2자리 유지). Android `formatQuietTime`.
+    private static func formatQuietTime(_ value: String) -> String {
+        let parts = value.split(separator: ":")
+        guard let hour = parts.first.flatMap({ Int($0) }),
+              parts.count > 1, let minute = Int(parts[1]) else { return value }
+        return String(format: "%d:%02d", hour, minute)
+    }
+
+    /// 요일 묶음 라벨. 0=일 … 6=토. Android `quietDaysLabel` 와 동일한 스마트 그룹핑.
+    private static func quietDaysLabel(_ days: [Int]) -> String {
+        let sorted = Array(Set(days)).sorted()
+        switch sorted {
+        case []: return "없음"
+        case [1, 2, 3, 4, 5]: return "평일"
+        case [0, 6]: return "주말"
+        case [0, 1, 2, 3, 4, 5, 6]: return "매일"
+        default:
+            let labels = ["일", "월", "화", "수", "목", "금", "토"]
+            return sorted.map { labels[max(0, min(6, $0))] }.joined(separator: ",")
+        }
+    }
 }
