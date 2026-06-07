@@ -165,6 +165,12 @@ enum AlarmSoundStaging {
         guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {
             throw AlarmSoundStagingError.writeFailed("AVAssetExportSession init failed.")
         }
+        // 손상/비오디오 입력에서는 .caf 가 지원되지 않아 outputFileType 설정 시
+        // ObjC 예외(NSInvalidArgumentException)가 던져진다. Swift `try?` 로 못 잡으므로
+        // 지원 여부를 먼저 확인해 미지원이면 graceful 하게 throw → 호출부가 in-app 폴백.
+        guard exporter.supportedFileTypes.contains(.caf) else {
+            throw AlarmSoundStagingError.writeFailed("Output type .caf unsupported for source.")
+        }
         exporter.outputFileType = .caf
         exporter.outputURL = dst
 
