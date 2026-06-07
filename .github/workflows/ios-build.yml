@@ -130,25 +130,18 @@ jobs:
       - name: Run unit tests
         run: |
           set -o pipefail
-          # 아래 -skip-testing 목록은 이 PR 이전부터 실패하던(CI 처음 도입으로 드러난)
-          # 테스트들로, 본 변경과 무관하다. 별도로 추적/수정 예정이라 게이트에서 제외한다.
-          #  - AuthViewModelTests(refreshUser): CI 시뮬레이터에 코드서명/Keychain 엔타이틀먼트가
-          #    없어 KeychainStore.saveSession 이 errSecMissingEntitlement 로 실패(개발 시뮬레이터/
-          #    실기기에서는 통과).
-          #  - AlarmSoundResolverTests: 오디오 staging 이 실행 환경(파일/AVAsset)에 의존.
-          #  - LocalAlarmRecordCodableTests / TimeWheelPickerLogicTests: 기존부터 어긋난 단언.
+          # 시뮬레이터 ad-hoc 서명("-")으로 빌드해 앱에 Keychain / App Group 엔타이틀먼트가
+          # 부여되도록 한다. (CODE_SIGNING_ALLOWED=NO 면 엔타이틀먼트가 없어
+          # KeychainStore.saveSession / App Group 컨테이너 접근이 실패한다.)
           xcodebuild \
             -project VoiceAlarmNative.xcodeproj \
             -scheme VoiceAlarm \
             -configuration Debug \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -skipPackagePluginValidation \
-            -skip-testing:VoiceAlarmTests/AuthViewModelTests/test_refreshUser_setsPendingDeletion_whenStatusPending \
-            -skip-testing:VoiceAlarmTests/AuthViewModelTests/test_refreshUser_success_clearsLastNetworkError_andPreservesAppleUserId \
-            -skip-testing:VoiceAlarmTests/AlarmSoundResolverTests/test_resolve_voiceOnly_withCachedAudioWithinLimit_attemptsStagingOrFallsBack \
-            -skip-testing:VoiceAlarmTests/LocalAlarmRecordCodableTests/test_legacy17FieldJSONCompatibility \
-            -skip-testing:VoiceAlarmTests/TimeWheelPickerLogicTests/test_combine_outOfRangeDisplayIsClamped \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             test 2>&1 | tee xcodebuild-test.log
 
       - name: Upload test log

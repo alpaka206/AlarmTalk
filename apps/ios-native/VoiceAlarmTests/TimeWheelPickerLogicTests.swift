@@ -60,8 +60,10 @@ final class TimeWheelPickerLogicTests: XCTestCase {
 
     func test_combine_outOfRangeDisplayIsClamped() {
         // 휠 wrap 이 실수로 0 이나 13 을 흘려보내도 안전한 값으로 클램프되어야 한다.
+        // combine 은 displayHour 를 1...12 로 clamp 한다: 0→1, 13→12.
+        // 13(PM) → clamp 12 → base 0 → +12 = 12(정오). (combine 구현과 일치.)
         XCTAssertEqual(TimeWheelMath.combine(displayHour: 0, isPM: false), 1)
-        XCTAssertEqual(TimeWheelMath.combine(displayHour: 13, isPM: true), 0)
+        XCTAssertEqual(TimeWheelMath.combine(displayHour: 13, isPM: true), 12)
     }
 
     // MARK: - Round trip

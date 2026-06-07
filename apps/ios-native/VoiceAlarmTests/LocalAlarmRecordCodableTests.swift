@@ -139,8 +139,10 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertEqual(decoded.origin, AlarmOrigin.localOwned.rawValue)
         // fireAtMillis 가 JSON 에 없으므로 fallback 으로 채워졌어야.
         XCTAssertGreaterThan(decoded.fireAtMillis, 0)
-        // updatedAt Date(700000000) → millis 700_000_000_000.
-        XCTAssertEqual(decoded.updatedAtMillis, 700_000_000_000)
+        // legacy "updatedAt" 는 Swift Date 기본 인코딩(.deferredToDate = 2001 기준 초)으로
+        // 저장됐다. JSONDecoder 기본 전략도 동일하게 timeIntervalSinceReferenceDate 로 읽으므로
+        // 700000000 초(2001 기준) → unix 1678307200 초 → 1678307200000 ms.
+        XCTAssertEqual(decoded.updatedAtMillis, 1_678_307_200_000)
     }
 
     func test_alarmKitID_decodesUUIDObjectFromLegacyJSON() throws {
