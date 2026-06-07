@@ -872,6 +872,32 @@ struct CancelDeletionResponse: Decodable, Equatable {
     var status: String = "active"
 }
 
+/// 약관 동의 항목 1건. Android `AuthApi.kt:137` `ConsentItemRequest`.
+struct ConsentItemRequest: Encodable, Equatable {
+    var type: String
+    var agreed: Bool
+    var version: String? = nil
+}
+
+/// 약관 동의 기록 요청. Android `AuthApi.kt:143` `RecordConsentsRequest`.
+struct RecordConsentsRequest: Encodable, Equatable {
+    var consents: [ConsentItemRequest]
+}
+
+/// 약관 동의 기록 응답. Android `AuthApi.kt:147` `RecordConsentsResponse`.
+struct RecordConsentsResponse: Decodable, Equatable {
+    var success: Bool = false
+    var recorded: Int = 0
+}
+
+/// 약관 동의 필요 여부 응답. Android `AuthApi.kt:152` `ConsentStatusResponse`.
+struct ConsentStatusResponse: Decodable, Equatable {
+    var needsConsent: Bool = false
+    var required: [String] = []
+    var missing: [String] = []
+    var policyVersion: String = "1"
+}
+
 // MARK: - Phase 3-C3: 이메일/비밀번호 + 인증코드 + 멤버/Family 액션 + 바우처 + 검색
 
 struct RequestEmailVerificationRequest: Encodable {
@@ -1331,6 +1357,16 @@ final class VoiceAlarmAPI: @unchecked Sendable {
     /// 유예 기간 내 탈퇴 철회 → 계정 복구. Android `AuthApi.kt:202`.
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
         try await request("user/me/deletion", method: "DELETE", token: token)
+    }
+
+    /// 필수 약관 동의 필요 여부 조회. Android `AuthApi.kt:206`.
+    func consentStatus(token: String) async throws -> ConsentStatusResponse {
+        try await request("user/consents/status", token: token)
+    }
+
+    /// 약관 동의 기록. Android `AuthApi.kt:209`.
+    func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
+        try await request("user/consents", method: "POST", token: token, body: requestBody)
     }
 
     func getFamilyGroup(token: String) async throws -> FamilyGroupCurrentResponse {

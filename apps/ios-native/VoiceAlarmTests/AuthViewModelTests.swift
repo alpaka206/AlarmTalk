@@ -462,6 +462,42 @@ final class AuthViewModelTests: XCTestCase {
 
         XCTAssertTrue(vm.pendingDeletion)
     }
+
+    func test_checkConsentStatus_setsNeedsConsent() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: true, required: ["terms"], missing: ["terms"]))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        await vm.checkConsentStatus()
+
+        XCTAssertTrue(vm.needsConsent)
+        XCTAssertEqual(api.consentStatusCallCount, 1)
+    }
+
+    func test_submitConsents_recordsAllRequiredAndMarketing() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: true))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent2-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+        await vm.checkConsentStatus()
+        XCTAssertTrue(vm.needsConsent)
+
+        await vm.submitConsents(marketingAgreed: true)
+
+        XCTAssertFalse(vm.needsConsent)
+        XCTAssertEqual(api.recordConsentsCallCount, 1)
+        let consents = api.lastRecordConsentsRequest?.consents ?? []
+        XCTAssertEqual(Set(consents.filter { $0.agreed }.map { $0.type }), ["terms", "privacy", "age14", "marketing"])
+    }
 }
 
 // MARK: - Mocks
@@ -491,12 +527,17 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     var deleteAccountResult: Result<DeleteAccountResponse, Error> = .success(DeleteAccountResponse(success: true))
     var requestAccountDeletionResult: Result<AccountDeletionResponse, Error> = .success(AccountDeletionResponse(success: true))
     var cancelAccountDeletionResult: Result<CancelDeletionResponse, Error> = .success(CancelDeletionResponse(success: true))
+    var consentStatusResult: Result<ConsentStatusResponse, Error> = .success(ConsentStatusResponse(needsConsent: false))
+    var recordConsentsResult: Result<RecordConsentsResponse, Error> = .success(RecordConsentsResponse(success: true, recorded: 4))
     private(set) var meCallCount = 0
     private(set) var updateProfileCallCount = 0
     private(set) var lastUpdateProfileRequest: UpdateProfileRequest?
     private(set) var deleteAccountCallCount = 0
     private(set) var requestAccountDeletionCallCount = 0
     private(set) var cancelAccountDeletionCallCount = 0
+    private(set) var consentStatusCallCount = 0
+    private(set) var recordConsentsCallCount = 0
+    private(set) var lastRecordConsentsRequest: RecordConsentsRequest?
 
     func me(token: String) async throws -> AuthUser {
         meCallCount += 1
@@ -544,6 +585,27 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse {
         cancelAccountDeletionCallCount += 1
         switch cancelAccountDeletionResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func consentStatus(token: String) async throws -> ConsentStatusResponse {
+        consentStatusCallCount += 1
+        switch consentStatusResult {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
+        recordConsentsCallCount += 1
+        lastRecordConsentsRequest = requestBody
+        switch recordConsentsResult {
         case .success(let response):
             return response
         case .failure(let error):

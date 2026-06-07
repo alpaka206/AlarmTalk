@@ -12,6 +12,8 @@ protocol AuthAPIProviding: AnyObject, Sendable {
     func deleteAccount(token: String) async throws -> DeleteAccountResponse
     func requestAccountDeletion(token: String) async throws -> AccountDeletionResponse
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse
+    func consentStatus(token: String) async throws -> ConsentStatusResponse
+    func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse
 }
 
 extension VoiceAlarmAPI: AuthAPIProviding {}
@@ -50,6 +52,9 @@ final class AuthViewModel: ObservableObject {
     /// `/auth/me` 응답의 `deletion_status == "pending_deletion"` 에서 설정된다.
     /// Android `MainViewModel.pendingDeletion`.
     @Published private(set) var pendingDeletion = false
+    /// 필수 약관 동의가 필요한지. true 면 RootView 가 동의 화면으로 게이팅한다.
+    /// `/user/consents/status` 의 `needs_consent` 에서 설정된다. Android `MainViewModel.needsConsent`.
+    @Published private(set) var needsConsent = false
 
     private let api: AuthAPIProviding
     private let appleCredentialProvider: AppleCredentialStateProviding
@@ -109,6 +114,7 @@ final class AuthViewModel: ObservableObject {
         guard let saved = KeychainStore.readSession() else { return }
         session = saved
         await refreshUser()
+        await checkConsentStatus()
     }
 
     func handleAppleAuthorization(_ authorization: ASAuthorization, rawNonce: String?) async {
@@ -170,6 +176,8 @@ final class AuthViewModel: ObservableObject {
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
+            // 필수 약관 미동의면 동의 화면으로 게이팅.
+            await checkConsentStatus()
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
         }
@@ -227,6 +235,8 @@ final class AuthViewModel: ObservableObject {
             lastNetworkError = nil
             // 탈퇴 유예 상태 점검 — 유예 중인 계정이 다시 로그인하면 복구 화면을 띄운다.
             await refreshUser()
+            // 필수 약관 미동의면 동의 화면으로 게이팅.
+            await checkConsentStatus()
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
         }
@@ -254,6 +264,8 @@ final class AuthViewModel: ObservableObject {
             session = nextSession
             statusMessage = "환영해요! 계정이 만들어졌어요."
             lastNetworkError = nil
+            // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
+            await checkConsentStatus()
         } catch {
             statusMessage = Self.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
         }
@@ -478,10 +490,53 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    /// 로그인 후 필수 약관 동의 여부를 서버에 확인한다. 미동의면 `needsConsent=true` 로
+    /// 두어 RootView 가 동의 화면을 띄운다. 네트워크 실패 시 앱 진입을 막지 않는다.
+    /// Android `MainViewModel.checkConsentStatus()`.
+    func checkConsentStatus() async {
+        guard let token else { return }
+        do {
+            let status = try await api.consentStatus(token: token)
+            needsConsent = status.needsConsent
+        } catch {
+            // 동의 상태 확인 실패 시 앱 진입을 막지 않는다(보수적으로 false).
+            needsConsent = false
+        }
+    }
+
+    /// 동의 화면 제출. 필수(terms/privacy/age14)는 항상 동의로, marketing 은 사용자 선택값으로
+    /// 기록한다. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
+    func submitConsents(marketingAgreed: Bool) async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await api.recordConsents(
+                RecordConsentsRequest(consents: [
+                    ConsentItemRequest(type: "terms", agreed: true),
+                    ConsentItemRequest(type: "privacy", agreed: true),
+                    ConsentItemRequest(type: "age14", agreed: true),
+                    ConsentItemRequest(type: "marketing", agreed: marketingAgreed),
+                ]),
+                token: token
+            )
+            needsConsent = false
+            statusMessage = "동의가 완료됐어요"
+        } catch {
+            statusMessage = Self.userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+        }
+    }
+
     func signOut(message: String? = nil) {
         KeychainStore.deleteSession()
         session = nil
         pendingDeletion = false
+        needsConsent = false
         statusMessage = message
         lastNetworkError = nil
     }
