@@ -71,7 +71,7 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
         ttsMessageId: String? = nil
     ) -> LocalAlarmRecord {
         let resolvedPlayMode = audioCacheKey == nil ? playMode : .voiceOnly
-        LocalAlarmRecord(
+        return LocalAlarmRecord(
             id: id,
             label: id,
             hour: 7,
