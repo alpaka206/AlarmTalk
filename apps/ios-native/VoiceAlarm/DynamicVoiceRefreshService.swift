@@ -63,11 +63,11 @@ final class DynamicVoiceRefreshService {
                         randomContext: alarm.voiceRandomContext ?? RandomPromptContext.defaultContext.rawValue,
                         alarmHour: alarm.hour,
                         alarmMinute: alarm.minute,
-                        weatherCountry: Self.nonEmpty(alarm.voiceWeatherCountry),
-                        weatherCity: Self.nonEmpty(alarm.voiceWeatherCity),
-                        fortuneGender: Self.nonEmpty(alarm.voiceFortuneGender),
-                        fortuneBirthDate: Self.nonEmpty(alarm.voiceFortuneBirthDate),
-                        fortuneBirthTime: Self.nonEmpty(alarm.voiceFortuneBirthTime)
+                        weatherCountry: (alarm.voiceWeatherCountry).nilIfBlank,
+                        weatherCity: (alarm.voiceWeatherCity).nilIfBlank,
+                        fortuneGender: (alarm.voiceFortuneGender).nilIfBlank,
+                        fortuneBirthDate: (alarm.voiceFortuneBirthDate).nilIfBlank,
+                        fortuneBirthTime: (alarm.voiceFortuneBirthTime).nilIfBlank
                     ),
                     token: token
                 )
@@ -145,8 +145,4 @@ final class DynamicVoiceRefreshService {
         }
     }
 
-    private static func nonEmpty(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }

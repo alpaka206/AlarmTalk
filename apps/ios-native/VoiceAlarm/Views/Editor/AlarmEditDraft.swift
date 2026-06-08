@@ -187,10 +187,10 @@ struct AlarmEditDraft: Equatable {
         guard let record,
               record.playModeEnum != .alarmOnly,
               record.voiceSourceEnum != .localAudio,
-              nonEmpty(record.localAudioUri) != nil,
-              nonEmpty(record.audioCacheKey) != nil,
-              let selectedProfileID = nonEmpty(selectedProfileID),
-              selectedProfileID == nonEmpty(record.voiceProfileId) else {
+              (record.localAudioUri).nilIfBlank != nil,
+              (record.audioCacheKey).nilIfBlank != nil,
+              let selectedProfileID = (selectedProfileID).nilIfBlank,
+              selectedProfileID == (record.voiceProfileId).nilIfBlank else {
             return false
         }
 
@@ -199,8 +199,8 @@ struct AlarmEditDraft: Equatable {
         let activeLanguage = (randomPrompt || translateText)
             ? language.trimmingCharacters(in: .whitespacesAndNewlines)
             : "ko"
-        guard activeCategory == (nonEmpty(record.voiceCategory) ?? "custom"),
-              activeLanguage == (nonEmpty(record.voiceLanguage) ?? "ko") else {
+        guard activeCategory == ((record.voiceCategory).nilIfBlank ?? "custom"),
+              activeLanguage == ((record.voiceLanguage).nilIfBlank ?? "ko") else {
             return false
         }
 
@@ -212,7 +212,7 @@ struct AlarmEditDraft: Equatable {
         let expectedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !expectedText.isEmpty else { return false }
         return !record.voiceRandomPrompt &&
-            expectedText == nonEmpty(record.voiceText)
+            expectedText == (record.voiceText).nilIfBlank
     }
 
     // MARK: - Convert to record
@@ -256,11 +256,11 @@ struct AlarmEditDraft: Equatable {
             voiceLanguage: alarmOnly ? nil : existing?.voiceLanguage,
             voiceRandomPrompt: !alarmOnly && voiceRandomPrompt,
             voiceRandomContext: !alarmOnly && voiceRandomPrompt ? promptContext.rawValue : nil,
-            voiceWeatherCountry: storesWeather ? nonEmpty(voiceWeatherCountry) : nil,
-            voiceWeatherCity: storesWeather ? nonEmpty(voiceWeatherCity) : nil,
-            voiceFortuneGender: storesFortune ? nonEmpty(voiceFortuneGender) : nil,
-            voiceFortuneBirthDate: storesFortune ? nonEmpty(voiceFortuneBirthDate) : nil,
-            voiceFortuneBirthTime: storesFortune ? nonEmpty(voiceFortuneBirthTime) : nil,
+            voiceWeatherCountry: storesWeather ? (voiceWeatherCountry).nilIfBlank : nil,
+            voiceWeatherCity: storesWeather ? (voiceWeatherCity).nilIfBlank : nil,
+            voiceFortuneGender: storesFortune ? (voiceFortuneGender).nilIfBlank : nil,
+            voiceFortuneBirthDate: storesFortune ? (voiceFortuneBirthDate).nilIfBlank : nil,
+            voiceFortuneBirthTime: storesFortune ? (voiceFortuneBirthTime).nilIfBlank : nil,
             dynamicVoicePreparedForFireAtMillis: !alarmOnly && voiceRandomPrompt
                 ? existing?.dynamicVoicePreparedForFireAtMillis
                 : nil,
@@ -289,7 +289,3 @@ struct AlarmEditDraft: Equatable {
     }
 }
 
-private func nonEmpty(_ value: String?) -> String? {
-    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return trimmed.isEmpty ? nil : trimmed
-}

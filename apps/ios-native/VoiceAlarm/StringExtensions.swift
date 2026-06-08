@@ -4,6 +4,12 @@ import Foundation
 // (containsKorean ×5, nilIfBlank ×2 중복 제거)
 
 extension String {
+    /// 공백 trim 후 빈 문자열이면 nil. (nonEmpty/clean 등으로 흩어져 있던 동일 로직 통합.)
+    var nilIfBlank: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     /// 한글(가-힣) 음절이 하나라도 포함되는지.
     var containsKorean: Bool {
         contains { character in

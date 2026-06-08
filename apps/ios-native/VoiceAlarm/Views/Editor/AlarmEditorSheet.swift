@@ -554,11 +554,11 @@ struct AlarmEditorSheet: View {
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
         record.voiceRandomPrompt = enabled
         record.voiceRandomContext = enabled ? context.rawValue : nil
-        record.voiceWeatherCountry = enabled && context.usesWeather ? nonEmpty(voiceStudio.weatherCountry) : nil
-        record.voiceWeatherCity = enabled && context.usesWeather ? nonEmpty(voiceStudio.weatherCity) : nil
-        record.voiceFortuneGender = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneGender) : nil
-        record.voiceFortuneBirthDate = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneBirthDate) : nil
-        record.voiceFortuneBirthTime = enabled && context.usesFortune ? nonEmpty(voiceStudio.fortuneBirthTime) : nil
+        record.voiceWeatherCountry = enabled && context.usesWeather ? (voiceStudio.weatherCountry).nilIfBlank : nil
+        record.voiceWeatherCity = enabled && context.usesWeather ? (voiceStudio.weatherCity).nilIfBlank : nil
+        record.voiceFortuneGender = enabled && context.usesFortune ? (voiceStudio.fortuneGender).nilIfBlank : nil
+        record.voiceFortuneBirthDate = enabled && context.usesFortune ? (voiceStudio.fortuneBirthDate).nilIfBlank : nil
+        record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
     }
 
     private func showVoicePlanLockedAlert() {
@@ -866,7 +866,7 @@ struct AlarmEditorSheet: View {
                     recipientUserId: recipient.userId,
                     wakeAt: String(format: "%02d:%02d", draft.hour, draft.minute),
                     voiceUploadId: upload.id,
-                    label: nonEmpty(draft.label) ?? "가족이 보낸 음성",
+                    label: (draft.label).nilIfBlank ?? "가족이 보낸 음성",
                     dubTargetLanguage: nil,
                     repeatDays: RemoteAlarmMapper.repeatDays(fromMask: draft.repeatDaysMask)
                 )
@@ -1091,10 +1091,6 @@ struct AlarmEditorSheet: View {
         return Int((seconds * 1000).rounded())
     }
 
-    private func nonEmpty(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 
     private func localAudioUploadDisplayName(for url: URL) -> String {
         switch localAudioMode {
