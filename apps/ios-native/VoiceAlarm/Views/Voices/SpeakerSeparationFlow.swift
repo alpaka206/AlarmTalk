@@ -229,7 +229,7 @@ struct SpeakerSeparationFlow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(preparedSourceName)
                         .font(.subheadline.weight(.semibold))
-                    Text("전체 \(timeLabel(durationMs)) · 사용할 구간 \(timeLabel(effectiveDurationMs))")
+                    Text("전체 \(HelperFormatters.audioTimeLabel(durationMs)) · 사용할 구간 \(HelperFormatters.audioTimeLabel(effectiveDurationMs))")
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
@@ -247,7 +247,7 @@ struct SpeakerSeparationFlow: View {
 
             if durationMs > VoiceProfileLimits.maxDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(cropEndMs))")
+                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(cropEndMs))")
                         .font(.caption.weight(.semibold))
                     Slider(
                         value: Binding(
@@ -266,7 +266,7 @@ struct SpeakerSeparationFlow: View {
 
             VoiceSegmentPreviewPlayer(
                 title: "선택 구간 미리듣기",
-                subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
+                subtitle: "\(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
                 endMs: effectiveEndMs,
@@ -812,7 +812,7 @@ struct SpeakerSeparationFlow: View {
         localError = nil
     }
 
-    private func timeLabel(_ millis: Int) -> String {
+    private func HelperFormatters.audioTimeLabel(_ millis: Int) -> String {
         let seconds = max(0, millis / 1000)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }

@@ -82,10 +82,10 @@ struct LocalAlarmAudioEditor: View {
     private var durationLabel: String {
         switch mode {
         case .record:
-            return timeLabel(elapsedMs)
+            return HelperFormatters.audioTimeLabel(elapsedMs)
         case .file:
             guard let fileDurationMs else { return "0:00" }
-            return timeLabel(max(0, min(cropEndMs, fileDurationMs) - cropStartMs))
+            return HelperFormatters.audioTimeLabel(max(0, min(cropEndMs, fileDurationMs) - cropStartMs))
         }
     }
 
@@ -139,7 +139,7 @@ struct LocalAlarmAudioEditor: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(isRecording ? "녹음 중..." : (hasRecording ? "녹음을 저장했어요." : "녹음 또는 파일 업로드"))
                         .font(theme.typography.labelLarge)
-                    Text("\(durationLabel) / \(timeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
+                    Text("\(durationLabel) / \(HelperFormatters.audioTimeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .monospacedDigit()
@@ -171,7 +171,7 @@ struct LocalAlarmAudioEditor: View {
                     Text(fileName ?? "파일 업로드")
                         .font(theme.typography.labelLarge)
                         .lineLimit(1)
-                    Text(fileDurationMs.map { "전체 \(timeLabel($0)) · 사용할 구간 \(durationLabel)" } ?? "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초")
+                    Text(fileDurationMs.map { "전체 \(HelperFormatters.audioTimeLabel($0)) · 사용할 구간 \(durationLabel)" } ?? "최대 \(AlarmAudioLimits.maxDurationMillis / 1000)초")
                         .font(theme.typography.bodySmall)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                 }
@@ -184,7 +184,7 @@ struct LocalAlarmAudioEditor: View {
 
             if let fileDurationMs, fileDurationMs > Int(AlarmAudioLimits.maxDurationMillis) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(min(cropEndMs, fileDurationMs)))")
+                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(min(cropEndMs, fileDurationMs)))")
                         .font(.caption.weight(.semibold))
                     Slider(
                         value: Binding(
@@ -212,7 +212,7 @@ struct LocalAlarmAudioEditor: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func timeLabel(_ millis: Int) -> String {
+    private func HelperFormatters.audioTimeLabel(_ millis: Int) -> String {
         let seconds = max(0, millis / 1000)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
@@ -334,7 +334,7 @@ enum FamilyAlarmScheduleRules {
 
     static func quietScheduleLabel(_ member: FamilyGroupMember) -> String {
         quietWindows(member).map { window in
-            "\(quietDaysLabel(window.days)) \(window.start)-\(window.end)"
+            "\(HelperFormatters.quietDaysLabel(window.days)) \(window.start)-\(window.end)"
         }.joined(separator: " · ")
     }
 
@@ -442,22 +442,6 @@ enum FamilyAlarmScheduleRules {
         return trimmed.isEmpty ? fallback : trimmed
     }
 
-    private static func quietDaysLabel(_ days: [Int]) -> String {
-        let sorted = Array(Set(days)).sorted()
-        switch sorted {
-        case []:
-            return "없음"
-        case [1, 2, 3, 4, 5]:
-            return "평일"
-        case [0, 6]:
-            return "주말"
-        case [0, 1, 2, 3, 4, 5, 6]:
-            return "매일"
-        default:
-            let labels = ["일", "월", "화", "수", "목", "금", "토"]
-            return sorted.map { labels[max(0, min(6, $0))] }.joined(separator: ",")
-        }
-    }
 }
 
 struct EditorLanguageOption: Identifiable {
