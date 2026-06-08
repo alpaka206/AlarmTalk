@@ -73,7 +73,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             voiceProfiles = try await profilesTask
             statusMessage = "서버 동기화 완료"
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요")
         }
     }
 
@@ -107,7 +107,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             await refresh(session: session, force: true)
         } catch {
             store.markSyncFailed(id: record.id)
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "알람 변경사항을 저장하지 못했어요")
         }
     }
 
@@ -123,7 +123,7 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             try await pull.runOnce()
             statusMessage = "전체 동기화 완료"
         } catch {
-            statusMessage = Self.userFacingErrorMessage(
+            statusMessage = userFacingErrorMessage(
                 error,
                 fallback: "알람 정보를 불러오거나 변경사항을 저장하지 못했어요"
             )
@@ -137,21 +137,9 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
             try await api.deleteAlarm(id: remoteID, token: token)
             await refresh(session: session)
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요")
         }
     }
 
-    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
-        guard let apiError = error as? APIError else {
-            let message = error.localizedDescription
-            return message.containsKorean ? message : fallback
-        }
-        switch apiError {
-        case .invalidResponse:
-            return fallback
-        case .server(_, let message, _):
-            return message.containsKorean ? message : fallback
-        }
-    }
 }
 
