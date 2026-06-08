@@ -158,7 +158,7 @@ struct AlarmsListView: View {
                 actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
             }
         } catch {
-            actionMessage = RemoteAlarmSyncViewModel.userFacingErrorMessage(
+            actionMessage = userFacingErrorMessage(
                 error,
                 fallback: "알람 복사에 실패했어요."
             )

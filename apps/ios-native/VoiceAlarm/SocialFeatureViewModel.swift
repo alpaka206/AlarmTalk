@@ -298,7 +298,7 @@ final class SocialFeatureViewModel: ObservableObject {
             await refreshAllAfterMutation(session: session, successMessage: "코드를 등록했어요.")
             return Self.codeRegistrationDestination(responseType: response.type, code: code)
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
+            statusMessage = userFacingErrorMessage(error, fallback: "코드 등록에 실패했어요.")
             return nil
         }
     }
@@ -327,7 +327,7 @@ final class SocialFeatureViewModel: ObservableObject {
             noteText = ""
             await refreshAllAfterMutation(session: session, successMessage: "메시지를 보냈어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "메시지 전송에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "메시지 전송에 실패했어요")
         }
     }
 
@@ -379,7 +379,7 @@ final class SocialFeatureViewModel: ObservableObject {
             if isMissingNoteAudio(error) {
                 unavailableAudioNoteIDs.insert(note.id)
             }
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "음성 메시지를 재생하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "음성 메시지를 재생하지 못했어요")
         }
     }
 
@@ -581,18 +581,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
-        guard let apiError = error as? APIError else {
-            let message = error.localizedDescription
-            return message.containsKorean ? message : fallback
-        }
-        switch apiError {
-        case .invalidResponse:
-            return fallback
-        case .server(_, let message, _):
-            return message.containsKorean ? message : fallback
-        }
-    }
 
     static func scopedRefreshErrorMessage(label: String, error: Error, fallback: String) -> String {
         "\(label): \(userFacingErrorMessage(error, fallback: fallback))"
@@ -649,7 +637,7 @@ final class SocialFeatureViewModel: ObservableObject {
                 successMessage: "이용권에서 나갔어요. 무료 이용권으로 전환됐어요."
             )
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "이용권에서 나가지 못했어요")
         }
     }
 
@@ -667,7 +655,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.removeFamilyMember(groupId: groupId, userId: userId, token: token)
             await refreshAllAfterMutation(session: session, successMessage: "멤버를 내보냈어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "멤버를 내보내지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "멤버를 내보내지 못했어요")
         }
     }
 
@@ -685,7 +673,7 @@ final class SocialFeatureViewModel: ObservableObject {
             _ = try await api.transferFamilyOwnership(groupId: groupId, newOwnerId: newOwnerId, token: token)
             await refreshAllAfterMutation(session: session, successMessage: "소유권을 이양했어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "소유권을 이양하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "소유권을 이양하지 못했어요")
         }
     }
 
@@ -752,7 +740,7 @@ final class SocialFeatureViewModel: ObservableObject {
             )
             await refreshAllAfterMutation(session: session, successMessage: "음성 메시지를 보냈어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "음성 메시지 전송에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "음성 메시지 전송에 실패했어요")
         }
     }
 
@@ -829,17 +817,8 @@ final class SocialFeatureViewModel: ObservableObject {
             )
             statusMessage = "캐릭터 경험치를 반영했어요."
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "성장 기록을 반영하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "성장 기록을 반영하지 못했어요")
         }
     }
 }
 
-private extension String {
-    var containsKorean: Bool {
-        contains { character in
-            character.unicodeScalars.contains { scalar in
-                (0xAC00...0xD7A3).contains(Int(scalar.value))
-            }
-        }
-    }
-}

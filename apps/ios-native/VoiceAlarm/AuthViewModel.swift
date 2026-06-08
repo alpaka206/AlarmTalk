@@ -143,7 +143,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func handleAppleAuthorizationFailure(_ error: Error) {
-        statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
+        statusMessage = userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
     }
 
     func loginWithApple(
@@ -179,7 +179,7 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
+            statusMessage = userFacingErrorMessage(error, fallback: "Apple 로그인에 실패했어요. 다시 시도해 주세요.")
         }
     }
 
@@ -195,7 +195,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await VoiceAlarmAPI.shared.requestEmailVerification(email: email)
             statusMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
         }
     }
 
@@ -216,7 +216,7 @@ final class AuthViewModel: ObservableObject {
             statusMessage = "이메일 인증이 완료됐어요."
             return true
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요")
+            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드가 맞지 않아요")
             return false
         }
     }
@@ -238,7 +238,7 @@ final class AuthViewModel: ObservableObject {
             // 필수 약관 미동의면 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "로그인에 실패했어요")
         }
     }
 
@@ -267,7 +267,7 @@ final class AuthViewModel: ObservableObject {
             // 신규 가입자는 필수 약관 동의가 필요 — 동의 화면으로 게이팅.
             await checkConsentStatus()
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
         }
     }
 
@@ -301,7 +301,7 @@ final class AuthViewModel: ObservableObject {
                     lastNetworkError = "이 계정으로는 접근할 수 없는 기능이 있어요."
                 } else {
                     // 5xx, 4xx 기타 오류는 세션을 유지하되 영어 서버 메시지를 그대로 노출하지 않는다.
-                    lastNetworkError = Self.userFacingErrorMessage(
+                    lastNetworkError = userFacingErrorMessage(
                         apiError,
                         fallback: "서버에 일시적으로 연결할 수 없어요."
                     )
@@ -393,7 +393,7 @@ final class AuthViewModel: ObservableObject {
             await refreshUser()
             statusMessage = "프로필을 저장했어요."
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "프로필을 저장하지 못했어요")
         }
     }
 
@@ -442,7 +442,7 @@ final class AuthViewModel: ObservableObject {
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "회원 탈퇴에 실패했어요")
         }
     }
 
@@ -466,7 +466,7 @@ final class AuthViewModel: ObservableObject {
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요")
+            statusMessage = userFacingErrorMessage(error, fallback: "회원 탈퇴 신청에 실패했어요")
         }
     }
 
@@ -486,7 +486,7 @@ final class AuthViewModel: ObservableObject {
             pendingDeletion = false
             statusMessage = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")
+            statusMessage = userFacingErrorMessage(error, fallback: "탈퇴 취소에 실패했어요. 다시 시도해 주세요")
         }
     }
 
@@ -528,7 +528,7 @@ final class AuthViewModel: ObservableObject {
             needsConsent = false
             statusMessage = "동의가 완료됐어요"
         } catch {
-            statusMessage = Self.userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
+            statusMessage = userFacingErrorMessage(error, fallback: "동의 기록에 실패했어요. 다시 시도해 주세요")
         }
     }
 
@@ -547,18 +547,6 @@ final class AuthViewModel: ObservableObject {
         return value.isEmpty ? nil : value
     }
 
-    static func userFacingErrorMessage(_ error: Error, fallback: String) -> String {
-        guard let apiError = error as? APIError else {
-            let message = error.localizedDescription
-            return message.containsKorean ? message : fallback
-        }
-        switch apiError {
-        case .invalidResponse:
-            return fallback
-        case .server(_, let message, _):
-            return message.containsKorean ? message : fallback
-        }
-    }
 
     // MARK: - Testing support
     //
@@ -574,24 +562,4 @@ final class AuthViewModel: ObservableObject {
 //
 // `VoiceAlarmAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
 // 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.
-private extension Optional where Wrapped == String {
-    var nilIfBlank: String? {
-        switch self {
-        case .some(let value):
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        case .none:
-            return nil
-        }
-    }
-}
 
-private extension String {
-    var containsKorean: Bool {
-        contains { character in
-            character.unicodeScalars.contains { scalar in
-                (0xAC00...0xD7A3).contains(Int(scalar.value))
-            }
-        }
-    }
-}

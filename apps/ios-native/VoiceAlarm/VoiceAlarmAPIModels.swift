@@ -31,13 +31,13 @@ struct DynamicPromptSettings: Codable, Equatable {
         fortune: DynamicPromptFortuneSettings = DynamicPromptFortuneSettings(gender: nil, birthDate: nil, birthTime: nil)
     ) {
         self.weather = DynamicPromptWeatherSettings(
-            country: Self.clean(weather.country),
-            city: Self.clean(weather.city)
+            country: (weather.country).nilIfBlank,
+            city: (weather.city).nilIfBlank
         )
         self.fortune = DynamicPromptFortuneSettings(
-            gender: Self.clean(fortune.gender),
-            birthDate: Self.clean(fortune.birthDate),
-            birthTime: Self.clean(fortune.birthTime)
+            gender: (fortune.gender).nilIfBlank,
+            birthDate: (fortune.birthDate).nilIfBlank,
+            birthTime: (fortune.birthTime).nilIfBlank
         )
     }
 
@@ -61,10 +61,6 @@ struct DynamicPromptSettings: Codable, Equatable {
         )
     }
 
-    private static func clean(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
 
 struct DynamicPromptSettingsState: Codable, Equatable {
@@ -107,25 +103,25 @@ struct DynamicPromptPreferences: Codable, Equatable {
     func toSettings() -> DynamicPromptSettings {
         DynamicPromptSettings(
             weather: DynamicPromptWeatherSettings(
-                country: clean(weatherCountry),
-                city: clean(weatherCity)
+                country: (weatherCountry).nilIfBlank,
+                city: (weatherCity).nilIfBlank
             ),
             fortune: DynamicPromptFortuneSettings(
-                gender: clean(fortuneGender),
-                birthDate: clean(fortuneBirthDate),
-                birthTime: clean(fortuneBirthTime)
+                gender: (fortuneGender).nilIfBlank,
+                birthDate: (fortuneBirthDate).nilIfBlank,
+                birthTime: (fortuneBirthTime).nilIfBlank
             )
         )
     }
 
     var weatherReady: Bool {
-        clean(weatherCountry) != nil && clean(weatherCity) != nil
+        (weatherCountry).nilIfBlank != nil && (weatherCity).nilIfBlank != nil
     }
 
     var fortuneReady: Bool {
-        clean(fortuneGender) != nil &&
-            clean(fortuneBirthDate) != nil &&
-            clean(fortuneBirthTime) != nil
+        (fortuneGender).nilIfBlank != nil &&
+            (fortuneBirthDate).nilIfBlank != nil &&
+            (fortuneBirthTime).nilIfBlank != nil
     }
 
     private func normalized() -> DynamicPromptPreferences {
@@ -138,10 +134,6 @@ struct DynamicPromptPreferences: Codable, Equatable {
         )
     }
 
-    private func clean(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
 
 struct AuthUser: Codable, Equatable, Identifiable {
@@ -198,7 +190,7 @@ struct AuthUser: Codable, Equatable, Identifiable {
         self.familyAlarmQuietStart = firstWindow.start
         self.familyAlarmQuietEnd = firstWindow.end
         self.familyAlarmQuietWindows = quietWindows
-        self.appleUserId = Self.clean(appleUserId)
+        self.appleUserId = (appleUserId).nilIfBlank
         self.dynamicPromptSettings = dynamicPromptSettings ?? .empty
         let trimmedDeletion = deletionStatus.trimmingCharacters(in: .whitespacesAndNewlines)
         self.deletionStatus = trimmedDeletion.isEmpty ? "active" : trimmedDeletion
@@ -271,10 +263,6 @@ struct AuthUser: Codable, Equatable, Identifiable {
         return Array(normalized.prefix(8))
     }
 
-    private static func clean(_ value: String?) -> String? {
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }
 
 struct RemoteAlarmListResponse: Decodable {

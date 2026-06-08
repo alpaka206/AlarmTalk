@@ -103,10 +103,10 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     private var selectedListenerTitle: String? {
-        if let listener = selectedProfile?.listenerTitle, let trimmed = nonEmpty(listener) {
+        if let listener = selectedProfile?.listenerTitle, let trimmed = (listener).nilIfBlank {
             return trimmed
         }
-        if let listener = selectedFamilyVoice?.listenerTitle, let trimmed = nonEmpty(listener) {
+        if let listener = selectedFamilyVoice?.listenerTitle, let trimmed = (listener).nilIfBlank {
             return trimmed
         }
         return nil
@@ -119,13 +119,13 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     var hasWeatherInfo: Bool {
-        nonEmpty(weatherCountry) != nil && nonEmpty(weatherCity) != nil
+        (weatherCountry).nilIfBlank != nil && (weatherCity).nilIfBlank != nil
     }
 
     var hasFortuneInfo: Bool {
-        nonEmpty(fortuneGender) != nil &&
-            nonEmpty(fortuneBirthDate) != nil &&
-            nonEmpty(fortuneBirthTime) != nil
+        (fortuneGender).nilIfBlank != nil &&
+            (fortuneBirthDate).nilIfBlank != nil &&
+            (fortuneBirthTime).nilIfBlank != nil
     }
 
     /// 슬롯이 가득 찼는지 — VoiceProfileManagementPanel 의 슬롯 카드/추가 버튼 비활성에 사용.
@@ -509,7 +509,7 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "로그인이 필요해요."
             return nil
         }
-        let resolvedName = nonEmpty(name) ?? "분리한 목소리"
+        let resolvedName = (name).nilIfBlank ?? "분리한 목소리"
         guard durationMs >= VoiceProfileLimits.minDurationMs else {
             statusMessage = "1분 이상 들리는 구간이 필요해요."
             return nil
@@ -659,11 +659,11 @@ final class VoiceStudioViewModel: ObservableObject {
                     randomContext: randomPrompt ? promptContext.rawValue : nil,
                     alarmHour: randomPrompt ? alarmHour : nil,
                     alarmMinute: randomPrompt ? alarmMinute : nil,
-                    weatherCountry: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCountry) : nil,
-                    weatherCity: targetUserId == nil && randomPrompt && promptContext.usesWeather ? nonEmpty(weatherCity) : nil,
-                    fortuneGender: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneGender) : nil,
-                    fortuneBirthDate: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthDate) : nil,
-                    fortuneBirthTime: targetUserId == nil && randomPrompt && promptContext.usesFortune ? nonEmpty(fortuneBirthTime) : nil,
+                    weatherCountry: targetUserId == nil && randomPrompt && promptContext.usesWeather ? (weatherCountry).nilIfBlank : nil,
+                    weatherCity: targetUserId == nil && randomPrompt && promptContext.usesWeather ? (weatherCity).nilIfBlank : nil,
+                    fortuneGender: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneGender).nilIfBlank : nil,
+                    fortuneBirthDate: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneBirthDate).nilIfBlank : nil,
+                    fortuneBirthTime: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneBirthTime).nilIfBlank : nil,
                     listenerTitle: selectedListenerTitle,
                     targetUserId: targetUserId
                 ),
@@ -810,10 +810,6 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
-    private func nonEmpty(_ value: String) -> String? {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 
     private func isNotFoundError(_ error: Error) -> Bool {
         if case APIError.server(let status, _, _) = error {
@@ -834,7 +830,7 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String?,
         listenerTitle: String?
     ) -> RequiredVoiceProfileFields? {
-        let normalizedName = nonEmpty(name) ?? fallbackName.flatMap { nonEmpty($0) }
+        let normalizedName = (name).nilIfBlank ?? fallbackName.flatMap { ($0).nilIfBlank }
         guard let normalizedName else {
             statusMessage = "목소리 이름을 입력해 주세요."
             return nil
@@ -856,11 +852,11 @@ final class VoiceStudioViewModel: ObservableObject {
         relationshipLabel: String?,
         listenerTitle: String?
     ) -> (relationshipLabel: String, listenerTitle: String)? {
-        guard let relationshipLabel = nonEmpty(relationshipLabel ?? "") else {
+        guard let relationshipLabel = (relationshipLabel ?? "").nilIfBlank else {
             statusMessage = "나와의 관계를 입력해 주세요."
             return nil
         }
-        guard let listenerTitle = nonEmpty(listenerTitle ?? "") else {
+        guard let listenerTitle = (listenerTitle ?? "").nilIfBlank else {
             statusMessage = "이 목소리가 나를 부를 호칭을 입력해 주세요."
             return nil
         }
