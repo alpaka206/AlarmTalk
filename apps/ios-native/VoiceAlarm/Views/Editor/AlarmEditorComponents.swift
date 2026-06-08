@@ -212,10 +212,6 @@ struct LocalAlarmAudioEditor: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func HelperFormatters.audioTimeLabel(_ millis: Int) -> String {
-        let seconds = max(0, millis / 1000)
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
 }
 
 struct FamilyAlarmTargetPicker: View {
