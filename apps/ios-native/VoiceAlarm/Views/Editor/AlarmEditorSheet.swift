@@ -14,19 +14,19 @@ import UniformTypeIdentifiers
 /// 등) 는 `AlarmEditDraft.toRecord(...)` 가 기존 record 의 값을 보존하며 다시
 /// 합쳐 돌려준다.
 struct AlarmEditorSheet: View {
-    @EnvironmentObject private var auth: AuthViewModel
-    @EnvironmentObject private var store: LocalAlarmStore
-    @EnvironmentObject private var alarmKit: AlarmKitViewModel
-    @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
-    @EnvironmentObject private var voiceStudio: VoiceStudioViewModel
-    @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
-    @EnvironmentObject private var subscriptions: SubscriptionManager
+    @EnvironmentObject var auth: AuthViewModel
+    @EnvironmentObject var store: LocalAlarmStore
+    @EnvironmentObject var alarmKit: AlarmKitViewModel
+    @EnvironmentObject var remoteSync: RemoteAlarmSyncViewModel
+    @EnvironmentObject var voiceStudio: VoiceStudioViewModel
+    @EnvironmentObject var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject var subscriptions: SubscriptionManager
 
-    @StateObject private var holidayStore = HolidayStore()
-    @StateObject private var localRecorder = VoiceRecorder()
-    @StateObject private var localPreviewPlayer = AudioPreviewPlayer()
+    @StateObject var holidayStore = HolidayStore()
+    @StateObject var localRecorder = VoiceRecorder()
+    @StateObject var localPreviewPlayer = AudioPreviewPlayer()
 
-    @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.voiceAlarmTheme) var theme
 
     /// 부모(MainTabsView)가 넘기는 target — 새 알람 vs 기존 알람 수정 구분.
     let target: AlarmEditorTarget
@@ -39,26 +39,26 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Form state
 
-    @State private var draft: AlarmEditDraft = .newDefault()
-    @State private var didLoadInitial = false
-    @State private var validationAlert: ValidationAlertContent?
-    @State private var isWorking = false
-    @State private var sharedVoiceSetupTarget: FamilyVoiceProfile?
-    @State private var selectedFamilyRecipientID: String?
-    @State private var voiceSourceMode: VoiceSource = .ttsProfile
-    @State private var localAudioMode: AlarmLocalAudioInputMode = .record
-    @State private var localAudioMessage: String?
-    @State private var localAudioFileImporterPresented = false
-    @State private var selectedLocalAudioURL: URL?
-    @State private var selectedLocalAudioName: String?
-    @State private var selectedLocalAudioDurationMs: Int?
-    @State private var localAudioCropStartMs = 0
-    @State private var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
-    @State private var clearExistingLocalAudio = false
+    @State var draft: AlarmEditDraft = .newDefault()
+    @State var didLoadInitial = false
+    @State var validationAlert: ValidationAlertContent?
+    @State var isWorking = false
+    @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
+    @State var selectedFamilyRecipientID: String?
+    @State var voiceSourceMode: VoiceSource = .ttsProfile
+    @State var localAudioMode: AlarmLocalAudioInputMode = .record
+    @State var localAudioMessage: String?
+    @State var localAudioFileImporterPresented = false
+    @State var selectedLocalAudioURL: URL?
+    @State var selectedLocalAudioName: String?
+    @State var selectedLocalAudioDurationMs: Int?
+    @State var localAudioCropStartMs = 0
+    @State var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
+    @State var clearExistingLocalAudio = false
 
-    private static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
+    static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
 
-    private struct ValidationAlertContent: Identifiable {
+    struct ValidationAlertContent: Identifiable {
         let id = UUID()
         let title: String
         let message: String
@@ -102,172 +102,7 @@ struct AlarmEditorSheet: View {
                 }
             }
 
-            Section("알람 방식") {
-                VoicePlayModePicker(
-                    mode: $draft.playMode,
-                    voiceLocked: voicePlanLocked,
-                    onLockedVoiceClick: showVoicePlanLockedAlert
-                )
-                    .onChange(of: draft.playMode) { _, newMode in
-                        voiceStudio.preparedAlarm = nil
-                        if newMode == .alarmOnly {
-                            draft.voiceRepeat = true
-                            draft.voiceVolumePercent = 100
-                        } else {
-                            selectDefaultVoiceProfileIfNeeded()
-                        }
-                    }
-                    .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-
-                if draft.playMode != .alarmOnly {
-                    Picker("음성 소스", selection: $voiceSourceMode) {
-                        Text("목소리").tag(VoiceSource.ttsProfile)
-                        Text("녹음/파일").tag(VoiceSource.localAudio)
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: voiceSourceMode) { _, newValue in
-                        voiceStudio.preparedAlarm = nil
-                        localPreviewPlayer.stop()
-                        if newValue == .ttsProfile {
-                            localRecorder.stop()
-                        }
-                    }
-
-                    if voiceSourceMode == .ttsProfile {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("목소리")
-                                .font(theme.typography.titleSmall)
-                            AlarmVoiceProfilePicker(
-                                ownProfiles: voiceStudio.profiles,
-                                familyVoices: voiceStudio.familyVoices,
-                                selectedProfileID: voiceStudio.selectedProfileID,
-                                onSelectOwn: { profile in
-                                    voiceStudio.selectedProfileID = profile.id
-                                    voiceStudio.preparedAlarm = nil
-                                },
-                                onSelectShared: { profile in
-                                    if profile.requiresViewerInfo {
-                                        sharedVoiceSetupTarget = profile
-                                    } else {
-                                        voiceStudio.selectedProfileID = profile.id
-                                        voiceStudio.preparedAlarm = nil
-                                    }
-                                }
-                            )
-                            Text(preparedVoiceLabel)
-                                .font(theme.typography.bodySmall)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                            Button {
-                                onJumpToVoices()
-                            } label: {
-                                Label("음성 탭에서 만들기", systemImage: "waveform")
-                            }
-                            .buttonStyle(.bordered)
-                        }
-
-                        Toggle("랜덤 문구 사용", isOn: Binding(
-                            get: { voiceStudio.randomPrompt },
-                            set: { enabled in
-                                voiceStudio.randomPrompt = enabled
-                                voiceStudio.preparedAlarm = nil
-                                if !enabled && !voiceStudio.translateText {
-                                    voiceStudio.ttsLanguage = "ko"
-                                }
-                            }
-                        ))
-                            .tint(theme.palette.primary)
-                        if voiceStudio.randomPrompt {
-                            Picker("랜덤 컨텍스트", selection: $voiceStudio.randomContext) {
-                                ForEach(RandomPromptContext.alarmEditorCases, id: \.rawValue) { context in
-                                    Text(context.label).tag(context.rawValue)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: voiceStudio.randomContext) { _, _ in
-                                voiceStudio.preparedAlarm = nil
-                            }
-                            Picker("언어", selection: $voiceStudio.ttsLanguage) {
-                                ForEach(ttsLanguages, id: \.code) { option in
-                                    Text(option.label).tag(option.code)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: voiceStudio.ttsLanguage) { _, _ in
-                                voiceStudio.preparedAlarm = nil
-                            }
-                            Text("선택한 상황에 맞춰 깨움말을 자동으로 만들어요.")
-                                .font(theme.typography.bodySmall)
-                                .foregroundStyle(theme.palette.onSurfaceVariant)
-                            if activePromptContext.usesWeather {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("날씨 지역")
-                                        .font(theme.typography.titleSmall)
-                                    WeatherLocationInputFields(
-                                        country: $voiceStudio.weatherCountry,
-                                        city: $voiceStudio.weatherCity,
-                                        helperText: "날씨가 들어간 깨움말에 사용할 지역이에요."
-                                    )
-                                    if !voiceStudio.hasWeatherInfo || targetWeatherReady {
-                                        Text(targetWeatherReady ? "상대가 저장한 날씨 지역을 사용해요." : "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.")
-                                            .font(theme.typography.bodySmall)
-                                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                            if activePromptContext.usesFortune {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("운세 정보")
-                                        .font(theme.typography.titleSmall)
-                                    FortunePromptInputFields(
-                                        gender: $voiceStudio.fortuneGender,
-                                        birthDate: $voiceStudio.fortuneBirthDate,
-                                        birthTime: $voiceStudio.fortuneBirthTime,
-                                        helperText: "운세가 들어간 깨움말을 만들 때만 사용해요."
-                                    )
-                                    if !voiceStudio.hasFortuneInfo || targetFortuneReady {
-                                        Text(targetFortuneReady ? "상대가 저장한 운세 정보를 사용해요." : "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요.")
-                                            .font(theme.typography.bodySmall)
-                                            .foregroundStyle(theme.palette.onSurfaceVariant)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                        } else {
-                            ManualVoiceMessageEditor(
-                                text: $voiceStudio.ttsText,
-                                translationEnabled: $voiceStudio.translateText,
-                                language: $voiceStudio.ttsLanguage,
-                                onInvalidatePreparedAudio: { voiceStudio.preparedAlarm = nil }
-                            )
-                        }
-                    } else {
-                        LocalAlarmAudioEditor(
-                            mode: $localAudioMode,
-                            isRecording: localRecorder.isRecording,
-                            elapsedMs: Int(localRecorder.elapsedSeconds * 1000),
-                            hasRecording: localRecorder.latestRecordingURL != nil,
-                            existingAudioLabel: existingLocalAudioLabel,
-                            fileName: selectedLocalAudioName,
-                            fileDurationMs: selectedLocalAudioDurationMs,
-                            cropStartMs: $localAudioCropStartMs,
-                            cropEndMs: $localAudioCropEndMs,
-                            isPreviewing: localPreviewPlayer.isPlaying,
-                            message: localAudioMessage,
-                            onModeChange: handleLocalAudioModeChange,
-                            onRecord: toggleLocalRecording,
-                            onPickFile: { localAudioFileImporterPresented = true },
-                            onPreview: previewLocalAlarmAudio,
-                            onClear: clearLocalAlarmAudio
-                        )
-                    }
-
-                    if draft.playMode == .voiceOnly {
-                        VoiceRepeatEditor(isRepeating: $draft.voiceRepeat)
-                    }
-                    VoiceVolumeEditor(volumePercent: $draft.voiceVolumePercent)
-                }
-            }
+            alarmModeSection
 
             Section("스누즈") {
                 Toggle("스누즈 허용", isOn: $draft.snoozeEnabled)
@@ -422,36 +257,36 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private var saveButtonTitle: String {
+    var saveButtonTitle: String {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
     }
 
-    private var navigationTitle: String {
+    var navigationTitle: String {
         if target.familyAlarmMode { return "상대 알람 맞추기" }
         return target.editingAlarmID == nil ? "알람 만들기" : "알람 수정"
     }
 
-    private var activePromptContext: RandomPromptContext {
+    var activePromptContext: RandomPromptContext {
         RandomPromptContext.normalized(voiceStudio.randomContext)
     }
 
-    private var targetWeatherReady: Bool {
+    var targetWeatherReady: Bool {
         target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.weatherReady == true
     }
 
-    private var targetFortuneReady: Bool {
+    var targetFortuneReady: Bool {
         target.familyAlarmMode && selectedFamilyRecipient?.dynamicPromptSettingsState?.fortuneReady == true
     }
 
-    private var voicePlanLocked: Bool {
+    var voicePlanLocked: Bool {
         !currentPlan.meetsOrExceeds(.personal)
     }
 
-    private var familyAlarmLocked: Bool {
+    var familyAlarmLocked: Bool {
         socialFeatures.familyGroup?.group == nil && !currentPlan.meetsOrExceeds(.couple)
     }
 
-    private var currentPlan: PlanTier {
+    var currentPlan: PlanTier {
         PlanTier.bestKnown(
             serverSubscription: socialFeatures.subscription,
             storeTier: subscriptions.currentTier,
@@ -459,24 +294,24 @@ struct AlarmEditorSheet: View {
         )
     }
 
-    private var defaultPlayModeForPlan: AlarmPlayMode {
+    var defaultPlayModeForPlan: AlarmPlayMode {
         voicePlanLocked ? .alarmOnly : .soundThenVoice
     }
 
-    private var preparedVoiceLabel: String {
+    var preparedVoiceLabel: String {
         guard let prepared = voiceStudio.preparedAlarm else {
             return "아직 생성한 음성이 없어요. 음성 탭에서 음성을 생성해 주세요."
         }
         return "\(prepared.text) · \(prepared.language) · 로컬 캐시 완료"
     }
 
-    private var editingAlarm: LocalAlarmRecord? {
+    var editingAlarm: LocalAlarmRecord? {
         target.editingAlarmID.flatMap { id in
             store.alarms.first { $0.id == id }
         }
     }
 
-    private var existingLocalAudioLabel: String? {
+    var existingLocalAudioLabel: String? {
         guard selectedLocalAudioURL == nil,
               localRecorder.latestRecordingURL == nil,
               !clearExistingLocalAudio,
@@ -488,7 +323,7 @@ struct AlarmEditorSheet: View {
         return "저장된 녹음/파일 음성을 사용 중이에요."
     }
 
-    private var familyRecipients: [FamilyGroupMember] {
+    var familyRecipients: [FamilyGroupMember] {
         let currentUserID = auth.session?.user.id
         let currentEmail = auth.session?.user.email
         return (socialFeatures.familyGroup?.members ?? []).filter { member in
@@ -498,7 +333,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private var selectedFamilyRecipient: FamilyGroupMember? {
+    var selectedFamilyRecipient: FamilyGroupMember? {
         if let selectedFamilyRecipientID,
            let selected = familyRecipients.first(where: { $0.userId == selectedFamilyRecipientID }) {
             return selected
@@ -508,7 +343,7 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Initial load
 
-    private func loadInitialState() {
+    func loadInitialState() {
         if let editingID = target.editingAlarmID,
            let alarm = store.alarms.first(where: { $0.id == editingID }) {
             draft = AlarmEditDraft(from: alarm)
@@ -527,7 +362,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
+    func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
         let saved = savedPromptPreferences()
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
@@ -544,12 +379,12 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? saved.fortuneBirthTime
     }
 
-    private func savedPromptPreferences() -> DynamicPromptPreferences {
+    func savedPromptPreferences() -> DynamicPromptPreferences {
         let server = DynamicPromptPreferences.from(settings: auth.session?.user.dynamicPromptSettings)
         return server == DynamicPromptPreferences() ? .loadFromDefaults() : server
     }
 
-    private func applyVoicePromptState(to record: inout LocalAlarmRecord) {
+    func applyVoicePromptState(to record: inout LocalAlarmRecord) {
         let enabled = record.playModeEnum != .alarmOnly && voiceStudio.randomPrompt
         let context = RandomPromptContext.normalized(voiceStudio.randomContext)
         record.voiceRandomPrompt = enabled
@@ -561,14 +396,14 @@ struct AlarmEditorSheet: View {
         record.voiceFortuneBirthTime = enabled && context.usesFortune ? (voiceStudio.fortuneBirthTime).nilIfBlank : nil
     }
 
-    private func showVoicePlanLockedAlert() {
+    func showVoicePlanLockedAlert() {
         validationAlert = ValidationAlertContent(
             title: "이용권이 필요해요",
             message: "무료 이용권에서는 알람만 사용할 수 있어요."
         )
     }
 
-    private func selectDefaultFamilyRecipientIfNeeded() {
+    func selectDefaultFamilyRecipientIfNeeded() {
         guard target.familyAlarmMode else { return }
         if let selectedFamilyRecipientID,
            familyRecipients.contains(where: { $0.userId == selectedFamilyRecipientID }) {
@@ -579,7 +414,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func selectDefaultVoiceProfileIfNeeded() {
+    func selectDefaultVoiceProfileIfNeeded() {
         guard draft.playMode != .alarmOnly else { return }
         let selected = voiceStudio.selectedProfileID
         let readyOwn = voiceStudio.profiles.filter { $0.isReadyForAlarmSelection }
@@ -598,7 +433,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func selectFamilyRecipient(_ userID: String) {
+    func selectFamilyRecipient(_ userID: String) {
         selectedFamilyRecipientID = userID
         voiceStudio.preparedAlarm = nil
         guard let recipient = familyRecipients.first(where: { $0.userId == userID }) else { return }
@@ -612,7 +447,7 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Save flow
 
-    private func saveFlow() async {
+    func saveFlow() async {
         guard !isWorking else { return }
         isWorking = true
         defer { isWorking = false }
@@ -789,7 +624,7 @@ struct AlarmEditorSheet: View {
         onSchedulingDidFinish()
     }
 
-    private func generateVoiceAndSave() async {
+    func generateVoiceAndSave() async {
         let prepared = await voiceStudio.generateTTS(
             session: auth.session,
             alarmHour: draft.hour,
@@ -802,7 +637,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func validateFamilyAlarmTarget() -> FamilyGroupMember? {
+    func validateFamilyAlarmTarget() -> FamilyGroupMember? {
         guard let recipient = selectedFamilyRecipient else {
             validationAlert = ValidationAlertContent(
                 title: "받을 사람이 없어요",
@@ -846,7 +681,7 @@ struct AlarmEditorSheet: View {
         return recipient
     }
 
-    private func createFamilyTargetAlarm(
+    func createFamilyTargetAlarm(
         recipient: FamilyGroupMember,
         localVoiceSource: FamilyLocalVoiceUploadSource?
     ) async {
@@ -904,7 +739,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
+    func handleLocalAudioModeChange(_ mode: AlarmLocalAudioInputMode) {
         localPreviewPlayer.stop()
         if mode == .file {
             localRecorder.clearLatest()
@@ -920,7 +755,7 @@ struct AlarmEditorSheet: View {
         localAudioMessage = nil
     }
 
-    private func toggleLocalRecording() {
+    func toggleLocalRecording() {
         localPreviewPlayer.stop()
         if localRecorder.isRecording {
             localRecorder.stop()
@@ -945,7 +780,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func importLocalAlarmAudio(_ source: URL) async {
+    func importLocalAlarmAudio(_ source: URL) async {
         do {
             let importedURL = try copyImportedAudio(source)
             let durationMs = try await readAudioDurationMs(importedURL)
@@ -963,7 +798,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func previewLocalAlarmAudio() {
+    func previewLocalAlarmAudio() {
         if localPreviewPlayer.isPlaying {
             localPreviewPlayer.stop()
             return
@@ -984,7 +819,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func clearLocalAlarmAudio() {
+    func clearLocalAlarmAudio() {
         localPreviewPlayer.stop()
         localRecorder.clearLatest()
         selectedLocalAudioURL = nil
@@ -996,7 +831,7 @@ struct AlarmEditorSheet: View {
         localAudioMessage = "음성 오디오를 지웠어요."
     }
 
-    private func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
+    func cachedLocalAudioForSave(existing: LocalAlarmRecord?) async throws -> CachedLocalAlarmAudio {
         let hasNewSource = selectedLocalAudioURL != nil || localRecorder.latestRecordingURL != nil
         if hasNewSource {
             let prepared = try await preparedLocalAlarmAudioSource()
@@ -1024,7 +859,7 @@ struct AlarmEditorSheet: View {
         return CachedLocalAlarmAudio(fileName: existing.localAudioUri ?? "", cacheKey: cacheKey)
     }
 
-    private func existingLocalAudioURL() -> URL? {
+    func existingLocalAudioURL() -> URL? {
         guard !clearExistingLocalAudio,
               let alarm = editingAlarm,
               alarm.voiceSourceEnum == .localAudio,
@@ -1034,7 +869,7 @@ struct AlarmEditorSheet: View {
         return AudioCacheStore.shared.cachedURL(for: cacheKey)
     }
 
-    private func preparedLocalAlarmAudioSource() async throws -> (url: URL, durationMs: Int) {
+    func preparedLocalAlarmAudioSource() async throws -> (url: URL, durationMs: Int) {
         switch localAudioMode {
         case .record:
             guard let url = localRecorder.latestRecordingURL else {
@@ -1065,7 +900,7 @@ struct AlarmEditorSheet: View {
         }
     }
 
-    private func copyImportedAudio(_ source: URL) throws -> URL {
+    func copyImportedAudio(_ source: URL) throws -> URL {
         let scoped = source.startAccessingSecurityScopedResource()
         defer {
             if scoped {
@@ -1081,7 +916,7 @@ struct AlarmEditorSheet: View {
         return destination
     }
 
-    private func readAudioDurationMs(_ url: URL) async throws -> Int {
+    func readAudioDurationMs(_ url: URL) async throws -> Int {
         let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
         let duration = try await asset.load(.duration)
         let seconds = CMTimeGetSeconds(duration)
@@ -1092,7 +927,7 @@ struct AlarmEditorSheet: View {
     }
 
 
-    private func localAudioUploadDisplayName(for url: URL) -> String {
+    func localAudioUploadDisplayName(for url: URL) -> String {
         switch localAudioMode {
         case .record:
             return "alarm-recording.m4a"
@@ -1107,7 +942,7 @@ struct AlarmEditorSheet: View {
 
     // MARK: - Error formatting
 
-    private func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
+    func errorMessage(_ error: AlarmEditDraft.ValidationError) -> String {
         switch error {
         case .invalidHour:
             return "시간(0–23) 값이 올바르지 않아요."
