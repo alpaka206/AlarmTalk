@@ -7,7 +7,7 @@ final class RemoteAlarmSyncViewModelTests: XCTestCase {
         let error = APIError.server(status: 500, message: "Internal Server Error", errorCode: nil)
 
         XCTAssertEqual(
-            RemoteAlarmSyncViewModel.userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요"),
+            userFacingErrorMessage(error, fallback: "알람 정보를 불러오지 못했어요"),
             "알람 정보를 불러오지 못했어요"
         )
     }
@@ -16,7 +16,7 @@ final class RemoteAlarmSyncViewModelTests: XCTestCase {
         let error = APIError.server(status: 400, message: "이미 삭제된 알람이에요", errorCode: nil)
 
         XCTAssertEqual(
-            RemoteAlarmSyncViewModel.userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요"),
+            userFacingErrorMessage(error, fallback: "알람 삭제에 실패했어요"),
             "이미 삭제된 알람이에요"
         )
     }
