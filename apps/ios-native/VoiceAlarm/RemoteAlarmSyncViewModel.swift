@@ -155,12 +155,3 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
     }
 }
 
-private extension String {
-    var containsKorean: Bool {
-        contains { character in
-            character.unicodeScalars.contains { scalar in
-                (0xAC00...0xD7A3).contains(Int(scalar.value))
-            }
-        }
-    }
-}

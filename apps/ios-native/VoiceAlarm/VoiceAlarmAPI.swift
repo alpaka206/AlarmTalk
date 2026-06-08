@@ -850,17 +850,6 @@ enum APIError: LocalizedError {
     }
 }
 
-private extension Optional where Wrapped == String {
-    var nilIfBlank: String? {
-        switch self {
-        case .some(let value):
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        case .none:
-            return nil
-        }
-    }
-}
 
 private extension Data {
     mutating func appendMultipartLine(_ value: String) {

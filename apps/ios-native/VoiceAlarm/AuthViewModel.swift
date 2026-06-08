@@ -574,24 +574,4 @@ final class AuthViewModel: ObservableObject {
 //
 // `VoiceAlarmAPI.swift` 의 fileprivate `nilIfBlank` 와 동일 시맨틱을 내부 노출로
 // 재선언한다. 모듈 내 다른 파일이 import 없이 쓸 수 있도록 internal 가시성.
-private extension Optional where Wrapped == String {
-    var nilIfBlank: String? {
-        switch self {
-        case .some(let value):
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        case .none:
-            return nil
-        }
-    }
-}
 
-private extension String {
-    var containsKorean: Bool {
-        contains { character in
-            character.unicodeScalars.contains { scalar in
-                (0xAC00...0xD7A3).contains(Int(scalar.value))
-            }
-        }
-    }
-}
