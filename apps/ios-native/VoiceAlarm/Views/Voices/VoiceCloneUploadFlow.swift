@@ -304,7 +304,7 @@ struct VoiceCloneUploadFlow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(selectedFileName ?? "선택한 파일")
                         .font(.subheadline.weight(.semibold))
-                    Text("전체 \(timeLabel(durationMs)) · 사용할 구간 \(timeLabel(effectiveDurationMs))")
+                    Text("전체 \(HelperFormatters.audioTimeLabel(durationMs)) · 사용할 구간 \(HelperFormatters.audioTimeLabel(effectiveDurationMs))")
                         .font(.caption)
                         .foregroundStyle(VoiceAlarmTheme.textSecondary)
                 }
@@ -320,7 +320,7 @@ struct VoiceCloneUploadFlow: View {
 
             if durationMs > VoiceProfileLimits.maxDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))")
+                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))")
                         .font(.caption.weight(.semibold))
                     Slider(
                         value: Binding(
@@ -339,7 +339,7 @@ struct VoiceCloneUploadFlow: View {
 
             VoiceSegmentPreviewPlayer(
                 title: "선택 구간 미리듣기",
-                subtitle: "\(timeLabel(cropStartMs)) - \(timeLabel(effectiveEndMs))",
+                subtitle: "\(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))",
                 audioURL: url,
                 startMs: cropStartMs,
                 endMs: effectiveEndMs,
@@ -698,10 +698,6 @@ struct VoiceCloneUploadFlow: View {
         localError = nil
     }
 
-    private func timeLabel(_ millis: Int) -> String {
-        let seconds = max(0, millis / 1000)
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
 
     private func startLevelAnimation() {
         levelTimer?.invalidate()

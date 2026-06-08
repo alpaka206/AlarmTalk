@@ -17,6 +17,13 @@ enum HelperFormatters {
         weekdays.first { $0.value == value }?.label ?? ""
     }
 
+    /// 밀리초를 "분:초"(m:ss) 로 표기. 오디오 크롭/길이 표시에 공용으로 쓴다.
+    /// Android `audioTimeLabel` 대응. (여러 뷰에 흩어져 있던 동일 구현을 통합.)
+    static func audioTimeLabel(_ millis: Int) -> String {
+        let seconds = max(0, millis / 1000)
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
     /// Android `stageEmoji` 와 같은 캐릭터 단계 이모지. nil/unknown 은 씨앗.
     static func characterStageEmoji(_ stage: String?) -> String {
         switch stage {
@@ -83,7 +90,8 @@ enum HelperFormatters {
     }
 
     /// 요일 묶음 라벨. 0=일 … 6=토. Android `quietDaysLabel` 와 동일한 스마트 그룹핑.
-    private static func quietDaysLabel(_ days: [Int]) -> String {
+    /// (에디터의 FamilyAlarmScheduleRules 와 공용으로 쓰도록 internal.)
+    static func quietDaysLabel(_ days: [Int]) -> String {
         let sorted = Array(Set(days)).sorted()
         switch sorted {
         case []: return "없음"
