@@ -42,6 +42,7 @@ struct AlarmEditorSheet: View {
     @State var draft: AlarmEditDraft = .newDefault()
     @State var didLoadInitial = false
     @State var validationAlert: ValidationAlertContent?
+    @State var duplicateAlarmConfirm: DuplicateAlarmConfirmContent?
     @State var isWorking = false
     @State var sharedVoiceSetupTarget: FamilyVoiceProfile?
     @State var selectedFamilyRecipientID: String?
@@ -62,6 +63,15 @@ struct AlarmEditorSheet: View {
         let id = UUID()
         let title: String
         let message: String
+    }
+
+    /// 같은 시각 알람 교체 확인 모달의 내용. merged/existing 은 동의 시 저장을 마무리하는 데 쓴다.
+    struct DuplicateAlarmConfirmContent: Identifiable {
+        let id = UUID()
+        let timeLabel: String
+        let existingLabel: String?
+        let merged: LocalAlarmRecord
+        let existing: LocalAlarmRecord?
     }
 
     var body: some View {
@@ -184,6 +194,16 @@ struct AlarmEditorSheet: View {
                 title: Text(content.title),
                 message: Text(content.message),
                 dismissButton: .default(Text("확인"))
+            )
+        }
+        .alert(item: $duplicateAlarmConfirm) { content in
+            Alert(
+                title: Text("같은 시각 알람이 있어요"),
+                message: Text(duplicateAlarmMessage(content)),
+                primaryButton: .destructive(Text("교체하기")) {
+                    Task { await confirmReplaceDuplicate(content) }
+                },
+                secondaryButton: .cancel(Text("취소"))
             )
         }
         .onAppear {
@@ -590,12 +610,6 @@ struct AlarmEditorSheet: View {
 
         do {
             try LocalAlarmStore.validateDraft(merged)
-            try store.requireUniqueTime(
-                hour: merged.hour,
-                minute: merged.minute,
-                repeatDaysMask: merged.repeatDaysMask,
-                excludingID: existing?.id
-            )
         } catch {
             validationAlert = ValidationAlertContent(
                 title: "저장할 수 없어요",
@@ -604,6 +618,28 @@ struct AlarmEditorSheet: View {
             return
         }
 
+        // "한 시각에는 알람 하나" — 같은 시각 알람이 있으면 바로 거부하지 않고
+        // 교체 여부를 모달로 묻는다(자동 삭제하지 않음). 동의 시 confirmReplaceDuplicate.
+        let conflicts = store.conflictingAlarms(
+            hour: merged.hour,
+            minute: merged.minute,
+            excludingID: existing?.id
+        )
+        if !conflicts.isEmpty {
+            duplicateAlarmConfirm = DuplicateAlarmConfirmContent(
+                timeLabel: String(format: "%02d:%02d", merged.hour, merged.minute),
+                existingLabel: conflicts.first?.label,
+                merged: merged,
+                existing: existing
+            )
+            return
+        }
+
+        await finishScheduling(merged: merged, existing: existing)
+    }
+
+    /// 충돌이 없거나 교체 동의 후, 실제 저장 + AlarmKit 예약을 수행한다. 예약 실패 시 롤백.
+    func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async {
         store.upsert(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
@@ -622,6 +658,27 @@ struct AlarmEditorSheet: View {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
         onSchedulingDidFinish()
+    }
+
+    /// 중복 시각 교체 동의: 같은 시각의 기존 알람을 취소·삭제한 뒤 저장을 마무리한다.
+    func confirmReplaceDuplicate(_ content: DuplicateAlarmConfirmContent) async {
+        let conflicts = store.conflictingAlarms(
+            hour: content.merged.hour,
+            minute: content.merged.minute,
+            excludingID: content.existing?.id
+        )
+        for conflict in conflicts {
+            await alarmKit.cancelScheduledAlarm(record: conflict)
+            store.deleteByID(conflict.id)
+        }
+        await finishScheduling(merged: content.merged, existing: content.existing)
+    }
+
+    private func duplicateAlarmMessage(_ content: DuplicateAlarmConfirmContent) -> String {
+        if let label = content.existingLabel, !label.isEmpty {
+            return "\(content.timeLabel)에 이미 '\(label)' 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
+        }
+        return "\(content.timeLabel)에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
     }
 
     func generateVoiceAndSave() async {

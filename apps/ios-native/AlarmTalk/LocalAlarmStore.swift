@@ -74,6 +74,14 @@ final class LocalAlarmStore: ObservableObject {
         if collision { throw LocalAlarmValidationError.duplicateTime }
     }
 
+    /// 같은 시각(hour+minute)의 기존 알람들. "한 시각에는 알람 하나" 교체 흐름에서
+    /// 충돌 대상을 찾아 라벨 표시·삭제에 쓴다.
+    func conflictingAlarms(hour: Int, minute: Int, excludingID: String? = nil) -> [LocalAlarmRecord] {
+        alarms.filter { record in
+            record.id != excludingID && record.hour == hour && record.minute == minute
+        }
+    }
+
     // MARK: Validation
 
     /// Android `AlarmRepository.validateDraft` 동일.
