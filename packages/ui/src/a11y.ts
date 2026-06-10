@@ -1,3 +1,7 @@
+// 접근성(a11y) 유틸. WCAG 2.1 명도 대비 계산과 최소 터치 타깃 상수를 제공한다.
+// relativeLuminance/contrastRatio 는 sRGB → 선형 변환 후 표준 대비 공식을 따른다.
+
+// 최소 터치 타깃 크기(pt/dp). iOS HIG·Material 권장값.
 export const MIN_TOUCH_TARGET = 44;
 
 export const WCAG_AA_NORMAL = 4.5;

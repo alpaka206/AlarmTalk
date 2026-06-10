@@ -1,3 +1,5 @@
+// 공통 상태 화면(로딩/빈 목록/오류) 구성. 기본 이모지·문구를 제공하고
+// 호출부가 필요한 항목만 override 한다.
 export type StateViewVariant = 'loading' | 'empty' | 'error';
 
 export interface StateViewConfig {

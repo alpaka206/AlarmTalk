@@ -1,5 +1,9 @@
-// Mustard Yellow + Deep Navy — "해 뜨는 시간, 따뜻한 모던"
-// Mustard = primary (sunrise), Navy = secondary (trust), Terracotta = accent (warmth)
+// 디자인 토큰: 색상 팔레트 · 라이트/다크 시맨틱 색상 · 간격 · 모서리 · 타이포.
+//
+// 팔레트 콘셉트 — Mustard Yellow + Deep Navy, "해 뜨는 시간, 따뜻한 모던"
+//   Mustard = primary(일출), Navy = secondary(신뢰), Terracotta = accent(온기)
+// 라이트/다크 모드의 시맨틱 색상은 WCAG AA 대비를 만족하도록 선택했다
+// (예: mustard 위 텍스트는 흰색이 아니라 charcoal).
 export const ColorPalette = {
   // Mustard scale (primary)
   mustard: '#E8B341',
