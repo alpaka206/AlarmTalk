@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   android-build:
-    name: VoiceAlarm (Android devDebug)
+    name: AlarmTalk (Android devDebug)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:

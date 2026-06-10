@@ -330,7 +330,7 @@ private fun FamilyAlarmPermissionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                VoiceAlarmSwitch(
+                AlarmTalkSwitch(
                     checked = allowFamilyAlarms,
                     onCheckedChange = onToggle,
                 )

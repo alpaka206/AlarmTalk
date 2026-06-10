@@ -1,3 +1,10 @@
+/**
+ * 인증 관련 요청/응답 스키마.
+ *
+ * 이메일+비밀번호 가입/로그인, 이메일 인증 코드(6자리), Google/Apple
+ * 소셜 로그인, 그리고 공통 인증 응답(JWT 토큰 + 사용자 요약)을 정의한다.
+ * 백엔드 `routes/auth.ts` 가 이 스키마로 입력을 검증한다.
+ */
 import { z } from 'zod';
 
 export const PasswordSchema = z

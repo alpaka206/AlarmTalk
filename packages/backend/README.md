@@ -1,4 +1,4 @@
-# VoiceAlarm Backend
+# AlarmTalk Backend
 
 Cloudflare Workers + Hono 기반 API 서버.
 

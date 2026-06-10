@@ -4,10 +4,10 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.alarm.SocialNotificationFactory
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import java.util.UUID
 
 data class RemoteAlarmPullResult(
@@ -25,11 +25,11 @@ internal class RemoteAlarmPullSyncService(
     private val context: android.content.Context,
 ) {
     suspend fun pullReceivedAlarms(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         token: String,
         myUserId: String,
     ): RemoteAlarmPullResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
+        val authorization = AlarmTalkApiClient.bearer(token)
         // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
         // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
@@ -106,7 +106,7 @@ internal class RemoteAlarmPullSyncService(
     }
 
     private suspend fun buildLocalAlarm(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         authorization: String,
         remote: RemoteAlarm,
         existing: AlarmEntity?,

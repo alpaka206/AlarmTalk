@@ -100,22 +100,22 @@ android {
         buildConfig = true
     }
 
-    val voiceAlarmDevApiBaseUrl = providers.gradleProperty("voiceAlarmDevApiBaseUrl")
+    val alarmTalkDevApiBaseUrl = providers.gradleProperty("alarmTalkDevApiBaseUrl")
         .orElse("https://api-dev.alarm-talk.com/api/")
         .get()
-    val voiceAlarmProdApiBaseUrl = providers.gradleProperty("voiceAlarmProdApiBaseUrl")
+    val alarmTalkProdApiBaseUrl = providers.gradleProperty("alarmTalkProdApiBaseUrl")
         .orElse("https://api.alarm-talk.com/api/")
         .get()
-    val voiceAlarmDevGoogleWebClientId = providers.gradleProperty("voiceAlarmDevGoogleWebClientId")
+    val alarmTalkDevGoogleWebClientId = providers.gradleProperty("alarmTalkDevGoogleWebClientId")
         .orElse("")
         .get()
-    val voiceAlarmProdGoogleWebClientId = providers.gradleProperty("voiceAlarmProdGoogleWebClientId")
+    val alarmTalkProdGoogleWebClientId = providers.gradleProperty("alarmTalkProdGoogleWebClientId")
         .orElse("")
         .get()
-    val voiceAlarmDevSentryDsn = providers.gradleProperty("voiceAlarmDevSentryDsn")
+    val alarmTalkDevSentryDsn = providers.gradleProperty("alarmTalkDevSentryDsn")
         .orElse("")
         .get()
-    val voiceAlarmProdSentryDsn = providers.gradleProperty("voiceAlarmProdSentryDsn")
+    val alarmTalkProdSentryDsn = providers.gradleProperty("alarmTalkProdSentryDsn")
         .orElse("")
         .get()
 
@@ -124,16 +124,16 @@ android {
         create("dev") {
             dimension = "environment"
             applicationIdSuffix = ".dev"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmDevApiBaseUrl.asBuildConfigString())
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", alarmTalkDevApiBaseUrl.asBuildConfigString())
             buildConfigField(
                 "String",
                 "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                voiceAlarmDevGoogleWebClientId.asBuildConfigString(),
+                alarmTalkDevGoogleWebClientId.asBuildConfigString(),
             )
             buildConfigField(
                 "String",
                 "VOICE_ALARM_SENTRY_DSN",
-                voiceAlarmDevSentryDsn.asBuildConfigString(),
+                alarmTalkDevSentryDsn.asBuildConfigString(),
             )
             buildConfigField(
                 "String",
@@ -143,16 +143,16 @@ android {
         }
         create("prod") {
             dimension = "environment"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmProdApiBaseUrl.asBuildConfigString())
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", alarmTalkProdApiBaseUrl.asBuildConfigString())
             buildConfigField(
                 "String",
                 "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                voiceAlarmProdGoogleWebClientId.asBuildConfigString(),
+                alarmTalkProdGoogleWebClientId.asBuildConfigString(),
             )
             buildConfigField(
                 "String",
                 "VOICE_ALARM_SENTRY_DSN",
-                voiceAlarmProdSentryDsn.asBuildConfigString(),
+                alarmTalkProdSentryDsn.asBuildConfigString(),
             )
             buildConfigField(
                 "String",

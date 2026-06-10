@@ -13,7 +13,7 @@ import {
   AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
-} from '@voice-alarm/shared';
+} from '@alarmtalk/shared';
 import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
 import {

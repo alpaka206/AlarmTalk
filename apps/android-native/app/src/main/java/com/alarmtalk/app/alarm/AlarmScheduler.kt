@@ -10,7 +10,7 @@ import androidx.core.content.getSystemService
 import com.alarmtalk.app.MainActivity
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_ALARM_TRIGGER
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmEntity
 
 class AlarmScheduler(

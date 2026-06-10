@@ -2,7 +2,7 @@ package com.alarmtalk.app
 
 import android.util.Log
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch

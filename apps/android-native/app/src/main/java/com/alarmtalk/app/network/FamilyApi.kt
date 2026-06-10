@@ -40,7 +40,7 @@ data class FamilyGroupMember(
         DynamicPromptSettingsState(),
 )
 
-data class FamilyVoiceAlarmRequest(
+data class FamilyAlarmTalkRequest(
     @SerializedName("recipient_user_id") val recipientUserId: String,
     @SerializedName("wake_at") val wakeAt: String,
     @SerializedName("voice_upload_id") val voiceUploadId: String,
@@ -48,11 +48,11 @@ data class FamilyVoiceAlarmRequest(
     @SerializedName("repeat_days") val repeatDays: List<Int> = emptyList(),
 )
 
-data class FamilyVoiceAlarmResponse(
-    val alarm: FamilyVoiceAlarm,
+data class FamilyAlarmTalkResponse(
+    val alarm: FamilyAlarmTalk,
 )
 
-data class FamilyVoiceAlarm(
+data class FamilyAlarmTalk(
     val id: String,
     @SerializedName("recipient_user_id") val recipientUserId: String? = null,
     @SerializedName("wake_at") val wakeAt: String? = null,
@@ -88,8 +88,8 @@ interface FamilyApi {
     ): RemoveFamilyMemberResponse
 
     @POST("family/alarms/voice")
-    suspend fun createFamilyVoiceAlarm(
+    suspend fun createFamilyAlarmTalk(
         @Header("Authorization") authorization: String,
-        @Body request: FamilyVoiceAlarmRequest,
-    ): FamilyVoiceAlarmResponse
+        @Body request: FamilyAlarmTalkRequest,
+    ): FamilyAlarmTalkResponse
 }

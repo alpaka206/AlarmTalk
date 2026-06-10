@@ -6,7 +6,7 @@ import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_DEBUG_RESTORE_ALARMS
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
 import kotlinx.coroutines.CoroutineScope

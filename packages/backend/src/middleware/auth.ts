@@ -1,3 +1,15 @@
+/**
+ * 인증 미들웨어. 모든 보호 라우트(`/api/*`)는 이 미들웨어를 통과한다.
+ *
+ * Firebase 없이 Bearer 토큰을 직접 검증한다. 토큰의 `iss`(발급자)를 보고
+ * 세 가지 경로로 분기한다:
+ *  - 자체 발급 앱 JWT(APP_JWT_ISSUER)  → verifyAppJwt
+ *  - Google ID Token                   → verifyGoogleIdToken
+ *  - Apple ID Token                    → verifyAppleIdToken
+ *
+ * 검증 후 `users` 행을 해석(없으면 즉석 생성)해 `userIdPK`(FK 기준 식별자)를
+ * 컨텍스트에 심고, 탈퇴 유예(pending_deletion) 계정은 본인조회/철회 외 API를 막는다.
+ */
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types';
 import { verifyAppJwt, APP_JWT_ISSUER } from '../lib/jwt';
@@ -88,9 +100,13 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         pk = String(found.rows[0]!.id);
         deletionStatus = String(found.rows[0]!.deletion_status ?? 'active');
       } else {
+        // 최초 인증 시 users 행을 즉석에서 생성한다. 동일 사용자의 동시 첫 요청이
+        // 둘 다 INSERT 를 시도해도 중복키 예외로 죽지 않도록 ON CONFLICT DO NOTHING
+        // 으로 멱등화한다. 신규 계정은 id = sub 이므로 경쟁 상황에서도 pk 는 일관된다.
         await db.execute({
           sql: `INSERT INTO users (id, google_id, apple_id, email, name, picture)
-                VALUES (?, ?, ?, ?, ?, ?)`,
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT DO NOTHING`,
           args: [
             verified.sub,
             verified.sub,
@@ -103,8 +119,6 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         pk = verified.sub;
       }
       c.set('userIdPK', pk);
-      // eslint-disable-next-line no-console
-      console.log('[AUTH user-resolve OK]', 'sub=', verified.sub, '→ usersId=', pk);
 
       // 탈퇴 유예(pending_deletion) 계정은 본인정보 조회(GET /user/me)와 탈퇴 철회
       // (DELETE /user/me/deletion) 외의 인증 API 사용을 차단한다(개인정보보호법 제21조,
@@ -125,9 +139,14 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         }
       }
     } catch (err) {
+      // 사용자 행 해석 실패 시에도 요청은 계속 처리하되(PK 는 sub 로 폴백),
+      // PII(sub/email)를 로그에 남기지 않고 오류만 구조적 로깅한다.
       c.set('userIdPK', verified.sub);
-      // eslint-disable-next-line no-console
-      console.log('[AUTH user-resolve FAIL]', err instanceof Error ? err.message : String(err));
+      const { logStructured } = await import('../lib/logger');
+      logStructured('error', {
+        at: 'auth.user_resolve',
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     await next();

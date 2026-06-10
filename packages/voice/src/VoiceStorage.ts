@@ -1,3 +1,10 @@
+/**
+ * 음성 파일 저장소(Voice Storage) 포트 정의.
+ *
+ * 업로드된 음성 원본을 저장/조회/삭제하는 추상 인터페이스. 운영 환경에서는
+ * Cloudflare R2 구현({@link ../../backend/src/lib/r2-storage.ts})을 쓰고,
+ * 이 파일의 {@link InMemoryVoiceStorage} 는 개발/테스트용 폴백이다.
+ */
 import { z } from 'zod';
 
 export const StoreInputSchema = z.object({

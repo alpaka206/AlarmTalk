@@ -32,7 +32,7 @@ On macOS:
 cd apps/ios-native
 brew install xcodegen
 xcodegen generate
-open VoiceAlarmNative.xcodeproj
+open AlarmTalkNative.xcodeproj
 ```
 
 For a command-line compile check without signing:
@@ -44,13 +44,13 @@ bash scripts/build-debug.sh
 
 In Xcode:
 
-1. Select the `VoiceAlarm` target.
+1. Select the `AlarmTalk` target.
 2. Set a development team.
 3. Confirm the bundle ID matches the backend `APPLE_CLIENT_ID` env value.
 4. Confirm Signing & Capabilities includes **Sign in with Apple**.
 5. Run on a physical iPhone with iOS 26+.
 
-The app reads `VOICE_ALARM_API_BASE_URL` from `VoiceAlarm/Info.plist`. The default is production:
+The app reads `VOICE_ALARM_API_BASE_URL` from `AlarmTalk/Info.plist`. The default is production:
 
 ```text
 https://api.alarm-talk.com/api
@@ -120,7 +120,7 @@ App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases �
 
 ### 시뮬레이터 로컬 테스트
 
-`apps/ios-native/VoiceAlarm/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 6개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
+`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 6개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
 
 xcodegen 후 Xcode 에서:
 
@@ -135,7 +135,7 @@ xcodegen 후 Xcode 에서:
 
 현재 백엔드 라우트는 server-to-server 검증이 구현되기 전까지 fail-closed 로 동작한다. 유효한 SKU 여도 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하며 DB entitlement 를 변경하지 않는다. iOS 클라이언트는 StoreKit `currentEntitlements` 를 로컬 권위로 사용하고, 서버 검증 구현 후 foreground 진입 시 `resyncEntitlements()` 로 catch-up 한다.
 
-**라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`VoiceAlarmApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
+**라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`AlarmTalkApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
 
 요청 페이로드 (`ConfirmAppleSubscriptionRequest`):
 

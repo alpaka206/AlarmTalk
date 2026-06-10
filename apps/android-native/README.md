@@ -12,9 +12,9 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - copy alarm action that reuses the cached local audio file
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
 - app theme matched to the legacy mobile mustard/navy/terracotta tokens
-- email/password auth against the deployed VoiceAlarm API
+- email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
-- manual alarm metadata sync to the deployed VoiceAlarm API
+- manual alarm metadata sync to the deployed AlarmTalk API
 - friend list, pending friend requests, and friend request creation
 - family group, invite code creation/accept/revoke, and shared voice profile lookup
 - post-alarm character XP event queue with manual sync
@@ -68,8 +68,8 @@ Google sign-in needs a Web OAuth client ID for `requestIdToken()`. Android OAuth
 ```text
 Dev applicationId: com.alarmtalk.app.dev
 Prod applicationId: com.alarmtalk.app
-Dev Web client ID: set with voiceAlarmDevGoogleWebClientId
-Prod Web client ID: set with voiceAlarmProdGoogleWebClientId
+Dev Web client ID: set with alarmTalkDevGoogleWebClientId
+Prod Web client ID: set with alarmTalkProdGoogleWebClientId
 ```
 
 Register Android OAuth clients in Google Cloud Console for each package name and signing certificate SHA-1. The app does not read Android client IDs at runtime.
@@ -77,7 +77,7 @@ Register Android OAuth clients in Google Cloud Console for each package name and
 Keep real OAuth client IDs in Gradle property sources, CI secrets, or local ignored files. Do not duplicate them in README files. Override the Web client ID with a Gradle property when needed:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
+.\gradlew.bat -PalarmTalkDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
 ```
 
 ### Sentry Error Reporting
@@ -85,7 +85,7 @@ Keep real OAuth client IDs in Gradle property sources, CI secrets, or local igno
 Android crash and ANR reporting is disabled by default. Set a flavor-specific DSN only when the target Sentry project is ready:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmProdSentryDsn="<SENTRY_DSN>" :app:bundleProdRelease
+.\gradlew.bat -PalarmTalkProdSentryDsn="<SENTRY_DSN>" :app:bundleProdRelease
 ```
 
 When the DSN is blank, the app does not initialize the Sentry SDK. Release bundles include native debug symbol metadata where available.
@@ -112,7 +112,7 @@ Use a real Android device. Keep logcat open in a separate terminal:
 
 ```powershell
 adb logcat -c
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Grant or open required permissions:
@@ -145,7 +145,7 @@ Current verified device:
 adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
-Expected: `VoiceAlarm` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
+Expected: `AlarmTalk` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
 
 For locked-device or CI-style debug verification where UI tapping is not available, debug builds include an adb-only test receiver. It is declared under `src/debug`, so it is not packaged in release builds:
 
@@ -153,7 +153,7 @@ For locked-device or CI-style debug verification where UI tapping is not availab
 adb logcat -c
 adb shell input keyevent KEYCODE_SLEEP
 adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_CREATE_TEST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver --ei delay_minutes 1
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_DISMISS_LAST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver
 ```
 
@@ -212,7 +212,7 @@ adb shell dumpsys alarm | findstr com.alarmtalk.app
 7. Enable it again and confirm a new OS alarm is registered.
 8. Delete it and confirm it disappears from the list and `dumpsys alarm`.
 
-Expected: `VoiceAlarm` logs show create, update, enabled changed, deleted, and scheduled/cancelled events. No network calls are required.
+Expected: `AlarmTalk` logs show create, update, enabled changed, deleted, and scheduled/cancelled events. No network calls are required.
 
 Opening the alarm list also performs a startup sync from Room to `AlarmManager`, so future enabled alarms are restored and expired one-shot alarms are marked inactive.
 
@@ -239,14 +239,14 @@ To verify file selection:
 
 1. Tap Pick and choose an `audio/*` file.
 2. Files longer than 30 seconds should be trimmed to the first 30 seconds when the Android media stack can mux the selected format. If duration cannot be read or trimming fails, retry with m4a/aac/mp4.
-3. Save and confirm `VoiceAlarm` logs show local audio caching.
+3. Save and confirm `AlarmTalk` logs show local audio caching.
 
 Airplane-mode check:
 
 ```powershell
 adb shell cmd connectivity airplane-mode enable
 adb logcat -c
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` loops bundled alarm audio until Dismiss, then plays the cached voice once. No fetch is allowed at ring time.
@@ -298,7 +298,7 @@ Network is only used when the user signs in or taps Sync now.
 5. Watch logs:
 
 ```powershell
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Expected:

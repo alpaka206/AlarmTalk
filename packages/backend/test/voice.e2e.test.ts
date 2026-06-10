@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware } from './helpers';
-import { resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 
 const mockDB = createMockDB();
 const mockDiarize = vi.fn();

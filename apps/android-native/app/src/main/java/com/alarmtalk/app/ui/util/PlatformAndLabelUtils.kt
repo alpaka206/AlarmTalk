@@ -12,7 +12,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.compose.material.icons.outlined.Message
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmSyncStates
 import com.alarmtalk.app.data.CachedAlarmAudio

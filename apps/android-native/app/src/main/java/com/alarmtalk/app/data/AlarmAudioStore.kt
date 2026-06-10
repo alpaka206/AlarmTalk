@@ -11,7 +11,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest

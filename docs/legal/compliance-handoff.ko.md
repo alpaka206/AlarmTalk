@@ -19,7 +19,7 @@ git pull
 cd packages/backend
 npx vitest run test/user.test.ts test/migrations.test.ts   # 54 passed
 ```
-> 로컬에서 `npx tsc --noEmit` 시 `@voice-alarm/shared`·`@voice-alarm/voice` 모듈 미해석
+> 로컬에서 `npx tsc --noEmit` 시 `@alarmtalk/shared`·`@alarmtalk/voice` 모듈 미해석
 > 경고가 날 수 있는데, 이는 워크스페이스 빌드 순서 이슈로 CI(루트 `npm ci`)에서는 정상이다.
 
 ## 완료 (이 PR에 포함)

@@ -1,10 +1,10 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
-import type { VoiceStorage } from '@voice-alarm/voice';
+import type { VoiceStorage } from '@alarmtalk/voice';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
-import { getSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { UUID_RE } from '../lib/validate';
 import { isPaidVoicePlan } from './billing-helpers';

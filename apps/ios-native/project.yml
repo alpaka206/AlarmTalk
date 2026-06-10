@@ -1,4 +1,4 @@
-name: VoiceAlarmNative
+name: AlarmTalkNative
 options:
   bundleIdPrefix: com.voicealarm.nativeapp.ios
   deploymentTarget:
@@ -25,25 +25,25 @@ settings:
       GCC_OPTIMIZATION_LEVEL: "s"
       ONLY_ACTIVE_ARCH: NO
 targets:
-  VoiceAlarm:
+  AlarmTalk:
     type: application
     platform: iOS
     sources:
-      - VoiceAlarm
+      - AlarmTalk
       - Shared
       # Phase 4-D1: StoreKit Configuration 파일을 build resources 에 포함시켜
       # Xcode 의 scheme 에서 시뮬레이터용 IAP 테스트 환경을 선택할 수 있게 한다.
       # 실기기/TestFlight/AppStore 빌드에서는 자동으로 무시됨 (App Store Connect 가 권위).
-      - path: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
+      - path: AlarmTalk/Configuration/StoreKitConfiguration.storekit
         buildPhase: resources
     dependencies:
-      - target: VoiceAlarmWidget
+      - target: AlarmTalkWidget
         embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
-        INFOPLIST_FILE: VoiceAlarm/Info.plist
-        CODE_SIGN_ENTITLEMENTS: VoiceAlarm/VoiceAlarm.entitlements
+        INFOPLIST_FILE: AlarmTalk/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AlarmTalk/AlarmTalk.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
@@ -51,33 +51,33 @@ targets:
     scheme:
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
-      storeKitConfiguration: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
-      # `xcodebuild -scheme VoiceAlarm test` 가 단위 테스트를 실행하도록 test action 에 포함.
+      storeKitConfiguration: AlarmTalk/Configuration/StoreKitConfiguration.storekit
+      # `xcodebuild -scheme AlarmTalk test` 가 단위 테스트를 실행하도록 test action 에 포함.
       testTargets:
-        - VoiceAlarmTests
-  VoiceAlarmWidget:
+        - AlarmTalkTests
+  AlarmTalkWidget:
     type: app-extension
     platform: iOS
     sources:
-      - VoiceAlarmWidget
+      - AlarmTalkWidget
       - Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.widget
-        INFOPLIST_FILE: VoiceAlarmWidget/Info.plist
-        CODE_SIGN_ENTITLEMENTS: VoiceAlarmWidget/VoiceAlarmWidget.entitlements
+        INFOPLIST_FILE: AlarmTalkWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AlarmTalkWidget/AlarmTalkWidget.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
-  VoiceAlarmTests:
+  AlarmTalkTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - VoiceAlarmTests
+      - AlarmTalkTests
     dependencies:
-      - target: VoiceAlarm
+      - target: AlarmTalk
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VoiceAlarm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VoiceAlarm"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk"

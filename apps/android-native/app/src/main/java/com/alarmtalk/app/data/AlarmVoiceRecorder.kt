@@ -4,7 +4,7 @@ import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 
 class AlarmVoiceRecorder(

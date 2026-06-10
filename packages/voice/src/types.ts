@@ -1,3 +1,15 @@
+/**
+ * 음성 제공자(Voice Provider) 포트 정의.
+ *
+ * 백엔드는 특정 벤더(ElevenLabs 등)가 아니라 이 `VoiceProvider` 인터페이스에
+ * 의존한다. 세 가지 동작을 추상화한다:
+ *  - enroll    : 사용자 음성 샘플로 음성 프로필 등록(클로닝)
+ *  - synthesize: 등록된 음성으로 텍스트 → 음성(TTS)
+ *  - separate  : 다화자 오디오에서 화자 분리
+ *
+ * 모든 입출력은 Zod 스키마로 검증한다. 실제 구현은 backend(ElevenLabs),
+ * 개발/테스트용 가짜 구현은 {@link MockVoiceProvider} 가 담당한다.
+ */
 import { z } from 'zod';
 
 export const EnrollInputSchema = z.object({

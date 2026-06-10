@@ -1,4 +1,4 @@
-# @voice-alarm/shared
+# @alarmtalk/shared
 
 모노레포 공용 타입·zod 스키마 패키지.
 
@@ -32,7 +32,7 @@ npm run test        # vitest
 ## 사용 예
 
 ```ts
-import { UserSchema } from "@voice-alarm/shared";
+import { UserSchema } from "@alarmtalk/shared";
 
 const user = UserSchema.parse(await fetchMe());
 ```

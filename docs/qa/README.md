@@ -258,7 +258,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 
 ## Logs / artifacts
 ```
-adb logcat | grep VoiceAlarm
+adb logcat | grep AlarmTalk
 ...
 ```
 
@@ -296,7 +296,7 @@ adb logcat | grep VoiceAlarm
 
 ```bash
 adb logcat -c
-adb logcat | grep VoiceAlarm > logcat.txt
+adb logcat | grep AlarmTalk > logcat.txt
 adb shell dumpsys alarm | grep voicealarm > alarms_dump.txt
 adb bugreport bugreport_$(date +%Y%m%d_%H%M%S).zip
 ```

@@ -28,7 +28,7 @@ import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes

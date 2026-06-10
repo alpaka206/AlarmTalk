@@ -1,10 +1,10 @@
 package com.alarmtalk.app.data
 
 import android.util.Log
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarmMapper
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
 
 data class AlarmSyncResult(
     val total: Int,
@@ -16,8 +16,8 @@ data class AlarmSyncResult(
 internal class AlarmSyncService(
     private val alarmDao: AlarmDao,
 ) {
-    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
+    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult {
+        val authorization = AlarmTalkApiClient.bearer(token)
         val localAlarms = alarmDao.getAllAlarms()
             .filter { alarm ->
                 alarm.origin == AlarmOrigins.LOCAL_OWNED &&

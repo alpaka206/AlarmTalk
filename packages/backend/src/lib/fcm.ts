@@ -69,7 +69,7 @@ export async function sendAlarmPush(
   const texts = getTexts(locale);
   const messages: FcmMessage[] = tokens.map((token) => ({
     token,
-    title: 'VoiceAlarm',
+    title: 'AlarmTalk',
     body: texts.alarmBody(alarmTime),
     data: { type: 'alarm', alarmId, channelId: 'alarms' },
   }));

@@ -15,7 +15,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:name=".VoiceAlarmApplication"
+        android:name=".AlarmTalkApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -24,7 +24,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VoiceAlarm"
+        android:theme="@style/Theme.AlarmTalk"
         android:usesCleartextTraffic="false">
 
         <meta-data
@@ -42,7 +42,7 @@
             android:showWhenLocked="true"
             android:taskAffinity="com.alarmtalk.app.ringing"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.VoiceAlarm.Ringing" />
+            android:theme="@style/Theme.AlarmTalk.Ringing" />
 
         <activity
             android:name=".MainActivity"

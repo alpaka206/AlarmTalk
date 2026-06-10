@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
-import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const V404 = '40000000-0000-4000-8000-0000000000ff';

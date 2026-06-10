@@ -254,7 +254,7 @@ internal fun SnoozeSettingsPane(
                                 MaterialTheme.colorScheme.onSurface
                             },
                         )
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = snoozeEnabled,
                             onCheckedChange = onSnoozeEnabledChange,
                         )

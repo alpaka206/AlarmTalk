@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -36,7 +36,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
@@ -75,7 +75,7 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
         if (voiceProfileBusy) return@launch
         voiceProfileBusy = true
         runCatching {
-            api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
+            api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
         }.onSuccess { profiles ->
             voiceProfiles = profiles
         }.onFailure { error ->
@@ -159,7 +159,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
                     api.createVoiceClone(
-                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        authorization = AlarmTalkApiClient.bearer(session.token),
                         audio = voiceUploadPart(draft.audio),
                         name = draft.name.toRequestBody("text/plain".toMediaType()),
                         isShared = draft.shared.toString().toRequestBody("text/plain".toMediaType()),
@@ -201,13 +201,13 @@ internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio
     }
     return withContext(Dispatchers.IO) {
         val upload = api.uploadVoiceAudio(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             audio = voiceUploadPart(audio),
             durationMs = (audio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
             originalName = audio.displayName.toRequestBody("text/plain".toMediaType()),
         ).upload
         api.separateVoiceUpload(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             uploadId = upload.id,
         ).speakers
     }
@@ -227,7 +227,7 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
     }
     return withContext(Dispatchers.IO) {
         api.createVoiceClone(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             audio = voiceUploadPart(audio),
             name = name.toRequestBody("text/plain".toMediaType()),
             isShared = false.toString().toRequestBody("text/plain".toMediaType()),
@@ -247,7 +247,7 @@ internal suspend fun MainViewModel.promoteDraftVoice(profileId: String): VoicePr
     val session = authSession ?: throw IllegalStateException("음성을 등록하려면 먼저 로그인해 주세요")
     return withContext(Dispatchers.IO) {
         api.updateVoiceProfile(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             id = profileId,
             request = VoiceProfileUpdateRequest(isDraft = false),
         ).profile
@@ -260,7 +260,7 @@ internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
     withContext(Dispatchers.IO) {
         runCatching {
             api.deleteVoiceProfile(
-                authorization = VoiceAlarmApiClient.bearer(session.token),
+                authorization = AlarmTalkApiClient.bearer(session.token),
                 id = profileId,
                 force = true,
             )
@@ -303,7 +303,7 @@ internal fun MainViewModel.renameVoiceProfile(
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileUpdateRequest(
                         name = trimmedName,
@@ -362,7 +362,7 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfileRelationship(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileRelationshipUpdateRequest(
                         relationshipLabel = trimmedRelationship,
@@ -408,7 +408,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileUpdateRequest(isShared = shared),
                 ).profile
@@ -418,7 +418,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
             }
             runCatching {
-                api.listFamilyVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
+                api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 familyVoices = profiles
             }
@@ -450,7 +450,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         runCatching {
             withContext(Dispatchers.IO) {
                 api.deleteVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     force = true,
                 )
@@ -484,7 +484,7 @@ internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest)
     }
     val session = authSession ?: throw IllegalStateException("음성 오디오를 만들려면 먼저 로그인해 주세요")
     return withContext(Dispatchers.IO) {
-        api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)
+        api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
     }
 }
 
@@ -497,7 +497,7 @@ internal fun MainViewModel.loadTtsMessages() {
     viewModelScope.launch {
         ttsMessageBusy = true
         runCatching {
-            api.listTtsMessages(VoiceAlarmApiClient.bearer(session.token)).messages
+            api.listTtsMessages(AlarmTalkApiClient.bearer(session.token)).messages
         }.onSuccess { messages ->
             ttsMessages = messages
         }.onFailure { error ->
@@ -511,6 +511,6 @@ internal fun MainViewModel.loadTtsMessages() {
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
     val session = authSession ?: throw IllegalStateException("저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요")
     return withContext(Dispatchers.IO) {
-        api.getTtsMessageAudio(VoiceAlarmApiClient.bearer(session.token), messageId)
+        api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
     }
 }
