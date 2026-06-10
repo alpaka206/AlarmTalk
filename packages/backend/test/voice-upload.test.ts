@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware } from './helpers';
-import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 
 const UPLOAD_ID = '50000000-0000-4000-8000-000000000001';
 const SPEAKER_ID = '60000000-0000-4000-8000-000000000001';

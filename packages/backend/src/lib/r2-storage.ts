@@ -1,4 +1,4 @@
-import type { VoiceStorage, StoreInput, StoredObject } from '@voice-alarm/voice';
+import type { VoiceStorage, StoreInput, StoredObject } from '@alarmtalk/voice';
 
 type StoreAtKeyInput = Omit<StoreInput, 'bytes'> & { bytes: Uint8Array<ArrayBufferLike> };
 
