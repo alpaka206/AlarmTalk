@@ -72,6 +72,7 @@ struct AlarmEditorSheet: View {
         let existingLabel: String?
         let merged: LocalAlarmRecord
         let existing: LocalAlarmRecord?
+        let conflicts: [LocalAlarmRecord]
     }
 
     var body: some View {
@@ -630,7 +631,8 @@ struct AlarmEditorSheet: View {
                 timeLabel: String(format: "%02d:%02d", merged.hour, merged.minute),
                 existingLabel: conflicts.first?.label,
                 merged: merged,
-                existing: existing
+                existing: existing,
+                conflicts: conflicts
             )
             return
         }
@@ -638,8 +640,10 @@ struct AlarmEditorSheet: View {
         await finishScheduling(merged: merged, existing: existing)
     }
 
-    /// 충돌이 없거나 교체 동의 후, 실제 저장 + AlarmKit 예약을 수행한다. 예약 실패 시 롤백.
-    func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async {
+    /// 충돌이 없거나 교체 동의 후, 실제 저장 + AlarmKit 예약을 수행한다. 예약 실패 시
+    /// 롤백하고 false 를 반환한다(교체 흐름이 충돌 알람을 지우지 않도록).
+    @discardableResult
+    func finishScheduling(merged: LocalAlarmRecord, existing: LocalAlarmRecord?) async -> Bool {
         store.upsert(merged)
         let scheduled = await alarmKit.schedule(record: merged, store: store)
         guard scheduled else {
@@ -652,26 +656,26 @@ struct AlarmEditorSheet: View {
                 title: "예약할 수 없어요",
                 message: alarmKit.statusMessage ?? "알람 예약에 실패했어요."
             )
-            return
+            return false
         }
         if let existing {
             await alarmKit.cancelScheduledAlarm(record: existing)
         }
         onSchedulingDidFinish()
+        return true
     }
 
-    /// 중복 시각 교체 동의: 같은 시각의 기존 알람을 취소·삭제한 뒤 저장을 마무리한다.
+    /// 중복 시각 교체 동의: 새 알람을 먼저 저장·예약한 뒤, 충돌 알람을 삭제한다.
+    /// 순서가 중요하다 — 충돌 알람을 먼저 지우면 둘이 공유하는 audioCacheKey 음성이
+    /// 마지막 참조로 간주돼 삭제되어, 같은 음성을 재사용하는 새 알람이 깨진다.
+    /// 저장 실패 시에는 충돌 알람을 보존한다.
     func confirmReplaceDuplicate(_ content: DuplicateAlarmConfirmContent) async {
-        let conflicts = store.conflictingAlarms(
-            hour: content.merged.hour,
-            minute: content.merged.minute,
-            excludingID: content.existing?.id
-        )
-        for conflict in conflicts {
-            await alarmKit.cancelScheduledAlarm(record: conflict)
-            store.deleteByID(conflict.id)
+        let saved = await finishScheduling(merged: content.merged, existing: content.existing)
+        guard saved else { return }
+        for conflict in content.conflicts {
+            // cancel(record:store:) = AlarmKit 예약 취소 + store.delete + 고아 캐시만 정리.
+            _ = await alarmKit.cancel(record: conflict, store: store)
         }
-        await finishScheduling(merged: content.merged, existing: content.existing)
     }
 
     private func duplicateAlarmMessage(_ content: DuplicateAlarmConfirmContent) -> String {

@@ -104,7 +104,7 @@ class AlarmRepository(
 
     suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity {
         validateDraft(draft)
-        resolveTimeConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
         val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
@@ -167,6 +167,9 @@ class AlarmRepository(
         requireExactAlarmPermission()
         alarmScheduler.schedule(alarm)
         alarmDao.upsert(alarm)
+        // 새 알람을 저장한 뒤에 충돌 알람을 삭제해야, 둘이 같은 audioCacheKey 를
+        // 공유할 때 캐시 음성이 보존된다(deleteAlarm 의 참조 카운트가 새 알람을 포함).
+        conflict?.let { deleteAlarm(it.id) }
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
         return alarm
     }
@@ -178,7 +181,7 @@ class AlarmRepository(
     ): AlarmEntity {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        resolveTimeConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
         val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
@@ -236,6 +239,8 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
         alarmScheduler.schedule(updated)
         alarmDao.upsert(updated)
+        // 갱신본 저장 후 충돌 알람 삭제 — 공유 audioCacheKey 음성 보존.
+        conflict?.let { deleteAlarm(it.id) }
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -599,18 +604,21 @@ class AlarmRepository(
     }
 
     /**
-     * "한 시각에는 알람 하나" 정책 적용. 같은 시각의 기존 알람이 있으면:
+     * "한 시각에는 알람 하나" 정책. 같은 시각의 기존 알람을 찾는다.
      *  - replaceExisting=false → [DuplicateAlarmTimeException] 을 던져 호출부(UI)가
      *    교체 여부를 사용자에게 모달로 묻게 한다.
-     *  - replaceExisting=true  → 기존 알람을 삭제(스케줄 취소 포함)하고 진행한다.
+     *  - replaceExisting=true  → 충돌 알람을 반환한다. 단, 삭제는 호출부가 새 알람을
+     *    저장한 '이후'에 [deleteAlarm] 으로 해야 한다. 새 알람보다 먼저 삭제하면,
+     *    새 알람이 같은 audioCacheKey(음성)를 재사용할 때 그 캐시의 마지막 참조로
+     *    간주돼 음성 파일이 지워지고 → 새 알람이 깨진 경로를 가리키게 된다.
      */
-    private suspend fun resolveTimeConflict(
+    private suspend fun findReplaceableConflict(
         hour: Int,
         minute: Int,
         excludeAlarmId: String?,
         replaceExisting: Boolean,
-    ) {
-        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return
+    ): AlarmEntity? {
+        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return null
         if (!replaceExisting) {
             throw DuplicateAlarmTimeException(
                 existingAlarmId = existing.id,
@@ -619,7 +627,7 @@ class AlarmRepository(
                 existingLabel = existing.label,
             )
         }
-        deleteAlarm(existing.id)
+        return existing
     }
 
     private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
