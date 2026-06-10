@@ -36,7 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun VoiceAlarmBottomBar(
+internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
     unreadAlarmCount: Int,
     unreadMessageCount: Int,
@@ -55,7 +55,7 @@ internal fun VoiceAlarmBottomBar(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            VoiceAlarmTabItem(
+            AlarmTalkTabItem(
                 tab = NativeTab.Home,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Home,
@@ -63,7 +63,7 @@ internal fun VoiceAlarmBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-            VoiceAlarmTabItem(
+            AlarmTalkTabItem(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Mic,
@@ -71,7 +71,7 @@ internal fun VoiceAlarmBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-            VoiceAlarmTabItem(
+            AlarmTalkTabItem(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Alarm,
@@ -80,7 +80,7 @@ internal fun VoiceAlarmBottomBar(
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
-            VoiceAlarmTabItem(
+            AlarmTalkTabItem(
                 tab = NativeTab.Messages,
                 selectedTab = selectedTab,
                 icon = Icons.AutoMirrored.Outlined.Message,
@@ -94,7 +94,7 @@ internal fun VoiceAlarmBottomBar(
 }
 
 @Composable
-internal fun VoiceAlarmTabItem(
+internal fun AlarmTalkTabItem(
     tab: NativeTab,
     selectedTab: NativeTab,
     icon: androidx.compose.ui.graphics.vector.ImageVector,

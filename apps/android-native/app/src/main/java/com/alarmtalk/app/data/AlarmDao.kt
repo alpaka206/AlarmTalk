@@ -40,7 +40,7 @@ interface AlarmDao {
         ORDER BY fireAtMillis ASC
         """,
     )
-    suspend fun getRepeatingDynamicVoiceAlarms(): List<AlarmEntity>
+    suspend fun getRepeatingDynamicAlarmTalks(): List<AlarmEntity>
 
     @Query(
         """

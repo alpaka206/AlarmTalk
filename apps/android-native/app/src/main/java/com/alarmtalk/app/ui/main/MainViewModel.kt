@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -34,7 +34,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
@@ -72,8 +72,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.getOrDefault(0)
 
-    internal val api = VoiceAlarmApiClient.create(
-        unauthorizedHandler = object : VoiceAlarmApiClient.UnauthorizedHandler {
+    internal val api = AlarmTalkApiClient.create(
+        unauthorizedHandler = object : AlarmTalkApiClient.UnauthorizedHandler {
             override fun onUnauthorized() {
                 // 백엔드에 refresh 엔드포인트가 없어 같은 토큰으로 재시도해도 의미가 없다.
                 // 세션을 비우고 화면에 재로그인을 안내한다.

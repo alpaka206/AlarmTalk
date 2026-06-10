@@ -129,7 +129,7 @@ internal fun SettingsToggleRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        VoiceAlarmSwitch(
+        AlarmTalkSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange,
         )

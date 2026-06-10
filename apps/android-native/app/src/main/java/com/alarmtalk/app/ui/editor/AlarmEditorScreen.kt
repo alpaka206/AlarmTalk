@@ -36,7 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft

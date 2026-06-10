@@ -3,12 +3,12 @@ package com.alarmtalk.app
 import android.app.Application
 import android.util.Log
 import com.alarmtalk.app.alarm.NotificationChannels
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
 import io.sentry.android.core.SentryAndroid
 
-class VoiceAlarmApplication : Application() {
+class AlarmTalkApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         // 각 초기화 단계의 실패가 앱 진입을 막지 않도록 개별 보호한다.

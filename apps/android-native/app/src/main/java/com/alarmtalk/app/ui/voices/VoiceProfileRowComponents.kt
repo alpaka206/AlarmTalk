@@ -541,7 +541,7 @@ internal fun VoiceProfileRow(
                                 fontWeight = FontWeight.SemiBold,
                             )
                         }
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = isShared,
                             onCheckedChange = onShareChange,
                             enabled = rowEnabled && canShareVoice,

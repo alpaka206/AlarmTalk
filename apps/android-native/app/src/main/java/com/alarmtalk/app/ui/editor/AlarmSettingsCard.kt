@@ -114,7 +114,7 @@ internal fun AlarmSettingsCard(
                 icon = Icons.Outlined.Snooze,
                 onClick = onOpenSnoozeSettings,
                 trailing = {
-                    VoiceAlarmSwitch(
+                    AlarmTalkSwitch(
                         checked = snoozeEnabled,
                         onCheckedChange = onSnoozeEnabledChange,
                     )
@@ -127,7 +127,7 @@ internal fun AlarmSettingsCard(
                 icon = Icons.Outlined.Notifications,
                 onClick = onOpenVibrationSettings,
                 trailing = {
-                    VoiceAlarmSwitch(
+                    AlarmTalkSwitch(
                         checked = vibrationPattern != VibrationPatterns.NONE,
                         onCheckedChange = onVibrationEnabledChange,
                     )
@@ -144,7 +144,7 @@ internal fun AlarmSettingsCard(
                     icon = Icons.Outlined.Alarm,
                     onClick = onOpenAlarmSoundSettings,
                     trailing = {
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = alarmVolumePercent > 0,
                             onCheckedChange = { enabled ->
                                 onAlarmVolumeChange(if (enabled) 100 else 0)
@@ -275,7 +275,7 @@ internal fun AlarmSoundSettingsPane(
                                 MaterialTheme.colorScheme.onSurface
                             },
                         )
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = alarmEnabled,
                             onCheckedChange = { enabled ->
                                 onAlarmVolumeChange(if (enabled) 100 else 0)
@@ -397,7 +397,7 @@ internal fun VibrationSettingsPane(
                                 MaterialTheme.colorScheme.onSurface
                             },
                         )
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = vibrationEnabled,
                             onCheckedChange = onVibrationEnabledChange,
                         )

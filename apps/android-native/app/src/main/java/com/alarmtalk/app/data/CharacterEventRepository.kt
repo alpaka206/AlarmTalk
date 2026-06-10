@@ -1,7 +1,7 @@
 package com.alarmtalk.app.data
 
 import android.util.Log
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.util.UUID
 
 internal class CharacterEventRepository(

@@ -31,14 +31,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.CharacterEventStates
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 
 @Composable
-internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
+internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val context = LocalContext.current
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val message = viewModel.message
@@ -443,7 +443,7 @@ internal fun VoiceAlarmApp(viewModel: MainViewModel = viewModel()) {
             if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired &&
                 !viewModel.pendingDeletion && currentTab != null
             ) {
-                VoiceAlarmBottomBar(
+                AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
                     unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },

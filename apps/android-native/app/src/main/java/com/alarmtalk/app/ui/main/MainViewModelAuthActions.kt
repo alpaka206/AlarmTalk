@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -39,7 +39,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
@@ -228,7 +228,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
         message = "로그인 후 사용할 수 있어요"
         return
     }
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldSignOutGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
@@ -256,7 +256,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
 // (GET /me 는 유예 상태에서도 허용되는 엔드포인트) 실패 시 앱 진입을 막지 않는다.
 internal fun MainViewModel.checkAccountStatus() {
     val session = authSession ?: return
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
             api.me(authorization)
@@ -275,7 +275,7 @@ internal fun MainViewModel.cancelAccountDeletion() {
         message = "로그인 후 사용할 수 있어요"
         return
     }
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -302,7 +302,7 @@ internal fun MainViewModel.updateNickname(name: String) {
         message = "닉네임은 1~30자여야 해요"
         return
     }
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -339,7 +339,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
     }
     val firstWindow = normalizedWindows.firstOrNull()
         ?: FamilyAlarmQuietWindow(days = listOf(1, 2, 3, 4, 5), start = "09:00", end = "18:30")
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -376,7 +376,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
 
 internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSettings) {
     val session = authSession ?: return
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
             api.updateProfile(
@@ -405,7 +405,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
         message = "로그인 후 사용할 수 있어요"
         return
     }
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val shouldRevokeGoogle = session.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
@@ -439,7 +439,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
 }
 
 // 앱 시작 시 백엔드 최소지원버전을 조회한다. 설치 버전이 그 미만이면 updateRequired=true 로
-// 두어 VoiceAlarmApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
+// 두어 AlarmTalkApp 이 업데이트 차단 화면을 띄운다. (로그인 여부와 무관하게 동작)
 // 네트워크 실패 시에는 앱 사용을 막지 않는다.
 internal fun MainViewModel.checkAppVersion() {
     viewModelScope.launch {
@@ -456,10 +456,10 @@ internal fun MainViewModel.checkAppVersion() {
 }
 
 // 로그인 후 필수 동의 여부를 서버에 확인한다. 미동의면 needsConsent=true 로 두어
-// VoiceAlarmApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
+// AlarmTalkApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
 internal fun MainViewModel.checkConsentStatus() {
     val session = authSession ?: return
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
             api.consentStatus(authorization)
@@ -480,7 +480,7 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
         message = "로그인 후 사용할 수 있어요"
         return
     }
-    val authorization = com.alarmtalk.app.network.VoiceAlarmApiClient.bearer(session.token)
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         authBusy = true
         runCatching {

@@ -12,7 +12,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
-object VoiceAlarmApiClient {
+object AlarmTalkApiClient {
     /**
      * 인증이 만료(401)되었을 때 호출되는 콜백.
      * 현재는 백엔드 refresh 엔드포인트가 없어 세션을 클리어하고 재로그인을 유도한다.
@@ -25,7 +25,7 @@ object VoiceAlarmApiClient {
         baseUrl: String = BuildConfig.VOICE_ALARM_API_BASE_URL,
         unauthorizedHandler: UnauthorizedHandler? = null,
         appVersionCode: Int = 0,
-    ): VoiceAlarmApi {
+    ): AlarmTalkApi {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BASIC
@@ -58,7 +58,7 @@ object VoiceAlarmApiClient {
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(VoiceAlarmApi::class.java)
+            .create(AlarmTalkApi::class.java)
     }
 
     fun bearer(token: String): String = "Bearer $token"

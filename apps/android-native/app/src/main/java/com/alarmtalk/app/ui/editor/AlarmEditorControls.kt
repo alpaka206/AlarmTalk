@@ -121,7 +121,7 @@ internal fun RepeatSelector(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            VoiceAlarmSwitch(
+            AlarmTalkSwitch(
                 checked = holidayEnabled && holidayOff,
                 enabled = holidayEnabled,
                 onCheckedChange = { enabled ->

@@ -6,7 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_ALARM_TRIGGER
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

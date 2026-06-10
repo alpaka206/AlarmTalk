@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
@@ -34,7 +34,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
@@ -67,7 +67,7 @@ internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
     viewModelScope.launch {
         runCatching {
-            api.me(VoiceAlarmApiClient.bearer(session.token)).user
+            api.me(AlarmTalkApiClient.bearer(session.token)).user
         }.onSuccess { user ->
             val response = AuthTokenResponse(
                 token = session.token,
@@ -90,5 +90,5 @@ internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
         message = fallbackMessage
         return null
     }
-    return VoiceAlarmApiClient.bearer(session.token)
+    return AlarmTalkApiClient.bearer(session.token)
 }

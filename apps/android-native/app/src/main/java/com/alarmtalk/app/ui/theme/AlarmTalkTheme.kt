@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
 @Composable
-internal fun VoiceAlarmTheme(
+internal fun AlarmTalkTheme(
     themeMode: ThemeMode = ThemeMode.System,
     content: @Composable () -> Unit,
 ) {
@@ -87,8 +87,8 @@ internal fun VoiceAlarmTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = VoiceAlarmTypography,
-        shapes = VoiceAlarmShapes,
+        typography = AlarmTalkTypography,
+        shapes = AlarmTalkShapes,
     ) {
         AppSystemBars(isDark = isDark)
         Surface(
@@ -99,7 +99,7 @@ internal fun VoiceAlarmTheme(
     }
 }
 
-private val VoiceAlarmShapes = Shapes(
+private val AlarmTalkShapes = Shapes(
     extraSmall = RoundedCornerShape(12.dp),
     small = RoundedCornerShape(14.dp),
     medium = RoundedCornerShape(18.dp),

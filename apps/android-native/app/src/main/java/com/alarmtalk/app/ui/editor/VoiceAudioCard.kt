@@ -203,7 +203,7 @@ internal fun VoiceAudioCard(
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text("랜덤 문구 사용", fontWeight = FontWeight.SemiBold)
                         }
-                        VoiceAlarmSwitch(
+                        AlarmTalkSwitch(
                             checked = editor.voiceRandomPrompt,
                             onCheckedChange = { checked ->
                                 if (checked) {
@@ -519,7 +519,7 @@ private fun ManualTranslationRow(
                 )
                 Spacer(Modifier.width(10.dp))
             }
-            VoiceAlarmSwitch(
+            AlarmTalkSwitch(
                 checked = enabled,
                 onCheckedChange = onEnabledChange,
             )

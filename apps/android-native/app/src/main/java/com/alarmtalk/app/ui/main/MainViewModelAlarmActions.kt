@@ -12,7 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.net.toUri
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
@@ -29,7 +29,7 @@ import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
-import com.alarmtalk.app.network.FamilyVoiceAlarmRequest
+import com.alarmtalk.app.network.FamilyAlarmTalkRequest
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.ReceivedNote
@@ -41,7 +41,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
@@ -115,14 +115,14 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                 val resolvedDurationMillis = localAudio.durationMillis
                     ?: throw IllegalArgumentException("음성 길이를 확인하지 못했어요. 다시 녹음해 주세요.")
                 val upload = api.uploadVoiceAudio(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     audio = voiceUploadPart(localAudio),
                     durationMs = resolvedDurationMillis.toString().toRequestBody("text/plain".toMediaType()),
                     originalName = localAudio.displayName.toRequestBody("text/plain".toMediaType()),
                 ).upload
-                api.createFamilyVoiceAlarm(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
-                    request = FamilyVoiceAlarmRequest(
+                api.createFamilyAlarmTalk(
+                    authorization = AlarmTalkApiClient.bearer(session.token),
+                    request = FamilyAlarmTalkRequest(
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
                         wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
                         voiceUploadId = upload.id,
@@ -132,7 +132,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                 ).alarm
             } else {
                 api.createAlarm(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     request = draft.toRemoteAlarmWriteRequest(),
                 ).alarm
             }

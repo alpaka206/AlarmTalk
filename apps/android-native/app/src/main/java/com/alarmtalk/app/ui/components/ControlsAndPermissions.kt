@@ -53,7 +53,7 @@ import com.alarmtalk.app.data.AlarmSyncStates
 import kotlin.math.roundToInt
 
 @Composable
-internal fun VoiceAlarmSwitch(
+internal fun AlarmTalkSwitch(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -301,7 +301,7 @@ internal fun AlarmRow(
                             },
                         )
                     }
-                    VoiceAlarmSwitch(
+                    AlarmTalkSwitch(
                         checked = alarm.enabled,
                         onCheckedChange = onToggleEnabled,
                     )

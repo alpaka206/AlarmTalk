@@ -4,10 +4,10 @@ import android.content.Context
 import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
 import java.time.LocalTime
@@ -289,7 +289,7 @@ class AlarmRepository(
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
-    suspend fun deletePaidVoiceAlarms(): Int {
+    suspend fun deletePaidAlarmTalks(): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
             alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
@@ -487,32 +487,32 @@ class AlarmRepository(
         return scheduled
     }
 
-    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
+    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult =
         alarmSyncService.syncWithBackend(api, token)
 
     suspend fun pullReceivedAlarms(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         token: String,
         myUserId: String,
     ): RemoteAlarmPullResult =
         remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
 
-    suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
+    suspend fun syncCharacterEvents(api: AlarmTalkApi, token: String): CharacterEventSyncResult =
         characterEventSyncService.sync(api, token)
 
-    suspend fun refreshDueDynamicVoiceAlarms(
-        api: VoiceAlarmApi,
+    suspend fun refreshDueDynamicAlarmTalks(
+        api: AlarmTalkApi,
         token: String,
         nowMillis: Long = System.currentTimeMillis(),
     ): Int {
-        val alarms = alarmDao.getRepeatingDynamicVoiceAlarms()
+        val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
         var refreshed = 0
         alarms.forEach { alarm ->
             if (!shouldRefreshDynamicVoice(alarm, nowMillis)) return@forEach
             val profileId = alarm.voiceProfileId?.takeIf { it.isNotBlank() } ?: return@forEach
             runCatching {
                 val response = api.generateTts(
-                    authorization = VoiceAlarmApiClient.bearer(token),
+                    authorization = AlarmTalkApiClient.bearer(token),
                     request = TtsGenerateRequest(
                         voiceProfileId = profileId,
                         text = "",

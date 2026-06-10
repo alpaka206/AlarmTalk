@@ -1,6 +1,6 @@
 package com.alarmtalk.app.network
 
-interface VoiceAlarmApi :
+interface AlarmTalkApi :
     AuthApi,
     RemoteAlarmApi,
     VoiceProfileApi,

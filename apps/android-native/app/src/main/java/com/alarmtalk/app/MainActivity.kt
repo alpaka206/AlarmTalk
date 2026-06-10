@@ -12,8 +12,8 @@ class MainActivity : ComponentActivity() {
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         setContent {
             val viewModel: MainViewModel = viewModel()
-            VoiceAlarmTheme(themeMode = viewModel.themeMode) {
-                VoiceAlarmApp(viewModel = viewModel)
+            AlarmTalkTheme(themeMode = viewModel.themeMode) {
+                AlarmTalkApp(viewModel = viewModel)
             }
         }
     }

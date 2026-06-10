@@ -5,10 +5,10 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.alarmtalk.app.alarm.SocialNotificationTracker
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 
 class RemoteAlarmSyncWorker(
     appContext: Context,
@@ -17,11 +17,11 @@ class RemoteAlarmSyncWorker(
     override suspend fun doWork(): Result {
         val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
         return runCatching {
-            val api = VoiceAlarmApiClient.create()
+            val api = AlarmTalkApiClient.create()
             val result = AlarmAppContainer.repository(applicationContext)
                 .pullReceivedAlarms(api, session.token, session.user.id)
             val notes = api
-                .listReceivedNotes(VoiceAlarmApiClient.bearer(session.token), limit = 20, offset = 0)
+                .listReceivedNotes(AlarmTalkApiClient.bearer(session.token), limit = 20, offset = 0)
                 .notes
             SocialNotificationTracker.notifyNewNotes(
                 context = applicationContext,

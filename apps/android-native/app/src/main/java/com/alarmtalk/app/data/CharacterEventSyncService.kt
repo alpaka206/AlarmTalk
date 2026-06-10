@@ -1,10 +1,10 @@
 package com.alarmtalk.app.data
 
 import android.util.Log
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.CharacterXpRequest
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
 
 data class CharacterEventSyncResult(
     val total: Int,
@@ -15,8 +15,8 @@ data class CharacterEventSyncResult(
 internal class CharacterEventSyncService(
     private val characterEventDao: CharacterEventDao,
 ) {
-    suspend fun sync(api: VoiceAlarmApi, token: String): CharacterEventSyncResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
+    suspend fun sync(api: AlarmTalkApi, token: String): CharacterEventSyncResult {
+        val authorization = AlarmTalkApiClient.bearer(token)
         val pending = characterEventDao.getEventsByState(
             listOf(CharacterEventStates.PENDING, CharacterEventStates.FAILED),
         )
