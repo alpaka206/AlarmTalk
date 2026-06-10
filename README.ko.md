@@ -27,7 +27,7 @@
 | Storage | Cloudflare R2 (결정적 TTS 캐시) |
 | Voice AI | ElevenLabs Instant Voice Clone + TTS |
 | Auth | JWT (HS256, 7일) · Google ID 토큰 · Apple ID 토큰 |
-| Landing | 정적 HTML + Tailwind CDN + Iconify (`apps/landing`) |
+| Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## 저장소 구조
 

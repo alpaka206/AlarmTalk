@@ -27,7 +27,7 @@
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
 | Voice AI | ElevenLabs Instant Voice Clone + TTS |
 | Auth | JWT (HS256, 7日) · Google ID トークン · Apple ID トークン |
-| Landing | 静的 HTML + Tailwind CDN + Iconify (`apps/landing`) |
+| Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## リポジトリ構成
 
