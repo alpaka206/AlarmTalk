@@ -72,7 +72,7 @@ async function healthPayload(env: Env) {
     // DB unreachable — report but don't fail the health check
   }
   return {
-    name: 'VoiceAlarm API',
+    name: 'AlarmTalk API',
     version: '1.0.0',
     status: dbStatus === 'ok' ? 'ok' : 'degraded',
     db: dbStatus,

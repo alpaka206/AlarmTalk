@@ -78,7 +78,7 @@ app.post('/auth/login', async (c) => {
 - ViewModels expose `StateFlow`. One-shot events go through `Channel`.
 - Room DAOs are `suspend` or `Flow`. No `runBlocking`.
 - All `AlarmManager` access goes through `alarm/AlarmScheduler.kt`.
-- Log via `VoiceAlarmLog.TAG`. No direct `Log.d / Log.w` calls.
+- Log via `AlarmTalkLog.TAG`. No direct `Log.d / Log.w` calls.
 - Long-running work uses WorkManager or an explicit Foreground Service.
 
 ## 6. Swift / iOS conventions (PoC level)

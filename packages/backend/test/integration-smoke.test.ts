@@ -48,7 +48,7 @@ describe('Health & Public Routes', () => {
     const res = await fetchApp('GET', '/');
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.name).toBe('VoiceAlarm API');
+    expect(body.name).toBe('AlarmTalk API');
     expect(body.version).toBe('1.0.0');
     expect(body.status).toBe('ok');
   });

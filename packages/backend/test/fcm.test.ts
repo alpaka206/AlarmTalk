@@ -57,13 +57,13 @@ describe('sendPushNotifications', () => {
   it('console.log으로 구조화된 로그 출력', async () => {
     const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await sendPushNotifications([
-      { token: 'abcdefghijk', title: 'VoiceAlarm', body: '알람' },
+      { token: 'abcdefghijk', title: 'AlarmTalk', body: '알람' },
     ]);
     expect(warnSpy).toHaveBeenCalledOnce();
     const logged = JSON.parse(warnSpy.mock.calls[0][0] as string);
     expect(logged.action).toBe('MOCK_SEND');
     expect(logged.token).toBe('abcdefgh...');
-    expect(logged.title).toBe('VoiceAlarm');
+    expect(logged.title).toBe('AlarmTalk');
   });
 });
 
@@ -214,11 +214,11 @@ describe('sendAlarmPush — edge cases', () => {
     );
     expect(spy).toHaveBeenCalledOnce();
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('VoiceAlarm');
+    expect(logged.title).toBe('AlarmTalk');
     expect(logged.body).toBe('08:30 알람이 울립니다');
   });
 
-  it('title은 항상 VoiceAlarm (로케일 무관)', async () => {
+  it('title은 항상 AlarmTalk (로케일 무관)', async () => {
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'en-dev' }]);
     await sendAlarmPush(
@@ -229,7 +229,7 @@ describe('sendAlarmPush — edge cases', () => {
       'en',
     );
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('VoiceAlarm');
+    expect(logged.title).toBe('AlarmTalk');
   });
 
   it('alarmTime에 특수 시각 "00:00" 전달', async () => {
@@ -263,7 +263,7 @@ describe('sendAlarmPush — edge cases', () => {
     expect(results).toHaveLength(3);
     for (const call of spy.mock.calls) {
       const logged = JSON.parse(call[0] as string);
-      expect(logged.title).toBe('VoiceAlarm');
+      expect(logged.title).toBe('AlarmTalk');
       expect(logged.body).toBe('Alarm at 06:00');
     }
   });
