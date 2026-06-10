@@ -2,6 +2,8 @@
 
 System architecture, database schema, and HTTP API for AlarmTalk.
 
+> 백엔드 correctness/보안 리뷰에서 나온 결정 필요·권장 항목은 [`backend-findings.ko.md`](backend-findings.ko.md) 참고.
+
 ## 1. System Architecture
 
 ### High-level
@@ -20,7 +22,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │                                                                 │
 │ Routes: /auth /user /voice /tts /alarm /friend /family         │
 │         /code /billing /character /library /dub /notes /stats  │
-│ Cron:   * * * * *  (subscription expiry, etc.)                 │
+│ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
            ▼                  ▼                 ▼
@@ -500,9 +502,9 @@ the owner of the new shared plan group. These bootstrap codes are single-use.
 
 ### Cron
 
-`* * * * *` — runs `processSubscriptionExpiry(db, now)`: subscriptions with `status='active' AND expires_at < now` are flipped to `expired` and the owner's plan is downgraded to `free`.
+`*/5 * * * *` — the `scheduled` handler runs (in order): `processSubscriptionExpiry(db, now)` (active subscriptions past `expires_at` → `expired`, owner downgraded to `free`), 탈퇴 유예 경과 계정 영구파기, 그리고 `selectFiringAlarms()`로 추린 알람에 대해 `sendAlarmPush()`.
 
-`selectFiringAlarms()` exists but is intentionally a no-op for sending: alarm rings are local to the device.
+> **주의**: 실제 알람 **울림**은 온디바이스(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. 여기서 보내는 푸시는 가족/대상 알람 알림 등 **보조 경로**다. 단, 현재 정확-분(UTC) 매칭이 5분 주기 cron과 어긋나 일부 알람이 푸시되지 않는 알려진 이슈가 있다 — [`backend-findings.ko.md` F1](backend-findings.ko.md) 참고.
 
 ### Change management
 
