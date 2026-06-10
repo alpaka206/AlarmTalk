@@ -1,4 +1,4 @@
-# Contributing to VoiceAlarm
+# Contributing to AlarmTalk
 
 Thank you for your interest in contributing! This guide will help you get started.
 

@@ -76,7 +76,7 @@ Android SDK가 자동 감지되지 않으면 `apps/android-native/local.properti
 cd apps/ios-native
 brew install xcodegen
 xcodegen generate
-open VoiceAlarmNative.xcodeproj
+open AlarmTalkNative.xcodeproj
 ```
 
 ## 절대 원칙

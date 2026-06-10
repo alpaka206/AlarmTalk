@@ -11,8 +11,8 @@ fi
 xcodegen generate
 
 xcodebuild \
-  -project VoiceAlarmNative.xcodeproj \
-  -scheme VoiceAlarm \
+  -project AlarmTalkNative.xcodeproj \
+  -scheme AlarmTalk \
   -configuration Debug \
   -destination 'generic/platform=iOS' \
   CODE_SIGNING_ALLOWED=NO \
