@@ -52,6 +52,18 @@ interface AlarmDao {
     )
     suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
 
+    /** 같은 시각(HH:mm)의 기존 알람 1건. 중복 시각 교체 흐름에서 충돌 대상을 찾는 데 쓴다. */
+    @Query(
+        """
+        SELECT * FROM alarms
+        WHERE hour = :hour
+          AND minute = :minute
+          AND (:excludeId IS NULL OR id != :excludeId)
+        LIMIT 1
+        """,
+    )
+    suspend fun findAtTime(hour: Int, minute: Int, excludeId: String? = null): AlarmEntity?
+
     @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
     suspend fun countByAudioCacheKey(cacheKey: String): Int
 

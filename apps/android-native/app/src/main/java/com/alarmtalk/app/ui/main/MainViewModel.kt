@@ -200,6 +200,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
         internal set
 
+    // 같은 시각 알람 충돌 시 교체 확인 모달 상태(null 이면 닫힘).
+    var duplicateAlarmPrompt by mutableStateOf<DuplicateAlarmPrompt?>(null)
+        internal set
+
     var navigateHomeTick by mutableStateOf(0)
         internal set
 
@@ -212,6 +216,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun dismissPermissionGate() {
         permissionGateRequest = null
+    }
+
+    fun dismissDuplicateAlarmPrompt() {
+        duplicateAlarmPrompt = null
     }
 
     fun checkOnboardingFor(userId: String) {

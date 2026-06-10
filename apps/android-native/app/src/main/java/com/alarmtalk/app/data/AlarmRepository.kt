@@ -102,9 +102,9 @@ class AlarmRepository(
         return alarm
     }
 
-    suspend fun createAlarm(draft: AlarmDraft): AlarmEntity {
+    suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity {
         validateDraft(draft)
-        requireUniqueTime(draft.hour, draft.minute)
+        resolveTimeConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
         val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
@@ -171,10 +171,14 @@ class AlarmRepository(
         return alarm
     }
 
-    suspend fun updateAlarm(alarmId: String, draft: AlarmDraft): AlarmEntity {
+    suspend fun updateAlarm(
+        alarmId: String,
+        draft: AlarmDraft,
+        replaceExisting: Boolean = false,
+    ): AlarmEntity {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        requireUniqueTime(draft.hour, draft.minute, excludeAlarmId = alarmId)
+        resolveTimeConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
         val now = System.currentTimeMillis()
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
@@ -594,6 +598,30 @@ class AlarmRepository(
         }
     }
 
+    /**
+     * "한 시각에는 알람 하나" 정책 적용. 같은 시각의 기존 알람이 있으면:
+     *  - replaceExisting=false → [DuplicateAlarmTimeException] 을 던져 호출부(UI)가
+     *    교체 여부를 사용자에게 모달로 묻게 한다.
+     *  - replaceExisting=true  → 기존 알람을 삭제(스케줄 취소 포함)하고 진행한다.
+     */
+    private suspend fun resolveTimeConflict(
+        hour: Int,
+        minute: Int,
+        excludeAlarmId: String?,
+        replaceExisting: Boolean,
+    ) {
+        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return
+        if (!replaceExisting) {
+            throw DuplicateAlarmTimeException(
+                existingAlarmId = existing.id,
+                hour = hour,
+                minute = minute,
+                existingLabel = existing.label,
+            )
+        }
+        deleteAlarm(existing.id)
+    }
+
     private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
         java.time.LocalTime.of(hour, minute).plusMinutes(10)
 
@@ -644,3 +672,14 @@ class AlarmRepository(
         val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
     }
 }
+
+/**
+ * 같은 시각에 이미 알람이 있어 생성/수정이 거부될 때 발생. UI는 이를 잡아 사용자에게
+ * 교체 여부를 모달로 물은 뒤, 동의 시 replaceExisting=true 로 재시도한다.
+ */
+class DuplicateAlarmTimeException(
+    val existingAlarmId: String,
+    val hour: Int,
+    val minute: Int,
+    val existingLabel: String?,
+) : Exception("이미 ${"%02d:%02d".format(hour, minute)} 에 알람이 있어요.")

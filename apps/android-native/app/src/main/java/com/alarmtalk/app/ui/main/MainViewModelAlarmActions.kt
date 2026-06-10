@@ -18,6 +18,7 @@ import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
+import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.VoiceSources
@@ -74,7 +75,11 @@ private fun alarmPermissionBlockedMessage(target: PermissionTarget): String = wh
     PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
 }
 
-internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
+internal fun MainViewModel.createAlarm(
+    draft: AlarmDraft,
+    replaceExisting: Boolean = false,
+    onDone: () -> Unit,
+) {
     if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
         message = "유료 이용권에서 사용할 수 있어요."
         return
@@ -86,13 +91,18 @@ internal fun MainViewModel.createAlarm(draft: AlarmDraft, onDone: () -> Unit) {
             return@launch
         }
         runCatching {
-            repository.createAlarm(draft)
+            repository.createAlarm(draft, replaceExisting)
         }.onSuccess { alarm ->
             message = "알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
             onDone()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to create alarm", error)
-            message = userFacingError(error, "알람 저장에 실패했어요")
+            if (error is DuplicateAlarmTimeException) {
+                // 같은 시각 알람이 있으면 교체 여부를 모달로 묻고, 동의 시 교체로 재시도.
+                promptReplaceDuplicateAlarm(error) { createAlarm(draft, replaceExisting = true, onDone) }
+            } else {
+                Log.e(TAG, "Failed to create alarm", error)
+                message = userFacingError(error, "알람 저장에 실패했어요")
+            }
         }
     }
 }
@@ -192,7 +202,12 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
     )
 }
 
-internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDone: () -> Unit) {
+internal fun MainViewModel.updateAlarm(
+    alarmId: String,
+    draft: AlarmDraft,
+    replaceExisting: Boolean = false,
+    onDone: () -> Unit,
+) {
     if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
         message = "유료 이용권에서 사용할 수 있어요."
         return
@@ -200,16 +215,46 @@ internal fun MainViewModel.updateAlarm(alarmId: String, draft: AlarmDraft, onDon
     if (!requireAlarmPermissionsForMutation()) return
     viewModelScope.launch {
         runCatching {
-            repository.updateAlarm(alarmId, draft)
+            repository.updateAlarm(alarmId, draft, replaceExisting)
         }.onSuccess { alarm ->
             message = "변경사항을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
             onDone()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update alarm id=$alarmId", error)
-            message = userFacingError(error, "알람 수정에 실패했어요")
+            if (error is DuplicateAlarmTimeException) {
+                promptReplaceDuplicateAlarm(error) {
+                    updateAlarm(alarmId, draft, replaceExisting = true, onDone)
+                }
+            } else {
+                Log.e(TAG, "Failed to update alarm id=$alarmId", error)
+                message = userFacingError(error, "알람 수정에 실패했어요")
+            }
         }
     }
 }
+
+/** 같은 시각 알람 충돌 시 교체 확인 모달을 띄운다. 동의하면 [onReplace] 로 교체 재시도. */
+private fun MainViewModel.promptReplaceDuplicateAlarm(
+    error: DuplicateAlarmTimeException,
+    onReplace: () -> Unit,
+) {
+    duplicateAlarmPrompt = DuplicateAlarmPrompt(
+        hour = error.hour,
+        minute = error.minute,
+        existingLabel = error.existingLabel,
+        onConfirmReplace = {
+            dismissDuplicateAlarmPrompt()
+            onReplace()
+        },
+    )
+}
+
+/** 같은 시각 알람 교체 확인 모달의 상태. */
+data class DuplicateAlarmPrompt(
+    val hour: Int,
+    val minute: Int,
+    val existingLabel: String?,
+    val onConfirmReplace: () -> Unit,
+)
 
 internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
     if (enabled && !requireAlarmPermissionsForMutation()) return

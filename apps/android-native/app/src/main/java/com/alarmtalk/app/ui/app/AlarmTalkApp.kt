@@ -438,6 +438,15 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         )
     }
 
+    viewModel.duplicateAlarmPrompt?.let { prompt ->
+        DuplicateAlarmDialog(
+            timeLabel = "%02d:%02d".format(prompt.hour, prompt.minute),
+            existingLabel = prompt.existingLabel,
+            onConfirm = prompt.onConfirmReplace,
+            onDismiss = viewModel::dismissDuplicateAlarmPrompt,
+        )
+    }
+
     Scaffold(
         bottomBar = {
             if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired &&
