@@ -590,6 +590,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDownloadNoteAudio = viewModel::downloadNoteAudio,
                           onMarkNoteRead = viewModel::markNoteRead,
                           onCheckoutPlan = viewModel::checkoutPlan,
+                          onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,

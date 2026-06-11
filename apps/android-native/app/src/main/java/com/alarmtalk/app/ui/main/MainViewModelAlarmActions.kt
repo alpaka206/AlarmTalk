@@ -199,6 +199,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         rawAudioUrl = rawAudioUrl,
         rawAudioDurationMs = null,
         targetUserId = targetUserId.trimmedOrNull(),
+        timezone = java.util.TimeZone.getDefault().id,
     )
 }
 

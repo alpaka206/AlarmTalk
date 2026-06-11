@@ -323,6 +323,39 @@ class AlarmAudioStore(
         }
     }
 
+    /**
+     * 오래 손대지 않은 캐시 음성 파일을 정리한다.
+     * 같은 캐시 파일을 여러 알람이 공유할 수 있으므로, 호출자가 DB 에서 모은
+     * [inUseFileNames](확장자 제외 파일명) 에 포함된 파일은 건너뛴다.
+     * 메타(.meta) 파일은 본 파일과 이름이 같아 함께 정리된다.
+     *
+     * @return 삭제한 파일 수
+     */
+    fun sweepStaleCache(
+        inUseFileNames: Set<String>,
+        maxAgeMillis: Long = STALE_CACHE_MAX_AGE_MILLIS,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Int {
+        val cutoffMillis = nowMillis - maxAgeMillis
+        var deleted = 0
+        audioDir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            if (file.nameWithoutExtension in inUseFileNames) return@forEach
+            val lastModified = file.lastModified()
+            if (lastModified <= 0L || lastModified >= cutoffMillis) return@forEach
+            if (file.delete()) {
+                deleted += 1
+                Log.i(TAG, "Swept stale alarm audio cache path=${file.absolutePath} lastModified=$lastModified")
+            } else {
+                Log.w(TAG, "Failed to sweep stale alarm audio cache path=${file.absolutePath}")
+            }
+        }
+        if (deleted > 0) {
+            Log.i(TAG, "Stale alarm audio cache sweep complete deleted=$deleted")
+        }
+        return deleted
+    }
+
     fun readDurationMillis(uri: Uri): Long? {
         val retriever = MediaMetadataRetriever()
         return runCatching {
@@ -729,6 +762,9 @@ class AlarmAudioStore(
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
+
+        /** 이 기간 이상 손대지 않은(미참조) 캐시 파일은 앱 시작 시 백그라운드 sweep 으로 정리한다. */
+        const val STALE_CACHE_MAX_AGE_MILLIS: Long = 30L * 24 * 60 * 60 * 1_000
         private const val DURATION_METADATA_TOLERANCE_MILLIS = 750L
         private const val DECODE_TIMEOUT_US = 10_000L
         private const val MAX_IDLE_OUTPUT_DEQUEUE_COUNT = 20
@@ -797,6 +833,20 @@ class AlarmAudioStore(
             return digest.joinToString("") { "%02x".format(it) }
         }
     }
+}
+
+/**
+ * 캐시 음성 파일을 다른 알람이 더 이상 참조하지 않을 때만 삭제한다.
+ * 같은 cacheKey 파일을 여러 알람이 공유할 수 있으므로(중복 시각 알람 교체, 알람 복사 등)
+ * DB 참조 카운트가 0 일 때만 실제 파일을 지운다.
+ */
+internal suspend fun AlarmAudioStore.deleteCachedAudioIfUnreferenced(
+    alarmDao: AlarmDao,
+    cacheKey: String?,
+) {
+    if (cacheKey.isNullOrBlank()) return
+    if (alarmDao.countByAudioCacheKey(cacheKey) > 0) return
+    deleteCachedAudio(cacheKey)
 }
 
 private data class CachedAudioMetadata(

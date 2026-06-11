@@ -48,7 +48,6 @@ class AlarmRepository(
             .atZone(java.time.ZoneId.systemDefault())
             .toLocalTime()
         requireUniqueTime(localTime.hour, localTime.minute)
-        requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
             label = "테스트 알람",
@@ -164,7 +163,6 @@ class AlarmRepository(
             updatedAtMillis = now,
         )
 
-        requireExactAlarmPermission()
         alarmScheduler.schedule(alarm)
         alarmDao.upsert(alarm)
         // 새 알람을 저장한 뒤에 충돌 알람을 삭제해야, 둘이 같은 audioCacheKey 를
@@ -192,7 +190,6 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
-        requireExactAlarmPermission()
         val updated = current.copy(
             label = draft.label.trim().ifBlank { "알람" },
             hour = draft.hour,
@@ -248,7 +245,6 @@ class AlarmRepository(
     suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
-        if (enabled) requireExactAlarmPermission()
         alarmScheduler.cancel(alarmId)
 
         val updated = if (enabled) {
@@ -292,9 +288,7 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
-        if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
-            alarmAudioStore.deleteCachedAudio(cacheKey)
-        }
+        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
@@ -310,9 +304,7 @@ class AlarmRepository(
             alarmScheduler.cancel(alarm.id)
             val cacheKey = alarm.audioCacheKey
             alarmDao.delete(alarm)
-            if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
-                alarmAudioStore.deleteCachedAudio(cacheKey)
-            }
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         }
         if (targets.isNotEmpty()) {
             Log.i(TAG, "Deleted paid voice alarms after free-plan downgrade count=${targets.size}")
@@ -348,7 +340,6 @@ class AlarmRepository(
             createdAtMillis = now,
             updatedAtMillis = now,
         )
-        requireExactAlarmPermission()
         alarmScheduler.schedule(copied)
         alarmDao.upsert(copied)
         Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
@@ -565,12 +556,9 @@ class AlarmRepository(
                     preparedForFireAtMillis = alarm.fireAtMillis,
                     updatedAtMillis = System.currentTimeMillis(),
                 )
-                if (
-                    !oldCacheKey.isNullOrBlank() &&
-                    oldCacheKey != cachedAudio.cacheKey &&
-                    alarmDao.countByAudioCacheKey(oldCacheKey) == 0
-                ) {
-                    alarmAudioStore.deleteCachedAudio(oldCacheKey)
+                // 랜덤 문구 알람이 새 음성으로 교체됐으면 이전 캐시는 미참조일 때만 정리.
+                if (!oldCacheKey.isNullOrBlank() && oldCacheKey != cachedAudio.cacheKey) {
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, oldCacheKey)
                 }
                 refreshed += 1
                 Log.i(TAG, "Refreshed dynamic voice alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
@@ -579,6 +567,26 @@ class AlarmRepository(
             }
         }
         return refreshed
+    }
+
+    /**
+     * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
+     * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
+     */
+    suspend fun sweepStaleAudioCache(): Int {
+        val inUseFileNames = buildSet {
+            alarmDao.getAllAlarms().forEach { alarm ->
+                alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let { cacheKey ->
+                    add(AlarmAudioStore.safeCacheKey(cacheKey))
+                }
+                // audioCacheKey 없이 localAudioUri 만 가진 구버전 알람의 파일도 보존한다.
+                alarm.localAudioUri?.takeIf { it.isNotBlank() }?.let { uriString ->
+                    val path = runCatching { android.net.Uri.parse(uriString).path }.getOrNull()
+                    if (!path.isNullOrBlank()) add(java.io.File(path).nameWithoutExtension)
+                }
+            }
+        }
+        return alarmAudioStore.sweepStaleCache(inUseFileNames)
     }
 
     private fun validateDraft(draft: AlarmDraft) {
@@ -661,12 +669,6 @@ class AlarmRepository(
             "love" -> "love"
             else -> "morning"
         }
-
-    private fun requireExactAlarmPermission() {
-        require(alarmScheduler.canScheduleExactAlarms()) {
-            "정확한 알람 권한을 허용한 뒤 다시 시도해 주세요."
-        }
-    }
 
     private fun AlarmEntity.nextLocalSyncState(): String =
         when {

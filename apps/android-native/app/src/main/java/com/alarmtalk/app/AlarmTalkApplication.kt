@@ -4,11 +4,19 @@ import android.app.Application
 import android.util.Log
 import com.alarmtalk.app.alarm.NotificationChannels
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.sync.RemoteAlarmSyncScheduler
 import io.sentry.android.core.SentryAndroid
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AlarmTalkApplication : Application() {
+    // 앱 프로세스 생존 주기 동안 살아있는 백그라운드 작업용 스코프(캐시 정리 등).
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         // 각 초기화 단계의 실패가 앱 진입을 막지 않도록 개별 보호한다.
@@ -25,6 +33,11 @@ class AlarmTalkApplication : Application() {
                 RemoteAlarmSyncScheduler.runOnce(this)
             }
         }.onFailure { Log.e(TAG, "RemoteAlarmSyncScheduler.runOnce failed", it) }
+        // 30일 이상 미참조 음성 캐시를 백그라운드에서 정리. 실패해도 앱 진입에 영향 없음.
+        applicationScope.launch {
+            runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }
+                .onFailure { Log.e(TAG, "Stale audio cache sweep failed", it) }
+        }
         Log.i(TAG, "Voice Alarm native application started")
     }
 

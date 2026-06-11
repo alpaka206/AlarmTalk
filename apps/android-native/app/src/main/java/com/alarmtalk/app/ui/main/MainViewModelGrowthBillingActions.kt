@@ -30,6 +30,7 @@ import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.GooglePlayConfirmRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.NoteAudioResponse
 import com.alarmtalk.app.network.ReceivedNote
@@ -465,6 +466,74 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
             val fallback = if (gift) "선물하기에 실패했어요" else "이용권 적용에 실패했어요"
             message = billingFailureMessage(apiErrorCode(error), userFacingError(error, fallback))
+        }
+        billingBusy = false
+    }
+}
+
+/**
+ * Google Play 구독 결제를 시작한다. 결제 시트 결과(성공/보류/취소)는
+ * [MainViewModel.playBilling] 의 리스너로 비동기 전달되어 [confirmGooglePurchase] 로 이어진다.
+ */
+internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
+    if (authSession == null) {
+        message = "이용권을 구매하려면 먼저 로그인해 주세요"
+        return
+    }
+    if (billingBusy) return
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            playBilling.launchPurchase(activity, productId)
+        }.onSuccess { launched ->
+            if (!launched) {
+                message = "Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."
+                billingBusy = false
+            }
+            // launched=true 면 busy 해제는 결제 결과 콜백(onPurchaseReady/Pending/Failed)에서 처리.
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to launch Play purchase productId=$productId", error)
+            message = "Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."
+            billingBusy = false
+        }
+    }
+}
+
+/**
+ * Play 구매 토큰을 백엔드(/billing/google/confirm)로 보내 검증·acknowledge·구독 반영을 요청한다.
+ * 성공 시 기존 구독 로드 경로를 재사용해 구독 상태를 새로고침한다.
+ */
+internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productId: String) {
+    val authorization = bearerOrMessage("이용권을 적용하려면 먼저 로그인해 주세요") ?: run {
+        billingBusy = false
+        return
+    }
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.confirmGooglePurchase(
+                authorization,
+                GooglePlayConfirmRequest(
+                    purchaseToken = purchaseToken,
+                    productId = productId,
+                    packageName = getApplication<Application>().packageName,
+                ),
+            )
+        }.onSuccess { response ->
+            if (response.success) {
+                message = "이용권을 적용했어요"
+                refreshCharacterBillingAfterMutation(authorization, "google play confirm")
+                refreshAppSession()
+                refreshSocial()
+            } else {
+                message = "결제 확인에 실패했어요. 잠시 후 다시 시도해 주세요."
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to confirm Play purchase productId=$productId", error)
+            message = billingFailureMessage(
+                apiErrorCode(error),
+                userFacingError(error, "결제 확인에 실패했어요"),
+            )
         }
         billingBusy = false
     }

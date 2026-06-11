@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -81,6 +82,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         },
         appVersionCode = appVersionCode,
+    )
+
+    // Google Play 결제 매니저. 구매 완료/보류 콜백을 받아 백엔드 검증으로 잇는다.
+    // 콜백은 빌링 라이브러리 스레드에서 올 수 있어 viewModelScope(Main)로 옮겨 상태를 갱신한다.
+    internal val playBilling = PlayBillingManager(
+        application,
+        listener = object : PlayBillingManager.Listener {
+            override fun onPurchaseReady(purchaseToken: String, productId: String) {
+                viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
+            }
+
+            override fun onPurchasePending(productId: String) {
+                viewModelScope.launch {
+                    billingBusy = false
+                    message = "결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요."
+                }
+            }
+
+            override fun onPurchaseFailed(userMessage: String?) {
+                viewModelScope.launch {
+                    billingBusy = false
+                    if (userMessage != null) message = userMessage
+                }
+            }
+        },
     )
 
     /**
@@ -343,9 +369,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "Startup alarm sync failed", error)
             }
         }
+        // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.
+        if (authSession != null) {
+            viewModelScope.launch {
+                runCatching { playBilling.resendUnconfirmedPurchases() }
+                    .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
+            }
+        }
         refreshAppSession()
     }
 
+    override fun onCleared() {
+        playBilling.release()
+        super.onCleared()
+    }
 }
 
 private fun loadInitialThemeMode(prefs: android.content.SharedPreferences): ThemeMode {

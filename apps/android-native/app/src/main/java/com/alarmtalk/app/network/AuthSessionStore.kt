@@ -1,6 +1,11 @@
 package com.alarmtalk.app.network
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,7 +17,63 @@ data class AuthSession(
 )
 
 class AuthSessionStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = run {
+        val appContext = context.applicationContext
+        createEncryptedPrefs(appContext).also { secure ->
+            migrateLegacyPlainPrefs(appContext, secure)
+        }
+    }
+
+    /**
+     * JWT 등 세션 정보를 평문 SharedPreferences 가 아닌 EncryptedSharedPreferences 에 저장한다.
+     * 생성 실패(키스토어 손상 등) 시 평문 폴백 대신 prefs 파일을 초기화하고 재생성한다.
+     * 세션은 잃어 재로그인이 필요하지만, 토큰이 평문으로 남는 것보다 안전하다.
+     */
+    private fun createEncryptedPrefs(context: Context): SharedPreferences =
+        runCatching { buildEncryptedPrefs(context) }.getOrElse { error ->
+            Log.w(TAG, "EncryptedSharedPreferences creation failed; resetting secure auth prefs", error)
+            runCatching { context.deleteSharedPreferences(SECURE_PREFS_NAME) }
+            buildEncryptedPrefs(context)
+        }
+
+    private fun buildEncryptedPrefs(context: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            context,
+            SECURE_PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        )
+    }
+
+    /**
+     * 구버전이 평문 prefs(voice_alarm_auth)에 남긴 세션을 1회 암호화 저장소로 옮기고 평문을 삭제한다.
+     * 암호화 prefs 에 이미 토큰이 있으면(이미 마이그레이션됨) 평문만 비운다.
+     */
+    private fun migrateLegacyPlainPrefs(context: Context, secure: SharedPreferences) {
+        val legacy = context.getSharedPreferences(LEGACY_PREFS_NAME, Context.MODE_PRIVATE)
+        val legacyEntries = runCatching { legacy.all }.getOrDefault(emptyMap())
+        if (legacyEntries.isEmpty()) return
+        if (secure.getString(KEY_TOKEN, null).isNullOrBlank()) {
+            val editor = secure.edit()
+            legacyEntries.forEach { (key, value) ->
+                when (value) {
+                    is String -> editor.putString(key, value)
+                    is Boolean -> editor.putBoolean(key, value)
+                    is Int -> editor.putInt(key, value)
+                    is Long -> editor.putLong(key, value)
+                    is Float -> editor.putFloat(key, value)
+                }
+            }
+            editor.apply()
+            Log.i(TAG, "Migrated legacy plain auth prefs to encrypted storage")
+        }
+        legacy.edit().clear().apply()
+        runCatching { context.deleteSharedPreferences(LEGACY_PREFS_NAME) }
+    }
 
     fun read(): AuthSession? {
         val token = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: return null
@@ -255,7 +316,9 @@ class AuthSessionStore(context: Context) {
         const val PROVIDER_GOOGLE = "google"
         private const val APP_JWT_ISSUER = "voice-alarm"
 
-        private const val PREFS_NAME = "voice_alarm_auth"
+        // 구버전 평문 prefs(마이그레이션 후 삭제) / 현재 사용하는 암호화 prefs 파일명.
+        private const val LEGACY_PREFS_NAME = "voice_alarm_auth"
+        private const val SECURE_PREFS_NAME = "voice_alarm_auth_secure"
         private val TIME_RE = Regex("^([01]\\d|2[0-3]):[0-5]\\d$")
         private const val KEY_TOKEN = "token"
         private const val KEY_PROVIDER = "provider"
