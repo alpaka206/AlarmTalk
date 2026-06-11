@@ -569,6 +569,44 @@ internal fun VoiceSharedBadge() {
     }
 }
 
+/** 시스템 제공(스톡) 보이스 행 — 수정/삭제/공유 액션 없이 정보만 보여준다. */
+@Composable
+internal fun SystemVoiceProfileRow(profile: VoiceProfile) {
+    OutlinedCard(
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(profile.name, fontWeight = FontWeight.SemiBold)
+                MutedText("기본 제공 목소리 · 모든 이용권에서 사용 가능")
+            }
+        }
+    }
+}
+
 @Composable
 internal fun SharedVoiceProfileRow(
     profile: FamilyVoiceProfile,

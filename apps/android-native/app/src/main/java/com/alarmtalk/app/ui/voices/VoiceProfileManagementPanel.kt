@@ -221,7 +221,10 @@ internal fun VoiceProfileManagementPanel(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
     var filePreviewPlaying by remember { mutableStateOf(false) }
-    val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
+    // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
+    val systemVoices = voiceProfiles.filter { it.isSystem == true }
+    val ownVoices = voiceProfiles.filter { it.isSystem != true }
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = "유료 이용권에서 사용할 수 있어요."
@@ -793,16 +796,16 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (!canCreateVoice) {
-            MutedText(paidVoiceRequiredMessage)
+            MutedText("내 목소리 만들기는 유료 이용권에서 사용할 수 있어요. 아래 기본 목소리는 무료로 쓸 수 있어요.")
         }
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
 
-        if (voiceProfiles.isEmpty() && canCreateVoice) {
+        if (ownVoices.isEmpty() && canCreateVoice) {
             MutedText("아직 만든 목소리가 없어요.")
-        } else if (voiceProfiles.isNotEmpty()) {
-            voiceProfiles.forEach { profile ->
+        } else if (ownVoices.isNotEmpty()) {
+            ownVoices.forEach { profile ->
                 VoiceProfileRow(
                     profile = profile,
                     enabled = !voiceProfileBusy,
@@ -817,6 +820,17 @@ internal fun VoiceProfileManagementPanel(
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
                 )
+            }
+        }
+
+        if (systemVoices.isNotEmpty()) {
+            Text(
+                text = "기본 목소리",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            systemVoices.forEach { profile ->
+                SystemVoiceProfileRow(profile = profile)
             }
         }
 

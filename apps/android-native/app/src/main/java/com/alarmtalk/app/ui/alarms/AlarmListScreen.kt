@@ -109,7 +109,8 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
-    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    // 시스템 스톡 보이스 도입으로 음성 기능은 로그인만 하면 열린다 (무료는 스톡 보이스 한정).
+    val voicePlanLocked = authSession == null
     val voiceLocked = voicePlanLocked || !permissions.recordAudio
     val alarmLocked = !permissions.alarmReady
 

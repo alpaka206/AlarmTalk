@@ -22,10 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -64,9 +61,11 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.trimmedOrNull
-import com.alarmtalk.app.ui.guide.UsageGuideOverlay
-import com.alarmtalk.app.ui.guide.UsageGuideStep
+import com.alarmtalk.app.ui.guide.CoachMarkOverlay
+import com.alarmtalk.app.ui.guide.CoachMarkRegistry
+import com.alarmtalk.app.ui.guide.CoachMarkStep
 import com.alarmtalk.app.ui.guide.UsageGuideStore
+import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -79,22 +78,36 @@ private enum class AudioPreviewTarget {
     SharedVoiceInfo,
 }
 
-// 처음 알람을 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-private val alarmEditorGuideSteps = listOf(
-    UsageGuideStep(
-        icon = Icons.Outlined.Schedule,
-        title = "시간과 반복부터",
-        body = "휠을 돌려 시각을 맞추고 반복할 요일을 골라요. 반복을 켜면 공휴일에는 끄기도 선택할 수 있어요.",
+// 처음 알람을 만드는 사용자를 위한 위치 앵커형 코치마크 가이드.
+// 각 단계가 실제 컨트롤에 스포트라이트를 비추므로 "어디서 하는지"가 함께 전달된다.
+private const val GUIDE_TARGET_TIME = "alarm_editor_time"
+private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
+private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
+private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
+
+private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_TIME,
+        title = "시각부터 맞춰요",
+        body = "휠을 위아래로 돌려 알람이 울릴 시각을 맞춰요.",
+        lazyItemIndex = 0,
     ),
-    UsageGuideStep(
-        icon = Icons.Outlined.GraphicEq,
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_SCHEDULE,
+        title = "반복과 이름을 정해요",
+        body = "요일을 누르면 매주 반복돼요. 반복을 켜면 공휴일에 끄기도 고를 수 있고, 알람 이름도 여기서 바꿔요.",
+        lazyItemIndex = 1,
+    ),
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_PLAY_MODE,
         title = "재생 방식을 골라요",
         body = "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요.",
+        lazyItemIndex = playModeItemIndex,
     ),
-    UsageGuideStep(
-        icon = Icons.Outlined.CheckCircle,
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_SAVE,
         title = "저장하면 끝이에요",
-        body = "음량·진동·스누즈도 아래에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.",
+        body = "음량·진동·스누즈는 바로 위 카드에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.",
     ),
 )
 
@@ -117,7 +130,11 @@ internal fun AlarmEditorScreen(
     onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
 ) {
-    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    // 시스템 스톡 보이스 도입으로 무료 플랜도 음성 모드를 쓸 수 있다 (스톡 보이스 + 프리셋 문구).
+    // 로그인하지 않은 경우만 음성 모드를 잠근다.
+    val voicePlanLocked = authSession == null
+    // 무료 플랜 제한 모드: 녹음/파일·직접 입력·동적(날씨/운세) 문구·번역은 유료 게이트.
+    val freeVoiceTier = authSession != null && !hasPaidVoiceAccess(subscriptionResponse)
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
@@ -135,6 +152,8 @@ internal fun AlarmEditorScreen(
                 !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_ALARM_EDITOR),
         )
     }
+    val coachMarkRegistry = remember { CoachMarkRegistry() }
+    val editorListState = rememberLazyListState()
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
     var audioMessage by remember { mutableStateOf<String?>(null) }
@@ -753,7 +772,28 @@ internal fun AlarmEditorScreen(
             editor.clearAudio()
             selectedFileUri = null
             selectedFileDurationMillis = null
-            audioMessage = "무료 이용권에서는 일반 알람만 만들 수 있어요."
+            audioMessage = "음성 알람은 로그인 후 사용할 수 있어요."
+        }
+    }
+
+    // 무료 플랜: 음성 모드는 시스템 스톡 보이스 + 프리셋 랜덤 문구 조합으로 고정.
+    // 녹음/파일·직접 입력·동적 문구·번역은 유료 게이트 (백엔드도 동일 규칙으로 차단).
+    LaunchedEffect(freeVoiceTier, editor.playMode) {
+        if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
+            if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
+                editor.voiceSource = VoiceSources.TTS_PROFILE
+                editor.clearAudio()
+                editor.clearTtsMeta()
+            }
+            if (!editor.voiceRandomPrompt) {
+                editor.voiceRandomPrompt = true
+                editor.clearTtsMeta()
+            }
+            if (normalizedRandomPromptContext(editor.voiceRandomContext) != "preset") {
+                editor.voiceRandomContext = "preset"
+                editor.clearTtsMeta()
+            }
+            if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
         }
     }
 
@@ -921,6 +961,7 @@ internal fun AlarmEditorScreen(
                 onShowGuide = { usageGuideVisible = true },
             )
             LazyColumn(
+                state = editorListState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -935,12 +976,18 @@ internal fun AlarmEditorScreen(
                             editor.hour = selectedHour
                             editor.minute = selectedMinute
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_TIME),
                     )
                 }
 
                 item {
-                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = editorHorizontalPadding)
+                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SCHEDULE),
+                    ) {
                         ScheduleDetailsCard(
                             hour = editor.hour,
                             minute = editor.minute,
@@ -977,7 +1024,11 @@ internal fun AlarmEditorScreen(
                 }
 
                 item {
-                    Box(modifier = Modifier.padding(horizontal = editorHorizontalPadding)) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = editorHorizontalPadding)
+                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_PLAY_MODE),
+                    ) {
                         PlayModeCard(
                             selected = editor.playMode,
                             voiceLocked = voicePlanLocked,
@@ -1009,6 +1060,8 @@ internal fun AlarmEditorScreen(
                                 voiceProfiles = voiceProfiles,
                                 familyVoices = familyVoices,
                                 voiceProfileBusy = voiceProfileBusy,
+                                freeVoiceTier = freeVoiceTier,
+                                onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,
                                 localInputMode = localInputMode,
                                 isRecording = isRecording,
@@ -1109,12 +1162,14 @@ internal fun AlarmEditorScreen(
                 Column {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                     Box(
-                        modifier = Modifier.padding(
-                            start = 16.dp,
-                            end = 16.dp,
-                            top = 10.dp,
-                            bottom = 10.dp,
-                        ),
+                        modifier = Modifier
+                            .padding(
+                                start = 16.dp,
+                                end = 16.dp,
+                                top = 10.dp,
+                                bottom = 10.dp,
+                            )
+                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_SAVE),
                     ) {
                         EditorActionButtons(
                             isEditing = alarm != null,
@@ -1198,8 +1253,12 @@ internal fun AlarmEditorScreen(
         }
 
         if (usageGuideVisible) {
-            UsageGuideOverlay(
-                steps = alarmEditorGuideSteps,
+            CoachMarkOverlay(
+                steps = alarmEditorCoachSteps(
+                    playModeItemIndex = if (familyAlarmMode) 3 else 2,
+                ),
+                registry = coachMarkRegistry,
+                listState = editorListState,
                 onFinish = {
                     usageGuideStore.markSeen(UsageGuideStore.GUIDE_ALARM_EDITOR)
                     usageGuideVisible = false
@@ -1238,7 +1297,11 @@ internal fun AlarmEditorScreen(
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
-            message = "유료 이용권에서 사용할 수 있어요.",
+            message = if (freeVoiceTier) {
+                "직접 만든 목소리·녹음·직접 입력 문구는 유료 이용권에서 사용할 수 있어요."
+            } else {
+                "음성 알람은 로그인 후 사용할 수 있어요."
+            },
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()
