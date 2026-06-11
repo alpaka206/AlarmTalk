@@ -69,3 +69,5 @@ test/*
 *.caf
 !packages/**/test/**
 !apps/android-native/**/res/raw/**
+
+handoff
