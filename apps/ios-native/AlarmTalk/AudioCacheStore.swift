@@ -246,10 +246,92 @@ final class AudioCacheStore {
         }
     }
 
+    // MARK: Stale sweep
+
+    /// 미참조 캐시 음원의 보존 기한 (30일).
+    nonisolated static let staleCacheMaxAgeMillis: Int64 = 30 * 24 * 60 * 60 * 1000
+
+    /// 앱 시작 시 1회 백그라운드로 호출되는 캐시 청소.
+    ///
+    /// 정책:
+    ///   - `activeCacheKeys` (현재 알람들이 참조 중인 audioCacheKey 집합) 는
+    ///     나이와 무관하게 건너뛴다 — 같은 키를 여러 알람이 공유할 수 있으므로
+    ///     호출자가 전체 알람의 키를 모아 전달해야 한다.
+    ///   - 메타 사이드카의 `createdAtMillis` (없으면 파일 생성/수정 시각) 기준으로
+    ///     30일이 지난 음원과 그 사이드카를 함께 삭제한다.
+    ///   - 본체 음원이 없는 고아 `.meta.json` 은 나이와 무관하게 즉시 제거한다.
+    ///
+    /// actor state 를 건드리지 않고 파일 I/O 만 수행하므로 `nonisolated` —
+    /// `Task.detached` 등 백그라운드 컨텍스트에서 실행해도 안전하다.
+    nonisolated func sweepStaleCache(
+        activeCacheKeys: Set<String>,
+        nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
+    ) {
+        guard let directory = try? Self.audioDirectory() else { return }
+        let fileManager = FileManager.default
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        guard !names.isEmpty else { return }
+
+        let active = Set(activeCacheKeys.map { Self.safeCacheKey($0) })
+
+        // base(safeCacheKey) 단위로 음원과 사이드카를 묶어 함께 판정한다.
+        var namesByBase: [String: [String]] = [:]
+        for name in names {
+            namesByBase[Self.splitName(name).base, default: []].append(name)
+        }
+
+        for (base, grouped) in namesByBase {
+            if active.contains(base) { continue }
+
+            let audioNames = grouped.filter { Self.splitName($0).ext != "meta.json" }
+
+            // 고아 사이드카: 본체 음원이 사라졌으면 즉시 제거.
+            if audioNames.isEmpty {
+                for name in grouped {
+                    try? fileManager.removeItem(at: directory.appendingPathComponent(name))
+                }
+                continue
+            }
+
+            // 생성 시각을 알 수 없으면 보수적으로 보존한다.
+            guard let createdAtMillis = Self.entryCreatedAtMillis(
+                base: base,
+                audioNames: audioNames,
+                directory: directory
+            ) else { continue }
+
+            if nowMillis - createdAtMillis >= Self.staleCacheMaxAgeMillis {
+                for name in grouped {
+                    try? fileManager.removeItem(at: directory.appendingPathComponent(name))
+                }
+            }
+        }
+    }
+
+    /// 메타 사이드카의 `createdAtMillis` 우선, 없으면 음원 파일의 생성/수정 시각.
+    private nonisolated static func entryCreatedAtMillis(
+        base: String,
+        audioNames: [String],
+        directory: URL
+    ) -> Int64? {
+        let metaURL = directory.appendingPathComponent("\(base).meta.json")
+        if let data = try? Data(contentsOf: metaURL),
+           let metadata = try? JSONDecoder().decode(AudioCacheMetadata.self, from: data) {
+            return metadata.createdAtMillis
+        }
+        guard let audioName = audioNames.first else { return nil }
+        let audioURL = directory.appendingPathComponent(audioName)
+        let attributes = try? FileManager.default.attributesOfItem(atPath: audioURL.path)
+        let date = (attributes?[.creationDate] as? Date) ?? (attributes?[.modificationDate] as? Date)
+        guard let date else { return nil }
+        return Int64(date.timeIntervalSince1970 * 1000)
+    }
+
     // MARK: Helpers
 
     /// 메인 캐시 디렉토리. App Group 컨테이너가 있으면 위젯과 공유.
-    static func audioDirectory() throws -> URL {
+    /// 파일 시스템만 다루므로 `nonisolated` — 백그라운드 sweep 에서도 호출 가능.
+    nonisolated static func audioDirectory() throws -> URL {
         let base: URL
         if let container = AppGroup.containerURL {
             base = container
@@ -282,7 +364,7 @@ final class AudioCacheStore {
     }
 
     /// Android `safeCacheKey` 와 동일 규칙: 소문자 + [^a-z0-9_-] → "_", 최대 96 자.
-    static func safeCacheKey(_ cacheKey: String) -> String {
+    nonisolated static func safeCacheKey(_ cacheKey: String) -> String {
         let lowered = cacheKey.lowercased()
         let sanitized = lowered.map { ch -> Character in
             if ("a"..."z").contains(ch) || ("0"..."9").contains(ch) || ch == "_" || ch == "-" {
@@ -304,7 +386,7 @@ final class AudioCacheStore {
     }
 
     /// "abc.meta.json" → ("abc", "meta.json"), "abc.mp3" → ("abc", "mp3").
-    static func splitName(_ name: String) -> (base: String, ext: String) {
+    nonisolated static func splitName(_ name: String) -> (base: String, ext: String) {
         if name.hasSuffix(".meta.json") {
             let base = String(name.dropLast(".meta.json".count))
             return (base, "meta.json")

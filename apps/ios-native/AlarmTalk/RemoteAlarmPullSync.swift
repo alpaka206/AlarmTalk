@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - RemoteAlarmPullSync
 //
@@ -42,6 +43,13 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     private let alarmKit: AlarmKitViewModel
     private let audioCache: AudioCacheStore
     private let auth: AuthViewModel
+
+    /// 캐싱 실패 등 비정상 경로 기록용. 코드베이스에 공용 로깅 유틸이 없어
+    /// os.Logger 를 직접 사용한다 (print 금지 — 콘솔/Instruments 에서 필터 가능).
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "AlarmTalk",
+        category: "RemoteAlarmPullSync"
+    )
 
     init(
         api: AlarmTalkAPI = .shared,
@@ -194,7 +202,12 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
 
     // MARK: Audio fetch
 
-    private func fetchAndCacheTTS(messageId: String, cacheKey: String, token: String) async {
+    private func fetchAndCacheTTS(
+        messageId: String,
+        cacheKey: String,
+        rawAudioUri: String?,
+        token: String
+    ) async {
         do {
             let audio = try await api.getTtsAudio(messageId: messageId, token: token)
             _ = try audioCache.cacheBytes(
@@ -203,12 +216,67 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 mimeType: audio.mimeType,
                 source: "tts",
                 messageId: messageId,
-                rawAudioUri: audio.rawAudioUri,
+                rawAudioUri: audio.rawAudioUri ?? rawAudioUri,
                 durationOverrideMs: audio.durationMs,
                 enforceMaxDuration: false
             )
         } catch {
-            // 캐싱 실패는 sync 전체를 실패시키지 않는다. 다음 사이클에서 재시도.
+            // 캐싱 실패는 sync 전체를 실패시키지 않는다. 무음 알람을 막기 위해
+            // 원본 오디오 URL 직다운로드 폴백을 먼저 시도한다.
+            Self.logger.warning(
+                "TTS 캐싱 실패 (messageId: \(messageId, privacy: .public)): \(error.localizedDescription, privacy: .public) — 원본 오디오 폴백 시도"
+            )
+            await cacheRawAudioFallback(rawAudioUri: rawAudioUri, cacheKey: cacheKey, messageId: messageId)
+        }
+    }
+
+    /// TTS 메시지 오디오 API 가 실패했을 때 레코드의 원본 오디오 URL(rawAudioUri)을
+    /// 직접 다운로드해 **같은 cacheKey** 로 저장하는 폴백.
+    /// 이것마저 실패하면 호출자(`recordWithCachedTTSIfNeeded`)가 캐시 키를 비워
+    /// 두므로 다음 sync 사이클의 fresh mapped 레코드에서 재시도된다.
+    private func cacheRawAudioFallback(rawAudioUri: String?, cacheKey: String, messageId: String) async {
+        guard let raw = rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let url = URL(string: raw),
+              url.scheme == "https" || url.scheme == "http" else {
+            Self.logger.warning(
+                "원본 오디오 폴백 불가 — rawAudioUri 없음/비 http(s) (messageId: \(messageId, privacy: .public)). 다음 sync 에서 재시도"
+            )
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 15
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  !data.isEmpty else {
+                throw APIError.invalidResponse
+            }
+            // Content-Type 이 audio/* 가 아니면 (예: octet-stream) URL 확장자로 추정.
+            let responseMime = http.mimeType?.lowercased()
+            let mimeType: String
+            if let responseMime, responseMime.hasPrefix("audio/") {
+                mimeType = responseMime
+            } else {
+                mimeType = AudioCacheStore.mimeType(
+                    forFormat: AudioCacheStore.normalizedFormat(url.pathExtension)
+                )
+            }
+            _ = try audioCache.cacheBytes(
+                data,
+                cacheKey: cacheKey,
+                mimeType: mimeType,
+                source: "raw_audio",
+                messageId: messageId,
+                rawAudioUri: raw,
+                durationOverrideMs: nil,
+                enforceMaxDuration: false
+            )
+        } catch {
+            Self.logger.error(
+                "원본 오디오 폴백 실패 (messageId: \(messageId, privacy: .public)): \(error.localizedDescription, privacy: .public) — 캐시 키를 비워 두고 다음 sync 에서 재시도"
+            )
         }
     }
 
@@ -221,11 +289,18 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
 
         if audioCache.cachedURL(for: cacheKey) == nil {
-            await fetchAndCacheTTS(messageId: messageId, cacheKey: cacheKey, token: token)
+            await fetchAndCacheTTS(
+                messageId: messageId,
+                cacheKey: cacheKey,
+                rawAudioUri: copy.rawAudioUri,
+                token: token
+            )
         }
         if let cached = audioCache.cachedURL(for: cacheKey) {
             copy.localAudioUri = cached.lastPathComponent
         } else {
+            // 1차 캐싱 + 원본 오디오 폴백 모두 실패. 캐시 키를 비운 alarmOnly 로
+            // 강등해 두면, 다음 sync 의 mapped 레코드가 다시 캐싱을 시도한다.
             copy = Self.withoutUnavailableRemoteAudio(copy)
         }
         return copy

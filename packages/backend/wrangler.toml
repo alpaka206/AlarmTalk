@@ -55,5 +55,17 @@ crons = ["*/5 * * * *"]
 # RESEND_API_KEY
 # AUTH_EMAIL_FROM
 # AUTH_EMAIL_REPLY_TO
-# FIREBASE_PROJECT_ID
 # SENTRY_DSN
+#
+# Push (FCM HTTP v1) — 미설정 시 푸시는 MOCK 로그만 남김:
+# FIREBASE_PROJECT_ID
+# FIREBASE_SERVICE_ACCOUNT_JSON   (서비스 계정 JSON 전체, client_email/private_key 포함)
+#
+# Billing — 미설정 provider 는 해당 confirm 라우트가 503:
+# APPLE_ISSUER_ID                 (App Store Connect API issuer)
+# APPLE_KEY_ID                    (In-App Purchase key id)
+# APPLE_IAP_PRIVATE_KEY           (.p8 내용 전체)
+# APPLE_BUNDLE_ID                 (com.voicealarm.nativeapp.ios)
+# GOOGLE_PLAY_SERVICE_ACCOUNT_JSON (Play Developer API 서비스 계정 JSON)
+# ANDROID_PACKAGE_NAME            (com.alarmtalk.app)
+# PORTONE_API_SECRET              (PortOne V2 API Secret — 국내 PG)

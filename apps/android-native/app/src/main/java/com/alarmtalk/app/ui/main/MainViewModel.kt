@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -83,6 +84,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appVersionCode = appVersionCode,
     )
 
+    // Google Play 결제 매니저. 구매 완료/보류 콜백을 받아 백엔드 검증으로 잇는다.
+    // 콜백은 빌링 라이브러리 스레드에서 올 수 있어 viewModelScope(Main)로 옮겨 상태를 갱신한다.
+    internal val playBilling = PlayBillingManager(
+        application,
+        listener = object : PlayBillingManager.Listener {
+            override fun onPurchaseReady(purchaseToken: String, productId: String) {
+                viewModelScope.launch { confirmGooglePurchase(purchaseToken, productId) }
+            }
+
+            override fun onPurchasePending(productId: String) {
+                viewModelScope.launch {
+                    billingBusy = false
+                    message = "결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요."
+                }
+            }
+
+            override fun onPurchaseFailed(userMessage: String?) {
+                viewModelScope.launch {
+                    billingBusy = false
+                    if (userMessage != null) message = userMessage
+                }
+            }
+        },
+    )
+
     /**
      * okhttp Authenticator 에서 호출되는 401 처리.
      * 다른 스레드(non-main) 에서 호출될 수 있어 UI 스레드로 옮긴 뒤 세션을 클리어한다.
@@ -146,6 +172,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var billingBusy by mutableStateOf(false)
+        internal set
+
+    // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
+    // 뮤테이션)와 분리해, 새로고침 중에도 구매 버튼이 즉시 눌리게 한다 —
+    // 구독 상태는 AccessSnapshotStore 캐시로 이미 알고 있다.
+    var billingRefreshing by mutableStateOf(false)
         internal set
 
     var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
@@ -343,9 +375,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "Startup alarm sync failed", error)
             }
         }
+        // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.
+        if (authSession != null) {
+            viewModelScope.launch {
+                runCatching { playBilling.resendUnconfirmedPurchases() }
+                    .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
+            }
+        }
+        // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
+        viewModelScope.launch {
+            runCatching { playBilling.preloadProducts() }
+                .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
+        }
         refreshAppSession()
     }
 
+    override fun onCleared() {
+        playBilling.release()
+        super.onCleared()
+    }
 }
 
 private fun loadInitialThemeMode(prefs: android.content.SharedPreferences): ThemeMode {

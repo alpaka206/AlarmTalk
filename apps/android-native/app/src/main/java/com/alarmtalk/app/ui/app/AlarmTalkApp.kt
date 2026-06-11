@@ -244,27 +244,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
-    LaunchedEffect(
-        currentTab,
-        authSession?.user?.id,
-        subscriptionResponse?.subscription?.id,
-        subscriptionResponse?.subscription?.status,
-        subscriptionResponse?.plan?.key,
-        subscriptionResponse?.plan?.planType,
-    ) {
-        if (
-            currentTab == NativeTab.Voices &&
-            authSession != null &&
-            subscriptionResponse != null &&
-            !hasPaidVoiceAccess(subscriptionResponse)
-        ) {
-            planGateDialog = PlanGateDialogState(
-                message = "유료 이용권에서 사용할 수 있어요.",
-            )
-            navController.navigateTopLevelTab(NativeTab.Home)
-        }
-    }
-
+    // 목소리 탭은 무료 플랜에도 연다 — 시스템 스톡 보이스(미리듣기·알람 사용)는 무료,
+    // "내 목소리 만들기"만 탭 안에서 플랜 게이트를 거친다.
     LaunchedEffect(authSession?.token, pendingCharacterEventCount, characterBusy) {
         if (authSession != null && pendingCharacterEventCount > 0 && !characterBusy) {
             viewModel.syncPendingCharacterEventsSilently()
@@ -356,17 +337,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     }
 
     fun navigateToTab(tab: NativeTab) {
-        if (
-            tab == NativeTab.Voices &&
-            authSession != null &&
-            subscriptionResponse != null &&
-            !hasPaidVoiceAccess(subscriptionResponse)
-        ) {
-            planGateDialog = PlanGateDialogState(
-                message = "유료 이용권에서 사용할 수 있어요.",
-            )
-            return
-        }
         if (
             tab == NativeTab.Messages &&
             authSession != null &&
@@ -590,6 +560,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDownloadNoteAudio = viewModel::downloadNoteAudio,
                           onMarkNoteRead = viewModel::markNoteRead,
                           onCheckoutPlan = viewModel::checkoutPlan,
+                          onPurchasePlay = viewModel::startPlayPurchase,
                           onCancelSubscription = viewModel::cancelSubscription,
                           onChangePlan = viewModel::changePlan,
                           onRefreshShareCodeData = viewModel::refreshShareCodeData,

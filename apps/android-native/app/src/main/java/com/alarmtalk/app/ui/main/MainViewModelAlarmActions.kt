@@ -22,6 +22,7 @@ import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.VoiceSources
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
@@ -75,13 +76,25 @@ private fun alarmPermissionBlockedMessage(target: PermissionTarget): String = wh
     PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
 }
 
+/**
+ * 무료 플랜의 음성 알람 허용 여부 — 시스템 스톡 보이스 TTS 알람(녹음/파일 없음)이면
+ * 무료여도 저장할 수 있다. 백엔드 alarm-mutation 의 usesOnlySystemStockVoice 와 동일 규칙.
+ */
+private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
+    if (draft.playMode == AlarmPlayModes.ALARM_ONLY) return true
+    if (hasPaidVoiceAccess(subscriptionResponse)) return true
+    return draft.localAudioUri.isNullOrBlank() &&
+        draft.rawAudioUri.isNullOrBlank() &&
+        isSystemVoiceId(draft.voiceProfileId)
+}
+
 internal fun MainViewModel.createAlarm(
     draft: AlarmDraft,
     replaceExisting: Boolean = false,
     onDone: () -> Unit,
 ) {
-    if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
-        message = "유료 이용권에서 사용할 수 있어요."
+    if (!voiceAlarmAllowed(draft)) {
+        message = "직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요."
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -199,6 +212,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         rawAudioUrl = rawAudioUrl,
         rawAudioDurationMs = null,
         targetUserId = targetUserId.trimmedOrNull(),
+        timezone = java.util.TimeZone.getDefault().id,
     )
 }
 
@@ -208,8 +222,8 @@ internal fun MainViewModel.updateAlarm(
     replaceExisting: Boolean = false,
     onDone: () -> Unit,
 ) {
-    if (draft.playMode != AlarmPlayModes.ALARM_ONLY && !hasPaidVoiceAccess(subscriptionResponse)) {
-        message = "유료 이용권에서 사용할 수 있어요."
+    if (!voiceAlarmAllowed(draft)) {
+        message = "직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요."
         return
     }
     if (!requireAlarmPermissionsForMutation()) return

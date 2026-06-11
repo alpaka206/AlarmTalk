@@ -53,6 +53,9 @@ internal fun VoiceAudioCard(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
+    // 무료 플랜 제한 모드 — 녹음/파일·직접 입력·동적 문구는 [onLockedFeature] 로 게이트.
+    freeVoiceTier: Boolean,
+    onLockedFeature: () -> Unit,
     audioMessage: String?,
     localInputMode: VoiceCaptureMode,
     isRecording: Boolean,
@@ -124,6 +127,10 @@ internal fun VoiceAudioCard(
                 ),
                 selected = visibleVoiceSource,
                 onSelect = {
+                    if (freeVoiceTier && it == VoiceSources.LOCAL_AUDIO) {
+                        onLockedFeature()
+                        return@OptionChips
+                    }
                     editor.voiceSource = it
                     if (it == VoiceSources.TTS_PROFILE) {
                         editor.clearAudio()
@@ -208,6 +215,9 @@ internal fun VoiceAudioCard(
                             onCheckedChange = { checked ->
                                 if (checked) {
                                     onOpenRandomPromptSettings()
+                                } else if (freeVoiceTier) {
+                                    // 직접 입력은 유료 — 무료는 프리셋 랜덤 문구로 고정.
+                                    onLockedFeature()
                                 } else {
                                     editor.voiceRandomPrompt = false
                                     editor.clearAudio()
@@ -238,7 +248,8 @@ internal fun VoiceAudioCard(
                         RandomPromptSummaryRow(
                             language = editor.voiceLanguage,
                             randomContext = editor.voiceRandomContext,
-                            onClick = onOpenRandomPromptSettings,
+                            // 동적(날씨/운세) 문구·언어 설정은 유료 — 무료는 기본 프리셋 고정.
+                            onClick = if (freeVoiceTier) onLockedFeature else onOpenRandomPromptSettings,
                         )
                     }
                 }
@@ -689,8 +700,10 @@ private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
     }
 }
 
-private fun ownedVoiceDetail(profile: VoiceProfile): String {
-    return if (profile.isShared == true) "내 목소리 · 공유 중" else "내 목소리"
+private fun ownedVoiceDetail(profile: VoiceProfile): String = when {
+    profile.isSystem == true -> "기본 목소리"
+    profile.isShared == true -> "내 목소리 · 공유 중"
+    else -> "내 목소리"
 }
 
 internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =

@@ -25,7 +25,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +71,9 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
+import com.alarmtalk.app.ui.guide.UsageGuideDialog
+import com.alarmtalk.app.ui.guide.UsageGuideStep
+import com.alarmtalk.app.ui.guide.UsageGuideStore
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -105,6 +112,25 @@ private fun voiceProfileFileDurationError(durationMillis: Long?): String? = when
     durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 파일을 선택해 주세요."
     else -> null
 }
+
+// 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
+private val voiceCreateGuideSteps = listOf(
+    UsageGuideStep(
+        icon = Icons.Outlined.Mic,
+        title = "조용한 곳에서 녹음해요",
+        body = "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.Badge,
+        title = "누구의 목소리인지 알려줘요",
+        body = "이름·관계와 '나를 부를 호칭'을 입력하면, 랜덤 문구에서 그 호칭으로 다정하게 불러줘요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.AutoAwesome,
+        title = "등록을 누르면 완성",
+        body = "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요.",
+    ),
+)
 
 @Composable
 internal fun VoiceLoginRequiredCard() {
@@ -176,6 +202,14 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    var voiceGuideVisible by remember { mutableStateOf(false) }
+    // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
+    LaunchedEffect(showCreateForm) {
+        if (showCreateForm && !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_CREATE)) {
+            voiceGuideVisible = true
+        }
+    }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -187,7 +221,10 @@ internal fun VoiceProfileManagementPanel(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
     var filePreviewPlaying by remember { mutableStateOf(false) }
-    val isLimitReached = voiceProfiles.size >= MAX_VOICE_PROFILES
+    // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
+    val systemVoices = voiceProfiles.filter { it.isSystem == true }
+    val ownVoices = voiceProfiles.filter { it.isSystem != true }
+    val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = "유료 이용권에서 사용할 수 있어요."
@@ -759,16 +796,16 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (!canCreateVoice) {
-            MutedText(paidVoiceRequiredMessage)
+            MutedText("내 목소리 만들기는 유료 이용권에서 사용할 수 있어요. 아래 기본 목소리는 무료로 쓸 수 있어요.")
         }
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
 
-        if (voiceProfiles.isEmpty() && canCreateVoice) {
+        if (ownVoices.isEmpty() && canCreateVoice) {
             MutedText("아직 만든 목소리가 없어요.")
-        } else if (voiceProfiles.isNotEmpty()) {
-            voiceProfiles.forEach { profile ->
+        } else if (ownVoices.isNotEmpty()) {
+            ownVoices.forEach { profile ->
                 VoiceProfileRow(
                     profile = profile,
                     enabled = !voiceProfileBusy,
@@ -783,6 +820,17 @@ internal fun VoiceProfileManagementPanel(
                     onShareChange = { shared -> onShareVoiceProfile(profile.id, shared) },
                     onDelete = { deleteTarget = profile },
                 )
+            }
+        }
+
+        if (systemVoices.isNotEmpty()) {
+            Text(
+                text = "기본 목소리",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            systemVoices.forEach { profile ->
+                SystemVoiceProfileRow(profile = profile)
             }
         }
 
@@ -879,6 +927,16 @@ internal fun VoiceProfileManagementPanel(
                                 VoiceRegistrationStep.Sharing -> "공유 설정"
                             }
                             MutedText("$stepIndex / 3 · $stepTitle")
+                        }
+                        IconButton(
+                            onClick = { voiceGuideVisible = true },
+                            modifier = Modifier.size(42.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                                contentDescription = "사용 가이드",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                         IconButton(
                             onClick = ::closeCreateDialog,
@@ -1173,6 +1231,16 @@ internal fun VoiceProfileManagementPanel(
                 }
             }
         }
+    }
+
+    if (voiceGuideVisible) {
+        UsageGuideDialog(
+            steps = voiceCreateGuideSteps,
+            onFinish = {
+                usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
+                voiceGuideVisible = false
+            },
+        )
     }
 
     renameTarget?.let { profile ->

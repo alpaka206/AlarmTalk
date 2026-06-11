@@ -82,6 +82,7 @@ internal fun AlarmListScreen(
     onDownloadNoteAudio: suspend (String) -> NoteAudioResponse,
     onMarkNoteRead: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    onPurchasePlay: (android.app.Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
@@ -108,7 +109,8 @@ internal fun AlarmListScreen(
     val canCreateFamilyAlarm = authSession != null &&
         hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
         familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
-    val voicePlanLocked = !hasPaidVoiceAccess(subscriptionResponse)
+    // 시스템 스톡 보이스 도입으로 음성 기능은 로그인만 하면 열린다 (무료는 스톡 보이스 한정).
+    val voicePlanLocked = authSession == null
     val voiceLocked = voicePlanLocked || !permissions.recordAudio
     val alarmLocked = !permissions.alarmReady
 
@@ -289,6 +291,7 @@ internal fun AlarmListScreen(
                         vouchers = vouchers,
                         onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
+                        onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
                         onChangePlan = onChangePlan,
                         onLeaveFamilyGroup = onLeaveFamilyGroup,

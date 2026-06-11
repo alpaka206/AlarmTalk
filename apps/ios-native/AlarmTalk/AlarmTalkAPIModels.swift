@@ -311,6 +311,10 @@ struct RemoteAlarmWriteRequest: Encodable {
     var rawAudioUrl: String?
     var rawAudioDurationMs: Int?
     var targetUserId: String?
+    /// 기기 타임존 식별자 (예: "Asia/Seoul"). 서버가 사용자 로컬 시각 기준으로
+    /// 알람을 해석할 수 있도록 생성/수정 페이로드에 항상 동봉한다.
+    /// 서버 측 처리는 별도 작업 중 — 미인식 환경에서는 무시된다.
+    var timezone: String? = TimeZone.current.identifier
 }
 
 struct VoiceProfileListResponse: Decodable {
@@ -972,13 +976,41 @@ struct ConfirmAppleSubscriptionRequest: Encodable {
     var transactionId: String
     var originalTransactionId: String
     var productId: String
+    /// StoreKit2 `VerificationResult.jwsRepresentation` — Apple 이 서명한 raw JWS.
+    /// 서버가 App Store Server API 호출 없이도 서명 검증으로 트랜잭션 진위를
+    /// 확인할 수 있도록 동봉한다. snake_case 인코딩으로 `jws_representation` 전송.
+    var jwsRepresentation: String?
 }
 
+/// `POST /api/billing/apple/confirm` 성공 응답.
+/// `{ success: true, plan_key: string, subscription: {...} }` 형태.
+/// 라우트 미구현(501)/점검(503) 시에는 본 디코드에 도달하지 않는다.
 struct ConfirmAppleSubscriptionResponse: Decodable, Equatable {
-    /// 백엔드가 발급한 subscriptions row id. 미구현 환경에서는 nil.
-    var subscriptionId: String?
+    /// 서버 측 검증 + entitlement upsert 성공 여부.
+    var success: Bool
     /// 백엔드 plan key (`personal` / `couple` / `family`).
-    var plan: String
-    /// ISO8601 만료 시각. 백엔드가 Apple 의 expiresDate 를 그대로 echo.
-    var expiresAt: String?
+    var planKey: String?
+    /// 백엔드가 upsert 한 subscriptions row. 부분 응답 환경에서는 nil.
+    var subscription: BillingSubscription?
+
+    private enum CodingKeys: String, CodingKey {
+        case success
+        case planKey
+        case subscription
+    }
+
+    /// 서버 스키마가 확정되기 전이므로 부분 필드 누락/형식 차이에도 디코드가
+    /// 통째로 실패하지 않도록 관대하게 읽는다. `success` 만 신뢰 기준으로 사용.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        success = (try? container.decodeIfPresent(Bool.self, forKey: .success)) ?? false
+        planKey = try? container.decodeIfPresent(String.self, forKey: .planKey)
+        subscription = try? container.decodeIfPresent(BillingSubscription.self, forKey: .subscription)
+    }
+
+    init(success: Bool, planKey: String? = nil, subscription: BillingSubscription? = nil) {
+        self.success = success
+        self.planKey = planKey
+        self.subscription = subscription
+    }
 }

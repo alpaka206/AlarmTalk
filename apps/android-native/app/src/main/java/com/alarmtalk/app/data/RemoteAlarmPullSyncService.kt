@@ -67,6 +67,11 @@ internal class RemoteAlarmPullSyncService(
                 // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
                 // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                 alarmDao.upsert(local)
+                // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
+                val previousCacheKey = existing?.audioCacheKey
+                if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
+                }
                 if (local.enabled) {
                     runCatching { alarmScheduler.schedule(local) }
                         .onFailure { error ->

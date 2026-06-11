@@ -1,5 +1,8 @@
 package com.alarmtalk.app
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingPlan
 import com.alarmtalk.app.network.BillingPlanSummary
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -57,12 +61,14 @@ internal fun SubscriptionPanel(
     vouchers: List<VoucherItem>,
     onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
+    onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
     onChangePlan: (String, Boolean) -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
 ) {
     var checkoutTarget by remember { mutableStateOf<CheckoutSelection?>(null) }
+    var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var testCodeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var showCancelDialog by remember { mutableStateOf(false) }
@@ -170,7 +176,7 @@ internal fun SubscriptionPanel(
                     hasActiveSubscription = hasActive,
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
-                    onPurchase = { testCodeTarget = option },
+                    onPurchase = { purchaseTarget = option },
                     onGift = { testCodeTarget = option },
                     onChange = { testCodeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
@@ -195,6 +201,31 @@ internal fun SubscriptionPanel(
                 )
             }
         }
+    }
+
+    purchaseTarget?.let { option ->
+        PlayPurchaseDialog(
+            target = option,
+            busy = billingBusy,
+            onDismiss = { purchaseTarget = null },
+            onPurchase = {
+                val productId = PlayBillingProducts.productIdFor(option.key)
+                purchaseTarget = null
+                val activity = context.findActivity()
+                if (productId != null && activity != null) {
+                    onPurchasePlay(activity, productId)
+                }
+            },
+            // 디버그/개발 빌드에서는 기존 스텁(테스트 초대 코드 등록) 경로도 유지한다.
+            onUseTestCode = if (BuildConfig.DEBUG) {
+                {
+                    purchaseTarget = null
+                    testCodeTarget = option
+                }
+            } else {
+                null
+            },
+        )
     }
 
     testCodeTarget?.let { option ->
@@ -299,6 +330,47 @@ internal fun SubscriptionPanel(
             }
         }
     }
+}
+
+/**
+ * Google Play 구독 결제 시작 다이얼로그 (월간 구독만 판매).
+ * [onUseTestCode] 가 null 이 아니면(디버그 빌드) 기존 테스트 코드 스텁 경로 버튼도 노출한다.
+ */
+@Composable
+private fun PlayPurchaseDialog(
+    target: SubscriptionPlanOption,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onPurchase: () -> Unit,
+    onUseTestCode: (() -> Unit)?,
+) {
+    BillingActionDialog(
+        title = "${target.name} 이용권 구독",
+        description = "Google Play 결제로 구독을 시작해요. 결제 금액과 갱신 주기는 결제 화면에서 확인할 수 있어요.",
+        onDismiss = onDismiss,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            BillingDialogButton(
+                label = "월간 구독",
+                primary = true,
+                onClick = { if (!busy) onPurchase() },
+            )
+            if (onUseTestCode != null) {
+                BillingDialogButton(
+                    label = "테스트 코드 등록 (개발용)",
+                    primary = false,
+                    onClick = onUseTestCode,
+                )
+            }
+        }
+    }
+}
+
+/** Compose Context 에서 결제 시트 호출에 필요한 Activity 를 찾는다. */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

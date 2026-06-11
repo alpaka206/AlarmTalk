@@ -54,6 +54,8 @@ beforeAll(async () => {
   await db.execute('DELETE FROM user_consents');
   await db.execute('DELETE FROM retained_billing_records');
   await db.execute('DELETE FROM subscriptions');
+  // 시스템 스톡 보이스(migration 43)가 시스템 유저를 참조하므로 먼저 비운다.
+  await db.execute('DELETE FROM voice_profiles');
   await db.execute('DELETE FROM users');
   await db.execute({
     sql: `INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)`,

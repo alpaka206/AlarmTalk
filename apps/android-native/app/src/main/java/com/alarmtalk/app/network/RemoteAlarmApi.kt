@@ -58,6 +58,9 @@ data class RemoteAlarmWriteRequest(
     @SerializedName("raw_audio_url") val rawAudioUrl: String? = null,
     @SerializedName("raw_audio_duration_ms") val rawAudioDurationMs: Long? = null,
     @SerializedName("target_user_id") val targetUserId: String? = null,
+    // 사용자 기기의 IANA 타임존(예: "Asia/Seoul"). 서버가 로컬 시각(time)을 절대 시각으로
+    // 해석할 수 있게 함께 보낸다. 서버가 아직 받지 않아도 무해(무시됨).
+    @SerializedName("timezone") val timezone: String? = null,
 )
 
 interface RemoteAlarmApi {

@@ -104,23 +104,20 @@ Apple App Store 정책상 디지털 구독은 **반드시 StoreKit2 IAP** 로 �
 
 ### App Store Connect 제품 등록
 
-App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 6개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다.
+App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 3개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다. (연간 SKU 는 판매하지 않는다.)
 
 | productID | PlanTier | Period | 비고 |
 | --- | --- | --- | --- |
 | `com.voicealarm.nativeapp.ios.personal_monthly` | personal | Monthly (P1M) | |
-| `com.voicealarm.nativeapp.ios.personal_yearly`  | personal | Yearly (P1Y)  | |
 | `com.voicealarm.nativeapp.ios.couple_monthly`   | couple   | Monthly (P1M) | |
-| `com.voicealarm.nativeapp.ios.couple_yearly`    | couple   | Yearly (P1Y)  | |
 | `com.voicealarm.nativeapp.ios.family_monthly`   | family   | Monthly (P1M) | Family Sharing **enabled** |
-| `com.voicealarm.nativeapp.ios.family_yearly`    | family   | Yearly (P1Y)  | Family Sharing **enabled** |
 
 - 모든 SKU 를 단일 구독 그룹에 두면 사용자가 그룹 내에서 자유롭게 업/다운그레이드 할 수 있고, 가족 플랜은 Family Sharing 을 켜서 Apple Family 그룹 멤버에게도 entitlement 가 propagate 된다.
 - 가격은 App Store 의 region 별 price tier 로 설정 — 코드는 `Product.displayPrice` 를 그대로 표시하므로 통화/세금이 자동 반영된다.
 
 ### 시뮬레이터 로컬 테스트
 
-`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 6개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
+`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 3개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
 
 xcodegen 후 Xcode 에서:
 
@@ -143,7 +140,8 @@ xcodegen 후 Xcode 에서:
 {
   "transaction_id": "...",
   "original_transaction_id": "...",
-  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly"
+  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly",
+  "jws_representation": "<StoreKit2 VerificationResult.jwsRepresentation — Apple 서명 raw JWS>"
 }
 ```
 
@@ -151,11 +149,13 @@ xcodegen 후 Xcode 에서:
 
 ```json
 {
-  "subscription_id": "sub_...",
-  "plan": "personal",
-  "expires_at": "2026-06-19T12:34:56Z"
+  "success": true,
+  "plan_key": "personal",
+  "subscription": { "id": "sub_...", "plan_id": "...", "status": "active", "starts_at": "...", "expires_at": "2026-06-19T12:34:56Z" }
 }
 ```
+
+`success: true` 수신 시 클라이언트는 기존 구독 fetch 경로(`GET /api/billing/subscription`)로 서버 구독 상태를 즉시 새로고침한다 (`SubscriptionManager.onServerEntitlementUpdated` → `SocialFeatureViewModel.refreshSubscriptionSilently`). 501/503 응답은 비파괴 처리 — 로컬 StoreKit entitlement 를 유지하고 에러를 노출하지 않는다.
 
 ### Transaction listener race-safety
 

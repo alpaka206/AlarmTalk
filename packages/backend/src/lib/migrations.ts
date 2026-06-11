@@ -885,6 +885,79 @@ export const migrations: Migration[] = [
         ON retained_billing_records(retain_until)`,
     ],
   },
+  {
+    // 음성 수명주기 + 스케줄러 시간대 + 스토어 결제 기록.
+    //  - pending_external_deletions: 트랜잭션 안에서 DB 행을 지우기 전에 ElevenLabs
+    //    voice / R2 오브젝트 참조를 적재해 두고, cron 이 외부 API 로 실제 삭제 후
+    //    큐에서 제거한다 (탈퇴·다운그레이드 시 클로닝/오디오 잔존 방지).
+    //  - alarms.timezone: 클라이언트 IANA 시간대 (예: 'Asia/Seoul'). 푸시 스케줄러가
+    //    알람 HH:mm 을 이 시간대 기준으로 판정한다. NULL 이면 Asia/Seoul 폴백.
+    //  - store_transactions: Apple/Google/PortOne 결제 검증 기록 (중복 처리 방지 +
+    //    전자상거래법 보존 원본). provider_transaction_id 는 provider 별 고유.
+    id: 42,
+    name: 'voice-lifecycle-and-store-billing',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pending_external_deletions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('elevenlabs_voice','r2_object')),
+        ref TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_external_deletions_ref
+        ON pending_external_deletions(kind, ref)`,
+      `ALTER TABLE alarms ADD COLUMN timezone TEXT`,
+      `CREATE TABLE IF NOT EXISTS store_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google','portone')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+    ],
+  },
+  {
+    // 무료 플랜용 시스템 제공(스톡) 보이스.
+    //  - voice_profiles.is_system=1 행은 모든 사용자의 목소리 목록에 노출되고,
+    //    무료 플랜도 이 보이스로는 TTS(프리셋 문구 한정)를 쓸 수 있다.
+    //  - 소유자는 'system:voice-library' 시스템 유저 (로그인 불가, 발급 전용).
+    //  - elevenlabs_voice_id 는 ElevenLabs premade 보이스 (상업적 이용 허용 셋).
+    //    Adam 은 릴스/숏폼에서 유행한 그 목소리.
+    id: 43,
+    name: 'system-stock-voices',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`,
+      `INSERT OR IGNORE INTO users (id, google_id, email, name, plan)
+        VALUES ('70000000-0000-4000-9000-000000000001', 'system:voice-library',
+                'system@alarm-talk.com', 'AlarmTalk 기본 목소리', 'free')`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000101', '70000000-0000-4000-9000-000000000001',
+                '아담', 'pNInz6obpgDQGcFmaJgB', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000102', '70000000-0000-4000-9000-000000000001',
+                '레이첼', '21m00Tcm4TlvDq8ikWAM', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000103', '70000000-0000-4000-9000-000000000001',
+                '브라이언', 'nPczCjzI2devNBz1zQrb', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000104', '70000000-0000-4000-9000-000000000001',
+                '제시카', 'cgSgspJ2msm6clMCkdW9', 'ready', 1, 0, 0)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

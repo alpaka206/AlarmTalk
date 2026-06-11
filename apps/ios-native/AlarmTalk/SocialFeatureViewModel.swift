@@ -193,6 +193,26 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
+    /// 구독 정보만 조용히 재조회. Apple IAP confirm 이 `success: true` 로 끝난 직후
+    /// `SubscriptionManager.onServerEntitlementUpdated` 훅이 호출한다.
+    /// 기존 `refreshAll` 의 구독 fetch 경로(`GET /api/billing/subscription`) 를
+    /// 그대로 재사용하며, 실패는 조용히 무시 — 다음 refreshAll 에서 catch-up 된다.
+    func refreshSubscriptionSilently(session: AuthSession?) async {
+        guard let token = session?.token,
+              let userID = normalizedUserID(session?.user.id) else {
+            return
+        }
+        activeUserID = userID
+        do {
+            let nextSubscription = try await api.getSubscription(token: token)
+            guard activeUserID == userID else { return }
+            subscription = nextSubscription
+            accessSnapshotStore.updateSubscription(userID: userID, response: nextSubscription)
+        } catch {
+            // 백그라운드 새로고침 실패는 사용자에게 노출하지 않는다.
+        }
+    }
+
     private func refreshAllAfterMutation(session: AuthSession?, successMessage: String) async {
         await refreshAll(session: session, force: true)
         statusMessage = successMessage

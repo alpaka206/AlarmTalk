@@ -46,6 +46,26 @@ struct VoiceCloneUploadFlow: View {
     @State private var localError: String?
     @State private var animatedLevel: CGFloat = 0.0
     @State private var levelTimer: Timer?
+    @State private var usageGuidePresented = false
+
+    /// 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
+    private static let usageGuideSteps: [UsageGuideStep] = [
+        UsageGuideStep(
+            systemImage: "mic.fill",
+            title: "조용한 곳에서 녹음해요",
+            body: "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요."
+        ),
+        UsageGuideStep(
+            systemImage: "person.text.rectangle",
+            title: "누구의 목소리인지 알려줘요",
+            body: "이름·관계와 '나를 부를 호칭'을 입력하면, 랜덤 문구에서 그 호칭으로 다정하게 불러줘요."
+        ),
+        UsageGuideStep(
+            systemImage: "sparkles",
+            title: "학습을 시작하면 완성",
+            body: "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요."
+        ),
+    ]
 
     private var activeDurationMs: Int {
         switch sourceMode {
@@ -98,8 +118,20 @@ struct VoiceCloneUploadFlow: View {
             actionsSection
             statusSection
         }
-        .onAppear { profileName = voice.cloneName }
+        .onAppear {
+            profileName = voice.cloneName
+            if !UsageGuideStore().hasSeen(.voiceClone) {
+                usageGuidePresented = true
+            }
+        }
         .onDisappear { levelTimer?.invalidate() }
+        .sheet(isPresented: $usageGuidePresented, onDismiss: {
+            UsageGuideStore().markSeen(.voiceClone)
+        }) {
+            UsageGuideSheet(steps: Self.usageGuideSteps) {
+                usageGuidePresented = false
+            }
+        }
         .fileImporter(
             isPresented: $fileImporterPresented,
             allowedContentTypes: VoiceImportContentTypes.profileTraining,
@@ -132,7 +164,14 @@ struct VoiceCloneUploadFlow: View {
             Text("목소리 만들기")
                 .font(.headline)
             Spacer()
-            Color.clear.frame(width: 40, height: 1)
+            Button {
+                usageGuidePresented = true
+            } label: {
+                Image(systemName: "questionmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .tint(AlarmTalkTheme.textSecondary)
+            .accessibilityLabel(Text("사용 가이드"))
         }
     }
 

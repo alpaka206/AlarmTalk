@@ -33,10 +33,16 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
 
     private static let voiceRepeatGapNanos: UInt64 = 900_000_000
 
+    /// 최후 폴백 다운로드의 짧은 타임아웃 (초). 알람이 울리는 동안만 의미가
+    /// 있으므로 길게 기다리지 않는다. `downloadVoice` 가 nonisolated 라 명시적
+    /// nonisolated 로 표기.
+    private nonisolated static let fallbackDownloadTimeoutSeconds: TimeInterval = 8
+
     private var player: AVAudioPlayer?
     private var activePlayerID: ObjectIdentifier?
     private var repeatTask: Task<Void, Never>?
     private var fadeTask: Task<Void, Never>?
+    private var fallbackTask: Task<Void, Never>?
     private var playbackGeneration = 0
     private var currentVoiceURL: URL?
     private var currentRepeatVoice = false
@@ -50,14 +56,83 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
 
     /// playMode 가 voice/sound_then_voice 이고 캐시된 목소리가 있을 때만 재생.
     /// 이미 같은 record 가 재생 중이면 no-op. 다른 record 가 재생 중이면 교체.
+    ///
+    /// 캐시가 비어 있더라도 record.rawAudioUri 를 알고 있으면 짧은 타임아웃으로
+    /// 원본 오디오를 받아 같은 cacheKey 로 저장한 뒤 재생하는 최후 폴백을 탄다.
+    /// 그것도 불가하면 기존 동작(무음, AlarmKit .default 만 울림)을 유지한다.
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
         guard record.playModeEnum != .alarmOnly,
               let key = record.audioCacheKey,
-              let url = audioCache.cachedURL(for: key),
               record.voiceVolumePercent > 0 else {
             return
         }
 
+        if let url = audioCache.cachedURL(for: key) {
+            beginPlayback(for: record, url: url)
+            return
+        }
+        startLastResortFallback(for: record, cacheKey: key, audioCache: audioCache)
+    }
+
+    /// 캐시 미존재 + rawAudioUri 보유 시의 최후 폴백. 다운로드가 끝나기 전에
+    /// `stop()` 이 호출되면 (알람 dismiss/snooze) 재생하지 않는다.
+    private func startLastResortFallback(
+        for record: LocalAlarmRecord,
+        cacheKey: String,
+        audioCache: AudioCacheStore
+    ) {
+        guard fallbackTask == nil else { return }
+        guard let raw = record.rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let remoteURL = URL(string: raw),
+              remoteURL.scheme == "https" || remoteURL.scheme == "http" else {
+            return
+        }
+        fallbackTask = Task { @MainActor [weak self] in
+            defer { self?.fallbackTask = nil }
+            guard let payload = await Self.downloadVoice(from: remoteURL) else { return }
+            guard let self, !Task.isCancelled else { return }
+            guard let url = try? audioCache.cacheBytes(
+                payload.data,
+                cacheKey: cacheKey,
+                mimeType: payload.mimeType,
+                source: "raw_audio",
+                messageId: record.ttsMessageId,
+                rawAudioUri: raw,
+                durationOverrideMs: nil,
+                enforceMaxDuration: false
+            ) else {
+                return
+            }
+            self.beginPlayback(for: record, url: url)
+        }
+    }
+
+    /// 짧은 타임아웃으로 원본 음원 다운로드. 실패 시 nil (best-effort).
+    private nonisolated static func downloadVoice(
+        from remoteURL: URL
+    ) async -> (data: Data, mimeType: String)? {
+        var request = URLRequest(url: remoteURL)
+        request.timeoutInterval = fallbackDownloadTimeoutSeconds
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  !data.isEmpty else {
+                return nil
+            }
+            let responseMime = http.mimeType?.lowercased()
+            if let responseMime, responseMime.hasPrefix("audio/") {
+                return (data, responseMime)
+            }
+            let format = AudioCacheStore.normalizedFormat(remoteURL.pathExtension)
+            return (data, AudioCacheStore.mimeType(forFormat: format))
+        } catch {
+            return nil
+        }
+    }
+
+    private func beginPlayback(for record: LocalAlarmRecord, url: URL) {
         if currentRecordID == record.id,
            player?.isPlaying == true || repeatTask != nil || voiceHasPlayedThisRing {
             return
@@ -167,6 +242,11 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     private func stopPlayback(deactivateSession: Bool) {
+        // 진행 중인 최후 폴백 다운로드도 함께 무효화한다 — 알람이 이미 멈춘 뒤
+        // 뒤늦게 목소리가 재생되는 것을 막는다. (폴백 task 내부에서 재생 직전
+        // 본 메서드가 호출되는 self-cancel 은 cooperative 라 재생에 영향 없음.)
+        fallbackTask?.cancel()
+        fallbackTask = nil
         repeatTask?.cancel()
         repeatTask = nil
         fadeTask?.cancel()

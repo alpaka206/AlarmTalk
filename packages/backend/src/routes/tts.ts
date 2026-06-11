@@ -241,6 +241,15 @@ async function findUsableVoiceProfile(
   });
   if (owned.rows.length > 0) return owned.rows[0] as Record<string, unknown>;
 
+  // 시스템 스톡 보이스는 모든 사용자가 사용할 수 있다 (무료 플랜 포함).
+  const system = await db.execute({
+    sql: `SELECT * FROM voice_profiles
+          WHERE id = ? AND COALESCE(is_system, 0) = 1 AND deleted_at IS NULL
+          LIMIT 1`,
+    args: [voiceProfileId],
+  });
+  if (system.rows.length > 0) return system.rows[0] as Record<string, unknown>;
+
   const shared = await db.execute({
     sql: `SELECT vp.*, u.id AS owner_pk
           FROM voice_profiles vp
@@ -613,6 +622,7 @@ tts.post('/generate', async (c) => {
   }
 
   let dailyLimitExceeded = false;
+  let freePlanRestricted = false;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -623,14 +633,10 @@ tts.post('/generate', async (c) => {
     const plan = u.plan as string;
     const today = new Date().toISOString().split('T')[0]!;
 
+    // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
+    // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
     if (resolvedUserPk && !isPaidVoicePlan(plan)) {
-      return c.json(
-        {
-          error: 'Voice features require a paid plan.',
-          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
-        },
-        403,
-      );
+      freePlanRestricted = true;
     }
 
     if (u.daily_tts_reset_at !== today) {
@@ -665,6 +671,29 @@ tts.post('/generate', async (c) => {
       { error: 'Voice profile is not ready yet', error_code: 'VOICE_PROFILE_NOT_READY' },
       400,
     );
+  }
+
+  const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
+  if (freePlanRestricted) {
+    if (!isSystemVoice) {
+      return c.json(
+        {
+          error: 'Voice features require a paid plan.',
+          error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
+        },
+        403,
+      );
+    }
+    // 커스텀 텍스트·동적(날씨/운세) 문구·번역은 매번 생성 비용이 들어 유료 전용.
+    if (!randomRequested || randomContext !== 'preset' || body.translate === true) {
+      return c.json(
+        {
+          error: 'Free plan supports preset phrases with stock voices only.',
+          error_code: 'FREE_PLAN_PRESET_ONLY',
+        },
+        403,
+      );
+    }
   }
 
   if (dailyLimitExceeded && (randomRequested || body.translate === true)) {
@@ -822,7 +851,11 @@ tts.post('/generate', async (c) => {
     );
 
     for (const { cacheKey } of preparedAttempts) {
-      const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey);
+      // 시스템 보이스는 (보이스 × 문구)당 단 한 번만 생성되도록 전체 사용자가
+      // 캐시를 공유한다 — 무료 플랜의 한계 비용을 0에 가깝게 유지.
+      const cached = await findCachedGeneratedAudio(c, ownerIds, cacheKey, {
+        anyUser: isSystemVoice,
+      });
       if (cached) {
         return c.json(
           {
@@ -1202,6 +1235,7 @@ async function findCachedGeneratedAudio(
   c: Context<AppEnv>,
   userIds: [string, string],
   cacheKey: string,
+  options?: { anyUser?: boolean },
 ): Promise<{
   messageId: string;
   provider: string;
@@ -1212,15 +1246,16 @@ async function findCachedGeneratedAudio(
   bytes: Uint8Array;
 } | null> {
   const db = getDB(c.env);
+  // anyUser=true (시스템 보이스): 누가 생성했든 같은 request_hash 캐시를 재사용.
   const result = await db.execute({
     sql: `SELECT ga.message_id, ga.provider,
                  COALESCE(ga.text, m.synthesis_text, m.text) AS synthesis_text,
                  ga.audio_url, ga.audio_object_key, ga.audio_format, ga.mime_type
           FROM generated_audio_assets ga
           JOIN messages m ON m.id = ga.message_id
-          WHERE ga.user_id IN (?, ?) AND ga.request_hash = ?
+          WHERE ${options?.anyUser ? '' : 'ga.user_id IN (?, ?) AND '}ga.request_hash = ?
           LIMIT 1`,
-    args: [...userIds, cacheKey],
+    args: options?.anyUser ? [cacheKey] : [...userIds, cacheKey],
   });
 
   if (result.rows.length === 0) return null;
