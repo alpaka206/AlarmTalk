@@ -174,6 +174,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var billingBusy by mutableStateOf(false)
         internal set
 
+    // 이용권 패널 진입 시의 read-only 새로고침 플래그. billingBusy(구매·해지 등
+    // 뮤테이션)와 분리해, 새로고침 중에도 구매 버튼이 즉시 눌리게 한다 —
+    // 구독 상태는 AccessSnapshotStore 캐시로 이미 알고 있다.
+    var billingRefreshing by mutableStateOf(false)
+        internal set
+
     var subscriptionResponse by mutableStateOf<BillingSubscriptionResponse?>(initialAccessSnapshot.subscriptionResponse)
         internal set
 
@@ -375,6 +381,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { playBilling.resendUnconfirmedPurchases() }
                     .onFailure { error -> Log.w(TAG, "Failed to resend unconfirmed Play purchases", error) }
             }
+        }
+        // BillingClient 연결 + 상품 정보 선로드 — 이용권 패널의 구매 시트가 즉시 뜨게 한다.
+        viewModelScope.launch {
+            runCatching { playBilling.preloadProducts() }
+                .onFailure { error -> Log.w(TAG, "Failed to preload Play products", error) }
         }
         refreshAppSession()
     }

@@ -208,8 +208,8 @@ internal fun SubscriptionPanel(
             target = option,
             busy = billingBusy,
             onDismiss = { purchaseTarget = null },
-            onPurchase = { yearly ->
-                val productId = PlayBillingProducts.productIdFor(option.key, yearly)
+            onPurchase = {
+                val productId = PlayBillingProducts.productIdFor(option.key)
                 purchaseTarget = null
                 val activity = context.findActivity()
                 if (productId != null && activity != null) {
@@ -333,7 +333,7 @@ internal fun SubscriptionPanel(
 }
 
 /**
- * Google Play 구독 결제 시작 다이얼로그. 월간/연간 주기를 골라 결제 시트를 띄운다.
+ * Google Play 구독 결제 시작 다이얼로그 (월간 구독만 판매).
  * [onUseTestCode] 가 null 이 아니면(디버그 빌드) 기존 테스트 코드 스텁 경로 버튼도 노출한다.
  */
 @Composable
@@ -341,7 +341,7 @@ private fun PlayPurchaseDialog(
     target: SubscriptionPlanOption,
     busy: Boolean,
     onDismiss: () -> Unit,
-    onPurchase: (yearly: Boolean) -> Unit,
+    onPurchase: () -> Unit,
     onUseTestCode: (() -> Unit)?,
 ) {
     BillingActionDialog(
@@ -353,12 +353,7 @@ private fun PlayPurchaseDialog(
             BillingDialogButton(
                 label = "월간 구독",
                 primary = true,
-                onClick = { if (!busy) onPurchase(false) },
-            )
-            BillingDialogButton(
-                label = "연간 구독",
-                primary = false,
-                onClick = { if (!busy) onPurchase(true) },
+                onClick = { if (!busy) onPurchase() },
             )
             if (onUseTestCode != null) {
                 BillingDialogButton(

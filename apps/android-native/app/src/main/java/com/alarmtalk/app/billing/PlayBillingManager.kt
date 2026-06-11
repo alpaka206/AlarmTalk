@@ -21,28 +21,22 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 
-/** Play Console 에 등록된 구독 상품 ID 모음. */
+/** Play Console 에 등록된 구독 상품 ID 모음 (월간만 판매). */
 object PlayBillingProducts {
     const val PERSONAL_MONTHLY = "personal_monthly"
-    const val PERSONAL_YEARLY = "personal_yearly"
     const val COUPLE_MONTHLY = "couple_monthly"
-    const val COUPLE_YEARLY = "couple_yearly"
     const val FAMILY_MONTHLY = "family_monthly"
-    const val FAMILY_YEARLY = "family_yearly"
 
     val all: List<String> = listOf(
         PERSONAL_MONTHLY,
-        PERSONAL_YEARLY,
         COUPLE_MONTHLY,
-        COUPLE_YEARLY,
         FAMILY_MONTHLY,
-        FAMILY_YEARLY,
     )
 
-    /** 이용권 plan key("personal"/"couple"/"family") + 결제 주기 → Play 상품 ID. */
-    fun productIdFor(planKey: String, yearly: Boolean): String? {
+    /** 이용권 plan key("personal"/"couple"/"family") → Play 상품 ID. */
+    fun productIdFor(planKey: String): String? {
         if (planKey !in setOf("personal", "couple", "family")) return null
-        return if (yearly) "${planKey}_yearly" else "${planKey}_monthly"
+        return "${planKey}_monthly"
     }
 }
 
@@ -80,6 +74,9 @@ class PlayBillingManager(
         .build()
 
     private val connectionMutex = Mutex()
+
+    /** 앱 시작 시 미리 받아두는 상품 정보 — 구매 시트가 추가 네트워크 없이 바로 뜨게 한다. */
+    private val productDetailsCache = mutableMapOf<String, ProductDetails>()
 
     /** 연결을 보장한다. 이미 연결돼 있으면 즉시 true. */
     private suspend fun ensureConnected(): Boolean = connectionMutex.withLock {
@@ -123,7 +120,14 @@ class PlayBillingManager(
             )
             return emptyList()
         }
-        return result.productDetailsList.orEmpty()
+        return result.productDetailsList.orEmpty().also { list ->
+            list.forEach { productDetailsCache[it.productId] = it }
+        }
+    }
+
+    /** 앱 시작 시 호출: 연결 + 전체 구독 상품 정보를 캐시에 적재한다. 실패해도 무해. */
+    suspend fun preloadProducts() {
+        queryProductDetails()
     }
 
     /**
@@ -132,10 +136,12 @@ class PlayBillingManager(
      * @return 결제 플로우 실행에 성공했으면 true. false 면 시트 자체가 뜨지 않은 것.
      */
     suspend fun launchPurchase(activity: Activity, productId: String): Boolean {
-        val productDetails = queryProductDetails(listOf(productId)).firstOrNull() ?: run {
-            Log.w(TAG, "Play product not found productId=$productId")
-            return false
-        }
+        val productDetails = productDetailsCache[productId]
+            ?: queryProductDetails(listOf(productId)).firstOrNull()
+            ?: run {
+                Log.w(TAG, "Play product not found productId=$productId")
+                return false
+            }
         val offerToken = productDetails.subscriptionOfferDetails?.firstOrNull()?.offerToken ?: run {
             Log.w(TAG, "Play subscription offer not found productId=$productId")
             return false

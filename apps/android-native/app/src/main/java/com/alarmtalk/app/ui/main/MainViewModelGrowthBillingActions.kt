@@ -103,15 +103,17 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
 }
 
 internal fun MainViewModel.preloadCharacterAndBilling() {
-    if (authSession == null || characterBusy || billingBusy) return
+    if (authSession == null || characterBusy || billingRefreshing || billingBusy) return
     refreshCharacterAndBillingData(showMessage = false)
 }
 
+// read-only 새로고침은 billingRefreshing 만 올린다 — billingBusy 를 쓰면 패널 진입
+// 직후 구매 버튼이 네트워크 3개가 끝날 때까지 비활성화되는 문제가 있었다.
 private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
-    if (characterBusy || billingBusy) return
+    if (characterBusy || billingRefreshing || billingBusy) return
     val authorization = bearerOrMessage("성장 정보를 불러오려면 먼저 로그인해 주세요") ?: return
     characterBusy = true
-    billingBusy = true
+    billingRefreshing = true
     viewModelScope.launch {
         try {
             runCatching {
@@ -124,7 +126,7 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
             }
         } finally {
             characterBusy = false
-            billingBusy = false
+            billingRefreshing = false
         }
     }
 }
