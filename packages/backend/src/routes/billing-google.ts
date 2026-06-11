@@ -28,11 +28,8 @@ const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublishe
  */
 const GOOGLE_PRODUCT_TO_PLAN_KEY: Record<string, 'personal' | 'couple' | 'family'> = {
   personal_monthly: 'personal',
-  personal_yearly: 'personal',
   couple_monthly: 'couple',
-  couple_yearly: 'couple',
   family_monthly: 'family',
-  family_yearly: 'family',
 };
 
 export function googlePlanKeyFromProductId(
