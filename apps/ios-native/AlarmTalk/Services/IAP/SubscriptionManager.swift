@@ -6,7 +6,7 @@ import StoreKit
 /// Apple App Store 심사 차단 항목 ("디지털 구독은 IAP 필수") 을 해소하기 위한
 /// 단일 진입점. 다음을 책임진다.
 ///
-///   - App Store 로부터 `Product` 6종 (personal/couple/family × monthly/yearly) fetch.
+///   - App Store 로부터 `Product` 3종 (personal/couple/family, 월간) fetch.
 ///   - 사용자 구매 트리거 + 결과 처리 (success/cancelled/pending/failure).
 ///   - 복원 (Restore Purchases) 흐름.
 ///   - `Transaction.updates` 비동기 시퀀스 listener — 가족 공유, 환불, 자동 갱신

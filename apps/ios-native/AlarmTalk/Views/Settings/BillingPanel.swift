@@ -8,7 +8,7 @@ import UIKit
 ///   - 디지털 구독은 Apple StoreKit2 IAP 가 권위(authoritative). 기존
 ///     `socialFeatures.checkout(planKey:)` 호출은 deprecated 되었고, 본 패널은
 ///     `SubscriptionManager.purchase(_:)` 를 통한 IAP 흐름으로 통합됨.
-///   - 각 유료 플랜 카드에 월간/연간 두 가격 버튼이 노출되며, 가격은 Apple
+///   - 각 유료 플랜 카드에 월간 가격 버튼이 노출되며, 가격은 Apple
 ///     `Product.displayPrice` (지역 통화/세금 포함) 를 그대로 보여준다.
 ///   - "이전 구매 복원" 버튼이 하단에 추가됨 — Apple 심사 가이드라인 3.1.1 요구.
 ///   - free 플랜 카드는 정보 표시만 (구매 버튼 없음).

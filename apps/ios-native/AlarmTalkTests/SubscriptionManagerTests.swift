@@ -7,18 +7,17 @@ import XCTest
 /// 는 Xcode 시뮬레이터의 StoreKit Configuration 위에서만 동작하므로 본 테스트는
 /// 다루지 않는다. 본 파일은 다음만 검증한다.
 ///
-///   - 6개 SubscriptionProduct enum case 가 모두 등록되어 있다.
+///   - 3개 SubscriptionProduct enum case (월간만) 가 모두 등록되어 있다.
 ///   - 각 productID 가 백엔드 plan key 와 1:1 매핑된다.
-///   - period 매핑 (monthly / yearly) 이 정확하다.
 ///   - PlanTier ↔ SubscriptionProduct round-trip 이 안전하다.
-///   - `SubscriptionProduct.make(tier:period:)` 가 free 에 대해 nil 을 돌려준다.
+///   - `SubscriptionProduct.make(tier:)` 가 free 에 대해 nil 을 돌려준다.
 ///   - `PlanTier.tierOrder` 가 단조 증가한다.
 final class SubscriptionManagerTests: XCTestCase {
 
     // MARK: - Product enum
 
-    func testHasExactlySixProducts() {
-        XCTAssertEqual(SubscriptionProduct.allCases.count, 6)
+    func testHasExactlyThreeProducts() {
+        XCTAssertEqual(SubscriptionProduct.allCases.count, 3)
     }
 
     func testAllProductIDsAreUnique() {
@@ -41,11 +40,8 @@ final class SubscriptionManagerTests: XCTestCase {
     func testPlanTierMappingIsCorrect() {
         let expectations: [(SubscriptionProduct, PlanTier)] = [
             (.personalMonthly, .personal),
-            (.personalYearly,  .personal),
             (.coupleMonthly,   .couple),
-            (.coupleYearly,    .couple),
             (.familyMonthly,   .family),
-            (.familyYearly,    .family),
         ]
         for (product, expectedTier) in expectations {
             XCTAssertEqual(product.planTier, expectedTier, "\(product) 의 PlanTier 매핑이 잘못됨")
@@ -56,20 +52,6 @@ final class SubscriptionManagerTests: XCTestCase {
         for product in SubscriptionProduct.allCases {
             XCTAssertNotEqual(product.planTier, .free, "유료 SKU 가 free 로 매핑되면 안 됨: \(product)")
         }
-    }
-
-    // MARK: - period mapping
-
-    func testMonthlyPeriodMapping() {
-        XCTAssertEqual(SubscriptionProduct.personalMonthly.period, .monthly)
-        XCTAssertEqual(SubscriptionProduct.coupleMonthly.period, .monthly)
-        XCTAssertEqual(SubscriptionProduct.familyMonthly.period, .monthly)
-    }
-
-    func testYearlyPeriodMapping() {
-        XCTAssertEqual(SubscriptionProduct.personalYearly.period, .yearly)
-        XCTAssertEqual(SubscriptionProduct.coupleYearly.period, .yearly)
-        XCTAssertEqual(SubscriptionProduct.familyYearly.period, .yearly)
     }
 
     // MARK: - Round-trip
@@ -90,20 +72,16 @@ final class SubscriptionManagerTests: XCTestCase {
         XCTAssertNil(SubscriptionProduct.from(productID: "com.voicealarm.nativeapp.ios.premium"))
     }
 
-    // MARK: - make(tier:period:) factory
+    // MARK: - make(tier:) factory
 
     func testMakeReturnsCorrectProduct() {
-        XCTAssertEqual(SubscriptionProduct.make(tier: .personal, period: .monthly), .personalMonthly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .personal, period: .yearly),  .personalYearly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .couple,   period: .monthly), .coupleMonthly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .couple,   period: .yearly),  .coupleYearly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .family,   period: .monthly), .familyMonthly)
-        XCTAssertEqual(SubscriptionProduct.make(tier: .family,   period: .yearly),  .familyYearly)
+        XCTAssertEqual(SubscriptionProduct.make(tier: .personal), .personalMonthly)
+        XCTAssertEqual(SubscriptionProduct.make(tier: .couple),   .coupleMonthly)
+        XCTAssertEqual(SubscriptionProduct.make(tier: .family),   .familyMonthly)
     }
 
     func testMakeReturnsNilForFreeTier() {
-        XCTAssertNil(SubscriptionProduct.make(tier: .free, period: .monthly))
-        XCTAssertNil(SubscriptionProduct.make(tier: .free, period: .yearly))
+        XCTAssertNil(SubscriptionProduct.make(tier: .free))
     }
 
     // MARK: - PlanTier ordering
@@ -142,10 +120,4 @@ final class SubscriptionManagerTests: XCTestCase {
         }
     }
 
-    // MARK: - SubscriptionPeriod
-
-    func testSubscriptionPeriodDisplayLabel() {
-        XCTAssertEqual(SubscriptionPeriod.monthly.displayLabel, "월간")
-        XCTAssertEqual(SubscriptionPeriod.yearly.displayLabel, "연간")
-    }
 }

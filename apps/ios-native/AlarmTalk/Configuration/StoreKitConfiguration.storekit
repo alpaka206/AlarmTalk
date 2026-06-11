@@ -114,39 +114,9 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "19.99",
-          "familyShareable" : false,
-          "groupNumber" : 2,
-          "internalID" : "21500102",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "개인 플랜 연간 구독",
-              "displayName" : "개인 (연간)",
-              "locale" : "ko_KR"
-            },
-            {
-              "description" : "Personal plan, yearly",
-              "displayName" : "Personal (Yearly)",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "com.voicealarm.nativeapp.ios.personal_yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Personal Yearly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
           "displayPrice" : "3.99",
           "familyShareable" : false,
-          "groupNumber" : 3,
+          "groupNumber" : 2,
           "internalID" : "21500103",
           "introductoryOffer" : null,
           "localizations" : [
@@ -174,39 +144,9 @@
           "codeOffers" : [
 
           ],
-          "displayPrice" : "39.99",
-          "familyShareable" : false,
-          "groupNumber" : 4,
-          "internalID" : "21500104",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "커플 플랜 연간 구독",
-              "displayName" : "커플 (연간)",
-              "locale" : "ko_KR"
-            },
-            {
-              "description" : "Couple plan, yearly",
-              "displayName" : "Couple (Yearly)",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "com.voicealarm.nativeapp.ios.couple_yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Couple Yearly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
           "displayPrice" : "5.99",
           "familyShareable" : true,
-          "groupNumber" : 5,
+          "groupNumber" : 3,
           "internalID" : "21500105",
           "introductoryOffer" : null,
           "localizations" : [
@@ -224,36 +164,6 @@
           "productID" : "com.voicealarm.nativeapp.ios.family_monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Family Monthly",
-          "subscriptionGroupID" : "21500001",
-          "type" : "RecurringSubscription"
-        },
-        {
-          "adHocOffers" : [
-
-          ],
-          "codeOffers" : [
-
-          ],
-          "displayPrice" : "59.99",
-          "familyShareable" : true,
-          "groupNumber" : 6,
-          "internalID" : "21500106",
-          "introductoryOffer" : null,
-          "localizations" : [
-            {
-              "description" : "가족 플랜 연간 구독 (최대 6인)",
-              "displayName" : "가족 (연간)",
-              "locale" : "ko_KR"
-            },
-            {
-              "description" : "Family plan, yearly (up to 6 members)",
-              "displayName" : "Family (Yearly)",
-              "locale" : "en_US"
-            }
-          ],
-          "productID" : "com.voicealarm.nativeapp.ios.family_yearly",
-          "recurringSubscriptionPeriod" : "P1Y",
-          "referenceName" : "Family Yearly",
           "subscriptionGroupID" : "21500001",
           "type" : "RecurringSubscription"
         }

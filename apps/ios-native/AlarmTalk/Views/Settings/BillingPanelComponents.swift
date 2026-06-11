@@ -245,18 +245,11 @@ struct PlanCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    /// 월간 / 연간 두 가격 버튼. Product 가 아직 fetch 되지 않았으면 비활성.
+    /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
     @ViewBuilder
     private var purchaseButtons: some View {
-        let monthly = SubscriptionProduct.make(tier: tier, period: .monthly)
-        let yearly = SubscriptionProduct.make(tier: tier, period: .yearly)
-        HStack(spacing: 8) {
-            if let plan = monthly {
-                priceButton(for: plan, periodLabel: "월")
-            }
-            if let plan = yearly {
-                priceButton(for: plan, periodLabel: "년")
-            }
+        if let plan = SubscriptionProduct.make(tier: tier) {
+            priceButton(for: plan, periodLabel: "월")
         }
     }
 
