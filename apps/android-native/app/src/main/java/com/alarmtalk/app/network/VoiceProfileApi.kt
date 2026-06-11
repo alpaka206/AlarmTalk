@@ -72,6 +72,8 @@ data class VoiceProfile(
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("is_shared") val isShared: Boolean? = null,
     @SerializedName("is_draft") val isDraft: Boolean? = null,
+    // 시스템 제공(스톡) 보이스 — 무료 플랜도 사용 가능, 수정/삭제/공유 불가.
+    @SerializedName("is_system") val isSystem: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
 )

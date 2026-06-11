@@ -135,7 +135,8 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         message = "이 목소리가 나를 부를 이름을 입력해 주세요"
         return
     }
-    if (voiceProfiles.size + drafts.size > MAX_VOICE_PROFILES) {
+    // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
+    if (voiceProfiles.count { it.isSystem != true } + drafts.size > MAX_VOICE_PROFILES) {
         message = "목소리는 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
         return
     }

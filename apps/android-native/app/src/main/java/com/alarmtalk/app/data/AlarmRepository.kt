@@ -294,11 +294,16 @@ class AlarmRepository(
 
     suspend fun deletePaidAlarmTalks(): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
-            alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
+            val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
+            // 시스템 스톡 보이스 TTS 알람은 무료 플랜에서도 유효하므로 보존한다.
+            val stockVoiceOnly = alarm.localAudioUri.isNullOrBlank() &&
+                alarm.rawAudioUri.isNullOrBlank() &&
+                isSystemVoiceId(alarm.voiceProfileId)
+            usesVoice && !stockVoiceOnly
         }
         targets.forEach { alarm ->
             alarmScheduler.cancel(alarm.id)
