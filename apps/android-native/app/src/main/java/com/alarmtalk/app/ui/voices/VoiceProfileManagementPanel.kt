@@ -25,7 +25,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +71,9 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
+import com.alarmtalk.app.ui.guide.UsageGuideDialog
+import com.alarmtalk.app.ui.guide.UsageGuideStep
+import com.alarmtalk.app.ui.guide.UsageGuideStore
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -105,6 +112,25 @@ private fun voiceProfileFileDurationError(durationMillis: Long?): String? = when
     durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 파일을 선택해 주세요."
     else -> null
 }
+
+// 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
+private val voiceCreateGuideSteps = listOf(
+    UsageGuideStep(
+        icon = Icons.Outlined.Mic,
+        title = "조용한 곳에서 녹음해요",
+        body = "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.Badge,
+        title = "누구의 목소리인지 알려줘요",
+        body = "이름·관계와 '나를 부를 호칭'을 입력하면, 랜덤 문구에서 그 호칭으로 다정하게 불러줘요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.AutoAwesome,
+        title = "등록을 누르면 완성",
+        body = "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요.",
+    ),
+)
 
 @Composable
 internal fun VoiceLoginRequiredCard() {
@@ -176,6 +202,14 @@ internal fun VoiceProfileManagementPanel(
     var createPreparing by remember { mutableStateOf(false) }
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
+    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    var voiceGuideVisible by remember { mutableStateOf(false) }
+    // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
+    LaunchedEffect(showCreateForm) {
+        if (showCreateForm && !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_CREATE)) {
+            voiceGuideVisible = true
+        }
+    }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<VoiceProfile?>(null) }
     var renameName by remember { mutableStateOf("") }
@@ -881,6 +915,16 @@ internal fun VoiceProfileManagementPanel(
                             MutedText("$stepIndex / 3 · $stepTitle")
                         }
                         IconButton(
+                            onClick = { voiceGuideVisible = true },
+                            modifier = Modifier.size(42.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                                contentDescription = "사용 가이드",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(
                             onClick = ::closeCreateDialog,
                             enabled = !voiceProfileBusy && !separatingBusy,
                             modifier = Modifier.size(42.dp),
@@ -1173,6 +1217,16 @@ internal fun VoiceProfileManagementPanel(
                 }
             }
         }
+    }
+
+    if (voiceGuideVisible) {
+        UsageGuideDialog(
+            steps = voiceCreateGuideSteps,
+            onFinish = {
+                usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_CREATE)
+                voiceGuideVisible = false
+            },
+        )
     }
 
     renameTarget?.let { profile ->

@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,6 +64,9 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.trimmedOrNull
+import com.alarmtalk.app.ui.guide.UsageGuideOverlay
+import com.alarmtalk.app.ui.guide.UsageGuideStep
+import com.alarmtalk.app.ui.guide.UsageGuideStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -71,6 +78,25 @@ private enum class AudioPreviewTarget {
     CachedAudio,
     SharedVoiceInfo,
 }
+
+// 처음 알람을 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
+private val alarmEditorGuideSteps = listOf(
+    UsageGuideStep(
+        icon = Icons.Outlined.Schedule,
+        title = "시간과 반복부터",
+        body = "휠을 돌려 시각을 맞추고 반복할 요일을 골라요. 반복을 켜면 공휴일에는 끄기도 선택할 수 있어요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.GraphicEq,
+        title = "재생 방식을 골라요",
+        body = "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요.",
+    ),
+    UsageGuideStep(
+        icon = Icons.Outlined.CheckCircle,
+        title = "저장하면 끝이에요",
+        body = "음량·진동·스누즈도 아래에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.",
+    ),
+)
 
 @Composable
 internal fun AlarmEditorScreen(
@@ -100,6 +126,14 @@ internal fun AlarmEditorScreen(
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
     var dynamicPromptPreferences by remember(appContext) {
         mutableStateOf(dynamicPromptPreferenceStore.read())
+    }
+    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단 도움말 버튼으로 다시 볼 수 있다.
+    var usageGuideVisible by remember {
+        mutableStateOf(
+            alarm == null && !familyAlarmMode &&
+                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_ALARM_EDITOR),
+        )
     }
     val recorder = remember(appContext) { AlarmVoiceRecorder(appContext, audioStore) }
     val scope = rememberCoroutineScope()
@@ -884,6 +918,7 @@ internal fun AlarmEditorScreen(
                 isEditing = alarm != null,
                 familyAlarmMode = familyAlarmMode,
                 onCancel = onCancel,
+                onShowGuide = { usageGuideVisible = true },
             )
             LazyColumn(
                 modifier = Modifier
@@ -1158,6 +1193,16 @@ internal fun AlarmEditorScreen(
                 onLanguageChange = {
                     editor.voiceLanguage = it
                     editor.clearTtsMeta()
+                },
+            )
+        }
+
+        if (usageGuideVisible) {
+            UsageGuideOverlay(
+                steps = alarmEditorGuideSteps,
+                onFinish = {
+                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_ALARM_EDITOR)
+                    usageGuideVisible = false
                 },
             )
         }

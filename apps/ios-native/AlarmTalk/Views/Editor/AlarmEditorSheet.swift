@@ -56,6 +56,7 @@ struct AlarmEditorSheet: View {
     @State var localAudioCropStartMs = 0
     @State var localAudioCropEndMs = Int(AlarmAudioLimits.maxDurationMillis)
     @State var clearExistingLocalAudio = false
+    @State var usageGuidePresented = false
 
     static let familyAlarmMinLeadMillis: Int64 = 30 * 60 * 1000
 
@@ -183,11 +184,26 @@ struct AlarmEditorSheet: View {
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    usageGuidePresented = true
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel(Text("사용 가이드"))
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                 }
                 .accessibilityLabel(Text("닫기"))
+            }
+        }
+        .sheet(isPresented: $usageGuidePresented, onDismiss: {
+            UsageGuideStore().markSeen(.alarmEditor)
+        }) {
+            UsageGuideSheet(steps: Self.usageGuideSteps) {
+                usageGuidePresented = false
             }
         }
         .alert(item: $validationAlert) { content in
@@ -211,6 +227,11 @@ struct AlarmEditorSheet: View {
             guard !didLoadInitial else { return }
             didLoadInitial = true
             loadInitialState()
+            if target.editingAlarmID == nil,
+               !target.familyAlarmMode,
+               !UsageGuideStore().hasSeen(.alarmEditor) {
+                usageGuidePresented = true
+            }
             Task {
                 await voiceStudio.refresh(session: auth.session)
                 selectDefaultVoiceProfileIfNeeded()
@@ -277,6 +298,25 @@ struct AlarmEditorSheet: View {
             localPreviewPlayer.stop()
         }
     }
+
+    /// 처음 알람을 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
+    static let usageGuideSteps: [UsageGuideStep] = [
+        UsageGuideStep(
+            systemImage: "clock.fill",
+            title: "시간과 반복부터",
+            body: "휠을 돌려 시각을 맞추고 반복할 요일을 골라요. 반복을 켜면 공휴일에는 끄기도 선택할 수 있어요."
+        ),
+        UsageGuideStep(
+            systemImage: "waveform",
+            title: "재생 방식을 골라요",
+            body: "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요."
+        ),
+        UsageGuideStep(
+            systemImage: "checkmark.circle.fill",
+            title: "저장하면 끝이에요",
+            body: "음량·진동·스누즈는 아래로 스크롤해 조정할 수 있어요. 저장을 누르면 알람이 바로 예약돼요."
+        ),
+    ]
 
     var saveButtonTitle: String {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
