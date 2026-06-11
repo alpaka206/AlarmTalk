@@ -50,6 +50,42 @@ function alarmUsesPaidVoice(body: {
     !!body.raw_audio_url;
 }
 
+/**
+ * 무료 플랜도 시스템 스톡 보이스 기반 TTS 알람은 허용한다.
+ * 녹음/파일(raw_audio_url, speaker_id) 알람은 여전히 유료 전용.
+ */
+async function usesOnlySystemStockVoice(
+  db: ReturnType<typeof getDB>,
+  body: {
+    message_id?: string | null;
+    voice_profile_id?: string | null;
+    speaker_id?: string | null;
+    raw_audio_url?: string | null;
+  },
+): Promise<boolean> {
+  if (body.raw_audio_url || body.speaker_id) return false;
+  if (body.voice_profile_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM voice_profiles
+            WHERE id = ? AND COALESCE(is_system, 0) = 1 AND deleted_at IS NULL
+            LIMIT 1`,
+      args: [body.voice_profile_id],
+    });
+    return res.rows.length > 0;
+  }
+  if (body.message_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+            WHERE m.id = ? AND COALESCE(vp.is_system, 0) = 1
+            LIMIT 1`,
+      args: [body.message_id],
+    });
+    return res.rows.length > 0;
+  }
+  return false;
+}
+
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -182,7 +218,11 @@ alarmMutation.post('/', async (c) => {
   const creatorHasPaidVoice = !resolvedUserPk ||
     creatorPlanValue === undefined ||
     isPaidVoicePlan(creatorPlanValue);
-  if (!creatorHasPaidVoice && alarmUsesPaidVoice(body)) {
+  if (
+    !creatorHasPaidVoice &&
+    alarmUsesPaidVoice(body) &&
+    !(await usesOnlySystemStockVoice(db, body))
+  ) {
     return c.json(
       {
         error: 'Voice alarms require a paid plan.',
@@ -329,14 +369,19 @@ alarmMutation.patch('/:id', async (c) => {
   const creatorHasPaidVoice = !resolvedUserPk ||
     current.user_plan === undefined ||
     isPaidVoicePlan(current.user_plan);
-  if (!creatorHasPaidVoice && alarmUsesPaidVoice({
+  const effectiveVoiceFields = {
     mode: body.mode !== undefined ? body.mode : current.mode,
     wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,
     message_id: body.message_id !== undefined ? body.message_id : current.message_id,
     voice_profile_id: body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
     speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
     raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
-  })) {
+  };
+  if (
+    !creatorHasPaidVoice &&
+    alarmUsesPaidVoice(effectiveVoiceFields) &&
+    !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))
+  ) {
     return c.json(
       {
         error: 'Voice alarms require a paid plan.',

@@ -926,6 +926,38 @@ export const migrations: Migration[] = [
         ON store_transactions(user_id, created_at DESC)`,
     ],
   },
+  {
+    // 무료 플랜용 시스템 제공(스톡) 보이스.
+    //  - voice_profiles.is_system=1 행은 모든 사용자의 목소리 목록에 노출되고,
+    //    무료 플랜도 이 보이스로는 TTS(프리셋 문구 한정)를 쓸 수 있다.
+    //  - 소유자는 'system:voice-library' 시스템 유저 (로그인 불가, 발급 전용).
+    //  - elevenlabs_voice_id 는 ElevenLabs premade 보이스 (상업적 이용 허용 셋).
+    //    Adam 은 릴스/숏폼에서 유행한 그 목소리.
+    id: 43,
+    name: 'system-stock-voices',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`,
+      `INSERT OR IGNORE INTO users (id, google_id, email, name, plan)
+        VALUES ('70000000-0000-4000-9000-000000000001', 'system:voice-library',
+                'system@alarm-talk.com', 'AlarmTalk 기본 목소리', 'free')`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000101', '70000000-0000-4000-9000-000000000001',
+                '아담', 'pNInz6obpgDQGcFmaJgB', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000102', '70000000-0000-4000-9000-000000000001',
+                '레이첼', '21m00Tcm4TlvDq8ikWAM', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000103', '70000000-0000-4000-9000-000000000001',
+                '브라이언', 'nPczCjzI2devNBz1zQrb', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000104', '70000000-0000-4000-9000-000000000001',
+                '제시카', 'cgSgspJ2msm6clMCkdW9', 'ready', 1, 0, 0)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

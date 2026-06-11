@@ -196,13 +196,15 @@ voiceProfile.get('/', async (c) => {
     baseArgs.push(status);
   }
 
+  // 시스템 제공(스톡) 보이스는 모든 사용자에게 노출 — 무료 플랜의 기본 목소리.
+  // 내 목소리가 먼저, 시스템 보이스가 뒤에 오도록 정렬한다.
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -213,6 +215,7 @@ voiceProfile.get('/', async (c) => {
       ...row,
       is_shared: Boolean(Number(row.is_shared ?? 0)),
       is_draft: Boolean(Number(row.is_draft ?? 0)),
+      is_system: Boolean(Number(row.is_system ?? 0)),
     })),
     total,
     limit,

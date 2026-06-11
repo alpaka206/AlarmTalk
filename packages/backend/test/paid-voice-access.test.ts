@@ -56,8 +56,13 @@ beforeEach(() => {
 });
 
 describe('paid voice access gates', () => {
-  it('blocks TTS generation for a resolved free-plan user', async () => {
+  it('blocks TTS generation with a personal voice for a resolved free-plan user', async () => {
     mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: '2026-05-18' }]);
+    mockDB.pushResult([]); // daily_tts_count 리셋 UPDATE
+    // findUsableVoiceProfile: 본인 소유의 (시스템이 아닌) 보이스
+    mockDB.pushResult([
+      { id: ID.alarm, user_id: 'user-pk-1', status: 'ready', is_system: 0 },
+    ]);
 
     const res = await buildApp().request(
       jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
@@ -65,6 +70,23 @@ describe('paid voice access gates', () => {
 
     expect(res.status).toBe(403);
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+  });
+
+  it('blocks custom-text TTS with a system stock voice for a free-plan user', async () => {
+    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: '2026-05-18' }]);
+    mockDB.pushResult([]); // daily_tts_count 리셋 UPDATE
+    mockDB.pushResult([]); // findUsableVoiceProfile: owned 보이스 없음
+    // findUsableVoiceProfile: 시스템 스톡 보이스
+    mockDB.pushResult([
+      { id: ID.alarm, user_id: 'system-user', status: 'ready', is_system: 1 },
+    ]);
+
+    const res = await buildApp().request(
+      jsonReq('POST', '/tts/generate', { voice_profile_id: ID.alarm, text: 'hello' }),
+    );
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).error_code).toBe('FREE_PLAN_PRESET_ONLY');
   });
 
   it('blocks voice cloning for a resolved free-plan user', async () => {
