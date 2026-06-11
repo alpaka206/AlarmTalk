@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatHHmm,
+  localClockFor,
   shouldAlarmFire,
   selectFiringAlarms,
   type ScheduledAlarm,
@@ -17,6 +18,8 @@ function makeAlarm(partial: Partial<ScheduledAlarm> = {}): ScheduledAlarm {
     voice_profile_id: partial.voice_profile_id ?? null,
     speaker_id: partial.speaker_id ?? null,
     target_user_id: partial.target_user_id ?? null,
+    // 기존 픽스처가 UTC 시각 기준이므로 명시. 기본값(Asia/Seoul) 동작은 별도 케이스에서 검증.
+    timezone: partial.timezone !== undefined ? partial.timezone : 'UTC',
   };
 }
 
@@ -30,13 +33,33 @@ describe('formatHHmm', () => {
   });
 });
 
+describe('localClockFor', () => {
+  it('UTC 시각을 Asia/Seoul(+9) 로컬 시계로 변환한다', () => {
+    // UTC 화 22:00 = KST 수 07:00
+    const clock = localClockFor(new Date(Date.UTC(2026, 3, 21, 22, 0, 0)), 'Asia/Seoul');
+    expect(clock.minutesOfDay).toBe(7 * 60);
+    expect(clock.dayOfWeek).toBe(3); // 수요일
+  });
+
+  it('timezone 미지정이면 Asia/Seoul 폴백', () => {
+    const explicit = localClockFor(tuesday0700, 'Asia/Seoul');
+    expect(localClockFor(tuesday0700, null)).toEqual(explicit);
+    expect(localClockFor(tuesday0700, undefined)).toEqual(explicit);
+  });
+
+  it('잘못된 timezone 은 Asia/Seoul 폴백', () => {
+    const explicit = localClockFor(tuesday0700, 'Asia/Seoul');
+    expect(localClockFor(tuesday0700, 'Not/A_Zone_xx')).toEqual(explicit);
+  });
+});
+
 describe('shouldAlarmFire', () => {
   it('시각 일치 + repeat_days 빈 배열이면 매일 발화', () => {
     const alarm = makeAlarm({ time: '07:00', repeat_days: [] });
     expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
   });
 
-  it('시각 불일치면 발화 안 함', () => {
+  it('윈도우(5분) 밖 시각이면 발화 안 함', () => {
     const alarm = makeAlarm({ time: '08:00' });
     expect(shouldAlarmFire(alarm, tuesday0700)).toBe(false);
   });
@@ -56,9 +79,73 @@ describe('shouldAlarmFire', () => {
     expect(shouldAlarmFire(alarm, tuesday0700)).toBe(false);
   });
 
-  it('분 단위 부분 일치는 거절 (HH:mm 전체 매칭)', () => {
+  it('미래 시각(30분 뒤)은 발화 안 함', () => {
     const alarm = makeAlarm({ time: '07:30' });
     expect(shouldAlarmFire(alarm, tuesday0700)).toBe(false);
+  });
+});
+
+describe('shouldAlarmFire — 윈도우 매칭 (F1 수정)', () => {
+  it('cron 이 5분 간격이어도 사이 분(07:02)을 놓치지 않는다', () => {
+    // 07:05 실행 시 (07:00, 07:05] 윈도우 — 07:02 알람 포함.
+    const cronAt0705 = new Date(Date.UTC(2026, 3, 21, 7, 5, 0));
+    const alarm = makeAlarm({ time: '07:02' });
+    expect(shouldAlarmFire(alarm, cronAt0705)).toBe(true);
+  });
+
+  it('직전 실행이 처리한 분(정확히 window 분 전)은 중복 발화하지 않는다', () => {
+    // 07:05 실행의 윈도우는 (07:00, 07:05] — 07:00 은 07:00 실행이 이미 처리.
+    const cronAt0705 = new Date(Date.UTC(2026, 3, 21, 7, 5, 0));
+    const alarm = makeAlarm({ time: '07:00' });
+    expect(shouldAlarmFire(alarm, cronAt0705)).toBe(false);
+  });
+
+  it('자정 래핑 — 00:02 실행이 23:59 알람을 잡는다', () => {
+    const cronAt0002 = new Date(Date.UTC(2026, 3, 22, 0, 2, 0)); // 수요일 00:02 UTC
+    const alarm = makeAlarm({ time: '23:59' });
+    expect(shouldAlarmFire(alarm, cronAt0002)).toBe(true);
+  });
+
+  it('자정 래핑 시 요일은 발화일(어제) 기준으로 판정한다', () => {
+    // 수요일 00:02 실행 → 23:59 알람의 발화일은 화요일(2).
+    const cronAt0002 = new Date(Date.UTC(2026, 3, 22, 0, 2, 0));
+    expect(shouldAlarmFire(makeAlarm({ time: '23:59', repeat_days: [2] }), cronAt0002)).toBe(true);
+    expect(shouldAlarmFire(makeAlarm({ time: '23:59', repeat_days: [3] }), cronAt0002)).toBe(false);
+  });
+
+  it('windowMinutes 파라미터로 윈도우 폭을 바꿀 수 있다', () => {
+    const cronAt0710 = new Date(Date.UTC(2026, 3, 21, 7, 10, 0));
+    const alarm = makeAlarm({ time: '07:02' });
+    expect(shouldAlarmFire(alarm, cronAt0710, 5)).toBe(false);
+    expect(shouldAlarmFire(alarm, cronAt0710, 10)).toBe(true);
+  });
+});
+
+describe('shouldAlarmFire — timezone (F1 수정)', () => {
+  it('Asia/Seoul 알람은 KST 로컬 시각으로 판정한다', () => {
+    // UTC 화 22:00 = KST 수 07:00 → KST 07:00 알람 발화.
+    const utc2200 = new Date(Date.UTC(2026, 3, 21, 22, 0, 0));
+    const alarm = makeAlarm({ time: '07:00', timezone: 'Asia/Seoul' });
+    expect(shouldAlarmFire(alarm, utc2200)).toBe(true);
+    // 같은 순간 UTC 알람 07:00 은 발화하지 않는다.
+    expect(shouldAlarmFire(makeAlarm({ time: '07:00', timezone: 'UTC' }), utc2200)).toBe(false);
+  });
+
+  it('timezone null 이면 Asia/Seoul 기본값으로 판정한다', () => {
+    const utc2200 = new Date(Date.UTC(2026, 3, 21, 22, 0, 0));
+    const alarm = makeAlarm({ time: '07:00', timezone: null });
+    expect(shouldAlarmFire(alarm, utc2200)).toBe(true);
+  });
+
+  it('요일 판정도 timezone 로컬 기준이다', () => {
+    // UTC 화 22:00 = KST 수(3) 07:00.
+    const utc2200 = new Date(Date.UTC(2026, 3, 21, 22, 0, 0));
+    expect(
+      shouldAlarmFire(makeAlarm({ time: '07:00', timezone: 'Asia/Seoul', repeat_days: [3] }), utc2200),
+    ).toBe(true);
+    expect(
+      shouldAlarmFire(makeAlarm({ time: '07:00', timezone: 'Asia/Seoul', repeat_days: [2] }), utc2200),
+    ).toBe(false);
   });
 });
 
@@ -159,5 +246,10 @@ describe('shouldAlarmFire — edge cases', () => {
   it('repeat_days null → 비배열 → 폴백 빈 배열 → 매일 발화', () => {
     const alarm = makeAlarm({ time: '07:00', repeat_days: null as unknown as number[] });
     expect(shouldAlarmFire(alarm, tuesday0700)).toBe(true);
+  });
+
+  it('time 형식이 잘못되면 발화 안 함', () => {
+    expect(shouldAlarmFire(makeAlarm({ time: '7시' }), tuesday0700)).toBe(false);
+    expect(shouldAlarmFire(makeAlarm({ time: '25:00' }), tuesday0700)).toBe(false);
   });
 });

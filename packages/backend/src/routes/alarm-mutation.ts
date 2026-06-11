@@ -22,6 +22,18 @@ import { isPaidVoicePlan } from './billing-helpers';
 
 const alarmMutation = new Hono<AppEnv>();
 
+/**
+ * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
+ * 이 시간대로 판정한다. 형식이 어긋나면 null (스케줄러가 Asia/Seoul 폴백).
+ */
+function normalizeTimezone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 64) return null;
+  if (!/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(trimmed)) return null;
+  return trimmed;
+}
+
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
   wake_mode?: string | null;
@@ -58,11 +70,13 @@ alarmMutation.post('/', async (c) => {
     speaker_id?: string;
     raw_audio_url?: string;
     raw_audio_duration_ms?: number;
+    timezone?: string;
   }>();
 
   if (!body.time) {
     return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
   }
+  const timezone = normalizeTimezone(body.timezone);
   // Three valid sources for what the alarm plays:
   //   1. message_id          → TTS / saved voice clip
   //   2. raw_audio_url       → user-recorded raw audio
@@ -225,8 +239,8 @@ alarmMutation.post('/', async (c) => {
     sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
-             raw_audio_url, raw_audio_duration_ms)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             raw_audio_url, raw_audio_duration_ms, timezone)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       alarmId,
       userId,
@@ -242,6 +256,7 @@ alarmMutation.post('/', async (c) => {
       body.speaker_id ?? null,
       body.raw_audio_url ?? null,
       body.raw_audio_duration_ms ?? null,
+      timezone,
     ],
   });
 
@@ -283,6 +298,7 @@ alarmMutation.patch('/:id', async (c) => {
     speaker_id?: string | null;
     raw_audio_url?: string | null;
     raw_audio_duration_ms?: number | null;
+    timezone?: string | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -381,6 +397,10 @@ alarmMutation.patch('/:id', async (c) => {
     updates.push('raw_audio_duration_ms = ?');
     args.push(body.raw_audio_duration_ms);
   }
+  if (body.timezone !== undefined) {
+    updates.push('timezone = ?');
+    args.push(normalizeTimezone(body.timezone));
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
@@ -418,12 +438,14 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   const targetRes = await db.execute({
-    sql: 'SELECT message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
+    sql: 'SELECT message_id, raw_audio_url FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
     args: [id, userId],
   });
-  const messageId = targetRes.rows.length > 0
-    ? (typedRow<{ message_id: string | null }>(targetRes.rows[0]!).message_id ?? null)
+  const targetAlarm = targetRes.rows.length > 0
+    ? typedRow<{ message_id: string | null; raw_audio_url: string | null }>(targetRes.rows[0]!)
     : null;
+  const messageId = targetAlarm?.message_id ?? null;
+  const rawAudioUrl = targetAlarm?.raw_audio_url ?? null;
 
   const result = await db.execute({
     sql: 'DELETE FROM alarms WHERE id = ? AND user_id = ?',
@@ -432,6 +454,18 @@ alarmMutation.delete('/:id', async (c) => {
 
   if (result.rowsAffected === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
+  }
+
+  // 사용자 녹음 원본(r2://)이 더 이상 어떤 알람에도 쓰이지 않으면 R2 삭제 큐에 적재.
+  if (rawAudioUrl?.startsWith('r2://')) {
+    const rawRefRes = await db.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
+      args: [rawAudioUrl],
+    });
+    if (Number(typedRow<{ cnt: number }>(rawRefRes.rows[0]!).cnt ?? 0) === 0) {
+      const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+      await enqueueExternalDeletion(db, 'r2_object', rawAudioUrl.replace(/^r2:\/\//, ''));
+    }
   }
 
   if (messageId) {

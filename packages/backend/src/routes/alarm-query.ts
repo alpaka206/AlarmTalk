@@ -22,7 +22,7 @@ alarmQuery.get('/tick', async (c) => {
 
   const result = await db.execute({
     sql: `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
-                 mode, voice_profile_id, speaker_id
+                 mode, voice_profile_id, speaker_id, timezone
           FROM alarms
           WHERE (user_id IN (${idPlaceholders}) OR target_user_id IN (${idPlaceholders})) AND is_active = 1`,
     args: [...ids, ...ids],
@@ -40,6 +40,7 @@ alarmQuery.get('/tick', async (c) => {
       mode: n.mode,
       voice_profile_id: n.voice_profile_id,
       speaker_id: n.speaker_id,
+      timezone: ((r as Record<string, unknown>).timezone as string | null) ?? null,
     };
   });
 

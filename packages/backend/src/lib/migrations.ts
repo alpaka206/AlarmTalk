@@ -885,6 +885,47 @@ export const migrations: Migration[] = [
         ON retained_billing_records(retain_until)`,
     ],
   },
+  {
+    // 음성 수명주기 + 스케줄러 시간대 + 스토어 결제 기록.
+    //  - pending_external_deletions: 트랜잭션 안에서 DB 행을 지우기 전에 ElevenLabs
+    //    voice / R2 오브젝트 참조를 적재해 두고, cron 이 외부 API 로 실제 삭제 후
+    //    큐에서 제거한다 (탈퇴·다운그레이드 시 클로닝/오디오 잔존 방지).
+    //  - alarms.timezone: 클라이언트 IANA 시간대 (예: 'Asia/Seoul'). 푸시 스케줄러가
+    //    알람 HH:mm 을 이 시간대 기준으로 판정한다. NULL 이면 Asia/Seoul 폴백.
+    //  - store_transactions: Apple/Google/PortOne 결제 검증 기록 (중복 처리 방지 +
+    //    전자상거래법 보존 원본). provider_transaction_id 는 provider 별 고유.
+    id: 42,
+    name: 'voice-lifecycle-and-store-billing',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pending_external_deletions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('elevenlabs_voice','r2_object')),
+        ref TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_external_deletions_ref
+        ON pending_external_deletions(kind, ref)`,
+      `ALTER TABLE alarms ADD COLUMN timezone TEXT`,
+      `CREATE TABLE IF NOT EXISTS store_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google','portone')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

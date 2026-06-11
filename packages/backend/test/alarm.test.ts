@@ -430,6 +430,11 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
     const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
     const hhmm = `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}`;
 
+    // 30분 뒤 — 발화 윈도우(직전 5분) 에 절대 들어오지 않는 시각.
+    const future = new Date(now.getTime() + 30 * 60 * 1000);
+    const futureHHmm = `${pad(future.getUTCHours())}:${pad(future.getUTCMinutes())}`;
+
+    // 픽스처 시각이 UTC 기준이므로 timezone 을 명시한다 (미지정 시 Asia/Seoul 판정).
     mockDB.pushResult([
       {
         id: ID.alarm,
@@ -441,17 +446,19 @@ describe('GET /alarm/tick — 발화 대상 조회', () => {
         mode: 'tts',
         voice_profile_id: null,
         speaker_id: null,
+        timezone: 'UTC',
       },
       {
         id: '00000000-0000-4000-8000-0000000000aa',
         user_id: 'user-1',
         target_user_id: null,
-        time: '23:58', // 거의 확실히 일치 안 함 (현재 시각과 다를 확률 매우 높음)
+        time: futureHHmm,
         repeat_days: '[]',
         is_active: 1,
         mode: 'tts',
         voice_profile_id: null,
         speaker_id: null,
+        timezone: 'UTC',
       },
     ]);
 

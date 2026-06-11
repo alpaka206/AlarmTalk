@@ -16,6 +16,22 @@ export interface Env {
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_REPLY_TO?: string;
+  /** FCM HTTP v1 푸시용 Firebase 프로젝트 ID. 미설정 시 푸시는 MOCK 로그만 남긴다. */
+  FIREBASE_PROJECT_ID?: string;
+  /** Firebase 서비스 계정 JSON 전체 (client_email/private_key 포함). */
+  FIREBASE_SERVICE_ACCOUNT_JSON?: string;
+  /** Play Developer API 결제 검증용 서비스 계정 JSON. 미설정 시 Google 결제 503. */
+  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
+  /** Android 앱 패키지명 (Play 구독 검증 대상). */
+  ANDROID_PACKAGE_NAME?: string;
+  /** App Store Server API 자격 (Apple IAP 검증). 셋 다 있어야 활성화. */
+  APPLE_ISSUER_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_IAP_PRIVATE_KEY?: string;
+  /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
+  APPLE_BUNDLE_ID?: string;
+  /** PortOne(구 아임포트) V2 API Secret — 국내 PG 결제 검증. */
+  PORTONE_API_SECRET?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

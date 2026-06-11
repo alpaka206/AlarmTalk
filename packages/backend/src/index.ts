@@ -176,10 +176,20 @@ app.onError((err, c) => {
   return c.json({ error: 'Internal server error' }, 500);
 });
 
-// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml 에 `[triggers] crons = ["* * * * *"]` 등록 시 1분 주기로 호출됨
+// Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
+// 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
 async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
   const db = getDB(env);
   const now = new Date(event.scheduledTime);
+
+  // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
+  try {
+    const { drainExternalDeletions, cleanupExpiredAudio } = await import('./lib/audio-retention');
+    await cleanupExpiredAudio(db, now);
+    await drainExternalDeletions(db, env);
+  } catch (err) {
+    logStructured('error', { at: 'scheduled.audio_retention', error: String(err) });
+  }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
   try {
@@ -221,7 +231,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
   const result = await db.execute(
     `SELECT id, user_id, target_user_id, time, repeat_days, is_active,
-            mode, voice_profile_id, speaker_id
+            mode, voice_profile_id, speaker_id, timezone
      FROM alarms WHERE is_active = 1`,
   );
 
@@ -242,6 +252,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     mode: r.mode === 'sound-only' ? 'sound-only' : 'tts',
     voice_profile_id: (r.voice_profile_id as string | null) ?? null,
     speaker_id: (r.speaker_id as string | null) ?? null,
+    timezone: (r.timezone as string | null) ?? null,
   }));
 
   const firing = selectFiringAlarms(alarms, now);
@@ -256,7 +267,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
   for (const alarm of firing) {
     const targetUserId = alarm.target_user_id ?? alarm.user_id;
-    await sendAlarmPush(db, targetUserId, alarm.id, alarm.time);
+    await sendAlarmPush(db, env, targetUserId, alarm.id, alarm.time);
   }
 }
 

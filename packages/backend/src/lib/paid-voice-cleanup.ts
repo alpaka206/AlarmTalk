@@ -1,4 +1,5 @@
 import type { DbExecutor } from './transactions';
+import { enqueueUserVoiceArtifacts } from './audio-retention';
 
 function uniqueIds(ids: Array<string | null | undefined>): string[] {
   return Array.from(new Set(ids.filter((id): id is string => Boolean(id))));
@@ -16,6 +17,10 @@ export async function deletePaidVoiceDataForUser(
   const ids = uniqueIds([userPk, userLoginId]);
   if (ids.length === 0) return;
   const ph = placeholders(ids);
+
+  // ElevenLabs 클론/R2 오디오 외부 삭제 참조를 행 삭제 전에 큐에 적재 —
+  // 다운그레이드로 유료 음성 데이터가 사라질 때 클로닝 본체도 함께 사라지게 한다.
+  await enqueueUserVoiceArtifacts(db, ids);
 
   await db.execute({
     sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,

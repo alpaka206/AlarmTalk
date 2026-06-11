@@ -1,5 +1,6 @@
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
+import { enqueueUserVoiceArtifacts } from './audio-retention';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -62,6 +63,9 @@ export async function purgeUserAccount(
 ): Promise<void> {
   if (userPk) {
     const userIds = [userPk, userId];
+    // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
+    // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
+    await enqueueUserVoiceArtifacts(tx, userIds);
     await cancelActiveSubscriptionsForUser(tx, userPk);
 
     await tx.execute({
