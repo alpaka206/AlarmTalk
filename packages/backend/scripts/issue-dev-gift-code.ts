@@ -106,9 +106,10 @@ async function main(): Promise<void> {
     args: [SYSTEM_ISSUER_GOOGLE_ID],
   });
   if (issuerRes.rows.length === 0) {
+    // users.email unique 인덱스 — 다른 시스템 계정과 이메일이 겹치지 않게 한다.
     await db.execute({
       sql: `INSERT INTO users (id, google_id, email, name, plan)
-            VALUES (?, ?, 'system@alarm-talk.com', 'System Voucher Issuer', 'free')`,
+            VALUES (?, ?, 'voucher-issuer@alarm-talk.com', 'System Voucher Issuer', 'free')`,
       args: [crypto.randomUUID(), SYSTEM_ISSUER_GOOGLE_ID],
     });
     issuerRes = await db.execute({
