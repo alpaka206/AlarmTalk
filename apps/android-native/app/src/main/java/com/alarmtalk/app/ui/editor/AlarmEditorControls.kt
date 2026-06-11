@@ -390,6 +390,8 @@ internal val TtsCategories = listOf(
 )
 
 internal val RandomPromptContexts = listOf(
+    // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값. 무료 플랜은 이것만 사용 가능.
+    "preset" to "기본 문구",
     "wake_weather" to "기상 + 날씨",
     "wake_fortune" to "기상 + 운세",
     "meal" to "식사",

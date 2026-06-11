@@ -304,9 +304,10 @@ internal class AlarmEditorState(
                 voiceText = alarm?.voiceText,
                 voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
+                // 새 알람은 랜덤(기본 문구) ON — 목소리만 고르면 추가 입력 없이 저장 가능.
                 voiceRandomPrompt = alarm?.voiceRandomPrompt ?: alarm?.let {
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
-                } ?: false,
+                } ?: true,
                 voiceRandomContext = alarm?.voiceRandomContext ?: DefaultRandomPromptContext,
                 voiceWeatherCountry = alarm?.voiceWeatherCountry,
                 voiceWeatherCity = alarm?.voiceWeatherCity,
@@ -360,5 +361,6 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
     }
 
 private const val DefaultRandomTtsCategory = "morning"
-internal const val DefaultRandomPromptContext = "wake_weather"
+// 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
+internal const val DefaultRandomPromptContext = "preset"
 internal const val MinVoiceVolumePercent = 30

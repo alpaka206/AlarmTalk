@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -829,23 +830,32 @@ internal fun AlarmEditorScreen(
         return true
     }
 
-    fun canSaveTtsAlarm(): Boolean {
-        val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() } ?: return false
-        val text = editor.ttsTextForSave()
-        val profileAvailable = profileId in usableTtsProfileIds || editor.hasFreshTtsAudio(profileId, text)
-        if (!profileAvailable) return false
-        return if (editor.voiceRandomPrompt) {
-            randomPromptSettingsComplete()
-        } else {
-            editor.voiceText.trim().isNotBlank()
+    // 저장이 막힌 이유 — 비활성 버튼만으로는 무엇이 빠졌는지 알 수 없어
+    // 저장 버튼 위에 사유를 함께 보여준다. null 이면 저장 가능.
+    val editorSaveBlockedReason: String? = when {
+        editor.playMode == AlarmPlayModes.ALARM_ONLY -> null
+        editor.voiceSource == VoiceSources.LOCAL_AUDIO ->
+            if (selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()) {
+                null
+            } else {
+                "들려줄 음성을 녹음하거나 파일로 선택해 주세요."
+            }
+        else -> {
+            val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
+            val text = editor.ttsTextForSave()
+            when {
+                profileId == null -> "알람에서 들을 목소리를 선택해 주세요."
+                profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
+                    "선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요."
+                editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
+                    "랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요."
+                !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
+                    "들려줄 문구를 입력하거나 랜덤 문구를 켜 주세요."
+                else -> null
+            }
         }
     }
-
-    val editorCanSave = when {
-        editor.playMode == AlarmPlayModes.ALARM_ONLY -> true
-        editor.voiceSource == VoiceSources.LOCAL_AUDIO -> selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()
-        else -> canSaveTtsAlarm()
-    }
+    val editorCanSave = editorSaveBlockedReason == null
 
     fun openRandomPromptSettings() {
         randomPromptWasEnabledWhenOpened = editor.voiceRandomPrompt
@@ -1161,6 +1171,16 @@ internal fun AlarmEditorScreen(
             ) {
                 Column {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+                    if (editorSaveBlockedReason != null) {
+                        Text(
+                            text = editorSaveBlockedReason,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Box(
                         modifier = Modifier
                             .padding(
