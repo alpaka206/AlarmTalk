@@ -937,9 +937,12 @@ export const migrations: Migration[] = [
     name: 'system-stock-voices',
     statements: [
       `ALTER TABLE voice_profiles ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`,
+      // 주의: users.email 에 unique 인덱스가 있어 이메일은 다른 시스템 계정과
+      // 절대 겹치면 안 된다 (겹치면 INSERT OR IGNORE 가 조용히 무시되고
+      // 이어지는 voice_profiles 시드가 FK 로 실패).
       `INSERT OR IGNORE INTO users (id, google_id, email, name, plan)
         VALUES ('70000000-0000-4000-9000-000000000001', 'system:voice-library',
-                'system@alarm-talk.com', 'AlarmTalk 기본 목소리', 'free')`,
+                'voice-library@alarm-talk.com', 'AlarmTalk 기본 목소리', 'free')`,
       `INSERT OR IGNORE INTO voice_profiles
         (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
         VALUES ('70000000-0000-4000-9000-000000000101', '70000000-0000-4000-9000-000000000001',
