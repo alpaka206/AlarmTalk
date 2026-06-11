@@ -143,7 +143,8 @@ xcodegen 후 Xcode 에서:
 {
   "transaction_id": "...",
   "original_transaction_id": "...",
-  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly"
+  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly",
+  "jws_representation": "<StoreKit2 VerificationResult.jwsRepresentation — Apple 서명 raw JWS>"
 }
 ```
 
@@ -151,11 +152,13 @@ xcodegen 후 Xcode 에서:
 
 ```json
 {
-  "subscription_id": "sub_...",
-  "plan": "personal",
-  "expires_at": "2026-06-19T12:34:56Z"
+  "success": true,
+  "plan_key": "personal",
+  "subscription": { "id": "sub_...", "plan_id": "...", "status": "active", "starts_at": "...", "expires_at": "2026-06-19T12:34:56Z" }
 }
 ```
+
+`success: true` 수신 시 클라이언트는 기존 구독 fetch 경로(`GET /api/billing/subscription`)로 서버 구독 상태를 즉시 새로고침한다 (`SubscriptionManager.onServerEntitlementUpdated` → `SocialFeatureViewModel.refreshSubscriptionSilently`). 501/503 응답은 비파괴 처리 — 로컬 StoreKit entitlement 를 유지하고 에러를 노출하지 않는다.
 
 ### Transaction listener race-safety
 

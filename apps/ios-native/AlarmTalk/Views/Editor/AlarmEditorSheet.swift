@@ -690,6 +690,10 @@ struct AlarmEditorSheet: View {
             if let existing {
                 store.upsert(existing)
             } else {
+                // 신규 저장 롤백. 반환되는 releasedAudioCacheKey 는 의도적으로
+                // 무시한다 — 같은 키의 음원을 voiceStudio.preparedAlarm 이 아직
+                // 들고 있어 사용자가 곧바로 재시도하면 그대로 재사용되기 때문.
+                // 재시도 없이 버려진 캐시는 30일 sweep 이 회수한다.
                 store.deleteByID(merged.id)
             }
             validationAlert = ValidationAlertContent(

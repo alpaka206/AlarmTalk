@@ -154,7 +154,9 @@ struct AlarmsListView: View {
             if scheduled {
                 actionMessage = "알람을 10분 뒤로 복사했어요. \(copied.timeString)"
             } else {
-                _ = store.delete(copied)
+                // cancel(record:store:) = store.delete + 마지막 참조였던
+                // audioCacheKey 의 캐시 음원까지 정리 (공유 키는 보존).
+                _ = await alarmKit.cancel(record: copied, store: store)
                 actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
             }
         } catch {

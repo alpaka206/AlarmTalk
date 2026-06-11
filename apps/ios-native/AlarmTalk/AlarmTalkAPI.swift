@@ -510,6 +510,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         transactionID: String,
         originalTransactionID: String,
         productID: String,
+        jwsRepresentation: String?,
         token: String
     ) async throws -> ConfirmAppleSubscriptionResponse {
         try await request(
@@ -519,7 +520,8 @@ final class AlarmTalkAPI: @unchecked Sendable {
             body: ConfirmAppleSubscriptionRequest(
                 transactionId: transactionID,
                 originalTransactionId: originalTransactionID,
-                productId: productID
+                productId: productID,
+                jwsRepresentation: jwsRepresentation.nilIfBlank
             )
         )
     }

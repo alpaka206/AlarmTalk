@@ -52,6 +52,12 @@ struct AlarmTalkApp: App {
                     .task {
                         // Phase 4-D1: StoreKit 제품 fetch + currentEntitlements 동기화.
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
+                        // 백엔드 confirm 성공 시 기존 구독 fetch 경로로 서버 구독
+                        // 상태를 새로고침하도록 훅을 먼저 연결한다.
+                        subscriptions.onServerEntitlementUpdated = { [weak socialFeatures, weak auth] in
+                            guard let socialFeatures, let auth else { return }
+                            await socialFeatures.refreshSubscriptionSilently(session: auth.session)
+                        }
                         await subscriptions.bootstrap()
                     }
                     .task {
@@ -116,6 +122,14 @@ struct AlarmTalkApp: App {
                     .task(id: alarmStore.hasLoadedFromDisk) {
                         guard alarmStore.hasLoadedFromDisk else { return }
                         await alarmKit.recoverScheduledAlarms(store: alarmStore)
+                        // 앱 시작 후 1회: 30일 넘게 미참조 상태로 남은 캐시 음원과
+                        // 고아 .meta.json 사이드카를 백그라운드에서 정리한다.
+                        // 현재 알람이 참조하는 cacheKey 는 나이와 무관하게 보존.
+                        let activeKeys = Set(alarmStore.alarms.compactMap(\.audioCacheKey))
+                        let audioCache = AudioCacheStore.shared
+                        Task.detached(priority: .utility) {
+                            audioCache.sweepStaleCache(activeCacheKeys: activeKeys)
+                        }
                     }
             }
             .preferredColorScheme(AlarmTalkThemeMode.normalized(themeModeRaw).preferredColorScheme)
