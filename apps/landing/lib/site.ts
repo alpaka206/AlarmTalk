@@ -1,12 +1,26 @@
 const DEFAULT_SITE_URL = "https://alarm-talk.com";
 
-function normalize(url: string): string {
-  return url.replace(/\/+$/, "");
+// 환경변수에 경로가 섞여 들어오면(`https://…/ko` 등) sitemap/canonical 전체가
+// `/ko/ko/` 같은 존재하지 않는 URL로 생성되므로 origin만 취한다.
+function resolveSiteUrl(raw: string | undefined): string {
+  if (!raw) return DEFAULT_SITE_URL;
+  try {
+    const url = new URL(raw);
+    if (url.pathname !== "/" || url.search || url.hash) {
+      console.warn(
+        `[site] NEXT_PUBLIC_SITE_URL 은 origin 만 허용합니다. "${raw}" → "${url.origin}" 으로 보정합니다.`,
+      );
+    }
+    return url.origin;
+  } catch {
+    console.warn(
+      `[site] NEXT_PUBLIC_SITE_URL "${raw}" 이 유효한 URL 이 아니라 기본값 ${DEFAULT_SITE_URL} 을 사용합니다.`,
+    );
+    return DEFAULT_SITE_URL;
+  }
 }
 
-export const SITE_URL = normalize(
-  process.env.NEXT_PUBLIC_SITE_URL ?? DEFAULT_SITE_URL,
-);
+export const SITE_URL = resolveSiteUrl(process.env.NEXT_PUBLIC_SITE_URL);
 
 export const SITE_NAME = "AlarmTalk";
 
