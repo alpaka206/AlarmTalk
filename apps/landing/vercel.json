@@ -1,0 +1,15 @@
+{
+  "redirects": [
+    {
+      "source": "/:page(privacy|terms|account-deletion|company|contact)",
+      "destination": "/ko/:page/",
+      "permanent": true
+    },
+    {
+      "source": "/:page(privacy|terms|account-deletion|company|contact)/",
+      "destination": "/ko/:page/",
+      "permanent": true
+    },
+    { "source": "/", "destination": "/ko/", "permanent": false }
+  ]
+}
