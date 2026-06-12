@@ -19,6 +19,14 @@ npm run build        # 정적 사이트를 out/ 디렉터리로 export
 
 `next.config.ts`의 `output: "export"`로 완전 정적 사이트가 생성됩니다(이미지 비최적화, `trailingSlash`). Cloudflare Pages, Vercel, S3 등 어디든 배포 가능합니다. 모노레포에서 Turbopack이 워크스페이스 루트를 추론하지 못하므로 `outputFileTracingRoot`/`turbopack.root`를 명시합니다.
 
+## 배포 (Vercel)
+
+프로덕션은 Vercel에 배포되어 있습니다.
+
+- **리디렉션은 `vercel.json`이 담당합니다.** `output: "export"`에서는 `next.config.ts`의 `redirects()`가 동작하지 않고, `public/_redirects`(Netlify/Cloudflare Pages 형식)는 Vercel이 무시합니다. `_redirects`는 다른 정적 호스트로 옮길 때를 대비한 백업입니다.
+- 로케일 프리픽스 없는 경로(`/privacy`, `/terms`, `/account-deletion`, `/company`, `/contact`)는 `/ko/...`로 308 리디렉션됩니다. 스토어 심사(Google Play 개인정보처리방침 URL 등)에 `https://alarm-talk.com/privacy` 같은 짧은 URL을 제출해도 동작해야 하기 때문입니다.
+- **도메인 설정**: 코드의 canonical/sitemap/robots는 모두 `https://alarm-talk.com`(non-www, `lib/site.ts`의 `SITE_URL`)을 기준으로 합니다. Vercel 대시보드의 Domains 설정에서 반드시 `alarm-talk.com`을 primary로 두고 `www.alarm-talk.com`을 308로 apex에 리디렉션해야 합니다. 반대로 설정하면 canonical URL이 리디렉션을 가리키게 되어 Search Console에서 색인 문제가 발생합니다.
+
 ## 다국어 (i18n)
 
 `next-intl` 기반. 모든 경로에 로케일 프리픽스가 붙습니다(`localePrefix: "always"`), 기본 `ko`.
