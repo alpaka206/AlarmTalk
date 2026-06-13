@@ -123,6 +123,40 @@ app.post('/api/init-db', async (c) => {
   }
 });
 
+// 무료 플랜용 스톡 알람 클립 생성 (dev 전용 / prod 는 x-init-db-secret 필요).
+// Workers 서브리퀘스트 캡을 피하려고 한 번에 max 개(기본 2)만 생성하고 remaining 을
+// 돌려준다. 호출자가 remaining 이 0 이 될 때까지 반복 호출한다 (멱등).
+app.post('/api/admin/seed-stock-clips', async (c) => {
+  if (!canRunInitDb(c)) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+  try {
+    const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
+    const { findMissingStockTargets, generateStockClip } = await import('./lib/stock-clips');
+    const db = getDB(c.env);
+    const missing = await findMissingStockTargets(db);
+    const batch = missing.slice(0, max);
+    const generated = [];
+    for (const target of batch) {
+      generated.push(await generateStockClip(db, c.env, target));
+    }
+    return c.json({
+      success: true,
+      generated,
+      generated_count: generated.length,
+      remaining: missing.length - generated.length,
+    });
+  } catch (err) {
+    return c.json(
+      {
+        error: 'Stock clip seed failed',
+        detail: err instanceof Error ? err.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
 // 공개 라우트 (인증 불필요)
 app.get('/api/tts/presets', noStore, async (c) => {
   const { loadTtsPresets } = await import('./lib/tts-presets');

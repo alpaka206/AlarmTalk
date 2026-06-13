@@ -961,6 +961,19 @@ export const migrations: Migration[] = [
                 '제시카', 'cgSgspJ2msm6clMCkdW9', 'ready', 1, 0, 0)`,
     ],
   },
+  {
+    // 무료 플랜용 "스톡 알람 클립" — 시스템 보이스로 서버에서 미리 합성해 둔 고정 음성.
+    //  - messages.is_preset=1 + voice_profile_id(시스템 보이스) + category + language 조합으로 식별.
+    //  - 무료 플랜은 랜덤 생성 없이 이 클립을 그대로 받아 알람에 붙여 쓴다 (생성 비용 0).
+    //  - 실제 클립은 POST /api/admin/seed-stock-clips (dev 전용) 로 생성한다.
+    id: 44,
+    name: 'messages-language-for-stock-clips',
+    statements: [
+      `ALTER TABLE messages ADD COLUMN language TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_stock
+        ON messages(is_preset, voice_profile_id, category, language)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

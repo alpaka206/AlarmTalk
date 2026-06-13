@@ -1112,6 +1112,14 @@ tts.get('/messages/:id/audio', async (c) => {
                 WHERE a.message_id = messages.id
                   AND a.target_user_id IN (?, ?)
               )
+              OR (
+                COALESCE(messages.is_preset, 0) = 1
+                AND EXISTS (
+                  SELECT 1 FROM voice_profiles vp
+                  WHERE vp.id = messages.voice_profile_id
+                    AND COALESCE(vp.is_system, 0) = 1
+                )
+              )
             )`,
     args: [id, ...ownerIds, ...ownerIds],
   });
@@ -1229,6 +1237,37 @@ tts.delete('/messages/:id', async (c) => {
 
 tts.get('/presets', async (c) => {
   return c.json({ presets: await loadTtsPresets(c.env) });
+});
+
+// 무료 플랜용 스톡(미리 만든) 알람 클립 목록. 시스템 보이스로 서버에서 합성해 둔
+// 고정 클립을 보이스 × 언어 × 카테고리로 노출한다. 오디오는 message_id 로
+// GET /tts/messages/:id/audio 에서 받는다 (스톡은 모든 사용자가 조회 가능).
+tts.get('/stock-clips', async (c) => {
+  const db = getDB(c.env);
+  const result = await db.execute({
+    sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
+                 m.delivery_tags_json, m.audio_url, vp.name AS voice_name
+          FROM messages m
+          JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+          WHERE COALESCE(m.is_preset, 0) = 1
+            AND COALESCE(vp.is_system, 0) = 1
+            AND vp.deleted_at IS NULL
+            AND m.audio_url IS NOT NULL
+          ORDER BY vp.id ASC, m.category ASC, m.language ASC`,
+    args: [],
+  });
+  return c.json({
+    clips: result.rows.map((row) => ({
+      message_id: row.message_id,
+      voice_profile_id: row.voice_profile_id,
+      voice_name: row.voice_name,
+      category: row.category,
+      language: row.language,
+      text: row.text,
+      audio_url: row.audio_url,
+      tags: parseDeliveryTags(row.delivery_tags_json),
+    })),
+  });
 });
 
 async function findCachedGeneratedAudio(
