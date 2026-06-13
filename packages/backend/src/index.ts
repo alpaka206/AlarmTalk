@@ -132,8 +132,15 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   }
   try {
     const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
-    const { findMissingStockTargets, generateStockClip } = await import('./lib/stock-clips');
+    const reset = ['1', 'true', 'yes'].includes((c.req.query('reset') || '').toLowerCase());
+    const { findMissingStockTargets, generateStockClip, deleteAllStockClips } = await import(
+      './lib/stock-clips'
+    );
     const db = getDB(c.env);
+    let deleted = 0;
+    if (reset) {
+      deleted = await deleteAllStockClips(db, c.env);
+    }
     const missing = await findMissingStockTargets(db);
     const batch = missing.slice(0, max);
     const generated = [];
@@ -142,6 +149,7 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
     }
     return c.json({
       success: true,
+      deleted,
       generated,
       generated_count: generated.length,
       remaining: missing.length - generated.length,
