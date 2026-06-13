@@ -9,8 +9,16 @@ import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,8 +27,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -29,11 +39,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Snooze
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
@@ -43,13 +50,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -57,7 +75,12 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
+import kotlin.math.roundToInt
 
 class RingingActivity : ComponentActivity() {
     private var alarmId by mutableStateOf<String?>(null)
@@ -156,6 +179,11 @@ class RingingActivity : ComponentActivity() {
     }
 }
 
+// 가이드 .ring 디자인의 다크 블루→블랙 그라데이션 배경.
+private val RingingBackground = Brush.verticalGradient(
+    listOf(Color(0xFF11355A), Color(0xFF0A1726), Color(0xFF06080E)),
+)
+
 @Composable
 private fun RingingRoute(
     uiState: RingingUiState,
@@ -185,139 +213,298 @@ private fun RingingRoute(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .background(RingingBackground)
+                .systemBarsPadding()
+                .padding(horizontal = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            RingingStatusPill()
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
+            Spacer(Modifier.height(54.dp))
+            Text(
+                text = uiState.dateText,
+                color = Color(0xFFA6BDDA),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
+            RingingClock(ampm = uiState.ampm, time = uiState.timeText)
+
+            Spacer(Modifier.height(30.dp))
+            RingingVoiceCard(uiState)
+
+            Spacer(Modifier.weight(1f))
+
+            if (uiState.snoozeEnabled) {
+                RingingSnoozeButton(
+                    minutes = uiState.snoozeMinutes,
+                    onSnooze = onSnooze,
+                )
+                Spacer(Modifier.height(14.dp))
+            }
+            RingingSlideToDismiss(onDismiss = onDismiss)
+            Spacer(Modifier.height(28.dp))
+        }
+    }
+}
+
+@Composable
+private fun RingingClock(ampm: String, time: String) {
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (ampm.isNotBlank()) {
+            Text(
+                text = ampm,
+                modifier = Modifier.padding(bottom = 18.dp),
+                color = Color(0xFFA6BDDA),
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(
+            text = time,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 104.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-3).sp,
+        )
+    }
+}
+
+@Composable
+private fun RingingVoiceCard(uiState: RingingUiState) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 440.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = Color(0xFF122034).copy(alpha = 0.66f),
+        border = BorderStroke(1.dp, Color(0x24FFFFFF)),
+    ) {
+        Column(modifier = Modifier.padding(22.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    modifier = Modifier.size(112.dp),
+                    modifier = Modifier.size(46.dp),
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Outlined.Alarm,
-                            contentDescription = null,
-                            modifier = Modifier.size(58.dp),
-                        )
+                        val initial = uiState.avatarLabel
+                        if (initial != null) {
+                            Text(
+                                text = initial,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.Alarm,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                            )
+                        }
                     }
                 }
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    text = uiState.title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = uiState.subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                uiState.voiceText?.let { voiceText ->
-                    Spacer(Modifier.height(22.dp))
-                    RingingVoiceText(voiceText)
+                Spacer(Modifier.width(13.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = uiState.title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = uiState.subtitle,
+                        color = Color(0xFFA6BDDA),
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                Spacer(Modifier.height(24.dp))
-                RingingVoiceWaveform()
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                if (uiState.snoozeEnabled) {
-                    OutlinedButton(
-                        onClick = onSnooze,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(58.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        Icon(Icons.Outlined.Snooze, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("다시 울리기")
-                    }
-                }
-                Button(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(58.dp),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Text("알람 끄기")
-                }
+            Spacer(Modifier.height(16.dp))
+            RingingVoiceWaveform()
+            uiState.voiceText?.let { voiceText ->
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "“$voiceText”",
+                    color = Color(0xFFDBE7F6),
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun RingingStatusPill() {
+private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        onClick = onSnooze,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(62.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = Color.White.copy(alpha = 0.07f),
+        border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.GraphicEq,
+                imageVector = Icons.Outlined.Snooze,
                 contentDescription = null,
-                modifier = Modifier.size(17.dp),
+                tint = Color(0xFFCFDDEE),
+                modifier = Modifier.size(20.dp),
             )
+            Spacer(Modifier.width(9.dp))
             Text(
-                text = "알람 울림",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+                text = "${minutes}분 뒤 다시 알림",
+                color = Color(0xFFCFDDEE),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+private val SlideTrackBrush = Brush.verticalGradient(
+    listOf(Color(0x2E9ECBFF), Color(0x0F9ECBFF)),
+)
+private val SlideKnobBrush = Brush.verticalGradient(
+    listOf(Color(0xFFBFE0FF), Color(0xFF9ECBFF)),
+)
+
+@Composable
+private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val knobSizePx = with(density) { 64.dp.toPx() }
+    val edgePadPx = with(density) { 6.dp.toPx() }
+
+    var trackWidthPx by remember { mutableStateOf(0) }
+    val offsetX = remember { Animatable(0f) }
+    val maxOffset = (trackWidthPx - knobSizePx - edgePadPx * 2).coerceAtLeast(0f)
+
+    // 라벨은 노브가 이동할수록 서서히 사라진다.
+    val labelAlpha = if (maxOffset <= 0f) 1f else (1f - offsetX.value / maxOffset).coerceIn(0f, 1f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(76.dp)
+            .onSizeChanged { trackWidthPx = it.width }
+            .clip(RoundedCornerShape(26.dp))
+            .background(SlideTrackBrush)
+            .background(Color.Transparent),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // 1dp 라이트블루 보더.
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val stroke = 1.dp.toPx()
+            drawRoundRect(
+                color = Color(0x4D9ECBFF),
+                topLeft = Offset(stroke / 2f, stroke / 2f),
+                size = androidx.compose.ui.geometry.Size(
+                    size.width - stroke,
+                    size.height - stroke,
+                ),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(26.dp.toPx()),
+                style = Stroke(width = stroke),
+            )
+        }
+
+        Text(
+            text = "밀어서 끄기",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 60.dp, end = 24.dp)
+                .graphicsLayer { alpha = labelAlpha },
+            color = Color(0xFFDCECFF),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+
+        SlideHintArrows(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 22.dp)
+                .graphicsLayer { alpha = labelAlpha },
+        )
+
+        Box(
+            modifier = Modifier
+                .padding(start = 6.dp)
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .size(64.dp)
+                .clip(RoundedCornerShape(21.dp))
+                .background(SlideKnobBrush)
+                .pointerInput(maxOffset) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (maxOffset > 0f && offsetX.value >= maxOffset * 0.7f) {
+                                scope.launch {
+                                    offsetX.animateTo(maxOffset)
+                                    onDismiss()
+                                }
+                            } else {
+                                scope.launch { offsetX.animateTo(0f) }
+                            }
+                        },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        scope.launch {
+                            val next = (offsetX.value + dragAmount).coerceIn(0f, maxOffset)
+                            offsetX.snapTo(next)
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Alarm,
+                contentDescription = "밀어서 끄기",
+                tint = Color(0xFF06243E),
+                modifier = Modifier.size(24.dp),
             )
         }
     }
 }
 
 @Composable
-private fun RingingVoiceText(text: String) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 420.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+private fun SlideHintArrows(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "slideHint")
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis,
-        )
+        repeat(3) { index ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 0.9f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 750, delayMillis = index * 180, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "arrow$index",
+            )
+            Canvas(modifier = Modifier.size(11.dp)) {
+                val w = 2.4.dp.toPx()
+                val color = Color(0xFFDCECFF).copy(alpha = alpha)
+                // 오른쪽을 가리키는 셰브론.
+                drawLine(color, Offset(size.width * 0.3f, size.height * 0.2f), Offset(size.width * 0.75f, size.height * 0.5f), strokeWidth = w)
+                drawLine(color, Offset(size.width * 0.75f, size.height * 0.5f), Offset(size.width * 0.3f, size.height * 0.8f), strokeWidth = w)
+            }
+        }
     }
 }
 
@@ -325,8 +512,8 @@ private fun RingingVoiceText(text: String) {
 private fun RingingVoiceWaveform() {
     Row(
         modifier = Modifier
-            .fillMaxWidth(0.76f)
-            .height(54.dp),
+            .fillMaxWidth()
+            .height(40.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -339,7 +526,7 @@ private fun RingingVoiceWaveform() {
             Box(
                 modifier = Modifier
                     .width(2.dp)
-                    .height((8 + level * 42).dp)
+                    .height((8 + level * 30).dp)
                     .background(
                         color = when (index) {
                             in 5..14 -> MaterialTheme.colorScheme.primary
@@ -355,14 +542,19 @@ private fun RingingVoiceWaveform() {
 
 private data class RingingUiState(
     val title: String = "알람이 울리고 있어요",
-    val subtitle: String = "지금 알람을 확인해 주세요",
+    val subtitle: String = "지금 울리고 있어요",
     val voiceText: String? = null,
     val snoozeEnabled: Boolean = true,
+    val snoozeMinutes: Int = 5,
+    val dateText: String = todayDateLabel(),
+    val ampm: String = currentAmPmLabel(),
+    val timeText: String = currentTimeLabel(),
+    /** 보이스 카드 아바타에 표시할 라벨 첫 글자 — null 이면 알람 아이콘. */
+    val avatarLabel: String? = null,
 )
 
 private fun AlarmEntity.toRingingUiState(): RingingUiState {
     val customTitle = label.trim().takeIf { it.isNotBlank() && it != "알람" }
-    val timeText = alarmTimeLabel(hour, minute)
     val voiceMessage = voiceText
         ?.trim()
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
@@ -373,18 +565,43 @@ private fun AlarmEntity.toRingingUiState(): RingingUiState {
             )
 
     return RingingUiState(
-        title = customTitle ?: timeText,
-        subtitle = if (customTitle != null) timeText else ringingModeLabel(playMode, voiceMessage != null),
+        title = customTitle ?: "알람이 울리고 있어요",
+        subtitle = if (customTitle != null) {
+            ringingModeLabel(playMode, voiceMessage != null)
+        } else {
+            "지금 울리고 있어요"
+        },
         voiceText = voiceMessage,
         snoozeEnabled = snoozeAvailable,
+        snoozeMinutes = snoozeMinutes,
+        dateText = todayDateLabel(),
+        ampm = if (hour < 12) "오전" else "오후",
+        timeText = alarmClockLabel(hour, minute),
+        avatarLabel = customTitle?.take(1),
     )
 }
 
-private fun alarmTimeLabel(hour: Int, minute: Int): String {
-    val marker = if (hour < 12) "오전" else "오후"
+private fun todayDateLabel(): String {
+    val today = LocalDate.now()
+    val weekday = today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN)
+    return "${today.monthValue}월 ${today.dayOfMonth}일 $weekday"
+}
+
+private fun currentAmPmLabel(): String {
+    val hour = java.time.LocalTime.now().hour
+    return if (hour < 12) "오전" else "오후"
+}
+
+private fun currentTimeLabel(): String {
+    val now = java.time.LocalTime.now()
+    return alarmClockLabel(now.hour, now.minute)
+}
+
+/** "6:30" 형태(12시간제, 분 0패딩) — 큰 시계 표시용. */
+private fun alarmClockLabel(hour: Int, minute: Int): String {
     val hour12 = hour % 12
     val displayHour = if (hour12 == 0) 12 else hour12
-    return "$marker $displayHour:${"%02d".format(minute)}"
+    return "$displayHour:${"%02d".format(minute)}"
 }
 
 private fun ringingModeLabel(playMode: String, hasVoiceText: Boolean): String = when {

@@ -67,6 +67,20 @@ data class TtsMessageAudioResponse(
     @SerializedName("voice_profile_id") val voiceProfileId: String? = null,
 )
 
+data class StockClipListResponse(
+    val clips: List<StockClip> = emptyList(),
+)
+
+data class StockClip(
+    @SerializedName("message_id") val messageId: String,
+    @SerializedName("voice_profile_id") val voiceProfileId: String,
+    @SerializedName("voice_name") val voiceName: String? = null,
+    val category: String? = null,
+    val language: String? = null,
+    val text: String = "",
+    @SerializedName("audio_url") val audioUrl: String? = null,
+)
+
 interface TtsApi {
     @POST("tts/generate")
     suspend fun generateTts(
@@ -76,6 +90,9 @@ interface TtsApi {
 
     @GET("tts/messages")
     suspend fun listTtsMessages(@Header("Authorization") authorization: String): TtsMessageListResponse
+
+    @GET("tts/stock-clips")
+    suspend fun getStockClips(@Header("Authorization") authorization: String): StockClipListResponse
 
     @GET("tts/messages/{id}/audio")
     suspend fun getTtsMessageAudio(

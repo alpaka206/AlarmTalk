@@ -29,6 +29,8 @@ import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -48,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -58,6 +61,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
+import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
@@ -164,6 +168,8 @@ internal fun VoiceProfileManagementPanel(
     onPromoteDraftVoice: suspend (String) -> Unit,
     onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    stockClips: List<com.alarmtalk.app.network.StockClip>,
+    onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
@@ -221,6 +227,10 @@ internal fun VoiceProfileManagementPanel(
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var filePreviewPreparing by remember { mutableStateOf(false) }
     var filePreviewPlaying by remember { mutableStateOf(false) }
+    // 기본 제공 목소리는 정보성이라 평소엔 접어두고 헤더만 보여준다.
+    var systemVoicesExpanded by remember { mutableStateOf(false) }
+    // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
+    var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     val systemVoices = voiceProfiles.filter { it.isSystem == true }
     val ownVoices = voiceProfiles.filter { it.isSystem != true }
@@ -234,6 +244,54 @@ internal fun VoiceProfileManagementPanel(
         mediaPlayer = null
         filePreviewPreparing = false
         filePreviewPlaying = false
+        playingGreetingVoiceId = null
+    }
+
+    // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플(greeting 스톡 클립)을 들려준다.
+    fun playGreeting(profile: VoiceProfile) {
+        if (playingGreetingVoiceId == profile.id) {
+            stopMediaPreview()
+            return
+        }
+        val clip = stockClips.firstOrNull {
+            it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
+        } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+        if (clip == null) {
+            localMessage = "이 목소리의 미리듣기를 준비 중이에요."
+            return
+        }
+        scope.launch {
+            stopMediaPreview()
+            playingGreetingVoiceId = profile.id
+            runCatching {
+                val response = onDownloadStockAudio(clip.messageId)
+                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                val cached = withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = bytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = "greeting_${clip.messageId}",
+                        cacheKey = "greeting_${clip.messageId}",
+                        messageId = clip.messageId,
+                    )
+                }
+                val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
+                    ?: return@runCatching
+                mediaPlayer = player.apply {
+                    setOnCompletionListener {
+                        it.release()
+                        if (mediaPlayer === it) mediaPlayer = null
+                        if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    }
+                    start()
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to play greeting preview", error)
+                if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            }
+        }
     }
 
     fun applySelectedAudio(audio: CachedAlarmAudio) {
@@ -824,13 +882,40 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (systemVoices.isNotEmpty()) {
-            Text(
-                text = "기본 목소리",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            systemVoices.forEach { profile ->
-                SystemVoiceProfileRow(profile = profile)
+            Surface(
+                onClick = { systemVoicesExpanded = !systemVoicesExpanded },
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "기본 목소리 ${systemVoices.size}종",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Icon(
+                        imageVector = if (systemVoicesExpanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (systemVoicesExpanded) "접기" else "펼치기",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (systemVoicesExpanded) {
+                systemVoices.forEach { profile ->
+                    SystemVoiceProfileRow(
+                        profile = profile,
+                        playing = playingGreetingVoiceId == profile.id,
+                        onPlay = { playGreeting(profile) },
+                    )
+                }
             }
         }
 
