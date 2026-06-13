@@ -58,8 +58,10 @@ import com.alarmtalk.app.network.DynamicPromptSettings
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyGroupMember
 import com.alarmtalk.app.network.FamilyVoiceProfile
+import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
+import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.trimmedOrNull
 import com.alarmtalk.app.ui.guide.CoachMarkOverlay
@@ -77,6 +79,7 @@ private enum class AudioPreviewTarget {
     SelectedCrop,
     CachedAudio,
     SharedVoiceInfo,
+    StockClip,
 }
 
 // 처음 알람을 만드는 사용자를 위한 위치 앵커형 코치마크 가이드.
@@ -123,10 +126,12 @@ internal fun AlarmEditorScreen(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
+    stockClips: List<StockClip>,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String, () -> Unit) -> Unit,
     onSave: (AlarmDraft) -> Unit,
@@ -173,6 +178,7 @@ internal fun AlarmEditorScreen(
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
+    var previewingStockMessageId by remember { mutableStateOf<String?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
@@ -275,6 +281,7 @@ internal fun AlarmEditorScreen(
         mediaPlayer = null
         previewTarget = null
         previewPreparing = false
+        previewingStockMessageId = null
     }
 
     fun startPreparedPreview(
@@ -443,6 +450,75 @@ internal fun AlarmEditorScreen(
                 Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
                 stopPreview()
                 audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            }
+        }
+    }
+
+    fun previewStockClip(clip: StockClip) {
+        if (previewPreparing) return
+        // 이미 같은 클립을 재생 중이면 정지.
+        if (previewingStockMessageId == clip.messageId && mediaPlayer != null) {
+            stopPreview()
+            return
+        }
+        scope.launch {
+            stopPreview()
+            previewTarget = AudioPreviewTarget.StockClip
+            previewPreparing = true
+            previewingStockMessageId = clip.messageId
+            runCatching {
+                val response = onDownloadStockAudio(clip.messageId)
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = audioBytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = "stock_preview_${clip.messageId}",
+                        cacheKey = "stock_preview_${clip.messageId}",
+                        messageId = clip.messageId,
+                    )
+                }
+            }.onSuccess { cached ->
+                startPreparedPreview(
+                    uri = Uri.parse(cached.localAudioUri),
+                    target = AudioPreviewTarget.StockClip,
+                )
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to preview stock clip in alarm editor", error)
+                stopPreview()
+                audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            }
+        }
+    }
+
+    fun selectStockClip(clip: StockClip) {
+        if (isSaving || previewPreparing) return
+        scope.launch {
+            runCatching {
+                val response = onDownloadStockAudio(clip.messageId)
+                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+                withContext(Dispatchers.IO) {
+                    audioStore.cacheGeneratedAudio(
+                        bytes = audioBytes,
+                        format = response.audioFormat,
+                        rawAudioUri = response.audioUrl,
+                        displayName = "stock_${clip.messageId}",
+                        cacheKey = "stock_${clip.messageId}",
+                        messageId = clip.messageId,
+                    )
+                }
+            }.onSuccess { cached ->
+                editor.setStockClipAudio(
+                    audio = cached,
+                    profileId = clip.voiceProfileId,
+                    messageId = clip.messageId,
+                    text = clip.text,
+                )
+                audioMessage = "기본 제공 음성을 선택했어요."
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to select stock clip in alarm editor", error)
+                audioMessage = userFacingError(error, "기본 제공 음성을 선택하지 못했어요.")
             }
         }
     }
@@ -1070,6 +1146,11 @@ internal fun AlarmEditorScreen(
                                 voiceProfiles = voiceProfiles,
                                 familyVoices = familyVoices,
                                 voiceProfileBusy = voiceProfileBusy,
+                                stockClips = stockClips,
+                                selectedStockMessageId = editor.ttsMessageId,
+                                previewingStockMessageId = previewingStockMessageId,
+                                onPreviewStockClip = { clip -> previewStockClip(clip) },
+                                onSelectStockClip = { clip -> selectStockClip(clip) },
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,

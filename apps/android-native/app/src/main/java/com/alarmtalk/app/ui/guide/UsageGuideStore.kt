@@ -21,5 +21,7 @@ class UsageGuideStore(context: Context) {
         private const val PREFS_NAME = "usage_guide_seen"
         const val GUIDE_ALARM_EDITOR = "alarm_editor_v1"
         const val GUIDE_VOICE_CREATE = "voice_create_v1"
+        const val GUIDE_HOME = "home_v1"
+        const val GUIDE_VOICE_REGISTER = "voice_register_v1"
     }
 }

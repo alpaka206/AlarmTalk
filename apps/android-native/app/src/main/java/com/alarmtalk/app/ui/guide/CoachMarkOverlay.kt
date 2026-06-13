@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -192,17 +194,20 @@ private fun CoachMarkCard(
             .fillMaxSize()
             .onSizeChanged { overlayHeightPx = it.height },
     ) {
-        val offsetY = if (hole == null) {
+        // 카드가 상태바/내비게이션바 밑으로 깔려 화면을 벗어나지 않도록 안전 영역 안에 둔다.
+        val topInsetPx = WindowInsets.systemBars.getTop(density).toFloat()
+        val bottomInsetPx = WindowInsets.systemBars.getBottom(density).toFloat()
+        val minY = topInsetPx
+        val maxY = (overlayHeightPx - cardHeightPx - bottomInsetPx).coerceAtLeast(minY)
+        val rawY = if (hole == null) {
             // 대상 미등록 — 화면 중앙에 폴백.
-            ((overlayHeightPx - cardHeightPx) / 2f).coerceAtLeast(0f)
+            (overlayHeightPx - cardHeightPx) / 2f
         } else {
             val below = hole.bottom + gapPx
-            if (below + cardHeightPx <= overlayHeightPx || hole.top - gapPx - cardHeightPx < 0f) {
-                below.coerceAtMost((overlayHeightPx - cardHeightPx).coerceAtLeast(0).toFloat())
-            } else {
-                hole.top - gapPx - cardHeightPx
-            }
+            val above = hole.top - gapPx - cardHeightPx
+            if (below + cardHeightPx <= overlayHeightPx - bottomInsetPx || above < minY) below else above
         }
+        val offsetY = rawY.coerceIn(minY, maxY)
 
         Surface(
             modifier = Modifier
@@ -220,36 +225,14 @@ private fun CoachMarkCard(
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                // 단계가 여럿일 때만 진행 표시(가이드 N / M). 한 단계뿐이면 점·카운터 모두 생략.
+                if (stepCount > 1) {
                     Text(
                         text = "가이드 ${stepIndex + 1} / $stepCount",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        repeat(stepCount) { dot ->
-                            Box(
-                                modifier = Modifier
-                                    .size(if (dot == stepIndex) 7.dp else 5.dp)
-                                    .background(
-                                        if (dot == stepIndex) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.outlineVariant
-                                        },
-                                        CircleShape,
-                                    ),
-                            )
-                        }
-                    }
                 }
                 Text(
                     text = step.title,

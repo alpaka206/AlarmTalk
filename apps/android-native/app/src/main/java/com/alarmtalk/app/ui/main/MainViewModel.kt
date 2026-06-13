@@ -153,6 +153,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
         internal set
 
+    var stockClips by mutableStateOf<List<com.alarmtalk.app.network.StockClip>>(emptyList())
+        internal set
+
     var ttsMessageBusy by mutableStateOf(false)
         internal set
 

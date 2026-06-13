@@ -226,6 +226,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
+            viewModel.loadStockClips()
             viewModel.preloadSocial()
             viewModel.preloadCharacterAndBilling()
             viewModel.preloadNotes()
@@ -261,6 +262,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             }
             NativeTab.Voices -> {
                 viewModel.preloadVoiceProfiles()
+                viewModel.loadStockClips()
                 viewModel.preloadSocial()
             }
             NativeTab.Alarms -> viewModel.syncNow()
@@ -542,6 +544,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           },
                           onDeleteDraftVoice = viewModel::deleteDraftVoice,
                           onGenerateTts = viewModel::generateTtsAudio,
+                          stockClips = viewModel.stockClips,
+                          onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onRenameVoiceProfile = viewModel::renameVoiceProfile,
                           onShareVoiceProfile = viewModel::setVoiceProfileShared,
                           onUpdateSharedVoiceInfo = { id, relationship, listener ->
@@ -620,10 +624,12 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       voiceProfiles = voiceProfiles,
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
+                      stockClips = viewModel.stockClips,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                       onGenerateTts = viewModel::generateTtsAudio,
+                      onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                       onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
                           viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)
@@ -658,10 +664,12 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           voiceProfiles = voiceProfiles,
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
+                          stockClips = viewModel.stockClips,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
                           onGenerateTts = viewModel::generateTtsAudio,
+                          onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
                           onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
                           onUpdateSharedVoiceInfo = { id, relationship, listener, onSuccess ->
                               viewModel.updateSharedVoiceViewerInfo(id, relationship, listener, onSuccess)

@@ -1,20 +1,31 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.ui.guide.CoachMarkOverlay
+import com.alarmtalk.app.ui.guide.CoachMarkRegistry
+import com.alarmtalk.app.ui.guide.CoachMarkStep
+import com.alarmtalk.app.ui.guide.UsageGuideStore
+import com.alarmtalk.app.ui.guide.coachMarkTarget
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.CharacterEventEntity
@@ -31,6 +42,34 @@ import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
+
+// 홈 첫 방문 안내 — 다음 알람 히어로 / 빠른 시작 타일에 스포트라이트.
+private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
+private const val GUIDE_TARGET_HOME_QUICK = "home_quick_start"
+
+private val homeCoachSteps = listOf(
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_HOME_HERO,
+        title = "다음 알람을 한눈에",
+        body = "다음에 울릴 알람을 여기서 바로 확인하고, 눌러서 시각이나 목소리를 바꿀 수 있어요.",
+    ),
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_HOME_QUICK,
+        title = "여기서 바로 시작해요",
+        body = "‘목소리 만들기’로 깨워줄 목소리를 등록하고, ‘새 알람’으로 알람을 추가할 수 있어요.",
+    ),
+)
+
+// 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
+private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
+
+private val voiceRegisterCoachSteps = listOf(
+    CoachMarkStep(
+        targetKey = GUIDE_TARGET_VOICE_CREATE,
+        title = "내 목소리를 만들어요",
+        body = "여기서 1분 남짓 녹음하거나 음성 파일을 올리면, 그 목소리로 알람을 깨워줘요. 만든 목소리는 가족·연인과 공유할 수도 있어요.",
+    ),
+)
 
 @Composable
 internal fun AlarmListScreen(
@@ -66,6 +105,8 @@ internal fun AlarmListScreen(
     onPromoteDraftVoice: suspend (String) -> Unit,
     onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
+    stockClips: List<com.alarmtalk.app.network.StockClip>,
+    onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
@@ -114,7 +155,28 @@ internal fun AlarmListScreen(
     val voiceLocked = voicePlanLocked || !permissions.recordAudio
     val alarmLocked = !permissions.alarmReady
 
+    val appContext = LocalContext.current.applicationContext
+    val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    val coachMarkRegistry = remember { CoachMarkRegistry() }
+    val listState = rememberLazyListState()
+
+    // 홈/목소리 탭 첫 방문 시 한 번만 자동 노출. 로그인 후 콘텐츠가 보일 때만 띄운다.
+    var homeGuideVisible by remember {
+        mutableStateOf(
+            selectedTab == NativeTab.Home && authSession != null &&
+                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME),
+        )
+    }
+    var voiceGuideVisible by remember {
+        mutableStateOf(
+            selectedTab == NativeTab.Voices && authSession != null &&
+                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_REGISTER),
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding),
@@ -125,18 +187,21 @@ internal fun AlarmListScreen(
             NativeTab.Home -> {
                 item { HomeHeader() }
                 item {
-                    NextAlarmHeroCard(
-                        nextAlarm = nextAlarm,
-                        onClick = {
-                            if (nextAlarm == null) {
-                                onCreateAlarm()
-                            } else {
-                                onEditAlarm(nextAlarm)
-                            }
-                        },
-                    )
+                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO)) {
+                        NextAlarmHeroCard(
+                            nextAlarm = nextAlarm,
+                            onClick = {
+                                if (nextAlarm == null) {
+                                    onCreateAlarm()
+                                } else {
+                                    onEditAlarm(nextAlarm)
+                                }
+                            },
+                        )
+                    }
                 }
                 item {
+                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_QUICK)) {
                     QuickStartGrid(
                         onRecordVoice = {
                             when {
@@ -151,6 +216,7 @@ internal fun AlarmListScreen(
                         voiceLocked = voiceLocked,
                         alarmLocked = alarmLocked,
                     )
+                    }
                 }
                 item {
                     CharacterMiniCard(
@@ -165,6 +231,7 @@ internal fun AlarmListScreen(
                     ScreenHeader(title = "목소리")
                 }
                 item {
+                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_VOICE_CREATE)) {
                     VoiceProfileManagementPanel(
                         voiceProfiles = voiceProfiles,
                         familyVoices = familyVoices,
@@ -179,12 +246,15 @@ internal fun AlarmListScreen(
                         onPromoteDraftVoice = onPromoteDraftVoice,
                         onDeleteDraftVoice = onDeleteDraftVoice,
                         onGenerateTts = onGenerateTts,
+                        stockClips = stockClips,
+                        onDownloadStockAudio = onDownloadStockAudio,
                         onRenameVoiceProfile = onRenameVoiceProfile,
                         onShareVoiceProfile = onShareVoiceProfile,
                         onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                     )
+                    }
                 }
             }
 
@@ -299,6 +369,30 @@ internal fun AlarmListScreen(
                     )
                 }
             }
+        }
+    }
+
+        if (homeGuideVisible && selectedTab == NativeTab.Home) {
+            CoachMarkOverlay(
+                steps = homeCoachSteps,
+                registry = coachMarkRegistry,
+                listState = listState,
+                onFinish = {
+                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_HOME)
+                    homeGuideVisible = false
+                },
+            )
+        }
+        if (voiceGuideVisible && selectedTab == NativeTab.Voices) {
+            CoachMarkOverlay(
+                steps = voiceRegisterCoachSteps,
+                registry = coachMarkRegistry,
+                listState = listState,
+                onFinish = {
+                    usageGuideStore.markSeen(UsageGuideStore.GUIDE_VOICE_REGISTER)
+                    voiceGuideVisible = false
+                },
+            )
         }
     }
 }

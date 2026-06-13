@@ -515,3 +515,17 @@ internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): T
         api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
     }
 }
+
+internal fun MainViewModel.loadStockClips() {
+    val session = authSession ?: return
+    if (stockClips.isNotEmpty()) return
+    viewModelScope.launch {
+        runCatching {
+            api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        }.onSuccess { clips ->
+            stockClips = clips
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to load stock clips", error)
+        }
+    }
+}

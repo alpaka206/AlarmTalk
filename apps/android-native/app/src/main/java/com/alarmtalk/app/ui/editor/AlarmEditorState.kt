@@ -237,6 +237,24 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    fun setStockClipAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        messageId: String,
+        text: String,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceRandomPrompt = false
+        voiceTranslationEnabled = false
+        voiceText = text
+        localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
+        rawAudioUri = audio.rawAudioUri
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    }
+
     fun activeVoiceLanguage(): String =
         if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 

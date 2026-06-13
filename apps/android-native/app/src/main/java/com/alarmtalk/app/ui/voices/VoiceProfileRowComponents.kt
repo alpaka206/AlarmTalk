@@ -571,8 +571,13 @@ internal fun VoiceSharedBadge() {
 
 /** 시스템 제공(스톡) 보이스 행 — 수정/삭제/공유 액션 없이 정보만 보여준다. */
 @Composable
-internal fun SystemVoiceProfileRow(profile: VoiceProfile) {
+internal fun SystemVoiceProfileRow(
+    profile: VoiceProfile,
+    playing: Boolean,
+    onPlay: () -> Unit,
+) {
     OutlinedCard(
+        onClick = onPlay,
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -596,13 +601,16 @@ internal fun SystemVoiceProfileRow(profile: VoiceProfile) {
                     tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
             }
-            Column(
+            Text(
+                text = profile.name,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                Text(profile.name, fontWeight = FontWeight.SemiBold)
-                MutedText("기본 제공 목소리 · 모든 이용권에서 사용 가능")
-            }
+            )
+            Icon(
+                imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                contentDescription = if (playing) "정지" else "들어보기",
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

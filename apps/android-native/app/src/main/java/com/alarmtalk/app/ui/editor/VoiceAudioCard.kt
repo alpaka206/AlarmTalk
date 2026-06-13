@@ -14,12 +14,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -39,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
@@ -53,6 +60,11 @@ internal fun VoiceAudioCard(
     voiceProfiles: List<VoiceProfile>,
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
+    stockClips: List<com.alarmtalk.app.network.StockClip>,
+    selectedStockMessageId: String?,
+    previewingStockMessageId: String?,
+    onPreviewStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
+    onSelectStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
     // 무료 플랜 제한 모드 — 녹음/파일·직접 입력·동적 문구는 [onLockedFeature] 로 게이트.
     freeVoiceTier: Boolean,
     onLockedFeature: () -> Unit,
@@ -164,18 +176,33 @@ internal fun VoiceAudioCard(
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
-                    VoiceProfileOptionList(
+                    VoiceProfileSelector(
                         options = profileOptions,
-                        selected = editor.voiceProfileId ?: "",
+                        selectedId = editor.voiceProfileId ?: "",
                         onSelect = { option ->
                             val sharedProfile = option.sharedProfile
                             if (sharedProfile?.requiresViewerInfo() == true) {
                                 onSharedVoiceInfoRequired(sharedProfile)
-                                return@VoiceProfileOptionList
+                                return@VoiceProfileSelector
                             }
                             editor.voiceProfileId = option.id
                             editor.clearTtsMeta()
                         },
+                    )
+                }
+                // 유료 플랜은 랜덤 문구/직접 입력으로 충분하므로 기본 제공(스톡) 음성은
+                // 무료 플랜에서만 노출한다.
+                if (freeVoiceTier) {
+                    StockClipDropdown(
+                        clips = stockClips.filter {
+                            it.voiceProfileId == editor.voiceProfileId &&
+                                it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+                        },
+                        isSystemVoice = com.alarmtalk.app.data.isSystemVoiceId(editor.voiceProfileId),
+                        selectedStockMessageId = selectedStockMessageId,
+                        previewingStockMessageId = previewingStockMessageId,
+                        onPreviewStockClip = onPreviewStockClip,
+                        onSelectStockClip = onSelectStockClip,
                     )
                 }
                 if (selectedProfileUnavailable) {
@@ -383,19 +410,74 @@ private fun NoUsableVoiceProfileCallout(
     }
 }
 
+// 목소리가 여러 개(내 목소리 + 공유받은 + 기본 제공)면 목록이 길어지므로,
+// 평소엔 선택된 목소리 1줄만 보여주고 누르면 펼쳐서 전체에서 고르는 접이식 선택기.
 @Composable
-private fun VoiceProfileOptionList(
+private fun VoiceProfileSelector(
     options: List<VoiceProfileOption>,
-    selected: String,
+    selectedId: String,
     onSelect: (VoiceProfileOption) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { option ->
-            VoiceProfileOptionRow(
-                option = option,
-                selected = selected == option.id,
-                onClick = { onSelect(option) },
-            )
+    var expanded by remember { mutableStateOf(false) }
+    val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Column {
+            Surface(
+                onClick = { expanded = !expanded },
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = selectedOption?.name ?: "목소리 선택",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (selectedOption != null) {
+                            MutedText(selectedOption.detail)
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded) "접기" else "펼치기",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (expanded) {
+                Column(
+                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.forEach { option ->
+                        VoiceProfileOptionRow(
+                            option = option,
+                            selected = option.id == selectedId,
+                            onClick = {
+                                onSelect(option)
+                                expanded = false
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -449,6 +531,170 @@ private fun VoiceProfileOptionRow(
             VoiceSelectionDot(selected = selected)
         }
     }
+}
+
+@Composable
+private fun StockClipDropdown(
+    clips: List<com.alarmtalk.app.network.StockClip>,
+    isSystemVoice: Boolean,
+    selectedStockMessageId: String?,
+    previewingStockMessageId: String?,
+    onPreviewStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
+    onSelectStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
+) {
+    if (!isSystemVoice || clips.isEmpty()) return
+    var expanded by remember { mutableStateOf(false) }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Column {
+            Surface(
+                onClick = { expanded = !expanded },
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text("기본 제공 알람 음성", fontWeight = FontWeight.SemiBold)
+                        MutedText("미리 듣고 바로 사용할 수 있어요")
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded) "접기" else "펼치기",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (expanded) {
+                // 언어를 먼저 고르고 해당 언어 클립 하나만 보여준다.
+                val langs = remember(clips) {
+                    clips.mapNotNull { it.language }
+                        .distinct()
+                        .sortedBy {
+                            val i = StockClipLanguageOrder.indexOf(it)
+                            if (i < 0) Int.MAX_VALUE else i
+                        }
+                }
+                val selectedClipLang = clips.firstOrNull { it.messageId == selectedStockMessageId }?.language
+                var selectedLang by remember(clips) {
+                    mutableStateOf(
+                        selectedClipLang ?: langs.firstOrNull { it == "ko" } ?: langs.firstOrNull().orEmpty(),
+                    )
+                }
+                val activeClip = clips.firstOrNull { it.language == selectedLang } ?: clips.firstOrNull()
+                Column(
+                    modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        langs.forEach { lang ->
+                            FilterChip(
+                                selected = lang == selectedLang,
+                                onClick = { selectedLang = lang },
+                                label = { Text(stockClipLanguageLabel(lang)) },
+                            )
+                        }
+                    }
+                    if (activeClip != null) {
+                        StockClipRow(
+                            clip = activeClip,
+                            selected = activeClip.messageId == selectedStockMessageId,
+                            previewing = activeClip.messageId == previewingStockMessageId,
+                            onPreview = { onPreviewStockClip(activeClip) },
+                            onSelect = { onSelectStockClip(activeClip) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StockClipRow(
+    clip: com.alarmtalk.app.network.StockClip,
+    selected: Boolean,
+    previewing: Boolean,
+    onPreview: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    Surface(
+        onClick = onSelect,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+        },
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = clip.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            IconButton(onClick = onPreview) {
+                Icon(
+                    imageVector = if (previewing) {
+                        Icons.Outlined.Stop
+                    } else {
+                        Icons.Outlined.PlayArrow
+                    },
+                    contentDescription = if (previewing) "정지" else "미리듣기",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Outlined.Check,
+                    contentDescription = "선택됨",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+        }
+    }
+}
+
+private val StockClipLanguageOrder = listOf("ko", "en", "ja")
+
+private fun stockClipLanguageLabel(language: String?): String = when (language) {
+    "ko" -> "한국어"
+    "en" -> "English"
+    "ja" -> "日本語"
+    else -> language.orEmpty()
 }
 
 @Composable
