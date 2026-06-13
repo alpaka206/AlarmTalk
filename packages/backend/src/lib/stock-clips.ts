@@ -8,21 +8,32 @@ import { prepareAlarmTextWithVertex } from './vertex-translate';
 /** 시스템 스톡 보이스의 소유자(로그인 불가, 발급 전용). migrations.ts #43 과 동일. */
 export const SYSTEM_VOICE_LIBRARY_USER_ID = '70000000-0000-4000-9000-000000000001';
 
-/** 스톡 클립을 만들 언어. 한국어 베이스 → 영어/일본어는 Vertex 로 번역. */
+/** 스톡 클립을 만들 수 있는 언어. 한국어 베이스 → 영어/일본어는 Vertex 로 번역. */
 export const STOCK_CLIP_LANGUAGES = ['ko', 'en', 'ja'] as const;
+
+/** 목소리 미리듣기(샘플 인사말) 카테고리 — 알람 클립과 구분해 앱에서 따로 쓴다. */
+export const STOCK_GREETING_CATEGORY = 'greeting';
 
 /**
  * 스톡 클립 프리셋. baseText 는 태그 없는 한국어 한 줄이며, 합성 직전에
  * Vertex 로 (번역 +) ElevenLabs v3 딜리버리 태그 1개를 자동 부여한다.
+ * languages 로 프리셋별 생성 언어를 지정한다 (greeting 은 샘플이라 한국어만).
  *
- * 지금은 "기상" 1종만 테스트로 둔다. 카테고리를 늘리려면 여기에 추가하면
- * findMissingStockTargets 가 자동으로 (보이스 × 언어) 매트릭스를 채운다.
+ * 카테고리를 늘리려면 여기에 추가하면 findMissingStockTargets 가 자동으로
+ * (보이스 × 언어) 매트릭스를 채운다.
  */
 export const STOCK_CLIP_PRESETS = [
   {
     category: 'morning',
     // 안내방송처럼 딱딱하지 않게, 옆에서 다정하게 깨워주는 자연스러운 한 마디.
     baseText: '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
+    languages: ['ko', 'en', 'ja'],
+  },
+  {
+    category: STOCK_GREETING_CATEGORY,
+    // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 짧은 인사 샘플.
+    baseText: '안녕하세요? 만나서 반가워요. 앞으로 기분 좋은 아침을 함께할게요.',
+    languages: ['ko'],
   },
 ] as const;
 
@@ -90,7 +101,7 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
   const targets: StockClipTarget[] = [];
   for (const voice of voices) {
     for (const preset of STOCK_CLIP_PRESETS) {
-      for (const language of STOCK_CLIP_LANGUAGES) {
+      for (const language of preset.languages) {
         const lang = normalizeSynthesisLanguage(language);
         if (seen.has(`${voice.id}|${preset.category}|${lang}`)) continue;
         targets.push({
