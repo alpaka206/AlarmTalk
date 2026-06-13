@@ -21,7 +21,8 @@ export const STOCK_CLIP_LANGUAGES = ['ko', 'en', 'ja'] as const;
 export const STOCK_CLIP_PRESETS = [
   {
     category: 'morning',
-    baseText: '좋은 아침이에요. 일어나실 시간이에요. 오늘도 좋은 하루 되세요.',
+    // 안내방송처럼 딱딱하지 않게, 옆에서 다정하게 깨워주는 자연스러운 한 마디.
+    baseText: '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
   },
 ] as const;
 
@@ -104,6 +105,58 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
     }
   }
   return targets;
+}
+
+/**
+ * 기존 스톡 클립 전체 삭제 (문구를 바꿔 재생성할 때 사용). messages·
+ * generated_audio_assets·message_library 행과 R2 오브젝트를 정리하고,
+ * 혹시 이 클립을 참조하던 알람은 sound-only 로 떼어낸다. dev 반복용.
+ */
+export async function deleteAllStockClips(db: Client, env: Env): Promise<number> {
+  const rows = await db.execute({
+    sql: `SELECT m.id AS message_id, ga.audio_object_key AS audio_object_key
+          FROM messages m
+          LEFT JOIN generated_audio_assets ga ON ga.message_id = m.id
+          WHERE COALESCE(m.is_preset, 0) = 1
+            AND m.voice_profile_id IN (
+              SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
+            )`,
+    args: [],
+  });
+  const ids = Array.from(new Set(rows.rows.map((r) => String(r.message_id))));
+  if (ids.length === 0) return 0;
+
+  if (env.VOICE_BUCKET) {
+    const storage = new R2VoiceStorage(env.VOICE_BUCKET);
+    for (const r of rows.rows) {
+      const key = r.audio_object_key;
+      if (typeof key === 'string' && key) {
+        try {
+          await storage.delete(key);
+        } catch {
+          // R2 삭제 실패해도 DB 정리는 계속
+        }
+      }
+    }
+  }
+
+  const ph = ids.map(() => '?').join(',');
+  // 이 클립을 쓰던 알람은 음성 떼고 sound-only 로 (FK·런타임 안전).
+  await db.execute({
+    sql: `UPDATE alarms
+          SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+              message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+              raw_audio_url = NULL, raw_audio_duration_ms = NULL
+          WHERE message_id IN (${ph})`,
+    args: ids,
+  });
+  await db.execute({ sql: `DELETE FROM message_library WHERE message_id IN (${ph})`, args: ids });
+  await db.execute({
+    sql: `DELETE FROM generated_audio_assets WHERE message_id IN (${ph})`,
+    args: ids,
+  });
+  await db.execute({ sql: `DELETE FROM messages WHERE id IN (${ph})`, args: ids });
+  return ids.length;
 }
 
 /** 표시용 텍스트에서 [tag] 마커 제거 (앱에는 태그 없이 보여준다). */
