@@ -428,6 +428,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
                     unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
+                    // 메시지는 커플/가족 전용 — 무료·개인 플랜은 잠금 표시.
+                    messagesLocked = !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup),
                     onSelectTab = ::navigateToTab,
                 )
             }

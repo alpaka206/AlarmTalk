@@ -4,7 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,11 +14,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -40,6 +44,7 @@ internal fun AlarmTalkBottomBar(
     selectedTab: NativeTab,
     unreadAlarmCount: Int,
     unreadMessageCount: Int,
+    messagesLocked: Boolean,
     onSelectTab: (NativeTab) -> Unit,
 ) {
     Surface(
@@ -86,6 +91,7 @@ internal fun AlarmTalkBottomBar(
                 icon = Icons.AutoMirrored.Outlined.Message,
                 label = "메시지",
                 badgeCount = unreadMessageCount,
+                locked = messagesLocked,
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -100,6 +106,7 @@ internal fun AlarmTalkTabItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     badgeCount: Int = 0,
+    locked: Boolean = false,
     onSelectTab: (NativeTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -138,28 +145,47 @@ internal fun AlarmTalkTabItem(
             )
             .padding(vertical = 6.dp),
     ) {
-        BadgedBox(
-            badge = {
-                if (badgeCount > 0) {
-                    Badge(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ) {
-                        Text(text = badgeLabel(badgeCount))
+        Box(contentAlignment = Alignment.Center) {
+            BadgedBox(
+                badge = {
+                    if (!locked && badgeCount > 0) {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ) {
+                            Text(text = badgeLabel(badgeCount))
+                        }
                     }
-                }
-            },
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = if (selected) {
-                    selectedContentColor
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
                 },
-                modifier = Modifier.size(22.dp),
-            )
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = if (selected) {
+                        selectedContentColor
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            if (locked) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 9.dp, y = (-4).dp)
+                        .size(15.dp)
+                        .background(MaterialTheme.colorScheme.surface, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = "잠금",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+            }
         }
         Text(
             text = label,
