@@ -253,9 +253,26 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         }
     }
 
+    // 탭을 왔다갔다 할 때마다 네트워크 새로고침이 다시 나가면 응답이 올 때 화면이 갱신되며
+    // 살짝 버벅인다. 탭별로 마지막 새로고침 시각을 기억해, 일정 시간 안에 다시 들른
+    // 경우엔 재요청을 건너뛴다. (로그인 토큰이 바뀌면 키가 달라져 자연히 새로 받는다.)
+    val tabRefreshThrottleMs = 60_000L
+    val lastTabRefreshAt = remember { mutableMapOf<Pair<NativeTab, String?>, Long>() }
     LaunchedEffect(currentTab, authSession?.token) {
         if (authSession == null) return@LaunchedEffect
-        when (currentTab) {
+        val tab = currentTab ?: return@LaunchedEffect
+        val throttleKey = tab to authSession?.token
+        val now = System.currentTimeMillis()
+        val last = lastTabRefreshAt[throttleKey]
+        // 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜 정리로 목소리 목록이 비워진 직후)
+        // 스로틀을 무시하고 즉시 다시 불러와, 빈 화면이 남지 않게 한다.
+        val tabDataEmpty = when (tab) {
+            NativeTab.Voices -> voiceProfiles.isEmpty()
+            else -> false
+        }
+        if (!tabDataEmpty && last != null && now - last < tabRefreshThrottleMs) return@LaunchedEffect
+        lastTabRefreshAt[throttleKey] = now
+        when (tab) {
             NativeTab.Home -> {
                 viewModel.refreshCharacterAndBilling()
                 viewModel.refreshSocial()
@@ -276,7 +293,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             }
             NativeTab.Growth,
             NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
-            null -> Unit
         }
     }
 

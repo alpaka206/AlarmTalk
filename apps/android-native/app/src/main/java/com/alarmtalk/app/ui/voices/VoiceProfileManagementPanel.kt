@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -135,6 +136,70 @@ private val voiceCreateGuideSteps = listOf(
         body = "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요.",
     ),
 )
+
+// 보이스 클로닝용 추천 낭독 스크립트(약 1분 분량). 인사·일상·숫자·감정·긴 문장을
+// 고루 담아 다양한 발음이 들어가도록 구성했고, 알람톡 서비스의 따뜻한 톤을 자연스럽게 녹였다.
+private const val VOICE_RECORD_SCRIPT =
+    "안녕하세요. 지금 제 목소리로 알람톡에서 쓸 알람을 만들고 있어요. " +
+        "매일 아침, 좋아하는 사람의 목소리로 깨어날 수 있다니 생각만 해도 따뜻하네요. " +
+        "오늘은 날씨가 맑고 바람도 살랑살랑 불어서 산책하기 참 좋은 날이에요. " +
+        "이 목소리로 가족이나 친구의 아침을 다정하게 챙겨줄 수도 있겠죠. " +
+        "숫자도 한번 세어 볼게요. 하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열. " +
+        "기쁜 날엔 환하게 웃고, 힘든 날엔 \"오늘도 정말 수고했어\" 하고 스스로를 다독여 주는 것도 잊지 말아야겠죠. " +
+        "이제 조금 긴 문장을 읽어 볼게요. 매일 같은 시간에 일어나 창문을 열고 맑은 공기를 들이마시며 " +
+        "하루를 차분히 시작하면, 마음까지 한결 가벼워지는 기분이 들어요. " +
+        "끝까지 또렷하게 읽어 주셔서 고맙습니다."
+
+@Composable
+private fun VoiceRecordScriptCard() {
+    var expanded by remember { mutableStateOf(false) }
+    OutlinedCard(
+        shape = WakerCardShape,
+        border = wakerCardBorder(),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        ),
+    ) {
+        Column {
+            Surface(
+                onClick = { expanded = !expanded },
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "추천 대사 보기",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded) "접기" else "펼치기",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (expanded) {
+                Text(
+                    text = VOICE_RECORD_SCRIPT,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+    }
+}
 
 @Composable
 internal fun VoiceLoginRequiredCard() {
@@ -1051,13 +1116,14 @@ internal fun VoiceProfileManagementPanel(
                                 )
 
                                 if (inputMode == VoiceCaptureMode.Record) {
+                                    VoiceRecordScriptCard()
                                     VoiceRecordControls(
                                         isRecording = isRecording,
                                         elapsedMillis = recordingElapsedMillis,
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         levels = recordingLevels,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        notice = "1분 이상 2분 이하로 녹음해 주세요. 1분 30초를 권장해요.",
+                                        notice = "1분 이상 2분 이하로 녹음해 주세요.",
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1072,6 +1138,10 @@ internal fun VoiceProfileManagementPanel(
                                     )
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        MutedText(
+                                            "한 사람의 목소리만 담긴 파일을 추천해요. 여러 명의 목소리가 섞여 있으면 " +
+                                                "'여러 명'을 골라 화자를 나눈 뒤 한 명을 선택할 수 있어요.",
+                                        )
                                         FileSpeakerModeSelector(
                                             selected = fileSpeakerMode,
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
@@ -1085,7 +1155,8 @@ internal fun VoiceProfileManagementPanel(
                                             maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
                                             uploadLabel = "파일 또는 영상 업로드",
-                                            notice = "1분 이상 2분 이하 구간을 선택해 주세요. 1분 30초를 권장해요.",
+                                            notice = "1분 이상 2분 이하 구간을 선택해 주세요.",
+                                            noticeAfterUpload = true,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
                                             onPickFile = { pickAudioLauncher.launch(arrayOf("audio/*", "video/*")) },

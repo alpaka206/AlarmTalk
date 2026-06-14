@@ -204,6 +204,7 @@ internal fun VoiceFileControls(
     enabled: Boolean,
     uploadLabel: String,
     notice: String,
+    noticeAfterUpload: Boolean = false,
     isPreviewActive: Boolean = false,
     isPreviewPreparing: Boolean = false,
     onPickFile: () -> Unit,
@@ -211,7 +212,10 @@ internal fun VoiceFileControls(
     onPreviewCrop: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        MutedText(notice)
+        // 업로드 후에만 의미 있는 안내(자를 구간 선택 등)는 파일 선택 전까지 숨긴다.
+        if (!noticeAfterUpload) {
+            MutedText(notice)
+        }
         Button(
             onClick = onPickFile,
             enabled = enabled,
@@ -223,6 +227,9 @@ internal fun VoiceFileControls(
             Text(uploadLabel)
         }
         durationMillis?.let { duration ->
+            if (noticeAfterUpload) {
+                MutedText(notice)
+            }
             AudioCropRangeSelector(
                 durationMillis = duration,
                 cropStartMillis = cropStartMillis,

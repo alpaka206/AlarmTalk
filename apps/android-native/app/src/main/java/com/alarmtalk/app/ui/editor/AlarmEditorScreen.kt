@@ -1228,6 +1228,10 @@ internal fun AlarmEditorScreen(
                             alarmVolumePercent = editor.alarmVolumePercent,
                             alarmSoundLabel = editor.alarmSoundLabel,
                             showAlarmSound = editor.playMode != AlarmPlayModes.VOICE_ONLY,
+                            showVoiceOutput = editor.playMode != AlarmPlayModes.ALARM_ONLY,
+                            voiceVolumePercent = editor.voiceVolumePercent,
+                            voiceRepeat = editor.voiceRepeat,
+                            voiceRepeatActive = editor.playMode == AlarmPlayModes.VOICE_ONLY,
                             onSnoozeEnabledChange = { editor.snoozeEnabled = it },
                             onSnoozeMinutesChange = { editor.snoozeMinutes = it },
                             onSnoozeRepeatLimitChange = { editor.snoozeRepeatLimit = it },
@@ -1239,6 +1243,7 @@ internal fun AlarmEditorScreen(
                             onOpenSnoozeSettings = { settingsDetailPanel = "snooze" },
                             onOpenVibrationSettings = { settingsDetailPanel = "vibration" },
                             onOpenAlarmSoundSettings = { settingsDetailPanel = "sound" },
+                            onOpenVoiceOutputSettings = { settingsDetailPanel = "voice_output" },
                         )
                     }
                 }
@@ -1350,6 +1355,15 @@ internal fun AlarmEditorScreen(
                     editor.voiceLanguage = it
                     editor.clearTtsMeta()
                 },
+            )
+
+            "voice_output" -> VoiceOutputSettingsPane(
+                volumePercent = editor.voiceVolumePercent,
+                onVolumeChange = { editor.voiceVolumePercent = it },
+                showRepeat = editor.playMode == AlarmPlayModes.VOICE_ONLY,
+                repeat = editor.voiceRepeat,
+                onRepeatChange = { editor.voiceRepeat = it },
+                onDismiss = { settingsDetailPanel = null },
             )
         }
 

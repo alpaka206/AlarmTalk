@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,6 +27,7 @@ import com.alarmtalk.app.ui.guide.CoachMarkRegistry
 import com.alarmtalk.app.ui.guide.CoachMarkStep
 import com.alarmtalk.app.ui.guide.UsageGuideStore
 import com.alarmtalk.app.ui.guide.coachMarkTarget
+import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.CharacterEventEntity
@@ -160,18 +162,25 @@ internal fun AlarmListScreen(
     val coachMarkRegistry = remember { CoachMarkRegistry() }
     val listState = rememberLazyListState()
 
-    // 홈/목소리 탭 첫 방문 시 한 번만 자동 노출. 로그인 후 콘텐츠가 보일 때만 띄운다.
-    var homeGuideVisible by remember {
-        mutableStateOf(
-            selectedTab == NativeTab.Home && authSession != null &&
-                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME),
-        )
+    // 홈/목소리 탭 첫 방문 시 한 번만 자동 노출. 온보딩 직후 화면·권한과 한꺼번에
+    // 겹쳐 버벅이지 않도록, 화면이 자리잡을 시간을 살짝 둔 뒤 부드럽게 띄운다.
+    var homeGuideVisible by remember { mutableStateOf(false) }
+    var voiceGuideVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(selectedTab, authSession) {
+        if (selectedTab == NativeTab.Home && authSession != null &&
+            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME)
+        ) {
+            delay(700)
+            homeGuideVisible = true
+        }
     }
-    var voiceGuideVisible by remember {
-        mutableStateOf(
-            selectedTab == NativeTab.Voices && authSession != null &&
-                !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_REGISTER),
-        )
+    LaunchedEffect(selectedTab, authSession) {
+        if (selectedTab == NativeTab.Voices && authSession != null &&
+            !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_VOICE_REGISTER)
+        ) {
+            delay(700)
+            voiceGuideVisible = true
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
