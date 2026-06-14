@@ -264,7 +264,13 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         val throttleKey = tab to authSession?.token
         val now = System.currentTimeMillis()
         val last = lastTabRefreshAt[throttleKey]
-        if (last != null && now - last < tabRefreshThrottleMs) return@LaunchedEffect
+        // 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜 정리로 목소리 목록이 비워진 직후)
+        // 스로틀을 무시하고 즉시 다시 불러와, 빈 화면이 남지 않게 한다.
+        val tabDataEmpty = when (tab) {
+            NativeTab.Voices -> voiceProfiles.isEmpty()
+            else -> false
+        }
+        if (!tabDataEmpty && last != null && now - last < tabRefreshThrottleMs) return@LaunchedEffect
         lastTabRefreshAt[throttleKey] = now
         when (tab) {
             NativeTab.Home -> {

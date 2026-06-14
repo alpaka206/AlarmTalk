@@ -978,8 +978,12 @@ export const migrations: Migration[] = [
     // 시스템 스톡 보이스 이름/음성 재배치 (#43 시드 이후 변경분).
     //  - 레이첼·브라이언을 네이티브 한국어 보이스(Mina·Mr.K)로 교체하고 한글 이름(미나·하준) 부여.
     //  - 제시카→소은 은 음성 유지, 이름만 변경. 아담(101)은 이름·음성 모두 유지.
-    //  - 주의: elevenlabs_voice_id 가 바뀐 102·103 은 기존 스톡 클립이 옛 음성으로 남으므로,
-    //    배포 후 POST /api/admin/seed-stock-clips?reset=1 로 전체 재생성해야 한다.
+    //  - 음성이 바뀐 102·103, 인사말(greeting)이 바뀐 101·104 의 기존 스톡 클립은
+    //    옛 음성/문구로 남아 새 프로필 이름 아래 그대로 노출되므로 아래에서 무효화한다.
+    //    findMissingStockTargets 가 (voice_profile_id|category|language) 로만 존재 여부를
+    //    보기 때문에, 행을 지워야 다음 seed 때 새 음성/문구로 재생성된다.
+    //  - 배포 후 POST /api/admin/seed-stock-clips 로 재생성한다 (reset 불필요 — 여기서 무효화됨).
+    //  - R2 오브젝트는 만료 정리에 맡기고, 이 클립을 참조하던 알람은 sound-only 로 떼어낸다.
     id: 45,
     name: 'rename-reassign-stock-voices',
     statements: [
@@ -989,6 +993,58 @@ export const migrations: Migration[] = [
         WHERE id = '70000000-0000-4000-9000-000000000103'`,
       `UPDATE voice_profiles SET name = '소은'
         WHERE id = '70000000-0000-4000-9000-000000000104'`,
+      // 무효화 대상: 102·103 의 모든 프리셋 클립 + 101·104 의 greeting 프리셋 클립.
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (
+          SELECT id FROM messages
+          WHERE COALESCE(is_preset, 0) = 1 AND (
+            voice_profile_id IN (
+              '70000000-0000-4000-9000-000000000102',
+              '70000000-0000-4000-9000-000000000103'
+            )
+            OR (category = 'greeting' AND voice_profile_id IN (
+              '70000000-0000-4000-9000-000000000101',
+              '70000000-0000-4000-9000-000000000104'
+            ))
+          ))`,
+      `DELETE FROM message_library WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        ))`,
+      `DELETE FROM generated_audio_assets WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        ))`,
+      `DELETE FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        )`,
     ],
   },
 ];
