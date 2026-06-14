@@ -974,6 +974,23 @@ export const migrations: Migration[] = [
         ON messages(is_preset, voice_profile_id, category, language)`,
     ],
   },
+  {
+    // 시스템 스톡 보이스 이름/음성 재배치 (#43 시드 이후 변경분).
+    //  - 레이첼·브라이언을 네이티브 한국어 보이스(Mina·Mr.K)로 교체하고 한글 이름(미나·하준) 부여.
+    //  - 제시카→소은 은 음성 유지, 이름만 변경. 아담(101)은 이름·음성 모두 유지.
+    //  - 주의: elevenlabs_voice_id 가 바뀐 102·103 은 기존 스톡 클립이 옛 음성으로 남으므로,
+    //    배포 후 POST /api/admin/seed-stock-clips?reset=1 로 전체 재생성해야 한다.
+    id: 45,
+    name: 'rename-reassign-stock-voices',
+    statements: [
+      `UPDATE voice_profiles SET name = '미나', elevenlabs_voice_id = 'aiUUgjHa4mpHf6UenZuf'
+        WHERE id = '70000000-0000-4000-9000-000000000102'`,
+      `UPDATE voice_profiles SET name = '하준', elevenlabs_voice_id = 'LKOcTG4J4tYTPR9DnLeM'
+        WHERE id = '70000000-0000-4000-9000-000000000103'`,
+      `UPDATE voice_profiles SET name = '소은'
+        WHERE id = '70000000-0000-4000-9000-000000000104'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

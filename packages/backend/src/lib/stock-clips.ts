@@ -37,6 +37,20 @@ export const STOCK_CLIP_PRESETS = [
   },
 ] as const;
 
+/**
+ * 보이스별 인사말(greeting 카테고리) 문구. 키는 elevenlabs_voice_id.
+ * 없는 보이스는 STOCK_CLIP_PRESETS 의 기본 greeting 문구를 쓴다.
+ * 미리듣기에서 각 목소리의 개성이 드러나도록 톤을 음성별로 맞췄다.
+ */
+export const VOICE_GREETING_OVERRIDES: Record<string, string> = {
+  // 아담(Adam) — 장난스러운 자기소개 톤.
+  pNInz6obpgDQGcFmaJgB: '샤갈! 여러분! 저 됐어요! 저 알람톡 음성 됐어요. 자주 봐요!',
+  // 미나·하준·소은 — 목소리 특징이나 알람 기능을 드러내지 않는 담백한 첫인사.
+  aiUUgjHa4mpHf6UenZuf: '안녕하세요! 만나서 정말 반가워요. 앞으로 자주 봐요.',
+  LKOcTG4J4tYTPR9DnLeM: '안녕하세요. 반가워요. 우리 앞으로 잘 지내봐요.',
+  cgSgspJ2msm6clMCkdW9: '안녕하세요. 앞으로 저와 함께해요. 잘 부탁해요.',
+};
+
 export interface SystemVoiceRow {
   id: string;
   name: string;
@@ -104,12 +118,17 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
       for (const language of preset.languages) {
         const lang = normalizeSynthesisLanguage(language);
         if (seen.has(`${voice.id}|${preset.category}|${lang}`)) continue;
+        // greeting 은 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
+        const baseText =
+          preset.category === STOCK_GREETING_CATEGORY
+            ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? preset.baseText)
+            : preset.baseText;
         targets.push({
           voiceProfileId: voice.id,
           voiceName: voice.name,
           elevenlabsVoiceId: voice.elevenlabsVoiceId,
           category: preset.category,
-          baseText: preset.baseText,
+          baseText,
           language: lang,
         });
       }

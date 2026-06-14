@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -115,12 +117,6 @@ internal fun VoiceAudioCard(
                 sharedProfile = profile,
             )
         }
-    val hasConfiguredVoice = when (visibleVoiceSource) {
-        VoiceSources.TTS_PROFILE -> profileOptions.isNotEmpty() || !editor.localAudioUri.isNullOrBlank()
-        VoiceSources.LOCAL_AUDIO -> !editor.localAudioUri.isNullOrBlank() || selectedFileDurationMillis != null
-        else -> false
-    }
-
     LaunchedEffect(editor.voiceSource) {
         if (editor.voiceSource == VoiceSources.SERVER_TTS) {
             editor.voiceSource = VoiceSources.TTS_PROFILE
@@ -347,18 +343,7 @@ internal fun VoiceAudioCard(
                     )
                 }
             }
-            if (editor.playMode == AlarmPlayModes.VOICE_ONLY && hasConfiguredVoice) {
-                VoiceRepeatSelector(
-                    repeat = editor.voiceRepeat,
-                    onRepeatChange = {
-                        editor.voiceRepeat = it
-                    },
-                )
-            }
-            VoiceVolumeSelector(
-                volumePercent = editor.voiceVolumePercent,
-                onVolumeChange = { editor.voiceVolumePercent = it },
-            )
+            // 목소리 크기·반복 재생은 "세부 설정 > 음성 소리" 모달로 옮겼다.
             if (audioMessage != null) {
                 Text(
                     text = audioMessage,
@@ -371,6 +356,62 @@ internal fun VoiceAudioCard(
                 )
             }
         }
+}
+
+// "세부 설정 > 음성 소리" 전체화면 모달. 목소리 크기·반복 재생을 여기로 모아
+// 음성 카드 본문을 짧게 유지한다. (스누즈·진동·알람음 모달과 같은 패턴)
+@Composable
+internal fun VoiceOutputSettingsPane(
+    volumePercent: Int,
+    onVolumeChange: (Int) -> Unit,
+    showRepeat: Boolean,
+    repeat: Boolean,
+    onRepeatChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        contentDescription = "뒤로",
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = "음성 소리",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                VoiceVolumeSelector(
+                    volumePercent = volumePercent,
+                    onVolumeChange = onVolumeChange,
+                )
+                if (showRepeat) {
+                    VoiceRepeatSelector(
+                        repeat = repeat,
+                        onRepeatChange = onRepeatChange,
+                    )
+                }
+            }
+        }
+    }
 }
 
 private data class VoiceProfileOption(

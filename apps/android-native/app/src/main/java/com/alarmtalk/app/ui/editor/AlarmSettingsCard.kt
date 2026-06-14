@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -87,6 +88,10 @@ internal fun AlarmSettingsCard(
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
     showAlarmSound: Boolean,
+    showVoiceOutput: Boolean,
+    voiceVolumePercent: Int,
+    voiceRepeat: Boolean,
+    voiceRepeatActive: Boolean,
     onSnoozeEnabledChange: (Boolean) -> Unit,
     onSnoozeMinutesChange: (Int) -> Unit,
     onSnoozeRepeatLimitChange: (Int) -> Unit,
@@ -96,6 +101,7 @@ internal fun AlarmSettingsCard(
     onOpenSnoozeSettings: () -> Unit,
     onOpenVibrationSettings: () -> Unit,
     onOpenAlarmSoundSettings: () -> Unit,
+    onOpenVoiceOutputSettings: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -153,7 +159,33 @@ internal fun AlarmSettingsCard(
                     },
                 )
             }
+            if (showVoiceOutput) {
+                AlarmSettingDivider()
+                AlarmSettingRow(
+                    title = "음성 소리",
+                    subtitle = voiceOutputSummary(voiceVolumePercent, voiceRepeat, voiceRepeatActive),
+                    icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                    onClick = onOpenVoiceOutputSettings,
+                    trailing = {
+                        Text(
+                            text = ">",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                )
+            }
         }
+}
+
+private fun voiceOutputSummary(
+    voiceVolumePercent: Int,
+    voiceRepeat: Boolean,
+    voiceRepeatActive: Boolean,
+): String {
+    val volume = "${voiceVolumePercent.coerceIn(0, 100)}%"
+    return if (voiceRepeatActive && voiceRepeat) "$volume · 반복" else volume
 }
 
 private fun alarmVolumeLabel(value: Int): String =

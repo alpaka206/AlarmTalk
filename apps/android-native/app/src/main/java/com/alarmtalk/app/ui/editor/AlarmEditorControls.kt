@@ -101,33 +101,32 @@ internal fun RepeatSelector(
                 )
             }
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .alpha(if (holidayEnabled) 1f else 0.46f),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(end = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+        // 공휴일에 끄기는 매주 반복(요일 선택) 알람에만 의미가 있으므로,
+        // 요일을 하나라도 고른 경우에만 노출한다.
+        if (holidayEnabled) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
-                Text(
-                    text = "대체 공휴일 및 임시 공휴일 포함",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "대체 공휴일 및 임시 공휴일 포함",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                AlarmTalkSwitch(
+                    checked = holidayOff,
+                    onCheckedChange = onHolidayOffChange,
                 )
             }
-            AlarmTalkSwitch(
-                checked = holidayEnabled && holidayOff,
-                enabled = holidayEnabled,
-                onCheckedChange = { enabled ->
-                    if (holidayEnabled) onHolidayOffChange(enabled)
-                },
-            )
         }
     }
 }
