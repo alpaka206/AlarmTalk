@@ -79,6 +79,16 @@ val releaseKeystoreProps = rootProject.file("keystore.properties")
         Properties().apply { propsFile.inputStream().use { load(it) } }
     }
 
+// dev 플레이버 디버그 서명을 팀 공용 키스토어로 고정한다. 이렇게 해야 어느 PC/CI 에서 빌드해도
+// SHA-1 이 동일하게 유지되어 Google 로그인(OAuth Android 클라이언트의 SHA-1 매칭)이 항상 통과한다.
+// 파일이 없으면(예: 외부 기여자) 기본 debug.keystore 로 폴백한다.
+val devDebugKeystoreProps = rootProject.file("dev-debug-keystore.properties")
+    .takeIf { it.exists() }
+    ?.let { propsFile ->
+        Properties().apply { propsFile.inputStream().use { load(it) } }
+    }
+    ?.takeIf { rootProject.file(it.getProperty("storeFile") ?: "").exists() }
+
 android {
     namespace = "com.alarmtalk.app"
     compileSdk = 35
@@ -118,6 +128,25 @@ android {
     val alarmTalkProdSentryDsn = providers.gradleProperty("alarmTalkProdSentryDsn")
         .orElse("")
         .get()
+
+    signingConfigs {
+        if (releaseKeystoreProps != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystoreProps.getProperty("storeFile"))
+                storePassword = releaseKeystoreProps.getProperty("storePassword")
+                keyAlias = releaseKeystoreProps.getProperty("keyAlias")
+                keyPassword = releaseKeystoreProps.getProperty("keyPassword")
+            }
+        }
+        if (devDebugKeystoreProps != null) {
+            create("devDebug") {
+                storeFile = rootProject.file(devDebugKeystoreProps.getProperty("storeFile"))
+                storePassword = devDebugKeystoreProps.getProperty("storePassword")
+                keyAlias = devDebugKeystoreProps.getProperty("keyAlias")
+                keyPassword = devDebugKeystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
 
     flavorDimensions += "environment"
     productFlavors {
@@ -162,18 +191,15 @@ android {
         }
     }
 
-    signingConfigs {
-        if (releaseKeystoreProps != null) {
-            create("release") {
-                storeFile = rootProject.file(releaseKeystoreProps.getProperty("storeFile"))
-                storePassword = releaseKeystoreProps.getProperty("storePassword")
-                keyAlias = releaseKeystoreProps.getProperty("keyAlias")
-                keyPassword = releaseKeystoreProps.getProperty("keyPassword")
+    buildTypes {
+        debug {
+            // 디버그 빌드를 공용 키스토어로 고정 서명 → 어느 PC/CI 에서 빌드해도 SHA-1 동일.
+            // (Google 로그인은 패키지명 + SHA-1 매칭이라 dev OAuth 클라이언트에 등록된
+            // 8E:05:92… 와 항상 일치해야 통과.) 파일이 없으면 기본 debug.keystore 폴백.
+            if (devDebugKeystoreProps != null) {
+                signingConfig = signingConfigs.getByName("devDebug")
             }
         }
-    }
-
-    buildTypes {
         release {
             if (releaseKeystoreProps != null) {
                 signingConfig = signingConfigs.getByName("release")
