@@ -30,7 +30,7 @@
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.24",
+    "hono": "^4.12.25",
     "toucan-js": "^4.1.1"
   }
 }
