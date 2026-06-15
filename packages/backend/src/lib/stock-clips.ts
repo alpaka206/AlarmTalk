@@ -43,8 +43,9 @@ export const STOCK_CLIP_PRESETS = [
  * 미리듣기에서 각 목소리의 개성이 드러나도록 톤을 음성별로 맞췄다.
  */
 export const VOICE_GREETING_OVERRIDES: Record<string, string> = {
-  // 아담(Adam) — 장난스러운 자기소개 톤.
-  pNInz6obpgDQGcFmaJgB: '샤갈! 여러분! 저 됐어요! 저 알람톡 음성 됐어요. 자주 봐요!',
+  // 아담(Adam) — 장난스러운 자기소개 톤. [excited] 태그로 들뜬 딜리버리 고정
+  // (Vertex autoTag 에 맡기지 않고 직접 박음. stripDeliveryTags 가 표시용에선 태그 제거).
+  pNInz6obpgDQGcFmaJgB: '[excited] 샤갈! 여러분! 저 됐어요! 저 알람톡 음성 됐어요! 자주 봐요!',
   // 미나·하준·소은 — 목소리 특징이나 알람 기능을 드러내지 않는 담백한 첫인사.
   aiUUgjHa4mpHf6UenZuf: '안녕하세요! 만나서 정말 반가워요. 앞으로 자주 봐요.',
   LKOcTG4J4tYTPR9DnLeM: '안녕하세요. 반가워요. 우리 앞으로 잘 지내봐요.',
