@@ -3,7 +3,14 @@ import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
-import { ORGANIZATION, SITE_NAME, SITE_URL } from "@/lib/site";
+import {
+  ORGANIZATION,
+  SITE_NAME,
+  SITE_URL,
+  localePath,
+  localeUrl,
+  languageAlternates,
+} from "@/lib/site";
 import { HtmlLangSync } from "@/components/html-lang-sync";
 
 export function generateStaticParams() {
@@ -32,16 +39,13 @@ export async function generateMetadata({
     description,
     applicationName: SITE_NAME,
     alternates: {
-      canonical: `/${locale}`,
-      languages: {
-        ...Object.fromEntries(routing.locales.map((l) => [l, `/${l}`])),
-        "x-default": `/${routing.defaultLocale}`,
-      },
+      canonical: localePath(locale),
+      languages: languageAlternates(),
     },
     openGraph: {
       type: "website",
       locale: ogLocale,
-      url: `${SITE_URL}/${locale}`,
+      url: localeUrl(locale),
       siteName: SITE_NAME,
       title,
       description,
