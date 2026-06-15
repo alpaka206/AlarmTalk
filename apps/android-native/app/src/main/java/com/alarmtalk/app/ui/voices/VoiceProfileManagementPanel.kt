@@ -1032,10 +1032,15 @@ internal fun VoiceProfileManagementPanel(
         val listenerRequiredError = createSubmitAttempted && resolvedListener.isBlank()
         val hasSeparatedSpeakers = detectedSpeakers.isNotEmpty()
         val fileInputLocked = separatingBusy || hasSeparatedSpeakers
-        val canSubmitRecord = inputMode == VoiceCaptureMode.Record
+        // 1분 미만이면 "다음" 으로 넘어가지 못하게 막는다. 녹음은 selectedAudio 길이,
+        // 파일은 실제 업로드되는 crop 구간 길이로 판정(백엔드 MIN_UPLOAD_DURATION_MS 와 동일 기준).
+        // 짧으면 stopRecording/prepareSelectedFile 가 안내 메시지를 이미 띄운다.
+        val canSubmitRecord = inputMode == VoiceCaptureMode.Record &&
+            (selectedAudio?.durationMillis ?: 0L) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         val canSubmitSingleFile = inputMode == VoiceCaptureMode.File &&
             fileSpeakerMode == FileSpeakerMode.Single &&
-            selectedFileUri != null
+            selectedFileUri != null &&
+            (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
         Dialog(
             onDismissRequest = {
                 if (!voiceProfileBusy && !separatingBusy) closeCreateDialog()
