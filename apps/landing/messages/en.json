@@ -17,6 +17,8 @@
     "headline1": "Wake up to",
     "headline2": "a voice you love.",
     "description": "Register a voice once, then freely create alarms that read any line you write — all in that voice.",
+    "ctaPrimary": "Join the beta waitlist",
+    "ctaNote": "Free to start · No marketing emails",
     "waitlistHint": "Before launch — join the beta waitlist",
     "scrollHint": "Scroll",
     "phone": {
@@ -200,12 +202,11 @@
     "panelLabel": "Site menu"
   },
   "store": {
-    "appStoreEyebrow": "Download on",
-    "appStoreLabel": "App Store",
-    "appStoreAria": "Get AlarmTalk on the App Store",
     "googlePlayEyebrow": "GET IT ON",
     "googlePlayLabel": "Google Play",
-    "googlePlayAria": "Get AlarmTalk on Google Play"
+    "googlePlayAria": "Get AlarmTalk on Google Play",
+    "comingSoonEyebrow": "COMING SOON",
+    "comingSoonAria": "Google Play release coming soon"
   },
   "contact": {
     "meta": {
