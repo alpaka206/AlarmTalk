@@ -4,6 +4,7 @@ import { LegalMarkdown } from "@/components/legal-markdown";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { readLegalDoc } from "@/lib/legal-docs";
+import { localePath, languageAlternates } from "@/lib/site";
 
 export const dynamic = "force-static";
 
@@ -17,7 +18,10 @@ export async function generateMetadata({
   return {
     title: "서비스 이용약관",
     description: "AlarmTalk 음성 알람 서비스의 이용약관입니다.",
-    alternates: { canonical: `/${locale}/terms` },
+    alternates: {
+      canonical: localePath(locale, "terms"),
+      languages: languageAlternates("terms"),
+    },
     robots: { index: true, follow: true },
   };
 }

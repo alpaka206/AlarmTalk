@@ -13,7 +13,7 @@ import { Quotes } from "@/components/sections/quotes";
 import { Faq } from "@/components/sections/faq";
 import { Waitlist } from "@/components/sections/waitlist";
 import { SiteFooter } from "@/components/sections/site-footer";
-import { SITE_NAME, SITE_URL, STORE_LINKS } from "@/lib/site";
+import { SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
 
 type FaqItem = { q: string; a: string };
 
@@ -36,7 +36,7 @@ export default async function HomePage({
     description: tMeta("description"),
     applicationCategory: "LifestyleApplication",
     operatingSystem: "Android, iOS",
-    url: `${SITE_URL}/${locale}`,
+    url: localeUrl(locale),
     inLanguage: locale,
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
     ...(STORE_LINKS.googlePlay !== "#" || STORE_LINKS.appStore !== "#"

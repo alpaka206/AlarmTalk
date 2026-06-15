@@ -5,7 +5,7 @@ import { setRequestLocale } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
 
 const PRIVACY_EMAIL = "privacy@alarm-talk.com";
 
@@ -147,20 +147,15 @@ export async function generateMetadata({
     title: copy.title,
     description: copy.description,
     alternates: {
-      canonical: `/${locale}/account-deletion`,
-      languages: {
-        ...Object.fromEntries(
-          routing.locales.map((l) => [l, `/${l}/account-deletion`]),
-        ),
-        "x-default": `/${routing.defaultLocale}/account-deletion`,
-      },
+      canonical: localePath(locale, "account-deletion"),
+      languages: languageAlternates("account-deletion"),
     },
     openGraph: {
       type: "website",
       locale: ({ ko: "ko_KR", en: "en_US", ja: "ja_JP" } as const)[
         locale as Locale
       ],
-      url: `${SITE_URL}/${locale}/account-deletion`,
+      url: localeUrl(locale, "account-deletion"),
       siteName: SITE_NAME,
       title: copy.title,
       description: copy.description,

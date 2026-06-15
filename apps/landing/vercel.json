@@ -1,15 +1,30 @@
 {
+  "trailingSlash": true,
   "redirects": [
     {
-      "source": "/:page(privacy|terms|account-deletion|company|contact)",
-      "destination": "/ko/:page/",
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "www.alarm-talk.com" }],
+      "destination": "https://alarm-talk.com/:path*",
       "permanent": true
     },
     {
-      "source": "/:page(privacy|terms|account-deletion|company|contact)/",
-      "destination": "/ko/:page/",
+      "source": "/ko/:page(privacy|terms|account-deletion|company|contact)",
+      "destination": "/:page/",
       "permanent": true
     },
-    { "source": "/", "destination": "/ko/", "permanent": false }
+    {
+      "source": "/ko/:page(privacy|terms|account-deletion|company|contact)/",
+      "destination": "/:page/",
+      "permanent": true
+    },
+    { "source": "/ko", "destination": "/", "permanent": true },
+    { "source": "/ko/", "destination": "/", "permanent": true }
+  ],
+  "rewrites": [
+    { "source": "/", "destination": "/ko/" },
+    {
+      "source": "/:page(privacy|terms|account-deletion|company|contact)/",
+      "destination": "/ko/:page/"
+    }
   ]
 }
