@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { PhonePreview } from "../phone-preview";
 import { StoreBadges } from "../store-badges";
@@ -25,15 +25,15 @@ export function Hero() {
             {t("description")}
           </p>
 
-          <div className="mt-10">
-            <StoreBadges />
-            <a
-              href="#waitlist"
-              className="group mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-text-muted transition hover:text-text"
-            >
-              {t("waitlistHint")}
-              <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-            </a>
+          <div className="mt-10 flex flex-col gap-4">
+            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+              <a href="#waitlist" className="group btn btn-primary">
+                {t("ctaPrimary")}
+                <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-0.5" />
+              </a>
+              <StoreBadges />
+            </div>
+            <p className="text-[13px] text-text-faint">{t("ctaNote")}</p>
           </div>
         </div>
 
@@ -41,15 +41,6 @@ export function Hero() {
           <PhonePreview />
         </div>
       </div>
-
-      <a
-        href="#voices"
-        aria-label={t("scrollHint")}
-        className="group absolute bottom-3 left-1/2 hidden -translate-x-1/2 flex-col items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-text-faint transition hover:text-text-muted md:flex"
-      >
-        {t("scrollHint")}
-        <ChevronDown className="h-4 w-4 animate-bounce text-text-faint group-hover:text-text-muted" />
-      </a>
     </section>
   );
 }

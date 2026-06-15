@@ -17,6 +17,8 @@
     "headline1": "좋아하는 목소리로",
     "headline2": "깨어나는 알람.",
     "description": "한 번만 등록하면, 원하는 문장을 그 목소리로 읽어주는 알람을 자유롭게 만들 수 있어요.",
+    "ctaPrimary": "베타 대기자로 등록",
+    "ctaNote": "무료로 시작 · 마케팅 메일 없음",
     "waitlistHint": "정식 출시 전, 베타 대기자로 먼저 등록하기",
     "scrollHint": "Scroll",
     "phone": {
@@ -200,12 +202,11 @@
     "panelLabel": "사이트 메뉴"
   },
   "store": {
-    "appStoreEyebrow": "Download on",
-    "appStoreLabel": "App Store",
-    "appStoreAria": "App Store에서 알람톡 받기",
     "googlePlayEyebrow": "GET IT ON",
     "googlePlayLabel": "Google Play",
-    "googlePlayAria": "Google Play에서 알람톡 받기"
+    "googlePlayAria": "Google Play에서 알람톡 받기",
+    "comingSoonEyebrow": "곧 출시",
+    "comingSoonAria": "Google Play 정식 출시 준비 중"
   },
   "contact": {
     "meta": {

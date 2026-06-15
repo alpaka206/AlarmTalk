@@ -17,6 +17,8 @@
     "headline1": "好きな声で",
     "headline2": "目覚めるアラーム。",
     "description": "一度登録すれば、好きな文章をその声で読み上げるアラームを自由に作れます。",
+    "ctaPrimary": "ベータ待機リストに登録",
+    "ctaNote": "無料で開始・マーケティングメールなし",
     "waitlistHint": "正式リリース前 — ベータ待機リストに登録",
     "scrollHint": "Scroll",
     "phone": {
@@ -200,12 +202,11 @@
     "panelLabel": "サイトメニュー"
   },
   "store": {
-    "appStoreEyebrow": "Download on",
-    "appStoreLabel": "App Store",
-    "appStoreAria": "App Storeでアラームトークを入手",
     "googlePlayEyebrow": "GET IT ON",
     "googlePlayLabel": "Google Play",
-    "googlePlayAria": "Google Playでアラームトークを入手"
+    "googlePlayAria": "Google Playでアラームトークを入手",
+    "comingSoonEyebrow": "近日公開",
+    "comingSoonAria": "Google Play 正式リリース準備中"
   },
   "contact": {
     "meta": {
