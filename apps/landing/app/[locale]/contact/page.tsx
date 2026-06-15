@@ -5,7 +5,7 @@ import { hasLocale, useTranslations } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
-import { SITE_NAME, SITE_URL } from "@/lib/site";
+import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -31,18 +31,13 @@ export async function generateMetadata({
     title,
     description,
     alternates: {
-      canonical: `/${locale}/contact`,
-      languages: {
-        ...Object.fromEntries(
-          routing.locales.map((l) => [l, `/${l}/contact`]),
-        ),
-        "x-default": `/${routing.defaultLocale}/contact`,
-      },
+      canonical: localePath(locale, "contact"),
+      languages: languageAlternates("contact"),
     },
     openGraph: {
       type: "website",
       locale: ogLocale,
-      url: `${SITE_URL}/${locale}/contact`,
+      url: localeUrl(locale, "contact"),
       siteName: SITE_NAME,
       title,
       description,

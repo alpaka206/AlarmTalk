@@ -1,3 +1,5 @@
+import { routing } from "@/i18n/routing";
+
 const DEFAULT_SITE_URL = "https://alarm-talk.com";
 
 // 환경변수에 경로가 섞여 들어오면(`https://…/ko` 등) sitemap/canonical 전체가
@@ -23,6 +25,34 @@ function resolveSiteUrl(raw: string | undefined): string {
 export const SITE_URL = resolveSiteUrl(process.env.NEXT_PUBLIC_SITE_URL);
 
 export const SITE_NAME = "AlarmTalk";
+
+/**
+ * 로케일·페이지에 대응하는 공개 경로(항상 trailing slash).
+ * 기본 로케일(ko)은 접두사 없이 루트로: localePath("ko") → "/", localePath("ko","privacy") → "/privacy/".
+ * 그 외: localePath("en","privacy") → "/en/privacy/".
+ * canonical/hreflang 은 이 경로를 그대로 쓰고, 절대 URL 이 필요하면 localeUrl 을 쓴다.
+ */
+export function localePath(locale: string, page = ""): string {
+  const seg = page ? `${page}/` : "";
+  return locale === routing.defaultLocale
+    ? `/${seg}`
+    : `/${locale}/${seg}`;
+}
+
+/** localePath 의 절대 URL(SITE_URL 접두). og:url, JSON-LD, sitemap 용. */
+export function localeUrl(locale: string, page = ""): string {
+  return `${SITE_URL}${localePath(locale, page)}`;
+}
+
+/** hreflang(alternates.languages) 맵 — ko/en/ja + x-default(ko). */
+export function languageAlternates(page = ""): Record<string, string> {
+  return {
+    ...Object.fromEntries(
+      routing.locales.map((l) => [l, localePath(l, page)]),
+    ),
+    "x-default": localePath(routing.defaultLocale, page),
+  };
+}
 
 export const STORE_LINKS = {
   appStore: process.env.NEXT_PUBLIC_APP_STORE_URL ?? "#",
