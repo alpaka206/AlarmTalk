@@ -1090,6 +1090,41 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "voucher_redemptions_kst" AS SELECT *, datetime("redeemed_at",'+9 hours') AS redeemed_at_kst FROM "voucher_redemptions"`,
     ],
   },
+  {
+    // 아담(101) 인사말(greeting) 문구 교체 — 옛 "샤갈!" 멘트를 무효화한다.
+    //  - VOICE_GREETING_OVERRIDES 의 아담 문구를 바꿨으므로, 옛 문구로 합성돼 있던
+    //    greeting 스톡 클립을 지워 다음 seed 때 새 문구로 재생성되게 한다 (#45 와 동일 패턴).
+    //  - findMissingStockTargets 가 (voice_profile_id|category|language) 로만 존재 여부를
+    //    보기 때문에, 행을 지워야 새 문구로 다시 만들어진다.
+    //  - 배포 후 POST /api/admin/seed-stock-clips 로 재생성한다 (reset 불필요 — 여기서 무효화됨).
+    //  - 이 greeting 을 참조하던 알람은 sound-only 로 떼어낸다.
+    id: 47,
+    name: 'refresh-adam-greeting-clip',
+    statements: [
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (
+          SELECT id FROM messages
+          WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+            AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+        )`,
+      `DELETE FROM message_library WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+      )`,
+      `DELETE FROM generated_audio_assets WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+      )`,
+      `DELETE FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
