@@ -218,8 +218,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var showOnboarding by mutableStateOf(false)
         internal set
 
+    private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
+
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
     var needsConsent by mutableStateOf(false)
+        internal set
+
+    // 동의 확인이 끝났는지(서버 응답 또는 로컬 캐시로 확정). false 동안엔 온보딩·홈을 막아
+    // 동의 화면이 다른 화면보다 항상 먼저 뜨도록 한다.
+    var consentChecked by mutableStateOf(false)
         internal set
 
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
@@ -271,6 +278,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
         }
         showOnboarding = false
+    }
+
+    // 이 기기에서 필수 동의를 마친 사용자 캐시. 재로그인/콜드스타트 시 서버 응답을 기다리는
+    // 로딩 없이 바로 통과시키되, 백그라운드 서버 재확인은 그대로 진행한다.
+    internal fun isConsentCachedDone(userId: String): Boolean {
+        if (userId.isBlank()) return false
+        val done = consentPrefs.getStringSet("consented_users", emptySet()) ?: emptySet()
+        return userId in done
+    }
+
+    internal fun rememberConsentDone(userId: String, done: Boolean) {
+        if (userId.isBlank()) return
+        val set = consentPrefs.getStringSet("consented_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+        if (done) set += userId else set -= userId
+        consentPrefs.edit().putStringSet("consented_users", set).apply()
     }
 
     fun loadReceivedAlarmBadgeState() {

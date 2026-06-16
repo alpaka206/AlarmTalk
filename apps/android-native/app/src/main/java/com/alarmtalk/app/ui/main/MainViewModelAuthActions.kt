@@ -214,6 +214,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         clearUserScopedRemoteState()
         authSession = null
         needsConsent = false
+        consentChecked = false
         pendingDeletion = false
         message = "로그아웃했어요"
         authBusy = false
@@ -459,16 +460,29 @@ internal fun MainViewModel.checkAppVersion() {
 // AlarmTalkApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
 internal fun MainViewModel.checkConsentStatus() {
     val session = authSession ?: return
+    val userId = session.user.id
+    // 이 기기에서 이미 동의를 마친 사용자는 로딩 없이 바로 통과시키고, 서버로 재확인만 한다.
+    // 처음 보는 사용자는 서버 응답이 올 때까지 consentChecked=false 로 두어, 동의 화면이
+    // 온보딩·홈보다 먼저 뜨도록 진입을 막는다.
+    if (isConsentCachedDone(userId)) {
+        needsConsent = false
+        consentChecked = true
+    } else {
+        consentChecked = false
+    }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
             api.consentStatus(authorization)
         }.onSuccess { status ->
             needsConsent = status.needsConsent
+            rememberConsentDone(userId, !status.needsConsent)
         }.onFailure { error ->
             Log.w(TAG, "Failed to check consent status", error)
-            needsConsent = false
+            // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
+            if (!isConsentCachedDone(userId)) needsConsent = false
         }
+        consentChecked = true
     }
 }
 
@@ -497,6 +511,8 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
             )
         }.onSuccess {
             needsConsent = false
+            consentChecked = true
+            rememberConsentDone(session.user.id, true)
             message = "동의가 완료됐어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)
