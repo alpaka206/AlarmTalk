@@ -621,7 +621,7 @@ private fun StockClipDropdown(
                 }
             }
             if (expanded) {
-                // 언어를 먼저 고르고 해당 언어 클립 하나만 보여준다.
+                // 언어를 먼저 고른 뒤, 해당 언어의 카테고리별 알람 클립을 모두 보여준다.
                 val langs = remember(clips) {
                     clips.mapNotNull { it.language }
                         .distinct()
@@ -636,7 +636,13 @@ private fun StockClipDropdown(
                         selectedClipLang ?: langs.firstOrNull { it == "ko" } ?: langs.firstOrNull().orEmpty(),
                     )
                 }
-                val activeClip = clips.firstOrNull { it.language == selectedLang } ?: clips.firstOrNull()
+                // 선택 언어의 클립을 앱 카테고리 순서(기상→점심→…)대로 노출한다.
+                // 언어 매칭이 하나도 없으면 최소한 첫 클립이라도 보여준다.
+                val activeClips = remember(clips, selectedLang) {
+                    clips.filter { it.language == selectedLang }
+                        .sortedBy { stockClipCategoryOrder(it.category) }
+                        .ifEmpty { clips.firstOrNull()?.let { listOf(it) } ?: emptyList() }
+                }
                 Column(
                     modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -650,13 +656,13 @@ private fun StockClipDropdown(
                             )
                         }
                     }
-                    if (activeClip != null) {
+                    activeClips.forEach { clip ->
                         StockClipRow(
-                            clip = activeClip,
-                            selected = activeClip.messageId == selectedStockMessageId,
-                            previewing = activeClip.messageId == previewingStockMessageId,
-                            onPreview = { onPreviewStockClip(activeClip) },
-                            onSelect = { onSelectStockClip(activeClip) },
+                            clip = clip,
+                            selected = clip.messageId == selectedStockMessageId,
+                            previewing = clip.messageId == previewingStockMessageId,
+                            onPreview = { onPreviewStockClip(clip) },
+                            onSelect = { onSelectStockClip(clip) },
                         )
                     }
                 }
@@ -692,6 +698,17 @@ private fun StockClipRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
+                stockClipCategoryLabel(clip.category)?.let { label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
                 Text(
                     text = clip.text,
                     style = MaterialTheme.typography.bodyMedium,
@@ -737,6 +754,16 @@ private fun stockClipLanguageLabel(language: String?): String = when (language) 
     "ja" -> "日本語"
     else -> language.orEmpty()
 }
+
+// 스톡 클립을 앱 카테고리 순서(TtsCategories)대로 정렬·표기한다. 알 수 없는
+// 카테고리(예: greeting)는 목록 끝으로 보내고 라벨은 숨긴다.
+private fun stockClipCategoryOrder(category: String?): Int {
+    val i = TtsCategories.indexOfFirst { (key, _) -> key == category }
+    return if (i < 0) Int.MAX_VALUE else i
+}
+
+private fun stockClipCategoryLabel(category: String?): String? =
+    TtsCategories.firstOrNull { (key, _) -> key == category }?.second
 
 @Composable
 private fun ManualVoiceMessageField(
