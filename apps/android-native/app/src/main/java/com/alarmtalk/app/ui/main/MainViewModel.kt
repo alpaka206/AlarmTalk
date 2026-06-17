@@ -218,8 +218,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var showOnboarding by mutableStateOf(false)
         internal set
 
+    private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
+
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
     var needsConsent by mutableStateOf(false)
+        internal set
+
+    // 동의 확인이 끝났는지(서버 응답 또는 로컬 캐시로 확정). false 동안엔 온보딩·홈을 막아
+    // 동의 화면이 다른 화면보다 항상 먼저 뜨도록 한다.
+    var consentChecked by mutableStateOf(false)
         internal set
 
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
@@ -273,6 +280,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showOnboarding = false
     }
 
+    // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
+    // 재로그인/콜드스타트 시 서버 응답을 기다리는 로딩 없이 바로 통과시키되, 백그라운드
+    // 서버 재확인은 그대로 진행한다. 정책 버전이 올라가면(개정) 옛 버전 동의 캐시는 폐기해,
+    // 이미 동의했던 사용자라도 재동의가 필요할 땐 캐시로 게이트를 건너뛰지 않게 한다.
+    internal fun isConsentCachedDone(userId: String): Boolean {
+        if (userId.isBlank()) return false
+        // 현재 정책 버전을 한 번도 확인한 적 없으면(=서버 확인 전) 캐시로 통과시키지 않는다.
+        if (cachedPolicyVersion() == null) return false
+        val done = consentPrefs.getStringSet("consented_users", emptySet()) ?: emptySet()
+        return userId in done
+    }
+
+    // 직전에 서버에서 확인한 현재 정책 버전. 아직 확인 전이면 null.
+    internal fun cachedPolicyVersion(): String? =
+        consentPrefs.getString("current_policy_version", null)
+
+    // done=true 면 userId 를 "policyVersion 동의 완료" 캐시에 넣고, false 면 뺀다.
+    // policyVersion 이 캐시된 현재 버전과 다르면(정책 개정) 동의 캐시를 비우고 새 버전으로 시작한다.
+    internal fun rememberConsentDone(userId: String, done: Boolean, policyVersion: String) {
+        if (userId.isBlank()) return
+        val editor = consentPrefs.edit()
+        val set = if (cachedPolicyVersion() != policyVersion) {
+            editor.putString("current_policy_version", policyVersion)
+            mutableSetOf()
+        } else {
+            consentPrefs.getStringSet("consented_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+        }
+        if (done) set += userId else set -= userId
+        editor.putStringSet("consented_users", set).apply()
+    }
+
     fun loadReceivedAlarmBadgeState() {
         val userId = authSession?.user?.id ?: run {
             receivedAlarmSeenAtMillis = 0L
@@ -319,6 +357,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
+        // 세션이 비워지는 모든 경로(로그아웃/만료/탈퇴)에서 동의 게이트 상태도 함께 초기화한다.
+        // 특히 consentChecked 가 옛 세션의 true 로 남으면, 다음 로그인에서 동의 확인 전에
+        // 온보딩·홈·하단바가 먼저 뜰 수 있어 반드시 false 로 되돌린다.
+        needsConsent = false
+        consentChecked = false
+        pendingDeletion = false
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {
