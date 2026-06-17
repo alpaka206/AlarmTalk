@@ -379,6 +379,7 @@ internal fun PlayModeChip(
 
 internal val TtsCategories = listOf(
     "morning" to "기상",
+    "medication" to "약",
     "lunch" to "점심 식사",
     "evening" to "퇴근",
     "night" to "밤",

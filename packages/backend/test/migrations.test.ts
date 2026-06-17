@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { migrations, type Migration } from '../src/lib/migrations';
+import { PRESETS } from '../src/data/presets';
 
 describe('migrations', () => {
   it('마이그레이션 ID가 순차적이고 고유하다', () => {
@@ -215,9 +216,22 @@ describe('migrations', () => {
     expect(all).toContain('idx_tts_presets_order');
     expect(
       m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length,
-    ).toBe(8);
+    ).toBe(PRESETS.length);
     expect(all).toContain("'morning'");
     expect(all).toContain("'love'");
+  });
+
+  it('migration #48 upserts refreshed morning/night/medication presets', () => {
+    const m = migrations.find((x) => x.id === 48);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain("'morning'");
+    expect(all).toContain("'night'");
+    expect(all).toContain("'medication'");
+    // 기존 행을 덮어쓰는 upsert 여야 한다 (초기 시드는 INSERT OR IGNORE 라 갱신 안 됨).
+    for (const stmt of m!.statements) {
+      expect(stmt).toContain('ON CONFLICT(category) DO UPDATE');
+    }
   });
 
   it('migration #35 adds Apple login identity storage', () => {

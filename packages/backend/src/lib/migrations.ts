@@ -25,6 +25,31 @@ const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
     )`;
 });
 
+// 이미 시드된 DB(INSERT OR IGNORE 라 갱신 안 됨)에 특정 카테고리의 멘트/라벨을 강제로
+// 덮어쓰거나 신규 카테고리를 추가할 때 쓰는 upsert. PRESETS 가 단일 진실 공급원.
+function ttsPresetUpsert(category: string): string {
+  const index = PRESETS.findIndex((p) => p.category === category);
+  const preset = PRESETS[index];
+  if (!preset) throw new Error(`ttsPresetUpsert: unknown preset category "${category}"`);
+  const messagesJson = JSON.stringify(preset.messages);
+  return `INSERT INTO tts_presets
+    (category, label, emoji, messages_json, sort_order, enabled)
+    VALUES (
+      ${sqlLiteral(preset.category)},
+      ${sqlLiteral(preset.label)},
+      ${sqlLiteral(preset.emoji)},
+      ${sqlLiteral(messagesJson)},
+      ${index},
+      1
+    )
+    ON CONFLICT(category) DO UPDATE SET
+      label = excluded.label,
+      emoji = excluded.emoji,
+      messages_json = excluded.messages_json,
+      enabled = excluded.enabled,
+      updated_at = datetime('now')`;
+}
+
 export const migrations: Migration[] = [
   {
     id: 1,
@@ -1123,6 +1148,18 @@ export const migrations: Migration[] = [
       `DELETE FROM messages
         WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
           AND voice_profile_id = '70000000-0000-4000-9000-000000000101'`,
+    ],
+  },
+  {
+    // 무료 프리셋 멘트 개편: 기상 멘트 교체(6개), 취침 멘트 교체(2개), 신규 '약(medication)'
+    // 카테고리 추가(2개). tts_presets 초기 시드는 INSERT OR IGNORE 라 기존 DB 에 반영되지
+    // 않으므로 여기서 upsert 로 강제 갱신한다. (PRESETS 가 단일 진실 공급원)
+    id: 48,
+    name: 'tts-preset-refresh-morning-night-medication',
+    statements: [
+      ttsPresetUpsert('morning'),
+      ttsPresetUpsert('night'),
+      ttsPresetUpsert('medication'),
     ],
   },
 ];

@@ -350,7 +350,7 @@ internal fun normalizedTtsCategory(category: String): String {
     val legacy = mapOf(
         "afternoon" to "cheer",
         "sleep" to "night",
-        "medicine" to "health",
+        "medicine" to "medication",
     )
     val resolved = legacy[category] ?: category
     return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory

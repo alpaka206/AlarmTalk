@@ -36,6 +36,7 @@ const TTS_CATEGORIES = [
   'evening',
   'night',
   'health',
+  'medication',
   'study',
   'cheer',
   'love',
@@ -45,7 +46,7 @@ const TTS_CATEGORIES = [
 const LEGACY_TTS_CATEGORY_ALIASES: Record<string, (typeof TTS_CATEGORIES)[number]> = {
   afternoon: 'cheer',
   sleep: 'night',
-  medicine: 'health',
+  medicine: 'medication',
 };
 const RANDOM_CONTEXTS = [
   'preset',
