@@ -475,14 +475,18 @@ internal fun MainViewModel.checkConsentStatus() {
         runCatching {
             api.consentStatus(authorization)
         }.onSuccess { status ->
+            // 응답을 기다리는 사이 로그아웃/계정전환이 일어났으면, 옛 사용자의 결과로
+            // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
+            if (authSession?.user?.id != userId) return@launch
             needsConsent = status.needsConsent
-            rememberConsentDone(userId, !status.needsConsent)
+            rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
         }.onFailure { error ->
+            if (authSession?.user?.id != userId) return@launch
             Log.w(TAG, "Failed to check consent status", error)
             // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
             if (!isConsentCachedDone(userId)) needsConsent = false
         }
-        consentChecked = true
+        if (authSession?.user?.id == userId) consentChecked = true
     }
 }
 
@@ -512,7 +516,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
         }.onSuccess {
             needsConsent = false
             consentChecked = true
-            rememberConsentDone(session.user.id, true)
+            // 방금 동의한 사용자를 현재 정책 버전 캐시에 기록한다. 현재 버전은 직전 checkConsentStatus
+            // 가 저장해 둔 값(미동의 상태로 이 화면에 온 이상 존재한다). 모르면 다음 콜드스타트에서
+            // 서버로 재확인하므로 굳이 캐시하지 않는다.
+            cachedPolicyVersion()?.let { rememberConsentDone(session.user.id, true, it) }
             message = "동의가 완료됐어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)

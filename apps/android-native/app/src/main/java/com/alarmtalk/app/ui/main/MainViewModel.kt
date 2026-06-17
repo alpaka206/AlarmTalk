@@ -280,19 +280,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showOnboarding = false
     }
 
-    // 이 기기에서 필수 동의를 마친 사용자 캐시. 재로그인/콜드스타트 시 서버 응답을 기다리는
-    // 로딩 없이 바로 통과시키되, 백그라운드 서버 재확인은 그대로 진행한다.
+    // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
+    // 재로그인/콜드스타트 시 서버 응답을 기다리는 로딩 없이 바로 통과시키되, 백그라운드
+    // 서버 재확인은 그대로 진행한다. 정책 버전이 올라가면(개정) 옛 버전 동의 캐시는 폐기해,
+    // 이미 동의했던 사용자라도 재동의가 필요할 땐 캐시로 게이트를 건너뛰지 않게 한다.
     internal fun isConsentCachedDone(userId: String): Boolean {
         if (userId.isBlank()) return false
+        // 현재 정책 버전을 한 번도 확인한 적 없으면(=서버 확인 전) 캐시로 통과시키지 않는다.
+        if (cachedPolicyVersion() == null) return false
         val done = consentPrefs.getStringSet("consented_users", emptySet()) ?: emptySet()
         return userId in done
     }
 
-    internal fun rememberConsentDone(userId: String, done: Boolean) {
+    // 직전에 서버에서 확인한 현재 정책 버전. 아직 확인 전이면 null.
+    internal fun cachedPolicyVersion(): String? =
+        consentPrefs.getString("current_policy_version", null)
+
+    // done=true 면 userId 를 "policyVersion 동의 완료" 캐시에 넣고, false 면 뺀다.
+    // policyVersion 이 캐시된 현재 버전과 다르면(정책 개정) 동의 캐시를 비우고 새 버전으로 시작한다.
+    internal fun rememberConsentDone(userId: String, done: Boolean, policyVersion: String) {
         if (userId.isBlank()) return
-        val set = consentPrefs.getStringSet("consented_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val editor = consentPrefs.edit()
+        val set = if (cachedPolicyVersion() != policyVersion) {
+            editor.putString("current_policy_version", policyVersion)
+            mutableSetOf()
+        } else {
+            consentPrefs.getStringSet("consented_users", emptySet())?.toMutableSet() ?: mutableSetOf()
+        }
         if (done) set += userId else set -= userId
-        consentPrefs.edit().putStringSet("consented_users", set).apply()
+        editor.putStringSet("consented_users", set).apply()
     }
 
     fun loadReceivedAlarmBadgeState() {
