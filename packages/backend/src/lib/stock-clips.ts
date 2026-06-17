@@ -86,7 +86,7 @@ export const STOCK_CLIP_PRESETS = [
 export const VOICE_GREETING_OVERRIDES: Record<string, string> = {
   // 아담(Adam) — 릴스/숏폼에서 유행한 들뜬 자기소개 톤. [excited] 태그로 딜리버리 고정
   // (Vertex autoTag 에 맡기지 않고 직접 박음. stripDeliveryTags 가 표시용에선 태그 제거).
-  pNInz6obpgDQGcFmaJgB: '[excited] 여러분! 저 됐어요! 저 알람톡 음성 됐어요! 앞으로 자주 봐요!',
+  pNInz6obpgDQGcFmaJgB: '[excited] 여러분! 저 됐어요! 알람톡 음성 됐어요! 반가워요!',
   // 미나·하준·소은 — 목소리 특징이나 알람 기능을 드러내지 않는 담백한 첫인사.
   aiUUgjHa4mpHf6UenZuf: '안녕하세요! 만나서 정말 반가워요. 앞으로 자주 봐요.',
   LKOcTG4J4tYTPR9DnLeM: '안녕하세요. 반가워요. 우리 앞으로 잘 지내봐요.',
@@ -179,21 +179,46 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
   return targets;
 }
 
+/** 스톡 클립 삭제 필터. 비우면 전체(reset), 채우면 특정 보이스(+카테고리)만. */
+export interface DeleteStockClipsFilter {
+  /** elevenlabs_voice_id 로 특정 시스템 보이스만 한정. */
+  elevenlabsVoiceId?: string;
+  /** category 로 한정 (예: 'greeting'). elevenlabsVoiceId 와 함께 쓰면 보이스의 해당 클립만. */
+  category?: string;
+}
+
 /**
- * 기존 스톡 클립 전체 삭제 (문구를 바꿔 재생성할 때 사용). messages·
- * generated_audio_assets·message_library 행과 R2 오브젝트를 정리하고,
- * 혹시 이 클립을 참조하던 알람은 sound-only 로 떼어낸다. dev 반복용.
+ * 스톡 클립 삭제 (문구를 바꿔 재생성할 때 사용). 필터가 없으면 전체(reset),
+ * 있으면 특정 보이스(+카테고리)만 지운다. messages·generated_audio_assets·
+ * message_library 행과 R2 오브젝트를 정리하고, 혹시 이 클립을 참조하던 알람은
+ * sound-only 로 떼어낸다. dev 반복용.
  */
-export async function deleteAllStockClips(db: Client, env: Env): Promise<number> {
+export async function deleteStockClips(
+  db: Client,
+  env: Env,
+  filter: DeleteStockClipsFilter = {},
+): Promise<number> {
+  const conditions = [
+    'COALESCE(m.is_preset, 0) = 1',
+    `m.voice_profile_id IN (
+       SELECT id FROM voice_profiles
+       WHERE COALESCE(is_system, 0) = 1
+       ${filter.elevenlabsVoiceId ? 'AND elevenlabs_voice_id = ?' : ''}
+     )`,
+  ];
+  const selectArgs: string[] = [];
+  if (filter.elevenlabsVoiceId) selectArgs.push(filter.elevenlabsVoiceId);
+  if (filter.category) {
+    conditions.push('m.category = ?');
+    selectArgs.push(filter.category);
+  }
+
   const rows = await db.execute({
     sql: `SELECT m.id AS message_id, ga.audio_object_key AS audio_object_key
           FROM messages m
           LEFT JOIN generated_audio_assets ga ON ga.message_id = m.id
-          WHERE COALESCE(m.is_preset, 0) = 1
-            AND m.voice_profile_id IN (
-              SELECT id FROM voice_profiles WHERE COALESCE(is_system, 0) = 1
-            )`,
-    args: [],
+          WHERE ${conditions.join(' AND ')}`,
+    args: selectArgs,
   });
   const ids = Array.from(new Set(rows.rows.map((r) => String(r.message_id))));
   if (ids.length === 0) return 0;
@@ -229,6 +254,11 @@ export async function deleteAllStockClips(db: Client, env: Env): Promise<number>
   });
   await db.execute({ sql: `DELETE FROM messages WHERE id IN (${ph})`, args: ids });
   return ids.length;
+}
+
+/** 전체 스톡 클립 삭제 (reset). deleteStockClips 의 무필터 호출. */
+export async function deleteAllStockClips(db: Client, env: Env): Promise<number> {
+  return deleteStockClips(db, env);
 }
 
 /** 표시용 텍스트에서 [tag] 마커 제거 (앱에는 태그 없이 보여준다). */

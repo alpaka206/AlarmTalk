@@ -133,12 +133,20 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
   try {
     const max = Math.min(Math.max(parseInt(c.req.query('max') || '2', 10) || 2, 1), 12);
     const reset = ['1', 'true', 'yes'].includes((c.req.query('reset') || '').toLowerCase());
-    const { findMissingStockTargets, generateStockClip, deleteAllStockClips } = await import(
-      './lib/stock-clips'
-    );
+    // 특정 보이스(+카테고리)만 재생성하고 싶을 때: ?voice=<elevenlabs_voice_id>&category=greeting
+    // 해당 클립만 지우면 findMissingStockTargets 가 그것만 다시 채운다 (다른 클립·알람 영향 없음).
+    const voice = (c.req.query('voice') || '').trim();
+    const category = (c.req.query('category') || '').trim();
+    const { findMissingStockTargets, generateStockClip, deleteAllStockClips, deleteStockClips } =
+      await import('./lib/stock-clips');
     const db = getDB(c.env);
     let deleted = 0;
-    if (reset) {
+    if (voice) {
+      deleted = await deleteStockClips(db, c.env, {
+        elevenlabsVoiceId: voice,
+        category: category || undefined,
+      });
+    } else if (reset) {
       deleted = await deleteAllStockClips(db, c.env);
     }
     const missing = await findMissingStockTargets(db);
