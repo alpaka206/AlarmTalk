@@ -24,6 +24,12 @@ export interface Env {
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
   /** Android 앱 패키지명 (Play 구독 검증 대상). */
   ANDROID_PACKAGE_NAME?: string;
+  /**
+   * RTDN(실시간 개발자 알림) Pub/Sub push 엔드포인트 검증용 비밀 토큰.
+   * Play Console→Pub/Sub→`POST /api/billing/google/rtdn?token=<이 값>` 으로 들어오며,
+   * 쿼리 token 이 이 값과 일치할 때만 처리한다. 미설정 시 RTDN 503.
+   */
+  GOOGLE_RTDN_VERIFICATION_TOKEN?: string;
   /** App Store Server API 자격 (Apple IAP 검증). 셋 다 있어야 활성화. */
   APPLE_ISSUER_ID?: string;
   APPLE_KEY_ID?: string;

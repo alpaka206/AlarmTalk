@@ -19,7 +19,7 @@ import { resolveUserPk } from './billing-helpers';
 //
 // 필요 secrets: GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, ANDROID_PACKAGE_NAME.
 
-const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
+export const ANDROID_PUBLISHER_SCOPE = 'https://www.googleapis.com/auth/androidpublisher';
 
 /**
  * Play Console 구독 상품 ID → plans.key 매핑.
@@ -57,14 +57,14 @@ function parseConfirmRequest(value: unknown): ConfirmRequest | { error: string }
   return { purchase_token: purchaseToken, product_id: productId, package_name: packageName };
 }
 
-interface SubscriptionV2Response {
+export interface SubscriptionV2Response {
   subscriptionState?: string;
   acknowledgementState?: string;
   lineItems?: Array<{ productId?: string; expiryTime?: string }>;
   latestOrderId?: string;
 }
 
-const ENTITLED_STATES = new Set([
+export const ENTITLED_STATES = new Set([
   'SUBSCRIPTION_STATE_ACTIVE',
   'SUBSCRIPTION_STATE_IN_GRACE_PERIOD',
 ]);
