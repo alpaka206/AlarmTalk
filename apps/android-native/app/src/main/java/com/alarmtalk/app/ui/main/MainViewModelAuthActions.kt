@@ -211,11 +211,8 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         authSessionStore.clear()
-        clearUserScopedRemoteState()
+        clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
         authSession = null
-        needsConsent = false
-        consentChecked = false
-        pendingDeletion = false
         message = "로그아웃했어요"
         authBusy = false
     }
@@ -499,6 +496,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
+    // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
+    // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
+    val policyVersion = cachedPolicyVersion()
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -506,20 +507,19 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
                     consents = listOf(
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
                     ),
                 ),
             )
         }.onSuccess {
             needsConsent = false
             consentChecked = true
-            // 방금 동의한 사용자를 현재 정책 버전 캐시에 기록한다. 현재 버전은 직전 checkConsentStatus
-            // 가 저장해 둔 값(미동의 상태로 이 화면에 온 이상 존재한다). 모르면 다음 콜드스타트에서
-            // 서버로 재확인하므로 굳이 캐시하지 않는다.
-            cachedPolicyVersion()?.let { rememberConsentDone(session.user.id, true, it) }
+            // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
+            // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
+            policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
             message = "동의가 완료됐어요"
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)

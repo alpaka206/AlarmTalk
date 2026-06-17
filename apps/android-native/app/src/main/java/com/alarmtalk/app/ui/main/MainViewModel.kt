@@ -357,6 +357,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         receivedAlarmSeenAtMillis = 0L
         registerEmailVerificationSentTo = null
         registerEmailVerified = null
+        // 세션이 비워지는 모든 경로(로그아웃/만료/탈퇴)에서 동의 게이트 상태도 함께 초기화한다.
+        // 특히 consentChecked 가 옛 세션의 true 로 남으면, 다음 로그인에서 동의 확인 전에
+        // 온보딩·홈·하단바가 먼저 뜰 수 있어 반드시 false 로 되돌린다.
+        needsConsent = false
+        consentChecked = false
+        pendingDeletion = false
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {
