@@ -389,6 +389,14 @@ internal val TtsCategories = listOf(
     "love" to "사랑",
 )
 
+// 무료 플랜에 노출하는 프리셋 카테고리(라벨). 라벨이 너무 많으면 피로하므로 보편적인 3종만
+// 두고, 같은 라벨이라도 매번 다른 프리셋 문구로 회전한다. 유료는 직접 생성이라 영향 없음.
+internal val FreePresetCategories = listOf(
+    "morning" to "기상",
+    "medication" to "약",
+    "night" to "취침",
+)
+
 internal val RandomPromptContexts = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값. 무료 플랜은 이것만 사용 가능.
     "preset" to "기본 문구",

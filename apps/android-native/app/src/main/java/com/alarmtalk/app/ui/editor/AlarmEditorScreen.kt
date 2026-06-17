@@ -871,6 +871,11 @@ internal fun AlarmEditorScreen(
                 editor.clearTtsMeta()
             }
             if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
+            // 무료는 라벨 3종(기상/약/취침)만 — 그 밖의 카테고리면 기본값(기상)으로 맞춘다.
+            if (FreePresetCategories.none { it.first == editor.voiceCategory }) {
+                editor.voiceCategory = FreePresetCategories.first().first
+                editor.clearTtsMeta()
+            }
         }
     }
 

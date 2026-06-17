@@ -186,19 +186,15 @@ internal fun VoiceAudioCard(
                         },
                     )
                 }
-                // 유료 플랜은 랜덤 문구/직접 입력으로 충분하므로 기본 제공(스톡) 음성은
-                // 무료 플랜에서만 노출한다.
+                // 무료 플랜: 라벨(기상/약/취침) 3종만 고르고, 같은 라벨이라도 매번 다른
+                // 프리셋 문구로 회전한다. 유료는 직접 입력/동적 문구로 충분해 노출하지 않는다.
                 if (freeVoiceTier) {
-                    StockClipDropdown(
-                        clips = stockClips.filter {
-                            it.voiceProfileId == editor.voiceProfileId &&
-                                it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
+                    FreePresetCategoryChips(
+                        selectedCategory = editor.voiceCategory,
+                        onSelect = { category ->
+                            editor.voiceCategory = category
+                            editor.clearTtsMeta()
                         },
-                        isSystemVoice = com.alarmtalk.app.data.isSystemVoiceId(editor.voiceProfileId),
-                        selectedStockMessageId = selectedStockMessageId,
-                        previewingStockMessageId = previewingStockMessageId,
-                        onPreviewStockClip = onPreviewStockClip,
-                        onSelectStockClip = onSelectStockClip,
                     )
                 }
                 if (selectedProfileUnavailable) {
@@ -743,6 +739,28 @@ private fun StockClipRow(
                 Spacer(Modifier.width(8.dp))
             }
         }
+    }
+}
+
+// 무료 플랜용 라벨 선택 칩 — 기상/약/취침 중 하나를 고르면 그 카테고리 프리셋 풀에서
+// 매 알람마다 랜덤으로 문구가 회전한다. (editor.voiceCategory 로 저장 → 발화 시 회전)
+@Composable
+private fun FreePresetCategoryChips(
+    selectedCategory: String?,
+    onSelect: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("알람 문구", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FreePresetCategories.forEach { (key, label) ->
+                FilterChip(
+                    selected = selectedCategory == key,
+                    onClick = { onSelect(key) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        MutedText("고른 종류에 맞춰 매번 다른 문구로 깨워드려요.")
     }
 }
 

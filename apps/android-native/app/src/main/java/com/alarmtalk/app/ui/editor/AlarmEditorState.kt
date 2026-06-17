@@ -258,8 +258,13 @@ internal class AlarmEditorState(
     fun activeVoiceLanguage(): String =
         if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 
-    fun activeVoiceCategory(): String =
-        if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
+    fun activeVoiceCategory(): String = when {
+        !voiceRandomPrompt -> "custom"
+        // 기본 프리셋은 사용자가 고른 카테고리(기상/약/취침 등)로 회전시킨다.
+        // 동적(날씨/운세/식사 등) 컨텍스트만 컨텍스트→카테고리 매핑을 사용한다.
+        normalizedRandomPromptContext(voiceRandomContext) == "preset" -> normalizedTtsCategory(voiceCategory)
+        else -> ttsCategoryForRandomContext(voiceRandomContext)
+    }
 
     fun shouldTranslateVoiceText(): Boolean =
         !voiceRandomPrompt && voiceTranslationEnabled && voiceLanguage != "ko"
