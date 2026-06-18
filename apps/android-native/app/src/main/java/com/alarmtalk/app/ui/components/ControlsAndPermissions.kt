@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -26,6 +28,8 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -45,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmEntity
@@ -197,6 +202,7 @@ internal fun PermissionRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AlarmRow(
     alarm: AlarmEntity,
@@ -209,6 +215,8 @@ internal fun AlarmRow(
     var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
     var dragOffsetPx by remember(alarm.id) { mutableStateOf(0f) }
     val warningText = alarmRowWarningText(alarm)
+    // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
+    var menuExpanded by remember(alarm.id) { mutableStateOf(false) }
     val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
     val currentOffsetPx = if (dragOffsetPx != 0f) dragOffsetPx else settledOffsetPx
     val deleteVisible = deleteRevealed || currentOffsetPx < -0.5f
@@ -243,16 +251,21 @@ internal fun AlarmRow(
         }
 
         Card(
-            onClick = {
-                if (!deleteRevealed) {
-                    onEditAlarm()
-                } else {
-                    deleteRevealed = false
-                    dragOffsetPx = 0f
-                }
-            },
             modifier = Modifier
                 .offset { IntOffset(currentOffsetPx.roundToInt(), 0) }
+                // 클릭=수정/펼침 해제, 길게 누르기=삭제 메뉴. 길게 누르기로 스와이프와 별개의
+                // 접근성 친화 삭제 경로를 제공한다.
+                .combinedClickable(
+                    onClick = {
+                        if (!deleteRevealed) {
+                            onEditAlarm()
+                        } else {
+                            deleteRevealed = false
+                            dragOffsetPx = 0f
+                        }
+                    },
+                    onLongClick = { menuExpanded = true },
+                )
                 .draggable(
                     state = dragState,
                     orientation = Orientation.Horizontal,
@@ -279,7 +292,9 @@ internal fun AlarmRow(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column {
+                    // weight(1f) 로 스위치 공간을 남기고 라벨이 가질 폭을 확정해야
+                    // 긴 알람 이름이 ellipsis(말줄임)로 잘려 행 레이아웃이 깨지지 않는다.
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "%02d:%02d".format(alarm.hour, alarm.minute),
                             style = MaterialTheme.typography.headlineLarge,
@@ -294,6 +309,9 @@ internal fun AlarmRow(
                             text = alarm.label,
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
+                            // 긴 이름이 여러 줄로 줄바꿈되며 행을 망가뜨리지 않도록 한 줄 말줄임 처리.
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = if (alarm.enabled) {
                                 MaterialTheme.colorScheme.onSurface
                             } else {
@@ -301,6 +319,7 @@ internal fun AlarmRow(
                             },
                         )
                     }
+                    Spacer(Modifier.width(8.dp))
                     AlarmTalkSwitch(
                         checked = alarm.enabled,
                         onCheckedChange = onToggleEnabled,
@@ -332,6 +351,26 @@ internal fun AlarmRow(
                     }
                 }
             }
+        }
+
+        // 길게 누르기로 열리는 접근성 대체 삭제 메뉴(스와이프 삭제는 그대로 유지).
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("삭제") },
+                onClick = {
+                    menuExpanded = false
+                    onDeleteAlarm()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = null,
+                    )
+                },
+            )
         }
     }
 }

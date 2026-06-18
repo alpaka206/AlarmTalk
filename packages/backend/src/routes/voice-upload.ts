@@ -212,6 +212,7 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     const diarized = await client.diarize(toArrayBuffer(stored.bytes), {
       mimeType: stored.meta.mimeType,
       fileName: stored.meta.originalName ?? upload.object_key,
+      numSpeakers: MAX_SPEAKERS,
     });
     result = {
       provider: 'elevenlabs',
@@ -355,6 +356,7 @@ voiceUpload.post('/diarize', async (c) => {
     const result = await client.diarize(audioBuffer, {
       mimeType: audioFile.type,
       fileName: audioFile.name,
+      numSpeakers: MAX_SPEAKERS,
     });
 
     return c.json({

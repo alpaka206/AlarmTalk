@@ -111,9 +111,13 @@ it('저장된 mp3 MIME 과 파일명을 ElevenLabs diarize 로 전달', async ()
   expect(mockDiarize).toHaveBeenCalledOnce();
   const [, optionsArg] = mockDiarize.mock.calls[0]! as [
     ArrayBuffer,
-    { mimeType?: string; fileName?: string },
+    { mimeType?: string; fileName?: string; numSpeakers?: number },
   ];
-  expect(optionsArg).toEqual({ mimeType: 'audio/mpeg', fileName: 'voice.mp3' });
+  expect(optionsArg).toEqual({
+    mimeType: 'audio/mpeg',
+    fileName: 'voice.mp3',
+    numSpeakers: 3,
+  });
 });
 
 /* ------------------------------------------------------------------ */

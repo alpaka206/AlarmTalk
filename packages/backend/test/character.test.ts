@@ -378,9 +378,8 @@ describe('POST /characters/xp', () => {
     mockDB.pushResult([charStreak6]);
     mockDB.pushResult([], 1);                   // UPDATE characters
     mockDB.pushResult([], 1);                   // INSERT xp_log
-    mockDB.pushResult([]);                      // milestone check: no existing achievement
+    mockDB.pushResult([], 1);                   // INSERT streak_achievements (조건부 예약, 성공)
     mockDB.pushResult([], 1);                   // UPDATE characters (milestone XP)
-    mockDB.pushResult([], 1);                   // INSERT streak_achievements
     mockDB.pushResult([], 1);                   // INSERT xp_log (milestone)
     mockDB.pushResult([], 1);                   // ensureStatsRow
     mockDB.pushResult([], 1);                   // UPDATE stats

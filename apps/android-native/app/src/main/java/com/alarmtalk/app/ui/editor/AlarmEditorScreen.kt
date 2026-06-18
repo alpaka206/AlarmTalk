@@ -430,8 +430,9 @@ internal fun AlarmEditorScreen(
                         random = false,
                     ),
                 )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -468,8 +469,9 @@ internal fun AlarmEditorScreen(
             previewingStockMessageId = clip.messageId
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -497,8 +499,9 @@ internal fun AlarmEditorScreen(
         scope.launch {
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -771,7 +774,6 @@ internal fun AlarmEditorScreen(
                         ).trimmedOrNull(),
                     ),
                 )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
                 val cacheKey = AlarmAudioStore.ttsCacheKey(
                     profileId = profileId,
@@ -781,6 +783,8 @@ internal fun AlarmEditorScreen(
                     serverCacheKey = response.cacheKey,
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,

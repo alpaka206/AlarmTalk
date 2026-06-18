@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import type { Env, AppEnv } from './types';
 import { authMiddleware } from './middleware/auth';
 import { loggerMiddleware } from './middleware/logger';
-import { rateLimitMiddleware } from './middleware/rateLimit';
+import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
@@ -193,6 +193,8 @@ app.get('/api/app/version', noStore, async (c) => {
 });
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
+// 무차별 대입 방어용 엄격 한도를 일반 한도와 별개 버킷으로 추가 적용한다.
+app.use('/api/auth/*', authRateLimitMiddleware);
 app.route('/api/auth', authRoutes);
 
 // 인증이 필요한 라우트들
@@ -315,9 +317,17 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     firing_ids: firing.map((a) => a.id),
   });
 
-  for (const alarm of firing) {
-    const targetUserId = alarm.target_user_id ?? alarm.user_id;
-    await sendAlarmPush(db, env, targetUserId, alarm.id, alarm.time);
+  // 알람 푸시를 순차(await in loop)로 보내면 동시에 울릴 알람이 많을 때 지연이
+  // 선형으로 쌓인다(마지막 사용자는 늦게 울림). Workers 의 subrequest 상한을
+  // 고려해 청크 단위로 병렬 전송하고, 한 건 실패가 나머지를 막지 않도록 allSettled.
+  const PUSH_CONCURRENCY = 10;
+  for (let i = 0; i < firing.length; i += PUSH_CONCURRENCY) {
+    const chunk = firing.slice(i, i + PUSH_CONCURRENCY);
+    await Promise.allSettled(
+      chunk.map((alarm) =>
+        sendAlarmPush(db, env, alarm.target_user_id ?? alarm.user_id, alarm.id, alarm.time),
+      ),
+    );
   }
 }
 

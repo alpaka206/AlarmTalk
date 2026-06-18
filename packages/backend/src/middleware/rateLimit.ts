@@ -43,30 +43,57 @@ function getKey(c: Context): string {
   return `ip:${ip}`;
 }
 
-export async function rateLimitMiddleware(c: Context, next: Next) {
-  cleanup();
+/**
+ * 레이트리밋 미들웨어 팩토리. prefix 로 버킷을 분리하면 동일 키(사용자/IP)에 대해
+ * 일반 한도와 별개의 더 엄격한 한도를 독립적으로 걸 수 있다.
+ */
+export function createRateLimitMiddleware(options?: {
+  windowMs?: number;
+  maxRequests?: number;
+  prefix?: string;
+}) {
+  const windowMs = options?.windowMs ?? WINDOW_MS;
+  const maxRequests = options?.maxRequests ?? MAX_REQUESTS;
+  const prefix = options?.prefix ?? '';
 
-  const key = getKey(c);
-  const now = Date.now();
-  let entry = store.get(key);
+  return async function rateLimit(c: Context, next: Next) {
+    cleanup();
 
-  if (!entry || entry.resetAt <= now) {
-    entry = { count: 0, resetAt: now + WINDOW_MS };
-    store.set(key, entry);
-  }
+    const key = `${prefix}${getKey(c)}`;
+    const now = Date.now();
+    let entry = store.get(key);
 
-  entry.count++;
+    if (!entry || entry.resetAt <= now) {
+      entry = { count: 0, resetAt: now + windowMs };
+      store.set(key, entry);
+    }
 
-  const remaining = Math.max(0, MAX_REQUESTS - entry.count);
-  c.header('X-RateLimit-Limit', String(MAX_REQUESTS));
-  c.header('X-RateLimit-Remaining', String(remaining));
-  c.header('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
+    entry.count++;
 
-  if (entry.count > MAX_REQUESTS) {
-    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
-    c.header('Retry-After', String(retryAfter));
-    return c.json({ error: 'Too many requests', retryAfter }, 429);
-  }
+    const remaining = Math.max(0, maxRequests - entry.count);
+    c.header('X-RateLimit-Limit', String(maxRequests));
+    c.header('X-RateLimit-Remaining', String(remaining));
+    c.header('X-RateLimit-Reset', String(Math.ceil(entry.resetAt / 1000)));
 
-  await next();
+    if (entry.count > maxRequests) {
+      const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+      c.header('Retry-After', String(retryAfter));
+      return c.json({ error: 'Too many requests', retryAfter }, 429);
+    }
+
+    await next();
+  };
 }
+
+export const rateLimitMiddleware = createRateLimitMiddleware();
+
+/**
+ * 인증 엔드포인트(로그인/회원가입/이메일코드/소셜) 전용 엄격 한도. 별도 prefix 버킷이라
+ * 일반 60/분 한도와 독립적으로 동작해 무차별 대입(brute-force)을 좁힌다.
+ * 정상 다단계 가입 흐름(코드요청→검증→가입)에 여유를 두되 비밀번호 추측은 제한.
+ */
+export const authRateLimitMiddleware = createRateLimitMiddleware({
+  windowMs: 60_000,
+  maxRequests: 15,
+  prefix: 'auth:',
+});

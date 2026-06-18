@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
@@ -168,6 +169,8 @@ class AlarmRepository(
         // 새 알람을 저장한 뒤에 충돌 알람을 삭제해야, 둘이 같은 audioCacheKey 를
         // 공유할 때 캐시 음성이 보존된다(deleteAlarm 의 참조 카운트가 새 알람을 포함).
         conflict?.let { deleteAlarm(it.id) }
+        // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
+        ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
         return alarm
     }
@@ -238,6 +241,8 @@ class AlarmRepository(
         alarmDao.upsert(updated)
         // 갱신본 저장 후 충돌 알람 삭제 — 공유 audioCacheKey 음성 보존.
         conflict?.let { deleteAlarm(it.id) }
+        // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
+        ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -275,6 +280,8 @@ class AlarmRepository(
 
         if (enabled) alarmScheduler.schedule(updated)
         alarmDao.upsert(updated)
+        // 활성화된 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
+        if (enabled) ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -650,6 +657,33 @@ class AlarmRepository(
         Instant.ofEpochMilli(nowMillis)
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
+
+    /**
+     * 반복되는 랜덤 문구(동적 음성) 알람인지 판별한다.
+     * AlarmDao.getRepeatingDynamicAlarmTalks 의 조건과 동일하게 맞춘다.
+     */
+    private fun isRepeatingDynamicVoiceAlarm(alarm: AlarmEntity): Boolean =
+        alarm.enabled &&
+            alarm.repeatDaysMask != 0 &&
+            alarm.voiceRandomPrompt &&
+            alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
+            !alarm.voiceProfileId.isNullOrBlank()
+
+    /**
+     * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시
+     * 이 메서드를 호출해 DynamicVoiceRefreshWorker(WorkManager)를 예약한다.
+     * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
+     */
+    private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
+        if (!isRepeatingDynamicVoiceAlarm(alarm)) return
+        runCatching {
+            DynamicVoiceRefreshScheduler.ensurePeriodic(context)
+            DynamicVoiceRefreshScheduler.runOnce(context)
+            Log.i(TAG, "Scheduled dynamic voice refresh for alarm id=${alarm.id}")
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to schedule dynamic voice refresh id=${alarm.id}", error)
+        }
+    }
 
     private fun shouldRefreshDynamicVoice(alarm: AlarmEntity, nowMillis: Long): Boolean {
         if (alarm.dynamicVoicePreparedForFireAtMillis == alarm.fireAtMillis) return false

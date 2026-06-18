@@ -72,12 +72,32 @@ object WeatherLocationProvider {
             ?: return "" to ""
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             suspendCancellableCoroutine { continuation ->
-                geocoder.getFromLocation(latitude, longitude, 1) { addresses ->
-                    val address = addresses.firstOrNull()
-                    val country = address?.countryName?.trim().orEmpty()
-                    val city = (address?.adminArea ?: address?.locality)?.trim().orEmpty()
-                    if (continuation.isActive) continuation.resume(country to city)
+                // 비동기 콜백은 성공/에러/빈 결과 어느 경로로도 continuation 을 정확히 한 번만
+                // 재개해야 한다. resumed 가드가 없으면 onError 미처리로 코루틴이 영영 멈춘다.
+                val resumed = java.util.concurrent.atomic.AtomicBoolean(false)
+                fun finish(result: Pair<String, String>) {
+                    if (resumed.compareAndSet(false, true) && continuation.isActive) {
+                        continuation.resume(result)
+                    }
                 }
+                geocoder.getFromLocation(
+                    latitude,
+                    longitude,
+                    1,
+                    object : Geocoder.GeocodeListener {
+                        override fun onGeocode(addresses: MutableList<android.location.Address>) {
+                            val address = addresses.firstOrNull()
+                            val country = address?.countryName?.trim().orEmpty()
+                            val city = (address?.adminArea ?: address?.locality)?.trim().orEmpty()
+                            finish(country to city)
+                        }
+
+                        override fun onError(errorMessage: String?) {
+                            // 에러 시에도 반드시 재개(null 대용으로 빈 값) — 미재개 시 무한 대기.
+                            finish("" to "")
+                        }
+                    },
+                )
             }
         } else {
             @Suppress("DEPRECATION")

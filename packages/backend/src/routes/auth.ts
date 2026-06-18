@@ -537,9 +537,11 @@ auth.post('/apple', async (c) => {
       expectedNonceHash,
     );
     const appleId = apple.sub;
-    const email = (apple.email || parsed.data.email || `${appleId}@apple.local`)
-      .toLowerCase()
-      .trim();
+    // 계정 연동에 쓰이는 email 은 *검증된 토큰*의 email 만 신뢰한다. 클라이언트가
+    // 보낸 parsed.data.email 을 fallback 으로 쓰면, Apple 토큰에 email 이 없는
+    // (재로그인) 경우 공격자가 피해자 이메일을 주입해 기존 계정에 연동·탈취할 수
+    // 있다. 토큰에 email 이 없으면 충돌하지 않는 placeholder 로 둔다.
+    const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
     const name = parsed.data.name ?? apple.name ?? '';
 
     const existing = await db.execute({

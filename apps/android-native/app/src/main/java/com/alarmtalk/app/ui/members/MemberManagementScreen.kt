@@ -235,7 +235,7 @@ internal fun MemberManagementScreen(
             )
         }
 
-        items(sortedMembers) { member ->
+        items(sortedMembers, key = { it.userId }) { member ->
             MemberRow(
                 member = member,
                 isMe = member.userId == currentUserId,

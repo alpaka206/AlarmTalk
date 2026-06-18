@@ -43,20 +43,21 @@ private data class OnboardingPage(
 )
 
 private val OnboardingPages = listOf(
+    // 큰 글꼴 배율에서 줄바꿈이 어색하게 깨지지 않도록 하드코딩된 \n 없이 자연 줄바꿈에 맡긴다.
     OnboardingPage(
         icon = Icons.Outlined.Mic,
         title = "좋아하는 목소리로 깨어나요",
-        description = "녹음하거나 만든 목소리로\n내 알람을 울릴 수 있어요.",
+        description = "녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.Group,
         title = "소중한 사람들과 함께",
-        description = "목소리와 메시지를 주고받고\n서로의 아침을 챙길 수 있어요.",
+        description = "목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.",
     ),
     OnboardingPage(
         icon = Icons.Outlined.AutoAwesome,
         title = "알람을 끄며 함께 성장해요",
-        description = "하루를 시작할 때마다\n캐릭터의 성장 기록이 쌓여요.",
+        description = "하루를 시작할 때마다 캐릭터의 성장 기록이 쌓여요.",
     ),
 )
 

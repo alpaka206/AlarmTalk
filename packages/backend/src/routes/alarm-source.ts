@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getFormFile } from '../lib/db-types';
+import { getDB } from '../lib/db';
 
 /**
  * Upload a short raw audio clip (≤30s) to be played directly when an alarm
@@ -93,6 +94,19 @@ alarmSource.post('/source', async (c) => {
       originalName: audioFile.name?.slice(0, 200) ?? '',
     },
   });
+
+  // 업로드를 추적 테이블에 기록한다. 이후 어떤 알람에도 연결되지 않은 채 TTL 이
+  // 지나면 retention 크론이 R2 삭제 큐에 적재해 고아 누수를 막는다(VF2).
+  try {
+    await getDB(c.env).execute({
+      sql: `INSERT OR IGNORE INTO raw_alarm_uploads (id, user_id, object_key)
+            VALUES (?, ?, ?)`,
+      args: [id, userId, objectKey],
+    });
+  } catch {
+    // 추적 행 기록 실패가 업로드 자체를 막진 않는다(클립은 이미 R2 에 저장됨).
+    // 최악의 경우 해당 클립이 추적되지 않을 뿐, 알람에 연결되면 정상 동작한다.
+  }
 
   // Return a relative URL the alarm-fire client can resolve against the
   // public bucket / signed-URL endpoint. Storing the bare object key keeps

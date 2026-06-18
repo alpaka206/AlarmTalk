@@ -51,7 +51,10 @@ internal fun AlarmTimePickerCard(
     modifier: Modifier = Modifier,
 ) {
     val currentOnTimeChange by rememberUpdatedState(onTimeChange)
-    val itemHeight = 72.dp
+    // 휠 글자는 sp(폰트 스케일에 비례)인데 행 높이가 고정 dp 면 큰 글꼴 설정에서 숫자가 잘린다.
+    // 시스템 폰트 스케일에 맞춰 행 높이를 키우되, 과도한 확대는 1.5배로 제한해 레이아웃 균형을 유지한다.
+    val fontScale = LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
+    val itemHeight = 72.dp * fontScale
     val verticalWheelPadding = 24.dp
     var workingHour by remember { mutableIntStateOf(hour) }
     var workingMinute by remember { mutableIntStateOf(minute) }
