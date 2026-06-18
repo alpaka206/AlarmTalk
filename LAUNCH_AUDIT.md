@@ -423,9 +423,12 @@
 - 코치마크 maxWidth / 시간피커 폰트스케일 / AlarmRow 말줄임+접근가능 삭제 / 온보딩 \n 제거
 - 데드코드 제거 / LazyColumn key / DateTimeFormatter 호이스팅 / base64 IO 디스패처 / filter remember
 
+### 2차 배치 (가족/캐릭터 레이스 + auth)
+- character /xp 논스 중복지급 차단(조건부 INSERT 예약), streak 마일스톤 중복 차단,
+  가족초대 좌석 초과 TOCTOU(원자적 조건부 INSERT) (`character-mutation.ts`, `family-invite.ts`)
+- auth 전용 엄격 레이트리밋(15/분, 별도 버킷)로 무차별 대입 방어 (`rateLimit.ts`, `index.ts`)
+
 ## ⏳ 남은 항목 (권장 다음 배치)
-- 가족 medium 레이스: character XP 중복지급, streak 보너스 중복, 가족초대 좌석 초과 TOCTOU (트랜잭션/멱등 필요)
-- auth 엔드포인트 레이트리밋 (medium)
 - `pending_deletion` fail-open: fail-closed 전환은 일시적 DB 오류 시 인증 장애 위험 → 신중한 결정 필요(의도적 보류)
 - 저위험 리팩토링: resolveUserPk 중복 통합, ownerIds 헬퍼, 공통 에러 헬퍼, family-alarm 중복
 - 대형 구조 리팩토링(AlarmTalkApp God-composable 분할, AlarmListScreen 70-param 분할, strings.xml i18n): 출시 직전 리스크로 보류
