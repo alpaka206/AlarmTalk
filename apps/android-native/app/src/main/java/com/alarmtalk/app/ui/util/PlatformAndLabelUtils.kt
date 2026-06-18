@@ -12,6 +12,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.compose.material.icons.outlined.Message
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmSyncStates
@@ -134,11 +135,11 @@ private fun parseBackendTimestamp(value: String): Instant? =
                 .toInstant()
         }.getOrNull()
 
-internal fun audioFileLabel(localAudioUri: String): String =
+internal fun audioFileLabel(context: Context, localAudioUri: String): String =
     Uri.parse(localAudioUri).lastPathSegment
         ?.substringAfterLast('/')
         ?.ifBlank { null }
-        ?: "음성 파일"
+        ?: context.getString(R.string.label_audio_file)
 
 internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     val uri = Uri.parse(audio.localAudioUri)
@@ -160,55 +161,67 @@ internal fun voiceUploadPart(audio: CachedAlarmAudio): MultipartBody.Part {
     )
 }
 
-internal fun repeatLabel(mask: Int): String {
-    if (mask == 0) return "반복 없음"
-    if (mask == 0b1111111) return "매일"
-    val days = listOf("일", "월", "화", "수", "목", "금", "토")
+internal fun repeatLabel(context: Context, mask: Int): String {
+    if (mask == 0) return context.getString(R.string.label_repeat_none)
+    if (mask == 0b1111111) return context.getString(R.string.label_repeat_daily)
+    val days = listOf(
+        context.getString(R.string.label_weekday_sun),
+        context.getString(R.string.label_weekday_mon),
+        context.getString(R.string.label_weekday_tue),
+        context.getString(R.string.label_weekday_wed),
+        context.getString(R.string.label_weekday_thu),
+        context.getString(R.string.label_weekday_fri),
+        context.getString(R.string.label_weekday_sat),
+    )
     return days.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.joinToString(", ")
 }
 
-internal fun snoozeRepeatLabel(limit: Int): String = when (limit) {
-    SnoozeRepeatLimits.THREE -> "3회"
-    SnoozeRepeatLimits.FIVE -> "5회"
-    SnoozeRepeatLimits.FOREVER -> "계속 반복"
-    else -> "${limit}회"
+internal fun snoozeRepeatLabel(context: Context, limit: Int): String = when (limit) {
+    SnoozeRepeatLimits.THREE -> context.getString(R.string.label_snooze_repeat_three)
+    SnoozeRepeatLimits.FIVE -> context.getString(R.string.label_snooze_repeat_five)
+    SnoozeRepeatLimits.FOREVER -> context.getString(R.string.label_snooze_repeat_forever)
+    else -> context.getString(R.string.label_snooze_repeat_count, limit)
 }
 
-internal fun snoozeListLabel(enabled: Boolean, minutes: Int, repeatLimit: Int): String? =
+internal fun snoozeListLabel(context: Context, enabled: Boolean, minutes: Int, repeatLimit: Int): String? =
     if (enabled) {
-        "${minutes}분 · ${snoozeRepeatLabel(repeatLimit)}"
+        context.getString(
+            R.string.label_snooze_list,
+            minutes,
+            snoozeRepeatLabel(context, repeatLimit),
+        )
     } else {
         null
     }
 
-internal fun vibrationLabel(pattern: String): String = when (pattern) {
-    VibrationPatterns.STRONG -> "Strong"
-    VibrationPatterns.SHORT -> "Short"
-    VibrationPatterns.MEDIUM -> "Medium"
-    VibrationPatterns.HEARTBEAT -> "Heartbeat"
-    VibrationPatterns.TICKTOCK -> "Ticktock"
-    VibrationPatterns.WALTZ -> "Waltz"
-    VibrationPatterns.ZIGZAG -> "Zig-zig-zig"
-    VibrationPatterns.OFF_BEAT -> "Off-beat"
-    VibrationPatterns.RIPPLE -> "Ripple"
-    VibrationPatterns.SIREN -> "Siren"
-    VibrationPatterns.NONE -> "Off"
-    else -> "Basic call"
+internal fun vibrationLabel(context: Context, pattern: String): String = when (pattern) {
+    VibrationPatterns.STRONG -> context.getString(R.string.label_vibration_strong)
+    VibrationPatterns.SHORT -> context.getString(R.string.label_vibration_short)
+    VibrationPatterns.MEDIUM -> context.getString(R.string.label_vibration_medium)
+    VibrationPatterns.HEARTBEAT -> context.getString(R.string.label_vibration_heartbeat)
+    VibrationPatterns.TICKTOCK -> context.getString(R.string.label_vibration_ticktock)
+    VibrationPatterns.WALTZ -> context.getString(R.string.label_vibration_waltz)
+    VibrationPatterns.ZIGZAG -> context.getString(R.string.label_vibration_zigzag)
+    VibrationPatterns.OFF_BEAT -> context.getString(R.string.label_vibration_off_beat)
+    VibrationPatterns.RIPPLE -> context.getString(R.string.label_vibration_ripple)
+    VibrationPatterns.SIREN -> context.getString(R.string.label_vibration_siren)
+    VibrationPatterns.NONE -> context.getString(R.string.label_vibration_off)
+    else -> context.getString(R.string.label_vibration_basic_call)
 }
 
-internal fun playModeLabel(mode: String): String = when (mode) {
-    AlarmPlayModes.VOICE_ONLY -> "목소리"
-    AlarmPlayModes.ALARM_VOICE -> "알람 + 목소리"
-    else -> "알람"
+internal fun playModeLabel(context: Context, mode: String): String = when (mode) {
+    AlarmPlayModes.VOICE_ONLY -> context.getString(R.string.label_play_mode_voice_only)
+    AlarmPlayModes.ALARM_VOICE -> context.getString(R.string.label_play_mode_alarm_voice)
+    else -> context.getString(R.string.label_play_mode_alarm)
 }
 
 internal fun userFacingError(error: Throwable, fallback: String): String =
     error.message?.takeIf { it.any { char -> char in '\uAC00'..'\uD7A3' } } ?: fallback
 
-internal fun providerLabel(provider: String?): String = when (provider) {
-    "google" -> "Google"
-    "app" -> "이메일"
-    else -> provider ?: "앱"
+internal fun providerLabel(context: Context, provider: String?): String = when (provider) {
+    "google" -> context.getString(R.string.label_provider_google)
+    "app" -> context.getString(R.string.label_provider_email)
+    else -> provider ?: context.getString(R.string.label_provider_app)
 }
 
 internal fun hasCoupleOrFamilyAccess(
@@ -264,60 +277,60 @@ internal fun familyAlarmRecipients(
     }
 }
 
-internal fun roleLabel(role: String?): String = when (role) {
-    "owner" -> "소유자"
-    "admin" -> "관리자"
-    "member" -> "멤버"
-    else -> role ?: "멤버"
+internal fun roleLabel(context: Context, role: String?): String = when (role) {
+    "owner" -> context.getString(R.string.label_role_owner)
+    "admin" -> context.getString(R.string.label_role_admin)
+    "member" -> context.getString(R.string.label_role_member)
+    else -> role ?: context.getString(R.string.label_role_member)
 }
 
-internal fun inviteStatusLabel(status: String?): String = when (status) {
-    "pending" -> "대기 중"
-    "used" -> "사용됨"
-    "expired" -> "만료됨"
-    "revoked" -> "취소됨"
-    else -> status ?: "알 수 없음"
+internal fun inviteStatusLabel(context: Context, status: String?): String = when (status) {
+    "pending" -> context.getString(R.string.label_invite_status_pending)
+    "used" -> context.getString(R.string.label_invite_status_used)
+    "expired" -> context.getString(R.string.label_invite_status_expired)
+    "revoked" -> context.getString(R.string.label_invite_status_revoked)
+    else -> status ?: context.getString(R.string.label_invite_status_unknown)
 }
 
-internal fun voiceStatusLabel(status: String?): String = when (status) {
-    null, "ready" -> "목소리 준비됨"
-    "processing" -> "목소리 준비 중"
-    "failed" -> "실패"
+internal fun voiceStatusLabel(context: Context, status: String?): String = when (status) {
+    null, "ready" -> context.getString(R.string.label_voice_status_ready)
+    "processing" -> context.getString(R.string.label_voice_status_processing)
+    "failed" -> context.getString(R.string.label_voice_status_failed)
     else -> status
 }
 
-internal fun planTypeLabel(type: String?): String = when (type) {
-    "free" -> "무료"
-    "personal", "individual", "plus" -> "개인"
-    "couple" -> "커플"
-    "family" -> "가족"
-    else -> type ?: "이용권"
+internal fun planTypeLabel(context: Context, type: String?): String = when (type) {
+    "free" -> context.getString(R.string.label_plan_type_free)
+    "personal", "individual", "plus" -> context.getString(R.string.label_plan_type_personal)
+    "couple" -> context.getString(R.string.label_plan_type_couple)
+    "family" -> context.getString(R.string.label_plan_type_family)
+    else -> type ?: context.getString(R.string.label_plan_type_default)
 }
 
-internal fun voucherStatusLabel(status: String?): String = when (status) {
-    "active", "issued" -> "사용 가능"
-    "pending" -> "대기 중"
-    "redeemed", "used" -> "사용됨"
-    "expired" -> "만료됨"
-    "revoked" -> "취소됨"
-    else -> status ?: "알 수 없음"
+internal fun voucherStatusLabel(context: Context, status: String?): String = when (status) {
+    "active", "issued" -> context.getString(R.string.label_voucher_status_available)
+    "pending" -> context.getString(R.string.label_voucher_status_pending)
+    "redeemed", "used" -> context.getString(R.string.label_voucher_status_used)
+    "expired" -> context.getString(R.string.label_voucher_status_expired)
+    "revoked" -> context.getString(R.string.label_voucher_status_revoked)
+    else -> status ?: context.getString(R.string.label_voucher_status_unknown)
 }
 
-internal fun codeTypeLabel(type: String): String = when (type) {
-    "voucher" -> "쿠폰"
-    "invite" -> "초대 코드"
-    "subscription" -> "이용권"
+internal fun codeTypeLabel(context: Context, type: String): String = when (type) {
+    "voucher" -> context.getString(R.string.label_code_type_voucher)
+    "invite" -> context.getString(R.string.label_code_type_invite)
+    "subscription" -> context.getString(R.string.label_code_type_subscription)
     else -> type
 }
 
-internal fun alarmStateLabel(state: String?): String = when (state) {
-    "scheduled" -> "예약됨"
-    "ringing" -> "울리는 중"
-    "snoozed" -> "다시 울림"
-    "dismissed" -> "종료됨"
-    "missed" -> "놓침"
-    "failed" -> "알람을 다시 예약하지 못했어요"
-    else -> state ?: "로컬"
+internal fun alarmStateLabel(context: Context, state: String?): String = when (state) {
+    "scheduled" -> context.getString(R.string.label_alarm_state_scheduled)
+    "ringing" -> context.getString(R.string.label_alarm_state_ringing)
+    "snoozed" -> context.getString(R.string.label_alarm_state_snoozed)
+    "dismissed" -> context.getString(R.string.label_alarm_state_dismissed)
+    "missed" -> context.getString(R.string.label_alarm_state_missed)
+    "failed" -> context.getString(R.string.label_alarm_state_failed)
+    else -> state ?: context.getString(R.string.label_alarm_state_local)
 }
 
 internal fun stageEmoji(stage: String): String = when (stage) {
@@ -327,16 +340,16 @@ internal fun stageEmoji(stage: String): String = when (stage) {
     else -> "\uD83C\uDF30"
 }
 
-internal fun stageLabel(stage: String): String = when (stage) {
-    "sprout" -> "새싹"
-    "tree" -> "나무"
-    "bloom" -> "꽃"
-    else -> "씨앗"
+internal fun stageLabel(context: Context, stage: String): String = when (stage) {
+    "sprout" -> context.getString(R.string.label_stage_sprout)
+    "tree" -> context.getString(R.string.label_stage_tree)
+    "bloom" -> context.getString(R.string.label_stage_bloom)
+    else -> context.getString(R.string.label_stage_seed)
 }
 
-internal fun syncStateLabel(state: String): String = when (state) {
-    AlarmSyncStates.SYNCED -> "동기화됨"
-    AlarmSyncStates.DIRTY -> "저장 대기"
-    AlarmSyncStates.FAILED -> "서버에 저장하지 못했어요"
-    else -> "기기에만 저장됨"
+internal fun syncStateLabel(context: Context, state: String): String = when (state) {
+    AlarmSyncStates.SYNCED -> context.getString(R.string.label_sync_state_synced)
+    AlarmSyncStates.DIRTY -> context.getString(R.string.label_sync_state_dirty)
+    AlarmSyncStates.FAILED -> context.getString(R.string.label_sync_state_failed)
+    else -> context.getString(R.string.label_sync_state_device_only)
 }

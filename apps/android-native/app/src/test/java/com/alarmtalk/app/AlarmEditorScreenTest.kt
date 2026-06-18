@@ -1,5 +1,7 @@
 package com.alarmtalk.app
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.google.gson.Gson
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
 import com.alarmtalk.app.network.FamilyGroupMember
@@ -9,8 +11,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// 라벨 함수가 Context(앱 리소스)에 의존하므로 Robolectric 으로 실행한다.
+// 기본 로케일(values/ = 한국어)이 로드되어 기존 한국어 단언이 그대로 통과한다.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "ko")
 class AlarmEditorScreenTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
     @Test
     fun familyAlarmQuietScheduleFallsBackWhenQuietWindowsIsNull() {
         val member = Gson().fromJson(
@@ -32,7 +43,7 @@ class AlarmEditorScreenTest {
             FamilyGroupMember::class.java,
         )
 
-        val label = familyAlarmQuietScheduleLabel(member)
+        val label = familyAlarmQuietScheduleLabel(context, member)
 
         assertTrue(label.contains("09:00-18:30"))
     }
@@ -104,19 +115,19 @@ class AlarmEditorScreenTest {
             .toInstant()
             .toEpochMilli()
 
-        assertEquals("오늘 - 5월 13일(수)", repeatSummaryLabel(8, 30, 0, nowMillis, zoneId))
-        assertEquals("내일 - 5월 14일(목)", repeatSummaryLabel(7, 30, 0, nowMillis, zoneId))
+        assertEquals("오늘 - 5월 13일(수)", repeatSummaryLabel(context, 8, 30, 0, nowMillis, zoneId))
+        assertEquals("내일 - 5월 14일(목)", repeatSummaryLabel(context, 7, 30, 0, nowMillis, zoneId))
         assertEquals(
             "매주 월, 화, 수",
-            repeatSummaryLabel(7, 30, (1 shl 1) or (1 shl 2) or (1 shl 3), nowMillis, zoneId),
+            repeatSummaryLabel(context, 7, 30, (1 shl 1) or (1 shl 2) or (1 shl 3), nowMillis, zoneId),
         )
     }
 
     @Test
     fun voicePreviewContentDescriptionShowsPlaybackState() {
-        assertEquals("미리듣기 재생", voicePreviewContentDescription(active = false, preparing = false))
-        assertEquals("미리듣기 준비 중", voicePreviewContentDescription(active = false, preparing = true))
-        assertEquals("미리듣기 일시정지", voicePreviewContentDescription(active = true, preparing = false))
+        assertEquals("미리듣기 재생", voicePreviewContentDescription(context, active = false, preparing = false))
+        assertEquals("미리듣기 준비 중", voicePreviewContentDescription(context, active = false, preparing = true))
+        assertEquals("미리듣기 일시정지", voicePreviewContentDescription(context, active = true, preparing = false))
     }
 
     private fun member(

@@ -29,11 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 
 /** 사용 가이드 한 단계의 내용. */
 data class UsageGuideStep(
@@ -85,7 +87,7 @@ fun UsageGuideOverlay(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    text = "가이드 ${index + 1} / ${steps.size}",
+                    text = stringResource(R.string.r3dlg_usage_guide_step_counter, index + 1, steps.size),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
@@ -148,10 +150,10 @@ fun UsageGuideOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onFinish) {
-                        Text("건너뛰기", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.r3dlg_usage_guide_skip), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Button(onClick = { if (isLast) onFinish() else index += 1 }) {
-                        Text(if (isLast) "시작하기" else "다음")
+                        Text(if (isLast) stringResource(R.string.r3dlg_usage_guide_start) else stringResource(R.string.r3dlg_usage_guide_next))
                     }
                 }
             }

@@ -32,6 +32,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -64,7 +65,7 @@ internal fun AlarmTalkBottomBar(
                 tab = NativeTab.Home,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Home,
-                label = "홈",
+                label = stringResource(R.string.r3app_bottom_tab_home),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -72,7 +73,7 @@ internal fun AlarmTalkBottomBar(
                 tab = NativeTab.Voices,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Mic,
-                label = "목소리",
+                label = stringResource(R.string.r3app_bottom_tab_voices),
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
             )
@@ -80,7 +81,7 @@ internal fun AlarmTalkBottomBar(
                 tab = NativeTab.Alarms,
                 selectedTab = selectedTab,
                 icon = Icons.Outlined.Alarm,
-                label = "알람",
+                label = stringResource(R.string.r3app_bottom_tab_alarms),
                 badgeCount = unreadAlarmCount,
                 onSelectTab = onSelectTab,
                 modifier = Modifier.weight(1f),
@@ -89,7 +90,7 @@ internal fun AlarmTalkBottomBar(
                 tab = NativeTab.Messages,
                 selectedTab = selectedTab,
                 icon = Icons.AutoMirrored.Outlined.Message,
-                label = "메시지",
+                label = stringResource(R.string.r3app_bottom_tab_messages),
                 badgeCount = unreadMessageCount,
                 locked = messagesLocked,
                 onSelectTab = onSelectTab,
@@ -180,7 +181,7 @@ internal fun AlarmTalkTabItem(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Lock,
-                        contentDescription = "잠금",
+                        contentDescription = stringResource(R.string.r3app_bottom_locked_desc),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(12.dp),
                     )

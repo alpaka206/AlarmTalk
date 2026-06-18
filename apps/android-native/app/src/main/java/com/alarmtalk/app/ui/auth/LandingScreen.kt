@@ -27,6 +27,7 @@ import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -124,7 +125,7 @@ internal fun LandingScreen(
                 WakerBrandHeader(colors = colors)
                 Spacer(Modifier.height(if (compact) 28.dp else 48.dp))
                 Text(
-                    text = "좋아하는 목소리로\n깨어나는 알람",
+                    text = stringResource(R.string.auth_landing_headline),
                     style = MaterialTheme.typography.displaySmall,
                     color = colors.text,
                     fontWeight = FontWeight.Bold,
@@ -235,7 +236,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        text = "내일 아침",
+                        text = stringResource(R.string.auth_landing_tomorrow_morning),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.muted,
                     )
@@ -257,7 +258,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (isPlaying) "미리듣기 일시정지" else "목소리 미리듣기",
+                            contentDescription = if (isPlaying) stringResource(R.string.auth_landing_preview_pause) else stringResource(R.string.auth_landing_preview_play),
                             modifier = Modifier.size(29.dp),
                         )
                     }
@@ -331,13 +332,13 @@ private fun LandingAuthPanel(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(
-                    text = "시작하기",
+                    text = stringResource(R.string.auth_landing_get_started),
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.text,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "로그인하면 목소리 알람을 만들 수 있어요.",
+                    text = stringResource(R.string.auth_landing_get_started_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.muted,
                 )
@@ -365,7 +366,7 @@ private fun LandingAuthPanel(
                         disabledContentColor = colors.accentText.copy(alpha = 0.45f),
                     ),
                 ) {
-                    Text("이메일로 로그인")
+                    Text(stringResource(R.string.auth_landing_login_with_email))
                 }
             }
             HorizontalDivider(color = colors.line)
@@ -377,7 +378,7 @@ private fun LandingAuthPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "처음 사용하시나요?",
+                    text = stringResource(R.string.auth_landing_first_time),
                     style = MaterialTheme.typography.bodyMedium,
                     color = colors.muted,
                 )
@@ -391,7 +392,7 @@ private fun LandingAuthPanel(
                         disabledContentColor = colors.muted.copy(alpha = 0.45f),
                     ),
                 ) {
-                    Text("계정 만들기")
+                    Text(stringResource(R.string.auth_create_account))
                 }
             }
         }

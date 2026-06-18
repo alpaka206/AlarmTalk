@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
+import com.alarmtalk.app.R
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -95,7 +97,7 @@ internal fun PermissionPanel(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                text = "권한",
+                text = stringResource(R.string.common_permission_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -107,35 +109,35 @@ internal fun PermissionPanel(
                 ) {
                     Icon(Icons.Outlined.ErrorOutline, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text("필요 권한 모두 허용")
+                    Text(stringResource(R.string.common_permission_allow_all))
                 }
             }
             PermissionRow(
                 icon = Icons.Outlined.Alarm,
-                label = "정확한 알람",
+                label = stringResource(R.string.common_permission_exact_alarm_label),
                 granted = permissions.exactAlarms,
-                actionLabel = "허용하기",
+                actionLabel = stringResource(R.string.common_permission_allow_action),
                 onAction = { onRequestPermission(PermissionTarget.ExactAlarms) },
             )
             PermissionRow(
                 icon = Icons.Outlined.Notifications,
-                label = "알림",
+                label = stringResource(R.string.common_permission_notifications_label),
                 granted = permissions.notifications,
-                actionLabel = "허용하기",
+                actionLabel = stringResource(R.string.common_permission_allow_action),
                 onAction = { onRequestPermission(PermissionTarget.Notifications) },
             )
             PermissionRow(
                 icon = Icons.Outlined.Fullscreen,
-                label = "전체 화면 알람",
+                label = stringResource(R.string.common_permission_full_screen_label),
                 granted = permissions.fullScreenIntent,
-                actionLabel = "허용하기",
+                actionLabel = stringResource(R.string.common_permission_allow_action),
                 onAction = { onRequestPermission(PermissionTarget.FullScreenIntent) },
             )
             PermissionRow(
                 icon = Icons.Outlined.Mic,
-                label = "마이크",
+                label = stringResource(R.string.common_permission_mic_label),
                 granted = permissions.recordAudio,
-                actionLabel = "허용하기",
+                actionLabel = stringResource(R.string.common_permission_allow_action),
                 onAction = { onRequestPermission(PermissionTarget.RecordAudio) },
             )
         }
@@ -180,7 +182,11 @@ internal fun PermissionRow(
             Column {
                 Text(text = label, fontWeight = FontWeight.Medium)
                 Text(
-                    text = if (granted) "허용됨" else "필요함",
+                    text = if (granted) {
+                        stringResource(R.string.common_permission_granted)
+                    } else {
+                        stringResource(R.string.common_permission_required)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (granted) {
                         MaterialTheme.colorScheme.primary
@@ -214,7 +220,7 @@ internal fun AlarmRow(
     val deleteWidthPx = with(LocalDensity.current) { deleteWidth.toPx() }
     var deleteRevealed by remember(alarm.id) { mutableStateOf(false) }
     var dragOffsetPx by remember(alarm.id) { mutableStateOf(0f) }
-    val warningText = alarmRowWarningText(alarm)
+    val warningText = alarmRowWarningResId(alarm)?.let { stringResource(it) }
     // 스와이프 외에 접근성(TalkBack/지체장애) 대체 삭제 수단: 길게 눌러 메뉴 노출.
     var menuExpanded by remember(alarm.id) { mutableStateOf(false) }
     val settledOffsetPx = if (deleteRevealed) -deleteWidthPx else 0f
@@ -359,7 +365,7 @@ internal fun AlarmRow(
             onDismissRequest = { menuExpanded = false },
         ) {
             DropdownMenuItem(
-                text = { Text("삭제") },
+                text = { Text(stringResource(R.string.common_alarm_delete)) },
                 onClick = {
                     menuExpanded = false
                     onDeleteAlarm()
@@ -375,9 +381,9 @@ internal fun AlarmRow(
     }
 }
 
-private fun alarmRowWarningText(alarm: AlarmEntity): String? = when {
-    alarm.state == AlarmStates.FAILED -> "알람을 다시 예약하지 못했어요. 시간을 확인하고 다시 저장해 주세요."
-    alarm.syncState == AlarmSyncStates.FAILED -> "서버에 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+private fun alarmRowWarningResId(alarm: AlarmEntity): Int? = when {
+    alarm.state == AlarmStates.FAILED -> R.string.common_alarm_warning_reschedule_failed
+    alarm.syncState == AlarmSyncStates.FAILED -> R.string.common_alarm_warning_sync_failed
     else -> null
 }
 
@@ -403,7 +409,7 @@ internal fun DeleteRevealButton(
                 tint = MaterialTheme.colorScheme.onError,
             )
             Text(
-                text = "삭제",
+                text = stringResource(R.string.common_alarm_delete),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onError,

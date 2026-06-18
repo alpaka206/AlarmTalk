@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -96,7 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             override fun onPurchasePending(productId: String) {
                 viewModelScope.launch {
                     billingBusy = false
-                    message = "결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요."
+                    message = getApplication<android.app.Application>().getString(R.string.r3misc_billing_purchase_pending)
                 }
             }
 
@@ -119,7 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             runCatching { authSessionStore.clear() }
             clearUserScopedRemoteState()
             authSession = null
-            message = "로그인이 만료되었어요. 다시 로그인해 주세요."
+            message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
         }
     }
 
@@ -386,7 +387,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestEditNickname() {
         if (authSession == null) {
-            message = "로그인 후 사용할 수 있어요"
+            message = getApplication<android.app.Application>().getString(R.string.r3misc_login_required_generic)
             return
         }
         nicknameEditDialogOpen = true
@@ -398,7 +399,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestDeleteAccount() {
         if (authSession == null) {
-            message = "로그인 후 사용할 수 있어요"
+            message = getApplication<android.app.Application>().getString(R.string.r3misc_login_required_generic)
             return
         }
         deleteAccountConfirmOpen = true

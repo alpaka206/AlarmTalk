@@ -47,9 +47,11 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import kotlin.math.roundToInt
 
 /**
@@ -232,7 +234,7 @@ private fun CoachMarkCard(
                 // 단계가 여럿일 때만 진행 표시(가이드 N / M). 한 단계뿐이면 점·카운터 모두 생략.
                 if (stepCount > 1) {
                     Text(
-                        text = "가이드 ${stepIndex + 1} / $stepCount",
+                        text = stringResource(R.string.r3dlg_usage_guide_step_counter, stepIndex + 1, stepCount),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -254,10 +256,10 @@ private fun CoachMarkCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onSkip) {
-                        Text("건너뛰기", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.r3dlg_usage_guide_skip), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Button(onClick = onNext) {
-                        Text(if (isLast) "시작하기" else "다음")
+                        Text(if (isLast) stringResource(R.string.r3dlg_usage_guide_start) else stringResource(R.string.r3dlg_usage_guide_next))
                     }
                 }
             }

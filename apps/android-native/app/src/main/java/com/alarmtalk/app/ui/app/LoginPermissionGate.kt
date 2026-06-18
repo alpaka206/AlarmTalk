@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -78,11 +79,11 @@ internal fun LoginPermissionGate(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
-                    title = "알람 권한을 허용해 주세요",
+                    title = stringResource(R.string.r3app_permission_gate_title),
                     onDismiss = { visible = false },
                 )
                 Text(
-                    text = "정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.",
+                    text = stringResource(R.string.r3app_permission_gate_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

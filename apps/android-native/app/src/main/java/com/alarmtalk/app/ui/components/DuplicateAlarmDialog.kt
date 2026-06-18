@@ -16,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -39,9 +40,9 @@ internal fun DuplicateAlarmDialog(
     val scheme = MaterialTheme.colorScheme
     val existing = existingLabel?.takeIf { it.isNotBlank() }
     val message = if (existing != null) {
-        "${timeLabel}에 이미 '${existing}' 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
+        stringResource(R.string.r3dlg_duplicate_alarm_message_named, timeLabel, existing)
     } else {
-        "${timeLabel}에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?"
+        stringResource(R.string.r3dlg_duplicate_alarm_message, timeLabel)
     }
     Dialog(
         onDismissRequest = onDismiss,
@@ -63,7 +64,7 @@ internal fun DuplicateAlarmDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ModalDialogTitle(
-                    title = "같은 시각 알람이 있어요",
+                    title = stringResource(R.string.r3dlg_duplicate_alarm_title),
                     onDismiss = onDismiss,
                 )
                 Text(
@@ -80,13 +81,13 @@ internal fun DuplicateAlarmDialog(
                             .height(48.dp),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text("교체하기", maxLines = 1)
+                        Text(stringResource(R.string.r3dlg_duplicate_alarm_replace), maxLines = 1)
                     }
                     TextButton(
                         onClick = onDismiss,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text("취소", maxLines = 1)
+                        Text(stringResource(R.string.r3dlg_duplicate_alarm_cancel), maxLines = 1)
                     }
                 }
             }

@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -52,11 +53,11 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.showGoogleSetupRequired() {
-    message = "현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요."
+    message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
 }
 
 internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
-    message = reason ?: "Google 로그인에 실패했어요"
+    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
 }
 
 internal fun MainViewModel.clearMessage() {

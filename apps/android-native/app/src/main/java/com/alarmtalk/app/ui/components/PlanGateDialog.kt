@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -26,8 +27,8 @@ internal fun PlanGateDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "이용권이 필요한 기능이에요",
-    confirmLabel: String = "이용권 보기",
+    title: String = stringResource(R.string.r3dlg_plan_gate_title),
+    confirmLabel: String = stringResource(R.string.r3dlg_plan_gate_confirm),
 ) {
     val scheme = MaterialTheme.colorScheme
     Dialog(

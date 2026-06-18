@@ -39,11 +39,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingPlan
 import com.alarmtalk.app.network.BillingPlanSummary
@@ -85,45 +87,60 @@ internal fun SubscriptionPanel(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    val options = remember {
-        listOf(
-            SubscriptionPlanOption(
-                key = "free",
-                name = "무료",
-                price = "0원",
-                description = "기본 알람을 먼저 써볼 수 있어요.",
-                features = listOf("일반 알람", "기본 캐릭터 성장"),
+    val options = listOf(
+        SubscriptionPlanOption(
+            key = "free",
+            name = stringResource(R.string.billing_plan_free_name),
+            price = stringResource(R.string.billing_plan_free_price),
+            description = stringResource(R.string.billing_plan_free_description),
+            features = listOf(
+                stringResource(R.string.billing_plan_free_feature_basic_alarm),
+                stringResource(R.string.billing_plan_free_feature_basic_growth),
             ),
-            SubscriptionPlanOption(
-                key = "personal",
-                name = "개인",
-                price = "월 4,900원",
-                description = "내가 좋아하는 목소리로 알람을 만들어요.",
-                features = listOf("목소리", "음성 메시지", "개인 이용권 선물"),
+        ),
+        SubscriptionPlanOption(
+            key = "personal",
+            name = stringResource(R.string.billing_plan_personal_name),
+            price = stringResource(R.string.billing_plan_personal_price),
+            description = stringResource(R.string.billing_plan_personal_description),
+            features = listOf(
+                stringResource(R.string.billing_plan_personal_feature_voice),
+                stringResource(R.string.billing_plan_personal_feature_voice_message),
+                stringResource(R.string.billing_plan_personal_feature_gift),
             ),
-            SubscriptionPlanOption(
-                key = "couple",
-                name = "커플",
-                price = "월 7,900원",
-                description = "둘이 서로의 목소리로 알람을 설정해요.",
-                features = listOf("음성 공유", "메시지", "최대 2명"),
+        ),
+        SubscriptionPlanOption(
+            key = "couple",
+            name = stringResource(R.string.billing_plan_couple_name),
+            price = stringResource(R.string.billing_plan_couple_price),
+            description = stringResource(R.string.billing_plan_couple_description),
+            features = listOf(
+                stringResource(R.string.billing_plan_couple_feature_voice_share),
+                stringResource(R.string.billing_plan_couple_feature_message),
+                stringResource(R.string.billing_plan_couple_feature_max_two),
             ),
-            SubscriptionPlanOption(
-                key = "family",
-                name = "가족",
-                price = "월 9,900원",
-                description = "가족이 함께 목소리 알람을 공유해요.",
-                features = listOf("음성 공유", "메시지", "최대 6명"),
+        ),
+        SubscriptionPlanOption(
+            key = "family",
+            name = stringResource(R.string.billing_plan_family_name),
+            price = stringResource(R.string.billing_plan_family_price),
+            description = stringResource(R.string.billing_plan_family_description),
+            features = listOf(
+                stringResource(R.string.billing_plan_family_feature_voice_share),
+                stringResource(R.string.billing_plan_family_feature_message),
+                stringResource(R.string.billing_plan_family_feature_max_six),
             ),
-        )
-    }
+        ),
+    )
     fun shareVoucher(voucher: VoucherItem) {
         clipboard.setText(AnnotatedString(voucher.code))
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, voucher.code)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "이용권 코드 공유"))
+        context.startActivity(
+            Intent.createChooser(sendIntent, context.getString(R.string.billing_voucher_share_chooser_title)),
+        )
     }
     fun openVoucherShare(vouchersForPlan: List<VoucherItem>) {
         if (vouchersForPlan.isNotEmpty()) {
@@ -162,7 +179,7 @@ internal fun SubscriptionPanel(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                text = "이용권 선택",
+                text = stringResource(R.string.billing_plan_select_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
@@ -196,7 +213,11 @@ internal fun SubscriptionPanel(
                 colors = wakerOutlinedButtonColors(),
             ) {
                 Text(
-                    text = if (isSharedMember) "공유 이용권에서 나가기" else "이용권 해지",
+                    text = if (isSharedMember) {
+                        stringResource(R.string.billing_leave_shared_pass)
+                    } else {
+                        stringResource(R.string.billing_cancel_pass)
+                    },
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -253,12 +274,12 @@ internal fun SubscriptionPanel(
 
     if (showLeaveDialog && sharedGroupId != null) {
         BillingActionDialog(
-            title = "공유 이용권에서 나가기",
-            description = "나가면 무료 이용권으로 전환돼요. 다시 들어오려면 새 초대 코드가 필요해요.",
+            title = stringResource(R.string.billing_leave_shared_pass),
+            description = stringResource(R.string.billing_leave_shared_pass_description),
             onDismiss = { showLeaveDialog = false },
         ) {
             BillingDialogButton(
-                label = "나가기",
+                label = stringResource(R.string.billing_leave_button),
                 primary = true,
                 destructive = true,
                 onClick = {
@@ -283,16 +304,24 @@ internal fun SubscriptionPanel(
     checkoutTarget?.let { selection ->
         val target = selection.option
         BillingActionDialog(
-            title = if (selection.gift) "${target.name} 이용권 선물하기" else "${target.name} 이용권 적용",
-            description = if (selection.gift) {
-                "받는 사람이 직접 등록할 수 있는 개인 이용권 코드를 만들어요. 내 이용권은 그대로 유지돼요."
+            title = if (selection.gift) {
+                stringResource(R.string.billing_checkout_gift_title, target.name)
             } else {
-                "${target.name} 이용권으로 바로 적용할까요?"
+                stringResource(R.string.billing_checkout_apply_title, target.name)
+            },
+            description = if (selection.gift) {
+                stringResource(R.string.billing_checkout_gift_description)
+            } else {
+                stringResource(R.string.billing_checkout_apply_description, target.name)
             },
             onDismiss = { checkoutTarget = null },
         ) {
             BillingDialogButton(
-                label = if (selection.gift) "선물하기" else "적용하기",
+                label = if (selection.gift) {
+                    stringResource(R.string.billing_gift_button)
+                } else {
+                    stringResource(R.string.billing_apply_button)
+                },
                 primary = true,
                 onClick = {
                     checkoutTarget = null
@@ -304,22 +333,22 @@ internal fun SubscriptionPanel(
 
     if (shareTarget.isNotEmpty()) {
         BillingActionDialog(
-            title = "공유할 이용권 선택",
-            description = "아직 등록되지 않은 코드를 골라 바로 공유할 수 있어요.",
+            title = stringResource(R.string.billing_share_voucher_select_title),
+            description = stringResource(R.string.billing_share_voucher_select_description),
             onDismiss = { shareTarget = emptyList() },
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 shareTarget.forEach { voucher ->
                     val issuedAtLabel = formatVoucherIssuedAt(voucher.issuedAt)
                     val subtitle = if (issuedAtLabel != null) {
-                        "미등록 · 발급일 $issuedAtLabel"
+                        stringResource(R.string.billing_voucher_unregistered_with_date, issuedAtLabel)
                     } else {
-                        "미등록"
+                        stringResource(R.string.billing_voucher_unregistered)
                     }
                     CompactActionRow(
                         title = voucher.code,
                         subtitle = subtitle,
-                        actionLabel = "공유",
+                        actionLabel = stringResource(R.string.billing_share_button),
                         enabled = true,
                         onAction = {
                             shareTarget = emptyList()
@@ -345,19 +374,19 @@ private fun PlayPurchaseDialog(
     onUseTestCode: (() -> Unit)?,
 ) {
     BillingActionDialog(
-        title = "${target.name} 이용권 구독",
-        description = "Google Play 결제로 구독을 시작해요. 결제 금액과 갱신 주기는 결제 화면에서 확인할 수 있어요.",
+        title = stringResource(R.string.billing_play_purchase_title, target.name),
+        description = stringResource(R.string.billing_play_purchase_description),
         onDismiss = onDismiss,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             BillingDialogButton(
-                label = "월간 구독",
+                label = stringResource(R.string.billing_monthly_subscription),
                 primary = true,
                 onClick = { if (!busy) onPurchase() },
             )
             if (onUseTestCode != null) {
                 BillingDialogButton(
-                    label = "테스트 코드 등록 (개발용)",
+                    label = stringResource(R.string.billing_register_test_code_dev),
                     primary = false,
                     onClick = onUseTestCode,
                 )
@@ -385,8 +414,8 @@ private fun TestInviteCodeDialog(
     val maxCodeLength = if (prefix == "GIFT") 19 else 18
 
     BillingActionDialog(
-        title = "${target.name} 테스트 코드 등록",
-        description = "테스트 버전이므로 초대 코드를 등록해주세요.",
+        title = stringResource(R.string.billing_test_invite_code_title, target.name),
+        description = stringResource(R.string.billing_test_invite_code_description),
         onDismiss = onDismiss,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -406,7 +435,7 @@ private fun TestInviteCodeDialog(
                 modifier = Modifier.fillMaxWidth(),
             )
             BillingDialogButton(
-                label = "코드 등록",
+                label = stringResource(R.string.billing_register_code_button),
                 primary = true,
                 onClick = {
                     val trimmed = code.trim()
@@ -468,7 +497,7 @@ private fun BillingActionDialog(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
-                            contentDescription = "닫기",
+                            contentDescription = stringResource(R.string.billing_close),
                         )
                     }
                 }
@@ -534,24 +563,37 @@ private fun CurrentPassSummaryCard(
     cancelScheduled: Boolean,
     isSharedMember: Boolean,
 ) {
+    val context = LocalContext.current
     val planKey = currentPlan?.key ?: "free"
-    val planName = passPlanName(planKey = planKey, fallback = currentPlan?.name)
+    val planName = passPlanName(context, planKey = planKey, fallback = currentPlan?.name)
     val expiresAt = formatPassDate(subscription?.expiresAt)
     val statusText = when {
-        isSharedMember -> "공유 이용권에 참여 중이에요."
+        isSharedMember -> stringResource(R.string.billing_status_shared_member)
         cancelScheduled && nextPlan != null -> {
-            val nextName = passPlanName(nextPlan.key, nextPlan.name)
-            if (expiresAt != null) "$expiresAt 이후 $nextName 이용권으로 변경돼요." else "$nextName 이용권으로 변경 예정이에요."
+            val nextName = passPlanName(context, nextPlan.key, nextPlan.name)
+            if (expiresAt != null) {
+                stringResource(R.string.billing_status_change_to_next_after_date, expiresAt, nextName)
+            } else {
+                stringResource(R.string.billing_status_change_to_next_scheduled, nextName)
+            }
         }
         cancelScheduled -> {
-            if (expiresAt != null) "${expiresAt}까지 사용 후 종료돼요." else "현재 이용권이 종료 예정이에요."
+            if (expiresAt != null) {
+                stringResource(R.string.billing_status_end_after_date, expiresAt)
+            } else {
+                stringResource(R.string.billing_status_end_scheduled)
+            }
         }
-        hasActive && expiresAt != null -> "${expiresAt}까지 사용할 수 있어요."
-        hasActive -> "사용 중인 이용권이에요."
-        else -> "기본 알람은 무료로 사용할 수 있어요."
+        hasActive && expiresAt != null -> stringResource(R.string.billing_status_available_until, expiresAt)
+        hasActive -> stringResource(R.string.billing_status_in_use)
+        else -> stringResource(R.string.billing_status_free_basic)
     }
-    val priceText = currentPlan?.priceKrw?.takeIf { it > 0 }?.let { "월 ${it.formatKrw()}원" } ?: "0원"
-    val capacityText = currentPlan?.maxMembers?.takeIf { it > 1 }?.let { "최대 ${it}명" } ?: "개인 사용"
+    val priceText = currentPlan?.priceKrw?.takeIf { it > 0 }
+        ?.let { stringResource(R.string.billing_price_monthly, it.formatKrw()) }
+        ?: stringResource(R.string.billing_price_zero)
+    val capacityText = currentPlan?.maxMembers?.takeIf { it > 1 }
+        ?.let { stringResource(R.string.billing_capacity_max_members, it) }
+        ?: stringResource(R.string.billing_capacity_personal)
 
     OutlinedCard(
         shape = WakerCardShape,
@@ -566,7 +608,7 @@ private fun CurrentPassSummaryCard(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "현재 이용권",
+                    text = stringResource(R.string.billing_current_pass_label),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -694,7 +736,7 @@ internal fun SubscriptionPlanCard(
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ) {
                         Text(
-                            text = "현재 이용권",
+                            text = stringResource(R.string.billing_current_pass_label),
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
@@ -721,7 +763,13 @@ internal fun SubscriptionPlanCard(
                         modifier = Modifier.weight(1f),
                         shape = WakerButtonShape,
                     ) {
-                        Text(if (hasActiveSubscription) "이용권 변경" else "선택하기")
+                        Text(
+                            if (hasActiveSubscription) {
+                                stringResource(R.string.billing_change_pass)
+                            } else {
+                                stringResource(R.string.billing_select_button)
+                            },
+                        )
                     }
                     if (option.key == "personal") {
                         OutlinedButton(
@@ -732,7 +780,7 @@ internal fun SubscriptionPlanCard(
                             border = wakerCardBorder(),
                             colors = wakerOutlinedButtonColors(),
                         ) {
-                            Text("선물하기")
+                            Text(stringResource(R.string.billing_gift_button))
                         }
                     }
                 }
@@ -746,7 +794,7 @@ internal fun SubscriptionPlanCard(
                     border = wakerCardBorder(),
                     colors = wakerOutlinedButtonColors(),
                 ) {
-                    Text("개인 이용권 선물하기")
+                    Text(stringResource(R.string.billing_gift_personal_pass))
                 }
             }
             if (vouchers.isNotEmpty()) {
@@ -758,7 +806,7 @@ internal fun SubscriptionPlanCard(
                     border = wakerCardBorder(),
                     colors = wakerOutlinedButtonColors(),
                 ) {
-                    Text("이용권 코드 공유")
+                    Text(stringResource(R.string.billing_share_voucher_code))
                 }
             }
         }
@@ -782,30 +830,26 @@ private fun CancelSubscriptionDialog(
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
     val endDate = formatPassShortDate(subscription?.expiresAt)
-    val description = if (endDate != null) {
-        "종료일인 ${endDate}까지 이용권을 유지하거나, 지금 바로 무료 이용권으로 전환할 수 있어요."
-    } else {
-        "해지 시점을 선택해 주세요. 목소리와 알람 기록은 보존되며, 다시 이용권을 적용하면 그대로 사용할 수 있어요."
-    }
     val finalDescription = if (endDate != null) {
-        "종료일인 ${endDate}까지 이용권을 유지하거나, 지금 바로 무료 이용권으로 전환할 수 있어요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+        stringResource(R.string.billing_cancel_description_with_date, endDate)
     } else {
-        "해지 시점을 선택해 주세요. 무료로 전환되면 만든 목소리, 관련 메시지, 목소리 알람이 삭제되고 일반 알람만 사용할 수 있어요."
+        stringResource(R.string.billing_cancel_description_no_date)
     }
     BillingActionDialog(
-        title = "이용권 해지",
+        title = stringResource(R.string.billing_cancel_pass),
         description = finalDescription,
         onDismiss = onDismiss,
     ) {
         BillingDialogButtonRow {
             BillingDialogButton(
-                label = endDate?.let { "${it}에 해지" } ?: "종료일에 해지",
+                label = endDate?.let { stringResource(R.string.billing_cancel_at_date, it) }
+                    ?: stringResource(R.string.billing_cancel_at_end_date),
                 primary = false,
                 modifier = Modifier.weight(1f),
                 onClick = { onConfirm(true) },
             )
             BillingDialogButton(
-                label = "지금 해지하기",
+                label = stringResource(R.string.billing_cancel_now),
                 primary = true,
                 destructive = true,
                 modifier = Modifier.weight(1f),
@@ -822,19 +866,19 @@ private fun ChangePlanDialog(
     onConfirm: (atPeriodEnd: Boolean) -> Unit,
 ) {
     BillingActionDialog(
-        title = "${target.name} 이용권으로 변경",
-        description = "즉시 변경하면 현재 이용권은 바로 종료되고 새 이용권이 적용돼요. 종료일 변경은 현재 기간이 끝난 뒤 적용돼요.",
+        title = stringResource(R.string.billing_change_plan_title, target.name),
+        description = stringResource(R.string.billing_change_plan_description),
         onDismiss = onDismiss,
     ) {
         BillingDialogButtonRow {
             BillingDialogButton(
-                label = "종료일에 변경",
+                label = stringResource(R.string.billing_change_at_end_date),
                 primary = false,
                 modifier = Modifier.weight(1f),
                 onClick = { onConfirm(true) },
             )
             BillingDialogButton(
-                label = "지금 변경",
+                label = stringResource(R.string.billing_change_now),
                 primary = true,
                 modifier = Modifier.weight(1f),
                 onClick = { onConfirm(false) },

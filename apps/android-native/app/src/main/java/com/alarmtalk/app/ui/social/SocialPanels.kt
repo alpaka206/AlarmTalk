@@ -56,11 +56,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -94,9 +96,9 @@ internal fun FamilyConnectionPanel(
     val clipboard = LocalClipboardManager.current
     val activePlanKey = subscriptionResponse?.plan?.key
     val sharedPlanLabel = when (activePlanKey) {
-        "couple" -> "커플"
-        "family" -> "가족"
-        else -> "공유"
+        "couple" -> stringResource(R.string.social_plan_label_couple)
+        "family" -> stringResource(R.string.social_plan_label_family)
+        else -> stringResource(R.string.social_plan_label_shared)
     }
     val familyShareCodes = remember(vouchers, activePlanKey) {
         vouchers.filter { voucher ->
@@ -122,7 +124,7 @@ internal fun FamilyConnectionPanel(
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, code)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "코드 공유"))
+        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.social_share_code_chooser_title)))
     }
 
     OutlinedCard {
@@ -133,12 +135,12 @@ internal fun FamilyConnectionPanel(
             val isSharedMember = currentGroup != null && familyGroup?.role == "member"
 
             if (canManageShareCode) {
-                MutedText("공유 이용권을 관리 중이에요.")
+                MutedText(stringResource(R.string.social_managing_shared_plan))
                 return@Column
             }
 
             if (hasActivePlan && !showCodeInputs) {
-                MutedText("$activePlanName 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.")
+                MutedText(stringResource(R.string.social_active_plan_in_use, activePlanName))
                 if (isSharedMember) {
                     OutlinedButton(
                         onClick = { showLeaveDialog = true },
@@ -147,7 +149,7 @@ internal fun FamilyConnectionPanel(
                         shape = RoundedCornerShape(14.dp),
                     ) {
                         Text(
-                            text = "현재 이용권 나가고 새 코드 등록하기",
+                            text = stringResource(R.string.social_leave_and_register_new_code),
                             color = MaterialTheme.colorScheme.error,
                         )
                     }
@@ -158,14 +160,14 @@ internal fun FamilyConnectionPanel(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text("다른 코드 등록하기")
+                        Text(stringResource(R.string.social_register_other_code))
                     }
                 }
             } else {
                 if (hasActivePlan) {
-                    MutedText("등록하면 현재 $activePlanName 이용권이 변경돼요.")
+                    MutedText(stringResource(R.string.social_register_will_change_plan, activePlanName))
                 }
-                Text("초대 코드", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.social_invite_code_label), fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -188,11 +190,11 @@ internal fun FamilyConnectionPanel(
                         onClick = { pendingRegisterCode = inviteCode },
                         enabled = inviteCode.isNotBlank() && !socialBusy,
                     ) {
-                        Text("참여")
+                        Text(stringResource(R.string.social_join_button))
                     }
                 }
 
-                Text("이용권 코드", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.social_voucher_code_label), fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -215,7 +217,7 @@ internal fun FamilyConnectionPanel(
                         onClick = { pendingRegisterCode = voucherCode },
                         enabled = voucherCode.isNotBlank() && !socialBusy,
                     ) {
-                        Text("등록")
+                        Text(stringResource(R.string.social_register_button))
                     }
                 }
             }
@@ -227,12 +229,12 @@ internal fun FamilyConnectionPanel(
             onDismissRequest = { showLeaveDialog = false },
             title = {
                 ModalDialogTitle(
-                    title = "현재 이용권 나가고 새 코드 등록",
+                    title = stringResource(R.string.social_leave_dialog_title),
                     onDismiss = { showLeaveDialog = false },
                 )
             },
             text = {
-                MutedText("현재 이용권에서 나가고 새 코드를 등록할까요?")
+                MutedText(stringResource(R.string.social_leave_dialog_message))
             },
             confirmButton = {
                 TextButton(
@@ -243,7 +245,7 @@ internal fun FamilyConnectionPanel(
                     },
                 ) {
                     Text(
-                        text = "나가고 등록하기",
+                        text = stringResource(R.string.social_leave_and_register_button),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -256,16 +258,16 @@ internal fun FamilyConnectionPanel(
             onDismissRequest = { pendingRegisterCode = null },
             title = {
                 ModalDialogTitle(
-                    title = "코드 등록",
+                    title = stringResource(R.string.social_register_dialog_title),
                     onDismiss = { pendingRegisterCode = null },
                 )
             },
             text = {
                 MutedText(
                     if (hasActivePlan) {
-                        "등록 가능한 코드라면 현재 $activePlanName 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?"
+                        stringResource(R.string.social_register_dialog_message_active, activePlanName)
                     } else {
-                        "이 코드를 등록할까요?"
+                        stringResource(R.string.social_register_dialog_message)
                     },
                 )
             },
@@ -278,7 +280,7 @@ internal fun FamilyConnectionPanel(
                         pendingRegisterCode = null
                     },
                 ) {
-                    Text("등록")
+                    Text(stringResource(R.string.social_register_button))
                 }
             },
         )
@@ -313,13 +315,13 @@ internal fun VoiceMessagePanel(
     }
     var selectedRecipientId by remember(recipients) { mutableStateOf(recipients.firstOrNull()?.userId) }
     var text by remember { mutableStateOf("") }
-    val voiceOptions = remember(voiceProfiles, familyVoices) {
+    val voiceOptions = remember(voiceProfiles, familyVoices, context) {
         val readyProfiles = voiceProfiles
             .filter { it.status == null || it.status == "ready" }
             .map { it.id to it.name }
         val readyFamilyVoices = familyVoices
             .filter { (it.status == null || it.status == "ready") && it.isShared != false }
-            .map { it.id to sharedNoteVoiceLabel(it) }
+            .map { it.id to sharedNoteVoiceLabel(context, it) }
         readyProfiles + readyFamilyVoices
     }
     var sendMode by remember { mutableStateOf(VoiceMessageSendMode.Text) }
@@ -430,19 +432,19 @@ internal fun VoiceMessagePanel(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                MutedText("메시지는 커플/가족 이용권에서 사용할 수 있어요.")
+                MutedText(stringResource(R.string.social_message_requires_plan))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = onOpenFamily,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("연결하기")
+                        Text(stringResource(R.string.social_connect_button))
                     }
                     Button(
                         onClick = onOpenBilling,
                         modifier = Modifier.weight(1f),
                     ) {
-                        Text("이용권 보기")
+                        Text(stringResource(R.string.social_view_plan_button))
                     }
                 }
             }
@@ -455,13 +457,13 @@ internal fun VoiceMessagePanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "받은 메시지",
+                    text = stringResource(R.string.social_received_messages_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = onRefresh, enabled = !noteBusy) {
-                        Icon(Icons.Outlined.Refresh, contentDescription = "새로고침")
+                        Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.social_refresh_cd))
                     }
                     Button(
                         onClick = { showComposer = true },
@@ -474,15 +476,15 @@ internal fun VoiceMessagePanel(
                             modifier = Modifier.size(18.dp),
                         )
                         Spacer(Modifier.size(6.dp))
-                        Text("작성")
+                        Text(stringResource(R.string.social_compose_button))
                     }
                 }
             }
             if (recipients.isEmpty()) {
-                MutedText("연결된 상대가 없어요.")
+                MutedText(stringResource(R.string.social_no_connected_partner))
             }
             if (receivedNotes.isEmpty()) {
-                MutedText("받은 메시지가 없어요.")
+                MutedText(stringResource(R.string.social_no_received_messages))
             } else {
                 receivedNotes.take(8).forEach { note ->
                     NoteRow(
@@ -539,7 +541,7 @@ internal fun VoiceMessagePanel(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     ModalDialogTitle(
-                        title = "새 메시지",
+                        title = stringResource(R.string.social_new_message_title),
                         onDismiss = { showComposer = false },
                     )
                     Column(
@@ -548,7 +550,7 @@ internal fun VoiceMessagePanel(
                             .verticalScroll(composerScrollState),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        ComposerSection(title = "받는 사람") {
+                        ComposerSection(title = stringResource(R.string.social_composer_recipient)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -564,7 +566,7 @@ internal fun VoiceMessagePanel(
                                         ),
                                         label = {
                                             Text(
-                                                text = member.name ?: member.email ?: "멤버",
+                                                text = member.name ?: member.email ?: stringResource(R.string.social_member_fallback),
                                                 maxLines = 1,
                                             )
                                         },
@@ -572,7 +574,7 @@ internal fun VoiceMessagePanel(
                                 }
                             }
                         }
-                        ComposerSection(title = "보내기 방식") {
+                        ComposerSection(title = stringResource(R.string.social_composer_send_method)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = sendMode == VoiceMessageSendMode.Text,
@@ -581,7 +583,7 @@ internal fun VoiceMessagePanel(
                                         selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     ),
-                                    label = { Text("텍스트") },
+                                    label = { Text(stringResource(R.string.social_send_mode_text)) },
                                 )
                                 FilterChip(
                                     selected = sendMode == VoiceMessageSendMode.Tts,
@@ -590,15 +592,15 @@ internal fun VoiceMessagePanel(
                                         selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     ),
-                                    label = { Text("음성 메시지") },
+                                    label = { Text(stringResource(R.string.social_send_mode_voice)) },
                                 )
                             }
                         }
                         if (sendMode == VoiceMessageSendMode.Tts) {
-                            ComposerSection(title = "보낼 목소리") {
+                            ComposerSection(title = stringResource(R.string.social_composer_voice)) {
                                 when {
-                                    voiceProfileBusy -> MutedText("목소리를 불러오는 중이에요.")
-                                    voiceOptions.isEmpty() -> MutedText("사용 가능한 목소리가 없어요.")
+                                    voiceProfileBusy -> MutedText(stringResource(R.string.social_loading_voices))
+                                    voiceOptions.isEmpty() -> MutedText(stringResource(R.string.social_no_available_voices))
                                     else -> ChipGrid(
                                         options = voiceOptions,
                                         selected = selectedVoiceProfileId.orEmpty(),
@@ -609,11 +611,11 @@ internal fun VoiceMessagePanel(
                                 }
                             }
                         }
-                        ComposerSection(title = "메시지") {
+                        ComposerSection(title = stringResource(R.string.social_composer_message)) {
                             OutlinedTextField(
                                 value = text,
                                 onValueChange = { text = it.take(maxTextLength) },
-                                placeholder = { Text("전하고 싶은 말을 입력하세요") },
+                                placeholder = { Text(stringResource(R.string.social_message_placeholder)) },
                                 minLines = 4,
                                 maxLines = 6,
                                 shape = WakerInputShape,
@@ -634,7 +636,7 @@ internal fun VoiceMessagePanel(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Text(if (noteBusy) "보내는 중" else "보내기")
+                        Text(if (noteBusy) stringResource(R.string.social_sending) else stringResource(R.string.social_send_button))
                     }
                 }
             }
@@ -703,7 +705,7 @@ internal fun NoteRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = note.senderName ?: note.senderEmail ?: "보낸 사람",
+                    text = note.senderName ?: note.senderEmail ?: stringResource(R.string.social_sender_fallback),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -755,7 +757,7 @@ internal fun NoteRow(
                         } else {
                             Icon(
                                 imageVector = if (isPlaying) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
-                                contentDescription = if (isPlaying) "정지" else "재생",
+                                contentDescription = if (isPlaying) stringResource(R.string.social_stop_cd) else stringResource(R.string.social_play_cd),
                                 tint = if (isPlaying) {
                                     MaterialTheme.colorScheme.onSecondary
                                 } else {
@@ -776,10 +778,10 @@ private enum class VoiceMessageSendMode {
     Tts,
 }
 
-private fun sharedNoteVoiceLabel(profile: FamilyVoiceProfile): String {
+private fun sharedNoteVoiceLabel(context: android.content.Context, profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
     return if (owner == null) {
-        "${profile.name} · 공유"
+        context.getString(R.string.misc2_shared_voice_label, profile.name)
     } else {
         "${profile.name} · $owner"
     }

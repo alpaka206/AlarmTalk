@@ -26,38 +26,41 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import kotlinx.coroutines.launch
 
 private data class OnboardingPage(
     val icon: ImageVector,
-    val title: String,
-    val description: String,
+    @StringRes val title: Int,
+    @StringRes val description: Int,
 )
 
 private val OnboardingPages = listOf(
     // 큰 글꼴 배율에서 줄바꿈이 어색하게 깨지지 않도록 하드코딩된 \n 없이 자연 줄바꿈에 맡긴다.
     OnboardingPage(
         icon = Icons.Outlined.Mic,
-        title = "좋아하는 목소리로 깨어나요",
-        description = "녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.",
+        title = R.string.misc2_onboarding_voice_title,
+        description = R.string.misc2_onboarding_voice_desc,
     ),
     OnboardingPage(
         icon = Icons.Outlined.Group,
-        title = "소중한 사람들과 함께",
-        description = "목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.",
+        title = R.string.misc2_onboarding_together_title,
+        description = R.string.misc2_onboarding_together_desc,
     ),
     OnboardingPage(
         icon = Icons.Outlined.AutoAwesome,
-        title = "알람을 끄며 함께 성장해요",
-        description = "하루를 시작할 때마다 캐릭터의 성장 기록이 쌓여요.",
+        title = R.string.misc2_onboarding_grow_title,
+        description = R.string.misc2_onboarding_grow_desc,
     ),
 )
 
@@ -81,7 +84,7 @@ internal fun OnboardingScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = onComplete) { Text("건너뛰기") }
+            TextButton(onClick = onComplete) { Text(stringResource(R.string.auth_onboarding_skip)) }
         }
 
         HorizontalPager(
@@ -122,14 +125,14 @@ internal fun OnboardingScreen(
                 }
                 Spacer(Modifier.height(28.dp))
                 Text(
-                    text = page.title,
+                    text = stringResource(page.title),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    text = page.description,
+                    text = stringResource(page.description),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -174,7 +177,7 @@ internal fun OnboardingScreen(
                 .padding(horizontal = 32.dp, vertical = 16.dp)
                 .height(48.dp),
         ) {
-            Text(if (isLastPage) "시작하기" else "다음")
+            Text(if (isLastPage) stringResource(R.string.auth_onboarding_start) else stringResource(R.string.auth_onboarding_next))
         }
     }
 }

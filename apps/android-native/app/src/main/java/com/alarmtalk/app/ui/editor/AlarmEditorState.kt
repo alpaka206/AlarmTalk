@@ -17,35 +17,40 @@ import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-internal fun amPmLabel(hour: Int): String = if (floorMod(hour, 24) < 12) "오전" else "오후"
+internal fun amPmLabel(context: android.content.Context, hour: Int): String =
+    if (floorMod(hour, 24) < 12) {
+        context.getString(R.string.editor2_am)
+    } else {
+        context.getString(R.string.editor2_pm)
+    }
 
 internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
 }
 
-internal fun timeUntilAlarmLabel(fireAtMillis: Long): String {
+internal fun timeUntilAlarmLabel(context: android.content.Context, fireAtMillis: Long): String {
     val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
     val duration = java.time.Duration.ofMillis(millisUntilFire)
     val days = duration.toDays()
     val hours = duration.minusDays(days).toHours()
     val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
     return when {
-        days > 0L && hours == 0L -> "약 ${days}일 뒤에 울려요"
-        days > 0L -> "약 ${days}일 ${hours}시간 뒤에 울려요"
-        hours == 0L -> "${minutes.coerceAtLeast(1)}분 뒤에 울려요"
-        minutes == 0L -> "${hours}시간 뒤에 울려요"
-        else -> "${hours}시간 ${minutes}분 뒤에 울려요"
+        days > 0L && hours == 0L -> context.getString(R.string.r3ed_time_until_days, days)
+        days > 0L -> context.getString(R.string.r3ed_time_until_days_hours, days, hours)
+        hours == 0L -> context.getString(R.string.r3ed_time_until_minutes, minutes.coerceAtLeast(1))
+        minutes == 0L -> context.getString(R.string.r3ed_time_until_hours, hours)
+        else -> context.getString(R.string.r3ed_time_until_hours_minutes, hours, minutes)
     }
 }
 
-internal fun googleSignInErrorMessage(statusCode: Int): String = when (statusCode) {
-    10 -> "Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요."
-    7 -> "네트워크 연결을 확인한 뒤 다시 시도해 주세요."
-    12500 -> "Google 로그인에 실패했어요."
-    12501 -> "Google 로그인을 취소했어요."
-    12502 -> "Google 로그인이 이미 진행 중이에요."
-    else -> "Google 로그인에 실패했어요. status=$statusCode"
+internal fun googleSignInErrorMessage(context: android.content.Context, statusCode: Int): String = when (statusCode) {
+    10 -> context.getString(R.string.r3ed_google_signin_error_config)
+    7 -> context.getString(R.string.r3ed_google_signin_error_network)
+    12500 -> context.getString(R.string.r3ed_google_signin_error_failed)
+    12501 -> context.getString(R.string.r3ed_google_signin_error_canceled)
+    12502 -> context.getString(R.string.r3ed_google_signin_error_in_progress)
+    else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
 
 internal class AlarmEditorState(

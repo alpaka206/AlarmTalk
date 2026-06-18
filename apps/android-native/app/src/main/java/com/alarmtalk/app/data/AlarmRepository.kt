@@ -3,6 +3,7 @@ package com.alarmtalk.app.data
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
@@ -51,7 +52,7 @@ class AlarmRepository(
         requireUniqueTime(localTime.hour, localTime.minute)
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = "테스트 알람",
+            label = context.getString(R.string.rd_test_alarm_label),
             hour = localTime.hour,
             minute = localTime.minute,
             fireAtMillis = fireAtMillis,
@@ -118,7 +119,7 @@ class AlarmRepository(
         )
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = draft.label.trim().ifBlank { "알람" },
+            label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = fireAtMillis,
@@ -194,7 +195,7 @@ class AlarmRepository(
             isHoliday = holidayPredicate,
         )
         val updated = current.copy(
-            label = draft.label.trim().ifBlank { "알람" },
+            label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = nextFireAt,
@@ -332,7 +333,9 @@ class AlarmRepository(
         val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
         val copied = current.copy(
             id = UUID.randomUUID().toString(),
-            label = current.label.takeIf { it.isNotBlank() }?.let { "$it 복사본" } ?: "복사한 알람",
+            label = current.label.takeIf { it.isNotBlank() }
+                ?.let { context.getString(R.string.rd_copied_alarm_label_suffix, it) }
+                ?: context.getString(R.string.rd_copied_alarm_label),
             hour = copiedTime.hour,
             minute = copiedTime.minute,
             fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
@@ -619,7 +622,7 @@ class AlarmRepository(
 
     private suspend fun requireUniqueTime(hour: Int, minute: Int, excludeAlarmId: String? = null) {
         require(alarmDao.countAtTime(hour, minute, excludeAlarmId) == 0) {
-            "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
+            context.getString(R.string.rd_duplicate_alarm_time_message)
         }
     }
 

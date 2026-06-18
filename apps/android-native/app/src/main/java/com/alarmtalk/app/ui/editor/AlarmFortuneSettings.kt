@@ -37,9 +37,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.text.SimpleDateFormat
@@ -53,10 +56,11 @@ internal fun FortuneInfoDialog(
     gender: String,
     birthDate: String,
     birthTime: String,
-    description: String = "운세가 들어간 문구를 만들 때만 사용해요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+    description: String = stringResource(R.string.editorp_fortune_dialog_description),
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
+    val context = LocalContext.current
     var draftGender by remember(gender) { mutableStateOf(normalizeFortuneGender(gender)) }
     var draftBirthDate by remember(birthDate) { mutableStateOf(normalizeFortuneBirthDate(birthDate)) }
     var draftBirthTime by remember(birthTime) { mutableStateOf(normalizeFortuneBirthTime(birthTime)) }
@@ -91,7 +95,7 @@ internal fun FortuneInfoDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
-                    title = "운세 정보",
+                    title = stringResource(R.string.editorp_fortune_dialog_title),
                     onDismiss = onDismissWithoutSave,
                 )
                 Surface(
@@ -105,7 +109,7 @@ internal fun FortuneInfoDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "운세 문구에만 사용해요",
+                            text = stringResource(R.string.editorp_fortune_only_label),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -117,16 +121,16 @@ internal fun FortuneInfoDialog(
                         )
                     }
                 }
-                FortuneInputSection(title = "성별", error = genderError) {
+                FortuneInputSection(title = stringResource(R.string.editorp_fortune_gender_section), error = genderError) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GenderChoice(
-                            label = "남성",
+                            label = stringResource(R.string.editorp_fortune_gender_male),
                             selected = draftGender == FortuneGenderMale,
                             onClick = { draftGender = FortuneGenderMale },
                             modifier = Modifier.weight(1f),
                         )
                         GenderChoice(
-                            label = "여성",
+                            label = stringResource(R.string.editorp_fortune_gender_female),
                             selected = draftGender == FortuneGenderFemale,
                             onClick = { draftGender = FortuneGenderFemale },
                             modifier = Modifier.weight(1f),
@@ -134,9 +138,9 @@ internal fun FortuneInfoDialog(
                     }
                 }
 
-                FortuneInputSection(title = "생년월일", error = birthDateError) {
+                FortuneInputSection(title = stringResource(R.string.editorp_fortune_birthdate_section), error = birthDateError) {
                     FortuneSelectorRow(
-                        value = if (draftBirthDate.isBlank()) "탭하여 생년월일 선택" else formatBirthDateDisplay(draftBirthDate),
+                        value = if (draftBirthDate.isBlank()) stringResource(R.string.editorp_fortune_birthdate_placeholder) else formatBirthDateDisplay(context, draftBirthDate),
                         placeholderActive = draftBirthDate.isBlank(),
                         error = birthDateError,
                         onClick = { datePickerOpen = true },
@@ -144,9 +148,9 @@ internal fun FortuneInfoDialog(
                 }
 
                 FortuneInputSection(
-                    title = "태어난 시간",
+                    title = stringResource(R.string.editorp_fortune_birthtime_section),
                     error = birthTimeError,
-                    subtitle = "정확히 모르면 가까운 시간대를 골라도 돼요.",
+                    subtitle = stringResource(R.string.editorp_fortune_birthtime_subtitle),
                 ) {
                     FortuneTimeChoiceGrid(
                         selectedValue = draftBirthTime,
@@ -156,9 +160,9 @@ internal fun FortuneInfoDialog(
                         draftBirthTime == FortuneBirthTimeUnknown
                     FortuneSelectorRow(
                         value = if (exactTimePlaceholder) {
-                            "정확한 시간 선택"
+                            stringResource(R.string.editorp_fortune_exact_time_placeholder)
                         } else {
-                            formatBirthTimeDisplay(draftBirthTime)
+                            formatBirthTimeDisplay(context, draftBirthTime)
                         },
                         placeholderActive = exactTimePlaceholder,
                         error = birthTimeError && draftBirthTime.isBlank(),
@@ -190,7 +194,7 @@ internal fun FortuneInfoDialog(
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("저장")
+                        Text(stringResource(R.string.editorp_fortune_save_button))
                     }
                 }
             }
@@ -210,13 +214,13 @@ internal fun FortuneInfoDialog(
                         }
                         datePickerOpen = false
                     },
-                ) { Text("확인") }
+                ) { Text(stringResource(R.string.editorp_fortune_date_confirm)) }
             },
             dismissButton = {},
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModalDialogTitle(
-                    title = "생년월일",
+                    title = stringResource(R.string.editorp_fortune_date_title),
                     onDismiss = { datePickerOpen = false },
                     modifier = Modifier.padding(horizontal = 24.dp),
                 )
@@ -244,7 +248,7 @@ internal fun FortuneInfoDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ModalDialogTitle(
-                        title = "태어난 시간",
+                        title = stringResource(R.string.editorp_fortune_birthtime_section),
                         onDismiss = { timePickerOpen = false },
                     )
                     TimePicker(state = state)
@@ -262,7 +266,7 @@ internal fun FortuneInfoDialog(
                                 )
                                 timePickerOpen = false
                             },
-                        ) { Text("확인") }
+                        ) { Text(stringResource(R.string.editorp_fortune_time_confirm)) }
                     }
                 }
             }
@@ -274,12 +278,12 @@ internal const val FortuneGenderMale = "남성"
 internal const val FortuneGenderFemale = "여성"
 internal const val FortuneBirthTimeUnknown = "시간 모름"
 
-internal val FortuneBirthTimeChoices = listOf(
-    FortuneBirthTimeUnknown to "시간 모름",
-    "05:00" to "새벽",
-    "09:00" to "오전",
-    "15:00" to "오후",
-    "20:00" to "저녁",
+internal val FortuneBirthTimeChoices: List<Pair<String, Int>> = listOf(
+    FortuneBirthTimeUnknown to R.string.editor2_fortune_time_unknown,
+    "05:00" to R.string.editor2_fortune_time_dawn,
+    "09:00" to R.string.editor2_fortune_time_morning,
+    "15:00" to R.string.editor2_fortune_time_afternoon,
+    "20:00" to R.string.editor2_fortune_time_evening,
 )
 
 internal fun normalizeFortuneGender(value: String): String =
@@ -340,20 +344,36 @@ internal fun formatBirthDateIso(millis: Long): String {
     return formatter.format(java.util.Date(millis))
 }
 
-internal fun formatBirthDateDisplay(value: String): String {
+internal fun formatBirthDateDisplay(context: android.content.Context, value: String): String {
     val digits = value.filter { it.isDigit() }
     if (digits.length != 8) return value
-    return "${digits.substring(0, 4)}년 ${digits.substring(4, 6).trimStart('0')}월 ${digits.substring(6, 8).trimStart('0')}일"
+    return context.getString(
+        R.string.editor2_birthdate_display,
+        digits.substring(0, 4),
+        digits.substring(4, 6).trimStart('0'),
+        digits.substring(6, 8).trimStart('0'),
+    )
 }
 
-internal fun formatBirthTimeDisplay(value: String): String {
-    if (value == FortuneBirthTimeUnknown) return value
+internal fun formatBirthTimeDisplay(context: android.content.Context, value: String): String {
+    if (value == FortuneBirthTimeUnknown) {
+        return context.getString(R.string.editor2_fortune_time_unknown)
+    }
     val parts = value.split(":")
     val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
     val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
-    val suffix = if (hour < 12) "오전" else "오후"
+    val suffix = if (hour < 12) {
+        context.getString(R.string.editor2_am)
+    } else {
+        context.getString(R.string.editor2_pm)
+    }
     val display = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-    return "$suffix ${display}시 ${String.format(Locale.US, "%02d", minute)}분"
+    return context.getString(
+        R.string.editor2_birthtime_display,
+        suffix,
+        display,
+        String.format(Locale.US, "%02d", minute),
+    )
 }
 
 @Composable
@@ -380,7 +400,7 @@ internal fun FortuneInputSection(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
-                    text = if (error) "$title · 필수 입력" else title,
+                    text = if (error) stringResource(R.string.editorp_fortune_required_suffix, title) else title,
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
@@ -406,14 +426,14 @@ internal fun FortuneTimeChoiceGrid(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FortuneTimeChoice(
-                label = FortuneBirthTimeChoices[0].second,
+                label = stringResource(FortuneBirthTimeChoices[0].second),
                 value = FortuneBirthTimeChoices[0].first,
                 selected = selectedValue == FortuneBirthTimeChoices[0].first,
                 onClick = onSelect,
                 modifier = Modifier.weight(1f),
             )
             FortuneTimeChoice(
-                label = FortuneBirthTimeChoices[1].second,
+                label = stringResource(FortuneBirthTimeChoices[1].second),
                 value = FortuneBirthTimeChoices[1].first,
                 selected = selectedValue == FortuneBirthTimeChoices[1].first,
                 onClick = onSelect,
@@ -421,9 +441,9 @@ internal fun FortuneTimeChoiceGrid(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FortuneBirthTimeChoices.drop(2).forEach { (value, label) ->
+            FortuneBirthTimeChoices.drop(2).forEach { (value, labelRes) ->
                 FortuneTimeChoice(
-                    label = label,
+                    label = stringResource(labelRes),
                     value = value,
                     selected = selectedValue == value,
                     onClick = onSelect,
@@ -560,17 +580,17 @@ internal fun GenderChoice(
     }
 }
 
-internal fun weatherLocationSummary(country: String, city: String): String =
+internal fun weatherLocationSummary(context: android.content.Context, country: String, city: String): String =
     listOf(country, city)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" ")
-        .ifBlank { "나라와 도시를 입력해 주세요." }
+        .ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
 
-internal fun fortuneInfoSummary(gender: String, birthDate: String, birthTime: String): String =
+internal fun fortuneInfoSummary(context: android.content.Context, gender: String, birthDate: String, birthTime: String): String =
     listOf(gender, birthDate, birthTime)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
-        .ifBlank { "성별, 생년월일, 태어난 시간을 입력해 주세요." }
+        .ifBlank { context.getString(R.string.editor2_fortune_info_prompt) }
 
