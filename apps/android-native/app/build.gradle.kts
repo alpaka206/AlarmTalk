@@ -228,6 +228,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric 단위 테스트가 앱 리소스(strings.xml 등)에 접근할 수 있도록 한다.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 tasks.named("preBuild").configure {
@@ -268,6 +275,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
+    // Context/리소스가 필요한 라벨 함수의 단위 테스트용(앱 기본 로케일 = 한국어 리소스 로드).
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }
