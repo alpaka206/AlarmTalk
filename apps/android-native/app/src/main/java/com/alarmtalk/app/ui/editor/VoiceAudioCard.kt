@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,6 +96,7 @@ internal fun VoiceAudioCard(
     onOpenVoiceTranslationSettings: () -> Unit,
     onClear: () -> Unit,
 ) {
+    val context = LocalContext.current
     val visibleVoiceSource = if (editor.voiceSource == VoiceSources.SERVER_TTS) {
         VoiceSources.TTS_PROFILE
     } else {
@@ -108,14 +110,14 @@ internal fun VoiceAudioCard(
         VoiceProfileOption(
             id = it.id,
             name = it.name,
-            detail = ownedVoiceDetail(it),
+            detail = ownedVoiceDetail(context, it),
         )
     } +
         readyFamilyVoices.map { profile ->
             VoiceProfileOption(
                 id = profile.id,
                 name = profile.name,
-                detail = sharedVoiceDetail(profile),
+                detail = sharedVoiceDetail(context, profile),
                 sharedProfile = profile,
             )
         }
@@ -586,6 +588,7 @@ private fun StockClipDropdown(
     onSelectStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
 ) {
     if (!isSystemVoice || clips.isEmpty()) return
+    val context = LocalContext.current
     var expanded by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -654,7 +657,7 @@ private fun StockClipDropdown(
                             FilterChip(
                                 selected = lang == selectedLang,
                                 onClick = { selectedLang = lang },
-                                label = { Text(stockClipLanguageLabel(lang)) },
+                                label = { Text(stockClipLanguageLabel(context, lang)) },
                             )
                         }
                     }
@@ -700,9 +703,9 @@ private fun StockClipRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                stockClipCategoryLabel(clip.category)?.let { label ->
+                stockClipCategoryLabelRes(clip.category)?.let { labelRes ->
                     Text(
-                        text = label,
+                        text = stringResource(labelRes),
                         style = MaterialTheme.typography.labelSmall,
                         color = if (selected) {
                             MaterialTheme.colorScheme.onSecondaryContainer
@@ -750,10 +753,10 @@ private fun StockClipRow(
 
 private val StockClipLanguageOrder = listOf("ko", "en", "ja")
 
-private fun stockClipLanguageLabel(language: String?): String = when (language) {
-    "ko" -> "한국어"
-    "en" -> "English"
-    "ja" -> "日本語"
+private fun stockClipLanguageLabel(context: android.content.Context, language: String?): String = when (language) {
+    "ko" -> context.getString(R.string.r3ed_stock_clip_lang_ko)
+    "en" -> context.getString(R.string.r3ed_stock_clip_lang_en)
+    "ja" -> context.getString(R.string.r3ed_stock_clip_lang_ja)
     else -> language.orEmpty()
 }
 
@@ -764,7 +767,7 @@ private fun stockClipCategoryOrder(category: String?): Int {
     return if (i < 0) Int.MAX_VALUE else i
 }
 
-private fun stockClipCategoryLabel(category: String?): String? =
+private fun stockClipCategoryLabelRes(category: String?): Int? =
     TtsCategories.firstOrNull { (key, _) -> key == category }?.second
 
 @Composable
@@ -815,7 +818,7 @@ private fun ManualTranslationRow(
     onEnabledChange: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    val languageLabel = voiceOptionLabel(TtsTranslationLanguages, language)
+    val languageLabel = voiceOptionLabelRes(TtsTranslationLanguages, language)?.let { stringResource(it) }.orEmpty()
     Surface(
         onClick = {
             if (enabled) onOpenSettings()
@@ -860,8 +863,11 @@ private fun RandomPromptSummaryRow(
     randomContext: String,
     onClick: () -> Unit,
 ) {
-    val languageLabel = voiceOptionLabel(TtsLanguages, language)
-    val contextLabel = voiceOptionLabel(RandomPromptContexts, normalizedRandomPromptContext(randomContext))
+    val languageLabel = voiceOptionLabelRes(TtsLanguages, language)?.let { stringResource(it) }.orEmpty()
+    val contextLabel = voiceOptionLabelRes(
+        RandomPromptContexts,
+        normalizedRandomPromptContext(randomContext),
+    )?.let { stringResource(it) }.orEmpty()
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -1004,22 +1010,22 @@ private fun VoiceSelectionDot(selected: Boolean) {
     }
 }
 
-private fun voiceOptionLabel(options: List<Pair<String, String>>, value: String): String =
-    options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second.orEmpty()
+private fun voiceOptionLabelRes(options: List<Pair<String, Int>>, value: String): Int? =
+    options.firstOrNull { it.first == value }?.second ?: options.firstOrNull()?.second
 
-private fun sharedVoiceDetail(profile: FamilyVoiceProfile): String {
+private fun sharedVoiceDetail(context: android.content.Context, profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
     return if (owner == null) {
-        "공유받은 목소리"
+        context.getString(R.string.editor2_voice_detail_shared)
     } else {
-        "${owner}님에게 공유받은 목소리"
+        context.getString(R.string.editor2_voice_detail_shared_from, owner)
     }
 }
 
-private fun ownedVoiceDetail(profile: VoiceProfile): String = when {
-    profile.isSystem == true -> "기본 목소리"
-    profile.isShared == true -> "내 목소리 · 공유 중"
-    else -> "내 목소리"
+private fun ownedVoiceDetail(context: android.content.Context, profile: VoiceProfile): String = when {
+    profile.isSystem == true -> context.getString(R.string.editor2_voice_detail_default)
+    profile.isShared == true -> context.getString(R.string.editor2_voice_detail_mine_sharing)
+    else -> context.getString(R.string.editor2_voice_detail_mine)
 }
 
 internal fun FamilyVoiceProfile.requiresViewerInfo(): Boolean =

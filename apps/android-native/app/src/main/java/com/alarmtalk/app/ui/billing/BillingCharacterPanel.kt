@@ -396,12 +396,16 @@ internal fun characterEventXpLabel(event: String): String = when (event) {
     else -> "+0 XP"
 }
 
-internal fun passPlanName(planKey: String?, fallback: String?): String = when (planKey) {
-    "free" -> "무료"
-    "personal", "individual", "plus" -> "개인"
-    "couple" -> "커플"
-    "family" -> "가족"
-    else -> fallback?.takeIf { it.isNotBlank() } ?: "이용권"
+internal fun passPlanName(
+    context: android.content.Context,
+    planKey: String?,
+    fallback: String?,
+): String = when (planKey) {
+    "free" -> context.getString(R.string.misc2_pass_plan_free)
+    "personal", "individual", "plus" -> context.getString(R.string.misc2_pass_plan_personal)
+    "couple" -> context.getString(R.string.misc2_pass_plan_couple)
+    "family" -> context.getString(R.string.misc2_pass_plan_family)
+    else -> fallback?.takeIf { it.isNotBlank() } ?: context.getString(R.string.misc2_pass_plan_default)
 }
 
 internal fun formatPassDate(value: String?): String? =

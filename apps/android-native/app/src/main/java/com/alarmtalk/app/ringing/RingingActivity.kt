@@ -96,14 +96,15 @@ class RingingActivity : ComponentActivity() {
         setContent {
             var uiState by remember { mutableStateOf(RingingUiState()) }
             val currentAlarmId = alarmId
+            val appContext = applicationContext
             LaunchedEffect(currentAlarmId) {
                 uiState = currentAlarmId?.let { id ->
                     withContext(Dispatchers.IO) {
-                        AlarmAppContainer.repository(applicationContext)
+                        AlarmAppContainer.repository(appContext)
                             .getAlarm(id)
-                            ?.toRingingUiState()
+                            ?.toRingingUiState(appContext)
                     }
-                } ?: RingingUiState()
+                } ?: defaultRingingUiState(appContext)
             }
             RingingRoute(
                 uiState = uiState,
@@ -543,20 +544,37 @@ private fun RingingVoiceWaveform() {
 }
 
 private data class RingingUiState(
-    val title: String = "알람이 울리고 있어요",
-    val subtitle: String = "지금 울리고 있어요",
+    val title: String = "",
+    val subtitle: String = "",
     val voiceText: String? = null,
     val snoozeEnabled: Boolean = true,
     val snoozeMinutes: Int = 5,
-    val dateText: String = todayDateLabel(),
-    val ampm: String = currentAmPmLabel(),
-    val timeText: String = currentTimeLabel(),
+    val dateText: String = "",
+    val ampm: String = "",
+    val timeText: String = "",
     /** 보이스 카드 아바타에 표시할 라벨 첫 글자 — null 이면 알람 아이콘. */
     val avatarLabel: String? = null,
 )
 
-private fun AlarmEntity.toRingingUiState(): RingingUiState {
-    val customTitle = label.trim().takeIf { it.isNotBlank() && it != "알람" }
+/** 알람을 아직 불러오지 못했을 때(빈 상태) 표시할 기본 UI 상태. */
+private fun defaultRingingUiState(context: android.content.Context): RingingUiState {
+    val now = java.time.LocalTime.now()
+    return RingingUiState(
+        title = context.getString(R.string.rd2_ringing_title_default),
+        subtitle = context.getString(R.string.rd2_ringing_subtitle_now),
+        dateText = todayDateLabel(context),
+        ampm = if (now.hour < 12) {
+            context.getString(R.string.rd2_am)
+        } else {
+            context.getString(R.string.rd2_pm)
+        },
+        timeText = alarmClockLabel(now.hour, now.minute),
+    )
+}
+
+private fun AlarmEntity.toRingingUiState(context: android.content.Context): RingingUiState {
+    val customTitle = label.trim()
+        .takeIf { it.isNotBlank() && it != context.getString(R.string.rd_default_alarm_label) }
     val voiceMessage = voiceText
         ?.trim()
         ?.takeIf { it.isNotBlank() && playMode != AlarmPlayModes.ALARM_ONLY }
@@ -567,36 +585,35 @@ private fun AlarmEntity.toRingingUiState(): RingingUiState {
             )
 
     return RingingUiState(
-        title = customTitle ?: "알람이 울리고 있어요",
+        title = customTitle ?: context.getString(R.string.rd2_ringing_title_default),
         subtitle = if (customTitle != null) {
-            ringingModeLabel(playMode, voiceMessage != null)
+            ringingModeLabel(context, playMode, voiceMessage != null)
         } else {
-            "지금 울리고 있어요"
+            context.getString(R.string.rd2_ringing_subtitle_now)
         },
         voiceText = voiceMessage,
         snoozeEnabled = snoozeAvailable,
         snoozeMinutes = snoozeMinutes,
-        dateText = todayDateLabel(),
-        ampm = if (hour < 12) "오전" else "오후",
+        dateText = todayDateLabel(context),
+        ampm = if (hour < 12) {
+            context.getString(R.string.rd2_am)
+        } else {
+            context.getString(R.string.rd2_pm)
+        },
         timeText = alarmClockLabel(hour, minute),
         avatarLabel = customTitle?.take(1),
     )
 }
 
-private fun todayDateLabel(): String {
+private fun todayDateLabel(context: android.content.Context): String {
     val today = LocalDate.now()
-    val weekday = today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.KOREAN)
-    return "${today.monthValue}월 ${today.dayOfMonth}일 $weekday"
-}
-
-private fun currentAmPmLabel(): String {
-    val hour = java.time.LocalTime.now().hour
-    return if (hour < 12) "오전" else "오후"
-}
-
-private fun currentTimeLabel(): String {
-    val now = java.time.LocalTime.now()
-    return alarmClockLabel(now.hour, now.minute)
+    val weekday = today.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
+    return context.getString(
+        R.string.rd2_ringing_date,
+        today.monthValue,
+        today.dayOfMonth,
+        weekday,
+    )
 }
 
 /** "6:30" 형태(12시간제, 분 0패딩) — 큰 시계 표시용. */
@@ -606,9 +623,13 @@ private fun alarmClockLabel(hour: Int, minute: Int): String {
     return "$displayHour:${"%02d".format(minute)}"
 }
 
-private fun ringingModeLabel(playMode: String, hasVoiceText: Boolean): String = when {
-    hasVoiceText -> "목소리 알람이 울리고 있어요"
-    playMode == AlarmPlayModes.VOICE_ONLY -> "목소리가 재생되고 있어요"
-    playMode == AlarmPlayModes.ALARM_VOICE -> "알람음과 목소리가 울리고 있어요"
-    else -> "알람이 울리고 있어요"
+private fun ringingModeLabel(
+    context: android.content.Context,
+    playMode: String,
+    hasVoiceText: Boolean,
+): String = when {
+    hasVoiceText -> context.getString(R.string.rd2_ringing_mode_voice_alarm)
+    playMode == AlarmPlayModes.VOICE_ONLY -> context.getString(R.string.rd2_ringing_mode_voice_only)
+    playMode == AlarmPlayModes.ALARM_VOICE -> context.getString(R.string.rd2_ringing_mode_alarm_voice)
+    else -> context.getString(R.string.rd2_ringing_title_default)
 }

@@ -94,9 +94,9 @@ internal fun VoiceTranslationSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SnoozeOptionSection(title = stringResource(R.string.editor_language)) {
-                    TtsTranslationLanguages.forEachIndexed { index, (language, label) ->
+                    TtsTranslationLanguages.forEachIndexed { index, (language, labelRes) ->
                         SnoozeRadioRow(
-                            label = label,
+                            label = stringResource(labelRes),
                             selected = voiceLanguage == language,
                             onClick = { onLanguageChange(language) },
                         )

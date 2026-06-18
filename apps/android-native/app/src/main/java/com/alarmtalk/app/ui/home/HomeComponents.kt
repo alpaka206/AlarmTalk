@@ -206,10 +206,10 @@ internal fun ProfileMenuItem(
 
 enum class ThemeMode { System, Light, Dark }
 
-internal fun themeModeLabel(mode: ThemeMode): String = when (mode) {
-    ThemeMode.System -> "시스템 설정"
-    ThemeMode.Light -> "밝게"
-    ThemeMode.Dark -> "어둡게"
+internal fun themeModeLabel(context: android.content.Context, mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> context.getString(R.string.misc2_theme_mode_system)
+    ThemeMode.Light -> context.getString(R.string.misc2_theme_mode_light)
+    ThemeMode.Dark -> context.getString(R.string.misc2_theme_mode_dark)
 }
 
 @Composable

@@ -563,13 +563,14 @@ private fun CurrentPassSummaryCard(
     cancelScheduled: Boolean,
     isSharedMember: Boolean,
 ) {
+    val context = LocalContext.current
     val planKey = currentPlan?.key ?: "free"
-    val planName = passPlanName(planKey = planKey, fallback = currentPlan?.name)
+    val planName = passPlanName(context, planKey = planKey, fallback = currentPlan?.name)
     val expiresAt = formatPassDate(subscription?.expiresAt)
     val statusText = when {
         isSharedMember -> stringResource(R.string.billing_status_shared_member)
         cancelScheduled && nextPlan != null -> {
-            val nextName = passPlanName(nextPlan.key, nextPlan.name)
+            val nextName = passPlanName(context, nextPlan.key, nextPlan.name)
             if (expiresAt != null) {
                 stringResource(R.string.billing_status_change_to_next_after_date, expiresAt, nextName)
             } else {

@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +60,7 @@ internal fun FortuneInfoDialog(
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String, String) -> Unit,
 ) {
+    val context = LocalContext.current
     var draftGender by remember(gender) { mutableStateOf(normalizeFortuneGender(gender)) }
     var draftBirthDate by remember(birthDate) { mutableStateOf(normalizeFortuneBirthDate(birthDate)) }
     var draftBirthTime by remember(birthTime) { mutableStateOf(normalizeFortuneBirthTime(birthTime)) }
@@ -138,7 +140,7 @@ internal fun FortuneInfoDialog(
 
                 FortuneInputSection(title = stringResource(R.string.editorp_fortune_birthdate_section), error = birthDateError) {
                     FortuneSelectorRow(
-                        value = if (draftBirthDate.isBlank()) stringResource(R.string.editorp_fortune_birthdate_placeholder) else formatBirthDateDisplay(draftBirthDate),
+                        value = if (draftBirthDate.isBlank()) stringResource(R.string.editorp_fortune_birthdate_placeholder) else formatBirthDateDisplay(context, draftBirthDate),
                         placeholderActive = draftBirthDate.isBlank(),
                         error = birthDateError,
                         onClick = { datePickerOpen = true },
@@ -160,7 +162,7 @@ internal fun FortuneInfoDialog(
                         value = if (exactTimePlaceholder) {
                             stringResource(R.string.editorp_fortune_exact_time_placeholder)
                         } else {
-                            formatBirthTimeDisplay(draftBirthTime)
+                            formatBirthTimeDisplay(context, draftBirthTime)
                         },
                         placeholderActive = exactTimePlaceholder,
                         error = birthTimeError && draftBirthTime.isBlank(),
@@ -276,12 +278,12 @@ internal const val FortuneGenderMale = "남성"
 internal const val FortuneGenderFemale = "여성"
 internal const val FortuneBirthTimeUnknown = "시간 모름"
 
-internal val FortuneBirthTimeChoices = listOf(
-    FortuneBirthTimeUnknown to "시간 모름",
-    "05:00" to "새벽",
-    "09:00" to "오전",
-    "15:00" to "오후",
-    "20:00" to "저녁",
+internal val FortuneBirthTimeChoices: List<Pair<String, Int>> = listOf(
+    FortuneBirthTimeUnknown to R.string.editor2_fortune_time_unknown,
+    "05:00" to R.string.editor2_fortune_time_dawn,
+    "09:00" to R.string.editor2_fortune_time_morning,
+    "15:00" to R.string.editor2_fortune_time_afternoon,
+    "20:00" to R.string.editor2_fortune_time_evening,
 )
 
 internal fun normalizeFortuneGender(value: String): String =
@@ -342,20 +344,36 @@ internal fun formatBirthDateIso(millis: Long): String {
     return formatter.format(java.util.Date(millis))
 }
 
-internal fun formatBirthDateDisplay(value: String): String {
+internal fun formatBirthDateDisplay(context: android.content.Context, value: String): String {
     val digits = value.filter { it.isDigit() }
     if (digits.length != 8) return value
-    return "${digits.substring(0, 4)}년 ${digits.substring(4, 6).trimStart('0')}월 ${digits.substring(6, 8).trimStart('0')}일"
+    return context.getString(
+        R.string.editor2_birthdate_display,
+        digits.substring(0, 4),
+        digits.substring(4, 6).trimStart('0'),
+        digits.substring(6, 8).trimStart('0'),
+    )
 }
 
-internal fun formatBirthTimeDisplay(value: String): String {
-    if (value == FortuneBirthTimeUnknown) return value
+internal fun formatBirthTimeDisplay(context: android.content.Context, value: String): String {
+    if (value == FortuneBirthTimeUnknown) {
+        return context.getString(R.string.editor2_fortune_time_unknown)
+    }
     val parts = value.split(":")
     val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
     val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
-    val suffix = if (hour < 12) "오전" else "오후"
+    val suffix = if (hour < 12) {
+        context.getString(R.string.editor2_am)
+    } else {
+        context.getString(R.string.editor2_pm)
+    }
     val display = if (hour == 0) 12 else if (hour > 12) hour - 12 else hour
-    return "$suffix ${display}시 ${String.format(Locale.US, "%02d", minute)}분"
+    return context.getString(
+        R.string.editor2_birthtime_display,
+        suffix,
+        display,
+        String.format(Locale.US, "%02d", minute),
+    )
 }
 
 @Composable
@@ -408,14 +426,14 @@ internal fun FortuneTimeChoiceGrid(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FortuneTimeChoice(
-                label = FortuneBirthTimeChoices[0].second,
+                label = stringResource(FortuneBirthTimeChoices[0].second),
                 value = FortuneBirthTimeChoices[0].first,
                 selected = selectedValue == FortuneBirthTimeChoices[0].first,
                 onClick = onSelect,
                 modifier = Modifier.weight(1f),
             )
             FortuneTimeChoice(
-                label = FortuneBirthTimeChoices[1].second,
+                label = stringResource(FortuneBirthTimeChoices[1].second),
                 value = FortuneBirthTimeChoices[1].first,
                 selected = selectedValue == FortuneBirthTimeChoices[1].first,
                 onClick = onSelect,
@@ -423,9 +441,9 @@ internal fun FortuneTimeChoiceGrid(
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FortuneBirthTimeChoices.drop(2).forEach { (value, label) ->
+            FortuneBirthTimeChoices.drop(2).forEach { (value, labelRes) ->
                 FortuneTimeChoice(
-                    label = label,
+                    label = stringResource(labelRes),
                     value = value,
                     selected = selectedValue == value,
                     onClick = onSelect,
@@ -562,17 +580,17 @@ internal fun GenderChoice(
     }
 }
 
-internal fun weatherLocationSummary(country: String, city: String): String =
+internal fun weatherLocationSummary(context: android.content.Context, country: String, city: String): String =
     listOf(country, city)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" ")
-        .ifBlank { "나라와 도시를 입력해 주세요." }
+        .ifBlank { context.getString(R.string.editor2_weather_location_prompt) }
 
-internal fun fortuneInfoSummary(gender: String, birthDate: String, birthTime: String): String =
+internal fun fortuneInfoSummary(context: android.content.Context, gender: String, birthDate: String, birthTime: String): String =
     listOf(gender, birthDate, birthTime)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
-        .ifBlank { "성별, 생년월일, 태어난 시간을 입력해 주세요." }
+        .ifBlank { context.getString(R.string.editor2_fortune_info_prompt) }
 

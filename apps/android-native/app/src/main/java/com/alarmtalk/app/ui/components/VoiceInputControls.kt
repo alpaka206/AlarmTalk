@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -49,12 +50,13 @@ internal fun audioTimeLabel(millis: Long): String {
 }
 
 internal fun voicePreviewContentDescription(
+    context: android.content.Context,
     active: Boolean,
     preparing: Boolean,
 ): String = when {
-    preparing -> "미리듣기 준비 중"
-    active -> "미리듣기 일시정지"
-    else -> "미리듣기 재생"
+    preparing -> context.getString(R.string.misc2_voice_preview_preparing)
+    active -> context.getString(R.string.misc2_voice_preview_pause)
+    else -> context.getString(R.string.misc2_voice_preview_play)
 }
 
 @Composable
@@ -63,19 +65,20 @@ internal fun VoicePreviewButtonIcon(
     preparing: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     if (preparing) {
         CircularProgressIndicator(
             modifier = modifier
                 .size(20.dp)
                 .semantics {
-                    contentDescription = voicePreviewContentDescription(active = active, preparing = true)
+                    contentDescription = voicePreviewContentDescription(context, active = active, preparing = true)
                 },
             strokeWidth = 2.dp,
         )
     } else {
         Icon(
             imageVector = if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-            contentDescription = voicePreviewContentDescription(active = active, preparing = false),
+            contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
     }

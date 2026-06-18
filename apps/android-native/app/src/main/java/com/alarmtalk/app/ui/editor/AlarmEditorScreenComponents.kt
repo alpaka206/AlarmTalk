@@ -39,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -274,6 +275,7 @@ internal fun FamilyAlarmTargetCard(
     holidayOff: Boolean,
     onSelectRecipient: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var recipientDialogOpen by remember { mutableStateOf(false) }
     val selectedRecipient = recipients.firstOrNull { it.userId == selectedRecipientId }
         ?: recipients.firstOrNull()
@@ -342,7 +344,7 @@ internal fun FamilyAlarmTargetCard(
                 FamilyAlarmTargetStatus(
                     leadTooSoon = leadTooSoon,
                     quietUnavailable = quietUnavailable,
-                    quietLabel = familyAlarmQuietScheduleLabel(selectedRecipient),
+                    quietLabel = familyAlarmQuietScheduleLabel(context, selectedRecipient),
                 )
 
                 if (recipients.size == 1) {
@@ -359,6 +361,7 @@ internal fun RecipientSummaryRow(
     clickable: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     val content: @Composable () -> Unit = {
         Row(
             modifier = Modifier
@@ -372,7 +375,7 @@ internal fun RecipientSummaryRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = familyMemberLabel(recipient),
+                    text = familyMemberLabel(context, recipient),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -418,6 +421,7 @@ internal fun RecipientPickerRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -437,8 +441,8 @@ internal fun RecipientPickerRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(familyMemberLabel(recipient), fontWeight = FontWeight.SemiBold)
-                MutedText(stringResource(R.string.editor_quiet_hours_label, familyAlarmQuietScheduleLabel(recipient)))
+                Text(familyMemberLabel(context, recipient), fontWeight = FontWeight.SemiBold)
+                MutedText(stringResource(R.string.editor_quiet_hours_label, familyAlarmQuietScheduleLabel(context, recipient)))
             }
             if (selected) {
                 Text(
@@ -502,15 +506,15 @@ internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
     ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
 }
 
-internal fun familyMemberLabel(member: FamilyGroupMember): String =
+internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }
         ?: member.email?.takeIf { it.isNotBlank() }
-        ?: "멤버"
+        ?: context.getString(R.string.editor2_family_member_fallback)
 
-internal fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)
     return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+        "${quietDaysLabelForFamily(context, window.days)} ${window.start}-${window.end}"
     }
 }
 
@@ -614,13 +618,24 @@ internal fun safeQuietDays(days: List<Int>?): List<Int> =
 internal fun safeQuietTime(value: String?, fallback: String): String =
     value?.takeIf { it.isNotBlank() } ?: fallback
 
-internal fun quietDaysLabelForFamily(days: List<Int>): String {
+internal fun quietDaysLabelForFamily(context: Context, days: List<Int>): String {
     val sorted = days.distinct().sorted()
     return when (sorted) {
-        emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "평일"
-        listOf(0, 6) -> "주말"
-        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
-        else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }
+        emptyList<Int>() -> context.getString(R.string.editor2_quiet_days_none)
+        listOf(1, 2, 3, 4, 5) -> context.getString(R.string.editor2_quiet_days_weekdays)
+        listOf(0, 6) -> context.getString(R.string.editor2_quiet_days_weekend)
+        listOf(0, 1, 2, 3, 4, 5, 6) -> context.getString(R.string.editor2_quiet_days_everyday)
+        else -> {
+            val weekdayResIds = listOf(
+                R.string.editor2_weekday_sun,
+                R.string.editor2_weekday_mon,
+                R.string.editor2_weekday_tue,
+                R.string.editor2_weekday_wed,
+                R.string.editor2_weekday_thu,
+                R.string.editor2_weekday_fri,
+                R.string.editor2_weekday_sat,
+            )
+            sorted.joinToString(",") { context.getString(weekdayResIds[it]) }
+        }
     }
 }

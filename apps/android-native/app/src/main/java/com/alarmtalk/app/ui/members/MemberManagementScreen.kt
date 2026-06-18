@@ -316,6 +316,7 @@ private fun FamilyAlarmPermissionCard(
     onToggle: (Boolean) -> Unit,
     onEditQuietTime: () -> Unit,
 ) {
+    val context = LocalContext.current
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -366,7 +367,7 @@ private fun FamilyAlarmPermissionCard(
                             fontWeight = FontWeight.Medium,
                         )
                         Text(
-                            text = quietScheduleLabel(quietWindows),
+                            text = quietScheduleLabel(context, quietWindows),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

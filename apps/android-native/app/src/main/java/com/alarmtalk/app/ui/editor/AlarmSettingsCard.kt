@@ -151,6 +151,7 @@ internal fun AlarmSettingsCard(
                 AlarmSettingRow(
                     title = stringResource(R.string.editor_alarm_sound_title),
                     subtitle = alarmSoundSummary(
+                        context = context,
                         alarmVolumePercent = alarmVolumePercent,
                         alarmSoundLabel = alarmSoundLabel,
                     ),
@@ -170,7 +171,7 @@ internal fun AlarmSettingsCard(
                 AlarmSettingDivider()
                 AlarmSettingRow(
                     title = stringResource(R.string.editor_voice_output_title),
-                    subtitle = voiceOutputSummary(voiceVolumePercent, voiceRepeat, voiceRepeatActive),
+                    subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
                     icon = Icons.AutoMirrored.Outlined.VolumeUp,
                     onClick = onOpenVoiceOutputSettings,
                     trailing = {
@@ -187,25 +188,35 @@ internal fun AlarmSettingsCard(
 }
 
 private fun voiceOutputSummary(
+    context: android.content.Context,
     voiceVolumePercent: Int,
     voiceRepeat: Boolean,
     voiceRepeatActive: Boolean,
 ): String {
     val volume = "${voiceVolumePercent.coerceIn(0, 100)}%"
-    return if (voiceRepeatActive && voiceRepeat) "$volume · 반복" else volume
+    return if (voiceRepeatActive && voiceRepeat) {
+        context.getString(R.string.editor2_voice_output_summary_repeat, volume)
+    } else {
+        volume
+    }
 }
 
-private fun alarmVolumeLabel(value: Int): String =
-    if (value <= 0) "무음" else "${value.coerceIn(0, 100)}%"
+private fun alarmVolumeLabel(context: android.content.Context, value: Int): String =
+    if (value <= 0) context.getString(R.string.editor2_silent) else "${value.coerceIn(0, 100)}%"
 
 private fun alarmSoundSummary(
+    context: android.content.Context,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
 ): String =
     if (alarmVolumePercent <= 0) {
-        "무음"
+        context.getString(R.string.editor2_silent)
     } else {
-        "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}"
+        context.getString(
+            R.string.editor2_alarm_sound_summary,
+            alarmSoundLabel ?: context.getString(R.string.editor2_default_alarm_sound),
+            alarmVolumeLabel(context, alarmVolumePercent),
+        )
     }
 
 @Composable
@@ -259,6 +270,7 @@ internal fun AlarmSoundSettingsPane(
     onAlarmVolumeChange: (Int) -> Unit,
     onPickAlarmSound: () -> Unit,
 ) {
+    val context = LocalContext.current
     val alarmEnabled = alarmVolumePercent > 0
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -351,7 +363,7 @@ internal fun AlarmSoundSettingsPane(
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                text = alarmVolumeLabel(alarmVolumePercent),
+                                text = alarmVolumeLabel(context, alarmVolumePercent),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,

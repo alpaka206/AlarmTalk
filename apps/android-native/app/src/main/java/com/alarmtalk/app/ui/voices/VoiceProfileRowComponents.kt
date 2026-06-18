@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -163,7 +165,7 @@ internal fun RelationshipDropdownField(
     isError: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val presetLabel = selection.preset?.label.orEmpty()
+    val presetLabel = selection.preset?.let { stringResource(it.labelRes) }.orEmpty()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ExposedDropdownMenuBox(
             expanded = expanded,
@@ -195,7 +197,7 @@ internal fun RelationshipDropdownField(
                     RelationshipPreset.entries.filterNot { it == RelationshipPreset.Custom }
                 relationshipOptions.forEach { preset ->
                     DropdownMenuItem(
-                        text = { Text(preset.label) },
+                        text = { Text(stringResource(preset.labelRes)) },
                         onClick = {
                             expanded = false
                             onSelectionChange(
@@ -302,23 +304,25 @@ internal fun SharingOptionCard(
     }
 }
 
-internal enum class RelationshipPreset(val label: String) {
-    Mom("엄마"),
-    Dad("아빠"),
-    Grandma("할머니"),
-    Grandpa("할아버지"),
-    Son("아들"),
-    Daughter("딸"),
-    Granddaughter("손녀"),
-    Grandson("손주"),
-    Sibling("형제·자매"),
-    Boyfriend("남자친구"),
-    Girlfriend("여자친구"),
-    Husband("남편"),
-    Wife("아내"),
-    Friend("친구"),
-    Celebrity("연예인"),
-    Custom("직접 입력"),
+// label 은 백엔드에 저장되고 parseRelationshipLabel 로 다시 preset 으로 복원되는
+// 정규(canonical) 값이라 로케일과 무관하게 고정한다. labelRes 는 드롭다운 표시용 번역 리소스.
+internal enum class RelationshipPreset(val label: String, @StringRes val labelRes: Int) {
+    Mom("엄마", R.string.voices2_relationship_mom),
+    Dad("아빠", R.string.voices2_relationship_dad),
+    Grandma("할머니", R.string.voices2_relationship_grandma),
+    Grandpa("할아버지", R.string.voices2_relationship_grandpa),
+    Son("아들", R.string.voices2_relationship_son),
+    Daughter("딸", R.string.voices2_relationship_daughter),
+    Granddaughter("손녀", R.string.voices2_relationship_granddaughter),
+    Grandson("손주", R.string.voices2_relationship_grandson),
+    Sibling("형제·자매", R.string.voices2_relationship_sibling),
+    Boyfriend("남자친구", R.string.voices2_relationship_boyfriend),
+    Girlfriend("여자친구", R.string.voices2_relationship_girlfriend),
+    Husband("남편", R.string.voices2_relationship_husband),
+    Wife("아내", R.string.voices2_relationship_wife),
+    Friend("친구", R.string.voices2_relationship_friend),
+    Celebrity("연예인", R.string.voices2_relationship_celebrity),
+    Custom("직접 입력", R.string.voices2_relationship_custom),
 }
 
 internal data class RelationshipSelection(
@@ -363,11 +367,16 @@ internal data class SpeakerDraftState(
     val errorMessage: String? = null,
 )
 
-internal fun draftStatusLabel(status: SpeakerDraftStatus, errorMessage: String?): String = when (status) {
-    SpeakerDraftStatus.Cloning -> "목소리를 만드는 중"
-    SpeakerDraftStatus.Synthesizing -> "미리듣기를 만드는 중"
-    SpeakerDraftStatus.Ready -> "준비 완료"
-    SpeakerDraftStatus.Failed -> errorMessage ?: "미리듣기를 준비하지 못했어요"
+internal fun draftStatusLabel(
+    context: android.content.Context,
+    status: SpeakerDraftStatus,
+    errorMessage: String?,
+): String = when (status) {
+    SpeakerDraftStatus.Cloning -> context.getString(R.string.voices2_draft_status_cloning)
+    SpeakerDraftStatus.Synthesizing -> context.getString(R.string.voices2_draft_status_synthesizing)
+    SpeakerDraftStatus.Ready -> context.getString(R.string.voices2_draft_status_ready)
+    SpeakerDraftStatus.Failed ->
+        errorMessage ?: context.getString(R.string.voices2_draft_status_failed)
 }
 
 @Composable
@@ -381,6 +390,7 @@ internal fun SpeakerDraftRow(
     onSelect: () -> Unit,
 ) {
     val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
+    val context = LocalContext.current
     OutlinedCard {
         Row(
             modifier = Modifier
@@ -394,7 +404,7 @@ internal fun SpeakerDraftRow(
                     text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText(draftStatusLabel(state.status, state.errorMessage))
+                MutedText(draftStatusLabel(context, state.status, state.errorMessage))
             }
             IconButton(
                 onClick = onTogglePlay,

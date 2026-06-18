@@ -3,6 +3,7 @@ package com.alarmtalk.app.billing
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -65,6 +66,8 @@ class PlayBillingManager(
         /** 결제 실패/취소. [userMessage] 가 null 이면 사용자 취소(별도 안내 불필요). */
         fun onPurchaseFailed(userMessage: String?)
     }
+
+    private val appContext: Context = context.applicationContext
 
     private val billingClient: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
@@ -210,14 +213,14 @@ class PlayBillingManager(
                 listener.onPurchaseFailed(null)
 
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
-                listener.onPurchaseFailed("이미 구독 중인 상품이에요. 잠시 후 구독 상태를 새로고침해 주세요.")
+                listener.onPurchaseFailed(appContext.getString(R.string.r3misc_billing_already_owned))
 
             else -> {
                 Log.w(
                     TAG,
                     "Play purchase failed code=${billingResult.responseCode} message=${billingResult.debugMessage}",
                 )
-                listener.onPurchaseFailed("Google Play 결제에 실패했어요. 잠시 후 다시 시도해 주세요.")
+                listener.onPurchaseFailed(appContext.getString(R.string.r3misc_billing_purchase_failed))
             }
         }
     }

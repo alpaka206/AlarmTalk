@@ -91,7 +91,8 @@ import kotlinx.coroutines.withContext
 private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
     audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
 
-private fun voiceProfilePlaceholder(): String = "목소리"
+private fun voiceProfilePlaceholder(context: android.content.Context): String =
+    context.getString(R.string.voices2_default_profile_name)
 
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
@@ -106,51 +107,42 @@ private fun androidNavigationBarHeightPadding(): Dp {
     return with(density) { navigationBarHeightPx.toDp() }
 }
 
-private fun voiceProfileDurationError(durationMillis: Long?): String? = when {
-    durationMillis == null -> "오디오 길이를 확인할 수 없어요."
-    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 녹음해 주세요."
+private fun voiceProfileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
+    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
+    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
+        context.getString(R.string.voices2_record_at_least_one_minute)
     durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS +
-        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS -> "2분 이하 음성으로 등록할 수 있어요."
+        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS ->
+        context.getString(R.string.voices2_register_under_two_minutes)
     else -> null
 }
 
-private fun voiceProfileFileDurationError(durationMillis: Long?): String? = when {
-    durationMillis == null -> "오디오 길이를 확인할 수 없어요."
-    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 파일을 선택해 주세요."
+private fun voiceProfileFileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
+    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
+    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
+        context.getString(R.string.voices2_select_file_at_least_one_minute)
     else -> null
 }
 
 // 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-private val voiceCreateGuideSteps = listOf(
+@Composable
+private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
     UsageGuideStep(
         icon = Icons.Outlined.Mic,
-        title = "조용한 곳에서 녹음해요",
-        body = "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.",
+        title = stringResource(R.string.voices2_guide_record_title),
+        body = stringResource(R.string.voices2_guide_record_body),
     ),
     UsageGuideStep(
         icon = Icons.Outlined.Badge,
-        title = "누구의 목소리인지 알려줘요",
-        body = "이름·관계와 '나를 부를 호칭'을 입력하면, 랜덤 문구에서 그 호칭으로 다정하게 불러줘요.",
+        title = stringResource(R.string.voices2_guide_identity_title),
+        body = stringResource(R.string.voices2_guide_identity_body),
     ),
     UsageGuideStep(
         icon = Icons.Outlined.AutoAwesome,
-        title = "등록을 누르면 완성",
-        body = "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요.",
+        title = stringResource(R.string.voices2_guide_register_title),
+        body = stringResource(R.string.voices2_guide_register_body),
     ),
 )
-
-// 보이스 클로닝용 추천 낭독 스크립트(약 1분 분량). 인사·일상·숫자·감정·긴 문장을
-// 고루 담아 다양한 발음이 들어가도록 구성했고, 알람톡 서비스의 따뜻한 톤을 자연스럽게 녹였다.
-private const val VOICE_RECORD_SCRIPT =
-    "안녕하세요. 지금 제 목소리로 알람톡에서 쓸 알람을 만들고 있어요. " +
-        "매일 아침, 좋아하는 사람의 목소리로 깨어날 수 있다니 생각만 해도 따뜻하네요. " +
-        "오늘은 날씨가 맑고 바람도 살랑살랑 불어서 산책하기 참 좋은 날이에요. " +
-        "이 목소리로 가족이나 친구의 아침을 다정하게 챙겨줄 수도 있겠죠. " +
-        "숫자도 한번 세어 볼게요. 하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열. " +
-        "기쁜 날엔 환하게 웃고, 힘든 날엔 \"오늘도 정말 수고했어\" 하고 스스로를 다독여 주는 것도 잊지 말아야겠죠. " +
-        "이제 조금 긴 문장을 읽어 볼게요. 매일 같은 시간에 일어나 창문을 열고 맑은 공기를 들이마시며 " +
-        "하루를 차분히 시작하면, 마음까지 한결 가벼워지는 기분이 들어요. " +
-        "끝까지 또렷하게 읽어 주셔서 고맙습니다."
 
 @Composable
 private fun VoiceRecordScriptCard() {
@@ -196,7 +188,7 @@ private fun VoiceRecordScriptCard() {
             }
             if (expanded) {
                 Text(
-                    text = VOICE_RECORD_SCRIPT,
+                    text = stringResource(R.string.voices2_record_script),
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
@@ -280,6 +272,7 @@ internal fun VoiceProfileManagementPanel(
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    val voiceCreateGuideSteps = rememberVoiceCreateGuideSteps()
     var voiceGuideVisible by remember { mutableStateOf(false) }
     // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
     LaunchedEffect(showCreateForm) {
@@ -370,7 +363,7 @@ internal fun VoiceProfileManagementPanel(
     fun applySelectedAudio(audio: CachedAlarmAudio) {
         stopMediaPreview()
         selectedAudio = audio
-        localMessage = voiceProfileDurationError(audio.durationMillis)
+        localMessage = voiceProfileDurationError(context, audio.durationMillis)
     }
 
     fun prepareSelectedFile(uri: Uri) {
@@ -388,7 +381,7 @@ internal fun VoiceProfileManagementPanel(
                 detectedSpeakers = emptyList()
                 speakerDraftStates = emptyMap()
                 activePlayingSpeakerId = null
-                localMessage = voiceProfileFileDurationError(durationMillis)
+                localMessage = voiceProfileFileDurationError(context, durationMillis)
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache voice profile audio", error)
@@ -403,7 +396,7 @@ internal fun VoiceProfileManagementPanel(
                 withContext(Dispatchers.IO) { recorder.stop() }
             }.onSuccess { audio ->
                 isRecording = false
-                val error = voiceProfileDurationError(audio.durationMillis)
+                val error = voiceProfileDurationError(context, audio.durationMillis)
                 if (error == null) {
                     applySelectedAudio(audio)
                 } else {
@@ -566,7 +559,7 @@ internal fun VoiceProfileManagementPanel(
                     startMillis = cropStartMillis + speaker.startMs,
                 )
             }
-            val draftName = baseName.ifBlank { voiceProfilePlaceholder() }
+            val draftName = baseName.ifBlank { voiceProfilePlaceholder(context) }
             val profile = onCloneSpeakerDraft(draftName, audio)
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
@@ -577,7 +570,7 @@ internal fun VoiceProfileManagementPanel(
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profile.id,
-                    text = "이 목소리로 깨워드릴까요?",
+                    text = context.getString(R.string.r3data_voice_preview_prompt),
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -730,7 +723,7 @@ internal fun VoiceProfileManagementPanel(
             val response = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profileId,
-                    text = "이 목소리로 깨워드릴까요?",
+                    text = context.getString(R.string.r3data_voice_preview_prompt),
                     category = "custom",
                     language = "ko",
                     random = false,
@@ -868,7 +861,7 @@ internal fun VoiceProfileManagementPanel(
                 localMessage = context.getString(R.string.voices_prepare_recording_first)
                 return
             }
-            if (voiceProfileDurationError(audio.durationMillis) != null) return
+            if (voiceProfileDurationError(context, audio.durationMillis) != null) return
             onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
             closeCreateDialog()
             return
@@ -883,7 +876,7 @@ internal fun VoiceProfileManagementPanel(
             runCatching {
                 croppedFileAudio()
             }.onSuccess { audio ->
-                val error = voiceProfileDurationError(audio.durationMillis)
+                val error = voiceProfileDurationError(context, audio.durationMillis)
                 if (error != null) {
                     localMessage = error
                 } else {

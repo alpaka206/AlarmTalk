@@ -73,6 +73,7 @@ internal fun RandomPromptSettingsPane(
     onDismissWithoutSave: () -> Unit,
     onSaveSettings: (RandomPromptSettingsResult) -> Unit,
 ) {
+    val context = LocalContext.current
     var draftLanguage by remember(voiceLanguage) {
         mutableStateOf(voiceLanguage.takeIf { language -> TtsLanguages.any { it.first == language } } ?: "ko")
     }
@@ -184,9 +185,9 @@ internal fun RandomPromptSettingsPane(
                 }
 
                 SnoozeOptionSection(title = stringResource(R.string.editorp_random_context_section)) {
-                    RandomPromptContexts.forEachIndexed { index, (context, label) ->
+                    RandomPromptContexts.forEachIndexed { index, (context, labelRes) ->
                         SnoozeRadioRow(
-                            label = label,
+                            label = stringResource(labelRes),
                             selected = normalizedContext == context,
                             onClick = { selectContext(context) },
                         )
@@ -201,7 +202,7 @@ internal fun RandomPromptSettingsPane(
                             draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
                                 stringResource(
                                     R.string.editorp_random_weather_region_value,
-                                    weatherLocationSummary(draftWeatherCountry, draftWeatherCity),
+                                    weatherLocationSummary(context, draftWeatherCountry, draftWeatherCity),
                                 )
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
                                 stringResource(R.string.editorp_random_weather_region_saved)
@@ -217,7 +218,7 @@ internal fun RandomPromptSettingsPane(
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
-                                fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
+                                fortuneInfoSummary(context, draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
                                 stringResource(R.string.editorp_random_fortune_saved)
                             else -> stringResource(R.string.editorp_random_fortune_required)
@@ -226,9 +227,9 @@ internal fun RandomPromptSettingsPane(
                 }
 
                 SnoozeOptionSection(title = stringResource(R.string.editorp_random_language_section)) {
-                    TtsLanguages.forEachIndexed { index, (language, label) ->
+                    TtsLanguages.forEachIndexed { index, (language, labelRes) ->
                         SnoozeRadioRow(
-                            label = label,
+                            label = stringResource(labelRes),
                             selected = draftLanguage == language,
                             onClick = { draftLanguage = language },
                         )

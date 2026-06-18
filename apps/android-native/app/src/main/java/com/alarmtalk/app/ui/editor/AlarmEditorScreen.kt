@@ -91,29 +91,30 @@ private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
 private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
 private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
 
+@Composable
 private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
     CoachMarkStep(
         targetKey = GUIDE_TARGET_TIME,
-        title = "시각부터 맞춰요",
-        body = "휠을 위아래로 돌려 알람이 울릴 시각을 맞춰요.",
+        title = stringResource(R.string.editor2_coach_time_title),
+        body = stringResource(R.string.editor2_coach_time_body),
         lazyItemIndex = 0,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_SCHEDULE,
-        title = "반복과 이름을 정해요",
-        body = "요일을 누르면 매주 반복돼요. 반복을 켜면 공휴일에 끄기도 고를 수 있고, 알람 이름도 여기서 바꿔요.",
+        title = stringResource(R.string.editor2_coach_schedule_title),
+        body = stringResource(R.string.editor2_coach_schedule_body),
         lazyItemIndex = 1,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_PLAY_MODE,
-        title = "재생 방식을 골라요",
-        body = "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요.",
+        title = stringResource(R.string.editor2_coach_play_mode_title),
+        body = stringResource(R.string.editor2_coach_play_mode_body),
         lazyItemIndex = playModeItemIndex,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_SAVE,
-        title = "저장하면 끝이에요",
-        body = "음량·진동·스누즈는 바로 위 카드에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.",
+        title = stringResource(R.string.editor2_coach_save_title),
+        body = stringResource(R.string.editor2_coach_save_body),
     ),
 )
 
@@ -542,7 +543,7 @@ internal fun AlarmEditorScreen(
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
-                targetUserName = familyMemberLabel(recipient),
+                targetUserName = familyMemberLabel(context, recipient),
             ),
         )
     }

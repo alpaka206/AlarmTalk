@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.ui.res.stringResource
 import android.Manifest
 import android.util.Log
 import androidx.activity.compose.BackHandler
@@ -147,7 +148,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     fun requestFirstMissingAlarmPermission() {
         val target = PermissionSnapshot.read(context).firstMissingAlarmTarget() ?: return
-        viewModel.message = alarmPermissionRequiredMessage(target)
+        viewModel.message = alarmPermissionRequiredMessage(context, target)
         requestPermission(target)
     }
 
@@ -318,17 +319,19 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                     "Google sign-in failed resultCode=${result.resultCode} statusCode=${error.statusCode}",
                     error,
                 )
-                viewModel.showGoogleSignInFailed(googleSignInErrorMessage(error.statusCode))
+                viewModel.showGoogleSignInFailed(googleSignInErrorMessage(context, error.statusCode))
             } else {
                 Log.e(TAG, "Google sign-in failed resultCode=${result.resultCode}", error)
-                viewModel.showGoogleSignInFailed(userFacingError(error, "Google 로그인에 실패했어요"))
+                viewModel.showGoogleSignInFailed(
+                    userFacingError(error, context.getString(R.string.r3app_google_signin_failed)),
+                )
             }
         }.getOrNull()
         if (account == null) return@rememberLauncherForActivityResult
 
         val idToken = account?.idToken
         if (idToken.isNullOrBlank()) {
-            viewModel.showGoogleSignInFailed("Google 로그인 정보를 받지 못했어요. 다시 시도해 주세요.")
+            viewModel.showGoogleSignInFailed(context.getString(R.string.r3app_google_signin_no_info))
         } else {
             viewModel.finishGoogleLogin(idToken)
         }
@@ -367,7 +370,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
             planGateDialog = PlanGateDialogState(
-                message = "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
+                message = context.getString(R.string.r3app_messages_plan_gate),
             )
             return
         }
@@ -421,7 +424,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     planGateDialog?.let { gate ->
         PlanGateDialog(
             message = gate.message,
-            confirmLabel = gate.confirmLabel,
+            confirmLabel = gate.confirmLabel ?: stringResource(R.string.r3app_plan_gate_confirm),
             onConfirm = {
                 planGateDialog = null
                 navController.navigateTopLevelTab(NativeTab.Billing)

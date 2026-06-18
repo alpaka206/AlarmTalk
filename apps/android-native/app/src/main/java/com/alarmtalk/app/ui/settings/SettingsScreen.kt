@@ -80,7 +80,7 @@ internal fun SettingsScreen(
             SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
                 SettingsRow(
                     label = stringResource(R.string.hs_settings_theme),
-                    value = themeModeLabel(themeMode),
+                    value = themeModeLabel(context, themeMode),
                     onClick = { showThemeDialog = true },
                 )
             }
@@ -91,6 +91,7 @@ internal fun SettingsScreen(
                 SettingsRow(
                     label = stringResource(R.string.hs_settings_weather_region),
                     value = weatherLocationSettingsLabel(
+                        context,
                         promptPreferences.weatherCountry,
                         promptPreferences.weatherCity,
                     ),
@@ -100,6 +101,7 @@ internal fun SettingsScreen(
                 SettingsRow(
                     label = stringResource(R.string.hs_settings_fortune_info),
                     value = fortuneInfoSettingsLabel(
+                        context,
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
                         promptPreferences.fortuneBirthTime,

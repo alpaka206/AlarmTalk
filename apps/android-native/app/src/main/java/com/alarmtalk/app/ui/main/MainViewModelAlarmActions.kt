@@ -111,7 +111,7 @@ internal fun MainViewModel.createAlarm(
         runCatching {
             repository.createAlarm(draft, replaceExisting)
         }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_alarm_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
+            message = getApplication<Application>().getString(R.string.msg_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -240,7 +240,7 @@ internal fun MainViewModel.updateAlarm(
         runCatching {
             repository.updateAlarm(alarmId, draft, replaceExisting)
         }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_changes_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
+            message = getApplication<Application>().getString(R.string.msg_changes_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -312,7 +312,7 @@ internal fun MainViewModel.copyAlarm(alarmId: String) {
         runCatching {
             repository.copyAlarm(alarmId)
         }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(alarm.fireAtMillis))
+            message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
         }.onFailure { error ->
             Log.e(TAG, "Failed to copy alarm id=$alarmId", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_copy_failed))
@@ -326,7 +326,7 @@ internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
         runCatching {
             repository.createTestAlarm(delayMinutes)
         }.onSuccess { alarm ->
-            message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
+            message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(getApplication<Application>(), alarm.fireAtMillis))
         }.onFailure { error ->
             Log.e(TAG, "Failed to create test alarm", error)
             message = userFacingError(error, getApplication<Application>().getString(R.string.msg_test_alarm_schedule_failed))

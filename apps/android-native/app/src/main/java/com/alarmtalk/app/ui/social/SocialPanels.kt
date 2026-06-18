@@ -315,13 +315,13 @@ internal fun VoiceMessagePanel(
     }
     var selectedRecipientId by remember(recipients) { mutableStateOf(recipients.firstOrNull()?.userId) }
     var text by remember { mutableStateOf("") }
-    val voiceOptions = remember(voiceProfiles, familyVoices) {
+    val voiceOptions = remember(voiceProfiles, familyVoices, context) {
         val readyProfiles = voiceProfiles
             .filter { it.status == null || it.status == "ready" }
             .map { it.id to it.name }
         val readyFamilyVoices = familyVoices
             .filter { (it.status == null || it.status == "ready") && it.isShared != false }
-            .map { it.id to sharedNoteVoiceLabel(it) }
+            .map { it.id to sharedNoteVoiceLabel(context, it) }
         readyProfiles + readyFamilyVoices
     }
     var sendMode by remember { mutableStateOf(VoiceMessageSendMode.Text) }
@@ -778,10 +778,10 @@ private enum class VoiceMessageSendMode {
     Tts,
 }
 
-private fun sharedNoteVoiceLabel(profile: FamilyVoiceProfile): String {
+private fun sharedNoteVoiceLabel(context: android.content.Context, profile: FamilyVoiceProfile): String {
     val owner = profile.ownerName?.takeIf { it.isNotBlank() }
     return if (owner == null) {
-        "${profile.name} · 공유"
+        context.getString(R.string.misc2_shared_voice_label, profile.name)
     } else {
         "${profile.name} · $owner"
     }

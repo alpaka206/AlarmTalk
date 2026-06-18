@@ -25,8 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 
 @Composable
 internal fun AlarmsHeader(
@@ -39,7 +41,7 @@ internal fun AlarmsHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "알람",
+            text = stringResource(R.string.r3misc_alarms_header_title),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -58,7 +60,7 @@ internal fun AlarmsHeader(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("알람 만들기")
+                Text(stringResource(R.string.r3misc_alarms_create_button))
             }
             profileMenu?.invoke()
         }
@@ -86,12 +88,12 @@ internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
                 modifier = Modifier.size(44.dp),
             )
             Text(
-                text = "아직 알람이 없어요.",
+                text = stringResource(R.string.r3misc_alarms_empty_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
-                Text("새 알람 만들기")
+                Text(stringResource(R.string.r3misc_alarms_create_new_button))
             }
         }
     }
