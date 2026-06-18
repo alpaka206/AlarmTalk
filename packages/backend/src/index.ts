@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import type { Env, AppEnv } from './types';
 import { authMiddleware } from './middleware/auth';
 import { loggerMiddleware } from './middleware/logger';
-import { rateLimitMiddleware } from './middleware/rateLimit';
+import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
@@ -185,6 +185,8 @@ app.get('/api/app/version', noStore, async (c) => {
 });
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
+// 무차별 대입 방어용 엄격 한도를 일반 한도와 별개 버킷으로 추가 적용한다.
+app.use('/api/auth/*', authRateLimitMiddleware);
 app.route('/api/auth', authRoutes);
 
 // 인증이 필요한 라우트들
