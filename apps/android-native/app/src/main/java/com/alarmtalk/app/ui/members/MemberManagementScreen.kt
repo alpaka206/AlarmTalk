@@ -38,9 +38,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
@@ -66,9 +68,9 @@ internal fun MemberManagementScreen(
     val group = familyGroup?.group
     val isOwner = familyGroup?.role == "owner" && group != null
     val planLabel = when (subscriptionResponse?.plan?.key) {
-        "couple" -> "커플"
-        "family" -> "가족"
-        else -> "공유"
+        "couple" -> stringResource(R.string.social_plan_label_couple)
+        "family" -> stringResource(R.string.social_plan_label_family)
+        else -> stringResource(R.string.social_plan_label_shared)
     }
     val sortedMembers = familyGroup?.members.orEmpty()
         .sortedWith(compareByDescending<FamilyGroupMember> { it.role == "owner" }.thenBy { it.joinedAt })
@@ -91,7 +93,7 @@ internal fun MemberManagementScreen(
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, code)
         }
-        context.startActivity(Intent.createChooser(sendIntent, "코드 공유"))
+        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.social_share_code_chooser_title)))
     }
 
     var pendingRemoveMember by remember { mutableStateOf<FamilyGroupMember?>(null) }
@@ -112,11 +114,11 @@ internal fun MemberManagementScreen(
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.social_back_cd),
                     )
                 }
                 Text(
-                    text = "공유 이용권",
+                    text = stringResource(R.string.social_shared_plan_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -126,7 +128,7 @@ internal fun MemberManagementScreen(
         if (group == null) {
             item {
                 Text(
-                    text = "현재 함께 쓰는 이용권이 없어요.",
+                    text = stringResource(R.string.social_no_shared_plan),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -136,7 +138,12 @@ internal fun MemberManagementScreen(
 
         item {
             Text(
-                text = "$planLabel 이용권 · 현재 ${sortedMembers.size}/${group.maxMembers}명",
+                text = stringResource(
+                    R.string.social_plan_member_count,
+                    planLabel,
+                    sortedMembers.size,
+                    group.maxMembers,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -161,7 +168,7 @@ internal fun MemberManagementScreen(
         if (isOwner) {
             item {
                 Text(
-                    text = "공유 코드",
+                    text = stringResource(R.string.social_share_code_section_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -170,9 +177,9 @@ internal fun MemberManagementScreen(
                 item {
                     Text(
                         text = if (isCapacityFull) {
-                            "정원이 가득 차서 더 이상 공유할 수 없어요."
+                            stringResource(R.string.social_capacity_full_no_share)
                         } else {
-                            "공유 코드가 아직 없어요. $planLabel 구성원을 초대할 초대 코드를 만들어 주세요."
+                            stringResource(R.string.social_no_share_code_yet, planLabel)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -185,7 +192,7 @@ internal fun MemberManagementScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
                     ) {
-                        Text(if (isCapacityFull) "공유 불가" else "공유 코드 만들기")
+                        Text(if (isCapacityFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_create_share_code))
                     }
                 }
             } else {
@@ -206,9 +213,17 @@ internal fun MemberManagementScreen(
                             )
                             Text(
                                 text = if (isFull) {
-                                    "${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용 · 정원이 가득 차서 공유할 수 없어요"
+                                    stringResource(
+                                        R.string.social_voucher_usage_full,
+                                        shareVoucher.useCount,
+                                        shareVoucher.maxUses,
+                                    )
                                 } else {
-                                    "${shareVoucher.useCount}/${shareVoucher.maxUses}명 사용"
+                                    stringResource(
+                                        R.string.social_voucher_usage,
+                                        shareVoucher.useCount,
+                                        shareVoucher.maxUses,
+                                    )
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -219,7 +234,7 @@ internal fun MemberManagementScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                             ) {
-                                Text(if (isFull) "공유 불가" else "공유하기")
+                                Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                             }
                         }
                     }
@@ -229,7 +244,7 @@ internal fun MemberManagementScreen(
 
         item {
             Text(
-                text = "구성원",
+                text = stringResource(R.string.social_members_section_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -251,13 +266,13 @@ internal fun MemberManagementScreen(
             onDismissRequest = { pendingRemoveMember = null },
             title = {
                 ModalDialogTitle(
-                    title = "구성원 내보내기",
+                    title = stringResource(R.string.social_remove_member_dialog_title),
                     onDismiss = { pendingRemoveMember = null },
                 )
             },
             text = {
                 Text(
-                    text = "이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.",
+                    text = stringResource(R.string.social_remove_member_dialog_message),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -274,7 +289,7 @@ internal fun MemberManagementScreen(
                     },
                 ) {
                     Text(
-                        text = "내보내기",
+                        text = stringResource(R.string.social_remove_button),
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
@@ -320,12 +335,12 @@ private fun FamilyAlarmPermissionCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = "상대 알람 허용",
+                        text = stringResource(R.string.social_allow_partner_alarm),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.",
+                        text = stringResource(R.string.social_allow_partner_alarm_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -346,7 +361,7 @@ private fun FamilyAlarmPermissionCard(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "알람 받지 않을 시간",
+                            text = stringResource(R.string.social_quiet_time_label),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                         )
@@ -357,7 +372,7 @@ private fun FamilyAlarmPermissionCard(
                         )
                     }
                     TextButton(onClick = onEditQuietTime) {
-                        Text("수정")
+                        Text(stringResource(R.string.social_edit_button))
                     }
                 }
             }
@@ -394,7 +409,7 @@ private fun MemberRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = member.name ?: member.email ?: "멤버",
+                    text = member.name ?: member.email ?: stringResource(R.string.social_member_fallback),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
@@ -407,8 +422,8 @@ private fun MemberRow(
                 }
             }
             val chipLabel = when {
-                member.role == "owner" -> "관리자"
-                isMe -> "나"
+                member.role == "owner" -> stringResource(R.string.social_role_owner)
+                isMe -> stringResource(R.string.social_role_me)
                 else -> null
             }
             if (chipLabel != null) {
@@ -426,7 +441,7 @@ private fun MemberRow(
                 IconButton(onClick = onRemove, enabled = removeEnabled) {
                     Icon(
                         imageVector = Icons.Outlined.PersonRemove,
-                        contentDescription = "내보내기",
+                        contentDescription = stringResource(R.string.social_remove_button),
                         tint = MaterialTheme.colorScheme.error,
                     )
                 }

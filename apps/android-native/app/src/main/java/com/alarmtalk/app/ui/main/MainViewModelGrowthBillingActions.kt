@@ -45,6 +45,7 @@ import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
 import com.alarmtalk.app.network.trimmedOrNull
+import com.alarmtalk.app.R
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -65,7 +66,7 @@ internal fun MainViewModel.refreshCharacterAndBilling() {
 }
 
 internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
-    val authorization = bearerOrMessage("공유 코드 정보를 불러오려면 먼저 로그인해 주세요") ?: return vouchers
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_share_code_info)) ?: return vouchers
     if (billingBusy || socialBusy) return vouchers
     billingBusy = true
     socialBusy = true
@@ -94,7 +95,7 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
         }
     } catch (error: Throwable) {
         Log.e(TAG, "Failed to refresh share code data", error)
-        message = userFacingError(error, "공유 코드 정보를 불러오지 못했어요")
+        message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_info_load_failed))
         vouchers
     } finally {
         billingBusy = false
@@ -111,7 +112,7 @@ internal fun MainViewModel.preloadCharacterAndBilling() {
 // 직후 구매 버튼이 네트워크 3개가 끝날 때까지 비활성화되는 문제가 있었다.
 private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
     if (characterBusy || billingRefreshing || billingBusy) return
-    val authorization = bearerOrMessage("성장 정보를 불러오려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_growth_info)) ?: return
     characterBusy = true
     billingRefreshing = true
     viewModelScope.launch {
@@ -122,7 +123,7 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
                 applyCharacterBillingSnapshot(snapshot)
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load character or billing", error)
-                if (showMessage) message = userFacingError(error, "성장 정보를 불러오지 못했어요")
+                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_info_load_failed))
             }
         } finally {
             characterBusy = false
@@ -134,7 +135,7 @@ private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
 internal fun MainViewModel.syncCharacterEvents() {
     val session = authSession
     if (session == null) {
-        message = "성장 기록을 동기화하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_sync_growth_records)
         return
     }
     if (characterBusy) return
@@ -145,11 +146,11 @@ internal fun MainViewModel.syncCharacterEvents() {
         }
         characterBusy = false
         syncResult.onSuccess { result ->
-            message = "성장 기록을 반영했어요. 실패한 기록 ${result.failed}개는 다시 시도해 주세요."
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_growth_records_applied, result.failed)
             refreshCharacterAndBillingData(showMessage = false)
         }.onFailure { error ->
             Log.e(TAG, "Character event sync failed", error)
-            message = userFacingError(error, "성장 기록을 반영하지 못했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_records_apply_failed))
         }
     }
 }
@@ -237,10 +238,10 @@ internal fun MainViewModel.syncPendingCharacterEventsSilently() {
 }
 
 internal fun MainViewModel.registerCode(code: String) {
-    val authorization = bearerOrMessage("코드를 등록하려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code)) ?: return
     val trimmedCode = code.trim()
     if (trimmedCode.isBlank()) {
-        message = "코드를 입력해 주세요."
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_input_required_period)
         return
     }
     viewModelScope.launch {
@@ -248,7 +249,7 @@ internal fun MainViewModel.registerCode(code: String) {
         runCatching {
             api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
-            message = "코드를 등록했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
             refreshCharacterBillingAfterMutation(authorization, "code registration")
             refreshSocial()
             refreshAppSession()
@@ -261,7 +262,7 @@ internal fun MainViewModel.registerCode(code: String) {
             Log.e(TAG, "Failed to register code", error)
             message = codeRegistrationFailureMessage(
                 apiErrorCode(error),
-                userFacingError(error, "코드 등록에 실패했어요"),
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
             )
         }
         billingBusy = false
@@ -283,7 +284,7 @@ internal fun MainViewModel.preloadNotes() {
 
 private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
     if (noteBusy) return
-    val authorization = bearerOrMessage("음성 메시지를 불러오려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_load_voice_messages)) ?: return
     noteBusy = true
     viewModelScope.launch {
         try {
@@ -298,7 +299,7 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
                 receivedNotes = notes
             }.onFailure { error ->
                 Log.e(TAG, "Failed to refresh notes", error)
-                if (showMessage) message = userFacingError(error, "음성 메시지를 불러오지 못했어요")
+                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_messages_load_failed))
             }
         } finally {
             noteBusy = false
@@ -307,15 +308,15 @@ private fun MainViewModel.refreshNotesData(showMessage: Boolean) {
 }
 
 internal fun MainViewModel.sendNote(receiverId: String, text: String) {
-    val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_send_message)) ?: return
     val normalizedReceiverId = receiverId.trim()
     val trimmedText = text.trim()
     if (normalizedReceiverId.isBlank()) {
-        message = "받는 사람을 선택해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_receiver_required)
         return
     }
     if (trimmedText.isBlank()) {
-        message = "메시지를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_input_required)
         return
     }
     viewModelScope.launch {
@@ -326,35 +327,35 @@ internal fun MainViewModel.sendNote(receiverId: String, text: String) {
                 request = SendNoteRequest(receiverId = normalizedReceiverId, text = trimmedText),
             )
         }.onSuccess {
-            message = "메시지를 보냈어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_sent)
             refreshNotes()
         }.onFailure { error ->
             Log.e(TAG, "Failed to send note", error)
-            message = userFacingError(error, "메시지 전송에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_message_send_failed))
         }
         noteBusy = false
     }
 }
 
 internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voiceProfileId: String) {
-    val authorization = bearerOrMessage("메시지를 보내려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_send_message)) ?: return
     val normalizedReceiverId = receiverId.trim()
     val normalizedVoiceProfileId = voiceProfileId.trim()
     val trimmedText = text.trim()
     if (normalizedReceiverId.isBlank()) {
-        message = "받는 사람을 선택해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_receiver_required)
         return
     }
     if (trimmedText.isBlank()) {
-        message = "메시지를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_message_input_required)
         return
     }
     if (trimmedText.length > 200) {
-        message = "음성 메시지는 200자까지 보낼 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_max_length)
         return
     }
     if (normalizedVoiceProfileId.isBlank()) {
-        message = "목소리를 선택해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_required)
         return
     }
     viewModelScope.launch {
@@ -382,18 +383,18 @@ internal fun MainViewModel.sendTtsNote(receiverId: String, text: String, voicePr
                 ),
             )
         }.onSuccess {
-            message = "음성 메시지를 보냈어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_sent)
             refreshNotes()
         }.onFailure { error ->
             Log.e(TAG, "Failed to send TTS note", error)
-            message = userFacingError(error, "음성 메시지 전송에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_voice_message_send_failed))
         }
         noteBusy = false
     }
 }
 
 internal suspend fun MainViewModel.downloadNoteAudio(noteId: String): NoteAudioResponse {
-    val authorization = bearerOrMessage("음성 메시지를 재생하려면 먼저 로그인해 주세요")
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_play_voice_message))
         ?: throw IllegalStateException("Login is required to play note audio.")
     return withContext(Dispatchers.IO) {
         api.getNoteAudio(authorization, noteId)
@@ -401,7 +402,7 @@ internal suspend fun MainViewModel.downloadNoteAudio(noteId: String): NoteAudioR
 }
 
 internal fun MainViewModel.markNoteRead(noteId: String) {
-    val authorization = bearerOrMessage("메시지를 읽음 처리하려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_mark_message_read)) ?: return
     viewModelScope.launch {
         runCatching {
             api.markNoteRead(authorization, noteId)
@@ -420,7 +421,7 @@ internal fun MainViewModel.markNoteRead(noteId: String) {
 }
 
 internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) {
-    val authorization = bearerOrMessage("이용권을 변경하려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_change_plan)) ?: return
     viewModelScope.launch {
         billingBusy = true
         runCatching {
@@ -450,9 +451,9 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
                 ) + vouchers
             }
             message = if (gift) {
-                "${response.plan.name} 이용권을 선물할 수 있어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_gift_available, response.plan.name)
             } else {
-                "${response.plan.name} 이용권을 적용했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied_named, response.plan.name)
             }
             refreshCharacterBillingAfterMutation(authorization, "checkout")
             if (!gift) {
@@ -466,7 +467,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to checkout plan key=$planKey gift=$gift", error)
-            val fallback = if (gift) "선물하기에 실패했어요" else "이용권 적용에 실패했어요"
+            val fallback = if (gift) getApplication<android.app.Application>().getString(R.string.msg_gb_gift_failed) else getApplication<android.app.Application>().getString(R.string.msg_gb_plan_apply_failed)
             message = billingFailureMessage(apiErrorCode(error), userFacingError(error, fallback))
         }
         billingBusy = false
@@ -479,7 +480,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
  */
 internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, productId: String) {
     if (authSession == null) {
-        message = "이용권을 구매하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_purchase_plan)
         return
     }
     if (billingBusy) return
@@ -489,13 +490,13 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
             playBilling.launchPurchase(activity, productId)
         }.onSuccess { launched ->
             if (!launched) {
-                message = "Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
                 billingBusy = false
             }
             // launched=true 면 busy 해제는 결제 결과 콜백(onPurchaseReady/Pending/Failed)에서 처리.
         }.onFailure { error ->
             Log.e(TAG, "Failed to launch Play purchase productId=$productId", error)
-            message = "Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요."
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_google_play_start_failed)
             billingBusy = false
         }
     }
@@ -506,7 +507,7 @@ internal fun MainViewModel.startPlayPurchase(activity: android.app.Activity, pro
  * 성공 시 기존 구독 로드 경로를 재사용해 구독 상태를 새로고침한다.
  */
 internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productId: String) {
-    val authorization = bearerOrMessage("이용권을 적용하려면 먼저 로그인해 주세요") ?: run {
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_apply_plan)) ?: run {
         billingBusy = false
         return
     }
@@ -523,18 +524,18 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
             )
         }.onSuccess { response ->
             if (response.success) {
-                message = "이용권을 적용했어요"
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
                 refreshCharacterBillingAfterMutation(authorization, "google play confirm")
                 refreshAppSession()
                 refreshSocial()
             } else {
-                message = "결제 확인에 실패했어요. 잠시 후 다시 시도해 주세요."
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed_retry)
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to confirm Play purchase productId=$productId", error)
             message = billingFailureMessage(
                 apiErrorCode(error),
-                userFacingError(error, "결제 확인에 실패했어요"),
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_payment_confirm_failed)),
             )
         }
         billingBusy = false
@@ -542,11 +543,11 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
 }
 
 internal fun MainViewModel.ensureFamilyShareCode() {
-    val authorization = bearerOrMessage("공유 코드를 만들려면 먼저 로그인해 주세요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_create_share_code)) ?: return
     val planLabel = when (subscriptionResponse?.plan?.key) {
-        "couple" -> "커플"
-        "family" -> "가족"
-        else -> "공유"
+        "couple" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_couple)
+        "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
+        else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
     }
     viewModelScope.launch {
         billingBusy = true
@@ -554,14 +555,14 @@ internal fun MainViewModel.ensureFamilyShareCode() {
             api.ensureFamilyShareCode(authorization).voucher
         }.onSuccess { voucher ->
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
-            message = "$planLabel 공유 코드를 준비했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
             refreshCharacterBillingAfterMutation(authorization, "family share code")
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to ensure family share code", error)
             message = billingFailureMessage(
                 apiErrorCode(error),
-                userFacingError(error, "$planLabel 공유 코드를 불러오지 못했어요"),
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_load_failed, planLabel)),
             )
         }
         billingBusy = false
@@ -572,7 +573,7 @@ private fun com.alarmtalk.app.network.BillingPlan.isSharedPassPlan(): Boolean =
     key in setOf("couple", "family") || planType in setOf("couple", "family")
 
 internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
-    val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
     viewModelScope.launch {
         billingBusy = true
@@ -580,16 +581,16 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             api.cancelSubscription(authorization, CancelSubscriptionRequest(mode = mode))
         }.onSuccess {
             message = if (atPeriodEnd) {
-                "다음 결제일까지 사용 후 자동 해지되도록 예약했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_at_period_end)
             } else {
-                "이용권을 해지했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
             }
             refreshCharacterBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to cancel subscription mode=$mode", error)
-            message = billingFailureMessage(apiErrorCode(error), userFacingError(error, "해지에 실패했어요"))
+            message = billingFailureMessage(apiErrorCode(error), userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_cancel_failed)))
         }
         billingBusy = false
     }
@@ -605,7 +606,7 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
             if (ttsMessages.isNotEmpty()) ttsMessages = emptyList()
             if (receivedNotes.isNotEmpty()) receivedNotes = emptyList()
             if (deletedAlarms > 0) {
-                message = "무료 이용권으로 전환되어 목소리 알람을 삭제했어요."
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_free_plan_voice_alarms_deleted)
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to apply free-plan voice lock", error)
@@ -614,7 +615,7 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
 }
 
 internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
-    val authorization = bearerOrMessage("로그인 후 사용할 수 있어요") ?: return
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_generic)) ?: return
     val mode = if (atPeriodEnd) "at_period_end" else "immediate"
     viewModelScope.launch {
         billingBusy = true
@@ -628,9 +629,9 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
                 return@onSuccess
             }
             message = if (atPeriodEnd) {
-                "이용권 종료일에 변경하도록 예약했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_scheduled)
             } else {
-                "이용권을 변경했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_gb_plan_changed)
             }
             refreshCharacterBillingAfterMutation(authorization, "plan change")
             refreshAppSession()
@@ -639,17 +640,17 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             Log.e(TAG, "Failed to change plan key=$planKey mode=$mode", error)
             val errorCode = apiErrorCode(error)
             if (errorCode == "NO_ACTIVE_SUBSCRIPTION") {
-                message = billingFailureMessage(errorCode, "현재 적용된 이용권이 없어 새 이용권으로 적용할게요")
+                message = billingFailureMessage(errorCode, getApplication<android.app.Application>().getString(R.string.msg_gb_no_active_subscription_apply_new))
                 billingBusy = false
                 checkoutPlan(planKey)
                 return@onFailure
             }
             if (errorCode == "SAME_PLAN") {
-                message = "이미 사용 중인 이용권이에요"
+                message = getApplication<android.app.Application>().getString(R.string.msg_gb_same_plan_in_use)
                 refreshCharacterBillingAfterMutation(authorization, "same plan check")
                 return@onFailure
             }
-            message = billingFailureMessage(errorCode, userFacingError(error, "이용권 변경에 실패했어요"))
+            message = billingFailureMessage(errorCode, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_failed)))
         }
         billingBusy = false
     }

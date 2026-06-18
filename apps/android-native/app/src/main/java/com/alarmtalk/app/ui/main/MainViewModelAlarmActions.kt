@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.net.toUri
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -69,11 +70,14 @@ private fun MainViewModel.requireAlarmPermissionsForMutation(): Boolean {
     return false
 }
 
-private fun alarmPermissionBlockedMessage(target: PermissionTarget): String = when (target) {
-    PermissionTarget.Notifications -> "알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요."
-    PermissionTarget.ExactAlarms -> "정해진 시간에 울리려면 정확한 알람 권한이 필요해요."
-    PermissionTarget.FullScreenIntent -> "잠금화면 위에 알람 화면을 띄우려면 전체 화면 알람 권한을 켜 주세요."
-    PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
+private fun MainViewModel.alarmPermissionBlockedMessage(target: PermissionTarget): String {
+    val app = getApplication<Application>()
+    return when (target) {
+        PermissionTarget.Notifications -> app.getString(R.string.msg_permission_notifications_required)
+        PermissionTarget.ExactAlarms -> app.getString(R.string.msg_permission_exact_alarms_required)
+        PermissionTarget.FullScreenIntent -> app.getString(R.string.msg_permission_full_screen_intent_required)
+        PermissionTarget.RecordAudio -> app.getString(R.string.msg_permission_record_audio_required)
+    }
 }
 
 /**
@@ -94,7 +98,7 @@ internal fun MainViewModel.createAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = "직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요."
+        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -106,7 +110,7 @@ internal fun MainViewModel.createAlarm(
         runCatching {
             repository.createAlarm(draft, replaceExisting)
         }.onSuccess { alarm ->
-            message = "알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+            message = getApplication<Application>().getString(R.string.msg_alarm_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -114,7 +118,7 @@ internal fun MainViewModel.createAlarm(
                 promptReplaceDuplicateAlarm(error) { createAlarm(draft, replaceExisting = true, onDone) }
             } else {
                 Log.e(TAG, "Failed to create alarm", error)
-                message = userFacingError(error, "알람 저장에 실패했어요")
+                message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_save_failed))
             }
         }
     }
@@ -123,11 +127,11 @@ internal fun MainViewModel.createAlarm(
 private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onDone: () -> Unit) {
     val session = authSession
     if (session == null) {
-        message = "상대 알람을 설정하려면 먼저 로그인해 주세요"
+        message = getApplication<Application>().getString(R.string.msg_family_alarm_login_required)
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "상대 알람은 커플/가족 이용권에서 사용할 수 있어요"
+        message = getApplication<Application>().getString(R.string.msg_family_alarm_couple_family_only)
         return
     }
     runCatching {
@@ -136,7 +140,9 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                 val audioStore = AlarmAudioStore(getApplication<Application>())
                 val localAudio = draft.toCachedLocalAudio(audioStore)
                 val resolvedDurationMillis = localAudio.durationMillis
-                    ?: throw IllegalArgumentException("음성 길이를 확인하지 못했어요. 다시 녹음해 주세요.")
+                    ?: throw IllegalArgumentException(
+                        getApplication<Application>().getString(R.string.msg_voice_duration_unknown),
+                    )
                 val upload = api.uploadVoiceAudio(
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     audio = voiceUploadPart(localAudio),
@@ -149,7 +155,8 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
                         wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
                         voiceUploadId = upload.id,
-                        label = draft.label.trimmedOrNull() ?: "가족이 보낸 음성",
+                        label = draft.label.trimmedOrNull()
+                            ?: getApplication<Application>().getString(R.string.msg_family_voice_default_label),
                         repeatDays = RemoteAlarmMapper.repeatMaskToDays(draft.repeatDaysMask),
                     ),
                 ).alarm
@@ -161,12 +168,13 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
             }
         }
     }.onSuccess {
-        val target = draft.targetUserName?.takeIf { it.isNotBlank() } ?: "상대"
-        message = "${target}에게 알람을 설정했어요"
+        val target = draft.targetUserName?.takeIf { it.isNotBlank() }
+            ?: getApplication<Application>().getString(R.string.msg_family_alarm_target_fallback)
+        message = getApplication<Application>().getString(R.string.msg_family_alarm_set_for_target, target)
         onDone()
     }.onFailure { error ->
         Log.e(TAG, "Failed to create family target alarm target=${draft.targetUserId}", error)
-        message = userFacingError(error, "상대 알람 설정에 실패했어요")
+        message = userFacingError(error, getApplication<Application>().getString(R.string.msg_family_alarm_set_failed))
     }
 }
 
@@ -223,7 +231,7 @@ internal fun MainViewModel.updateAlarm(
     onDone: () -> Unit,
 ) {
     if (!voiceAlarmAllowed(draft)) {
-        message = "직접 만든 목소리·녹음 알람은 유료 이용권에서 사용할 수 있어요."
+        message = getApplication<Application>().getString(R.string.msg_custom_voice_alarm_paid_only)
         return
     }
     if (!requireAlarmPermissionsForMutation()) return
@@ -231,7 +239,7 @@ internal fun MainViewModel.updateAlarm(
         runCatching {
             repository.updateAlarm(alarmId, draft, replaceExisting)
         }.onSuccess { alarm ->
-            message = "변경사항을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+            message = getApplication<Application>().getString(R.string.msg_changes_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
             onDone()
         }.onFailure { error ->
             if (error is DuplicateAlarmTimeException) {
@@ -240,7 +248,7 @@ internal fun MainViewModel.updateAlarm(
                 }
             } else {
                 Log.e(TAG, "Failed to update alarm id=$alarmId", error)
-                message = userFacingError(error, "알람 수정에 실패했어요")
+                message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_update_failed))
             }
         }
     }
@@ -279,7 +287,7 @@ internal fun MainViewModel.setAlarmEnabled(alarmId: String, enabled: Boolean) {
             message = null
         }.onFailure { error ->
             Log.e(TAG, "Failed to change alarm enabled id=$alarmId", error)
-            message = userFacingError(error, "알람 상태 변경에 실패했어요")
+            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_toggle_failed))
         }
     }
 }
@@ -289,10 +297,10 @@ internal fun MainViewModel.deleteAlarm(alarmId: String) {
         runCatching {
             repository.deleteAlarm(alarmId)
         }.onSuccess {
-            message = "알람을 삭제했어요"
+            message = getApplication<Application>().getString(R.string.msg_alarm_deleted)
         }.onFailure { error ->
             Log.e(TAG, "Failed to delete alarm id=$alarmId", error)
-            message = userFacingError(error, "알람 삭제에 실패했어요")
+            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_delete_failed))
         }
     }
 }
@@ -303,10 +311,10 @@ internal fun MainViewModel.copyAlarm(alarmId: String) {
         runCatching {
             repository.copyAlarm(alarmId)
         }.onSuccess { alarm ->
-            message = "알람을 10분 뒤로 복사했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+            message = getApplication<Application>().getString(R.string.msg_alarm_copied_ten_minutes, timeUntilAlarmLabel(alarm.fireAtMillis))
         }.onFailure { error ->
             Log.e(TAG, "Failed to copy alarm id=$alarmId", error)
-            message = userFacingError(error, "알람 복사에 실패했어요")
+            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_alarm_copy_failed))
         }
     }
 }
@@ -317,10 +325,10 @@ internal fun MainViewModel.createTestAlarm(delayMinutes: Int) {
         runCatching {
             repository.createTestAlarm(delayMinutes)
         }.onSuccess { alarm ->
-            message = "테스트 알람을 저장했어요. ${timeUntilAlarmLabel(alarm.fireAtMillis)}"
+            message = getApplication<Application>().getString(R.string.msg_test_alarm_saved, timeUntilAlarmLabel(alarm.fireAtMillis))
         }.onFailure { error ->
             Log.e(TAG, "Failed to create test alarm", error)
-            message = userFacingError(error, "테스트 알람 예약에 실패했어요")
+            message = userFacingError(error, getApplication<Application>().getString(R.string.msg_test_alarm_schedule_failed))
         }
     }
 }

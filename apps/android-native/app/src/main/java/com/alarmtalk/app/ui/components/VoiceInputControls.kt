@@ -29,9 +29,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import com.alarmtalk.app.R
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -91,14 +93,14 @@ internal fun VoiceCaptureModeSelector(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         VoiceInputModeButton(
-            label = "녹음",
+            label = stringResource(R.string.common_voice_capture_mode_record),
             selected = selected == VoiceCaptureMode.Record,
             enabled = enabled,
             onClick = { onSelect(VoiceCaptureMode.Record) },
             modifier = Modifier.weight(1f),
         )
         VoiceInputModeButton(
-            label = "파일",
+            label = stringResource(R.string.common_voice_capture_mode_file),
             selected = selected == VoiceCaptureMode.File,
             enabled = enabled,
             onClick = { onSelect(VoiceCaptureMode.File) },
@@ -172,7 +174,11 @@ internal fun VoiceRecordControls(
         ) {
             Icon(
                 imageVector = Icons.Outlined.Mic,
-                contentDescription = if (isRecording) "녹음 종료" else "녹음",
+                contentDescription = if (isRecording) {
+                    stringResource(R.string.common_voice_record_stop)
+                } else {
+                    stringResource(R.string.common_voice_record_start)
+                },
                 modifier = Modifier.size(34.dp),
             )
         }
@@ -274,7 +280,13 @@ internal fun AudioCropRangeSelector(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText("선택 ${audioTimeLabel(selectedDuration)} / 전체 ${audioTimeLabel(safeDuration)}")
+                MutedText(
+                    stringResource(
+                        R.string.common_voice_crop_selected_total,
+                        audioTimeLabel(selectedDuration),
+                        audioTimeLabel(safeDuration),
+                    ),
+                )
             }
             OutlinedButton(
                 onClick = onPreviewCrop,

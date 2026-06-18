@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -98,19 +99,19 @@ internal fun AuthScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "뒤로")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.auth_back))
             }
             Text(
-                text = if (mode == AuthMode.Login) "로그인" else "회원가입",
+                text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
         }
         Text(
             text = if (mode == AuthMode.Login) {
-                "좋아하는 목소리 알람을 다시 불러올게요."
+                stringResource(R.string.auth_subtitle_login)
             } else {
-                "목소리 알람을 만들 계정을 준비해요."
+                stringResource(R.string.auth_subtitle_register)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -120,7 +121,7 @@ internal fun AuthScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(30) },
-                label = { Text("이름") },
+                label = { Text(stringResource(R.string.auth_label_name)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -136,7 +137,7 @@ internal fun AuthScreen(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("이메일") },
+            label = { Text(stringResource(R.string.auth_label_email)) },
             singleLine = true,
             enabled = !busy,
             shape = WakerInputShape,
@@ -161,9 +162,9 @@ internal fun AuthScreen(
             ) {
                 Text(
                     when {
-                        isEmailVerified -> "이메일 인증 완료"
-                        codeSentForEmail -> "인증 코드 다시 받기"
-                        else -> "이메일 인증"
+                        isEmailVerified -> stringResource(R.string.auth_email_verify_done)
+                        codeSentForEmail -> stringResource(R.string.auth_email_verify_resend)
+                        else -> stringResource(R.string.auth_email_verify)
                     },
                 )
             }
@@ -177,7 +178,7 @@ internal fun AuthScreen(
                     OutlinedTextField(
                         value = emailCode,
                         onValueChange = { emailCode = it.filter(Char::isDigit).take(6) },
-                        label = { Text("인증 코드") },
+                        label = { Text(stringResource(R.string.auth_label_verification_code)) },
                         singleLine = true,
                         enabled = !busy,
                         shape = WakerInputShape,
@@ -196,23 +197,23 @@ internal fun AuthScreen(
                         border = wakerCardBorder(),
                         colors = wakerOutlinedButtonColors(),
                     ) {
-                        Text("확인")
+                        Text(stringResource(R.string.auth_confirm))
                     }
                 }
                 Text(
-                    text = "메일로 받은 6자리 코드를 입력해 주세요.",
+                    text = stringResource(R.string.auth_verification_code_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else if (isEmailVerified) {
-                PasswordRuleRow(text = "이메일 인증 완료", satisfied = true)
+                PasswordRuleRow(text = stringResource(R.string.auth_email_verify_done), satisfied = true)
             }
         }
 
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("비밀번호") },
+            label = { Text(stringResource(R.string.auth_label_password)) },
             singleLine = true,
             enabled = !busy,
             shape = WakerInputShape,
@@ -222,7 +223,7 @@ internal fun AuthScreen(
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (passwordVisible) "비밀번호 숨기기" else "비밀번호 보기",
+                        contentDescription = if (passwordVisible) stringResource(R.string.auth_password_hide) else stringResource(R.string.auth_password_show),
                     )
                 }
             },
@@ -243,7 +244,7 @@ internal fun AuthScreen(
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = { confirmPassword = it },
-                label = { Text("비밀번호 확인") },
+                label = { Text(stringResource(R.string.auth_label_confirm_password)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -263,16 +264,16 @@ internal fun AuthScreen(
                                 Icons.Outlined.Visibility
                             },
                             contentDescription = if (confirmPasswordVisible) {
-                                "비밀번호 확인 숨기기"
+                                stringResource(R.string.auth_confirm_password_hide)
                             } else {
-                                "비밀번호 확인 보기"
+                                stringResource(R.string.auth_confirm_password_show)
                             },
                         )
                     }
                 },
                 supportingText = {
                     if (confirmPassword.isNotBlank() && !passwordMatches) {
-                        Text("비밀번호가 일치하지 않아요.")
+                        Text(stringResource(R.string.auth_password_mismatch))
                     }
                 },
                 keyboardOptions = KeyboardOptions(
@@ -296,9 +297,9 @@ internal fun AuthScreen(
         ) {
             Text(
                 when {
-                    busy -> "처리 중"
-                    mode == AuthMode.Register -> "계정 만들기"
-                    else -> "로그인"
+                    busy -> stringResource(R.string.auth_processing)
+                    mode == AuthMode.Register -> stringResource(R.string.auth_create_account)
+                    else -> stringResource(R.string.auth_title_login)
                 },
             )
         }
@@ -315,8 +316,8 @@ internal fun AuthScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                if (mode == AuthMode.Login) "처음이신가요? 회원가입"
-                else "이미 계정이 있나요? 로그인",
+                if (mode == AuthMode.Login) stringResource(R.string.auth_switch_to_register)
+                else stringResource(R.string.auth_switch_to_login),
             )
         }
     }
@@ -329,9 +330,9 @@ private fun PasswordRules(
     passwordMatches: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        PasswordRuleRow(text = "8자 이상", satisfied = passwordAtLeastMin)
-        PasswordRuleRow(text = "128자 이하", satisfied = passwordUnderMax)
-        PasswordRuleRow(text = "비밀번호 확인 일치", satisfied = passwordMatches)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_min), satisfied = passwordAtLeastMin)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_max), satisfied = passwordUnderMax)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_match), satisfied = passwordMatches)
     }
 }
 

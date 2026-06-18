@@ -20,6 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.alarmtalk.app.R
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
@@ -164,24 +166,24 @@ internal fun PermissionGateDialog(
 ) {
     val (title, body, action) = when (target) {
         PermissionTarget.Notifications -> Triple(
-            "알림 권한이 필요해요",
-            "이 권한이 없어 지금은 알람을 만들거나 켤 수 없어요. 알람이 울릴 때 알림과 알람 화면을 안정적으로 표시하려면 앱 알림이 켜져 있어야 해요.",
-            "허용하기",
+            stringResource(R.string.common_permission_gate_notifications_title),
+            stringResource(R.string.common_permission_gate_notifications_body),
+            stringResource(R.string.common_permission_gate_allow_action),
         )
         PermissionTarget.ExactAlarms -> Triple(
-            "정확한 시간에 울리려면 권한이 필요해요",
-            "이 권한이 없어 지금은 알람을 만들거나 켤 수 없어요. 정해진 시간에 실제 알람을 울리려면 알람 및 리마인더 권한이 필요해요.",
-            "허용하기",
+            stringResource(R.string.common_permission_gate_exact_alarm_title),
+            stringResource(R.string.common_permission_gate_exact_alarm_body),
+            stringResource(R.string.common_permission_gate_allow_action),
         )
         PermissionTarget.FullScreenIntent -> Triple(
-            "잠금 화면 알람 권한이 필요해요",
-            "이 권한이 없어 잠금 화면에서 알람 화면을 바로 열 수 없어요. 화면이 꺼져 있거나 잠겨 있어도 알람 화면을 띄우려면 전체 화면 알림 권한이 필요해요.",
-            "허용하기",
+            stringResource(R.string.common_permission_gate_full_screen_title),
+            stringResource(R.string.common_permission_gate_full_screen_body),
+            stringResource(R.string.common_permission_gate_allow_action),
         )
         PermissionTarget.RecordAudio -> Triple(
-            "마이크 권한이 필요해요",
-            "이 권한이 없어 지금은 녹음을 시작할 수 없어요. 목소리를 만들려면 마이크 권한이 필요해요.",
-            "허용하기",
+            stringResource(R.string.common_permission_gate_mic_title),
+            stringResource(R.string.common_permission_gate_mic_body),
+            stringResource(R.string.common_permission_gate_allow_action),
         )
     }
 

@@ -11,6 +11,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
@@ -78,7 +79,7 @@ class AlarmAudioStore(
         startMillis: Long = 0L,
     ): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
-            ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+            ?: throw IllegalArgumentException(context.getString(R.string.rd_audio_duration_unreadable))
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
         val sourceMimeType = context.contentResolver.getType(sourceUri)
@@ -195,7 +196,7 @@ class AlarmAudioStore(
                 Log.e(TAG, "trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
-                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                    context.getString(R.string.rd_audio_trim_failed),
                     error,
                 )
             }.getOrThrow()
@@ -210,13 +211,13 @@ class AlarmAudioStore(
                 )
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
-                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                    context.getString(R.string.rd_audio_trim_failed),
                 )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
                 context.contentResolver.openInputStream(sourceUri).use { input ->
-                    requireNotNull(input) { "선택한 오디오 파일을 열 수 없어요." }
+                    requireNotNull(input) { context.getString(R.string.rd_audio_open_failed) }
                     file.outputStream().use { output -> input.copyTo(output) }
                 }
             }
@@ -234,7 +235,7 @@ class AlarmAudioStore(
                 "Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
             )
             runCatching { target.delete() }
-            throw IllegalArgumentException("선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.")
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
         }
         val cachedDurationMillis = trimmedDuration
         val normalizedDurationMillis = normalizeDurationWithinLimit(
@@ -569,7 +570,7 @@ class AlarmAudioStore(
         }.onFailure { error ->
             target.delete()
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
-            throw IllegalArgumentException("${maxDurationMillis / 1000}초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
 
@@ -618,7 +619,7 @@ class AlarmAudioStore(
         }.onFailure { error ->
             target.delete()
             Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
-            throw IllegalArgumentException("MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.", error)
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }
 

@@ -46,8 +46,10 @@ import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
@@ -150,12 +152,12 @@ internal fun RandomPromptSettingsPane(
                 IconButton(onClick = onDismissWithoutSave) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editorp_random_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "랜덤 문구 설정",
+                    text = stringResource(R.string.editorp_random_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -174,14 +176,14 @@ internal fun RandomPromptSettingsPane(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                 ) {
                     Text(
-                        text = "저장하면 선택한 조건으로 알람 문구를 만들어요. 저장하지 않으면 직접 입력으로 돌아가요.",
+                        text = stringResource(R.string.editorp_random_intro),
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
 
-                SnoozeOptionSection(title = "문구 종류") {
+                SnoozeOptionSection(title = stringResource(R.string.editorp_random_context_section)) {
                     RandomPromptContexts.forEachIndexed { index, (context, label) ->
                         SnoozeRadioRow(
                             label = label,
@@ -194,33 +196,36 @@ internal fun RandomPromptSettingsPane(
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
-                        title = "날씨 지역",
+                        title = stringResource(R.string.editorp_random_weather_region_title),
                         value = when {
                             draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank() ->
-                                "${weatherLocationSummary(draftWeatherCountry, draftWeatherCity)} 날씨를 사용해요."
+                                stringResource(
+                                    R.string.editorp_random_weather_region_value,
+                                    weatherLocationSummary(draftWeatherCountry, draftWeatherCity),
+                                )
                             usingTargetDynamicPromptSettings && savedWeatherConfigured ->
-                                "상대가 저장한 날씨 지역을 사용해요."
-                            else -> "날씨가 들어간 문구를 쓰려면 나라와 도시가 필요해요."
+                                stringResource(R.string.editorp_random_weather_region_saved)
+                            else -> stringResource(R.string.editorp_random_weather_region_required)
                         },
                     )
                 }
 
                 if (normalizedContext == "wake_fortune") {
                     RandomPromptDetailRow(
-                        title = "운세 정보",
+                        title = stringResource(R.string.editorp_random_fortune_title),
                         value = when {
                             draftFortuneGender.isNotBlank() &&
                                 draftFortuneBirthDate.isNotBlank() &&
                                 draftFortuneBirthTime.isNotBlank() ->
                                 fortuneInfoSummary(draftFortuneGender, draftFortuneBirthDate, draftFortuneBirthTime)
                             usingTargetDynamicPromptSettings && savedFortuneConfigured ->
-                                "상대가 저장한 운세 정보를 사용해요."
-                            else -> "운세가 들어간 문구를 쓰려면 성별, 생년월일, 태어난 시간이 필요해요."
+                                stringResource(R.string.editorp_random_fortune_saved)
+                            else -> stringResource(R.string.editorp_random_fortune_required)
                         },
                     )
                 }
 
-                SnoozeOptionSection(title = "언어") {
+                SnoozeOptionSection(title = stringResource(R.string.editorp_random_language_section)) {
                     TtsLanguages.forEachIndexed { index, (language, label) ->
                         SnoozeRadioRow(
                             label = label,
@@ -246,7 +251,7 @@ internal fun RandomPromptSettingsPane(
                     ) {
                         Icon(Icons.Outlined.Save, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("저장")
+                        Text(stringResource(R.string.editorp_random_save_button))
                     }
                 }
             }
@@ -327,21 +332,21 @@ internal fun WeatherLocationDialog(
         if (locationBusy) return
         scope.launch {
             locationBusy = true
-            locationStatus = "현재 위치를 가져오는 중..."
+            locationStatus = context.getString(R.string.editorp_weather_location_loading)
             val fix = withContext(Dispatchers.IO) {
                 runCatching {
                     com.alarmtalk.app.location.WeatherLocationProvider.resolve(context)
                 }.getOrNull()
             }
             if (fix == null) {
-                locationStatus = "위치를 가져오지 못했어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
+                locationStatus = context.getString(R.string.editorp_weather_location_failed)
             } else {
                 draftCountry = fix.country.ifBlank { draftCountry }
                 draftCity = fix.city.ifBlank { draftCity }
                 locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
-                    "위치를 가져왔지만 주소 정보를 못 찾았어요. GPS/위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
+                    context.getString(R.string.editorp_weather_location_no_address)
                 } else {
-                    "현재 위치로 채웠어요"
+                    context.getString(R.string.editorp_weather_location_filled)
                 }
             }
             locationBusy = false
@@ -353,7 +358,7 @@ internal fun WeatherLocationDialog(
     ) { results ->
         val granted = results.values.any { it }
         if (!granted) {
-            locationStatus = "위치 권한이 거부됐어요. 권한과 GPS/위치 서비스를 확인하거나 직접 입력해 주세요."
+            locationStatus = context.getString(R.string.editorp_weather_location_denied)
             return@rememberLauncherForActivityResult
         }
         startLocationLookup()
@@ -383,7 +388,7 @@ internal fun WeatherLocationDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ModalDialogTitle(
-                    title = "날씨 지역",
+                    title = stringResource(R.string.editorp_random_weather_region_title),
                     onDismiss = onDismissWithoutSave,
                 )
                 Surface(
@@ -396,13 +401,13 @@ internal fun WeatherLocationDialog(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         Text(
-                            text = "날씨 문구에 사용할 지역",
+                            text = stringResource(R.string.editorp_weather_dialog_section_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Text(
-                            text = "직접 입력하거나 현재 위치로 채울 수 있어요. 저장하지 않으면 랜덤 문구가 꺼져요.",
+                            text = stringResource(R.string.editorp_weather_dialog_section_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -436,7 +441,7 @@ internal fun WeatherLocationDialog(
                                         strokeWidth = 2.dp,
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text("위치 가져오는 중")
+                                    Text(stringResource(R.string.editorp_weather_location_getting))
                                 } else {
                                     Icon(
                                         imageVector = Icons.Outlined.MyLocation,
@@ -444,7 +449,7 @@ internal fun WeatherLocationDialog(
                                         modifier = Modifier.size(18.dp),
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text("현재 위치 사용")
+                                    Text(stringResource(R.string.editorp_weather_use_current_location))
                                 }
                             }
                         }
@@ -461,12 +466,12 @@ internal fun WeatherLocationDialog(
                     OutlinedTextField(
                         value = draftCountry,
                         onValueChange = { draftCountry = it.take(30) },
-                        label = { Text("나라") },
-                        placeholder = { Text("예: 대한민국") },
+                        label = { Text(stringResource(R.string.editorp_weather_country_label)) },
+                        placeholder = { Text(stringResource(R.string.editorp_weather_country_placeholder)) },
                         singleLine = true,
                         isError = countryError,
                         supportingText = {
-                            if (countryError) Text("꼭 입력해 주세요.")
+                            if (countryError) Text(stringResource(R.string.editorp_weather_required_field))
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -475,12 +480,12 @@ internal fun WeatherLocationDialog(
                     OutlinedTextField(
                         value = draftCity,
                         onValueChange = { draftCity = it.take(30) },
-                        label = { Text("도시") },
-                        placeholder = { Text("예: 서울") },
+                        label = { Text(stringResource(R.string.editorp_weather_city_label)) },
+                        placeholder = { Text(stringResource(R.string.editorp_weather_city_placeholder)) },
                         singleLine = true,
                         isError = cityError,
                         supportingText = {
-                            if (cityError) Text("꼭 입력해 주세요.")
+                            if (cityError) Text(stringResource(R.string.editorp_weather_required_field))
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -501,7 +506,7 @@ internal fun WeatherLocationDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Text("저장")
+                        Text(stringResource(R.string.editorp_weather_save_button))
                     }
                 }
             }

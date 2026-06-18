@@ -31,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -81,7 +82,7 @@ internal fun OnboardingScreen(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = onComplete) { Text("건너뛰기") }
+            TextButton(onClick = onComplete) { Text(stringResource(R.string.auth_onboarding_skip)) }
         }
 
         HorizontalPager(
@@ -174,7 +175,7 @@ internal fun OnboardingScreen(
                 .padding(horizontal = 32.dp, vertical = 16.dp)
                 .height(48.dp),
         ) {
-            Text(if (isLastPage) "시작하기" else "다음")
+            Text(if (isLastPage) stringResource(R.string.auth_onboarding_start) else stringResource(R.string.auth_onboarding_next))
         }
     }
 }

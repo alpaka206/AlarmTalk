@@ -62,12 +62,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
+import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -332,7 +334,7 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
             uiState.voiceText?.let { voiceText ->
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    text = "“$voiceText”",
+                    text = stringResource(R.string.rd_voice_text_quoted, voiceText),
                     color = Color(0xFFDBE7F6),
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 4,
@@ -367,7 +369,7 @@ private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
             )
             Spacer(Modifier.width(9.dp))
             Text(
-                text = "${minutes}분 뒤 다시 알림",
+                text = stringResource(R.string.rd_snooze_button_minutes, minutes),
                 color = Color(0xFFCFDDEE),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
@@ -423,7 +425,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
         }
 
         Text(
-            text = "밀어서 끄기",
+            text = stringResource(R.string.rd_slide_to_dismiss),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 60.dp, end = 24.dp)
@@ -472,7 +474,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
         ) {
             Icon(
                 imageVector = Icons.Outlined.Alarm,
-                contentDescription = "밀어서 끄기",
+                contentDescription = stringResource(R.string.rd_slide_to_dismiss),
                 tint = Color(0xFF06243E),
                 modifier = Modifier.size(24.dp),
             )

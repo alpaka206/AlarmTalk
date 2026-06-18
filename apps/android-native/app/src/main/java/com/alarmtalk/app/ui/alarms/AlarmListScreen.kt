@@ -21,7 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.ui.guide.CoachMarkOverlay
 import com.alarmtalk.app.ui.guide.CoachMarkRegistry
 import com.alarmtalk.app.ui.guide.CoachMarkStep
@@ -237,7 +239,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Voices -> {
                 item {
-                    ScreenHeader(title = "목소리")
+                    ScreenHeader(title = stringResource(R.string.common_tab_voices))
                 }
                 item {
                     Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_VOICE_CREATE)) {
@@ -294,7 +296,7 @@ internal fun AlarmListScreen(
 
             NativeTab.People -> {
                 item {
-                    ScreenHeader(title = "코드 등록")
+                    ScreenHeader(title = stringResource(R.string.common_tab_code_register))
                 }
                 item {
                     FamilyConnectionPanel(
@@ -312,7 +314,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Messages -> {
                 item {
-                    ScreenHeader(title = "메시지")
+                    ScreenHeader(title = stringResource(R.string.common_tab_messages))
                 }
                 if (authSession != null) item {
                     VoiceMessagePanel(
@@ -340,7 +342,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Growth -> {
                 item {
-                    ScreenHeader(title = "캐릭터")
+                    ScreenHeader(title = stringResource(R.string.common_tab_character))
                 }
                 item {
                     CharacterBillingPanel(
@@ -360,7 +362,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(title = "이용권")
+                    ScreenHeader(title = stringResource(R.string.common_tab_billing))
                 }
                 item {
                     SubscriptionPanel(

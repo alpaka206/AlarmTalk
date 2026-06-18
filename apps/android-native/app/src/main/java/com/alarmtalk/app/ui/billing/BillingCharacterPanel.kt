@@ -28,8 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.CharacterEventStates
@@ -75,7 +77,7 @@ internal fun CharacterBillingPanel(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "캐릭터 성장",
+                        text = stringResource(R.string.billing_character_growth_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -86,7 +88,11 @@ internal fun CharacterBillingPanel(
                 ) {
                     Icon(
                         imageVector = Icons.Outlined.Refresh,
-                        contentDescription = if (hasUnreflectedEvents) "성장 반영" else "새로고침",
+                        contentDescription = if (hasUnreflectedEvents) {
+                            stringResource(R.string.billing_character_sync_growth)
+                        } else {
+                            stringResource(R.string.billing_character_refresh)
+                        },
                     )
                 }
             }
@@ -129,12 +135,20 @@ internal fun CharacterBillingPanel(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "LV.${character.level} ${stageLabel(character.stage)}",
+                            text = stringResource(
+                                R.string.billing_character_level_stage,
+                                character.level,
+                                stageLabel(character.stage),
+                            ),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "연속 ${characterResponse.streak.current}일 · 최장 ${characterResponse.streak.longest}일",
+                            text = stringResource(
+                                R.string.billing_character_streak,
+                                characterResponse.streak.current,
+                                characterResponse.streak.longest,
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -163,7 +177,10 @@ internal fun CharacterBillingPanel(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        text = "다음 레벨까지 ${progress.xpToNextLevel} XP",
+                        text = stringResource(
+                            R.string.billing_character_xp_to_next_level,
+                            progress.xpToNextLevel,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -172,24 +189,24 @@ internal fun CharacterBillingPanel(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CharacterStatTile(
-                            label = "성실함",
+                            label = stringResource(R.string.billing_character_stat_diligence),
                             value = stats.diligence,
                             modifier = Modifier.weight(1f),
                         )
                         CharacterStatTile(
-                            label = "꾸준함",
+                            label = stringResource(R.string.billing_character_stat_consistency),
                             value = stats.consistency,
                             modifier = Modifier.weight(1f),
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         CharacterStatTile(
-                            label = "건강",
+                            label = stringResource(R.string.billing_character_stat_health),
                             value = stats.health,
                             modifier = Modifier.weight(1f),
                         )
                         CharacterStatTile(
-                            label = "애정도",
+                            label = stringResource(R.string.billing_character_stat_affection),
                             value = character.affection,
                             modifier = Modifier.weight(1f),
                         )
@@ -207,7 +224,7 @@ internal fun CharacterBillingPanel(
             if (recentEvents.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "최근 성장 기록",
+                        text = stringResource(R.string.billing_character_recent_growth),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -247,14 +264,14 @@ internal fun CharacterEmptyState(
                 )
             }
         }
-        MutedText("캐릭터 정보를 불러오는 중이에요.")
+        MutedText(stringResource(R.string.billing_character_loading))
         IconButton(
             onClick = onRefresh,
             enabled = !busy,
         ) {
             Icon(
                 imageVector = Icons.Outlined.Refresh,
-                contentDescription = "새로고침",
+                contentDescription = stringResource(R.string.billing_character_refresh),
             )
         }
     }
@@ -317,12 +334,16 @@ internal fun CharacterSyncStatus(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (needsCheck) "반영 확인 필요" else "성장 반영 대기",
+                text = if (needsCheck) {
+                    stringResource(R.string.billing_character_sync_check_needed)
+                } else {
+                    stringResource(R.string.billing_character_sync_pending)
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "${pendingCount + failedCount}개",
+                text = stringResource(R.string.billing_character_sync_count, pendingCount + failedCount),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
             )

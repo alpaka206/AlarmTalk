@@ -36,9 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.network.CharacterResponse
 import kotlin.math.PI
@@ -73,13 +75,13 @@ internal fun NextAlarmHeroCard(
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text(
-                        text = if (hasAlarm) "다음 알람" else "아직 알람이 없어요.",
+                        text = if (hasAlarm) stringResource(R.string.hs_next_alarm_label) else stringResource(R.string.hs_no_alarm_yet),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
                         text = nextAlarm?.let { "%02d:%02d".format(it.hour, it.minute) }
-                            ?: "알람 예약",
+                            ?: stringResource(R.string.hs_reserve_alarm),
                         style = if (hasAlarm) {
                             MaterialTheme.typography.displayLarge
                         } else {
@@ -109,7 +111,7 @@ internal fun NextAlarmHeroCard(
                 ) {
                     Text(
                         text = nextAlarm?.label?.takeIf { it.isNotBlank() }
-                            ?: "좋아하는 목소리로 알람 예약",
+                            ?: stringResource(R.string.hs_reserve_alarm_with_voice),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,
@@ -118,8 +120,8 @@ internal fun NextAlarmHeroCard(
                     )
                     Text(
                         text = nextAlarm?.let {
-                            "수정하기"
-                        } ?: "바로 시작해봐요.",
+                            stringResource(R.string.hs_edit_alarm)
+                        } ?: stringResource(R.string.hs_start_now),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -201,7 +203,7 @@ internal fun QuickStartGrid(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "바로 가기",
+                text = stringResource(R.string.hs_quick_start_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.Bold,
@@ -209,7 +211,7 @@ internal fun QuickStartGrid(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             HomeActionCard(
-                label = "목소리",
+                label = stringResource(R.string.hs_action_voice),
                 icon = Icons.Outlined.Mic,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -218,7 +220,7 @@ internal fun QuickStartGrid(
                 modifier = Modifier.weight(1f),
             )
             HomeActionCard(
-                label = "새 알람",
+                label = stringResource(R.string.hs_action_new_alarm),
                 icon = Icons.Outlined.Alarm,
                 accentContainerColor = MaterialTheme.colorScheme.primaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -229,7 +231,7 @@ internal fun QuickStartGrid(
         }
         if (canCreateFamilyAlarm) {
             HomeActionCard(
-                label = "상대 알람 맞춰주기",
+                label = stringResource(R.string.hs_action_family_alarm),
                 icon = Icons.Outlined.People,
                 accentContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                 accentContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -368,13 +370,13 @@ internal fun CharacterMiniCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "LV.$level",
+                        text = stringResource(R.string.hs_character_level, level),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "연속 ${streak}일",
+                        text = stringResource(R.string.hs_character_streak, streak),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

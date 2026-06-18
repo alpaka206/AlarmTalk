@@ -45,10 +45,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatterns
@@ -130,8 +132,8 @@ internal fun VoiceAudioCard(
     ) {
             OptionChips(
                 options = listOf(
-                    VoiceSources.TTS_PROFILE to "목소리",
-                    VoiceSources.LOCAL_AUDIO to "녹음/파일",
+                    VoiceSources.TTS_PROFILE to stringResource(R.string.editor_voice_source_tts),
+                    VoiceSources.LOCAL_AUDIO to stringResource(R.string.editor_voice_source_local),
                 ),
                 selected = visibleVoiceSource,
                 onSelect = {
@@ -166,9 +168,9 @@ internal fun VoiceAudioCard(
                 val selectedProfileUnavailable = !voiceProfileBusy &&
                     !editor.voiceProfileId.isNullOrBlank() &&
                     profileOptions.none { it.id == editor.voiceProfileId }
-                Text("알람에서 들을 목소리", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.editor_voice_to_hear), fontWeight = FontWeight.SemiBold)
                 if (voiceProfileBusy) {
-                    MutedText("목소리를 불러오는 중이에요.")
+                    MutedText(stringResource(R.string.editor_voice_loading))
                 } else if (profileOptions.isEmpty()) {
                     NoUsableVoiceProfileCallout(onCreateVoiceProfileClick)
                 } else {
@@ -212,12 +214,12 @@ internal fun VoiceAudioCard(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "삭제된 목소리",
+                                text = stringResource(R.string.editor_voice_deleted_title),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                             )
                             Text(
-                                text = "이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.",
+                                text = stringResource(R.string.editor_voice_deleted_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
                             )
@@ -231,7 +233,7 @@ internal fun VoiceAudioCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("랜덤 문구 사용", fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.editor_random_prompt_use), fontWeight = FontWeight.SemiBold)
                         }
                         AlarmTalkSwitch(
                             checked = editor.voiceRandomPrompt,
@@ -289,7 +291,7 @@ internal fun VoiceAudioCard(
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         levels = recordingLevels,
                         enabled = true,
-                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
+                        notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
                         onRecordClick = onRecord,
                     )
                 } else {
@@ -300,8 +302,8 @@ internal fun VoiceAudioCard(
                         minDurationMillis = 1_000L,
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
                         enabled = !isRecording,
-                        uploadLabel = "파일 업로드",
-                        notice = "최대 ${AlarmAudioLimits.MAX_DURATION_MILLIS / 1000}초",
+                        uploadLabel = stringResource(R.string.editor_audio_upload_file),
+                        notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
                         isPreviewActive = isCropPreviewActive,
                         isPreviewPreparing = isCropPreviewActive && isPreviewPreparing,
                         onPickFile = onPick,
@@ -327,7 +329,7 @@ internal fun VoiceAudioCard(
                             onClick = onClear,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(Icons.Outlined.Delete, contentDescription = "지우기")
+                            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.editor_audio_clear))
                         }
                     }
                 }
@@ -337,7 +339,7 @@ internal fun VoiceAudioCard(
                     !isRecording
                 ) {
                     Text(
-                        text = "녹음 또는 파일 업로드",
+                        text = stringResource(R.string.editor_audio_record_or_upload),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -383,12 +385,12 @@ internal fun VoiceOutputSettingsPane(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editor_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "음성 소리",
+                    text = stringResource(R.string.editor_voice_output_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -436,7 +438,7 @@ private fun NoUsableVoiceProfileCallout(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "아직 사용할 목소리가 없어요.",
+                text = stringResource(R.string.editor_no_voice_profile),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -445,7 +447,7 @@ private fun NoUsableVoiceProfileCallout(
                 onClick = onCreateVoiceProfileClick,
                 shape = WakerButtonShape,
             ) {
-                Text("목소리 만들기")
+                Text(stringResource(R.string.editor_create_voice))
             }
         }
     }
@@ -482,7 +484,7 @@ private fun VoiceProfileSelector(
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         Text(
-                            text = selectedOption?.name ?: "목소리 선택",
+                            text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
                         )
@@ -497,7 +499,7 @@ private fun VoiceProfileSelector(
                         } else {
                             Icons.Outlined.KeyboardArrowDown
                         },
-                        contentDescription = if (expanded) "접기" else "펼치기",
+                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -605,8 +607,8 @@ private fun StockClipDropdown(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        Text("기본 제공 알람 음성", fontWeight = FontWeight.SemiBold)
-                        MutedText("미리 듣고 바로 사용할 수 있어요")
+                        Text(stringResource(R.string.editor_stock_clip_title), fontWeight = FontWeight.SemiBold)
+                        MutedText(stringResource(R.string.editor_stock_clip_subtitle))
                     }
                     Spacer(Modifier.width(12.dp))
                     Icon(
@@ -615,7 +617,7 @@ private fun StockClipDropdown(
                         } else {
                             Icons.Outlined.KeyboardArrowDown
                         },
-                        contentDescription = if (expanded) "접기" else "펼치기",
+                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -729,14 +731,14 @@ private fun StockClipRow(
                     } else {
                         Icons.Outlined.PlayArrow
                     },
-                    contentDescription = if (previewing) "정지" else "미리듣기",
+                    contentDescription = if (previewing) stringResource(R.string.editor_stop) else stringResource(R.string.editor_preview),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
             if (selected) {
                 Icon(
                     imageVector = Icons.Outlined.Check,
-                    contentDescription = "선택됨",
+                    contentDescription = stringResource(R.string.editor_selected_done),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(18.dp),
                 )
@@ -780,7 +782,7 @@ private fun ManualVoiceMessageField(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("직접 입력", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.editor_manual_input), fontWeight = FontWeight.SemiBold)
             Text(
                 text = "${text.length}/200",
                 style = MaterialTheme.typography.bodySmall,
@@ -790,7 +792,7 @@ private fun ManualVoiceMessageField(
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("알람에서 들려줄 음성 메시지를 입력해 주세요") },
+            placeholder = { Text(stringResource(R.string.editor_manual_input_placeholder)) },
             minLines = 3,
             maxLines = 5,
             shape = WakerInputShape,
@@ -831,13 +833,13 @@ private fun ManualTranslationRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("번역", fontWeight = FontWeight.SemiBold)
-                MutedText(if (enabled) languageLabel else "사용 안 함")
+                Text(stringResource(R.string.editor_translation), fontWeight = FontWeight.SemiBold)
+                MutedText(if (enabled) languageLabel else stringResource(R.string.editor_translation_off))
             }
             Spacer(Modifier.width(12.dp))
             if (enabled) {
                 Text(
-                    text = "변경",
+                    text = stringResource(R.string.editor_change),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -875,12 +877,12 @@ private fun RandomPromptSummaryRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Text("랜덤 문구 설정", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.editor_random_prompt_settings), fontWeight = FontWeight.SemiBold)
                 MutedText("$contextLabel · $languageLabel")
             }
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "변경",
+                text = stringResource(R.string.editor_change),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -895,16 +897,16 @@ private fun VoiceRepeatSelector(
     onRepeatChange: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("반복 재생", fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.editor_voice_repeat_title), fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             VoiceRepeatChoice(
-                label = "한 번만",
+                label = stringResource(R.string.editor_voice_repeat_once),
                 selected = !repeat,
                 onClick = { onRepeatChange(false) },
                 modifier = Modifier.weight(1f),
             )
             VoiceRepeatChoice(
-                label = "반복",
+                label = stringResource(R.string.editor_voice_repeat_on),
                 selected = repeat,
                 onClick = { onRepeatChange(true) },
                 modifier = Modifier.weight(1f),
@@ -958,7 +960,7 @@ private fun VoiceVolumeSelector(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("목소리 크기", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.editor_voice_volume), fontWeight = FontWeight.SemiBold)
             Text(
                 text = "${volumePercent.coerceIn(MinVoiceVolumePercent, 100)}%",
                 style = MaterialTheme.typography.bodyMedium,

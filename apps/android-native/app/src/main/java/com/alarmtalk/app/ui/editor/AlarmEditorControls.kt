@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,6 +31,7 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.VoiceProfile
+import com.alarmtalk.app.R
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -60,8 +62,8 @@ internal fun ScheduleDetailsCard(
         OutlinedTextField(
             value = label,
             onValueChange = onLabelChange,
-            label = { Text("알람 이름") },
-            placeholder = { Text("예: 출근 준비") },
+            label = { Text(stringResource(R.string.editor_label_alarm_name)) },
+            placeholder = { Text(stringResource(R.string.editor_placeholder_alarm_name)) },
             singleLine = true,
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
@@ -115,9 +117,9 @@ internal fun RepeatSelector(
                         .padding(end = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.editor_holiday_off_title), fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = "대체 공휴일 및 임시 공휴일 포함",
+                        text = stringResource(R.string.editor_holiday_off_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -269,7 +271,7 @@ internal fun PlayModeCard(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "재생 방식",
+            text = stringResource(R.string.editor_play_mode_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -292,7 +294,7 @@ internal fun PlayModeSelector(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PlayModeChip(
-            label = "알람 + 음성",
+            label = stringResource(R.string.editor_play_mode_alarm_voice),
             selected = selected == AlarmPlayModes.ALARM_VOICE,
             locked = voiceLocked,
             onClick = {
@@ -301,7 +303,7 @@ internal fun PlayModeSelector(
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "음성",
+            label = stringResource(R.string.editor_play_mode_voice_only),
             selected = selected == AlarmPlayModes.VOICE_ONLY,
             locked = voiceLocked,
             onClick = {
@@ -310,7 +312,7 @@ internal fun PlayModeSelector(
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "알람",
+            label = stringResource(R.string.editor_play_mode_alarm_only),
             selected = selected == AlarmPlayModes.ALARM_ONLY,
             onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
             modifier = Modifier.weight(1f),

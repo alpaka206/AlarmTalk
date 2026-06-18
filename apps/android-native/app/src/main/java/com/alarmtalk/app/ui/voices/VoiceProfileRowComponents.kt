@@ -43,8 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
@@ -58,20 +60,20 @@ internal fun FileSpeakerModeSelector(
     onSelect: (FileSpeakerMode) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("파일 속 목소리", fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.voicesr_file_speaker_section_title), fontWeight = FontWeight.SemiBold)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FileSpeakerModeButton(
-                label = "1명",
+                label = stringResource(R.string.voicesr_file_speaker_single),
                 selected = selected == FileSpeakerMode.Single,
                 enabled = enabled,
                 onClick = { onSelect(FileSpeakerMode.Single) },
                 modifier = Modifier.weight(1f),
             )
             FileSpeakerModeButton(
-                label = "2명 이상",
+                label = stringResource(R.string.voicesr_file_speaker_multiple),
                 selected = selected == FileSpeakerMode.Multiple,
                 enabled = enabled,
                 onClick = { onSelect(FileSpeakerMode.Multiple) },
@@ -172,12 +174,12 @@ internal fun RelationshipDropdownField(
                 value = presetLabel,
                 onValueChange = {},
                 readOnly = true,
-                label = { Text("나와의 관계 (필수)") },
-                placeholder = { Text("관계를 선택해 주세요") },
+                label = { Text(stringResource(R.string.voicesr_relationship_label_required)) },
+                placeholder = { Text(stringResource(R.string.voicesr_relationship_placeholder)) },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 isError = isError && !selection.isComplete,
                 supportingText = {
-                    if (isError && !selection.isComplete) Text("꼭 입력해 주세요.")
+                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
                 },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
@@ -214,12 +216,12 @@ internal fun RelationshipDropdownField(
                 onValueChange = {
                     onSelectionChange(selection.copy(customLabel = it.take(30)))
                 },
-                label = { Text("관계 직접 입력") },
-                placeholder = { Text("예: 손녀, 연인, 동료") },
+                label = { Text(stringResource(R.string.voicesr_relationship_custom_label)) },
+                placeholder = { Text(stringResource(R.string.voicesr_relationship_custom_placeholder)) },
                 singleLine = true,
                 isError = isError && !selection.isComplete,
                 supportingText = {
-                    if (isError && !selection.isComplete) Text("꼭 입력해 주세요.")
+                    if (isError && !selection.isComplete) Text(stringResource(R.string.voicesr_required_field))
                 },
                 shape = WakerInputShape,
                 colors = wakerOutlinedTextFieldColors(),
@@ -245,18 +247,18 @@ internal fun ListenerTitlePreview(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "이 목소리는 이렇게 불러줘요",
+                text = stringResource(R.string.voicesr_listener_preview_heading),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Text(
-                text = "\"$listenerTitle, 일어날 시간이에요\"",
+                text = stringResource(R.string.voicesr_listener_preview_quote, listenerTitle),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             if (relationshipLabel.isNotBlank()) {
-                MutedText("관계 · $relationshipLabel")
+                MutedText(stringResource(R.string.voicesr_listener_preview_relationship, relationshipLabel))
             }
         }
     }
@@ -389,7 +391,7 @@ internal fun SpeakerDraftRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "목소리 ${index + 1}",
+                    text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
                     fontWeight = FontWeight.SemiBold,
                 )
                 MutedText(draftStatusLabel(state.status, state.errorMessage))
@@ -400,7 +402,7 @@ internal fun SpeakerDraftRow(
             ) {
                 Icon(
                     imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (isPlaying) "일시정지" else "미리듣기",
+                    contentDescription = if (isPlaying) stringResource(R.string.voicesr_pause) else stringResource(R.string.voicesr_preview),
                 )
             }
             Button(
@@ -408,7 +410,7 @@ internal fun SpeakerDraftRow(
                 enabled = ready && !promotingBusy,
                 shape = RoundedCornerShape(999.dp),
             ) {
-                Text("선택")
+                Text(stringResource(R.string.voicesr_select))
             }
         }
     }
@@ -483,22 +485,22 @@ internal fun VoiceProfileRow(
                     }
                 }
                 when {
-                    isProcessing -> VoiceProgressMessage("생성 중")
-                    isDeleting -> VoiceProgressMessage("삭제 중")
+                    isProcessing -> VoiceProgressMessage(stringResource(R.string.voicesr_status_creating))
+                    isDeleting -> VoiceProgressMessage(stringResource(R.string.voicesr_status_deleting))
                     else -> {
                         Box {
                             IconButton(
                                 onClick = { menuExpanded = true },
                                 enabled = rowEnabled,
                             ) {
-                                Icon(Icons.Outlined.MoreVert, contentDescription = "더보기")
+                                Icon(Icons.Outlined.MoreVert, contentDescription = stringResource(R.string.voicesr_more))
                             }
                             DropdownMenu(
                                 expanded = menuExpanded,
                                 onDismissRequest = { menuExpanded = false },
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("정보 수정") },
+                                    text = { Text(stringResource(R.string.voicesr_edit_info)) },
                                     leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                                     onClick = {
                                         menuExpanded = false
@@ -506,7 +508,7 @@ internal fun VoiceProfileRow(
                                     },
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("삭제") },
+                                    text = { Text(stringResource(R.string.voicesr_delete)) },
                                     leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null) },
                                     onClick = {
                                         menuExpanded = false
@@ -536,7 +538,7 @@ internal fun VoiceProfileRow(
                             verticalArrangement = Arrangement.spacedBy(3.dp),
                         ) {
                             Text(
-                                text = "목소리 공유",
+                                text = stringResource(R.string.voicesr_share_voice),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
@@ -560,7 +562,7 @@ internal fun VoiceSharedBadge() {
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
     ) {
         Text(
-            text = "공유 중",
+            text = stringResource(R.string.voicesr_sharing_badge),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -608,7 +610,7 @@ internal fun SystemVoiceProfileRow(
             )
             Icon(
                 imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                contentDescription = if (playing) "정지" else "들어보기",
+                contentDescription = if (playing) stringResource(R.string.voicesr_stop) else stringResource(R.string.voicesr_listen),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
@@ -655,11 +657,12 @@ internal fun SharedVoiceProfileRow(
                 ) {
                     Text(profile.name, fontWeight = FontWeight.SemiBold)
                     val ownerText = profile.ownerName?.takeIf { it.isNotBlank() }
-                        ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리"
+                        ?.let { stringResource(R.string.voicesr_shared_from_owner, it) }
+                        ?: stringResource(R.string.voicesr_shared_voice)
                     MutedText(ownerText)
                 }
                 IconButton(onClick = onEdit) {
-                    Icon(Icons.Outlined.Edit, contentDescription = "내 정보 수정")
+                    Icon(Icons.Outlined.Edit, contentDescription = stringResource(R.string.voicesr_edit_my_info))
                 }
             }
             if (needsViewerInfo) {
@@ -670,7 +673,7 @@ internal fun SharedVoiceProfileRow(
                     border = wakerCardBorder(),
                     colors = wakerOutlinedButtonColors(),
                 ) {
-                    Text("이 목소리가 나를 어떻게 부를지 설정")
+                    Text(stringResource(R.string.voicesr_set_how_voice_calls_me))
                 }
             }
         }

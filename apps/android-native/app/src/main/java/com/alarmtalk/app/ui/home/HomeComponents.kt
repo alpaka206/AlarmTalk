@@ -41,6 +41,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import com.alarmtalk.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
@@ -51,11 +53,11 @@ import androidx.compose.ui.window.DialogProperties
 internal fun HomeHeader() {
     val hour = java.time.LocalTime.now().hour
     val (greetingTop, greetingBottom) = when {
-        hour < 6 -> "좋아하는 목소리로" to "깨워드릴게요"
-        hour < 12 -> "오늘 아침," to "잘 일어나셨나요?"
-        hour < 17 -> "내일 알람을" to "준비해요"
-        hour < 21 -> "서로의 목소리로" to "아침을 예약해요"
-        else -> "좋아하는 목소리로" to "깨워드릴게요"
+        hour < 6 -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
+        hour < 12 -> stringResource(R.string.hs_greeting_morning_top) to stringResource(R.string.hs_greeting_morning_bottom)
+        hour < 17 -> stringResource(R.string.hs_greeting_tomorrow_top) to stringResource(R.string.hs_greeting_tomorrow_bottom)
+        hour < 21 -> stringResource(R.string.hs_greeting_each_other_top) to stringResource(R.string.hs_greeting_each_other_bottom)
+        else -> stringResource(R.string.hs_greeting_voice_top) to stringResource(R.string.hs_greeting_voice_bottom)
     }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -99,7 +101,7 @@ internal fun ProfileMenu(
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Person,
-                    contentDescription = "프로필",
+                    contentDescription = stringResource(R.string.hs_profile_content_desc),
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -121,7 +123,7 @@ internal fun ProfileMenu(
                 if (!hasSharedPass) {
                     ProfileMenuItem(
                         icon = Icons.Outlined.QrCode2,
-                        label = "초대 코드 등록",
+                        label = stringResource(R.string.hs_profile_menu_invite_code),
                     ) {
                         expanded = false
                         onSelectTab(NativeTab.People)
@@ -129,14 +131,14 @@ internal fun ProfileMenu(
                 }
                 ProfileMenuItem(
                     icon = Icons.Outlined.EmojiEvents,
-                    label = "캐릭터",
+                    label = stringResource(R.string.hs_profile_menu_character),
                 ) {
                     expanded = false
                     onSelectTab(NativeTab.Growth)
                 }
                 ProfileMenuItem(
                     icon = Icons.Outlined.CreditCard,
-                    label = "이용권",
+                    label = stringResource(R.string.hs_profile_menu_pass),
                 ) {
                     expanded = false
                     onSelectTab(NativeTab.Billing)
@@ -144,7 +146,7 @@ internal fun ProfileMenu(
                 if (hasSharedPass) {
                     ProfileMenuItem(
                         icon = Icons.Outlined.People,
-                        label = "공유 이용권",
+                        label = stringResource(R.string.hs_profile_menu_shared_pass),
                     ) {
                         expanded = false
                         onOpenMemberManagement()
@@ -156,7 +158,7 @@ internal fun ProfileMenu(
                 )
                 ProfileMenuItem(
                     icon = Icons.Outlined.Settings,
-                    label = "설정",
+                    label = stringResource(R.string.hs_profile_menu_settings),
                 ) {
                     expanded = false
                     onOpenSettings()
@@ -219,20 +221,20 @@ internal fun ThemeModePickerDialog(
     val options = listOf(
         ThemeModeOption(
             mode = ThemeMode.System,
-            title = "시스템",
-            description = "휴대폰 설정을 따라가요.",
+            title = stringResource(R.string.hs_theme_system_title),
+            description = stringResource(R.string.hs_theme_system_desc),
             icon = Icons.Outlined.Settings,
         ),
         ThemeModeOption(
             mode = ThemeMode.Light,
-            title = "밝게",
-            description = "낮에도 선명한 밝은 화면이에요.",
+            title = stringResource(R.string.hs_theme_light_title),
+            description = stringResource(R.string.hs_theme_light_desc),
             icon = Icons.Outlined.LightMode,
         ),
         ThemeModeOption(
             mode = ThemeMode.Dark,
-            title = "어둡게",
-            description = "밤에 보기 편한 어두운 화면이에요.",
+            title = stringResource(R.string.hs_theme_dark_title),
+            description = stringResource(R.string.hs_theme_dark_desc),
             icon = Icons.Outlined.DarkMode,
         ),
     )
@@ -258,7 +260,7 @@ internal fun ThemeModePickerDialog(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                ModalDialogTitle("테마 선택", onDismiss = onDismiss)
+                ModalDialogTitle(stringResource(R.string.hs_theme_dialog_title), onDismiss = onDismiss)
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     options.forEach { option ->
                         ThemeModeOptionRow(
@@ -349,7 +351,7 @@ private fun ThemeModeOptionRow(
                     contentColor = scheme.onPrimary,
                 ) {
                     Text(
-                        text = "선택됨",
+                        text = stringResource(R.string.hs_theme_selected),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -393,7 +395,7 @@ internal fun NicknameEditDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 ModalDialogTitle(
-                    title = "닉네임 수정",
+                    title = stringResource(R.string.hs_nickname_dialog_title),
                     onDismiss = onDismiss,
                     dismissEnabled = !busy,
                 )
@@ -429,13 +431,13 @@ internal fun NicknameEditDialog(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "앱에서 보일 이름",
+                                text = stringResource(R.string.hs_nickname_display_name_title),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                             Text(
-                                text = "알람, 메시지, 공유 이용권 화면에서 이 이름을 사용해요.",
+                                text = stringResource(R.string.hs_nickname_display_name_desc),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -446,8 +448,8 @@ internal fun NicknameEditDialog(
                     OutlinedTextField(
                         value = value,
                         onValueChange = { value = it.take(30) },
-                        label = { Text("닉네임") },
-                        placeholder = { Text("예: 규원") },
+                        label = { Text(stringResource(R.string.hs_nickname_field_label)) },
+                        placeholder = { Text(stringResource(R.string.hs_nickname_field_placeholder)) },
                         singleLine = true,
                         enabled = !busy,
                         shape = WakerInputShape,
@@ -455,7 +457,7 @@ internal fun NicknameEditDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        text = "${value.length}/30",
+                        text = stringResource(R.string.hs_nickname_char_counter, value.length),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.End),
@@ -467,7 +469,7 @@ internal fun NicknameEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
-                    Text(if (busy) "저장 중" else "저장")
+                    Text(if (busy) stringResource(R.string.hs_nickname_saving) else stringResource(R.string.hs_nickname_save))
                 }
             }
         }
@@ -484,21 +486,20 @@ internal fun DeleteAccountConfirmDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = {
             ModalDialogTitle(
-                title = "회원 탈퇴",
+                title = stringResource(R.string.hs_delete_account_title),
                 onDismiss = onDismiss,
                 dismissEnabled = !busy,
             )
         },
         text = {
             Text(
-                "정말 탈퇴할까요? 신청 후 30일이 지나면 알람, 음성, 메시지 등 모든 데이터가 " +
-                    "영구 삭제돼요. 그 전에 다시 로그인해 탈퇴를 취소하면 복구할 수 있어요.",
+                stringResource(R.string.hs_delete_account_body),
             )
         },
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = !busy) {
                 Text(
-                    text = "탈퇴",
+                    text = stringResource(R.string.hs_delete_account_confirm),
                     color = MaterialTheme.colorScheme.error,
                 )
             }

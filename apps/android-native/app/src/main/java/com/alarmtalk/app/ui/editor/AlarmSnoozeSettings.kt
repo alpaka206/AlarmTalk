@@ -44,8 +44,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
@@ -74,12 +76,12 @@ internal fun VoiceTranslationSettingsPane(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editor_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "번역 언어",
+                    text = stringResource(R.string.editor_translation_language_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -91,7 +93,7 @@ internal fun VoiceTranslationSettingsPane(
                     .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SnoozeOptionSection(title = "언어") {
+                SnoozeOptionSection(title = stringResource(R.string.editor_language)) {
                     TtsTranslationLanguages.forEachIndexed { index, (language, label) ->
                         SnoozeRadioRow(
                             label = label,
@@ -216,12 +218,12 @@ internal fun SnoozeSettingsPane(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editor_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "다시 울림",
+                    text = stringResource(R.string.editor_snooze_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -245,7 +247,7 @@ internal fun SnoozeSettingsPane(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (snoozeEnabled) "사용 중" else "사용 안 함",
+                            text = if (snoozeEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (snoozeEnabled) {
@@ -261,10 +263,10 @@ internal fun SnoozeSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection(title = "간격") {
+                SnoozeOptionSection(title = stringResource(R.string.editor_snooze_interval)) {
                     SnoozeIntervals.forEachIndexed { index, minutes ->
                         SnoozeRadioRow(
-                            label = "${minutes}분",
+                            label = stringResource(R.string.editor_minutes, minutes),
                             selected = snoozeMinutes == minutes,
                             onClick = { onSnoozeMinutesChange(minutes) },
                         )
@@ -273,9 +275,9 @@ internal fun SnoozeSettingsPane(
                     SnoozeOptionDivider()
                     SnoozeRadioRow(
                         label = if (snoozeMinutes in SnoozeIntervals) {
-                            "직접 설정"
+                            stringResource(R.string.editor_snooze_custom)
                         } else {
-                            "직접 설정 · ${snoozeMinutes}분"
+                            stringResource(R.string.editor_snooze_custom_value, snoozeMinutes)
                         },
                         selected = snoozeMinutes !in SnoozeIntervals,
                         onClick = {
@@ -285,11 +287,11 @@ internal fun SnoozeSettingsPane(
                     )
                 }
 
-                SnoozeOptionSection(title = "반복") {
+                SnoozeOptionSection(title = stringResource(R.string.editor_snooze_repeat)) {
                     val repeatOptions = listOf(
-                        SnoozeRepeatLimits.THREE to "3회",
-                        SnoozeRepeatLimits.FIVE to "5회",
-                        SnoozeRepeatLimits.FOREVER to "계속 반복",
+                        SnoozeRepeatLimits.THREE to stringResource(R.string.editor_snooze_repeat_three),
+                        SnoozeRepeatLimits.FIVE to stringResource(R.string.editor_snooze_repeat_five),
+                        SnoozeRepeatLimits.FOREVER to stringResource(R.string.editor_snooze_repeat_forever),
                     )
                     repeatOptions.forEachIndexed { index, (limit, label) ->
                         SnoozeRadioRow(
@@ -310,7 +312,7 @@ internal fun SnoozeSettingsPane(
             onDismissRequest = { customIntervalDialogOpen = false },
             title = {
                 ModalDialogTitle(
-                    title = "간격 직접 설정",
+                    title = stringResource(R.string.editor_snooze_custom_dialog_title),
                     onDismiss = { customIntervalDialogOpen = false },
                 )
             },
@@ -320,7 +322,7 @@ internal fun SnoozeSettingsPane(
                     onValueChange = { value ->
                         customMinutesText = value.filter { it.isDigit() }.take(2)
                     },
-                    label = { Text("분") },
+                    label = { Text(stringResource(R.string.editor_minute_label)) },
                     singleLine = true,
                     isError = customMinutesText.isNotBlank() && customMinutes !in 1..60,
                     shape = WakerInputShape,
@@ -335,7 +337,7 @@ internal fun SnoozeSettingsPane(
                         customIntervalDialogOpen = false
                     },
                 ) {
-                    Text("적용")
+                    Text(stringResource(R.string.editor_apply))
                 }
             },
         )
@@ -453,9 +455,9 @@ internal fun EditorActionButtons(
         Spacer(Modifier.width(8.dp))
         Text(
             when {
-                isSaving -> "저장 중"
-                isEditing -> "변경사항 저장"
-                else -> "알람 설정하기"
+                isSaving -> stringResource(R.string.editor_saving)
+                isEditing -> stringResource(R.string.editor_save_changes)
+                else -> stringResource(R.string.editor_set_alarm)
             },
         )
     }
