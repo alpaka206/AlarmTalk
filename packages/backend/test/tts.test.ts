@@ -280,11 +280,12 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('force=true로 연관 알람 있어도 삭제', async () => {
-    mockDB.pushResult([{ cnt: 2 }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ cnt: 2 }]); // alarm check
+    mockDB.pushResult([], 1); // UPDATE alarms (detach)
+    mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([]); // SELECT audio_object_key
+    mockDB.pushResult([], 1); // DELETE generated_audio_assets
+    mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}?force=true`));
     expect(res.status).toBe(200);
@@ -313,10 +314,11 @@ describe('DELETE /tts/messages/:id — 메시지 삭제', () => {
   });
 
   it('정상 삭제', async () => {
-    mockDB.pushResult([{ cnt: 0 }]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([{ cnt: 0 }]); // alarm check
+    mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([]); // SELECT audio_object_key
+    mockDB.pushResult([], 1); // DELETE generated_audio_assets
+    mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     const res = await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(res.status).toBe(200);
@@ -411,6 +413,8 @@ describe('POST /tts/generate — edge cases', () => {
   it('ElevenLabs 실패 시 500 + detail 포함', async () => {
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]); // cache lookup (miss)
+    mockDB.pushResult([], 1); // atomic daily-count reservation
     mockTextToSpeech.mockRejectedValue(new Error('ElevenLabs quota exceeded'));
     const app = buildApp();
     const res = await reqWithEnv(
@@ -426,6 +430,8 @@ describe('POST /tts/generate — edge cases', () => {
   it('ElevenLabs가 비-Error를 throw하면 detail "Unknown error"', async () => {
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]); // cache lookup (miss)
+    mockDB.pushResult([], 1); // atomic daily-count reservation
     mockTextToSpeech.mockRejectedValue('raw string error');
     const app = buildApp();
     const res = await reqWithEnv(
@@ -463,6 +469,8 @@ describe('POST /tts/generate — edge cases', () => {
     const r2 = createMockR2Bucket();
     mockDB.pushResult([{ plan: 'plus', daily_tts_count: 0, daily_tts_reset_at: today() }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]); // cache lookup (miss)
+    mockDB.pushResult([], 1); // atomic daily-count reservation
     mockTextToSpeech.mockResolvedValue(new Uint8Array([72, 101]).buffer);
     const app = buildApp();
     const res = await app.request(
@@ -975,30 +983,34 @@ describe('DELETE /tts/messages/:id — edge cases', () => {
   it('삭제 시 message_library부터 삭제 후 messages 삭제 (순서 검증)', async () => {
     mockDB.pushResult([{ cnt: 0 }]); // alarm check
     mockDB.pushResult([], 1); // DELETE message_library
+    mockDB.pushResult([]); // SELECT audio_object_key (정리할 R2 오브젝트 없음)
     mockDB.pushResult([], 1); // DELETE generated_audio_assets
     mockDB.pushResult([], 1); // DELETE messages
     const app = buildApp();
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(mockDB.calls[1].sql).toContain('DELETE FROM message_library');
-    expect(mockDB.calls[2].sql).toContain('DELETE FROM generated_audio_assets');
-    expect(mockDB.calls[3].sql).toContain('DELETE FROM messages');
+    expect(mockDB.calls[2].sql).toContain('SELECT audio_object_key');
+    expect(mockDB.calls[3].sql).toContain('DELETE FROM generated_audio_assets');
+    expect(mockDB.calls[4].sql).toContain('DELETE FROM messages');
   });
 
   it('삭제 SQL에 user_id 포함 (사용자 격리)', async () => {
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([]); // SELECT audio_object_key
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp('user-99');
     await app.request(jsonReq('DELETE', `/tts/messages/${M1}`));
     expect(mockDB.calls[1].args).toContain('user-99');
-    expect(mockDB.calls[2].args).toContain('user-99');
     expect(mockDB.calls[3].args).toContain('user-99');
+    expect(mockDB.calls[4].args).toContain('user-99');
   });
 
   it('force=true이고 알람 0개여도 정상 삭제', async () => {
     mockDB.pushResult([{ cnt: 0 }]);
     mockDB.pushResult([], 1);
+    mockDB.pushResult([]); // SELECT audio_object_key
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
     const app = buildApp();

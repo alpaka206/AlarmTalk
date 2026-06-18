@@ -358,6 +358,7 @@ describe('POST /auth/google', () => {
       name: 'Google User',
       picture: 'https://lh3.googleusercontent.com/photo.jpg',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: ENV.GOOGLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -400,6 +401,7 @@ describe('POST /auth/google', () => {
       email: 'linked@gmail.com',
       name: 'Linked User',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: ENV.GOOGLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -474,6 +476,7 @@ describe('POST /auth/apple', () => {
       email: 'user@privaterelay.appleid.com',
       name: 'Apple User',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -516,6 +519,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-2',
       email: 'linked@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -564,6 +568,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-3',
       email: 'bad@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'other.bundle',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -587,6 +592,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-4',
       email: 'tampered@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -635,6 +641,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-nonce-ok',
       email: 'nonce-ok@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: nonceHash,
@@ -673,6 +680,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-nonce-bad',
       email: 'nonce-bad@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: wrongNonceHash,
@@ -700,6 +708,7 @@ describe('POST /auth/apple', () => {
         sub: 'apple-user-no-nonce',
         email: 'no-nonce@icloud.com',
         iss: 'https://appleid.apple.com',
+      email_verified: true,
         aud: 'com.voicealarm.nativeapp.ios',
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
@@ -738,6 +747,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-token-has-nonce',
       email: 'token-nonce@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: nonceHash,

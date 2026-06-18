@@ -307,9 +307,17 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     firing_ids: firing.map((a) => a.id),
   });
 
-  for (const alarm of firing) {
-    const targetUserId = alarm.target_user_id ?? alarm.user_id;
-    await sendAlarmPush(db, env, targetUserId, alarm.id, alarm.time);
+  // 알람 푸시를 순차(await in loop)로 보내면 동시에 울릴 알람이 많을 때 지연이
+  // 선형으로 쌓인다(마지막 사용자는 늦게 울림). Workers 의 subrequest 상한을
+  // 고려해 청크 단위로 병렬 전송하고, 한 건 실패가 나머지를 막지 않도록 allSettled.
+  const PUSH_CONCURRENCY = 10;
+  for (let i = 0; i < firing.length; i += PUSH_CONCURRENCY) {
+    const chunk = firing.slice(i, i + PUSH_CONCURRENCY);
+    await Promise.allSettled(
+      chunk.map((alarm) =>
+        sendAlarmPush(db, env, alarm.target_user_id ?? alarm.user_id, alarm.id, alarm.time),
+      ),
+    );
   }
 }
 

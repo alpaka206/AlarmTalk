@@ -245,6 +245,7 @@ describe('authMiddleware — Google token', () => {
       name: 'Google User',
       picture: 'https://lh3.googleusercontent.com/photo.jpg',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -269,6 +270,7 @@ describe('authMiddleware — Google token', () => {
     const token = fakeToken({
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -290,6 +292,7 @@ describe('authMiddleware — Google token', () => {
     const payload = {
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'wrong-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -311,6 +314,7 @@ describe('authMiddleware — Google token', () => {
     const payload = {
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) - 3600,
     };
@@ -332,6 +336,7 @@ describe('authMiddleware — Google token', () => {
     const token = fakeToken({
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -352,6 +357,7 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@privaterelay.appleid.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -372,6 +378,7 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@apple.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) - 3600,
     };
@@ -388,6 +395,7 @@ describe('authMiddleware — Apple token', () => {
     const payload = {
       sub: 'apple-user-002',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -411,6 +419,7 @@ describe('authMiddleware — Apple token', () => {
         sub: 'apple-user-mw-nonce',
         email: 'mw-nonce@apple.com',
         iss: 'https://appleid.apple.com',
+      email_verified: true,
         aud: ENV.APPLE_CLIENT_ID,
         exp: Math.floor(Date.now() / 1000) + 3600,
         nonce: 'a'.repeat(64),
@@ -472,6 +481,7 @@ describe('authMiddleware — 토큰 발급자 분기', () => {
     const payload = {
       sub: 'apple-u',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };

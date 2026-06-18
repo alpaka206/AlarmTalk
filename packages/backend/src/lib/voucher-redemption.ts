@@ -233,6 +233,27 @@ async function redeemVoucherCodeInTransaction(
     });
   }
 
+  // 방어 가드: 코드를 사용하면 redeemer 의 기존 구독이 취소되는데, redeemer 가
+  // *다른 멤버가 있는 가족 그룹의 소유자*라면 그 취소가 그룹을 해체하고 멤버들의
+  // 구독까지 강등시킨다(한 사람의 코드 사용이 남의 구독을 파괴). 이를 막기 위해
+  // 소유 그룹에 본인 외 멤버가 있으면 명확한 에러로 차단한다(소유권 이전/멤버
+  // 정리 후 재시도하도록 유도).
+  const ownedGroupRes = await db.execute({
+    sql: `SELECT COUNT(*) AS other_members
+          FROM plan_group_members m
+          JOIN plan_groups pg ON pg.id = m.plan_group_id
+          WHERE pg.owner_user_id = ? AND m.user_id != ?`,
+    args: [params.userPk, params.userPk],
+  });
+  const otherMembers = Number(ownedGroupRes.rows[0]?.other_members) || 0;
+  if (otherMembers > 0) {
+    throw new VoucherRedemptionError(
+      409,
+      'OWNS_ACTIVE_GROUP',
+      'You own a family group with other members. Transfer ownership or remove members before redeeming a new code.',
+    );
+  }
+
   await claimVoucherUse(db, {
     voucherId,
     userPk: params.userPk,
