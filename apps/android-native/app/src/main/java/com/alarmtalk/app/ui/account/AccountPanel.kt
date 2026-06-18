@@ -34,6 +34,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
@@ -110,6 +111,7 @@ internal fun DayRows(
     repeatDaysMask: Int,
     onToggleDay: (Int) -> Unit,
 ) {
+    val context = LocalContext.current
     val days = listOf(
         0 to stringResource(R.string.common_day_sun),
         1 to stringResource(R.string.common_day_mon),
@@ -131,7 +133,7 @@ internal fun DayRows(
             }
         }
         Text(
-            text = repeatLabel(repeatDaysMask),
+            text = repeatLabel(context, repeatDaysMask),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

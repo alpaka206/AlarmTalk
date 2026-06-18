@@ -105,6 +105,7 @@ internal fun AlarmSettingsCard(
     onOpenAlarmSoundSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -119,7 +120,7 @@ internal fun AlarmSettingsCard(
             AlarmSettingRow(
                 title = stringResource(R.string.editor_snooze_title),
                 subtitle = if (snoozeEnabled) {
-                    stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(snoozeRepeatLimit))
+                    stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(context, snoozeRepeatLimit))
                 } else {
                     stringResource(R.string.editor_off)
                 },
@@ -135,7 +136,7 @@ internal fun AlarmSettingsCard(
             AlarmSettingDivider()
             AlarmSettingRow(
                 title = stringResource(R.string.editor_vibration_title),
-                subtitle = vibrationLabel(vibrationPattern),
+                subtitle = vibrationLabel(context, vibrationPattern),
                 icon = Icons.Outlined.Notifications,
                 onClick = onOpenVibrationSettings,
                 trailing = {

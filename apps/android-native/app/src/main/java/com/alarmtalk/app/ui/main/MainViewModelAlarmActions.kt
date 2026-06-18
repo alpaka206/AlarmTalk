@@ -1,6 +1,7 @@
 package com.alarmtalk.app
 
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
@@ -138,7 +139,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
         withContext(Dispatchers.IO) {
             if (draft.shouldUploadLocalVoiceForFamilyAlarm()) {
                 val audioStore = AlarmAudioStore(getApplication<Application>())
-                val localAudio = draft.toCachedLocalAudio(audioStore)
+                val localAudio = draft.toCachedLocalAudio(getApplication<Application>(), audioStore)
                 val resolvedDurationMillis = localAudio.durationMillis
                     ?: throw IllegalArgumentException(
                         getApplication<Application>().getString(R.string.msg_voice_duration_unknown),
@@ -184,7 +185,7 @@ private fun AlarmDraft.shouldUploadLocalVoiceForFamilyAlarm(): Boolean =
         !localAudioUri.isNullOrBlank() &&
         rawAudioUri?.let(RemoteAlarmMapper::isRemoteAudioUrl) != true
 
-private fun AlarmDraft.toCachedLocalAudio(audioStore: AlarmAudioStore): CachedAlarmAudio {
+private fun AlarmDraft.toCachedLocalAudio(context: Context, audioStore: AlarmAudioStore): CachedAlarmAudio {
     val resolvedLocalAudioUri = requireNotNull(localAudioUri)
     // 가족 음성 알람 업로드는 백엔드가 INVALID_DURATION 으로 0L 을 거부하므로
     // 캐시된 로컬 파일에서 실제 길이를 읽어와 채워야 한다.
@@ -194,7 +195,7 @@ private fun AlarmDraft.toCachedLocalAudio(audioStore: AlarmAudioStore): CachedAl
     return CachedAlarmAudio(
         localAudioUri = resolvedLocalAudioUri,
         rawAudioUri = rawAudioUri,
-        displayName = audioFileLabel(resolvedLocalAudioUri),
+        displayName = audioFileLabel(context, resolvedLocalAudioUri),
         durationMillis = durationMillis,
         cacheKey = audioCacheKey,
     )
