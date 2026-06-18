@@ -204,7 +204,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     LoginPermissionGate(
         authSession = authSession,
-        enabled = authSession != null && !viewModel.showOnboarding,
+        enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
+            !viewModel.showOnboarding,
         permissions = permissions,
         onRequestPermission = ::requestPermission,
         onRequestAllPermissions = ::requestAllMissingPermissions,
@@ -444,7 +445,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     Scaffold(
         bottomBar = {
-            if (authSession != null && !viewModel.showOnboarding && !viewModel.updateRequired &&
+            if (authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
+                !viewModel.showOnboarding && !viewModel.updateRequired &&
                 !viewModel.pendingDeletion && currentTab != null
             ) {
                 AlarmTalkBottomBar(
@@ -506,6 +508,12 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
               onRecover = viewModel::cancelAccountDeletion,
               onLogout = ::logout,
           )
+          return@Scaffold
+      }
+      // 동의 확인이 끝나기 전엔 온보딩·홈을 띄우지 않고 로딩으로 잡아둬, 동의가 필요한
+      // 사용자에게 다른 화면이 먼저 깜빡였다가 동의 화면이 끼어드는 일을 막는다.
+      if (!viewModel.consentChecked) {
+          ConsentCheckLoadingScreen(contentPadding = padding)
           return@Scaffold
       }
       if (viewModel.needsConsent) {

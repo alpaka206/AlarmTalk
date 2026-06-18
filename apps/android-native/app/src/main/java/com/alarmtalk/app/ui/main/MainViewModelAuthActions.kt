@@ -212,10 +212,8 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
             }
         }
         authSessionStore.clear()
-        clearUserScopedRemoteState()
+        clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
         authSession = null
-        needsConsent = false
-        pendingDeletion = false
         message = getApplication<android.app.Application>().getString(R.string.msg_logout_success)
         authBusy = false
     }
@@ -460,16 +458,33 @@ internal fun MainViewModel.checkAppVersion() {
 // AlarmTalkApp 이 동의 화면을 띄운다. 네트워크 실패 시에는 앱 진입을 막지 않는다.
 internal fun MainViewModel.checkConsentStatus() {
     val session = authSession ?: return
+    val userId = session.user.id
+    // 이 기기에서 이미 동의를 마친 사용자는 로딩 없이 바로 통과시키고, 서버로 재확인만 한다.
+    // 처음 보는 사용자는 서버 응답이 올 때까지 consentChecked=false 로 두어, 동의 화면이
+    // 온보딩·홈보다 먼저 뜨도록 진입을 막는다.
+    if (isConsentCachedDone(userId)) {
+        needsConsent = false
+        consentChecked = true
+    } else {
+        consentChecked = false
+    }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     viewModelScope.launch {
         runCatching {
             api.consentStatus(authorization)
         }.onSuccess { status ->
+            // 응답을 기다리는 사이 로그아웃/계정전환이 일어났으면, 옛 사용자의 결과로
+            // 현재(또는 빈) 세션의 동의 상태를 덮어쓰지 않는다.
+            if (authSession?.user?.id != userId) return@launch
             needsConsent = status.needsConsent
+            rememberConsentDone(userId, !status.needsConsent, status.policyVersion)
         }.onFailure { error ->
+            if (authSession?.user?.id != userId) return@launch
             Log.w(TAG, "Failed to check consent status", error)
-            needsConsent = false
+            // 캐시로 이미 통과시킨 게 아니면 네트워크 실패가 앱 진입을 막지 않게 한다.
+            if (!isConsentCachedDone(userId)) needsConsent = false
         }
+        if (authSession?.user?.id == userId) consentChecked = true
     }
 }
 
@@ -482,6 +497,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 서버에 "현재 정책 버전"으로 기록되도록 직전 checkConsentStatus 가 저장한 버전을 함께 보낸다.
+    // version 을 비우면 백엔드가 "1" 로 기록해, 정책이 개정된 뒤엔 옛 버전으로 저장되어
+    // 계속 재동의를 요구받고 로컬 캐시(새 버전 만족)와 어긋난다.
+    val policyVersion = cachedPolicyVersion()
     viewModelScope.launch {
         authBusy = true
         runCatching {
@@ -489,15 +508,19 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
                     consents = listOf(
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
                     ),
                 ),
             )
         }.onSuccess {
             needsConsent = false
+            consentChecked = true
+            // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
+            // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
+            policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
             message = getApplication<android.app.Application>().getString(R.string.msg_consent_completed)
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)
