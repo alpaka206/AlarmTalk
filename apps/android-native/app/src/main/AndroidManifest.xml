@@ -71,6 +71,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <!-- 시간대(여행)·시스템 시각/DST 변경 시 알람 재예약을 위해 수신 -->
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="com.alarmtalk.app.action.DEBUG_RESTORE_ALARMS" />
             </intent-filter>
         </receiver>

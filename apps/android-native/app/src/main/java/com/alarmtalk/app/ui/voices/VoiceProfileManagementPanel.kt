@@ -297,8 +297,9 @@ internal fun VoiceProfileManagementPanel(
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
-    val systemVoices = voiceProfiles.filter { it.isSystem == true }
-    val ownVoices = voiceProfiles.filter { it.isSystem != true }
+    // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
+    val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
+    val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
@@ -330,8 +331,9 @@ internal fun VoiceProfileManagementPanel(
             playingGreetingVoiceId = profile.id
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 val cached = withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = bytes,
                         format = response.audioFormat,
@@ -575,8 +577,9 @@ internal fun VoiceProfileManagementPanel(
                     random = false,
                 ),
             )
-            val audioBytes = Base64.decode(ttsResponse.audioBase64, Base64.DEFAULT)
             val cached = withContext(Dispatchers.IO) {
+                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                val audioBytes = Base64.decode(ttsResponse.audioBase64, Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
                     bytes = audioBytes,
                     format = ttsResponse.audioFormat,
@@ -727,8 +730,9 @@ internal fun VoiceProfileManagementPanel(
                     random = false,
                 ),
             )
-            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
             val cached = withContext(Dispatchers.IO) {
+                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
                     bytes = bytes,
                     format = response.audioFormat,

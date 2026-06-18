@@ -77,6 +77,10 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val pendingCharacterEventCount = remember(characterEvents) {
         characterEvents.count { it.state == CharacterEventStates.PENDING }
     }
+    // 읽지 않은 메시지 수도 receivedNotes 가 바뀔 때만 계산(매 리컴포지션 재계산 방지).
+    val unreadMessageCount = remember(receivedNotes) {
+        receivedNotes.count { it.readAt.isNullOrBlank() }
+    }
     val permissionState = rememberPermissionStatusState()
     val permissions = permissionState.snapshot
     var bulkPermissionFlowActive by remember { mutableStateOf(false) }
@@ -443,7 +447,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                 AlarmTalkBottomBar(
                     selectedTab = selectedTab,
                     unreadAlarmCount = if (selectedTab == NativeTab.Alarms) 0 else unreadAlarmCount,
-                    unreadMessageCount = receivedNotes.count { it.readAt.isNullOrBlank() },
+                    unreadMessageCount = unreadMessageCount,
                     // 메시지는 커플/가족 전용 — 무료·개인 플랜은 잠금 표시.
                     messagesLocked = !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup),
                     onSelectTab = ::navigateToTab,

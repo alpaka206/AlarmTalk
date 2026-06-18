@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -211,8 +212,11 @@ private fun CoachMarkCard(
 
         Surface(
             modifier = Modifier
+                .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
+                // 태블릿/폴더블에서 카드가 화면 폭 전체로 늘어나지 않도록 최대 폭을 제한하고 가운데 정렬.
+                .widthIn(max = 480.dp)
                 .offset { IntOffset(0, offsetY.roundToInt()) }
                 .onSizeChanged { cardHeightPx = it.height }
                 // 첫 프레임에 높이를 모른 채 그려지는 깜빡임을 숨긴다.

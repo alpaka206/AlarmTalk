@@ -18,8 +18,12 @@ class BootCompletedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         val isDebuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        // 부팅/업데이트뿐 아니라 시간대(여행)·시스템 시각/DST 변경 시에도 알람을 재예약한다.
+        // 그렇지 않으면 시간대 변경 후 알람이 잘못된 벽시계 시각에 울린다.
         val isRestoreAction = action == Intent.ACTION_BOOT_COMPLETED ||
             action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+            action == Intent.ACTION_TIMEZONE_CHANGED ||
+            action == Intent.ACTION_TIME_CHANGED ||
             (isDebuggable && action == ACTION_DEBUG_RESTORE_ALARMS)
         if (!isRestoreAction) return
 

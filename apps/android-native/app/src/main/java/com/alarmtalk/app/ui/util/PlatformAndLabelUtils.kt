@@ -32,6 +32,17 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 
+// DateTimeFormatter 는 스레드 안전하며 불변이므로 호출마다 새로 만들 필요가 없다.
+// 코드베이스의 다른 곳(BillingCharacterPanel)과 동일하게 top-level val 로 1회만 할당한다.
+private val DateTimeMinuteFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val DotDateFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy.MM.dd")
+private val BackendSecondFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+private val BackendMinuteFormatter: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
 internal fun Context.canScheduleExactAlarms(): Boolean {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
     val am = getSystemService(AlarmManager::class.java) ?: return false
@@ -84,29 +95,26 @@ internal fun Context.startSettingsActivity(intent: Intent) {
 }
 
 internal fun formatFireTime(millis: Long): String {
-    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     return Instant.ofEpochMilli(millis)
         .atZone(ZoneId.systemDefault())
-        .format(formatter)
+        .format(DateTimeMinuteFormatter)
 }
 
 internal fun formatVoucherIssuedAt(isoString: String?): String? {
     if (isoString.isNullOrBlank()) return null
-    val formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd")
     return runCatching {
         Instant.parse(isoString)
             .atZone(ZoneId.systemDefault())
-            .format(formatter)
+            .format(DotDateFormatter)
     }.getOrNull()
 }
 
 internal fun formatNoteCreatedAt(isoString: String?, zoneId: ZoneId = ZoneId.systemDefault()): String? {
     val value = isoString?.trim()?.takeIf { it.isNotBlank() } ?: return null
-    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
     val instant = parseBackendTimestamp(value)
     return instant
         ?.atZone(zoneId)
-        ?.format(formatter)
+        ?.format(DateTimeMinuteFormatter)
         ?: value
             .replace('T', ' ')
             .take(16)
@@ -116,12 +124,12 @@ internal fun formatNoteCreatedAt(isoString: String?, zoneId: ZoneId = ZoneId.sys
 private fun parseBackendTimestamp(value: String): Instant? =
     runCatching { Instant.parse(value) }.getOrNull()
         ?: runCatching {
-            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            LocalDateTime.parse(value, BackendSecondFormatter)
                 .atZone(ZoneOffset.UTC)
                 .toInstant()
         }.getOrNull()
         ?: runCatching {
-            LocalDateTime.parse(value, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+            LocalDateTime.parse(value, BackendMinuteFormatter)
                 .atZone(ZoneOffset.UTC)
                 .toInstant()
         }.getOrNull()
