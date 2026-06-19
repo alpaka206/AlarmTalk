@@ -30,15 +30,18 @@ export async function pseudonymizeBillingForRetention(
 ): Promise<void> {
   const pseudonym = await pseudonymizeUserId(userPk, salt);
   const retainUntil = new Date(now.getTime() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
+  // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
   const subs = await tx.execute({
-    sql: `SELECT id, plan_id, status, starts_at, expires_at FROM subscriptions WHERE user_id = ?`,
+    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
+          FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+          WHERE s.user_id = ?`,
     args: [userPk],
   });
   for (const row of subs.rows) {
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, retained_reason, retain_until)
-            VALUES (?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -46,6 +49,7 @@ export async function pseudonymizeBillingForRetention(
         (row.status as string | null) ?? null,
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
+        row.price_krw != null ? Number(row.price_krw) : null,
         retainUntil,
       ],
     });
@@ -112,6 +116,13 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM subscriptions WHERE user_id = ?`,
       args: [userPk],
+    });
+    // 결제 검증 원본(store_transactions)도 함께 파기한다. user_id(원본 식별자)가 남으면
+    // 가명보존(retained_billing_records) 설계를 우회해 탈퇴자 직접식별자가 잔존한다
+    // (개인정보보호법 제21조). 보존이 필요한 거래 사실은 위 가명보존 레코드가 담는다.
+    await tx.execute({
+      sql: `DELETE FROM store_transactions WHERE user_id IN (?, ?)`,
+      args: [userPk, userId],
     });
 
     await tx.execute({

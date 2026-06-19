@@ -91,6 +91,9 @@ interface TestCodeVoucher {
 }
 
 function isBillingStubEnabled(env: Partial<AppEnv['Bindings']> | undefined): boolean {
+  // production 에서는 BILLING_STUB_ENABLED 값과 무관하게 항상 비활성한다.
+  // (env 오설정 하나로 /checkout·/change-plan 이 무결제 유료지급 디스펜서가 되는 것 차단.)
+  if (env?.ENVIRONMENT === 'production') return false;
   if (env?.BILLING_STUB_ENABLED === 'true' || env?.BILLING_STUB_ENABLED === '1') return true;
   if (env?.BILLING_STUB_ENABLED === 'false' || env?.BILLING_STUB_ENABLED === '0') return false;
   return env?.ENVIRONMENT !== 'production';
@@ -104,7 +107,11 @@ function checkoutDisabledResponse() {
 }
 
 function allowedTestCodeIssuerEmails(env: Partial<AppEnv['Bindings']> | undefined): Set<string> {
-  const raw = env?.TEST_CODE_ISSUER_EMAILS?.trim() || 'gyuwon05@gmail.com';
+  // 발급자 화이트리스트는 TEST_CODE_ISSUER_EMAILS 로만 지정한다. 개인 이메일 하드코딩
+  // 폴백을 두면 env 누락·계정 탈취 시 단일 계정이 무제한 무료 유료코드 발급 권한을 갖게
+  // 되므로, 미설정이면 발급자 없음(fail-closed)으로 둔다.
+  const raw = env?.TEST_CODE_ISSUER_EMAILS?.trim();
+  if (!raw) return new Set();
   return new Set(
     raw
       .split(',')

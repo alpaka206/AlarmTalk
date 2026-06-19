@@ -165,15 +165,10 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
           : message.includes('format')
             ? 'AUTH_MALFORMED_TOKEN'
             : 'AUTH_VERIFICATION_FAILED';
-    // eslint-disable-next-line no-console
-    console.log(
-      '[AUTH 401]',
-      code,
-      '|',
-      message,
-      '| GOOGLE_CLIENT_ID set:',
-      !!c.env.GOOGLE_CLIENT_ID,
-    );
+    // 검증 실패 상세(토큰 발급자/audience)·구성 단서(GOOGLE_CLIENT_ID 설정 여부)를
+    // 평문 콘솔에 남기면 토큰 위조 탐색에 악용될 수 있어, 코드만 구조화 로그로 남긴다.
+    const { logStructured } = await import('../lib/logger');
+    logStructured('warn', { at: 'auth.verify_failed', code });
     return c.json({ error: message, error_code: code }, 401);
   }
 }

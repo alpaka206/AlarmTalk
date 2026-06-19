@@ -46,6 +46,15 @@ const PLAN_FAMILY = {
 
 function buildApp(email = 'gyuwon05@gmail.com') {
   const app = new Hono<AppEnv>();
+  // 발급자 화이트리스트는 이제 하드코딩 폴백 없이 TEST_CODE_ISSUER_EMAILS 로만 지정되므로
+  // 테스트도 env 를 명시 설정한다(미설정 시 fail-closed → 403).
+  app.use('*', async (c, next) => {
+    (c as unknown as { env: Record<string, unknown> }).env = {
+      ...((c.env as Record<string, unknown>) ?? {}),
+      TEST_CODE_ISSUER_EMAILS: 'gyuwon05@gmail.com',
+    };
+    await next();
+  });
   app.use('*', fakeAuthMiddleware('google-admin', email));
   app.route('/billing', billingMutation);
   return app;
