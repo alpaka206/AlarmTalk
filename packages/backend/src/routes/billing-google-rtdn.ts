@@ -206,20 +206,42 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
 
   if (action === 'cancel_at_period_end') {
     // 자동갱신만 꺼졌고 기간까지는 유효 — 활성 유지하되 예약취소 플래그만 세운다.
+    // 권위 조회로 얻은 만료시각으로 expires_at 도 함께 갱신한다. 갱신(RENEWED)
+    // 알림을 놓쳤거나 순서가 뒤바뀌어 DB 만료가 과거값으로 남아 있으면,
+    // processSubscriptionExpiry 가 기간이 남았는데도 즉시 해지해버리기 때문이다.
+    // (decideSubscriptionAction 이 cancel_at_period_end 를 반환하는 조건상 expiryMs 는 유한값이다.)
     await db.execute({
       sql: `UPDATE subscriptions
             SET cancel_at_period_end = 1,
+                expires_at = ?,
                 canceled_at = COALESCE(canceled_at, datetime('now')),
                 updated_at = datetime('now')
             WHERE user_id = ? AND status = 'active'`,
-      args: [userPk],
+      args: [new Date(expiryMs).toISOString(), userPk],
     });
     logStructured('info', { at: 'billing.google.rtdn', action: 'cancel_at_period_end', userPk });
     return c.json({ success: true, action: 'cancel_at_period_end' });
   }
 
-  // deactivate — 즉시 권한 회수(가족 그룹/바우처 정리 포함). 음성 데이터는 보존한다
-  // (보류/일시정지 후 복구될 수 있어 파괴적 정리는 하지 않는다).
+  // ON_HOLD/PAUSED 는 결제 복구로 되살아날 수 있는 일시 상태다. 이때
+  // cancelActiveSubscriptionsForUser 를 호출하면 소유자의 가족 그룹 멤버가
+  // 전원 삭제·강등되고(cancelSubscriptionImmediate 의 owner 분기), 이후 복구
+  // (entitle)는 소유자 구독만 되살려 그룹이 깨진 채로 남는다. 따라서 회복형
+  // 상태에서는 그룹·멤버 구조를 보존하고 소유자 권한만 보수적으로 회수한다
+  // (결제가 복구되면 entitle 가 users.plan 을 원복). 진짜 종료 상태
+  // (EXPIRED/REVOKED/CANCELED+만료지남)에서만 그룹 정리를 포함한 완전 취소를 한다.
+  const isRecoverable =
+    state === 'SUBSCRIPTION_STATE_ON_HOLD' || state === 'SUBSCRIPTION_STATE_PAUSED';
+  if (isRecoverable) {
+    await db.execute({
+      sql: `UPDATE users SET plan = 'free', updated_at = datetime('now') WHERE id = ?`,
+      args: [userPk],
+    });
+    logStructured('info', { at: 'billing.google.rtdn', action: 'suspend', state, userPk });
+    return c.json({ success: true, action: 'suspended' });
+  }
+
+  // deactivate — 즉시 권한 회수(가족 그룹/바우처 정리 포함). 음성 데이터는 보존한다.
   await withWriteTransaction(db, (tx) =>
     cancelActiveSubscriptionsForUser(tx, userPk, new Date(), { deleteVoiceData: false }),
   );
