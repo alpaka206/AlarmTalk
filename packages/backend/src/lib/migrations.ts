@@ -25,6 +25,31 @@ const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
     )`;
 });
 
+// 이미 시드된 DB(INSERT OR IGNORE 라 갱신 안 됨)에 특정 카테고리의 멘트/라벨을 강제로
+// 덮어쓰거나 신규 카테고리를 추가할 때 쓰는 upsert. PRESETS 가 단일 진실 공급원.
+function ttsPresetUpsert(category: string): string {
+  const index = PRESETS.findIndex((p) => p.category === category);
+  const preset = PRESETS[index];
+  if (!preset) throw new Error(`ttsPresetUpsert: unknown preset category "${category}"`);
+  const messagesJson = JSON.stringify(preset.messages);
+  return `INSERT INTO tts_presets
+    (category, label, emoji, messages_json, sort_order, enabled)
+    VALUES (
+      ${sqlLiteral(preset.category)},
+      ${sqlLiteral(preset.label)},
+      ${sqlLiteral(preset.emoji)},
+      ${sqlLiteral(messagesJson)},
+      ${index},
+      1
+    )
+    ON CONFLICT(category) DO UPDATE SET
+      label = excluded.label,
+      emoji = excluded.emoji,
+      messages_json = excluded.messages_json,
+      enabled = excluded.enabled,
+      updated_at = datetime('now')`;
+}
+
 export const migrations: Migration[] = [
   {
     id: 1,
@@ -1145,6 +1170,20 @@ export const migrations: Migration[] = [
         ON raw_alarm_uploads(created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_user
         ON raw_alarm_uploads(user_id)`,
+    ],
+  },
+  {
+    // 무료 프리셋 멘트 개편(#478 흡수) + 신규 카테고리(약·운동) 추가. tts_presets 초기 시드는
+    // INSERT OR IGNORE 라 기존 DB 에 반영되지 않으므로 여기서 upsert 로 강제 갱신/추가한다.
+    // 기상·밤 멘트 교체, 약 멘트는 건강에서 분리, 약·운동 신규. (PRESETS 가 단일 진실 공급원)
+    id: 49,
+    name: 'tts-preset-refresh-and-add-medication-exercise',
+    statements: [
+      ttsPresetUpsert('morning'),
+      ttsPresetUpsert('night'),
+      ttsPresetUpsert('health'),
+      ttsPresetUpsert('medication'),
+      ttsPresetUpsert('exercise'),
     ],
   },
 ];

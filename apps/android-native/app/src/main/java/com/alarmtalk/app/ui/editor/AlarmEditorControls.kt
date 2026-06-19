@@ -396,9 +396,11 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "evening" to R.string.editor2_cat_evening,
     "night" to R.string.editor2_cat_night,
     "health" to R.string.editor2_cat_health,
+    "medication" to R.string.editor2_cat_medication,
     "study" to R.string.editor2_cat_study,
     "cheer" to R.string.editor2_cat_cheer,
     "love" to R.string.editor2_cat_love,
+    "exercise" to R.string.editor2_cat_exercise,
 )
 
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(

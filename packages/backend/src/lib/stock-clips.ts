@@ -23,56 +23,63 @@ export const STOCK_GREETING_CATEGORY = 'greeting';
  * (보이스 × 언어) 매트릭스를 채운다.
  */
 export const STOCK_CLIP_PRESETS = [
+  // 무료 플랜이 그대로 받아 쓰는 알람 스톡 클립. 앱의 voice 카테고리 10종
+  // (morning·lunch·evening·night·health·medication·study·cheer·love·exercise) 과 맞춰,
+  // 시스템 보이스마다 카테고리별 알람 음성을 한국어·영어·일본어로 미리 합성해 둔다.
+  // (보이스당 10 카테고리 × 3 언어 = 30 클립 + greeting 미리듣기 1. en/ja 는 Vertex 번역.)
   {
     category: 'morning',
-    // 안내방송처럼 딱딱하지 않게, 옆에서 다정하게 깨워주는 자연스러운 한 마디.
-    // 가장 많이 쓰는 알람이라 한국어 외에 영어·일본어까지 미리 만들어 둔다.
     baseText: '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
     languages: ['ko', 'en', 'ja'],
   },
-  // 아래는 무료 플랜이 그대로 받아 쓰는 알람 스톡 클립. 앱의 카테고리
-  // (morning·lunch·evening·night·health·study·cheer·love) 와 동일하게 맞춰,
-  // 시스템 보이스마다 카테고리별 알람 음성을 하나씩 미리 합성해 둔다.
-  // 신규 카테고리는 한국어 우선으로 두고(영어·일본어는 추후 확장),
-  // morning(3개 언어) + 아래 7개 = 보이스당 알람 클립 10개가 채워진다.
   {
     category: 'lunch',
     baseText: '점심시간이에요. 잠깐 멈추고 따뜻한 밥 한 끼 제대로 챙겨 먹어요. 오후도 든든하게 가봐요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'evening',
     baseText: '오늘 하루도 정말 고생 많았어요. 이제 천천히 마무리하고 편하게 쉬러 가요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'night',
     baseText: '벌써 밤이 깊었어요. 오늘은 여기까지만 하고, 편안하게 잘 준비를 해봐요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'health',
     baseText: '물 한 잔 마실 시간이에요. 어깨도 쭉 펴고, 잠깐 몸을 챙겨줘요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
+  },
+  {
+    category: 'medication',
+    baseText: '약 먹을 시간이에요. 물 한 잔과 함께 잊지 말고 꼭 챙겨 드세요.',
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'study',
     baseText: '집중할 시간이에요. 딱 한 페이지만 펼쳐 봐요. 시작하면 금방 흐름을 탈 거예요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'cheer',
     baseText: '잘하고 있어요. 지금까지도 충분히 잘 해왔으니까, 조금만 더 힘내봐요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: 'love',
     baseText: '오늘도 당신을 생각하고 있어요. 무리하지 말고, 끼니 잘 챙기면서 지내요.',
-    languages: ['ko'],
+    languages: ['ko', 'en', 'ja'],
+  },
+  {
+    category: 'exercise',
+    baseText: '운동할 시간이에요. 잠깐이라도 몸을 움직이면 하루가 한결 가벼워져요. 천천히 시작해 봐요.',
+    languages: ['ko', 'en', 'ja'],
   },
   {
     category: STOCK_GREETING_CATEGORY,
-    // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 짧은 인사 샘플.
+    // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 짧은 인사 샘플(미리듣기, 한국어).
     baseText: '안녕하세요? 만나서 반가워요. 앞으로 기분 좋은 아침을 함께할게요.',
     languages: ['ko'],
   },
