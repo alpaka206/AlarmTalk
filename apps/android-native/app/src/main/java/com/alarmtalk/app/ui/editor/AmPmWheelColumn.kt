@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
@@ -62,10 +63,12 @@ internal fun AmPmWheelColumn(
     var suppressNextAutoAnimation by remember { mutableStateOf(false) }
     val minOffset = if (isPm) -itemHeightPx * 0.22f else -itemHeightPx * 0.72f
     val maxOffset = if (isPm) itemHeightPx * 0.72f else itemHeightPx * 0.22f
+    val amLabel = stringResource(R.string.r3ed_ampm_wheel_am)
+    val pmLabel = stringResource(R.string.r3ed_ampm_wheel_pm)
     val rows = if (isPm) {
-        listOf(-1 to "오전", 0 to "오후", null to "")
+        listOf(-1 to amLabel, 0 to pmLabel, null to "")
     } else {
-        listOf(null to "", 0 to "오전", 1 to "오후")
+        listOf(null to "", 0 to amLabel, 1 to pmLabel)
     }
     val draggableState = rememberDraggableState { delta ->
         dragOffsetPx = (dragOffsetPx + delta).coerceIn(minOffset, maxOffset)

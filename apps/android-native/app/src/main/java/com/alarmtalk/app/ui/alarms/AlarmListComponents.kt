@@ -2,7 +2,6 @@ package com.alarmtalk.app
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,9 +25,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.data.AlarmEntity
+import com.alarmtalk.app.R
 
 @Composable
 internal fun AlarmsHeader(
@@ -41,7 +41,7 @@ internal fun AlarmsHeader(
         verticalAlignment = Alignment.Top,
     ) {
         Text(
-            text = "알람",
+            text = stringResource(R.string.r3misc_alarms_header_title),
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold,
         )
@@ -60,41 +60,9 @@ internal fun AlarmsHeader(
                     modifier = Modifier.size(18.dp),
                 )
                 Spacer(Modifier.width(6.dp))
-                Text("알람 만들기")
+                Text(stringResource(R.string.r3misc_alarms_create_button))
             }
             profileMenu?.invoke()
-        }
-    }
-}
-
-@Composable
-internal fun CountdownBanner(nextAlarm: AlarmEntity) {
-    Card(
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "다음 알람",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = formatFireTime(nextAlarm.fireAtMillis),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-            )
         }
     }
 }
@@ -120,32 +88,14 @@ internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
                 modifier = Modifier.size(44.dp),
             )
             Text(
-                text = "아직 알람이 없어요.",
+                text = stringResource(R.string.r3misc_alarms_empty_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
             Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
-                Text("새 알람 만들기")
+                Text(stringResource(R.string.r3misc_alarms_create_new_button))
             }
         }
     }
 }
 
-@Composable
-internal fun LegacyPanel(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            content = content,
-        )
-    }
-}

@@ -259,8 +259,24 @@ alarmMutation.post('/', async (c) => {
     });
     resolvedMessageId = placeholderMsgId;
   } else if (resolvedMessageId) {
+    // 본인 소유 메시지뿐 아니라 시스템 스톡 클립(is_preset=1 + 시스템 보이스)도
+    // 허용한다. 무료 플랜은 스톡 클립으로 알람을 만들 수 있어야 하는데, 기존
+    // 검증은 user_id 만 봐서 스톡 클립 알람을 404 로 막고 있었다
+    // (GET /tts/messages/:id/audio 의 허용 규칙과 일치시킨다).
     const msg = await db.execute({
-      sql: 'SELECT id FROM messages WHERE id = ? AND user_id IN (?, ?)',
+      sql: `SELECT id FROM messages
+            WHERE id = ?
+              AND (
+                user_id IN (?, ?)
+                OR (
+                  COALESCE(is_preset, 0) = 1
+                  AND EXISTS (
+                    SELECT 1 FROM voice_profiles vp
+                    WHERE vp.id = messages.voice_profile_id
+                      AND COALESCE(vp.is_system, 0) = 1
+                  )
+                )
+              )`,
       args: [resolvedMessageId, ...ownerIds],
     });
     if (msg.rows.length === 0) {
@@ -458,6 +474,26 @@ alarmMutation.patch('/:id', async (c) => {
     sql: `UPDATE alarms SET ${updates.join(', ')} WHERE id = ?`,
     args,
   });
+
+  // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
+  // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를
+  // 삭제 큐에 적재해 영구 고아를 막는다(교체 경로에는 기존에 이 정리가 없었다).
+  if (body.raw_audio_url !== undefined) {
+    const previousRawUrl = current.raw_audio_url;
+    if (
+      previousRawUrl?.startsWith('r2://') &&
+      previousRawUrl !== body.raw_audio_url
+    ) {
+      const stillReferenced = await db.execute({
+        sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
+        args: [previousRawUrl],
+      });
+      if (Number(typedRow<{ cnt: number }>(stillReferenced.rows[0]!).cnt ?? 0) === 0) {
+        const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+        await enqueueExternalDeletion(db, 'r2_object', previousRawUrl.replace(/^r2:\/\//, ''));
+      }
+    }
+  }
 
   const updated = await db.execute({
     sql: `SELECT id, user_id, target_user_id, message_id, time, repeat_days,

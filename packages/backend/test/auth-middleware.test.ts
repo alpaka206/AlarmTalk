@@ -8,6 +8,13 @@ vi.mock('../src/lib/jwt', () => ({
   APP_JWT_ISSUER: 'voice-alarm',
 }));
 
+// 사용자 해석 쿼리를 모킹한다. 기본은 'active' 계정 1행 반환(정상 흐름).
+// 미들웨어는 해석 실패 시 fail-closed(503) 하므로 테스트도 DB 를 모킹해야 한다.
+const mockDbExecute = vi.fn();
+vi.mock('../src/lib/db', () => ({
+  getDB: () => ({ execute: (...args: unknown[]) => mockDbExecute(...args) }),
+}));
+
 import { authMiddleware } from '../src/middleware/auth';
 
 const ENV: Env = {
@@ -99,6 +106,12 @@ const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   mockVerifyAppJwt.mockReset();
+  mockDbExecute.mockReset();
+  // 기본: 'active' 계정 1행을 반환해 사용자 해석이 성공하도록 한다.
+  mockDbExecute.mockResolvedValue({
+    rows: [{ id: 'pk-1', deletion_status: 'active' }],
+    rowsAffected: 0,
+  });
 });
 
 afterEach(() => {
@@ -186,6 +199,25 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     expect(body.error_code).toBe('AUTH_VERIFICATION_FAILED');
   });
 
+  it('사용자 해석 쿼리 실패 시 fail-closed(503) — 탈퇴 유예 우회 차단', async () => {
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'user-1',
+      email: 'test@test.com',
+      name: 'Test',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    // 토큰 검증은 통과하지만 사용자 해석 쿼리가 던지는 상황 → deletion_status 확인 불가.
+    mockDbExecute.mockRejectedValue(new Error('db unreachable'));
+
+    const app = buildApp();
+    const res = await reqWithEnv(app, req(`Bearer ${token}`));
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
+  });
+
   it('앱 JWT 만료 시 AUTH_TOKEN_EXPIRED', async () => {
     const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1' });
     mockVerifyAppJwt.mockRejectedValue(new Error('Token expired'));
@@ -245,6 +277,7 @@ describe('authMiddleware — Google token', () => {
       name: 'Google User',
       picture: 'https://lh3.googleusercontent.com/photo.jpg',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -269,6 +302,7 @@ describe('authMiddleware — Google token', () => {
     const token = fakeToken({
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -290,6 +324,7 @@ describe('authMiddleware — Google token', () => {
     const payload = {
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'wrong-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -311,6 +346,7 @@ describe('authMiddleware — Google token', () => {
     const payload = {
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) - 3600,
     };
@@ -332,6 +368,7 @@ describe('authMiddleware — Google token', () => {
     const token = fakeToken({
       sub: 'g-user',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -352,6 +389,7 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@privaterelay.appleid.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -372,6 +410,7 @@ describe('authMiddleware — Apple token', () => {
       sub: 'apple-user-001',
       email: 'user@apple.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) - 3600,
     };
@@ -388,6 +427,7 @@ describe('authMiddleware — Apple token', () => {
     const payload = {
       sub: 'apple-user-002',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -411,6 +451,7 @@ describe('authMiddleware — Apple token', () => {
         sub: 'apple-user-mw-nonce',
         email: 'mw-nonce@apple.com',
         iss: 'https://appleid.apple.com',
+      email_verified: true,
         aud: ENV.APPLE_CLIENT_ID,
         exp: Math.floor(Date.now() / 1000) + 3600,
         nonce: 'a'.repeat(64),
@@ -472,6 +513,7 @@ describe('authMiddleware — 토큰 발급자 분기', () => {
     const payload = {
       sub: 'apple-u',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,9 +47,11 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import kotlin.math.roundToInt
 
 /**
@@ -211,8 +214,11 @@ private fun CoachMarkCard(
 
         Surface(
             modifier = Modifier
+                .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
+                // 태블릿/폴더블에서 카드가 화면 폭 전체로 늘어나지 않도록 최대 폭을 제한하고 가운데 정렬.
+                .widthIn(max = 480.dp)
                 .offset { IntOffset(0, offsetY.roundToInt()) }
                 .onSizeChanged { cardHeightPx = it.height }
                 // 첫 프레임에 높이를 모른 채 그려지는 깜빡임을 숨긴다.
@@ -228,7 +234,7 @@ private fun CoachMarkCard(
                 // 단계가 여럿일 때만 진행 표시(가이드 N / M). 한 단계뿐이면 점·카운터 모두 생략.
                 if (stepCount > 1) {
                     Text(
-                        text = "가이드 ${stepIndex + 1} / $stepCount",
+                        text = stringResource(R.string.r3dlg_usage_guide_step_counter, stepIndex + 1, stepCount),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -250,10 +256,10 @@ private fun CoachMarkCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     TextButton(onClick = onSkip) {
-                        Text("건너뛰기", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.r3dlg_usage_guide_skip), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Button(onClick = onNext) {
-                        Text(if (isLast) "시작하기" else "다음")
+                        Text(if (isLast) stringResource(R.string.r3dlg_usage_guide_start) else stringResource(R.string.r3dlg_usage_guide_next))
                     }
                 }
             }

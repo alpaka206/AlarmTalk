@@ -203,12 +203,19 @@ familyInvite.post('/invites/:code/accept', async (c) => {
     return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
   }
 
+  // 좌석을 원자적으로 삽입한다: 정원 미만일 때만 INSERT 되도록 한 문장으로 처리해
+  // 동시 수락 두 건이 모두 count<max 를 읽고 함께 들어가 정원을 넘기는 TOCTOU 를
+  // 막는다. rowsAffected=0 이면 그 사이 정원이 찼다는 뜻이므로 GROUP_FULL.
   const memberId = crypto.randomUUID();
-  await db.execute({
+  const insertRes = await db.execute({
     sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-          VALUES (?, ?, ?, 'member')`,
-    args: [memberId, planGroupId, userPk],
+          SELECT ?, ?, ?, 'member'
+          WHERE (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = ?) < ?`,
+    args: [memberId, planGroupId, userPk, planGroupId, maxMembers],
   });
+  if ((insertRes.rowsAffected ?? 0) === 0) {
+    return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
+  }
 
   await db.execute({
     sql: `UPDATE plan_group_invites

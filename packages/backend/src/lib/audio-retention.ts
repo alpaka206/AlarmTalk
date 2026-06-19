@@ -24,6 +24,9 @@ import { logStructured } from './logger';
 
 export const VOICE_UPLOAD_TTL_DAYS = 7;
 export const GENERATED_TTS_TTL_DAYS = 30;
+// 알람에 연결되지 않은 raw-alarms 업로드의 유예 시간. 업로드 직후 알람에 붙는
+// 정상 흐름은 보존하면서, 이탈로 버려진 클립만 정리할 만큼 넉넉하게 잡는다.
+export const RAW_ALARM_UPLOAD_TTL_DAYS = 2;
 
 const DRAIN_BATCH_SIZE = 10;
 const TTL_BATCH_SIZE = 10;
@@ -95,6 +98,15 @@ export async function enqueueUserVoiceArtifacts(
   for (const row of rawAlarms.rows) {
     const url = String(row.raw_audio_url ?? '');
     await enqueueExternalDeletion(tx, 'r2_object', url.replace(/^r2:\/\//, ''));
+  }
+
+  // 추적된 raw-alarms 업로드(알람에 연결되지 않은 것 포함) — 계정 삭제 시 함께 정리.
+  const rawTracked = await tx.execute({
+    sql: `SELECT object_key FROM raw_alarm_uploads WHERE user_id IN (${ph})`,
+    args: ownerIds,
+  });
+  for (const row of rawTracked.rows) {
+    await enqueueExternalDeletion(tx, 'r2_object', row.object_key as string);
   }
 }
 
@@ -185,7 +197,11 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
     });
   }
 
-  // 2) TTS 캐시 — 알람 raw_audio_url 이 참조 중인 오브젝트는 보존.
+  // 2) TTS 캐시 — 알람이 참조 중인 오브젝트는 보존한다.
+  //    알람은 (a) raw_audio_url 로 직접, 또는 (b) message_id → messages.audio_url 로
+  //    간접 참조할 수 있다. 두 경로를 모두 확인하지 않으면 활성 알람이 쓰는 TTS
+  //    오브젝트가 30일 후 삭제되어 알람이 무음이 된다(기존 가드는 (a)만 검사해
+  //    generated-tts 키를 한 번도 매칭하지 못하는 dead guard 였다).
   const generated = await db.execute({
     sql: `SELECT g.id, g.audio_object_key FROM generated_audio_assets g
           WHERE g.created_at <= ?
@@ -194,23 +210,60 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
               SELECT 1 FROM alarms a
               WHERE a.raw_audio_url = 'r2://' || g.audio_object_key
             )
+            AND NOT EXISTS (
+              SELECT 1 FROM alarms a
+              JOIN messages m ON m.id = a.message_id
+              WHERE m.audio_url = 'r2://' || g.audio_object_key
+            )
           ORDER BY g.created_at ASC
           LIMIT ?`,
     args: [generatedCutoff, TTL_BATCH_SIZE],
   });
   for (const row of generated.rows) {
-    await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
+    const objectKey = row.audio_object_key as string;
+    await enqueueExternalDeletion(db, 'r2_object', objectKey);
+    // 라이브러리 메시지가 가리키던 포인터를 비워, 오브젝트 삭제 후 깨진 r2:// 참조
+    // (재생 시 404)가 라이브러리에 남지 않도록 한다.
+    await db.execute({
+      sql: `UPDATE messages SET audio_url = NULL WHERE audio_url = 'r2://' || ?`,
+      args: [objectKey],
+    });
     await db.execute({
       sql: 'DELETE FROM generated_audio_assets WHERE id = ?',
       args: [String(row.id)],
     });
   }
 
-  if (uploads.rows.length > 0 || generated.rows.length > 0) {
+  // 3) raw-alarms 직접 재생 클립 — 업로드 후 어떤 알람에도 연결되지 않은 채
+  //    TTL 이 지나면 정리한다. 알람이 raw_audio_url 로 참조 중이면 보존한다.
+  const rawUploadCutoff = new Date(
+    now.getTime() - RAW_ALARM_UPLOAD_TTL_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const rawUploads = await db.execute({
+    sql: `SELECT id, object_key FROM raw_alarm_uploads
+          WHERE created_at <= ?
+            AND NOT EXISTS (
+              SELECT 1 FROM alarms a
+              WHERE a.raw_audio_url = 'r2://' || raw_alarm_uploads.object_key
+            )
+          ORDER BY created_at ASC
+          LIMIT ?`,
+    args: [rawUploadCutoff, TTL_BATCH_SIZE],
+  });
+  for (const row of rawUploads.rows) {
+    await enqueueExternalDeletion(db, 'r2_object', row.object_key as string);
+    await db.execute({
+      sql: 'DELETE FROM raw_alarm_uploads WHERE id = ?',
+      args: [String(row.id)],
+    });
+  }
+
+  if (uploads.rows.length > 0 || generated.rows.length > 0 || rawUploads.rows.length > 0) {
     logStructured('info', {
       at: 'audio-retention.ttl',
       expired_uploads: uploads.rows.length,
       expired_generated: generated.rows.length,
+      expired_raw_uploads: rawUploads.rows.length,
     });
   }
 }

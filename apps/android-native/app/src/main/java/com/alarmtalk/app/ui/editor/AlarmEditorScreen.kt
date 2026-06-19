@@ -37,7 +37,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmAudioStore
@@ -89,29 +91,30 @@ private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
 private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
 private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
 
+@Composable
 private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
     CoachMarkStep(
         targetKey = GUIDE_TARGET_TIME,
-        title = "시각부터 맞춰요",
-        body = "휠을 위아래로 돌려 알람이 울릴 시각을 맞춰요.",
+        title = stringResource(R.string.editor2_coach_time_title),
+        body = stringResource(R.string.editor2_coach_time_body),
         lazyItemIndex = 0,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_SCHEDULE,
-        title = "반복과 이름을 정해요",
-        body = "요일을 누르면 매주 반복돼요. 반복을 켜면 공휴일에 끄기도 고를 수 있고, 알람 이름도 여기서 바꿔요.",
+        title = stringResource(R.string.editor2_coach_schedule_title),
+        body = stringResource(R.string.editor2_coach_schedule_body),
         lazyItemIndex = 1,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_PLAY_MODE,
-        title = "재생 방식을 골라요",
-        body = "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요. 랜덤 문구를 켜면 아침마다 새로운 메시지로 깨워줘요.",
+        title = stringResource(R.string.editor2_coach_play_mode_title),
+        body = stringResource(R.string.editor2_coach_play_mode_body),
         lazyItemIndex = playModeItemIndex,
     ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_SAVE,
-        title = "저장하면 끝이에요",
-        body = "음량·진동·스누즈는 바로 위 카드에서 바꿀 수 있어요. 저장을 누르면 알람이 바로 예약돼요.",
+        title = stringResource(R.string.editor2_coach_save_title),
+        body = stringResource(R.string.editor2_coach_save_body),
     ),
 )
 
@@ -366,7 +369,7 @@ internal fun AlarmEditorScreen(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
-                    ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+                    ?: throw IllegalArgumentException(context.getString(R.string.editor_error_audio_duration_unreadable))
             }.onSuccess { durationMillis ->
                 selectedFileUri = uri
                 selectedFileDurationMillis = durationMillis
@@ -377,13 +380,13 @@ internal fun AlarmEditorScreen(
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache selected audio", error)
-                    audioMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요.")
+                    audioMessage = userFacingError(error, context.getString(R.string.editor_error_selected_audio_unusable))
                 }
         }
     }
 
     suspend fun cacheSelectedCrop(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요.")
+        val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.editor_error_select_file))
         val cropDurationMillis = (cropEndMillis - cropStartMillis).coerceIn(1_000L, AlarmAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {
             audioStore.cacheFromUri(
@@ -424,14 +427,15 @@ internal fun AlarmEditorScreen(
                 val response = onGenerateTts(
                     TtsGenerateRequest(
                         voiceProfileId = profileId,
-                        text = "이 목소리로 깨워드릴까요?",
+                        text = context.getString(R.string.editor_shared_voice_preview_prompt),
                         category = "custom",
                         language = "ko",
                         random = false,
                     ),
                 )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -449,7 +453,7 @@ internal fun AlarmEditorScreen(
             }.onFailure { error ->
                 Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
                 stopPreview()
-                audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
             }
         }
     }
@@ -468,8 +472,9 @@ internal fun AlarmEditorScreen(
             previewingStockMessageId = clip.messageId
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -487,7 +492,7 @@ internal fun AlarmEditorScreen(
             }.onFailure { error ->
                 Log.e(TAG, "Failed to preview stock clip in alarm editor", error)
                 stopPreview()
-                audioMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
             }
         }
     }
@@ -497,8 +502,9 @@ internal fun AlarmEditorScreen(
         scope.launch {
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -515,10 +521,10 @@ internal fun AlarmEditorScreen(
                     messageId = clip.messageId,
                     text = clip.text,
                 )
-                audioMessage = "기본 제공 음성을 선택했어요."
+                audioMessage = context.getString(R.string.editor_stock_clip_selected)
             }.onFailure { error ->
                 Log.e(TAG, "Failed to select stock clip in alarm editor", error)
-                audioMessage = userFacingError(error, "기본 제공 음성을 선택하지 못했어요.")
+                audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
         }
     }
@@ -530,14 +536,14 @@ internal fun AlarmEditorScreen(
         }
         val recipient = selectedFamilyRecipient()
         if (recipient == null) {
-            audioMessage = "알람을 받을 사람을 선택해 주세요."
+            audioMessage = context.getString(R.string.editor_error_select_recipient)
             return
         }
-        showFamilyAlarmToast("상대 알람을 설정했어요.")
+        showFamilyAlarmToast(context.getString(R.string.editor_family_alarm_set))
         onSave(
             draft.copy(
                 targetUserId = recipient.userId,
-                targetUserName = familyMemberLabel(recipient),
+                targetUserName = familyMemberLabel(context, recipient),
             ),
         )
     }
@@ -555,7 +561,7 @@ internal fun AlarmEditorScreen(
             }.onFailure { error ->
                 isRecording = false
                 Log.e(TAG, "Failed to stop recording", error)
-                audioMessage = userFacingError(error, "녹음에 실패했어요.")
+                audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_failed))
             }
         }
     }
@@ -567,10 +573,10 @@ internal fun AlarmEditorScreen(
             isRecording = true
             recordingElapsedMillis = 0L
             recordingLevels = List(18) { 0.08f }
-            audioMessage = "녹음 중..."
+            audioMessage = context.getString(R.string.editor_recording_in_progress)
         }.onFailure { error ->
             Log.e(TAG, "Failed to start recording", error)
-            audioMessage = userFacingError(error, "녹음을 시작할 수 없어요.")
+            audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_start_failed))
         }
     }
 
@@ -588,7 +594,7 @@ internal fun AlarmEditorScreen(
         if (familyAlarmMode) {
             val recipient = selectedFamilyRecipient()
             if (recipient == null) {
-                audioMessage = "알람을 받을 사람을 선택해 주세요."
+                audioMessage = context.getString(R.string.editor_error_select_recipient)
                 return
             }
             val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
@@ -598,13 +604,13 @@ internal fun AlarmEditorScreen(
                 holidayOff = editor.holidayOff,
             )
             if (fireAtMillis - System.currentTimeMillis() < FAMILY_ALARM_MIN_LEAD_MILLIS) {
-                val message = "상대 알람은 지금부터 30분 뒤부터 설정할 수 있어요."
+                val message = context.getString(R.string.editor_error_family_alarm_lead_too_soon)
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
             }
             if (isFamilyAlarmTimeUnavailable(recipient, editor.hour, editor.minute, editor.repeatDaysMask)) {
-                val message = "상대가 받을 수 없는 시간이에요."
+                val message = context.getString(R.string.editor_error_family_alarm_time_unavailable)
                 audioMessage = message
                 showFamilyAlarmToast(message)
                 return
@@ -626,27 +632,27 @@ internal fun AlarmEditorScreen(
                         submitDraft(editor.toDraft())
                     }.onFailure { error ->
                         Log.e(TAG, "Failed to cache cropped local alarm audio", error)
-                        audioMessage = userFacingError(error, "선택한 구간을 저장하지 못했어요.")
+                        audioMessage = userFacingError(error, context.getString(R.string.editor_error_crop_save_failed))
                     }
                     isSaving = false
                 }
                 return
             }
             if (editor.localAudioUri.isNullOrBlank()) {
-                audioMessage = "녹음하거나 파일을 선택해 주세요."
+                audioMessage = context.getString(R.string.editor_error_record_or_select_file)
                 return
             }
             submitDraft(editor.toDraft())
             return
         }
         if (authSession == null) {
-            audioMessage = "음성 메시지는 로그인 후 사용할 수 있어요."
+            audioMessage = context.getString(R.string.editor_error_voice_message_login_required)
             return
         }
         val profileId = editor.voiceProfileId
             ?: voiceProfiles.firstOrNull { it.status == null || it.status == "ready" }?.id
         if (profileId.isNullOrBlank()) {
-            audioMessage = "사용할 목소리를 선택해 주세요."
+            audioMessage = context.getString(R.string.editor_error_select_voice)
             return
         }
         val selectedSharedProfile = familyVoices.firstOrNull {
@@ -660,7 +666,7 @@ internal fun AlarmEditorScreen(
         }
         val text = editor.ttsTextForSave()
         if (text.isBlank() && !editor.voiceRandomPrompt) {
-            audioMessage = "음성 메시지를 입력하거나 랜덤 문구를 사용해 주세요."
+            audioMessage = context.getString(R.string.editor_error_enter_message_or_random)
             return
         }
         if (
@@ -668,7 +674,7 @@ internal fun AlarmEditorScreen(
             randomContextUsesWeather(editor.voiceRandomContext) &&
             (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
         ) {
-            audioMessage = "날씨가 들어간 문구는 나라와 도시를 입력해 주세요."
+            audioMessage = context.getString(R.string.editor_error_weather_location_required)
             return
         }
         if (
@@ -680,7 +686,7 @@ internal fun AlarmEditorScreen(
                     editor.voiceFortuneBirthTime.isBlank()
                 )
         ) {
-            audioMessage = "운세가 들어간 문구는 성별, 생년월일, 태어난 시간을 입력해 주세요."
+            audioMessage = context.getString(R.string.editor_error_fortune_info_required)
             return
         }
         val usableProfileIds = (
@@ -688,7 +694,7 @@ internal fun AlarmEditorScreen(
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
             ).toSet()
         if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
-            audioMessage = "삭제된 목소리라 문구를 수정할 수 없어요. 다른 목소리를 선택해 주세요."
+            audioMessage = context.getString(R.string.editor_error_deleted_voice_cannot_edit)
             return
         }
         if (editor.hasFreshTtsAudio(profileId, text)) {
@@ -710,7 +716,7 @@ internal fun AlarmEditorScreen(
                     messageId = cached.messageId ?: editor.ttsMessageId ?: "",
                     rawAudioUri = cached.rawAudioUri,
                 )
-                audioMessage = "기존 음성 캐시를 사용했어요."
+                audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
                 submitDraft(editor.toDraft())
                 return
             }
@@ -720,8 +726,8 @@ internal fun AlarmEditorScreen(
         generationJob?.cancel()
         generationJob = scope.launch {
             isSaving = true
-            audioMessage = "목소리 알람을 준비하는 중이에요."
-            showFamilyAlarmToast("목소리 알람을 준비하는 중이에요.")
+            audioMessage = context.getString(R.string.editor_preparing_voice_alarm)
+            showFamilyAlarmToast(context.getString(R.string.editor_preparing_voice_alarm))
             runCatching {
                 val response = onGenerateTts(
                     TtsGenerateRequest(
@@ -771,7 +777,6 @@ internal fun AlarmEditorScreen(
                         ).trimmedOrNull(),
                     ),
                 )
-                val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
                 val cacheKey = AlarmAudioStore.ttsCacheKey(
                     profileId = profileId,
@@ -781,6 +786,8 @@ internal fun AlarmEditorScreen(
                     serverCacheKey = response.cacheKey,
                 )
                 val cachedAudio = withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = audioBytes,
                         format = response.audioFormat,
@@ -796,11 +803,11 @@ internal fun AlarmEditorScreen(
                     messageId = response.messageId,
                     rawAudioUri = rawAudioUri,
                 )
-                audioMessage = "생성한 음성을 로컬에 저장했어요."
+                audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
                 Log.e(TAG, "Failed to generate TTS alarm audio", error)
-                audioMessage = userFacingError(error, "음성 생성에 실패했어요.")
+                audioMessage = userFacingError(error, context.getString(R.string.editor_error_voice_generation_failed))
             }
             isSaving = false
             generationJob = null
@@ -814,7 +821,7 @@ internal fun AlarmEditorScreen(
         if (granted) {
             startRecording()
         } else {
-            audioMessage = "마이크 권한이 필요해요."
+            audioMessage = context.getString(R.string.editor_error_mic_permission_required)
         }
     }
 
@@ -849,7 +856,7 @@ internal fun AlarmEditorScreen(
             editor.clearAudio()
             selectedFileUri = null
             selectedFileDurationMillis = null
-            audioMessage = "음성 알람은 로그인 후 사용할 수 있어요."
+            audioMessage = context.getString(R.string.editor_error_voice_alarm_login_required)
         }
     }
 
@@ -914,19 +921,19 @@ internal fun AlarmEditorScreen(
             if (selectedFileUri != null || !editor.localAudioUri.isNullOrBlank()) {
                 null
             } else {
-                "들려줄 음성을 녹음하거나 파일로 선택해 주세요."
+                stringResource(R.string.editor_save_blocked_record_or_select_file)
             }
         else -> {
             val profileId = editor.voiceProfileId?.takeIf { it.isNotBlank() }
             val text = editor.ttsTextForSave()
             when {
-                profileId == null -> "알람에서 들을 목소리를 선택해 주세요."
+                profileId == null -> stringResource(R.string.editor_save_blocked_select_voice)
                 profileId !in usableTtsProfileIds && !editor.hasFreshTtsAudio(profileId, text) ->
-                    "선택한 목소리를 쓸 수 없어요. 다른 목소리를 선택해 주세요."
+                    stringResource(R.string.editor_save_blocked_voice_unusable)
                 editor.voiceRandomPrompt && !randomPromptSettingsComplete() ->
-                    "랜덤 문구 설정에서 날씨 지역·운세 정보를 채워 주세요."
+                    stringResource(R.string.editor_save_blocked_random_prompt_incomplete)
                 !editor.voiceRandomPrompt && editor.voiceText.trim().isBlank() ->
-                    "들려줄 문구를 입력하거나 랜덤 문구를 켜 주세요."
+                    stringResource(R.string.editor_save_blocked_enter_message_or_random)
                 else -> null
             }
         }
@@ -1026,7 +1033,7 @@ internal fun AlarmEditorScreen(
             if (current.isActive) {
                 current.cancel()
                 isSaving = false
-                audioMessage = "알람 시각이 바뀌어 음성 생성을 중단했어요."
+                audioMessage = context.getString(R.string.editor_voice_generation_canceled_time_changed)
             }
             generationJob = null
         }
@@ -1211,7 +1218,7 @@ internal fun AlarmEditorScreen(
                                     editor.clearAudio()
                                     selectedFileUri = null
                                     selectedFileDurationMillis = null
-                                    audioMessage = "음성 오디오를 지웠어요."
+                                    audioMessage = context.getString(R.string.editor_voice_audio_cleared)
                                 },
                             )
                         }
@@ -1319,7 +1326,7 @@ internal fun AlarmEditorScreen(
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "알람음 선택")
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, context.getString(R.string.editor_ringtone_picker_title))
                             val current = editor.alarmSoundUri?.let(Uri::parse)
                                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, current)
@@ -1386,7 +1393,8 @@ internal fun AlarmEditorScreen(
         SharedVoiceInfoRequiredDialog(
             profileName = profile.name,
             sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리",
+                ?.let { stringResource(R.string.editor_shared_voice_from_owner, it) }
+                ?: stringResource(R.string.editor_shared_voice_from_default),
             initialRelationship = profile.relationshipLabel.orEmpty(),
             initialListenerTitle = profile.listenerTitle.orEmpty(),
             saving = voiceProfileBusy,
@@ -1413,9 +1421,9 @@ internal fun AlarmEditorScreen(
     if (voicePlanGateOpen) {
         PlanGateDialog(
             message = if (freeVoiceTier) {
-                "직접 만든 목소리·녹음·직접 입력 문구는 유료 이용권에서 사용할 수 있어요."
+                stringResource(R.string.editor_plan_gate_paid_features)
             } else {
-                "음성 알람은 로그인 후 사용할 수 있어요."
+                stringResource(R.string.editor_plan_gate_login_required)
             },
             onConfirm = {
                 voicePlanGateOpen = false

@@ -1125,6 +1125,28 @@ export const migrations: Migration[] = [
           AND voice_profile_id = '70000000-0000-4000-9000-000000000101'`,
     ],
   },
+  {
+    // raw-alarms 업로드 추적: POST /alarm/source 로 올린 직접 재생용 클립은 지금까지
+    // DB 에 기록되지 않아, 사용자가 알람에 연결하지 않고 흐름을 이탈하면 R2 에서
+    // 영구 고아로 남았다(TTL/GC 없음 + 계정 삭제로도 정리 안 됨). 업로드 시점에
+    // 행을 남겨, 일정 시간 뒤에도 어떤 알람에서도 참조되지 않으면 정리(삭제 큐 적재)한다.
+    id: 48,
+    name: 'track-raw-alarm-uploads',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS raw_alarm_uploads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_alarm_uploads_key
+        ON raw_alarm_uploads(object_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_created
+        ON raw_alarm_uploads(created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_user
+        ON raw_alarm_uploads(user_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

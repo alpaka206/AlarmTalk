@@ -33,10 +33,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 
 // VoiceProfileManagementPanel 에서 분리한 하위 컴포넌트/다이얼로그.
 // 동작/디자인 변경 없음 — top-level private→internal 가시성만 조정.
@@ -92,11 +94,11 @@ internal fun VoiceProfileEditDialog(
         OutlinedTextField(
             value = name,
             onValueChange = onNameChange,
-            label = { Text("목소리 이름") },
+            label = { Text(stringResource(R.string.voicesr_voice_name_label)) },
             singleLine = true,
             isError = nameError,
             supportingText = {
-                if (nameError) Text("꼭 입력해 주세요.")
+                if (nameError) Text(stringResource(R.string.voicesr_required_field))
             },
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
@@ -105,12 +107,12 @@ internal fun VoiceProfileEditDialog(
         OutlinedTextField(
             value = relationship,
             onValueChange = onRelationshipChange,
-            label = { Text("나와의 관계") },
-            placeholder = { Text("예: 손녀, 엄마, 연인") },
+            label = { Text(stringResource(R.string.voicesr_relationship_label)) },
+            placeholder = { Text(stringResource(R.string.voicesr_relationship_example_a)) },
             singleLine = true,
             isError = relationshipError,
             supportingText = {
-                if (relationshipError) Text("꼭 입력해 주세요.")
+                if (relationshipError) Text(stringResource(R.string.voicesr_required_field))
             },
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
@@ -119,12 +121,12 @@ internal fun VoiceProfileEditDialog(
         OutlinedTextField(
             value = listenerTitle,
             onValueChange = onListenerTitleChange,
-            label = { Text("이 목소리가 나를 부를 이름") },
-            placeholder = { Text("예: 민지야, 여보") },
+            label = { Text(stringResource(R.string.voicesr_listener_title_label)) },
+            placeholder = { Text(stringResource(R.string.voicesr_listener_title_example_a)) },
             singleLine = true,
             isError = listenerError,
             supportingText = {
-                if (listenerError) Text("꼭 입력해 주세요.")
+                if (listenerError) Text(stringResource(R.string.voicesr_required_field))
             },
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
@@ -181,12 +183,12 @@ internal fun SharedVoiceViewerInfoDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "공유받은 목소리 설정",
+                            text = stringResource(R.string.voicesr_shared_viewer_dialog_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "알람에서 이 목소리가 나를 어떻게 부를지 정해요.",
+                            text = stringResource(R.string.voicesr_shared_viewer_dialog_description),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -195,7 +197,7 @@ internal fun SharedVoiceViewerInfoDialog(
                         onClick = onDismiss,
                         modifier = Modifier.size(42.dp),
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
                     }
                 }
                 Surface(
@@ -239,12 +241,12 @@ internal fun SharedVoiceViewerInfoDialog(
                 OutlinedTextField(
                     value = draftRelationship,
                     onValueChange = { draftRelationship = it.take(30) },
-                    label = { Text("나와의 관계") },
-                    placeholder = { Text("예: 손주, 자식, 형제") },
+                    label = { Text(stringResource(R.string.voicesr_relationship_label)) },
+                    placeholder = { Text(stringResource(R.string.voicesr_relationship_example_b)) },
                     singleLine = true,
                     isError = relationshipError,
                     supportingText = {
-                        if (relationshipError) Text("꼭 입력해 주세요.")
+                        if (relationshipError) Text(stringResource(R.string.voicesr_required_field))
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -253,12 +255,12 @@ internal fun SharedVoiceViewerInfoDialog(
                 OutlinedTextField(
                     value = draftListener,
                     onValueChange = { draftListener = it.take(30) },
-                    label = { Text("이 목소리가 나를 부를 이름") },
-                    placeholder = { Text("예: 지호야, 여보") },
+                    label = { Text(stringResource(R.string.voicesr_listener_title_label)) },
+                    placeholder = { Text(stringResource(R.string.voicesr_listener_title_example_b)) },
                     singleLine = true,
                     isError = listenerError,
                     supportingText = {
-                        if (listenerError) Text("꼭 입력해 주세요.")
+                        if (listenerError) Text(stringResource(R.string.voicesr_required_field))
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -274,7 +276,7 @@ internal fun SharedVoiceViewerInfoDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
-                    Text("저장")
+                    Text(stringResource(R.string.voicesr_save))
                 }
             }
         }
@@ -329,7 +331,7 @@ internal fun VoiceFormDialog(
                         onClick = onDismiss,
                         modifier = Modifier.size(42.dp),
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
                     }
                 }
                 Column(
@@ -347,7 +349,7 @@ internal fun VoiceFormDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Text("저장")
+                        Text(stringResource(R.string.voicesr_save))
                     }
                 }
             }
@@ -391,20 +393,20 @@ internal fun VoiceProfileDeleteDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Text(
-                            text = "목소리 삭제",
+                            text = stringResource(R.string.voicesr_delete_dialog_title),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        MutedText("'$profileName' 목소리를 삭제할까요?")
+                        MutedText(stringResource(R.string.voicesr_delete_dialog_confirm, profileName))
                     }
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier.size(42.dp),
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voicesr_close))
                     }
                 }
-                MutedText("이 목소리를 쓰는 메시지는 텍스트만 남고, 알람은 기본 알람음으로 바뀌어요. 저장된 음원 파일도 함께 삭제돼요.")
+                MutedText(stringResource(R.string.voicesr_delete_dialog_warning))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -418,7 +420,7 @@ internal fun VoiceProfileDeleteDialog(
                             contentColor = MaterialTheme.colorScheme.onError,
                         ),
                     ) {
-                        Text("삭제")
+                        Text(stringResource(R.string.voicesr_delete))
                     }
                 }
             }

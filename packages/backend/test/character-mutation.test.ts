@@ -254,14 +254,13 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([charStreak29]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // UPDATE characters (main)
+    mockDB.pushResult([], 1); // INSERT xp_log (main)
+    mockDB.pushResult([], 1); // INSERT streak_achievements (조건부 예약, 성공)
+    mockDB.pushResult([], 1); // UPDATE characters (milestone)
+    mockDB.pushResult([], 1); // INSERT xp_log (milestone)
+    mockDB.pushResult([], 1); // ensureStatsRow
+    mockDB.pushResult([], 1); // UPDATE stats
     const refreshed = {
       ...charStreak29,
       xp: 505,
@@ -293,14 +292,13 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([charStreak89]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // UPDATE characters (main)
+    mockDB.pushResult([], 1); // INSERT xp_log (main)
+    mockDB.pushResult([], 1); // INSERT streak_achievements (조건부 예약, 성공)
+    mockDB.pushResult([], 1); // UPDATE characters (milestone)
+    mockDB.pushResult([], 1); // INSERT xp_log (milestone)
+    mockDB.pushResult([], 1); // ensureStatsRow
+    mockDB.pushResult([], 1); // UPDATE stats
     const refreshed = {
       ...charStreak89,
       xp: 2005,
@@ -365,12 +363,14 @@ describe('POST /characters/xp (characterMutation)', () => {
     await buildApp().request(
       jsonReq('POST', '/characters/xp', { event: 'alarm_completed', local_date: '2026-04-25' }),
     );
+    // 마일스톤 중복 방지는 이제 조건부 INSERT(WHERE NOT EXISTS)에 내장됨.
+    // 존재 검사 바인딩(character_id, milestone)은 INSERT args 의 마지막 두 개.
     const milestoneCheck = mockDB.calls.find(
-      (c) => c.sql.includes('streak_achievements') && c.sql.includes('SELECT'),
+      (c) => c.sql.includes('streak_achievements') && c.sql.includes('NOT EXISTS'),
     );
     expect(milestoneCheck).toBeDefined();
-    expect(milestoneCheck!.args[0]).toBe('char-1');
-    expect(milestoneCheck!.args[1]).toBe(7);
+    expect(milestoneCheck!.args[4]).toBe('char-1');
+    expect(milestoneCheck!.args[5]).toBe(7);
   });
 
   it('milestone INSERT — streak_achievements에 정확한 값 저장', async () => {
@@ -382,14 +382,13 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([charStreak6]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // UPDATE characters (main)
+    mockDB.pushResult([], 1); // INSERT xp_log (main)
+    mockDB.pushResult([], 1); // INSERT streak_achievements (조건부 예약, 성공)
+    mockDB.pushResult([], 1); // UPDATE characters (milestone)
+    mockDB.pushResult([], 1); // INSERT xp_log (milestone)
+    mockDB.pushResult([], 1); // ensureStatsRow
+    mockDB.pushResult([], 1); // UPDATE stats
     const refreshed = { ...charStreak6, xp: 105, current_streak: 7, daily_xp: 105 };
     mockDB.pushResult([refreshed]);
     mockDB.pushResult([]);
@@ -415,14 +414,13 @@ describe('POST /characters/xp (characterMutation)', () => {
     };
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([charStreak6]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1); // UPDATE characters (main)
+    mockDB.pushResult([], 1); // INSERT xp_log (main)
+    mockDB.pushResult([], 1); // INSERT streak_achievements (조건부 예약, 성공)
+    mockDB.pushResult([], 1); // UPDATE characters (milestone)
+    mockDB.pushResult([], 1); // INSERT xp_log (milestone)
+    mockDB.pushResult([], 1); // ensureStatsRow
+    mockDB.pushResult([], 1); // UPDATE stats
     const refreshed = { ...charStreak6, xp: 105, current_streak: 7, daily_xp: 105 };
     mockDB.pushResult([refreshed]);
     mockDB.pushResult([]);

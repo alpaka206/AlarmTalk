@@ -19,9 +19,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 
 /**
  * 탈퇴 유예(pending_deletion) 상태로 로그인했을 때 표시되는 화면.
@@ -50,14 +52,14 @@ internal fun AccountPendingDeletionScreen(
         )
         Spacer(Modifier.height(24.dp))
         Text(
-            text = "회원 탈퇴가 진행 중이에요",
+            text = stringResource(R.string.r3dlg_pending_deletion_title),
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "신청일로부터 30일 뒤에 계정과 데이터가 완전히 삭제돼요.\n그 전에 탈퇴를 취소하면 계정을 그대로 복구할 수 있어요.",
+            text = stringResource(R.string.r3dlg_pending_deletion_body),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -70,7 +72,7 @@ internal fun AccountPendingDeletionScreen(
                 .fillMaxWidth()
                 .height(50.dp),
         ) {
-            Text(if (busy) "처리 중…" else "탈퇴 취소하고 계속 사용하기")
+            Text(if (busy) stringResource(R.string.r3dlg_pending_deletion_processing) else stringResource(R.string.r3dlg_pending_deletion_recover))
         }
         Spacer(Modifier.height(12.dp))
         OutlinedButton(
@@ -80,7 +82,7 @@ internal fun AccountPendingDeletionScreen(
                 .fillMaxWidth()
                 .height(50.dp),
         ) {
-            Text("로그아웃")
+            Text(stringResource(R.string.r3dlg_pending_deletion_logout))
         }
     }
 }

@@ -20,6 +20,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,6 +32,7 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.VoiceProfile
+import com.alarmtalk.app.R
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -60,8 +63,8 @@ internal fun ScheduleDetailsCard(
         OutlinedTextField(
             value = label,
             onValueChange = onLabelChange,
-            label = { Text("알람 이름") },
-            placeholder = { Text("예: 출근 준비") },
+            label = { Text(stringResource(R.string.editor_label_alarm_name)) },
+            placeholder = { Text(stringResource(R.string.editor_placeholder_alarm_name)) },
             singleLine = true,
             shape = WakerInputShape,
             colors = wakerOutlinedTextFieldColors(),
@@ -80,9 +83,10 @@ internal fun RepeatSelector(
     onHolidayOffChange: (Boolean) -> Unit,
 ) {
     val holidayEnabled = repeatDaysMask != 0
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = repeatSummaryLabel(hour, minute, repeatDaysMask),
+            text = repeatSummaryLabel(context, hour, minute, repeatDaysMask),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -91,9 +95,9 @@ internal fun RepeatSelector(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            WeekdayLabels.forEachIndexed { index, label ->
+            WeekdayLabels.forEachIndexed { index, labelRes ->
                 DayTextChip(
-                    label = label,
+                    label = stringResource(labelRes),
                     dayIndex = index,
                     selected = repeatDaysMask and (1 shl index) != 0,
                     onClick = { onToggleDay(index) },
@@ -115,9 +119,9 @@ internal fun RepeatSelector(
                         .padding(end = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Text("공휴일에는 끄기", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.editor_holiday_off_title), fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = "대체 공휴일 및 임시 공휴일 포함",
+                        text = stringResource(R.string.editor_holiday_off_subtitle),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -200,6 +204,7 @@ internal fun DayTextChip(
 }
 
 internal fun repeatSummaryLabel(
+    context: android.content.Context,
     hour: Int,
     minute: Int,
     repeatDaysMask: Int,
@@ -207,11 +212,11 @@ internal fun repeatSummaryLabel(
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): String {
     if (repeatDaysMask != 0) {
-        if (repeatDaysMask == 0b1111111) return "매일"
+        if (repeatDaysMask == 0b1111111) return context.getString(R.string.editor2_repeat_every_day)
         val selectedDays = WeekdayLabels
             .filterIndexed { index, _ -> repeatDaysMask and (1 shl index) != 0 }
-            .joinToString(", ")
-        return "매주 $selectedDays"
+            .joinToString(", ") { context.getString(it) }
+        return context.getString(R.string.editor2_repeat_weekly, selectedDays)
     }
 
     val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
@@ -223,20 +228,28 @@ internal fun repeatSummaryLabel(
     )
     val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
     val nextDate = Instant.ofEpochMilli(nextFireAt).atZone(zoneId).toLocalDate()
-    val dateLabel = koreanDateLabel(nextDate)
+    val dateLabel = koreanDateLabel(context, nextDate)
     return when (nextDate) {
-        today -> "오늘 - $dateLabel"
-        today.plusDays(1) -> "내일 - $dateLabel"
+        today -> context.getString(R.string.editor2_repeat_today, dateLabel)
+        today.plusDays(1) -> context.getString(R.string.editor2_repeat_tomorrow, dateLabel)
         else -> dateLabel
     }
 }
 
-private fun koreanDateLabel(date: LocalDate): String {
-    val dayLabel = WeekdayLabels[date.dayOfWeek.value % 7]
-    return "${date.monthValue}월 ${date.dayOfMonth}일($dayLabel)"
+private fun koreanDateLabel(context: android.content.Context, date: LocalDate): String {
+    val dayLabel = context.getString(WeekdayLabels[date.dayOfWeek.value % 7])
+    return context.getString(R.string.editor2_date_label, date.monthValue, date.dayOfMonth, dayLabel)
 }
 
-private val WeekdayLabels = listOf("일", "월", "화", "수", "목", "금", "토")
+private val WeekdayLabels: List<Int> = listOf(
+    R.string.editor2_weekday_sun,
+    R.string.editor2_weekday_mon,
+    R.string.editor2_weekday_tue,
+    R.string.editor2_weekday_wed,
+    R.string.editor2_weekday_thu,
+    R.string.editor2_weekday_fri,
+    R.string.editor2_weekday_sat,
+)
 
 @Composable
 internal fun QuickChip(
@@ -269,7 +282,7 @@ internal fun PlayModeCard(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            text = "재생 방식",
+            text = stringResource(R.string.editor_play_mode_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -292,7 +305,7 @@ internal fun PlayModeSelector(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PlayModeChip(
-            label = "알람 + 음성",
+            label = stringResource(R.string.editor_play_mode_alarm_voice),
             selected = selected == AlarmPlayModes.ALARM_VOICE,
             locked = voiceLocked,
             onClick = {
@@ -301,7 +314,7 @@ internal fun PlayModeSelector(
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "음성",
+            label = stringResource(R.string.editor_play_mode_voice_only),
             selected = selected == AlarmPlayModes.VOICE_ONLY,
             locked = voiceLocked,
             onClick = {
@@ -310,7 +323,7 @@ internal fun PlayModeSelector(
             modifier = Modifier.weight(1f),
         )
         PlayModeChip(
-            label = "알람",
+            label = stringResource(R.string.editor_play_mode_alarm_only),
             selected = selected == AlarmPlayModes.ALARM_ONLY,
             onClick = { onSelect(AlarmPlayModes.ALARM_ONLY) },
             modifier = Modifier.weight(1f),
@@ -377,38 +390,38 @@ internal fun PlayModeChip(
     }
 }
 
-internal val TtsCategories = listOf(
-    "morning" to "기상",
-    "lunch" to "점심 식사",
-    "evening" to "퇴근",
-    "night" to "밤",
-    "health" to "건강",
-    "study" to "공부",
-    "cheer" to "응원",
-    "love" to "사랑",
+internal val TtsCategories: List<Pair<String, Int>> = listOf(
+    "morning" to R.string.editor2_cat_morning,
+    "lunch" to R.string.editor2_cat_lunch,
+    "evening" to R.string.editor2_cat_evening,
+    "night" to R.string.editor2_cat_night,
+    "health" to R.string.editor2_cat_health,
+    "study" to R.string.editor2_cat_study,
+    "cheer" to R.string.editor2_cat_cheer,
+    "love" to R.string.editor2_cat_love,
 )
 
-internal val RandomPromptContexts = listOf(
+internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값. 무료 플랜은 이것만 사용 가능.
-    "preset" to "기본 문구",
-    "wake_weather" to "기상 + 날씨",
-    "wake_fortune" to "기상 + 운세",
-    "meal" to "식사",
-    "sleep" to "취침",
-    "exercise" to "운동",
-    "love" to "사랑",
+    "preset" to R.string.editor2_ctx_preset,
+    "wake_weather" to R.string.editor2_ctx_wake_weather,
+    "wake_fortune" to R.string.editor2_ctx_wake_fortune,
+    "meal" to R.string.editor2_ctx_meal,
+    "sleep" to R.string.editor2_ctx_sleep,
+    "exercise" to R.string.editor2_ctx_exercise,
+    "love" to R.string.editor2_ctx_love,
 )
 
-internal val TtsLanguages = listOf(
-    "ko" to "한국어",
-    "en" to "영어",
-    "ja" to "일본어",
+internal val TtsLanguages: List<Pair<String, Int>> = listOf(
+    "ko" to R.string.editor2_lang_ko,
+    "en" to R.string.editor2_lang_en,
+    "ja" to R.string.editor2_lang_ja,
 )
 
-internal val TtsTranslationLanguages = listOf(
-    "ko" to "한국어",
-    "en" to "영어",
-    "ja" to "일본어",
-    "fr" to "프랑스어",
-    "it" to "이탈리아어",
+internal val TtsTranslationLanguages: List<Pair<String, Int>> = listOf(
+    "ko" to R.string.editor2_lang_ko,
+    "en" to R.string.editor2_lang_en,
+    "ja" to R.string.editor2_lang_ja,
+    "fr" to R.string.editor2_lang_fr,
+    "it" to R.string.editor2_lang_it,
 )

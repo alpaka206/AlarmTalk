@@ -31,8 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.VibrationPatterns
 
 @Composable
@@ -103,20 +105,25 @@ internal fun AlarmSettingsCard(
     onOpenAlarmSoundSettings: () -> Unit,
     onOpenVoiceOutputSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
             Text(
-                text = "세부 설정",
+                text = stringResource(R.string.editor_detail_settings),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(bottom = 6.dp),
             )
             AlarmSettingRow(
-                title = "다시 울림",
-                subtitle = if (snoozeEnabled) "${snoozeMinutes}분 · ${snoozeRepeatLabel(snoozeRepeatLimit)}" else "꺼짐",
+                title = stringResource(R.string.editor_snooze_title),
+                subtitle = if (snoozeEnabled) {
+                    stringResource(R.string.editor_snooze_summary, snoozeMinutes, snoozeRepeatLabel(context, snoozeRepeatLimit))
+                } else {
+                    stringResource(R.string.editor_off)
+                },
                 icon = Icons.Outlined.Snooze,
                 onClick = onOpenSnoozeSettings,
                 trailing = {
@@ -128,8 +135,8 @@ internal fun AlarmSettingsCard(
             )
             AlarmSettingDivider()
             AlarmSettingRow(
-                title = "진동",
-                subtitle = vibrationLabel(vibrationPattern),
+                title = stringResource(R.string.editor_vibration_title),
+                subtitle = vibrationLabel(context, vibrationPattern),
                 icon = Icons.Outlined.Notifications,
                 onClick = onOpenVibrationSettings,
                 trailing = {
@@ -142,8 +149,9 @@ internal fun AlarmSettingsCard(
             if (showAlarmSound) {
                 AlarmSettingDivider()
                 AlarmSettingRow(
-                    title = "알람음",
+                    title = stringResource(R.string.editor_alarm_sound_title),
                     subtitle = alarmSoundSummary(
+                        context = context,
                         alarmVolumePercent = alarmVolumePercent,
                         alarmSoundLabel = alarmSoundLabel,
                     ),
@@ -162,8 +170,8 @@ internal fun AlarmSettingsCard(
             if (showVoiceOutput) {
                 AlarmSettingDivider()
                 AlarmSettingRow(
-                    title = "음성 소리",
-                    subtitle = voiceOutputSummary(voiceVolumePercent, voiceRepeat, voiceRepeatActive),
+                    title = stringResource(R.string.editor_voice_output_title),
+                    subtitle = voiceOutputSummary(context, voiceVolumePercent, voiceRepeat, voiceRepeatActive),
                     icon = Icons.AutoMirrored.Outlined.VolumeUp,
                     onClick = onOpenVoiceOutputSettings,
                     trailing = {
@@ -180,25 +188,35 @@ internal fun AlarmSettingsCard(
 }
 
 private fun voiceOutputSummary(
+    context: android.content.Context,
     voiceVolumePercent: Int,
     voiceRepeat: Boolean,
     voiceRepeatActive: Boolean,
 ): String {
     val volume = "${voiceVolumePercent.coerceIn(0, 100)}%"
-    return if (voiceRepeatActive && voiceRepeat) "$volume · 반복" else volume
+    return if (voiceRepeatActive && voiceRepeat) {
+        context.getString(R.string.editor2_voice_output_summary_repeat, volume)
+    } else {
+        volume
+    }
 }
 
-private fun alarmVolumeLabel(value: Int): String =
-    if (value <= 0) "무음" else "${value.coerceIn(0, 100)}%"
+private fun alarmVolumeLabel(context: android.content.Context, value: Int): String =
+    if (value <= 0) context.getString(R.string.editor2_silent) else "${value.coerceIn(0, 100)}%"
 
 private fun alarmSoundSummary(
+    context: android.content.Context,
     alarmVolumePercent: Int,
     alarmSoundLabel: String?,
 ): String =
     if (alarmVolumePercent <= 0) {
-        "무음"
+        context.getString(R.string.editor2_silent)
     } else {
-        "${alarmSoundLabel ?: "기본 알람음"} · ${alarmVolumeLabel(alarmVolumePercent)}"
+        context.getString(
+            R.string.editor2_alarm_sound_summary,
+            alarmSoundLabel ?: context.getString(R.string.editor2_default_alarm_sound),
+            alarmVolumeLabel(context, alarmVolumePercent),
+        )
     }
 
 @Composable
@@ -252,6 +270,7 @@ internal fun AlarmSoundSettingsPane(
     onAlarmVolumeChange: (Int) -> Unit,
     onPickAlarmSound: () -> Unit,
 ) {
+    val context = LocalContext.current
     val alarmEnabled = alarmVolumePercent > 0
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -269,12 +288,12 @@ internal fun AlarmSoundSettingsPane(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editor_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "알람음",
+                    text = stringResource(R.string.editor_alarm_sound_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -298,7 +317,7 @@ internal fun AlarmSoundSettingsPane(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (alarmEnabled) "사용 중" else "무음",
+                            text = if (alarmEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_silent),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (alarmEnabled) {
@@ -317,16 +336,16 @@ internal fun AlarmSoundSettingsPane(
                 }
 
                 if (alarmEnabled) {
-                    SnoozeOptionSection(title = "알람음") {
+                    SnoozeOptionSection(title = stringResource(R.string.editor_alarm_sound_title)) {
                         AlarmSoundActionRow(
-                            title = "알람음",
-                            subtitle = alarmSoundLabel ?: "기본 알람음",
+                            title = stringResource(R.string.editor_alarm_sound_title),
+                            subtitle = alarmSoundLabel ?: stringResource(R.string.editor_default_alarm_sound),
                             onClick = onPickAlarmSound,
                         )
                     }
                 }
 
-                SnoozeOptionSection(title = "볼륨") {
+                SnoozeOptionSection(title = stringResource(R.string.editor_volume)) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -339,12 +358,12 @@ internal fun AlarmSoundSettingsPane(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "볼륨",
+                                text = stringResource(R.string.editor_volume),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                text = alarmVolumeLabel(alarmVolumePercent),
+                                text = alarmVolumeLabel(context, alarmVolumePercent),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontWeight = FontWeight.SemiBold,
@@ -391,12 +410,12 @@ internal fun VibrationSettingsPane(
                 IconButton(onClick = onDismiss) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.editor_back),
                     )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "진동",
+                    text = stringResource(R.string.editor_vibration_title),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -420,7 +439,7 @@ internal fun VibrationSettingsPane(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (vibrationEnabled) "사용 중" else "사용 안 함",
+                            text = if (vibrationEnabled) stringResource(R.string.editor_in_use) else stringResource(R.string.editor_not_in_use),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (vibrationEnabled) {
@@ -436,7 +455,7 @@ internal fun VibrationSettingsPane(
                     }
                 }
 
-                SnoozeOptionSection(title = "패턴") {
+                SnoozeOptionSection(title = stringResource(R.string.editor_pattern)) {
                     VibrationOptions.forEachIndexed { index, (pattern, label) ->
                         SnoozeRadioRow(
                             label = label,

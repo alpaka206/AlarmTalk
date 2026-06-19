@@ -139,14 +139,18 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
         }
       }
     } catch (err) {
-      // 사용자 행 해석 실패 시에도 요청은 계속 처리하되(PK 는 sub 로 폴백),
-      // PII(sub/email)를 로그에 남기지 않고 오류만 구조적 로깅한다.
-      c.set('userIdPK', verified.sub);
+      // 사용자 행 해석에 실패하면 탈퇴 유예(pending_deletion) 여부를 확인할 수 없다.
+      // 이때 요청을 계속 처리(fail-open)하면 유예 계정이 차단을 우회할 수 있으므로,
+      // 상태 확인 불가 시에는 요청을 거부한다(fail-closed). PII 는 로그에 남기지 않는다.
       const { logStructured } = await import('../lib/logger');
       logStructured('error', {
         at: 'auth.user_resolve',
         error: err instanceof Error ? err.message : String(err),
       });
+      return c.json(
+        { error: 'Unable to verify account status', error_code: 'ACCOUNT_STATUS_UNVERIFIED' },
+        503,
+      );
     }
 
     await next();

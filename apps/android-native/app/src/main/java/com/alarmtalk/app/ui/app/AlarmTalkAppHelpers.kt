@@ -82,11 +82,11 @@ internal val NativeTab.route: String
 internal fun String?.toNativeTab(): NativeTab? =
     NativeTab.values().firstOrNull { it.route == this }
 
-internal fun alarmPermissionRequiredMessage(target: PermissionTarget): String = when (target) {
-    PermissionTarget.Notifications -> "알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요."
-    PermissionTarget.ExactAlarms -> "정해진 시간에 울리려면 정확한 알람 권한이 필요해요."
-    PermissionTarget.FullScreenIntent -> "잠금화면 위에 알람 화면을 띄우려면 전체 화면 알람 권한을 켜 주세요."
-    PermissionTarget.RecordAudio -> "음성을 녹음하려면 마이크 권한이 필요해요."
+internal fun alarmPermissionRequiredMessage(context: Context, target: PermissionTarget): String = when (target) {
+    PermissionTarget.Notifications -> context.getString(R.string.r3app_perm_required_notifications)
+    PermissionTarget.ExactAlarms -> context.getString(R.string.r3app_perm_required_exact_alarms)
+    PermissionTarget.FullScreenIntent -> context.getString(R.string.r3app_perm_required_full_screen)
+    PermissionTarget.RecordAudio -> context.getString(R.string.r3app_perm_required_record_audio)
 }
 
 internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
@@ -153,7 +153,8 @@ internal enum class MessageSeverity { Success, Error, Info }
 
 internal data class PlanGateDialogState(
     val message: String,
-    val confirmLabel: String = "이용권 보기",
+    // null이면 PlanGateDialog의 현지화된 기본 확인 라벨을 사용한다.
+    val confirmLabel: String? = null,
 )
 
 internal fun messageSeverity(text: String): MessageSeverity = when {

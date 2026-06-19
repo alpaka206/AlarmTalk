@@ -55,11 +55,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
@@ -89,7 +91,8 @@ import kotlinx.coroutines.withContext
 private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
     audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
 
-private fun voiceProfilePlaceholder(): String = "목소리"
+private fun voiceProfilePlaceholder(context: android.content.Context): String =
+    context.getString(R.string.voices2_default_profile_name)
 
 private val AndroidEdgeToEdgeNavigationExtraPadding = 24.dp
 
@@ -104,51 +107,42 @@ private fun androidNavigationBarHeightPadding(): Dp {
     return with(density) { navigationBarHeightPx.toDp() }
 }
 
-private fun voiceProfileDurationError(durationMillis: Long?): String? = when {
-    durationMillis == null -> "오디오 길이를 확인할 수 없어요."
-    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 녹음해 주세요."
+private fun voiceProfileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
+    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
+    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
+        context.getString(R.string.voices2_record_at_least_one_minute)
     durationMillis > VoiceProfileAudioLimits.MAX_DURATION_MILLIS +
-        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS -> "2분 이하 음성으로 등록할 수 있어요."
+        VoiceProfileAudioLimits.MAX_DURATION_TOLERANCE_MILLIS ->
+        context.getString(R.string.voices2_register_under_two_minutes)
     else -> null
 }
 
-private fun voiceProfileFileDurationError(durationMillis: Long?): String? = when {
-    durationMillis == null -> "오디오 길이를 확인할 수 없어요."
-    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS -> "1분 이상 파일을 선택해 주세요."
+private fun voiceProfileFileDurationError(context: android.content.Context, durationMillis: Long?): String? = when {
+    durationMillis == null -> context.getString(R.string.voices2_audio_duration_unknown)
+    durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS ->
+        context.getString(R.string.voices2_select_file_at_least_one_minute)
     else -> null
 }
 
 // 처음 목소리를 만드는 사용자를 위한 단계 가이드 (handoff 코치마크 카피 참고).
-private val voiceCreateGuideSteps = listOf(
+@Composable
+private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
     UsageGuideStep(
         icon = Icons.Outlined.Mic,
-        title = "조용한 곳에서 녹음해요",
-        body = "1분 이상 2분 이하로 평소 목소리처럼 또박또박 읽어 주세요. 가지고 있는 음성 파일이나 영상으로도 만들 수 있어요.",
+        title = stringResource(R.string.voices2_guide_record_title),
+        body = stringResource(R.string.voices2_guide_record_body),
     ),
     UsageGuideStep(
         icon = Icons.Outlined.Badge,
-        title = "누구의 목소리인지 알려줘요",
-        body = "이름·관계와 '나를 부를 호칭'을 입력하면, 랜덤 문구에서 그 호칭으로 다정하게 불러줘요.",
+        title = stringResource(R.string.voices2_guide_identity_title),
+        body = stringResource(R.string.voices2_guide_identity_body),
     ),
     UsageGuideStep(
         icon = Icons.Outlined.AutoAwesome,
-        title = "등록을 누르면 완성",
-        body = "학습이 끝난 목소리는 알람 만들기의 재생 방식에서 골라 쓸 수 있어요.",
+        title = stringResource(R.string.voices2_guide_register_title),
+        body = stringResource(R.string.voices2_guide_register_body),
     ),
 )
-
-// 보이스 클로닝용 추천 낭독 스크립트(약 1분 분량). 인사·일상·숫자·감정·긴 문장을
-// 고루 담아 다양한 발음이 들어가도록 구성했고, 알람톡 서비스의 따뜻한 톤을 자연스럽게 녹였다.
-private const val VOICE_RECORD_SCRIPT =
-    "안녕하세요. 지금 제 목소리로 알람톡에서 쓸 알람을 만들고 있어요. " +
-        "매일 아침, 좋아하는 사람의 목소리로 깨어날 수 있다니 생각만 해도 따뜻하네요. " +
-        "오늘은 날씨가 맑고 바람도 살랑살랑 불어서 산책하기 참 좋은 날이에요. " +
-        "이 목소리로 가족이나 친구의 아침을 다정하게 챙겨줄 수도 있겠죠. " +
-        "숫자도 한번 세어 볼게요. 하나, 둘, 셋, 넷, 다섯, 여섯, 일곱, 여덟, 아홉, 열. " +
-        "기쁜 날엔 환하게 웃고, 힘든 날엔 \"오늘도 정말 수고했어\" 하고 스스로를 다독여 주는 것도 잊지 말아야겠죠. " +
-        "이제 조금 긴 문장을 읽어 볼게요. 매일 같은 시간에 일어나 창문을 열고 맑은 공기를 들이마시며 " +
-        "하루를 차분히 시작하면, 마음까지 한결 가벼워지는 기분이 들어요. " +
-        "끝까지 또렷하게 읽어 주셔서 고맙습니다."
 
 @Composable
 private fun VoiceRecordScriptCard() {
@@ -172,7 +166,7 @@ private fun VoiceRecordScriptCard() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "추천 대사 보기",
+                        text = stringResource(R.string.voices_show_recommended_script),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f),
@@ -183,14 +177,18 @@ private fun VoiceRecordScriptCard() {
                         } else {
                             Icons.Outlined.KeyboardArrowDown
                         },
-                        contentDescription = if (expanded) "접기" else "펼치기",
+                        contentDescription = if (expanded) {
+                            stringResource(R.string.voices_collapse)
+                        } else {
+                            stringResource(R.string.voices_expand)
+                        },
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             if (expanded) {
                 Text(
-                    text = VOICE_RECORD_SCRIPT,
+                    text = stringResource(R.string.voices2_record_script),
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
@@ -209,11 +207,11 @@ internal fun VoiceLoginRequiredCard() {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "로그인이 필요해요",
+                text = stringResource(R.string.voices_login_required_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            MutedText("로그인 후 목소리를 만들 수 있어요.")
+            MutedText(stringResource(R.string.voices_login_required_body))
         }
     }
 }
@@ -274,6 +272,7 @@ internal fun VoiceProfileManagementPanel(
     var createSubmitAttempted by remember { mutableStateOf(false) }
     var showCreateForm by remember { mutableStateOf(false) }
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
+    val voiceCreateGuideSteps = rememberVoiceCreateGuideSteps()
     var voiceGuideVisible by remember { mutableStateOf(false) }
     // 목소리 만들기를 처음 열 때 한 번만 자동 노출. 다이얼로그 도움말 버튼으로 다시 볼 수 있다.
     LaunchedEffect(showCreateForm) {
@@ -297,12 +296,13 @@ internal fun VoiceProfileManagementPanel(
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
-    val systemVoices = voiceProfiles.filter { it.isSystem == true }
-    val ownVoices = voiceProfiles.filter { it.isSystem != true }
+    // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
+    val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
+    val ownVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem != true } }
     val isLimitReached = ownVoices.size >= MAX_VOICE_PROFILES
     val canCreateVoice = hasPaidVoiceAccess(subscriptionResponse)
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
-    val paidVoiceRequiredMessage = "유료 이용권에서 사용할 수 있어요."
+    val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
     fun stopMediaPreview() {
         mediaPlayer?.release()
@@ -322,7 +322,7 @@ internal fun VoiceProfileManagementPanel(
             it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
         } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
         if (clip == null) {
-            localMessage = "이 목소리의 미리듣기를 준비 중이에요."
+            localMessage = context.getString(R.string.voices_greeting_preview_preparing)
             return
         }
         scope.launch {
@@ -330,8 +330,9 @@ internal fun VoiceProfileManagementPanel(
             playingGreetingVoiceId = profile.id
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
-                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 val cached = withContext(Dispatchers.IO) {
+                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                     audioStore.cacheGeneratedAudio(
                         bytes = bytes,
                         format = response.audioFormat,
@@ -354,7 +355,7 @@ internal fun VoiceProfileManagementPanel(
             }.onFailure { error ->
                 Log.e(TAG, "Failed to play greeting preview", error)
                 if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+                localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
             }
         }
     }
@@ -362,7 +363,7 @@ internal fun VoiceProfileManagementPanel(
     fun applySelectedAudio(audio: CachedAlarmAudio) {
         stopMediaPreview()
         selectedAudio = audio
-        localMessage = voiceProfileDurationError(audio.durationMillis)
+        localMessage = voiceProfileDurationError(context, audio.durationMillis)
     }
 
     fun prepareSelectedFile(uri: Uri) {
@@ -370,7 +371,7 @@ internal fun VoiceProfileManagementPanel(
         scope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { audioStore.readDurationMillis(uri) }
-                    ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+                    ?: throw IllegalArgumentException(context.getString(R.string.voices_file_duration_unknown))
             }.onSuccess { durationMillis ->
                 selectedAudio = null
                 selectedFileUri = uri
@@ -380,11 +381,11 @@ internal fun VoiceProfileManagementPanel(
                 detectedSpeakers = emptyList()
                 speakerDraftStates = emptyMap()
                 activePlayingSpeakerId = null
-                localMessage = voiceProfileFileDurationError(durationMillis)
+                localMessage = voiceProfileFileDurationError(context, durationMillis)
             }
                 .onFailure { error ->
                     Log.e(TAG, "Failed to cache voice profile audio", error)
-                    localMessage = userFacingError(error, "선택한 오디오를 사용할 수 없어요.")
+                    localMessage = userFacingError(error, context.getString(R.string.voices_selected_audio_unusable))
                 }
         }
     }
@@ -395,7 +396,7 @@ internal fun VoiceProfileManagementPanel(
                 withContext(Dispatchers.IO) { recorder.stop() }
             }.onSuccess { audio ->
                 isRecording = false
-                val error = voiceProfileDurationError(audio.durationMillis)
+                val error = voiceProfileDurationError(context, audio.durationMillis)
                 if (error == null) {
                     applySelectedAudio(audio)
                 } else {
@@ -405,7 +406,7 @@ internal fun VoiceProfileManagementPanel(
             }.onFailure { error ->
                 isRecording = false
                 Log.e(TAG, "Failed to stop voice profile recording", error)
-                localMessage = userFacingError(error, "녹음에 실패했어요.")
+                localMessage = userFacingError(error, context.getString(R.string.voices_recording_stop_failed))
             }
         }
     }
@@ -419,7 +420,7 @@ internal fun VoiceProfileManagementPanel(
             localMessage = null
         }.onFailure { error ->
             Log.e(TAG, "Failed to start voice profile recording", error)
-            localMessage = userFacingError(error, "녹음을 시작할 수 없어요.")
+            localMessage = userFacingError(error, context.getString(R.string.voices_recording_start_failed))
         }
     }
 
@@ -489,7 +490,7 @@ internal fun VoiceProfileManagementPanel(
         if (granted) {
             startRecording()
         } else {
-            localMessage = "마이크 권한이 필요해요."
+            localMessage = context.getString(R.string.voices_mic_permission_required)
         }
     }
 
@@ -528,7 +529,7 @@ internal fun VoiceProfileManagementPanel(
     }
 
     suspend fun croppedFileAudio(): CachedAlarmAudio {
-        val uri = selectedFileUri ?: throw IllegalStateException("파일을 선택해 주세요.")
+        val uri = selectedFileUri ?: throw IllegalStateException(context.getString(R.string.voices_select_file_first))
         val cropDurationMillis = (cropEndMillis - cropStartMillis)
             .coerceIn(1_000L, VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
         return withContext(Dispatchers.IO) {
@@ -558,7 +559,7 @@ internal fun VoiceProfileManagementPanel(
                     startMillis = cropStartMillis + speaker.startMs,
                 )
             }
-            val draftName = baseName.ifBlank { voiceProfilePlaceholder() }
+            val draftName = baseName.ifBlank { voiceProfilePlaceholder(context) }
             val profile = onCloneSpeakerDraft(draftName, audio)
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
@@ -569,14 +570,15 @@ internal fun VoiceProfileManagementPanel(
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profile.id,
-                    text = "이 목소리로 깨워드릴까요?",
+                    text = context.getString(R.string.r3data_voice_preview_prompt),
                     category = "custom",
                     language = "ko",
                     random = false,
                 ),
             )
-            val audioBytes = Base64.decode(ttsResponse.audioBase64, Base64.DEFAULT)
             val cached = withContext(Dispatchers.IO) {
+                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                val audioBytes = Base64.decode(ttsResponse.audioBase64, Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
                     bytes = audioBytes,
                     format = ttsResponse.audioFormat,
@@ -598,7 +600,7 @@ internal fun VoiceProfileManagementPanel(
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
                     status = SpeakerDraftStatus.Failed,
-                    errorMessage = "미리듣기를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.",
+                    errorMessage = context.getString(R.string.voices_speaker_preview_prepare_failed),
                 )
             }
         }
@@ -612,11 +614,11 @@ internal fun VoiceProfileManagementPanel(
         val uri = selectedFileUri ?: return
         val cropDuration = cropEndMillis - cropStartMillis
         if (cropDuration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
-            localMessage = "나눌 구간은 1분 이상이어야 해요. 자르기 범위를 늘려 주세요."
+            localMessage = context.getString(R.string.voices_separate_segment_too_short_hint)
             return
         }
         if (cropDuration > VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
-            localMessage = "나눌 구간은 2분 이하여야 해요. 자르기 범위를 줄여 주세요."
+            localMessage = context.getString(R.string.voices_separate_segment_too_long_hint)
             return
         }
         scope.launch {
@@ -636,7 +638,7 @@ internal fun VoiceProfileManagementPanel(
                 speakerDraftStates = visible.associate { s ->
                     s.id to SpeakerDraftState(status = SpeakerDraftStatus.Cloning)
                 }
-                localMessage = if (visible.isEmpty()) "나눌 목소리를 찾지 못했어요." else null
+                localMessage = if (visible.isEmpty()) context.getString(R.string.voices_no_speakers_found) else null
                 val baseName = profileName.trim()
                 // 기존 추적 중인 Job 이 있다면 새 separate 가 일어났으므로 모두 취소.
                 cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
@@ -657,13 +659,13 @@ internal fun VoiceProfileManagementPanel(
                 Log.e(TAG, "Failed to separate speakers", error)
                 val code = apiErrorCode(error)
                 localMessage = when (code) {
-                    "AUDIO_DURATION_TOO_SHORT" -> "나눌 구간은 1분 이상이어야 해요."
-                    "AUDIO_DURATION_TOO_LONG" -> "나눌 구간은 2분 이하여야 해요."
-                    "AUDIO_FILE_EMPTY" -> "선택한 음성 파일이 비어 있어요."
-                    "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
-                    "INVALID_AUDIO_MIME_TYPE" -> "지원하지 않는 오디오 형식이에요."
-                    "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 이용권에서 목소리 나누기를 사용할 수 있어요."
-                    else -> "목소리를 나누지 못했어요. 다른 구간을 선택하거나 잠시 후 다시 시도해 주세요."
+                    "AUDIO_DURATION_TOO_SHORT" -> context.getString(R.string.voices_separate_segment_too_short)
+                    "AUDIO_DURATION_TOO_LONG" -> context.getString(R.string.voices_separate_segment_too_long)
+                    "AUDIO_FILE_EMPTY" -> context.getString(R.string.voices_audio_file_empty)
+                    "INVALID_DURATION" -> context.getString(R.string.voices_invalid_duration)
+                    "INVALID_AUDIO_MIME_TYPE" -> context.getString(R.string.voices_unsupported_audio_format)
+                    "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> context.getString(R.string.voices_separate_requires_paid)
+                    else -> context.getString(R.string.voices_separate_failed)
                 }
             }
             separatingBusy = false
@@ -710,7 +712,7 @@ internal fun VoiceProfileManagementPanel(
             activePlayingSpeakerId = speaker.id
         }.onFailure { error ->
             Log.e(TAG, "Failed to play speaker draft preview", error)
-            localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
 
@@ -721,14 +723,15 @@ internal fun VoiceProfileManagementPanel(
             val response = onGenerateTts(
                 TtsGenerateRequest(
                     voiceProfileId = profileId,
-                    text = "이 목소리로 깨워드릴까요?",
+                    text = context.getString(R.string.r3data_voice_preview_prompt),
                     category = "custom",
                     language = "ko",
                     random = false,
                 ),
             )
-            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
             val cached = withContext(Dispatchers.IO) {
+                // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+                val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
                 audioStore.cacheGeneratedAudio(
                     bytes = bytes,
                     format = response.audioFormat,
@@ -750,7 +753,7 @@ internal fun VoiceProfileManagementPanel(
             }
         }.onFailure { error ->
             Log.e(TAG, "Failed to preview shared voice", error)
-            localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+            localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
 
@@ -781,10 +784,10 @@ internal fun VoiceProfileManagementPanel(
                 speakerDraftStates = emptyMap()
                 detectedSpeakers = emptyList()
                 closeCreateDialog()
-                localMessage = "목소리로 등록했어요"
+                localMessage = context.getString(R.string.voices_registered_success)
             }.onFailure { error ->
                 Log.e(TAG, "Failed to promote draft voice id=$selectedDraftId", error)
-                localMessage = userFacingError(error, "목소리로 등록하지 못했어요.")
+                localMessage = userFacingError(error, context.getString(R.string.voices_register_failed))
             }
             promotingBusy = false
         }
@@ -806,7 +809,7 @@ internal fun VoiceProfileManagementPanel(
                 val player = MediaPlayer.create(context, Uri.parse(audio.localAudioUri))
                 if (player == null) {
                     filePreviewPreparing = false
-                    localMessage = "미리듣기를 재생하지 못했어요."
+                    localMessage = context.getString(R.string.voices_preview_play_failed)
                     return@onSuccess
                 }
                 mediaPlayer = player.apply {
@@ -826,7 +829,7 @@ internal fun VoiceProfileManagementPanel(
                 Log.e(TAG, "Failed to play cropped voice preview", error)
                 filePreviewPreparing = false
                 filePreviewPlaying = false
-                localMessage = userFacingError(error, "미리듣기를 재생하지 못했어요.")
+                localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
             }
         }
     }
@@ -855,16 +858,16 @@ internal fun VoiceProfileManagementPanel(
         if (createPreparing) return
         if (inputMode == VoiceCaptureMode.Record) {
             val audio = selectedAudio ?: run {
-                localMessage = "녹음한 음성을 먼저 준비해 주세요."
+                localMessage = context.getString(R.string.voices_prepare_recording_first)
                 return
             }
-            if (voiceProfileDurationError(audio.durationMillis) != null) return
+            if (voiceProfileDurationError(context, audio.durationMillis) != null) return
             onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
             closeCreateDialog()
             return
         }
         if (fileSpeakerMode == FileSpeakerMode.Multiple) {
-            localMessage = "나눈 목소리 중 사용할 목소리를 선택해 주세요."
+            localMessage = context.getString(R.string.voices_select_separated_voice)
             return
         }
         scope.launch {
@@ -873,7 +876,7 @@ internal fun VoiceProfileManagementPanel(
             runCatching {
                 croppedFileAudio()
             }.onSuccess { audio ->
-                val error = voiceProfileDurationError(audio.durationMillis)
+                val error = voiceProfileDurationError(context, audio.durationMillis)
                 if (error != null) {
                     localMessage = error
                 } else {
@@ -882,7 +885,7 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to prepare selected voice file", error)
-                localMessage = userFacingError(error, "선택한 음성을 준비하지 못했어요.")
+                localMessage = userFacingError(error, context.getString(R.string.voices_prepare_selected_failed))
             }
             createPreparing = false
         }
@@ -895,7 +898,7 @@ internal fun VoiceProfileManagementPanel(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "내 목소리",
+                text = stringResource(R.string.voices_my_voices_title),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -911,22 +914,22 @@ internal fun VoiceProfileManagementPanel(
                 enabled = !voiceProfileBusy && (!canCreateVoice || !isLimitReached),
             ) {
                 if (canCreateVoice) {
-                    Text("추가")
+                    Text(stringResource(R.string.voices_add))
                 } else {
-                    Text("잠금")
+                    Text(stringResource(R.string.voices_locked))
                 }
             }
         }
 
         if (!canCreateVoice) {
-            MutedText("내 목소리 만들기는 유료 이용권에서 사용할 수 있어요. 아래 기본 목소리는 무료로 쓸 수 있어요.")
+            MutedText(stringResource(R.string.voices_create_paid_notice))
         }
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
 
         if (ownVoices.isEmpty() && canCreateVoice) {
-            MutedText("아직 만든 목소리가 없어요.")
+            MutedText(stringResource(R.string.voices_no_voices_yet))
         } else if (ownVoices.isNotEmpty()) {
             ownVoices.forEach { profile ->
                 VoiceProfileRow(
@@ -958,7 +961,7 @@ internal fun VoiceProfileManagementPanel(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "기본 목소리 ${systemVoices.size}종",
+                        text = stringResource(R.string.voices_system_voices_count, systemVoices.size),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -968,7 +971,11 @@ internal fun VoiceProfileManagementPanel(
                         } else {
                             Icons.Outlined.KeyboardArrowDown
                         },
-                        contentDescription = if (systemVoicesExpanded) "접기" else "펼치기",
+                        contentDescription = if (systemVoicesExpanded) {
+                            stringResource(R.string.voices_collapse)
+                        } else {
+                            stringResource(R.string.voices_expand)
+                        },
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -986,7 +993,7 @@ internal fun VoiceProfileManagementPanel(
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
             Text(
-                text = "공유받은 목소리",
+                text = stringResource(R.string.voices_shared_voices_title),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -1071,17 +1078,17 @@ internal fun VoiceProfileManagementPanel(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Text(
-                                text = "목소리 만들기",
+                                text = stringResource(R.string.voices_create_dialog_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
                             val stepIndex = currentStep.ordinal + 1
                             val stepTitle = when (currentStep) {
-                                VoiceRegistrationStep.Source -> "음성 준비"
-                                VoiceRegistrationStep.Identity -> "누구의 목소리인가요"
-                                VoiceRegistrationStep.Sharing -> "공유 설정"
+                                VoiceRegistrationStep.Source -> stringResource(R.string.voices_step_source)
+                                VoiceRegistrationStep.Identity -> stringResource(R.string.voices_step_identity)
+                                VoiceRegistrationStep.Sharing -> stringResource(R.string.voices_step_sharing)
                             }
-                            MutedText("$stepIndex / 3 · $stepTitle")
+                            MutedText(stringResource(R.string.voices_step_indicator, stepIndex, stepTitle))
                         }
                         IconButton(
                             onClick = { voiceGuideVisible = true },
@@ -1089,7 +1096,7 @@ internal fun VoiceProfileManagementPanel(
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                                contentDescription = "사용 가이드",
+                                contentDescription = stringResource(R.string.voices_usage_guide),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1098,7 +1105,7 @@ internal fun VoiceProfileManagementPanel(
                             enabled = !voiceProfileBusy && !separatingBusy,
                             modifier = Modifier.size(42.dp),
                         ) {
-                            Icon(Icons.Outlined.Close, contentDescription = "닫기")
+                            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.voices_close))
                         }
                     }
 
@@ -1128,7 +1135,7 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         levels = recordingLevels,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        notice = "1분 이상 2분 이하로 녹음해 주세요.",
+                                        notice = stringResource(R.string.voices_record_duration_notice),
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1144,8 +1151,7 @@ internal fun VoiceProfileManagementPanel(
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         MutedText(
-                                            "한 사람의 목소리만 담긴 파일을 추천해요. 여러 명의 목소리가 섞여 있으면 " +
-                                                "'여러 명'을 골라 화자를 나눈 뒤 한 명을 선택할 수 있어요.",
+                                            stringResource(R.string.voices_file_single_speaker_notice),
                                         )
                                         FileSpeakerModeSelector(
                                             selected = fileSpeakerMode,
@@ -1159,8 +1165,8 @@ internal fun VoiceProfileManagementPanel(
                                             minDurationMillis = VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
                                             maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                             enabled = !voiceProfileBusy && !isRecording && !createPreparing && !fileInputLocked,
-                                            uploadLabel = "파일 또는 영상 업로드",
-                                            notice = "1분 이상 2분 이하 구간을 선택해 주세요.",
+                                            uploadLabel = stringResource(R.string.voices_upload_file_or_video),
+                                            notice = stringResource(R.string.voices_crop_duration_notice),
                                             noticeAfterUpload = true,
                                             isPreviewActive = filePreviewPlaying,
                                             isPreviewPreparing = filePreviewPreparing,
@@ -1189,9 +1195,9 @@ internal fun VoiceProfileManagementPanel(
                                                     ) {
                                                         Text(
                                                             when {
-                                                                separatingBusy -> "분리 중"
-                                                                hasSeparatedSpeakers -> "분리 완료"
-                                                                else -> "목소리 나누기"
+                                                                separatingBusy -> stringResource(R.string.voices_separating)
+                                                                hasSeparatedSpeakers -> stringResource(R.string.voices_separate_done)
+                                                                else -> stringResource(R.string.voices_separate_voices)
                                                             },
                                                         )
                                                     }
@@ -1203,7 +1209,7 @@ internal fun VoiceProfileManagementPanel(
                                                         border = wakerCardBorder(),
                                                         colors = wakerOutlinedButtonColors(),
                                                     ) {
-                                                        Text("초기화")
+                                                        Text(stringResource(R.string.voices_reset))
                                                     }
                                                 }
                                                 detectedSpeakers.forEachIndexed { index, speaker ->
@@ -1219,7 +1225,7 @@ internal fun VoiceProfileManagementPanel(
                                                     )
                                                 }
                                             }
-                                            MutedText("목소리를 선택하면 바로 등록돼요. 이름, 관계, 호칭은 등록한 뒤 수정할 수 있어요.")
+                                            MutedText(stringResource(R.string.voices_select_to_register_hint))
                                         }
                                     }
                                 }
@@ -1229,12 +1235,12 @@ internal fun VoiceProfileManagementPanel(
                                 OutlinedTextField(
                                     value = profileName,
                                     onValueChange = { profileName = it.take(50) },
-                                    label = { Text("목소리 이름 (필수)") },
-                                    placeholder = { Text("예: 엄마 목소리") },
+                                    label = { Text(stringResource(R.string.voices_name_label)) },
+                                    placeholder = { Text(stringResource(R.string.voices_name_placeholder)) },
                                     singleLine = true,
                                     isError = nameRequiredError,
                                     supportingText = {
-                                        if (nameRequiredError) Text("꼭 입력해 주세요.")
+                                        if (nameRequiredError) Text(stringResource(R.string.voices_required_field))
                                     },
                                     shape = WakerInputShape,
                                     colors = wakerOutlinedTextFieldColors(),
@@ -1248,15 +1254,15 @@ internal fun VoiceProfileManagementPanel(
                                 OutlinedTextField(
                                     value = profileListenerTitle,
                                     onValueChange = { profileListenerTitle = it.take(30) },
-                                    label = { Text("이 목소리가 나를 부를 이름 (필수)") },
-                                    placeholder = { Text("예: 민지야, 여보, 우리 손주") },
+                                    label = { Text(stringResource(R.string.voices_listener_title_label)) },
+                                    placeholder = { Text(stringResource(R.string.voices_listener_title_placeholder)) },
                                     singleLine = true,
                                     isError = listenerRequiredError,
                                     supportingText = {
                                         if (listenerRequiredError) {
-                                            Text("꼭 입력해 주세요.")
+                                            Text(stringResource(R.string.voices_required_field))
                                         } else {
-                                            Text("랜덤 문구에서 이 이름으로 나를 불러요.")
+                                            Text(stringResource(R.string.voices_listener_title_hint))
                                         }
                                     },
                                     shape = WakerInputShape,
@@ -1272,18 +1278,18 @@ internal fun VoiceProfileManagementPanel(
                             VoiceRegistrationStep.Sharing -> {
                                 SharingOptionCard(
                                     enabled = true,
-                                    title = "나만 사용",
-                                    description = "이 목소리는 나만 사용할 수 있어요.",
+                                    title = stringResource(R.string.voices_sharing_private_title),
+                                    description = stringResource(R.string.voices_sharing_private_desc),
                                     onClick = { shareVoice = false },
                                     isChosen = !shareVoice,
                                 )
                                 SharingOptionCard(
                                     enabled = canShareVoice,
-                                    title = "가족·연인과 공유",
+                                    title = stringResource(R.string.voices_sharing_shared_title),
                                     description = if (canShareVoice) {
-                                        "등록 후 목록에서 공유 코드를 만들어 전달할 수 있어요."
+                                        stringResource(R.string.voices_sharing_shared_desc_enabled)
                                     } else {
-                                        "공유는 커플/가족 이용권에서 사용할 수 있어요."
+                                        stringResource(R.string.voices_sharing_shared_desc_disabled)
                                     },
                                     onClick = { if (canShareVoice) shareVoice = true },
                                     isChosen = shareVoice && canShareVoice,
@@ -1292,7 +1298,7 @@ internal fun VoiceProfileManagementPanel(
                         }
 
                         if (createPreparing) {
-                            VoiceProgressMessage("음성을 준비하고 있어요.")
+                            VoiceProgressMessage(stringResource(R.string.voices_preparing_audio))
                         }
                         if (localMessage != null) {
                             MutedText(localMessage.orEmpty())
@@ -1340,7 +1346,7 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.size(18.dp),
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("이전")
+                                Text(stringResource(R.string.voices_previous))
                             }
                         }
                         when (currentStep) {
@@ -1354,7 +1360,13 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text(if (createPreparing) "준비 중" else "다음")
+                                    Text(
+                                        if (createPreparing) {
+                                            stringResource(R.string.voices_preparing)
+                                        } else {
+                                            stringResource(R.string.voices_next)
+                                        },
+                                    )
                                 }
                             }
 
@@ -1372,7 +1384,7 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text("다음")
+                                    Text(stringResource(R.string.voices_next))
                                 }
                             }
 
@@ -1384,7 +1396,13 @@ internal fun VoiceProfileManagementPanel(
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {
-                                    Text(if (createPreparing) "준비 중" else "등록")
+                                    Text(
+                                        if (createPreparing) {
+                                            stringResource(R.string.voices_preparing)
+                                        } else {
+                                            stringResource(R.string.voices_register)
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -1412,8 +1430,8 @@ internal fun VoiceProfileManagementPanel(
         val renameRelationshipError = renameSubmitAttempted && resolvedRenameRelationship.isBlank()
         val renameListenerError = renameSubmitAttempted && resolvedRenameListener.isBlank()
         VoiceProfileEditDialog(
-            title = "정보 수정",
-            description = "알람에서 보일 이름과 이 목소리가 나를 부르는 방식을 정해요.",
+            title = stringResource(R.string.voices_edit_info_title),
+            description = stringResource(R.string.voices_edit_info_desc),
             name = renameName,
             relationship = renameRelationship,
             listenerTitle = renameListenerTitle,
@@ -1447,7 +1465,8 @@ internal fun VoiceProfileManagementPanel(
         SharedVoiceViewerInfoDialog(
             profileName = profile.name,
             sharedFromLabel = profile.ownerName?.takeIf { it.isNotBlank() }
-                ?.let { "${it}님에게 공유받은 목소리" } ?: "공유받은 목소리",
+                ?.let { stringResource(R.string.voices_shared_from_owner, it) }
+                ?: stringResource(R.string.voices_shared_from_unknown),
             initialRelationship = profile.relationshipLabel.orEmpty(),
             initialListenerTitle = profile.listenerTitle.orEmpty(),
             onDismiss = { sharedInfoTarget = null },

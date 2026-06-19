@@ -152,7 +152,7 @@ internal class RemoteAlarmPullSyncService(
             remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_VOICE
         }
-        val label = receivedRemoteAlarmLabel(remote.senderName, remote.senderEmail)
+        val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
 
         return AlarmEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),

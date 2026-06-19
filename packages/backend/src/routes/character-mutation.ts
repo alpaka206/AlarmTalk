@@ -118,6 +118,47 @@ characterMutation.post('/xp', async (c) => {
   const newLevel = Math.max(current.level, computeLevelFromXp(newXp));
   const newStage = computeStageFromLevel(newLevel);
 
+  const logId = crypto.randomUUID();
+
+  // 논스가 있으면 캐릭터 갱신 *전에* 로그를 조건부 삽입으로 예약한다. 같은 논스의
+  // 동시 요청 중 단 하나만 삽입에 성공하고(나머지는 rowsAffected=0 → 중복 처리),
+  // check-then-insert 레이스에 의한 XP/affection 중복 지급을 막는다. (XP UPDATE 는
+  // 절대값 SET 이라 순서를 바꿔도 안전하다.)
+  if (clientNonce) {
+    const reserved = await db.execute({
+      sql: `INSERT INTO character_xp_logs
+              (id, character_id, event, client_nonce, granted_xp, affection_delta, capped)
+            SELECT ?, ?, ?, ?, ?, ?, ?
+            WHERE NOT EXISTS (
+              SELECT 1 FROM character_xp_logs
+              WHERE character_id = ? AND client_nonce = ?
+            )`,
+      args: [
+        logId, current.id, event, clientNonce,
+        totalGrantedXp, grant.affection, grant.xp.capped ? 1 : 0,
+        current.id, clientNonce,
+      ],
+    });
+    if ((reserved.rowsAffected ?? 0) === 0) {
+      // 동시 중복: 다른 요청이 같은 논스로 이미 지급 중/완료 → XP 미적용, 현재 상태 반환.
+      const [dupStats, dupAchievements] = await Promise.all([
+        loadStats(db, current.id),
+        loadAchievements(db, current.id),
+      ]);
+      return c.json({
+        ...serializeCharacter(current, dupStats, dupAchievements),
+        grant: {
+          event,
+          granted_xp: 0,
+          affection: 0,
+          capped: false,
+          remaining_cap: 0,
+          duplicated: true,
+        },
+      });
+    }
+  }
+
   await db.execute({
     sql: `UPDATE characters
           SET xp = ?, affection = ?, level = ?, stage = ?,
@@ -133,27 +174,39 @@ characterMutation.post('/xp', async (c) => {
     ],
   });
 
-  const logId = crypto.randomUUID();
-  await db.execute({
-    sql: `INSERT INTO character_xp_logs
-          (id, character_id, event, client_nonce, granted_xp, affection_delta, capped)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      logId, current.id, event, clientNonce,
-      totalGrantedXp, grant.affection,
-      grant.xp.capped ? 1 : 0,
-    ],
-  });
+  if (!clientNonce) {
+    // 논스가 없으면 예약하지 않았으므로 여기서 로그를 기록한다(중복 방지 대상 아님).
+    await db.execute({
+      sql: `INSERT INTO character_xp_logs
+            (id, character_id, event, client_nonce, granted_xp, affection_delta, capped)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        logId, current.id, event, clientNonce,
+        totalGrantedXp, grant.affection,
+        grant.xp.capped ? 1 : 0,
+      ],
+    });
+  }
 
   const milestoneGrants: Array<{ event: XpEvent; xp: number }> = [];
   for (const mEvent of milestoneEvents) {
-    const existing = await db.execute({
-      sql: 'SELECT id FROM streak_achievements WHERE character_id = ? AND milestone = ?',
-      args: [current.id, newStreak],
-    });
-    if (existing.rows.length > 0) continue;
-
     const mGrant = computeGrant(mEvent, newDailyXp);
+
+    // 마일스톤 보상도 조건부 삽입으로 예약한다 — 동시 요청이 같은 마일스톤을
+    // 중복 지급하지 않도록 (achievement INSERT 에 성공한 요청만 보상 적용).
+    const achReserved = await db.execute({
+      sql: `INSERT INTO streak_achievements (id, character_id, milestone, bonus_xp)
+            SELECT ?, ?, ?, ?
+            WHERE NOT EXISTS (
+              SELECT 1 FROM streak_achievements WHERE character_id = ? AND milestone = ?
+            )`,
+      args: [
+        crypto.randomUUID(), current.id, newStreak, mGrant.xp.grantedXp,
+        current.id, newStreak,
+      ],
+    });
+    if ((achReserved.rowsAffected ?? 0) === 0) continue;
+
     newXp += mGrant.xp.grantedXp;
     newDailyXp += mGrant.xp.grantedXp;
     totalGrantedXp += mGrant.xp.grantedXp;
@@ -170,12 +223,6 @@ characterMutation.post('/xp', async (c) => {
                 updated_at = datetime('now')
             WHERE id = ?`,
       args: [newXp, updatedLevel, updatedStage, mGrant.affection, newDailyXp, current.id],
-    });
-
-    await db.execute({
-      sql: `INSERT INTO streak_achievements (id, character_id, milestone, bonus_xp)
-            VALUES (?, ?, ?, ?)`,
-      args: [crypto.randomUUID(), current.id, newStreak, mGrant.xp.grantedXp],
     });
 
     await db.execute({

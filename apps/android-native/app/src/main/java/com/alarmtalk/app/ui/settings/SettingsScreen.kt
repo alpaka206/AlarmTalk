@@ -22,8 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.network.AuthSession
@@ -63,11 +65,11 @@ internal fun SettingsScreen(
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.hs_settings_back),
                     )
                 }
                 Text(
-                    text = "설정",
+                    text = stringResource(R.string.hs_settings_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -75,20 +77,21 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "화면") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
                 SettingsRow(
-                    label = "테마",
-                    value = themeModeLabel(themeMode),
+                    label = stringResource(R.string.hs_settings_theme),
+                    value = themeModeLabel(context, themeMode),
                     onClick = { showThemeDialog = true },
                 )
             }
         }
 
         item {
-            SettingsCard(title = "랜덤 문구 정보") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_random_phrase)) {
                 SettingsRow(
-                    label = "날씨 지역",
+                    label = stringResource(R.string.hs_settings_weather_region),
                     value = weatherLocationSettingsLabel(
+                        context,
                         promptPreferences.weatherCountry,
                         promptPreferences.weatherCity,
                     ),
@@ -96,8 +99,9 @@ internal fun SettingsScreen(
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "운세 정보",
+                    label = stringResource(R.string.hs_settings_fortune_info),
                     value = fortuneInfoSettingsLabel(
+                        context,
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
                         promptPreferences.fortuneBirthTime,
@@ -108,15 +112,15 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "약관 및 정책") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_terms)) {
                 SettingsRow(
-                    label = "서비스 이용약관",
+                    label = stringResource(R.string.hs_settings_terms_of_service),
                     value = null,
                     onClick = { context.openExternalUrl("https://alarm-talk.com/ko/terms") },
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "개인정보 처리방침",
+                    label = stringResource(R.string.hs_settings_privacy_policy),
                     value = null,
                     onClick = { context.openExternalUrl("https://alarm-talk.com/ko/privacy") },
                 )
@@ -125,15 +129,15 @@ internal fun SettingsScreen(
 
         if (authSession != null) {
             item {
-                SettingsCard(title = "계정") {
+                SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
                     SettingsRow(
-                        label = "닉네임",
-                        value = authSession.user.name.ifBlank { "이름 없음" },
+                        label = stringResource(R.string.hs_settings_nickname),
+                        value = authSession.user.name.ifBlank { stringResource(R.string.hs_settings_no_name) },
                         onClick = onEditNickname,
                     )
                     HorizontalDivider()
                     SettingsRow(
-                        label = "로그아웃",
+                        label = stringResource(R.string.hs_settings_logout),
                         value = null,
                         onClick = onLogout,
                     )
@@ -143,7 +147,7 @@ internal fun SettingsScreen(
             item {
                 SettingsCard(title = null) {
                     SettingsRow(
-                        label = "회원 탈퇴",
+                        label = stringResource(R.string.hs_settings_delete_account),
                         value = null,
                         labelColor = MaterialTheme.colorScheme.error,
                         onClick = onDeleteAccount,
@@ -183,7 +187,7 @@ internal fun SettingsScreen(
             gender = promptPreferences.fortuneGender,
             birthDate = promptPreferences.fortuneBirthDate,
             birthTime = promptPreferences.fortuneBirthTime,
-            description = "운세가 들어간 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
+            description = stringResource(R.string.hs_fortune_info_description),
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
                 promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)

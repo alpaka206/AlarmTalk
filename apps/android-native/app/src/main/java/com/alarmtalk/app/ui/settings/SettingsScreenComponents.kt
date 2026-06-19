@@ -42,8 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.util.Locale
@@ -168,7 +171,7 @@ internal fun WeatherLocationPreferenceDialog(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                ModalDialogTitle("날씨 지역", onDismiss = onDismiss)
+                ModalDialogTitle(stringResource(R.string.hs_weather_dialog_title), onDismiss = onDismiss)
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
@@ -179,13 +182,13 @@ internal fun WeatherLocationPreferenceDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(
-                            text = "랜덤 문구의 기준 지역",
+                            text = stringResource(R.string.hs_weather_base_region_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
                         Text(
-                            text = "날씨가 들어간 문구를 만들 때 이 지역을 사용해요.",
+                            text = stringResource(R.string.hs_weather_base_region_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -195,12 +198,12 @@ internal fun WeatherLocationPreferenceDialog(
                     OutlinedTextField(
                         value = draftCountry,
                         onValueChange = { draftCountry = it.take(30) },
-                        label = { Text("나라") },
-                        placeholder = { Text("예: 대한민국") },
+                        label = { Text(stringResource(R.string.hs_weather_country_label)) },
+                        placeholder = { Text(stringResource(R.string.hs_weather_country_placeholder)) },
                         singleLine = true,
                         isError = countryError,
                         supportingText = {
-                            if (countryError) Text("꼭 입력해 주세요.")
+                            if (countryError) Text(stringResource(R.string.hs_weather_field_required))
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -209,12 +212,12 @@ internal fun WeatherLocationPreferenceDialog(
                     OutlinedTextField(
                         value = draftCity,
                         onValueChange = { draftCity = it.take(30) },
-                        label = { Text("도시") },
-                        placeholder = { Text("예: 서울") },
+                        label = { Text(stringResource(R.string.hs_weather_city_label)) },
+                        placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
                         singleLine = true,
                         isError = cityError,
                         supportingText = {
-                            if (cityError) Text("꼭 입력해 주세요.")
+                            if (cityError) Text(stringResource(R.string.hs_weather_field_required))
                         },
                         shape = WakerInputShape,
                         colors = wakerOutlinedTextFieldColors(),
@@ -231,7 +234,7 @@ internal fun WeatherLocationPreferenceDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
-                    Text("저장")
+                    Text(stringResource(R.string.hs_save))
                 }
             }
         }
@@ -280,11 +283,11 @@ internal fun FamilyAlarmQuietTimeDialog(
                     .heightIn(max = 620.dp),
             ) {
                 ModalDialogTitle(
-                    title = "알람 받지 않을 시간",
+                    title = stringResource(R.string.hs_quiet_time_dialog_title),
                     onDismiss = onDismiss,
                 )
                 Text(
-                    text = "선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.",
+                    text = stringResource(R.string.hs_quiet_time_dialog_desc),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
@@ -333,7 +336,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                         border = wakerCardBorder(),
                         colors = wakerOutlinedButtonColors(),
                     ) {
-                        Text("+ 시간 추가")
+                        Text(stringResource(R.string.hs_quiet_time_add))
                     }
                 }
                 Row(
@@ -348,7 +351,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                         modifier = Modifier.fillMaxWidth(),
                         shape = WakerButtonShape,
                     ) {
-                        Text("저장")
+                        Text(stringResource(R.string.hs_save))
                     }
                 }
             }
@@ -376,7 +379,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     ModalDialogTitle(
-                        title = if (target.isStart) "시작 시간" else "종료 시간",
+                        title = if (target.isStart) stringResource(R.string.hs_quiet_time_start) else stringResource(R.string.hs_quiet_time_end),
                         onDismiss = { timePickerTarget = null },
                     )
                     TimePicker(state = state)
@@ -394,7 +397,7 @@ internal fun FamilyAlarmQuietTimeDialog(
                                 }
                                 timePickerTarget = null
                             },
-                        ) { Text("확인") }
+                        ) { Text(stringResource(R.string.hs_quiet_time_confirm)) }
                     }
                 }
             }
@@ -414,6 +417,7 @@ internal fun QuietWindowCard(
     onPickEnd: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val context = LocalContext.current
     val chipColors = FilterChipDefaults.filterChipColors(
         selectedContainerColor = MaterialTheme.colorScheme.primary,
         selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
@@ -431,13 +435,13 @@ internal fun QuietWindowCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "시간대 ${index + 1}",
+                    text = stringResource(R.string.hs_quiet_window_index, index + 1),
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
                 if (removable) {
                     IconButton(onClick = onRemove) {
-                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
+                        Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.hs_quiet_window_delete))
                     }
                 }
             }
@@ -445,7 +449,7 @@ internal fun QuietWindowCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                dayLabels().forEachIndexed { dayIndex, label ->
+                dayLabels(context).forEachIndexed { dayIndex, label ->
                     FilterChip(
                         selected = dayIndex in draft.days,
                         onClick = { onToggleDay(dayIndex) },
@@ -566,31 +570,36 @@ internal fun splitTime(value: String): Pair<String, String> {
 internal fun twoDigit(value: String): String =
     value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
 
-internal fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
-    if (windows.isEmpty()) return "없음"
-    val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
+internal fun quietScheduleLabel(context: Context, windows: List<FamilyAlarmQuietWindow>): String {
+    if (windows.isEmpty()) return context.getString(R.string.misc2_quiet_none)
+    val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(context, it) }
     val hidden = windows.size - 2
-    return if (hidden > 0) "$visible 외 ${hidden}개" else visible
+    return if (hidden > 0) context.getString(R.string.misc2_quiet_more, visible, hidden) else visible
 }
 
-internal fun weatherLocationSettingsLabel(country: String, city: String): String {
+internal fun weatherLocationSettingsLabel(context: Context, country: String, city: String): String {
     val value = listOf(country, city)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" ")
-    return value.ifBlank { "미설정" }
+    return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
 }
 
-internal fun fortuneInfoSettingsLabel(gender: String, birthDate: String, birthTime: String): String {
+internal fun fortuneInfoSettingsLabel(
+    context: Context,
+    gender: String,
+    birthDate: String,
+    birthTime: String,
+): String {
     val value = listOf(gender, birthDate, birthTime)
         .map { it.trim() }
         .filter { it.isNotBlank() }
         .joinToString(" · ")
-    return value.ifBlank { "미설정" }
+    return value.ifBlank { context.getString(R.string.misc2_settings_not_set) }
 }
 
-internal fun quietWindowLabel(window: FamilyAlarmQuietWindow): String =
-    "${quietDaysLabel(window.days)} ${formatQuietTime(window.start)} ~ ${formatQuietTime(window.end)}"
+internal fun quietWindowLabel(context: Context, window: FamilyAlarmQuietWindow): String =
+    "${quietDaysLabel(context, window.days)} ${formatQuietTime(window.start)} ~ ${formatQuietTime(window.end)}"
 
 internal fun formatQuietTime(value: String): String {
     val parts = value.split(":")
@@ -599,18 +608,26 @@ internal fun formatQuietTime(value: String): String {
     return String.format(Locale.US, "%d:%02d", hour, minute)
 }
 
-internal fun quietDaysLabel(days: List<Int>): String {
+internal fun quietDaysLabel(context: Context, days: List<Int>): String {
     val sorted = days.distinct().sorted()
     return when (sorted) {
-        emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "평일"
-        listOf(0, 6) -> "주말"
-        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
-        else -> sorted.joinToString(",") { dayLabels()[it] }
+        emptyList<Int>() -> context.getString(R.string.misc2_quiet_none)
+        listOf(1, 2, 3, 4, 5) -> context.getString(R.string.misc2_days_weekday)
+        listOf(0, 6) -> context.getString(R.string.misc2_days_weekend)
+        listOf(0, 1, 2, 3, 4, 5, 6) -> context.getString(R.string.misc2_days_everyday)
+        else -> sorted.joinToString(",") { dayLabels(context)[it] }
     }
 }
 
-internal fun dayLabels(): List<String> = listOf("일", "월", "화", "수", "목", "금", "토")
+internal fun dayLabels(context: Context): List<String> = listOf(
+    context.getString(R.string.misc2_day_sun),
+    context.getString(R.string.misc2_day_mon),
+    context.getString(R.string.misc2_day_tue),
+    context.getString(R.string.misc2_day_wed),
+    context.getString(R.string.misc2_day_thu),
+    context.getString(R.string.misc2_day_fri),
+    context.getString(R.string.misc2_day_sat),
+)
 
 internal fun Context.openExternalUrl(url: String) {
     runCatching {

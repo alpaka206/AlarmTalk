@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -60,7 +61,7 @@ import androidx.compose.runtime.setValue
 internal fun MainViewModel.login(email: String, password: String) {
     val normalizedEmail = email.trim()
     if (normalizedEmail.isBlank() || password.isBlank()) {
-        message = "이메일과 비밀번호를 입력해 주세요."
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_email_password_required)
         return
     }
     viewModelScope.launch {
@@ -72,10 +73,10 @@ internal fun MainViewModel.login(email: String, password: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
-            message = "${response.user.email} 계정으로 로그인했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_login_success, response.user.email)
         }.onFailure { error ->
             Log.e(TAG, "Email login failed", error)
-            message = userFacingError(error, "로그인에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
         }
         authBusy = false
     }
@@ -84,7 +85,7 @@ internal fun MainViewModel.login(email: String, password: String) {
 internal fun MainViewModel.requestEmailVerification(email: String) {
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank()) {
-        message = "이메일을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_email_required)
         return
     }
     viewModelScope.launch {
@@ -96,11 +97,11 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
             registerEmailVerified = null
             message = response.debugCode
                 ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
-                ?.let { "인증 코드: $it" }
-                ?: "인증 코드를 보냈어요"
+                ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
+                ?: getApplication<android.app.Application>().getString(R.string.msg_verification_code_sent)
         }.onFailure { error ->
             Log.e(TAG, "Email verification request failed", error)
-            message = userFacingError(error, "인증 코드를 보내지 못했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
         }
         authBusy = false
     }
@@ -109,7 +110,7 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
 internal fun MainViewModel.confirmEmailVerification(email: String, code: String) {
     val normalizedEmail = email.trim().lowercase()
     if (normalizedEmail.isBlank() || code.trim().length != 6) {
-        message = "6자리 인증 코드를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_verification_code_six_digits_required)
         return
     }
     viewModelScope.launch {
@@ -123,10 +124,10 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
             )
         }.onSuccess {
             registerEmailVerified = normalizedEmail
-            message = "이메일 인증이 완료됐어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_email_verification_completed)
         }.onFailure { error ->
             Log.e(TAG, "Email verification confirm failed", error)
-            message = userFacingError(error, "인증 코드가 맞지 않아요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_mismatch))
         }
         authBusy = false
     }
@@ -142,11 +143,11 @@ internal fun MainViewModel.register(
     val trimmedName = name.trim()
     val trimmedCode = emailVerificationCode.trim()
     if (normalizedEmail.isBlank() || password.isBlank() || trimmedName.isBlank() || trimmedCode.isBlank()) {
-        message = "회원가입 정보를 모두 입력해 주세요."
+        message = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
         return
     }
     if (registerEmailVerified != normalizedEmail) {
-        message = "이메일 인증을 먼저 완료해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_register_verify_email_first)
         return
     }
     viewModelScope.launch {
@@ -167,10 +168,10 @@ internal fun MainViewModel.register(
             registerEmailVerified = null
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
-            message = "${response.user.email} 계정을 만들었어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             Log.e(TAG, "Email registration failed", error)
-            message = userFacingError(error, "회원가입에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
         }
         authBusy = false
     }
@@ -178,7 +179,7 @@ internal fun MainViewModel.register(
 
 internal fun MainViewModel.finishGoogleLogin(idToken: String) {
     if (idToken.isBlank()) {
-        message = "Google 로그인을 확인하지 못했어요. 다시 시도해 주세요."
+        message = getApplication<android.app.Application>().getString(R.string.msg_google_login_not_confirmed)
         return
     }
     viewModelScope.launch {
@@ -193,7 +194,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             message = null
         }.onFailure { error ->
             Log.e(TAG, "Google token exchange failed", error)
-            message = userFacingError(error, "Google 로그인을 완료하지 못했어요. 다시 시도해 주세요.")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_google_login_failed))
         }
         authBusy = false
     }
@@ -213,7 +214,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         authSessionStore.clear()
         clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
         authSession = null
-        message = "로그아웃했어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_logout_success)
         authBusy = false
     }
 }
@@ -223,7 +224,7 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
 internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> Unit = {}) {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -240,10 +241,10 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             authSession = null
             pendingDeletion = false
             dismissDeleteAccount()
-            message = "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요."
+            message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to request account deletion", error)
-            message = userFacingError(error, "회원 탈퇴 신청에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed))
         } finally {
             authBusy = false
         }
@@ -270,7 +271,7 @@ internal fun MainViewModel.checkAccountStatus() {
 internal fun MainViewModel.cancelAccountDeletion() {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -280,10 +281,10 @@ internal fun MainViewModel.cancelAccountDeletion() {
             api.cancelAccountDeletion(authorization)
         }.onSuccess {
             pendingDeletion = false
-            message = "회원 탈퇴를 취소했어요. 계정이 복구됐어요."
+            message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
             Log.e(TAG, "Failed to cancel account deletion", error)
-            message = userFacingError(error, "탈퇴 취소에 실패했어요. 다시 시도해 주세요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancel_failed))
         }
         authBusy = false
     }
@@ -292,12 +293,12 @@ internal fun MainViewModel.cancelAccountDeletion() {
 internal fun MainViewModel.updateNickname(name: String) {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val trimmed = name.trim()
     if (trimmed.isEmpty() || trimmed.length > 30) {
-        message = "닉네임은 1~30자여야 해요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_nickname_length_invalid)
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -309,10 +310,10 @@ internal fun MainViewModel.updateNickname(name: String) {
             val updated = session.copy(user = session.user.copy(name = trimmed))
             authSession = authSessionStore.save(updated)
             dismissEditNickname()
-            message = "닉네임을 변경했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_nickname_changed)
         }.onFailure { error ->
             Log.e(TAG, "Failed to update nickname", error)
-            message = userFacingError(error, "닉네임 변경에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
         }
         authBusy = false
     }
@@ -324,7 +325,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
 ) {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val normalizedWindows = quietWindows
@@ -332,7 +333,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
         .filter { it.days.isNotEmpty() }
         .take(8)
     if (normalizedWindows.any { !isValidTimeText(it.start) || !isValidTimeText(it.end) }) {
-        message = "시간은 HH:mm 형식으로 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_time_format_required)
         return
     }
     val firstWindow = normalizedWindows.firstOrNull()
@@ -363,10 +364,10 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             )
             authSession = authSessionStore.save(updated)
             refreshSocial()
-            message = "상대 알람 설정을 저장했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
             Log.e(TAG, "Failed to update family alarm settings", error)
-            message = userFacingError(error, "상대 알람 설정을 저장하지 못했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_save_failed))
         }
         authBusy = false
     }
@@ -400,7 +401,7 @@ private fun isValidTimeText(value: String): Boolean =
 internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit = {}) {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -423,13 +424,13 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
             authSession = null
             dismissDeleteAccount()
             message = if (revokeError == null) {
-                "회원 탈퇴가 완료되었어요"
+                getApplication<android.app.Application>().getString(R.string.msg_account_deleted)
             } else {
-                "회원 탈퇴는 완료되었지만 Google 연결 해제에 실패했어요"
+                getApplication<android.app.Application>().getString(R.string.msg_account_deleted_google_unlink_failed)
             }
         } catch (error: Throwable) {
             Log.e(TAG, "Failed to delete account", error)
-            message = userFacingError(error, "회원 탈퇴에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_delete_failed))
         } finally {
             authBusy = false
         }
@@ -492,7 +493,7 @@ internal fun MainViewModel.checkConsentStatus() {
 internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     val session = authSession
     if (session == null) {
-        message = "로그인 후 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
@@ -520,10 +521,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
             // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
             // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
             policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
-            message = "동의가 완료됐어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_consent_completed)
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)
-            message = userFacingError(error, "동의 기록에 실패했어요. 다시 시도해 주세요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
     }
@@ -532,7 +533,7 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {
-        message = "동기화하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_sync_login_required)
         return
     }
     viewModelScope.launch {
@@ -548,18 +549,18 @@ internal fun MainViewModel.syncNow() {
             }
         }.onFailure { error ->
             Log.e(TAG, "Backend sync failed", error)
-            message = userFacingError(error, "알람 정보를 불러오거나 변경사항을 저장하지 못했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_sync_failed))
         }
         syncBusy = false
     }
 }
 
-private fun alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
+private fun MainViewModel.alarmSyncFailureMessage(pushFailed: Int, pullFailed: Int): String = when {
     pushFailed > 0 && pullFailed > 0 ->
-        "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+        getApplication<android.app.Application>().getString(R.string.msg_sync_push_and_pull_partial_failed)
     pushFailed > 0 ->
-        "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+        getApplication<android.app.Application>().getString(R.string.msg_sync_push_partial_failed)
     pullFailed > 0 ->
-        "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
-    else -> "알람 동기화에 실패했어요."
+        getApplication<android.app.Application>().getString(R.string.msg_sync_pull_partial_failed)
+    else -> getApplication<android.app.Application>().getString(R.string.msg_sync_generic_failed)
 }

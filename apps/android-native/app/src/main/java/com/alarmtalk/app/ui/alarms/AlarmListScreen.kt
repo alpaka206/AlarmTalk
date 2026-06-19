@@ -21,7 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.R
 import com.alarmtalk.app.ui.guide.CoachMarkOverlay
 import com.alarmtalk.app.ui.guide.CoachMarkRegistry
 import com.alarmtalk.app.ui.guide.CoachMarkStep
@@ -49,29 +51,8 @@ import com.alarmtalk.app.network.VoucherItem
 private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
 private const val GUIDE_TARGET_HOME_QUICK = "home_quick_start"
 
-private val homeCoachSteps = listOf(
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_HOME_HERO,
-        title = "다음 알람을 한눈에",
-        body = "다음에 울릴 알람을 여기서 바로 확인하고, 눌러서 시각이나 목소리를 바꿀 수 있어요.",
-    ),
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_HOME_QUICK,
-        title = "여기서 바로 시작해요",
-        body = "‘목소리 만들기’로 깨워줄 목소리를 등록하고, ‘새 알람’으로 알람을 추가할 수 있어요.",
-    ),
-)
-
 // 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
 private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
-
-private val voiceRegisterCoachSteps = listOf(
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_VOICE_CREATE,
-        title = "내 목소리를 만들어요",
-        body = "여기서 1분 남짓 녹음하거나 음성 파일을 올리면, 그 목소리로 알람을 깨워줘요. 만든 목소리는 가족·연인과 공유할 수도 있어요.",
-    ),
-)
 
 @Composable
 internal fun AlarmListScreen(
@@ -162,6 +143,26 @@ internal fun AlarmListScreen(
     val coachMarkRegistry = remember { CoachMarkRegistry() }
     val listState = rememberLazyListState()
 
+    val homeCoachSteps = listOf(
+        CoachMarkStep(
+            targetKey = GUIDE_TARGET_HOME_HERO,
+            title = stringResource(R.string.misc2_coach_home_hero_title),
+            body = stringResource(R.string.misc2_coach_home_hero_body),
+        ),
+        CoachMarkStep(
+            targetKey = GUIDE_TARGET_HOME_QUICK,
+            title = stringResource(R.string.misc2_coach_home_quick_title),
+            body = stringResource(R.string.misc2_coach_home_quick_body),
+        ),
+    )
+    val voiceRegisterCoachSteps = listOf(
+        CoachMarkStep(
+            targetKey = GUIDE_TARGET_VOICE_CREATE,
+            title = stringResource(R.string.misc2_coach_voice_create_title),
+            body = stringResource(R.string.misc2_coach_voice_create_body),
+        ),
+    )
+
     // 홈/목소리 탭 첫 방문 시 한 번만 자동 노출. 온보딩 직후 화면·권한과 한꺼번에
     // 겹쳐 버벅이지 않도록, 화면이 자리잡을 시간을 살짝 둔 뒤 부드럽게 띄운다.
     var homeGuideVisible by remember { mutableStateOf(false) }
@@ -237,7 +238,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Voices -> {
                 item {
-                    ScreenHeader(title = "목소리")
+                    ScreenHeader(title = stringResource(R.string.common_tab_voices))
                 }
                 item {
                     Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_VOICE_CREATE)) {
@@ -294,7 +295,7 @@ internal fun AlarmListScreen(
 
             NativeTab.People -> {
                 item {
-                    ScreenHeader(title = "코드 등록")
+                    ScreenHeader(title = stringResource(R.string.common_tab_code_register))
                 }
                 item {
                     FamilyConnectionPanel(
@@ -312,7 +313,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Messages -> {
                 item {
-                    ScreenHeader(title = "메시지")
+                    ScreenHeader(title = stringResource(R.string.common_tab_messages))
                 }
                 if (authSession != null) item {
                     VoiceMessagePanel(
@@ -340,7 +341,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Growth -> {
                 item {
-                    ScreenHeader(title = "캐릭터")
+                    ScreenHeader(title = stringResource(R.string.common_tab_character))
                 }
                 item {
                     CharacterBillingPanel(
@@ -360,7 +361,7 @@ internal fun AlarmListScreen(
 
             NativeTab.Billing -> {
                 item {
-                    ScreenHeader(title = "이용권")
+                    ScreenHeader(title = stringResource(R.string.common_tab_billing))
                 }
                 item {
                     SubscriptionPanel(

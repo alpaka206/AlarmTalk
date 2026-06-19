@@ -73,6 +73,46 @@
 - **비밀번호**는 일방향 해시여야 하며 절대 복호화 가능한 형태로 저장하면 안 된다(현재 준수).
 - 인증코드 등 검증만 필요한 값도 일방향 해시 권장(현재 준수).
 
+### 결제 거래 기록 DB 암호화 의무 검토 (인앱결제 IAP 구조)
+
+질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, Google Play/Apple 인앱결제(IAP)의
+구독 거래 검증 기록만 저장하는 `store_transactions` 테이블(컬럼: `user_id`, `provider`,
+`provider_transaction_id`(구매토큰/주문ID), `product_id`, `plan_key`, `expires_at`,
+`raw_payload`(Google: `latestOrderId` + `subscriptionState`만))을 **법적으로 암호화해야 하는가?**
+
+**결론: 법적 암호화 의무 없음.** 프레임워크별 근거는 다음과 같다.
+
+- **PCI-DSS** — PAN/CVC를 전자적으로 저장·처리·전송하지 않고 카드 처리를 PCI-DSS 준수
+  제3자(Google/Apple)에 전적으로 위탁하는 구조는 최소 범위인 **SAQ A** 조건을 충족하며,
+  카드데이터 취급에 관한 PCI scope에서 사실상 제외된다. SAQ A 원문 요건: *"The merchant does
+  not electronically store, process, or transmit any account data on merchant systems or
+  premises, but relies entirely on a TPSP(s) to handle all these functions."* IAP는 카드
+  가맹점(merchant of record)이 Google/Apple이므로 일반 SAQ A 가맹점보다도 범위 밖일 수 있다.
+- **개인정보의 안전성 확보조치 기준 제7조** — 저장 시 의무 암호화 대상은 고유식별정보·비밀번호·
+  바이오정보·**신용카드번호·계좌번호**다. `provider_transaction_id`(구매토큰/주문ID)·`product_id`·
+  `plan_key`·만료시각·`raw_payload`(주문ID+구독상태)는 **제7조 열거 어디에도 해당하지 않아**
+  법정 암호화 대상이 아니다. 암호화를 트리거하는 카드번호·계좌번호를 **애초에 저장하지 않으므로**
+  의무가 발생하지 않는다.
+- **전자상거래법 시행령 제6조** — 거래기록은 '**보존**' 의무(계약·청약철회 5년, 대금결제·재화공급
+  5년, 소비자불만·분쟁처리 3년, 표시·광고 6개월)일 뿐 '**암호화**' 의무가 아니다. 조문에
+  '암호화/보안/안전성' 문구가 없다. `provider_transaction_id`·만료시각 보관은 이 보존 의무
+  충족용이다(위 3절과 동일 맥락).
+- **신용정보법 / 전자금융거래법** — 이 법들은 PG·금융회사 등 **돈 흐름에 직접 끼는 사업자**를
+  규율한다. 영수증 검증만 하고 정산만 수령하는 앱 사업자에는 (해당 거래기록에 관한 한) 그
+  암호화 의무가 직접 적용되지 않는다. ⚠️ 단, 이 결론을 뒷받침하는 **1차 조항(전자금융거래법
+  제2조 정의·신용정보법 적용범위)의 정확한 인용은 미확정** — 출시 전 법무 검토 시 확인 권장.
+
+#### 본 서비스 결정
+- 결제 거래 기록 DB는 **법적 의무로서의 암호화 대상이 아니다.** 카드·계좌 정보를 절대 저장하지
+  않는 현재 설계를 유지하는 것이 의무 회피의 핵심이다.
+- `raw_payload`는 **민감정보 제외 원칙**을 유지한다(현재 Google 경로는 `latestOrderId` +
+  `subscriptionState`만 저장). 향후 영수증 원본을 통째로 적재하지 않는다.
+- `user_id`가 다른 보유정보와 결합(결합용이성, 법 제2조)해 개인정보로 평가되더라도 그 자체로
+  암호화 의무는 없으나, **접근통제·접근권한 관리·접속기록 보관** 등 일반 안전성 확보조치는
+  암호화와 별개로 적용된다.
+- (모범관행) 인프라 레벨 저장암호화(at-rest)·TLS 전송암호화는 의무가 아니라도 비용 없이 적용
+  가능하면 켜둔다.
+
 ## 5. 위치정보 — GPS 제거 결정
 
 근거: 위치정보의 보호 및 이용 등에 관한 법률(위치정보법).
@@ -93,7 +133,30 @@
 - 가입 화면에 동의 체크박스(필수/선택)와 약관·처리방침 링크 노출.
 - 설정 화면에 서비스 이용약관 / 개인정보 처리방침 / 계정 삭제 안내 링크를 상시 노출.
 
+## 7. 음성 AI 수탁사 전환(ElevenLabs → Perso)과 AI 학습 고지
+
+근거: 개인정보보호법 제26조(업무위탁), 제28조의8(국외 이전), 제17조(제3자 제공)·표시광고법(허위·과장 고지 금지 취지).
+
+- 실서비스 음성 클론·TTS 제공자를 **Perso(운영사 이스트소프트)**로 전환한다. Perso의 공개 약관·방침은
+  *"회원이 제공한 입력 데이터(음성 포함)를 서비스 개선 및 AI 모델 학습에 이용할 수 있고, 회원은 이를 거부할 수
+  있으나 일부 기능이 제한될 수 있다"*고 명시한다. 상세 사실·근거·계약 체크리스트는 [`perso-processor-notes.ko.md`](./perso-processor-notes.ko.md).
+- **핵심 충돌**: 기존 처리방침/약관은 "음성을 범용 AI 모델 학습에 사용하지 않는다"고 단정 약속했는데,
+  수탁사 Perso는 학습에 이용할 수 있다. 이 약속을 그대로 두면 **허위 고지** 위험.
+
+### 본 서비스 결정 (2026-06-19)
+- **"학습 허용으로 고지"** 채택. 처리방침·약관·동의문구·스토어 고지를 다음과 같이 정정함(반영 완료):
+  - 베일런(처리자 본인)은 음성을 **자사가 직접 운영하는 별도 범용 AI 학습**에 사용하지 않는다(유지).
+  - 음성 수탁사 **Perso는 자사 정책에 따라 입력 데이터를 자사 서비스 개선·AI 모델 학습에 이용할 수 있음**을 고지.
+  - 이용자는 AI 학습 이용을 **거부할 수 있으나 거부 시 음성 클론·TTS 기능이 제한**될 수 있음을 고지.
+  - 국외 이전(미국 등)·하위 처리자(Google, Microsoft/Azure 등)를 처리방침에 추가.
+- **정책 버전 상향 필요**: 본 개정은 수탁사·국외이전·학습 이용 등 중요한 변경이므로
+  `user.ts`의 `CURRENT_POLICY_VERSION`을 올려 **기존 가입자 재동의**를 유도해야 한다(동의 게이트 연동).
+- **출시 전 확정**: Perso와의 실제 적용 약관(소비자 SaaS vs B2B/DPA) 확인 후 본 결정 재검토.
+  B2B 계약에서 학습 옵트아웃이 가능하면 "학습 미사용"으로 되돌리는 것을 검토(신뢰 중심 제품에 유리).
+
 ## 출처
+- Perso 개인정보처리방침(영문): https://info.perso.ai/policy-perso-saas/policy/privacy-policy-en/docs/251106.html
+- Perso 이용약관(영문): https://info.perso.ai/policy_perso_saas/policy/terms-of-service_en/docs/250626_en.html
 - 개인정보 보호법 (국가법령정보센터): https://www.law.go.kr/LSW/lsInfoP.do?lsId=011357
 - 개인정보의 수집·이용 (찾기쉬운 생활법령): https://www.easylaw.go.kr/CSP/CnpClsMainBtr.laf?csmSeq=1257&ccfNo=2&cciNo=1&cnpClsNo=1
 - 개인정보의 안전성 확보조치 기준 (행정규칙): https://www.law.go.kr/admRulLsInfoP.do?admRulSeq=2100000229672
@@ -101,3 +164,4 @@
 - 가명정보의 처리 (찾기쉬운 생활법령): https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=1257&ccfNo=2&cciNo=4&cnpClsNo=1
 - 위치정보의 보호 및 이용 등에 관한 법률 (국가법령정보센터): https://law.go.kr/LSW/lsInfoP.do?lsiSeq=125348
 - 전자상거래 등에서의 소비자보호에 관한 법률 시행령: https://law.go.kr/법령/전자상거래등에서의소비자보호에관한법률시행령
+- PCI DSS v4.0 SAQ A (PCI Security Standards Council): https://listings.pcisecuritystandards.org/documents/PCI-DSS-v4-0-SAQ-A.pdf

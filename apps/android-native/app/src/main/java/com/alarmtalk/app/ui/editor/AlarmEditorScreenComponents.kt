@@ -39,10 +39,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -95,7 +98,7 @@ internal fun SharedVoiceInfoRequiredDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
-                    title = "목소리 설정",
+                    title = stringResource(R.string.editor_voice_settings_title),
                     onDismiss = onDismiss,
                 )
                 Surface(
@@ -124,12 +127,12 @@ internal fun SharedVoiceInfoRequiredDialog(
                 OutlinedTextField(
                     value = draftRelationship,
                     onValueChange = { draftRelationship = it.take(30) },
-                    label = { Text("나와의 관계") },
-                    placeholder = { Text("예: 손녀, 엄마, 연인") },
+                    label = { Text(stringResource(R.string.editor_relationship_label)) },
+                    placeholder = { Text(stringResource(R.string.editor_relationship_placeholder)) },
                     singleLine = true,
                     isError = relationshipError,
                     supportingText = {
-                        if (relationshipError) Text("꼭 입력해 주세요.")
+                        if (relationshipError) Text(stringResource(R.string.editor_field_required))
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -138,12 +141,12 @@ internal fun SharedVoiceInfoRequiredDialog(
                 OutlinedTextField(
                     value = draftListenerTitle,
                     onValueChange = { draftListenerTitle = it.take(30) },
-                    label = { Text("이 목소리가 나를 부를 이름") },
-                    placeholder = { Text("예: 지호야, 여보") },
+                    label = { Text(stringResource(R.string.editor_listener_title_label)) },
+                    placeholder = { Text(stringResource(R.string.editor_listener_title_placeholder)) },
                     singleLine = true,
                     isError = listenerTitleError,
                     supportingText = {
-                        if (listenerTitleError) Text("꼭 입력해 주세요.")
+                        if (listenerTitleError) Text(stringResource(R.string.editor_field_required))
                     },
                     shape = WakerInputShape,
                     colors = wakerOutlinedTextFieldColors(),
@@ -163,11 +166,11 @@ internal fun SharedVoiceInfoRequiredDialog(
                             strokeWidth = 2.dp,
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("재생 중")
+                        Text(stringResource(R.string.editor_playing))
                     } else {
                         Icon(Icons.Outlined.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("미리듣기")
+                        Text(stringResource(R.string.editor_preview))
                     }
                 }
                 Button(
@@ -181,7 +184,7 @@ internal fun SharedVoiceInfoRequiredDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
-                    Text(if (saving) "저장 중" else "저장하고 선택")
+                    Text(if (saving) stringResource(R.string.editor_saving) else stringResource(R.string.editor_save_and_select))
                 }
             }
         }
@@ -225,15 +228,15 @@ internal fun AlarmEditorTopBar(
         IconButton(onClick = onCancel) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = "닫기",
+                contentDescription = stringResource(R.string.editor_close),
             )
         }
         Spacer(Modifier.width(8.dp))
         Text(
             text = when {
-                familyAlarmMode -> "상대 알람 맞추기"
-                isEditing -> "알람 수정"
-                else -> "새 알람"
+                familyAlarmMode -> stringResource(R.string.editor_title_family_alarm)
+                isEditing -> stringResource(R.string.editor_title_edit_alarm)
+                else -> stringResource(R.string.editor_title_new_alarm)
             },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
@@ -244,7 +247,7 @@ internal fun AlarmEditorTopBar(
             IconButton(onClick = onShowGuide) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
-                    contentDescription = "사용 가이드",
+                    contentDescription = stringResource(R.string.editor_usage_guide),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -272,6 +275,7 @@ internal fun FamilyAlarmTargetCard(
     holidayOff: Boolean,
     onSelectRecipient: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     var recipientDialogOpen by remember { mutableStateOf(false) }
     val selectedRecipient = recipients.firstOrNull { it.userId == selectedRecipientId }
         ?: recipients.firstOrNull()
@@ -285,7 +289,7 @@ internal fun FamilyAlarmTargetCard(
             onDismissRequest = { recipientDialogOpen = false },
             title = {
                 ModalDialogTitle(
-                    title = "알람 받을 사람 선택",
+                    title = stringResource(R.string.editor_select_recipient_title),
                     onDismiss = { recipientDialogOpen = false },
                 )
             },
@@ -321,15 +325,15 @@ internal fun FamilyAlarmTargetCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("알람 받을 사람", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.editor_recipient_header), fontWeight = FontWeight.SemiBold)
                 if (recipients.size > 1) {
                     TextButton(onClick = { recipientDialogOpen = true }) {
-                        Text("변경")
+                        Text(stringResource(R.string.editor_change))
                     }
                 }
             }
             if (recipients.isEmpty()) {
-                MutedText("상대가 내 알람 맞추기를 허용하면 여기에 표시돼요.")
+                MutedText(stringResource(R.string.editor_recipient_empty))
             } else {
                 RecipientSummaryRow(
                     recipient = requireNotNull(selectedRecipient),
@@ -340,11 +344,11 @@ internal fun FamilyAlarmTargetCard(
                 FamilyAlarmTargetStatus(
                     leadTooSoon = leadTooSoon,
                     quietUnavailable = quietUnavailable,
-                    quietLabel = familyAlarmQuietScheduleLabel(selectedRecipient),
+                    quietLabel = familyAlarmQuietScheduleLabel(context, selectedRecipient),
                 )
 
                 if (recipients.size == 1) {
-                    MutedText("이 알람은 선택된 한 사람에게만 설정돼요.")
+                    MutedText(stringResource(R.string.editor_recipient_single_only))
                 }
             }
         }
@@ -357,6 +361,7 @@ internal fun RecipientSummaryRow(
     clickable: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     val content: @Composable () -> Unit = {
         Row(
             modifier = Modifier
@@ -370,7 +375,7 @@ internal fun RecipientSummaryRow(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 Text(
-                    text = familyMemberLabel(recipient),
+                    text = familyMemberLabel(context, recipient),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -416,6 +421,7 @@ internal fun RecipientPickerRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -435,12 +441,12 @@ internal fun RecipientPickerRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(familyMemberLabel(recipient), fontWeight = FontWeight.SemiBold)
-                MutedText("받지 않는 시간: ${familyAlarmQuietScheduleLabel(recipient)}")
+                Text(familyMemberLabel(context, recipient), fontWeight = FontWeight.SemiBold)
+                MutedText(stringResource(R.string.editor_quiet_hours_label, familyAlarmQuietScheduleLabel(context, recipient)))
             }
             if (selected) {
                 Text(
-                    text = "선택",
+                    text = stringResource(R.string.editor_selected),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.SemiBold,
@@ -458,9 +464,9 @@ internal fun FamilyAlarmTargetStatus(
 ) {
     val blocked = leadTooSoon || quietUnavailable
     val statusText = when {
-        leadTooSoon -> "지금부터 30분 뒤 알람부터 설정할 수 있어요."
-        quietUnavailable -> "상대가 이 시간에는 알람을 받지 않도록 해뒀어요."
-        else -> "설정 가능"
+        leadTooSoon -> stringResource(R.string.editor_status_lead_too_soon)
+        quietUnavailable -> stringResource(R.string.editor_status_quiet_unavailable)
+        else -> stringResource(R.string.editor_status_available)
     }
     Surface(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
@@ -482,7 +488,7 @@ internal fun FamilyAlarmTargetStatus(
             fontWeight = FontWeight.SemiBold,
         )
     }
-    MutedText("받지 않는 시간: $quietLabel")
+    MutedText(stringResource(R.string.editor_quiet_hours_label, quietLabel))
 }
 
 internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
@@ -490,7 +496,7 @@ internal const val FAMILY_ALARM_MIN_LEAD_MILLIS = 30 * 60 * 1_000L
 internal fun ringtoneTitle(context: Context, uri: Uri): String =
     runCatching {
         RingtoneManager.getRingtone(context, uri)?.getTitle(context)
-    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "선택한 알람"
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: context.getString(R.string.editor_selected_ringtone)
 
 internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
     val uriText = uri.toString()
@@ -500,15 +506,15 @@ internal fun isDefaultAlarmSoundUri(uri: Uri): Boolean {
     ).any { defaultUri -> defaultUri != null && uriText == defaultUri.toString() }
 }
 
-internal fun familyMemberLabel(member: FamilyGroupMember): String =
+internal fun familyMemberLabel(context: Context, member: FamilyGroupMember): String =
     member.name?.takeIf { it.isNotBlank() }
         ?: member.email?.takeIf { it.isNotBlank() }
-        ?: "멤버"
+        ?: context.getString(R.string.editor2_family_member_fallback)
 
-internal fun familyAlarmQuietScheduleLabel(member: FamilyGroupMember): String {
+internal fun familyAlarmQuietScheduleLabel(context: Context, member: FamilyGroupMember): String {
     val windows = familyAlarmQuietWindows(member)
     return windows.joinToString(" · ") { window ->
-        "${quietDaysLabelForFamily(window.days)} ${window.start}-${window.end}"
+        "${quietDaysLabelForFamily(context, window.days)} ${window.start}-${window.end}"
     }
 }
 
@@ -612,13 +618,24 @@ internal fun safeQuietDays(days: List<Int>?): List<Int> =
 internal fun safeQuietTime(value: String?, fallback: String): String =
     value?.takeIf { it.isNotBlank() } ?: fallback
 
-internal fun quietDaysLabelForFamily(days: List<Int>): String {
+internal fun quietDaysLabelForFamily(context: Context, days: List<Int>): String {
     val sorted = days.distinct().sorted()
     return when (sorted) {
-        emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "평일"
-        listOf(0, 6) -> "주말"
-        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
-        else -> sorted.joinToString(",") { listOf("일", "월", "화", "수", "목", "금", "토")[it] }
+        emptyList<Int>() -> context.getString(R.string.editor2_quiet_days_none)
+        listOf(1, 2, 3, 4, 5) -> context.getString(R.string.editor2_quiet_days_weekdays)
+        listOf(0, 6) -> context.getString(R.string.editor2_quiet_days_weekend)
+        listOf(0, 1, 2, 3, 4, 5, 6) -> context.getString(R.string.editor2_quiet_days_everyday)
+        else -> {
+            val weekdayResIds = listOf(
+                R.string.editor2_weekday_sun,
+                R.string.editor2_weekday_mon,
+                R.string.editor2_weekday_tue,
+                R.string.editor2_weekday_wed,
+                R.string.editor2_weekday_thu,
+                R.string.editor2_weekday_fri,
+                R.string.editor2_weekday_sat,
+            )
+            sorted.joinToString(",") { context.getString(weekdayResIds[it]) }
+        }
     }
 }

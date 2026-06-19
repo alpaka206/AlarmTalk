@@ -623,6 +623,9 @@ tts.post('/generate', async (c) => {
 
   let dailyLimitExceeded = false;
   let freePlanRestricted = false;
+  // 일일 한도 값. null 이면 한도 미적용(레거시/유저행 없음 경로). 합성 직전
+  // 원자적 예약에서 사용한다.
+  let dailyLimit: number | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -639,6 +642,9 @@ tts.post('/generate', async (c) => {
       freePlanRestricted = true;
     }
 
+    const limits: Record<string, number> = { free: 3, plus: 9999, family: 9999 };
+    dailyLimit = limits[plan] ?? 3;
+
     if (u.daily_tts_reset_at !== today) {
       await db.execute({
         sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE id = ? OR google_id = ?`,
@@ -646,8 +652,7 @@ tts.post('/generate', async (c) => {
       });
     } else {
       const count = Number(u.daily_tts_count);
-      const limits: Record<string, number> = { free: 3, plus: 9999, family: 9999 };
-      if (count >= (limits[plan] ?? 3)) {
+      if (count >= dailyLimit) {
         dailyLimitExceeded = true;
       }
     }
@@ -881,14 +886,27 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    if (dailyLimitExceeded) {
-      return c.json(
-        {
-          error: 'Daily TTS generation limit exceeded.',
-          error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
-        },
-        429,
-      );
+    // 원자적 슬롯 예약: 합성(과금) 직전에 daily_tts_count 를 조건부 증가시켜
+    // 동시 요청이 같은 카운트를 읽고 모두 통과하던 read-then-increment 레이스를
+    // 닫는다(유료 ElevenLabs 호출 무제한 소비 방지). 캐시 히트는 위에서 이미
+    // 반환되므로, 여기 도달했다는 건 실제 합성 경로다.
+    let reservedSlot = false;
+    if (dailyLimit !== null && Number.isFinite(dailyLimit)) {
+      const reservation = await db.execute({
+        sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1
+              WHERE (id = ? OR google_id = ?) AND daily_tts_count < ?`,
+        args: [...ownerIds, dailyLimit],
+      });
+      reservedSlot = (reservation.rowsAffected ?? 0) > 0;
+      if (!reservedSlot) {
+        return c.json(
+          {
+            error: 'Daily TTS generation limit exceeded.',
+            error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
+          },
+          429,
+        );
+      }
     }
 
     let lastError: unknown = noVoiceProviderError();
@@ -958,10 +976,7 @@ tts.post('/generate', async (c) => {
           });
         }
 
-        await db.execute({
-          sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1 WHERE id = ? OR google_id = ?`,
-          args: ownerIds,
-        });
+        // 일일 카운트는 합성 직전 reservedSlot 예약에서 이미 원자적으로 증가됨.
 
         await db.execute({
           sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
@@ -994,6 +1009,16 @@ tts.post('/generate', async (c) => {
         if (err instanceof UnsupportedVoiceProviderError) continue;
         if (attempt !== attempts[attempts.length - 1]) continue;
       }
+    }
+
+    // 모든 합성 시도가 실패하면 예약한 슬롯을 되돌린다(실패한 호출이 한도를
+    // 깎지 않도록 — 슬롯 누수 방지).
+    if (reservedSlot) {
+      await db.execute({
+        sql: `UPDATE users SET daily_tts_count = MAX(0, daily_tts_count - 1)
+              WHERE id = ? OR google_id = ?`,
+        args: ownerIds,
+      });
     }
 
     throw lastError;
@@ -1217,6 +1242,21 @@ tts.delete('/messages/:id', async (c) => {
     sql: 'DELETE FROM message_library WHERE message_id = ? AND user_id IN (?, ?)',
     args: [id, ...ownerIds],
   });
+
+  // 메시지를 지우기 전에 백킹 R2 오브젝트를 삭제 큐에 적재한다. 큐에 넣지 않고
+  // generated_audio_assets 행만 지우면 object_key 가 어디에도 기록되지 않아
+  // R2 의 mp3 가 영구히 고아로 남는다(가장 흔한 사용자 동작인 메시지 삭제마다 누수).
+  const assetKeysRes = await db.execute({
+    sql: `SELECT audio_object_key FROM generated_audio_assets
+          WHERE message_id = ? AND user_id IN (?, ?) AND audio_object_key IS NOT NULL`,
+    args: [id, ...ownerIds],
+  });
+  if (assetKeysRes.rows.length > 0) {
+    const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+    for (const row of assetKeysRes.rows) {
+      await enqueueExternalDeletion(db, 'r2_object', row.audio_object_key as string);
+    }
+  }
 
   await db.execute({
     sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
