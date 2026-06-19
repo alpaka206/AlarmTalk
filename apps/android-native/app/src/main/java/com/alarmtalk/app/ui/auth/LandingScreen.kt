@@ -72,10 +72,10 @@ private fun landingPalette(): LandingPalette {
             surface = Color(0xFF14161E),
             surfaceRaised = Color(0xFF191C25),
             line = Color(0xFF2D313D),
-            text = Color(0xFFF7F7FA),
-            muted = Color(0xFFA8AEBA),
-            accent = Color(0xFFA8D4FF),
-            accentText = Color(0xFF08243C),
+            text = Color(0xFFF7F4EE),
+            muted = Color(0xFFB0A89C),
+            accent = Color(0xFFEC8C6C),
+            accentText = Color(0xFFFFFFFF),
         )
     } else {
         LandingPalette(
