@@ -874,6 +874,8 @@
     <string name="editor2_cat_study">勉強</string>
     <string name="editor2_cat_cheer">応援</string>
     <string name="editor2_cat_love">愛</string>
+    <string name="editor2_cat_medication">服薬</string>
+    <string name="editor2_cat_exercise">運動</string>
     <string name="editor2_ctx_preset">基本メッセージ</string>
     <string name="editor2_ctx_wake_weather">起床 + 天気</string>
     <string name="editor2_ctx_wake_fortune">起床 + 運勢</string>

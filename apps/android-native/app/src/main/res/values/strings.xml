@@ -874,6 +874,8 @@
     <string name="editor2_cat_study">공부</string>
     <string name="editor2_cat_cheer">응원</string>
     <string name="editor2_cat_love">사랑</string>
+    <string name="editor2_cat_medication">약</string>
+    <string name="editor2_cat_exercise">운동</string>
     <string name="editor2_ctx_preset">기본 문구</string>
     <string name="editor2_ctx_wake_weather">기상 + 날씨</string>
     <string name="editor2_ctx_wake_fortune">기상 + 운세</string>

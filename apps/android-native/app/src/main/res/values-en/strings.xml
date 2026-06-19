@@ -874,6 +874,8 @@
     <string name="editor2_cat_study">Study</string>
     <string name="editor2_cat_cheer">Cheer up</string>
     <string name="editor2_cat_love">Love</string>
+    <string name="editor2_cat_medication">Medication</string>
+    <string name="editor2_cat_exercise">Exercise</string>
     <string name="editor2_ctx_preset">Default message</string>
     <string name="editor2_ctx_wake_weather">Wake up + Weather</string>
     <string name="editor2_ctx_wake_fortune">Wake up + Fortune</string>

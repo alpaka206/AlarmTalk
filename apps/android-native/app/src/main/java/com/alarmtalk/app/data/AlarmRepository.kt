@@ -707,7 +707,7 @@ class AlarmRepository(
         when (context) {
             "meal" -> "lunch"
             "sleep" -> "night"
-            "exercise" -> "health"
+            "exercise" -> "exercise"
             "love" -> "love"
             else -> "morning"
         }

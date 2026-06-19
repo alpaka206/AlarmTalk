@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { migrations, type Migration } from '../src/lib/migrations';
+import { PRESETS } from '../src/data/presets';
 
 describe('migrations', () => {
   it('마이그레이션 ID가 순차적이고 고유하다', () => {
@@ -215,9 +216,18 @@ describe('migrations', () => {
     expect(all).toContain('idx_tts_presets_order');
     expect(
       m!.statements.filter((s) => s.includes('INSERT OR IGNORE INTO tts_presets')).length,
-    ).toBe(8);
+    ).toBe(PRESETS.length);
     expect(all).toContain("'morning'");
     expect(all).toContain("'love'");
+  });
+
+  it('migration #49 upserts refreshed/new presets (약·운동 포함)', () => {
+    const m = migrations.find((x) => x.id === 49);
+    expect(m).toBeDefined();
+    const all = m!.statements.join('\n');
+    expect(all).toContain('ON CONFLICT(category) DO UPDATE');
+    expect(all).toContain("'medication'");
+    expect(all).toContain("'exercise'");
   });
 
   it('migration #35 adds Apple login identity storage', () => {
