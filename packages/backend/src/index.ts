@@ -56,7 +56,10 @@ const ALLOWED_ORIGINS = [
 app.use(
   '*',
   cors({
-    origin: (origin) => (ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]),
+    // 허용 목록에 없는 Origin 에는 ACAO 헤더를 설정하지 않아 브라우저가 차단하게 한다.
+    // (기본 origin 반사는 정책을 모호하게 만들고 localhost 출처를 프로덕션에 노출한다.
+    //  토큰 인증은 Authorization 헤더 기반이라 네이티브 앱 요청에는 CORS 영향 없음.)
+    origin: (origin) => (ALLOWED_ORIGINS.includes(origin) ? origin : undefined),
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400,
