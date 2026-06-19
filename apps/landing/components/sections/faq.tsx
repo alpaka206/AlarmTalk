@@ -2,7 +2,7 @@ import { useTranslations } from "next-intl";
 
 export function Faq() {
   const t = useTranslations("faq");
-  const items = [0, 1, 2, 3, 4] as const;
+  const items = (t.raw("items") as unknown[]).map((_, i) => i);
 
   return (
     <section id="faq" className="relative">

@@ -15,7 +15,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
         return (
           <code
             key={key}
-            className="rounded bg-white/[0.08] px-1.5 py-0.5 text-[0.92em] text-accent"
+            className="rounded bg-accent-soft px-1.5 py-0.5 text-[0.92em] text-accent"
           >
             {part.slice(1, -1)}
           </code>

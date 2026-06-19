@@ -1,46 +1,49 @@
 @import "tailwindcss";
 @import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;600;700&display=swap");
 
 @theme {
-  /* gray ramp — slightly cool, warm enough to feel handcrafted */
-  --color-gray-50: #f8f8fb;
-  --color-gray-100: #ebecf0;
-  --color-gray-200: #c8cad2;
-  --color-gray-300: #9aa0ab;
-  --color-gray-400: #6f7682;
-  --color-gray-500: #4a505b;
-  --color-gray-600: #353944;
-  --color-gray-700: #25282f;
-  --color-gray-800: #181a20;
-  --color-gray-900: #101116;
-  --color-gray-950: #090a0f;
+  /* warm gray ramp — paper-like, slightly toasted */
+  --color-gray-50: #faf9f5;
+  --color-gray-100: #f0eee6;
+  --color-gray-200: #e6e2d9;
+  --color-gray-300: #d3cdc0;
+  --color-gray-400: #b0a99c;
+  --color-gray-500: #8a8377;
+  --color-gray-600: #6b675f;
+  --color-gray-700: #4a463f;
+  --color-gray-800: #2e2b26;
+  --color-gray-900: #1f1e1c;
+  --color-gray-950: #14130f;
 
-  /* surface tokens (synced with android LandingScreen.kt) */
-  --color-bg: #090a0f;
-  --color-surface: #14161e;
-  --color-raised: #191c25;
-  --color-line: #2d313d;
-  --color-line-soft: #20232c;
+  /* surface tokens — Claude "paper" */
+  --color-bg: #faf9f5;
+  --color-surface: #ffffff;
+  --color-raised: #f4f1ea;
+  --color-line: #e6e2d9;
+  --color-line-soft: #efece4;
 
-  /* text */
-  --color-text: #f7f7fa;
-  --color-text-muted: #a8aeba;
-  --color-text-dim: #6f7682;
-  --color-text-faint: #4a505b;
+  /* text — warm near-black */
+  --color-text: #1f1e1c;
+  --color-text-muted: #6b675f;
+  --color-text-dim: #8a8377;
+  --color-text-faint: #aaa395;
 
-  /* accent */
-  --color-accent: #a8d4ff;
-  --color-accent-strong: #cce5ff;
-  --color-accent-soft: rgba(168, 212, 255, 0.12);
-  --color-accent-fg: #08243c;
-  --color-mint: #c7e5d6;
-  --color-rose: #ffb3a6;
-  --color-indigo-deep: #1a1248;
+  /* accent — Claude coral / clay */
+  --color-accent: #d97757;
+  --color-accent-strong: #c25d3a;
+  --color-accent-soft: rgba(217, 119, 87, 0.1);
+  --color-accent-fg: #2a1206;
+  --color-mint: #5e9b7d;
+  --color-rose: #db7e63;
+  --color-indigo-deep: #f0e4da;
 
   /* typography */
   --font-sans:
     "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
     "Segoe UI", system-ui, sans-serif;
+  --font-serif:
+    "Noto Serif KR", "Apple SD Gothic Neo", Georgia, "Times New Roman", serif;
 
   /* radii */
   --radius-sm: 8px;
@@ -50,15 +53,15 @@
   --radius-2xl: 24px;
   --radius-3xl: 28px;
 
-  /* shadows */
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 18px 50px rgba(0, 0, 0, 0.35);
-  --shadow-elevated: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 34px 90px rgba(0, 0, 0, 0.5);
-  --shadow-hairline: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  /* shadows — soft, warm, low-contrast (light theme) */
+  --shadow-card: 0 1px 2px rgba(60, 50, 35, 0.04), 0 18px 44px rgba(90, 75, 55, 0.08);
+  --shadow-elevated: 0 1px 3px rgba(60, 50, 35, 0.05), 0 34px 80px rgba(90, 75, 55, 0.14);
+  --shadow-hairline: inset 0 0 0 1px rgba(40, 35, 25, 0.04);
 }
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
     -webkit-text-size-adjust: 100%;
   }
 
@@ -74,9 +77,24 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* serif display for headings — Claude editorial feel */
+  h1,
+  h2 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
   ::selection {
-    background: var(--color-accent);
-    color: var(--color-accent-fg);
+    background: var(--color-accent-soft);
+    color: var(--color-accent-strong);
+  }
+
+  /* visible keyboard focus everywhere (WCAG 2.4.7) */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 
   /* button & link defaults — never break across lines */
@@ -87,19 +105,26 @@
 }
 
 @layer utilities {
-  /* radial light + dotted-grid background — Linear's signature wash */
+  /* serif display utility for headline elements that aren't h1/h2 */
+  .font-display {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  /* warm radial paper wash */
   .bg-aurora {
     background-color: var(--color-bg);
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(168, 212, 255, 0.10), transparent 60%),
-      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(26, 18, 72, 0.45), transparent 50%),
-      radial-gradient(ellipse 50% 40% at 0% 30%, rgba(26, 18, 72, 0.30), transparent 50%);
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(217, 119, 87, 0.1), transparent 60%),
+      radial-gradient(ellipse 60% 45% at 100% 0%, rgba(217, 119, 87, 0.06), transparent 55%),
+      radial-gradient(ellipse 55% 40% at 0% 25%, rgba(94, 155, 125, 0.05), transparent 55%);
   }
 
   .bg-grid {
     background-image:
-      linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+      linear-gradient(rgba(40, 35, 25, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(40, 35, 25, 0.025) 1px, transparent 1px);
     background-size: 56px 56px;
     mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 30%, transparent 70%);
   }
@@ -108,17 +133,18 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    opacity: 0.035;
+    opacity: 0.025;
     z-index: 1;
     background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
-  /* hairline cards (Linear influence) */
+  /* hairline cards */
   .card {
     position: relative;
     background: var(--color-surface);
     border: 1px solid var(--color-line);
     border-radius: var(--radius-2xl);
+    box-shadow: var(--shadow-card);
   }
 
   .card-raised {
@@ -143,10 +169,11 @@
 
   .btn-primary {
     background: var(--color-accent);
-    color: var(--color-accent-fg);
+    color: #fff;
     height: 52px;
     padding: 0 1.75rem;
     font-size: 15px;
+    box-shadow: 0 1px 2px rgba(120, 60, 35, 0.18), 0 8px 24px rgba(217, 119, 87, 0.22);
   }
   .btn-primary:hover {
     background: var(--color-accent-strong);
@@ -187,7 +214,7 @@
     display: block;
     width: 18px;
     height: 1px;
-    background: var(--color-line);
+    background: var(--color-accent);
   }
 
   /* faint section divider */

@@ -23,7 +23,7 @@ export function Scenarios() {
               className="card group relative p-7 transition hover:border-line"
             >
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full border border-line bg-black/30 px-2.5 text-[11.5px] font-semibold text-text-muted">
+                <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full border border-line bg-raised px-2.5 text-[11.5px] font-semibold text-text-muted">
                   {t(`items.${i}.tag`)}
                 </span>
                 <span className="h-px flex-1 bg-line-soft" />
