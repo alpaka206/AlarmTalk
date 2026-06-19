@@ -26,16 +26,17 @@ payment details, and processor list match the final production setup.
 - `terms-of-service.ko.md`: public 서비스 이용약관 draft
 - `consent-and-permission-copy.ko.md`: in-app consent and permission copy
 - `store-disclosures.ko.md`: Google Play / App Store disclosure checklist
+- `perso-processor-notes.ko.md`: 음성 AI 수탁사 Perso(이스트소프트) 처리 사실·근거·계약(DPA) 체크리스트
 
 ## Release Blockers
 
-- Confirm the final public brand: `AlarmTalk` (Korean: `알람톡`).
-- Confirm operator entity, representative, address, business registration number,
-  mail-order business registration if paid plans are sold directly.
-- Confirm support/privacy email domains are live.
+- Public brand: `AlarmTalk` (Korean: `알람톡`). Operator entity: 베일런(Vailen),
+  대표 김규원, 사업자등록번호 819-32-01933, 인천광역시 서구 서곶로 45, 103동 4301호.
+  Confirm 통신판매업 신고 if paid plans are sold directly.
+- Confirm support/privacy contact is live (current legal docs use `gyuwon05@gmail.com`).
 - Confirm third-party processors and countries:
-  Cloudflare, Turso/libSQL, ElevenLabs, Sentry, Google, Apple, email providers,
-  payment providers.
+  Cloudflare, Turso/libSQL, Perso(이스트소프트), Sentry, Google, Apple, email providers,
+  payment providers. See `perso-processor-notes.ko.md` for the Perso processor details and DPA checklist.
 - Confirm whether voice data is treated as biometric information under the final
   product flow and jurisdiction review. These drafts conservatively treat user
   voice recordings and cloned voice profiles as highly sensitive voice data that
