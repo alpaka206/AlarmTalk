@@ -1,16 +1,15 @@
 name: iOS Build
 
 on:
-  push:
-    branches:
-      - develop
-      - main
-      - "feat/**"
-      - "fix/**"
-      - "ci/**"
-      - "refactor/**"
-  pull_request:
-    branches: [develop, main]
+  # iOS 도입 보류(2026-06) — 자동 빌드 비활성화. 출시하지 않을 앱을 매 push/PR 마다
+  # 유료 macOS 러너로 빌드하지 않도록 수동 트리거(workflow_dispatch)만 남긴다.
+  # iOS 재개 시 아래 push/pull_request 트리거를 복원하면 된다. (iOS 체크는 develop
+  # 브랜치 보호의 필수 상태 체크가 아니므로 비활성해도 PR 머지를 막지 않는다.)
+  #
+  # push:
+  #   branches: [develop, main, "feat/**", "fix/**", "ci/**", "refactor/**"]
+  # pull_request:
+  #   branches: [develop, main]
   workflow_dispatch:
 
 concurrency:
