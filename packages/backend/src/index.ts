@@ -22,6 +22,7 @@ import friendRoutes from './routes/friend';
 import giftRoutes from './routes/gift';
 import statsRoutes from './routes/stats';
 import billingRoutes from './routes/billing';
+import billingGoogleRtdn from './routes/billing-google-rtdn';
 import familyRoutes from './routes/family';
 import characterRoutes from './routes/character';
 import codeRoutes from './routes/code';
@@ -196,6 +197,10 @@ app.get('/api/app/version', noStore, async (c) => {
 // 무차별 대입 방어용 엄격 한도를 일반 한도와 별개 버킷으로 추가 적용한다.
 app.use('/api/auth/*', authRateLimitMiddleware);
 app.route('/api/auth', authRoutes);
+
+// Google Play RTDN 웹훅 (인증 미들웨어 미적용 — Pub/Sub push 가 사용자 인증 없이 호출하므로
+// ?token=GOOGLE_RTDN_VERIFICATION_TOKEN 쿼리로만 보호한다).
+app.route('/api/billing/google', billingGoogleRtdn);
 
 // 인증이 필요한 라우트들
 const api = new Hono<AppEnv>();
