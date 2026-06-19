@@ -33,8 +33,9 @@
 
 공유 여부:
 
-- Cloudflare, Turso, ElevenLabs, Sentry, Google, Apple, 이메일 발송 제공자, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
+- Cloudflare, Turso, Perso(이스트소프트), Sentry, Google, Apple, 이메일 발송 제공자, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
 - 광고 네트워크 또는 데이터 브로커에 제공하지 않는다면 "advertising or marketing sharing"은 아니라고 보는 방향이 합리적입니다.
+- ⚠️ Perso(이스트소프트)는 약관·방침상 제출된 입력 데이터(음성 포함)를 제공자 측 서비스 개선 및 AI 모델 학습에 이용할 수 있습니다. Google Play Data safety에서 audio/user content 항목의 목적에 이를 정확히 반영하고, 앱 내 음성 동의 화면에 AI 학습 이용 및 거부 경로(거부 시 기능 제한)를 고지해야 합니다.
 
 보안:
 
@@ -106,7 +107,7 @@ Account deletion:
 
 - Is the final app targeted to users under 14 or likely to be used by children?
 - Is voice data legally treated as biometric information in the launch jurisdictions?
-- Does ElevenLabs use submitted voice/audio for provider-side model training, quality improvement, or abuse monitoring?
+- Perso(ESTsoft) uses submitted voice/audio for provider-side model training and quality improvement (stated in Perso's terms/privacy policy). Confirm the in-app voice consent and Data safety form accurately disclose this, and that the AI-learning opt-out path (with feature-limit notice) is surfaced.
 - Are all provider DPAs and cross-border transfer notices in place?
 - Does account deletion delete R2 objects and provider-side cloned voice IDs?
 - Does the app provide a way to withdraw voice sharing consent?

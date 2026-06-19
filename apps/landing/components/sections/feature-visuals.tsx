@@ -1,11 +1,14 @@
 import { Mic, Heart, Languages, Send, ArrowRight } from "lucide-react";
 
+const CARD =
+  "rounded-[28px] border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
+
 // Visual for "voice" — recording UI
 export function VoiceVisual() {
   return (
     <div className="relative w-full max-w-[420px]">
-      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(168,212,255,0.18),transparent_60%)] blur-2xl" />
-      <div className="rounded-[28px] border border-line bg-surface p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)]">
+      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(217,119,87,0.12),transparent_60%)] blur-2xl" />
+      <div className={CARD}>
         <div className="flex items-center justify-between">
           <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-[0.12em] text-text-muted">
             Recording
@@ -34,17 +37,17 @@ export function VoiceVisual() {
                   backgroundColor: played
                     ? "var(--color-accent)"
                     : "var(--color-line)",
-                  opacity: played ? 0.85 : 0.6,
+                  opacity: played ? 0.9 : 1,
                 }}
               />
             );
           })}
         </div>
         <div className="mt-6 flex items-center justify-between">
-          <span className="text-[12.5px] text-text-muted">"늦지 않게 일어나자."</span>
+          <span className="text-[12.5px] text-text-muted">&ldquo;늦지 않게 일어나자.&rdquo;</span>
           <button
             type="button"
-            className="grid h-12 w-12 place-items-center rounded-full bg-accent text-accent-fg"
+            className="grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-[0_8px_20px_rgba(217,119,87,0.28)]"
           >
             <Mic className="h-5 w-5" strokeWidth={2.2} />
           </button>
@@ -57,14 +60,14 @@ export function VoiceVisual() {
 // Visual for "shared" — voice library cards
 export function SharedVisual() {
   const profiles = [
-    { name: "엄마", from: "공유 받음 · 7일 전", color: "#FFB3A6" },
-    { name: "지수 (커플)", from: "공유 받음 · 어제", color: "#A8D4FF" },
-    { name: "친구 민준", from: "공유 받음 · 3일 전", color: "#C7E5D6" },
+    { name: "엄마", from: "공유 받음 · 7일 전", color: "#db7e63" },
+    { name: "지수 (커플)", from: "공유 받음 · 어제", color: "#7fb096" },
+    { name: "친구 민준", from: "공유 받음 · 3일 전", color: "#e0b15e" },
   ];
   return (
     <div className="relative w-full max-w-[420px]">
-      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(199,229,214,0.16),transparent_60%)] blur-2xl" />
-      <div className="rounded-[28px] border border-line bg-surface p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)]">
+      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(217,119,87,0.1),transparent_60%)] blur-2xl" />
+      <div className={CARD}>
         <div className="flex items-center justify-between">
           <span className="text-[16px] font-bold text-text">공유 음성</span>
           <span className="inline-flex h-7 items-center rounded-full bg-accent-soft px-2.5 text-[11px] font-bold text-accent">
@@ -80,7 +83,7 @@ export function SharedVisual() {
             >
               <div
                 className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[14px] font-bold"
-                style={{ backgroundColor: p.color, color: "#08243C" }}
+                style={{ backgroundColor: p.color, color: "#fff" }}
               >
                 {p.name.slice(0, 1)}
               </div>
@@ -103,8 +106,8 @@ export function SharedVisual() {
 export function LanguageVisual() {
   return (
     <div className="relative w-full max-w-[420px]">
-      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(199,229,214,0.18),transparent_60%)] blur-2xl" />
-      <div className="rounded-[28px] border border-line bg-surface p-6 shadow-[0_30px_80px_rgba(0,0,0,0.4)]">
+      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(143,191,158,0.12),transparent_60%)] blur-2xl" />
+      <div className={CARD}>
         <div className="flex items-center justify-between">
           <span className="text-[16px] font-bold text-text">번역 메시지</span>
           <Languages className="h-4 w-4 text-mint" strokeWidth={2.2} />
@@ -114,7 +117,7 @@ export function LanguageVisual() {
             EN · 원어민 발음
           </span>
           <p className="mt-3 text-[15px] font-semibold text-text">
-            “Don't oversleep — today matters.”
+            &ldquo;Don&rsquo;t oversleep — today matters.&rdquo;
           </p>
           <p className="mt-2 text-[12px] text-text-muted">
             늦잠 자지 마. 오늘이 중요한 날이야.
@@ -129,7 +132,7 @@ export function LanguageVisual() {
           </div>
           <button
             type="button"
-            className="inline-flex h-9 items-center whitespace-nowrap rounded-full bg-accent px-4 text-[12.5px] font-bold text-accent-fg"
+            className="inline-flex h-9 items-center whitespace-nowrap rounded-full bg-accent px-4 text-[12.5px] font-bold text-white"
           >
             <Send className="mr-1.5 h-3.5 w-3.5" />
             등록
