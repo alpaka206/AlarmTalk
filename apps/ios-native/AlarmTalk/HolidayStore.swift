@@ -52,7 +52,66 @@ enum HolidaySeedData {
             HolidayDate(date: ymd(2026, 10, 5), name: "대체공휴일"),
             HolidayDate(date: ymd(2026, 10, 9), name: "한글날"),
             HolidayDate(date: ymd(2026, 12, 25), name: "기독탄신일"),
-        ]
+        ],
+        2027: [
+            HolidayDate(date: ymd(2027, 1, 1), name: "신정"),
+            HolidayDate(date: ymd(2027, 2, 6), name: "설날 연휴"),
+            HolidayDate(date: ymd(2027, 2, 7), name: "설날"),
+            HolidayDate(date: ymd(2027, 2, 8), name: "설날 연휴"),
+            HolidayDate(date: ymd(2027, 2, 9), name: "대체공휴일(설날)"),
+            HolidayDate(date: ymd(2027, 3, 1), name: "삼일절"),
+            HolidayDate(date: ymd(2027, 5, 5), name: "어린이날"),
+            HolidayDate(date: ymd(2027, 5, 13), name: "부처님오신날"),
+            HolidayDate(date: ymd(2027, 6, 6), name: "현충일"),
+            HolidayDate(date: ymd(2027, 8, 15), name: "광복절"),
+            HolidayDate(date: ymd(2027, 8, 16), name: "대체공휴일(광복절)"),
+            HolidayDate(date: ymd(2027, 9, 14), name: "추석 연휴"),
+            HolidayDate(date: ymd(2027, 9, 15), name: "추석"),
+            HolidayDate(date: ymd(2027, 9, 16), name: "추석 연휴"),
+            HolidayDate(date: ymd(2027, 10, 3), name: "개천절"),
+            HolidayDate(date: ymd(2027, 10, 4), name: "대체공휴일(개천절)"),
+            HolidayDate(date: ymd(2027, 10, 9), name: "한글날"),
+            HolidayDate(date: ymd(2027, 10, 11), name: "대체공휴일(한글날)"),
+            HolidayDate(date: ymd(2027, 12, 25), name: "성탄절"),
+            HolidayDate(date: ymd(2027, 12, 27), name: "대체공휴일(성탄절)"),
+        ],
+        2028: [
+            HolidayDate(date: ymd(2028, 1, 1), name: "신정"),
+            HolidayDate(date: ymd(2028, 1, 26), name: "설날 연휴"),
+            HolidayDate(date: ymd(2028, 1, 27), name: "설날"),
+            HolidayDate(date: ymd(2028, 1, 28), name: "설날 연휴"),
+            HolidayDate(date: ymd(2028, 3, 1), name: "삼일절"),
+            HolidayDate(date: ymd(2028, 5, 2), name: "부처님오신날"),
+            HolidayDate(date: ymd(2028, 5, 5), name: "어린이날"),
+            HolidayDate(date: ymd(2028, 6, 6), name: "현충일"),
+            HolidayDate(date: ymd(2028, 8, 15), name: "광복절"),
+            HolidayDate(date: ymd(2028, 10, 2), name: "추석 연휴"),
+            HolidayDate(date: ymd(2028, 10, 3), name: "추석/개천절"),
+            HolidayDate(date: ymd(2028, 10, 4), name: "추석 연휴"),
+            HolidayDate(date: ymd(2028, 10, 5), name: "대체공휴일(개천절)"),
+            HolidayDate(date: ymd(2028, 10, 9), name: "한글날"),
+            HolidayDate(date: ymd(2028, 12, 25), name: "성탄절"),
+        ],
+        2029: [
+            HolidayDate(date: ymd(2029, 1, 1), name: "신정"),
+            HolidayDate(date: ymd(2029, 2, 12), name: "설날 연휴"),
+            HolidayDate(date: ymd(2029, 2, 13), name: "설날"),
+            HolidayDate(date: ymd(2029, 2, 14), name: "설날 연휴"),
+            HolidayDate(date: ymd(2029, 3, 1), name: "삼일절"),
+            HolidayDate(date: ymd(2029, 5, 5), name: "어린이날"),
+            HolidayDate(date: ymd(2029, 5, 7), name: "대체공휴일(어린이날)"),
+            HolidayDate(date: ymd(2029, 5, 20), name: "부처님오신날"),
+            HolidayDate(date: ymd(2029, 5, 21), name: "대체공휴일(부처님오신날)"),
+            HolidayDate(date: ymd(2029, 6, 6), name: "현충일"),
+            HolidayDate(date: ymd(2029, 8, 15), name: "광복절"),
+            HolidayDate(date: ymd(2029, 9, 21), name: "추석 연휴"),
+            HolidayDate(date: ymd(2029, 9, 22), name: "추석"),
+            HolidayDate(date: ymd(2029, 9, 23), name: "추석 연휴"),
+            HolidayDate(date: ymd(2029, 9, 24), name: "대체공휴일(추석)"),
+            HolidayDate(date: ymd(2029, 10, 3), name: "개천절"),
+            HolidayDate(date: ymd(2029, 10, 9), name: "한글날"),
+            HolidayDate(date: ymd(2029, 12, 25), name: "성탄절"),
+        ],
     ]
 
     private static func ymd(_ year: Int, _ month: Int, _ day: Int) -> Date {
@@ -178,7 +237,8 @@ final class HolidayStore: ObservableObject {
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
         let calendar = Calendar.current
         let currentYear = calendar.component(.year, from: Date())
-        let years = [currentYear, currentYear + 1]
+        // currentYear..currentYear+2 까지 시드 (캘린더가 연말을 넘겨도 다음다음 해 시드가 닿도록).
+        let years = Array(currentYear...(currentYear + 2))
         var collected: [HolidayEntity] = []
         for year in years {
             let seeded = HolidaySeedData.holidays(countryCode: Self.defaultCountryCode, year: year)

@@ -50,7 +50,10 @@ class HolidayCalendarStore(
         startDate: LocalDate,
         daysAhead: Long = DEFAULT_LOOKAHEAD_DAYS,
     ): (LocalDate) -> Boolean {
-        seedDefaultHolidaysIfAvailable(countryCode, regionCode, startDate.year)
+        // currentYear..currentYear+2 까지 시드 (lookahead 가 연말을 넘겨도 다음다음 해 시드가 닿도록).
+        for (year in startDate.year..(startDate.year + 2)) {
+            seedDefaultHolidaysIfAvailable(countryCode, regionCode, year)
+        }
         seedDefaultHolidaysIfAvailable(countryCode, regionCode, startDate.plusDays(daysAhead).year)
         val endDate = startDate.plusDays(daysAhead)
         val cachedDates = holidayDao.getBetween(
