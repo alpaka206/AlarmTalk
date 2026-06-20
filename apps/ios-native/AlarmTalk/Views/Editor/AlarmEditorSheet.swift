@@ -786,7 +786,45 @@ struct AlarmEditorSheet: View {
         voiceStudio.fortuneGender = alarm?.voiceFortuneGender ?? saved.fortuneGender
         voiceStudio.fortuneBirthDate = alarm?.voiceFortuneBirthDate ?? saved.fortuneBirthDate
         voiceStudio.fortuneBirthTime = alarm?.voiceFortuneBirthTime ?? saved.fortuneBirthTime
+        // 기존 스톡 클립 알람은 선택/준비 상태로 복원해 저장 시 같은 캐시 음원을 재사용한다
+        // (P2). selectedProfileID 가 위에서 먼저 설정되고 그 onChange 훅이
+        // stockSelectedMessageID 를 비우므로, 복원은 반드시 그 이후 — 즉 coerce 직전 —
+        // 에 수행한다. coerce 가 보기 전에 preparedAlarm/stockSelectedMessageID 가 채워져
+        // 있어야 803 라인 가드가 4-값 강제를 건너뛴다.
+        restoreStockClipSelectionIfNeeded(from: alarm)
         coerceFreeVoiceTierConstraints()
+    }
+
+    /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
+    /// P1 과 동일한 신호(`audioCacheKey` 의 `stock_` prefix + 시스템 voiceProfileId)로
+    /// 스톡 알람을 식별하고, 스테이징됐던 캐시 파일이 디스크에 그대로 있을 때만
+    /// `preparedAlarm` + `stockSelectedMessageID` 를 재구성한다. 이렇게 하면
+    /// `selectedStockMessageID`(prepared.audioCacheKey 의 stock_ prefix 접근자)가
+    /// 선택을 보고해 editorSaveBlockedReason 이 nil 을 반환하고, saveFlow 가 스톡 분기
+    /// (1121-1143)로 동일 audioCacheKey 를 재사용한다. 캐시가 sweep 됐으면 복원하지
+    /// 않아 saveFlow 가 정상 재생성 경로를 타게 둔다(dangling 파일 재사용 방지, risk 1).
+    private func restoreStockClipSelectionIfNeeded(from alarm: LocalAlarmRecord?) {
+        guard let alarm, alarm.isStockVoiceClip,
+              let cacheKey = alarm.audioCacheKey,
+              let messageID = (alarm.ttsMessageId).nilIfBlank,
+              let profileID = (alarm.voiceProfileId).nilIfBlank,
+              let localFileName = (alarm.localAudioUri).nilIfBlank else {
+            return
+        }
+        // 스테이징된 `stock_<id>` 캐시 파일이 살아 있을 때만 재사용한다.
+        guard AudioCacheStore.shared.cachedURL(for: cacheKey) != nil else { return }
+        voiceStudio.preparedAlarm = PreparedAlarmTalk(
+            messageID: messageID,
+            voiceProfileID: profileID,
+            localAudioFileName: localFileName,
+            audioCacheKey: cacheKey,
+            rawAudioURL: alarm.rawAudioUri,
+            text: alarm.voiceText ?? "",
+            language: alarm.voiceLanguage ?? "ko"
+        )
+        stockSelectedMessageID = messageID
+        // 스톡 클립은 고정 음원이므로 랜덤 문구가 아니다(저장값 voiceRandomPrompt=false 미러).
+        voiceStudio.randomPrompt = false
     }
 
     /// 무료 등급 음성 제약을 강제한다 (Android `AlarmEditorScreen.kt:863-882` 미러).
@@ -800,7 +838,11 @@ struct AlarmEditorSheet: View {
         // 우회해 preparedAlarm 을 직접 채우므로, 혹시라도 randomPrompt 등이 흔들려
         // coerce 가 preparedAlarm 을 무효화하면 선택이 사라진다(spec risk 3 mitigation).
         // 정상 상태에서는 4-값이 이미 고정돼 있어 어차피 변경이 없다.
-        if stockSelectedMessageID != nil, voiceStudio.preparedAlarm != nil {
+        // selectedStockMessageID(prepared.audioCacheKey 의 stock_ prefix 파생 접근자)도
+        // 함께 검사해, @State stockSelectedMessageID 가 onChange 훅으로 잠깐 비워졌어도
+        // preparedAlarm 이 스톡 클립이면 복원된 선택을 보존한다(belt-and-suspenders).
+        if voiceStudio.preparedAlarm != nil,
+           stockSelectedMessageID != nil || selectedStockMessageID != nil {
             return false
         }
         var changed = false

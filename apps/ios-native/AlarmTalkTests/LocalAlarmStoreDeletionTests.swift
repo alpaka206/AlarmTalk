@@ -87,6 +87,33 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
         )
     }
 
+    /// 스톡 클립 알람은 스테이징된 `stock_<id>` 캐시 파일이 있어 localAudioUri 가
+    /// NON-blank 다. 그래도 `audioCacheKey` 의 `stock_` prefix + 시스템 voiceProfileId 면
+    /// 무료 다운그레이드에서 보존한다(P1). 비-시스템 server_tts 가 우연히 stock 모양 key 를
+    /// 가져도 보존되지 않아야 한다.
+    func test_paidAlarmTalksPreservesStockClipAlarmsWithStagedCache() {
+        let store = makeStore()
+        // 실제 스톡 저장 시그니처: stock_ cacheKey + NON-blank localAudioUri + 시스템 보이스.
+        let stockClip = makeAlarm(
+            id: "stock-clip",
+            audioCacheKey: "stock_msg-1",
+            voiceProfileId: "\(systemVoiceIDPrefix)000000000010",
+            ttsMessageId: "msg-1"
+        )
+        // 같은 stock 모양 key 지만 비-시스템 voiceProfileId — 보존되면 안 됨(여전히 삭제 대상).
+        let fakeStock = makeAlarm(
+            id: "fake-stock",
+            audioCacheKey: "stock_msg-2",
+            voiceProfileId: "voice-not-system",
+            ttsMessageId: "msg-2"
+        )
+
+        [stockClip, fakeStock].forEach { store.upsert($0) }
+
+        XCTAssertFalse(store.paidAlarmTalks().contains { $0.id == "stock-clip" })
+        XCTAssertTrue(store.paidAlarmTalks().contains { $0.id == "fake-stock" })
+    }
+
     private func makeStore() -> LocalAlarmStore {
         let url = FileManager.default
             .temporaryDirectory
