@@ -174,12 +174,19 @@ final class BackgroundSyncTask {
 
     static func scheduleNext(earliestBeginDate: Date? = nil) {
         #if canImport(BackgroundTasks)
+        // BGTaskScheduler 는 identifier 당 pending 요청을 하나만 유지한다. 이미 pending 인
+        // 요청이 있으면 submit 이 throw 하고(아래 catch 가 swallow), 기존 요청이 유지된다.
+        // 그 결과 runAndSchedule:115 의 초기 15분 예약이 살아남아 153/163 의 5분 재시도
+        // 재예약이 조용히 버려진다. cancel-then-submit 으로 last-writer-wins 를 보장한다:
+        // 초기 예약은 expiration safety 를 그대로 제공하고, 재시도 submit 이 그것을 취소한 뒤
+        // 5분 요청으로 교체한다. submit 이 즉시 뒤따르므로 pending 0 인 의미 있는 창은 없다.
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
         let request = BGAppRefreshTaskRequest(identifier: taskIdentifier)
         request.earliestBeginDate = earliestBeginDate ?? Date(timeIntervalSinceNow: refreshInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
         } catch {
-            // 시뮬레이터 / 권한 없음 / 중복 제출 — silent.
+            // 시뮬레이터 / 권한 없음 — silent.
         }
         #endif
     }

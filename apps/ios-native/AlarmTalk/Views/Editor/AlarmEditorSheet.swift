@@ -821,6 +821,14 @@ struct AlarmEditorSheet: View {
             voiceStudio.translateText = false
             changed = true
         }
+        // 언어를 비번역 기본값 "ko"(source)로 고정한다. randomPrompt 분기에서
+        // activeLanguage = ttsLanguage 이므로(VoiceStudioViewModel generateTTS:756) translate=false
+        // 라도 stale en/ja 가 그대로 전송돼 서버가 번역 경로로 흐른다. source 로 맞춰 무료
+        // 프리셋 요청이 번역을 유발하지 못하게 막는다(서버가 source of truth, 이는 클라 차단).
+        if voiceStudio.ttsLanguage != "ko" {
+            voiceStudio.ttsLanguage = "ko"
+            changed = true
+        }
         if changed {
             voiceStudio.preparedAlarm = nil
         }

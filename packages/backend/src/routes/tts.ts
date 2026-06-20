@@ -681,6 +681,22 @@ tts.post('/generate', async (c) => {
         403,
       );
     }
+    // 암묵적 번역 우회 차단: 프리셋 문구는 여기서 이미 확정(604-606)되므로 source 언어를
+    // 산정할 수 있다. 요청 언어가 source 와 다르면 아래 shouldTranslate(773-775)의
+    // `randomRequested && requestedLanguage !== sourceLanguage` 분기가 켜져 유료 번역
+    // 경로(prepareAlarmTextWithVertex translate:true)로 새어 나간다. translate===true 와
+    // 동일하게 차단해 무료 프리셋 요청이 번역을 절대 호출하지 못하게 한다.
+    const requestedLanguageForGate = normalizeSynthesisLanguage(body.language);
+    const sourceLanguageForGate = inferSynthesisLanguage(requestText, 'ko');
+    if (requestedLanguageForGate !== sourceLanguageForGate) {
+      return c.json(
+        {
+          error: 'Free plan supports preset phrases with stock voices only.',
+          error_code: 'FREE_PLAN_PRESET_ONLY',
+        },
+        403,
+      );
+    }
   }
 
   try {
