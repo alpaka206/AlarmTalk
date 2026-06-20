@@ -126,44 +126,40 @@ enum HolidaySeedData {
 }
 
 // MARK: - LocalHolidayCalendar
-// Android `LocalHolidayCalendar.kt` 의 고정 + 대체공휴일 규칙을 fallback 으로 보유.
-// 시드 미커버 연도/지역에서도 최소한 양력 고정 공휴일은 잡아주기 위함.
+// Android `LocalHolidayCalendar.kt` 의 고정 공휴일에 더해, ON-DEVICE 음력/대체공휴일 계산 엔진을
+// fallback 으로 보유한다. 시드 미커버 연도/지역(콜드 캐시·시드 지평선 너머)에서도 설날·추석·
+// 부처님오신날 + 대체공휴일이 오프라인으로 정확하도록 보강.
+//
+// isHoliday(date, "KR") = isKoreanFixedHoliday(date)            // 고정 양력 (기존)
+//                       || isKoreanLunarHoliday(date)            // 음력 계산 (신규)
+//                       || isKoreanSubstituteHoliday(date)       // 대체공휴일 계산 (신규)
+//
+// 셋은 OR 결합이며, HolidayStore.isHoliday 가 cache(서버/시드)를 먼저 OR 하므로
+// 효과적 우선순위: 서버 캐시 > 번들 시드 > 계산 엔진 > 고정 양력 (boolean SUPERSET, 자세한 의미는
+// KoreanLunarHolidayEngine 상단 주석 참고).
+//
+// TIMEZONE: 모든 양력 판정을 KoreanLunarHolidayEngine 의 고정 Asia/Seoul 캘린더로 통일한다.
+// (기존 코드는 Calendar.current 를 써서 UTC-11/UTC+14 디바이스에서 HolidaySeedData.ymd(Asia/Seoul)와
+// 민용일이 어긋나는 latent 버그가 있었다 — 함께 수정.)
 enum LocalHolidayCalendar {
     static func isHoliday(_ date: Date,
                           countryCode: String = HolidayStore.defaultCountryCode) -> Bool {
         switch countryCode.uppercased() {
         case "KR":
-            return isKoreanFixedHoliday(date) || isKoreanObservedFixedHoliday(date)
+            return isKoreanFixedHoliday(date)
+                || KoreanLunarHolidayEngine.isLunarHoliday(date)
+                || KoreanLunarHolidayEngine.isSubstituteHoliday(date)
         default:
             return false
         }
     }
 
     private static func isKoreanFixedHoliday(_ date: Date) -> Bool {
-        let comps = Calendar.current.dateComponents([.month, .day], from: date)
+        // Asia/Seoul 고정 캘린더로 월/일 추출 — 시드/엔진과 동일 시계.
+        let comps = KoreanLunarHolidayEngine.seoulGregorian.dateComponents([.month, .day], from: date)
         guard let m = comps.month, let d = comps.day else { return false }
         switch (m, d) {
         case (1, 1), (3, 1), (5, 5), (6, 6), (8, 15), (10, 3), (10, 9), (12, 25):
-            return true
-        default:
-            return false
-        }
-    }
-
-    private static func isKoreanObservedFixedHoliday(_ date: Date) -> Bool {
-        let cal = Calendar.current
-        // Calendar.weekday: 1=Sun..7=Sat. Monday == 2 일 때 대체 후보 검사.
-        guard cal.component(.weekday, from: date) == 2 else { return false }
-        guard let minus1 = cal.date(byAdding: .day, value: -1, to: date),
-              let minus2 = cal.date(byAdding: .day, value: -2, to: date) else { return false }
-        return isSubstituteEligible(minus1) || isSubstituteEligible(minus2)
-    }
-
-    private static func isSubstituteEligible(_ date: Date) -> Bool {
-        let comps = Calendar.current.dateComponents([.month, .day], from: date)
-        guard let m = comps.month, let d = comps.day else { return false }
-        switch (m, d) {
-        case (3, 1), (5, 5), (8, 15), (10, 3), (10, 9), (12, 25):
             return true
         default:
             return false
@@ -287,12 +283,10 @@ final class HolidayStore: ObservableObject {
     // MARK: Helpers
 
     /// LocalDate.toEpochDay 동등: 1970-01-01 을 0 으로 하는 정수 day.
+    /// Asia/Seoul 고정 캘린더로 계산하여 HolidaySeedData.ymd(Asia/Seoul) 및 계산 엔진과 정확히 일치시킨다.
+    /// (기존엔 start 는 gregorian, diff 는 Calendar.current 라서 디바이스 TZ 에 따라 ±1 이 가능했던 버그.)
     static func epochDay(of date: Date) -> Int {
-        let cal = Calendar(identifier: .gregorian)
-        let start = cal.date(from: DateComponents(year: 1970, month: 1, day: 1))
-            ?? Date(timeIntervalSince1970: 0)
-        let days = Calendar.current.dateComponents([.day], from: start, to: date).day ?? 0
-        return days
+        return KoreanLunarHolidayEngine.epochDay(of: date)
     }
 
     static func formatDate(_ date: Date) -> String {
