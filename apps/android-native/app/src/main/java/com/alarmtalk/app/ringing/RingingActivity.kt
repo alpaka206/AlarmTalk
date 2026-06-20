@@ -43,7 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +68,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
+import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
@@ -193,22 +193,17 @@ private fun RingingRoute(
     onDismiss: () -> Unit,
     onSnooze: () -> Unit,
 ) {
+    // 잠금화면 위에서는 항상 다크로 떠야 하므로 앱 테마를 상속하지 않고
+    // 단일 출처인 AlarmTalkDarkColorScheme(브랜드 블루 primary 계열)에서 시작한다.
+    // 의도적으로 다른 부분만 override: 살몬 secondary(따뜻한 대비 강조)와 표면 톤.
     MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = Color(0xFFA8D4FF),
-            onPrimary = Color(0xFF08243C),
-            primaryContainer = Color(0xFF1E4263),
-            onPrimaryContainer = Color(0xFFD9ECFF),
+        colorScheme = AlarmTalkDarkColorScheme.copy(
             secondary = Color(0xFFF0B8AF),
             onSecondary = Color(0xFF351210),
             secondaryContainer = Color(0xFF4F2824),
             onSecondaryContainer = Color(0xFFFFDED9),
-            tertiary = Color(0xFFC7E5D6),
-            onTertiary = Color(0xFF123226),
-            background = Color(0xFF090A0F),
             surface = Color(0xFF131821),
             surfaceVariant = Color(0xFF202833),
-            onSurface = Color(0xFFF7F7FA),
             onSurfaceVariant = Color(0xFFB6BEC9),
             outlineVariant = Color(0xFF303A46),
         ),
@@ -380,10 +375,10 @@ private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
 }
 
 private val SlideTrackBrush = Brush.verticalGradient(
-    listOf(Color(0x2E9ECBFF), Color(0x0F9ECBFF)),
+    listOf(Color(0x2E8FC4FF), Color(0x0F8FC4FF)),
 )
 private val SlideKnobBrush = Brush.verticalGradient(
-    listOf(Color(0xFFBFE0FF), Color(0xFF9ECBFF)),
+    listOf(Color(0xFFBFE0FF), Color(0xFF8FC4FF)),
 )
 
 @Composable
@@ -414,7 +409,7 @@ private fun RingingSlideToDismiss(onDismiss: () -> Unit) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val stroke = 1.dp.toPx()
             drawRoundRect(
-                color = Color(0x4D9ECBFF),
+                color = Color(0x4D8FC4FF),
                 topLeft = Offset(stroke / 2f, stroke / 2f),
                 size = androidx.compose.ui.geometry.Size(
                     size.width - stroke,

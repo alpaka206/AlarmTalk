@@ -11,7 +11,7 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - reusable local audio cache keys for generated TTS, recordings, and selected files
 - copy alarm action that reuses the cached local audio file
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
-- app theme matched to the legacy mobile mustard/navy/terracotta tokens
+- app theme using the unified blue (azure) Material 3 tokens (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`
 - email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
 - manual alarm metadata sync to the deployed AlarmTalk API
