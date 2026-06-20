@@ -71,3 +71,9 @@ crons = ["*/5 * * * *"]
 # GOOGLE_RTDN_VERIFICATION_TOKEN  (RTDN Pub/Sub push 검증 토큰 — Play Console RTDN 토픽의
 #                                  push 구독 URL `/api/billing/google/rtdn?token=<이 값>` 에 박는다)
 # PORTONE_API_SECRET              (PortOne V2 API Secret — 국내 PG)
+#
+# 공휴일(KR 보정) — 미설정 시 KR 오버레이 생략, date-holidays 결과만 제공:
+# KASI_SERVICE_KEY                (data.go.kr 특일정보 getRestDeInfo, **Decoding(디코딩)** 키.
+#                                  Encoding 키를 넣으면 이중 인코딩 → SERVICE_KEY_IS_NOT_REGISTERED_ERROR.
+#                                  dev 전용으로만 설정: `wrangler secret put KASI_SERVICE_KEY --env dev`,
+#                                  로컬은 .dev.vars.dev 에 추가. prod 에는 넣지 말 것.)

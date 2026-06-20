@@ -5,7 +5,7 @@ import { authMiddleware } from './middleware/auth';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
-import { privateCache, noStore } from './middleware/cache';
+import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
 import { getDB, initDB } from './lib/db';
@@ -27,6 +27,7 @@ import familyRoutes from './routes/family';
 import characterRoutes from './routes/character';
 import codeRoutes from './routes/code';
 import notesRoutes from './routes/notes';
+import holidayRoutes from './routes/holiday';
 
 const app = new Hono<AppEnv>();
 
@@ -195,6 +196,11 @@ app.get('/api/app/version', noStore, async (c) => {
     store_url: policy.storeUrl,
   });
 });
+
+// 공휴일 조회 (인증 불필요, 다국가). 결과가 (country,region,from,to,lang) 에 결정적이라 publicCache.
+// KR 은 KASI_SERVICE_KEY 설정 시 대체/임시공휴일을 보정한다 (미설정 시 date-holidays 결과만).
+app.use('/api/holiday', publicCache);
+app.route('/api/holiday', holidayRoutes);
 
 // 이메일+비밀번호 가입/로그인 (인증 미들웨어 미적용)
 // 무차별 대입 방어용 엄격 한도를 일반 한도와 별개 버킷으로 추가 적용한다.
