@@ -623,11 +623,7 @@ tts.post('/generate', async (c) => {
     );
   }
 
-  let dailyLimitExceeded = false;
   let freePlanRestricted = false;
-  // 일일 한도 값. null 이면 한도 미적용(레거시/유저행 없음 경로). 합성 직전
-  // 원자적 예약에서 사용한다.
-  let dailyLimit: number | null = null;
   const user = await db.execute({
     sql: 'SELECT * FROM users WHERE id = ? OR google_id = ? LIMIT 1',
     args: ownerIds,
@@ -636,27 +632,11 @@ tts.post('/generate', async (c) => {
   if (user.rows.length > 0) {
     const u = user.rows[0]!;
     const plan = u.plan as string;
-    const today = new Date().toISOString().split('T')[0]!;
 
     // 무료 플랜은 시스템 스톡 보이스 + 프리셋(고정) 문구 조합만 허용한다.
     // 보이스 조회 후에 is_system 여부와 함께 최종 판정한다.
     if (resolvedUserPk && !isPaidVoicePlan(plan)) {
       freePlanRestricted = true;
-    }
-
-    const limits: Record<string, number> = { free: 3, plus: 9999, family: 9999 };
-    dailyLimit = limits[plan] ?? 3;
-
-    if (u.daily_tts_reset_at !== today) {
-      await db.execute({
-        sql: `UPDATE users SET daily_tts_count = 0, daily_tts_reset_at = ? WHERE id = ? OR google_id = ?`,
-        args: [today, ...ownerIds],
-      });
-    } else {
-      const count = Number(u.daily_tts_count);
-      if (count >= dailyLimit) {
-        dailyLimitExceeded = true;
-      }
     }
   } else if (resolvedUserPk) {
     return c.json(
@@ -701,16 +681,6 @@ tts.post('/generate', async (c) => {
         403,
       );
     }
-  }
-
-  if (dailyLimitExceeded && (randomRequested || body.translate === true)) {
-    return c.json(
-      {
-        error: 'Daily TTS generation limit exceeded.',
-        error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
-      },
-      429,
-    );
   }
 
   try {
@@ -888,29 +858,6 @@ tts.post('/generate', async (c) => {
       }
     }
 
-    // 원자적 슬롯 예약: 합성(과금) 직전에 daily_tts_count 를 조건부 증가시켜
-    // 동시 요청이 같은 카운트를 읽고 모두 통과하던 read-then-increment 레이스를
-    // 닫는다(유료 ElevenLabs 호출 무제한 소비 방지). 캐시 히트는 위에서 이미
-    // 반환되므로, 여기 도달했다는 건 실제 합성 경로다.
-    let reservedSlot = false;
-    if (dailyLimit !== null && Number.isFinite(dailyLimit)) {
-      const reservation = await db.execute({
-        sql: `UPDATE users SET daily_tts_count = daily_tts_count + 1
-              WHERE (id = ? OR google_id = ?) AND daily_tts_count < ?`,
-        args: [...ownerIds, dailyLimit],
-      });
-      reservedSlot = (reservation.rowsAffected ?? 0) > 0;
-      if (!reservedSlot) {
-        return c.json(
-          {
-            error: 'Daily TTS generation limit exceeded.',
-            error_code: 'DAILY_TTS_LIMIT_EXCEEDED',
-          },
-          429,
-        );
-      }
-    }
-
     let lastError: unknown = noVoiceProviderError();
     for (const { attempt, cacheKey } of preparedAttempts) {
       try {
@@ -978,8 +925,6 @@ tts.post('/generate', async (c) => {
           });
         }
 
-        // 일일 카운트는 합성 직전 reservedSlot 예약에서 이미 원자적으로 증가됨.
-
         await db.execute({
           sql: `INSERT INTO message_library (id, user_id, message_id) VALUES (?, ?, ?)`,
           args: [crypto.randomUUID(), userPk, messageId],
@@ -1011,16 +956,6 @@ tts.post('/generate', async (c) => {
         if (err instanceof UnsupportedVoiceProviderError) continue;
         if (attempt !== attempts[attempts.length - 1]) continue;
       }
-    }
-
-    // 모든 합성 시도가 실패하면 예약한 슬롯을 되돌린다(실패한 호출이 한도를
-    // 깎지 않도록 — 슬롯 누수 방지).
-    if (reservedSlot) {
-      await db.execute({
-        sql: `UPDATE users SET daily_tts_count = MAX(0, daily_tts_count - 1)
-              WHERE id = ? OR google_id = ?`,
-        args: ownerIds,
-      });
     }
 
     throw lastError;
