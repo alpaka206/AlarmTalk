@@ -49,7 +49,7 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     func paidAlarmTalks() -> [LocalAlarmRecord] {
-        alarms.filter(\.usesPaidVoiceFeatures)
+        alarms.filter(\.isPaidVoiceForDowngrade)
     }
 
     func countByAudioCacheKey(_ key: String) -> Int {
@@ -238,7 +238,14 @@ final class LocalAlarmStore: ObservableObject {
     }
 
     /// AlarmKit alarmUpdates 에서 알람이 사라졌을 때 호출.
-    func markStopped(alarmKitID: String) {
+    /// - Parameter isHoliday: 다음 발화 시각 재계산에 쓰는 공휴일 술어. 기본은
+    ///   `LocalHolidayCalendar` 고정 규칙. 호출자(handleAlarmStopped/disappearance)는
+    ///   서버 sync 공휴일까지 반영하도록 `HolidayStore.holidayPredicate()` 를 넘긴다
+    ///   (Android dismiss 가 full holiday predicate 로 recompute 하는 것과 동일).
+    func markStopped(
+        alarmKitID: String,
+        isHoliday: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+    ) {
         guard let index = alarms.firstIndex(where: { $0.alarmKitID == alarmKitID }) else { return }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         if alarms[index].repeatDaysMask != 0,
@@ -247,12 +254,19 @@ final class LocalAlarmStore: ObservableObject {
             minute: alarms[index].minute,
             repeatDaysMask: alarms[index].repeatDaysMask,
             holidayOff: alarms[index].holidayOff,
-            nowMillis: now
+            nowMillis: now,
+            isHoliday: isHoliday
            ) {
             alarms[index].fireAtMillis = nextFireAt
             alarms[index].state = AlarmRuntimeState.armed.rawValue
             alarms[index].enabled = true
             alarms[index].snoozeCount = 0
+            // PR3: `.fixed` 서브셋만 alarmKitID 를 비워 "OS 재무장 필요" 신호를 남긴다.
+            // rearmIfHolidayOffOneShot 가 이 nil 을 guard 로 보고 schedule() 한다.
+            // 네이티브 `.relative` 반복 알람은 AlarmKit 이 여전히 소유하므로 비우지 않는다.
+            if alarms[index].isHolidayOffRecurring {
+                alarms[index].alarmKitID = nil
+            }
         } else {
             alarms[index].state = AlarmRuntimeState.dismissed.rawValue
             alarms[index].enabled = false

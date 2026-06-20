@@ -331,6 +331,11 @@ struct VoiceProfile: Decodable, Identifiable, Equatable {
     var status: String?
     var createdAt: String?
     var isShared: Bool?
+    /// 시스템/스톡 보이스 여부. 서버가 `GET /voice` 의 모든 row 에 `is_system`
+    /// 으로 실어 보낸다(voice-profile.ts:218). 무료 등급의 스톡 클립 노출 판정에
+    /// 사용. legacy 응답(키 없음) 호환을 위해 옵셔널이며, prefix 기반
+    /// `isSystemVoiceId(_:)` 가 폴백이다. Android `VoiceProfile.isSystem` 미러.
+    var isSystem: Bool? = nil
     /// 작성 중 임시 프로필 여부. promote 하기 전엔 알람 선택에 노출하지 않는다.
     /// Android `VoiceProfileApi.kt:72`.
     var isDraft: Bool? = nil
@@ -536,6 +541,33 @@ struct TtsMessageAudioResponse: Decodable, Equatable {
     var text: String?
     var category: String?
     var voiceProfileId: String?
+}
+
+/// `GET /tts/stock-clips` 응답. 무료 등급이 알람 에디터에서 고르는 기본 제공
+/// 음성 카탈로그. 서버는 모든 인증 사용자에게 동일한 전역 카탈로그를 준다
+/// (tts.ts:1287-1313). 쿼리 파라미터 없음 — 언어 필터는 클라이언트에서 처리한다.
+/// Android `TtsApi.kt:70` `StockClipListResponse` 미러.
+struct StockClipListResponse: Decodable {
+    var clips: [StockClip]
+}
+
+/// 기본 제공(스톡) 알람 클립 한 건. preset 메시지 × 시스템 보이스 조합.
+/// 인라인 오디오는 없고, 미리듣기/선택 시 `GET /tts/messages/:id/audio` 로
+/// 음원을 받아 캐싱한다. Android `TtsApi.kt:74` `StockClip` 미러(`tags` 는 드롭).
+/// camelCase 필드는 convertFromSnakeCase 로 snake_case 에서 자동 디코드.
+struct StockClip: Decodable, Identifiable, Equatable {
+    var messageId: String
+    var voiceProfileId: String
+    var voiceName: String?
+    /// 예: morning/lunch/evening/night/health/medication/study/cheer/love/exercise/greeting.
+    /// greeting 은 "이 목소리 들어보기" 샘플 전용이라 에디터 목록에선 제외한다.
+    var category: String?
+    /// "ko" | "en" | "ja".
+    var language: String?
+    var text: String
+    var audioUrl: String?
+
+    var id: String { messageId }
 }
 
 struct FamilyGroupCurrentResponse: Codable, Equatable {

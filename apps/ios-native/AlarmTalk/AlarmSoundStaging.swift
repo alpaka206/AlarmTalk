@@ -68,8 +68,13 @@ enum AlarmSoundStaging {
         let baseName = "\(stagedNamePrefix)\(safeKey)"
         let sourceExt = sourceURL.pathExtension.lowercased()
 
+        // 30초 초과 클립은 passthrough 도 캡(.caf 30s)을 강제한다 — Apple 의 30초 커스텀
+        // 사운드 한도를 넘긴 파일을 그대로 stage 하면 .named lookup 이 실패하므로,
+        // 길면 무조건 transcodeToCAF 로 첫 30초만 자른다(change 6 belt-and-suspenders).
+        let sourceTooLong = isLongerThanLimit(sourceURL)
+
         let stagedURL: URL
-        if isPassthroughFormat(sourceExt) {
+        if isPassthroughFormat(sourceExt) && !sourceTooLong {
             stagedURL = soundsDir.appendingPathComponent("\(baseName).\(sourceExt)")
             if !fm.fileExists(atPath: stagedURL.path) {
                 do {
@@ -78,7 +83,7 @@ enum AlarmSoundStaging {
                     throw AlarmSoundStagingError.writeFailed(error.localizedDescription)
                 }
             }
-        } else if isTranscodableFormat(sourceExt) {
+        } else if isTranscodableFormat(sourceExt) || (isPassthroughFormat(sourceExt) && sourceTooLong) {
             #if canImport(AVFoundation)
             stagedURL = soundsDir.appendingPathComponent("\(baseName).caf")
             if !fm.fileExists(atPath: stagedURL.path) {
@@ -92,6 +97,22 @@ enum AlarmSoundStaging {
         }
 
         return baseName
+    }
+
+    /// 소스가 30초(+tolerance)를 넘는지. 측정 불가/AVFoundation 미가용 시 false 로 보아
+    /// passthrough 를 막지 않는다(트림은 cacheBytes 단계에서 이미 시도됐을 수 있음).
+    private static func isLongerThanLimit(_ url: URL) -> Bool {
+        #if canImport(AVFoundation)
+        let asset = AVURLAsset(url: url)
+        let duration = asset.duration
+        guard !duration.isIndefinite else { return false }
+        let seconds = CMTimeGetSeconds(duration)
+        guard seconds.isFinite, seconds > 0 else { return false }
+        let limitSeconds = Double(AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis) / 1000.0
+        return seconds > limitSeconds
+        #else
+        return false
+        #endif
     }
 
     /// staged sounds 디렉터리 (`Library/Sounds/`) 를 보장.
@@ -154,12 +175,8 @@ enum AlarmSoundStaging {
             throw AlarmSoundStagingError.writeFailed("Indefinite source duration.")
         }
         let seconds = CMTimeGetSeconds(assetDuration)
-        if seconds.isFinite && seconds > 0 {
-            let limitSeconds = Double(AlarmAudioLimits.maxDurationMillis) / 1000.0
-            if seconds > limitSeconds + (Double(AlarmAudioLimits.durationToleranceMillis) / 1000.0) {
-                throw AlarmSoundStagingError.durationExceedsLimit
-            }
-        }
+        // 30초 초과 소스는 reject 하지 않고 아래 timeRange 로 첫 30초만 캡한다(change 6).
+        // 트림은 제품 결정이며, 캡 덕분에 staged 파일은 항상 <=30s 라 .named 로 잠금 재생 가능.
 
         // AppleM4A preset 은 mp3/m4a/aac 입력을 폭넓게 받는다. outputFileType 만 caf 로 지정.
         guard let exporter = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetAppleM4A) else {

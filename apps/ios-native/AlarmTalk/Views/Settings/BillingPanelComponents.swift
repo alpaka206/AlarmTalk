@@ -260,10 +260,17 @@ struct PlanCard: View {
                 onPurchase(plan)
             } label: {
                 VStack(spacing: 2) {
-                    Text(product.displayPrice)
-                        .font(.subheadline.weight(.semibold))
-                    Text("/ \(periodLabel)")
-                        .font(.caption2)
+                    if subscriptions.isPurchasing {
+                        // 결제 진행 중 — 스피너로 in-progress 를 분명히 한다.
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Text(product.displayPrice)
+                            .font(.subheadline.weight(.semibold))
+                        Text("/ \(periodLabel)")
+                            .font(.caption2)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
@@ -272,8 +279,17 @@ struct PlanCard: View {
             .tint(AlarmTalkTheme.primary)
             .foregroundStyle(.white)
             .disabled(isBusy || subscriptions.isPurchasing || isCurrent)
+        } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
+            // 아직 첫 fetch 가 끝나지 않음 — "준비중" 대신 로딩 스켈레톤을 보여줘
+            // 첫 진입이 망가진 화면처럼 보이지 않게 한다.
+            RoundedRectangle(cornerRadius: 6)
+                .fill(AlarmTalkTheme.outline.opacity(0.18))
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+                .overlay(ProgressView().controlSize(.small))
+                .accessibilityLabel("가격 불러오는 중")
         } else {
-            // 제품이 아직 로드되지 않았거나 App Store Connect 에 등록되지 않은 경우.
+            // fetch 가 끝났는데도 제품이 없음 — App Store Connect 미등록 등.
             Button {
                 // no-op
             } label: {
@@ -298,6 +314,119 @@ struct PlanCard: View {
         case .couple:   return "두 사람의 알람과 메시지 공유"
         case .family:   return "최대 6인 가족 공유 알람"
         }
+    }
+}
+
+/// 제품 정보를 불러오는 동안 보여주는 스켈레톤 (3개 유료 플랜 분량).
+/// 첫 로딩의 일시적 빈 상태가 "망가진 화면"처럼 보이지 않게 한다.
+struct BillingPlansSkeleton: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<3, id: \.self) { _ in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        skeletonBar(width: 80, height: 16)
+                        Spacer()
+                    }
+                    skeletonBar(width: 180, height: 12)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(AlarmTalkTheme.outline.opacity(0.18))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                }
+                .padding(12)
+                .background(AlarmTalkTheme.surfaceVariant)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .redacted(reason: .placeholder)
+        .accessibilityElement()
+        .accessibilityLabel("이용권 정보를 불러오는 중이에요")
+    }
+
+    private func skeletonBar(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(AlarmTalkTheme.outline.opacity(0.18))
+            .frame(width: width, height: height)
+    }
+}
+
+/// 제품 fetch 가 실패해 목록이 비어버렸을 때 보여주는 에러/재시도 상태.
+/// 일시적 네트워크 blip 으로 페이월이 영구히 구매 불가가 되는 것을 막는다.
+struct BillingProductsErrorState: View {
+    let isRetrying: Bool
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(AlarmTalkTheme.error)
+                Text("이용권 정보를 불러오지 못했어요")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(AlarmTalkTheme.text)
+            }
+            Text("네트워크 상태를 확인한 뒤 다시 시도해 주세요.")
+                .font(.footnote)
+                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button(action: onRetry) {
+                HStack(spacing: 6) {
+                    if isRetrying {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    Label("다시 시도", systemImage: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(AlarmTalkTheme.primary)
+            .foregroundStyle(.white)
+            .disabled(isRetrying)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AlarmTalkTheme.surfaceVariant)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// 자동 갱신 안내 + 이용약관(EULA)/개인정보 처리방침 링크.
+/// Apple App Store Review Guideline 3.1.2 (구독 메타데이터 노출) 충족용.
+struct SubscriptionTermsFootnote: View {
+    @Environment(\.openURL) private var openURL
+
+    // 약관/개인정보 외부 링크는 RootView 와 동일 출처를 사용한다.
+    private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
+    private static let privacyURL = URL(string: "https://alarm-talk.com/ko/privacy")!
+    // Apple 표준 EULA (앱별 EULA 미지정 시 Apple 이 적용하는 약관).
+    private static let eulaURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("구독은 자동으로 갱신돼요. 현재 기간 종료 24시간 전까지 해지하지 않으면 동일 금액으로 갱신되며, 요금은 결제 시점에 Apple ID 계정으로 청구돼요. 구매 후 App Store 계정 설정에서 언제든지 갱신을 끄거나 해지할 수 있어요.")
+                .font(.caption2)
+                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 12) {
+                Button("이용약관") { openURL(Self.termsURL) }
+                Text("·")
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                Button("개인정보 처리방침") { openURL(Self.privacyURL) }
+                Text("·")
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                Button("EULA") { openURL(Self.eulaURL) }
+            }
+            .font(.caption2.weight(.semibold))
+            .tint(AlarmTalkTheme.primary)
+        }
+        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

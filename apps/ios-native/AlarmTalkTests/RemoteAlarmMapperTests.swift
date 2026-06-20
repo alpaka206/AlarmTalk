@@ -289,7 +289,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
 
     // MARK: - toLocalRecord
 
-    func test_toLocalRecord_receivedRemote_setsExpectedFields() {
+    func test_toLocalRecord_receivedRemote_setsExpectedFields() throws {
         let remote = RemoteAlarm(
             id: "remote-99",
             time: "07:30",
@@ -314,7 +314,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
             isFamilyAlarm: false,
             isReceivedFamilyAlarm: false
         )
-        let local = RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000)
+        let local = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000))
         XCTAssertEqual(local.label, "Sender님이 보낸 알람")
         XCTAssertEqual(local.hour, 7)
         XCTAssertEqual(local.minute, 30)
@@ -334,7 +334,7 @@ final class RemoteAlarmMapperTests: XCTestCase {
         XCTAssertEqual(local.repeatDaysMask, RepeatDay.monday.mask | RepeatDay.tuesday.mask | RepeatDay.wednesday.mask | RepeatDay.thursday.mask | RepeatDay.friday.mask)
     }
 
-    func test_toLocalRecord_inactiveRemote_setsEnabledFalse() {
+    func test_toLocalRecord_inactiveRemote_setsEnabledFalse() throws {
         let remote = makeRemote(messageId: nil, wakeMode: nil)
         var modified = remote
         modified = RemoteAlarm(
@@ -351,15 +351,15 @@ final class RemoteAlarmMapperTests: XCTestCase {
             isFamilyAlarm: remote.isFamilyAlarm,
             isReceivedFamilyAlarm: remote.isReceivedFamilyAlarm
         )
-        let local = RemoteAlarmMapper.toLocalRecord(modified, currentUserID: "me", nowMillis: 1_700_000_000_000)
+        let local = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(modified, currentUserID: "me", nowMillis: 1_700_000_000_000))
         XCTAssertFalse(local.enabled)
         XCTAssertEqual(local.runtimeStateEnum, .disabled)
     }
 
-    func test_toLocalRecord_withoutMessageAudioUrl_downgradesToAlarmOnlyLikeAndroid() {
+    func test_toLocalRecord_withoutMessageAudioUrl_downgradesToAlarmOnlyLikeAndroid() throws {
         let remote = makeRemote(messageId: "m1", wakeMode: "voice_only", messageAudioUrl: nil)
 
-        let local = RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000)
+        let local = try XCTUnwrap(RemoteAlarmMapper.toLocalRecord(remote, currentUserID: "me", nowMillis: 1_700_000_000_000))
 
         XCTAssertEqual(local.playModeEnum, .alarmOnly)
         XCTAssertEqual(local.voiceSourceEnum, .localAudio)

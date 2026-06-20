@@ -65,6 +65,18 @@ final class AlarmAppContext {
     /// `now()` 를 주입 가능하게 만들어 테스트에서 clock 을 고정한다.
     var nowProvider: () -> Date = { Date() }
 
+    /// PR3: dismiss 시 다음 발화 시각 재계산에 쓰는 공휴일 술어. 기본은
+    /// `LocalHolidayCalendar` 고정 규칙이고, AlarmTalkApp 이 `HolidayStore`
+    /// 기반 predicate 로 덮어써 서버 sync 공휴일까지 반영한다 (Android dismiss 의
+    /// full-predicate recompute parity).
+    var holidayPredicate: (Date) -> Bool = { LocalHolidayCalendar.isHoliday($0) }
+
+    /// PR3: `.fixed` 공휴일off one-shot 의 OS 재무장 훅. AlarmAppContext 가
+    /// ViewModel 을 강하게 잡지 않도록(weak-singleton 설계 보존) 클로저 간접 호출로
+    /// 둔다. AlarmTalkApp 이 `alarmKit.rearmIfHolidayOffOneShot` 로 연결한다.
+    /// 기본은 no-op 이라 테스트/콜드부팅에서 안전하다.
+    var rearmHolidayOffOneShot: (String) async -> Void = { _ in }
+
     init(
         store: LocalAlarmStore,
         characterEvents: (AnyObject & CharacterEventQueueing)?
@@ -84,7 +96,18 @@ final class AlarmAppContext {
         guard let store else { return }
         let recordBeforeStop = store.recordByAlarmKitID(alarmKitIDString)
         // markStopped 는 alarmKitID 매칭이 안 되면 no-op 이므로 안전.
-        store.markStopped(alarmKitID: alarmKitIDString)
+        // PR3: 공휴일 술어를 넘겨 store 측 fireAtMillis 전진을 공휴일-정확하게 만든다
+        // (Android dismiss 의 full-predicate recompute parity).
+        store.markStopped(alarmKitID: alarmKitIDString, isHoliday: holidayPredicate)
+
+        // PR3: `.fixed` 공휴일off one-shot 은 markStopped 후 OS 재무장이 필요하다.
+        // markStopped 가 해당 서브셋의 alarmKitID 를 nil 로 비워두었고, 재무장 훅은
+        // alarmKitID==nil guard 로 멱등하다 (StopAlarmIntent + disappearance 중복 안전).
+        // 두 dismiss 진입점이 여기로 수렴하므로 dismiss-time 재무장의 1차 경로.
+        if recordBeforeStop?.isHolidayOffRecurring == true,
+           let id = recordBeforeStop?.id {
+            await rearmHolidayOffOneShot(id)
+        }
 
         guard let queueing else { return }
         guard let record = recordBeforeStop else { return }

@@ -53,6 +53,40 @@ final class LocalAlarmStoreDeletionTests: XCTestCase {
         )
     }
 
+    /// Android `AlarmRepository.deletePaidAlarmTalks` 의 `stockVoiceOnly` 보존 규칙 동일:
+    /// 로컬/raw 음원이 없고 voiceProfileId 가 시스템 스톡 보이스면 무료 다운그레이드에서 보존한다.
+    func test_paidAlarmTalksPreservesSystemStockVoiceOnlyAlarms() {
+        let store = makeStore()
+        let stockOnly = makeAlarm(
+            id: "stock-only",
+            audioCacheKey: nil,
+            playMode: .voiceOnly,
+            voiceProfileId: "\(systemVoiceIDPrefix)000000000001"
+        )
+        let stockWithLocalAudio = makeAlarm(
+            id: "stock-with-local-audio",
+            audioCacheKey: nil,
+            playMode: .voiceOnly,
+            localAudioUri: "local.m4a",
+            voiceProfileId: "\(systemVoiceIDPrefix)000000000002"
+        )
+        let stockWithRawAudio = makeAlarm(
+            id: "stock-with-raw-audio",
+            audioCacheKey: nil,
+            playMode: .voiceOnly,
+            rawAudioUri: "r2://raw",
+            voiceProfileId: "\(systemVoiceIDPrefix)000000000003"
+        )
+
+        [stockOnly, stockWithLocalAudio, stockWithRawAudio].forEach { store.upsert($0) }
+
+        // stockOnly 만 보존(삭제 대상 제외), 음원이 붙은 둘은 여전히 삭제 대상.
+        XCTAssertEqual(
+            Set(store.paidAlarmTalks().map(\.id)),
+            Set(["stock-with-local-audio", "stock-with-raw-audio"])
+        )
+    }
+
     private func makeStore() -> LocalAlarmStore {
         let url = FileManager.default
             .temporaryDirectory

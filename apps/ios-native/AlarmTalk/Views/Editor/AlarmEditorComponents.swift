@@ -137,7 +137,7 @@ struct LocalAlarmAudioEditor: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isRecording ? "녹음 중..." : (hasRecording ? "녹음을 저장했어요." : "녹음 또는 파일 업로드"))
+                    Text(isRecording ? "녹음 중…" : (hasRecording ? "녹음을 저장했어요." : "녹음 또는 파일 업로드"))
                         .font(theme.typography.labelLarge)
                     Text("\(durationLabel) / \(HelperFormatters.audioTimeLabel(Int(AlarmAudioLimits.maxDurationMillis)))")
                         .font(theme.typography.bodySmall)
@@ -512,11 +512,16 @@ struct ManualVoiceMessageEditor: View {
                         .foregroundStyle(theme.palette.onSurfaceVariant)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
+                        // 시각적 placeholder 일 뿐이라 VoiceOver 에는 노출하지 않는다
+                        // (실 입력 라벨은 아래 TextEditor 가 제공).
+                        .accessibilityHidden(true)
                 }
                 TextEditor(text: limitedText)
                     .frame(minHeight: 86)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
+                    .accessibilityLabel(Text("알람 음성 메시지"))
+                    .accessibilityValue(Text(text.isEmpty ? "비어 있음" : text))
             }
             .padding(8)
             .background(theme.palette.surfaceVariant.opacity(0.36))
@@ -637,6 +642,10 @@ struct AlarmVoiceProfilePicker: View {
     let ownProfiles: [VoiceProfile]
     let familyVoices: [FamilyVoiceProfile]
     let selectedProfileID: String?
+    /// 프로필 목록을 비동기로 불러오는 중인지. 초기 fetch 동안에는 ownProfiles /
+    /// familyVoices 가 잠깐 비어 있어, loading 을 무시하면 '삭제된 목소리' 경고가
+    /// 잘못 깜빡인다. Android `VoiceAudioCard.kt` 의 `!voiceProfileBusy` 게이트 미러.
+    let loading: Bool
     let onSelectOwn: (VoiceProfile) -> Void
     let onSelectShared: (FamilyVoiceProfile) -> Void
 
@@ -645,6 +654,18 @@ struct AlarmVoiceProfilePicker: View {
     var body: some View {
         let readyOwnProfiles = ownProfiles.filter(\.isReadyForAlarmSelection)
         let readyFamilyVoices = familyVoices.filter(\.isReadyForAlarmSelection)
+        // 저장된 voiceProfileId 가 더 이상 선택 가능한 목소리로 해석되지 않으면
+        // 조용히 다른 목소리로 바꾸지 않고 빨간 경고만 띄운다. 선택값은 그대로 두어
+        // 저장된 알람은 계속 울리되, 문구를 바꾸려면 사용자가 직접 다시 고르게 한다
+        // (Android `VoiceAudioCard.kt` selectedProfileUnavailable 미러).
+        // 단, 로딩 중에는 프로필 배열이 잠깐 비어 false-positive 가 나므로 제외한다.
+        let selectedProfileUnavailable: Bool = {
+            guard !loading else { return false }
+            guard let selectedID = selectedProfileID, !selectedID.isEmpty else { return false }
+            let resolves = readyOwnProfiles.contains { $0.id == selectedID }
+                || readyFamilyVoices.contains { $0.id == selectedID }
+            return !resolves
+        }()
         VStack(alignment: .leading, spacing: 8) {
             if readyOwnProfiles.isEmpty && readyFamilyVoices.isEmpty {
                 Text("사용할 수 있는 목소리가 없어요. 먼저 목소리를 만들어 주세요.")
@@ -674,7 +695,26 @@ struct AlarmVoiceProfilePicker: View {
                     )
                 }
             }
+            if selectedProfileUnavailable {
+                selectedProfileUnavailableCallout
+            }
         }
+    }
+
+    private var selectedProfileUnavailableCallout: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("삭제된 목소리")
+                .font(theme.typography.labelLarge)
+                .foregroundStyle(theme.palette.onErrorContainer)
+            Text("이 알람에 저장된 목소리는 그대로 울리지만, 문구를 바꾸려면 다른 목소리를 선택해 주세요.")
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onErrorContainer.opacity(0.78))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(theme.palette.errorContainer.opacity(0.58))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func voiceRow(

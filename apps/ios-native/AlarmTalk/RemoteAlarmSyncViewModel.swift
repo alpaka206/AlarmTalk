@@ -113,20 +113,44 @@ final class RemoteAlarmSyncViewModel: ObservableObject {
 
     /// 풀 push 사이클 수동 실행. 백그라운드 task 외에 UI 의 "전체 동기화" 같은
     /// 후속 액션에서 호출 가능.
+    ///
+    /// Android `MainViewModel.syncNow` 와 동일하게 push → pull 순으로 돌리고,
+    /// 부분 실패(개별 행 push/pull 실패)는 push-failed / pull-failed / 둘 다로
+    /// 나눠 안내한다. 사이클 전체가 throw 된 경우(네트워크 단절 등)는 기존
+    /// generic fallback 으로 폴백한다.
     func runFullSync() async {
         guard let push, let pull else { return }
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            _ = try await push.runOnce()
-            try await pull.runOnce()
-            statusMessage = "전체 동기화 완료"
+            let pushResult = try await push.runOnce()
+            let pullResult = try await pull.runOnce()
+            let failedMessage = alarmSyncPartialFailureMessage(
+                pushFailed: pushResult.failed,
+                pullFailed: pullResult.failed
+            )
+            statusMessage = failedMessage ?? "전체 동기화 완료"
         } catch {
             statusMessage = userFacingErrorMessage(
                 error,
                 fallback: "알람 정보를 불러오거나 변경사항을 저장하지 못했어요"
             )
+        }
+    }
+
+    /// push/pull 부분 실패 카운트를 사람이 읽는 안내로 변환. 실패가 없으면 nil.
+    /// Android `alarmSyncFailureMessage` (strings.xml msg_sync_*_partial_failed) parity.
+    private func alarmSyncPartialFailureMessage(pushFailed: Int, pullFailed: Int) -> String? {
+        switch (pushFailed > 0, pullFailed > 0) {
+        case (true, true):
+            return "알람 변경사항 일부를 저장하지 못했고, 받은 알람 일부를 불러오지 못했어요."
+        case (true, false):
+            return "알람 변경사항 일부를 저장하지 못했어요. 이 기기의 알람은 그대로 울려요."
+        case (false, true):
+            return "받은 알람 일부를 불러오지 못했어요. 잠시 후 다시 동기화해 주세요."
+        case (false, false):
+            return nil
         }
     }
 

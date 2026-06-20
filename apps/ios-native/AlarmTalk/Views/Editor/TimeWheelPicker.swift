@@ -16,6 +16,7 @@ import SwiftUI
 /// - 상하단 fade gradient mask 로 wheel-edge 효과.
 /// - `snappy(duration: 0.25)` 스프링 애니메이션.
 struct TimeWheelPicker: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var hour: Int
     @Binding var minute: Int
 
@@ -50,7 +51,7 @@ struct TimeWheelPicker: View {
         .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .fill(Color.timeWheelBackground)
+                .fill(theme.palette.primaryContainer)
         )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("시간 선택"))
@@ -105,6 +106,7 @@ enum TimeWheelMath {
 /// 무한 wrap (range 의 시작/끝이 이어짐) 을 지원한다. Android
 /// `DraggableTimeWheelColumn` 의 `floorMod` 동작과 동일.
 struct DraggableNumberColumn: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var value: Int
     let range: ClosedRange<Int>
     let formatter: (Int) -> String
@@ -129,7 +131,7 @@ struct DraggableNumberColumn: View {
                     Text(formatter(displayValue))
                         .font(.system(size: 48, weight: .bold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(Color.timeWheelText.opacity(textAlpha(for: clamped)))
+                        .foregroundStyle(theme.palette.onPrimaryContainer.opacity(textAlpha(for: clamped)))
                         .frame(maxWidth: .infinity)
                         .frame(height: itemHeight)
                         .position(x: proxy.size.width / 2, y: yPosition)
@@ -231,6 +233,7 @@ struct DraggableNumberColumn: View {
 // MARK: - AM/PM column
 
 struct AmPmWheelColumn: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var isPM: Bool
     @State private var selectionGenerator = UISelectionFeedbackGenerator()
 
@@ -286,7 +289,7 @@ struct AmPmWheelColumn: View {
     private func label(title: String, selected: Bool) -> some View {
         Text(title)
             .font(.system(size: selected ? 36 : 30, weight: selected ? .bold : .semibold))
-            .foregroundStyle(Color.timeWheelText.opacity(selected ? 1.0 : 0.22))
+            .foregroundStyle(theme.palette.onPrimaryContainer.opacity(selected ? 1.0 : 0.22))
             .frame(maxWidth: .infinity)
     }
 }
@@ -294,25 +297,14 @@ struct AmPmWheelColumn: View {
 // MARK: - Colon
 
 private struct ColonSeparator: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+
     var body: some View {
         Text(":")
             .font(.system(size: 48, weight: .bold, design: .rounded))
-            .foregroundStyle(Color.timeWheelText)
+            .foregroundStyle(theme.palette.onPrimaryContainer)
             .frame(width: 18)
             .accessibilityHidden(true)
-    }
-}
-
-// MARK: - Theme bridge
-
-private extension Color {
-    /// Android `wheelBackgroundColor = primaryContainer` 대응.
-    static var timeWheelBackground: Color {
-        Color(.sRGB, red: 0.86, green: 0.93, blue: 1.0, opacity: 1.0)
-    }
-    /// Android `selectedTextColor = onPrimaryContainer` 대응.
-    static var timeWheelText: Color {
-        Color(.sRGB, red: 0.04, green: 0.15, blue: 0.25, opacity: 1.0)
     }
 }
 

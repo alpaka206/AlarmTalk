@@ -196,8 +196,9 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static let defaultContext: RandomPromptContext = .wakeWeather
+    static let defaultContext: RandomPromptContext = .preset
     static let alarmEditorCases: [RandomPromptContext] = [
+        .preset,
         .wakeWeather,
         .wakeFortune,
         .meal,
@@ -213,9 +214,10 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         case "fortune":
             return .wakeFortune
         default:
+            // 'preset' 은 서버 무료 게이트(tts.ts:695)가 요구하는 정식 값이므로
+            // 더 이상 defaultContext 로 흡수하지 않고 그대로 보존한다.
             guard let rawValue,
-                  let context = RandomPromptContext(rawValue: rawValue),
-                  context != .preset else {
+                  let context = RandomPromptContext(rawValue: rawValue) else {
                 return defaultContext
             }
             return context
@@ -241,7 +243,7 @@ enum RandomPromptContext: String, CaseIterable, Identifiable {
         case .sleep:
             return "night"
         case .exercise:
-            return "health"
+            return "exercise"
         case .love:
             return "love"
         default:

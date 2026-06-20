@@ -1,5 +1,4 @@
 import SwiftUI
-@preconcurrency import CoreLocation
 
 struct WeatherLocationInputFields: View {
     @Binding var country: String
@@ -8,7 +7,9 @@ struct WeatherLocationInputFields: View {
     var submitted: Bool = false
     var helperText: String = "직접 입력하거나 현재 위치로 채울 수 있어요."
 
-    @StateObject private var locator = WeatherLocationLookupModel()
+    // 현재 위치 조회/역지오코딩 로직은 WeatherLocationProvider 에 분리되어 있다
+    // (Android com.alarmtalk.app.location.WeatherLocationProvider 대응).
+    @StateObject private var locator = WeatherLocationProvider()
 
     private var countryValue: String { Self.clean(country) }
     private var cityValue: String { Self.clean(city) }
@@ -107,124 +108,5 @@ struct WeatherLocationInputFields: View {
 
     static func clean(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-struct WeatherLocationFix: Equatable {
-    let country: String
-    let city: String
-}
-
-@MainActor
-final class WeatherLocationLookupModel: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published private(set) var isBusy = false
-    @Published var statusMessage: String?
-
-    private var manager: CLLocationManager?
-    private var continuation: CheckedContinuation<CLLocation?, Never>?
-    private let geocoder = CLGeocoder()
-
-    func resolveCurrentLocation() async -> WeatherLocationFix? {
-        guard !isBusy else { return nil }
-        isBusy = true
-        statusMessage = "현재 위치를 가져오는 중..."
-        defer { isBusy = false }
-
-        guard let location = await requestLocation() else {
-            if statusMessage == nil || statusMessage == "현재 위치를 가져오는 중..." {
-                statusMessage = "위치를 가져오지 못했어요. 위치 서비스가 켜져 있는지 확인하거나 직접 입력해 주세요."
-            }
-            return nil
-        }
-
-        do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(
-                location,
-                preferredLocale: Locale(identifier: "ko_KR")
-            )
-            let placemark = placemarks.first
-            let country = placemark?.country?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let city = (placemark?.administrativeArea ?? placemark?.locality ?? placemark?.subLocality ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            statusMessage = country.isEmpty && city.isEmpty
-                ? "위치는 가져왔지만 주소 정보를 찾지 못했어요. 직접 입력해 주세요."
-                : "현재 위치로 채웠어요."
-            return WeatherLocationFix(country: country, city: city)
-        } catch {
-            statusMessage = "주소 정보를 찾지 못했어요. 직접 입력해 주세요."
-            return nil
-        }
-    }
-
-    private func requestLocation() async -> CLLocation? {
-        guard CLLocationManager.locationServicesEnabled() else {
-            statusMessage = "위치 서비스가 꺼져 있어요. 직접 입력해 주세요."
-            return nil
-        }
-
-        return await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            let manager = CLLocationManager()
-            manager.delegate = self
-            manager.desiredAccuracy = kCLLocationAccuracyKilometer
-            self.manager = manager
-
-            switch manager.authorizationStatus {
-            case .notDetermined:
-                manager.requestWhenInUseAuthorization()
-            case .authorizedAlways, .authorizedWhenInUse:
-                manager.requestLocation()
-            case .denied, .restricted:
-                statusMessage = "위치 권한이 거부됐어요. 직접 입력해 주세요."
-                finishLocationRequest(with: nil)
-            @unknown default:
-                statusMessage = "위치 권한 상태를 확인하지 못했어요. 직접 입력해 주세요."
-                finishLocationRequest(with: nil)
-            }
-        }
-    }
-
-    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
-        Task { @MainActor in
-            guard self.continuation != nil else { return }
-            switch status {
-            case .authorizedAlways, .authorizedWhenInUse:
-                self.manager?.requestLocation()
-            case .denied, .restricted:
-                self.statusMessage = "위치 권한이 거부됐어요. 직접 입력해 주세요."
-                self.finishLocationRequest(with: nil)
-            case .notDetermined:
-                break
-            @unknown default:
-                self.finishLocationRequest(with: nil)
-            }
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        let latitude = locations.last?.coordinate.latitude
-        let longitude = locations.last?.coordinate.longitude
-        Task { @MainActor in
-            guard let latitude, let longitude else {
-                self.finishLocationRequest(with: nil)
-                return
-            }
-            self.finishLocationRequest(with: CLLocation(latitude: latitude, longitude: longitude))
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError _: Error) {
-        Task { @MainActor in
-            self.statusMessage = "위치를 가져오지 못했어요. 직접 입력해 주세요."
-            self.finishLocationRequest(with: nil)
-        }
-    }
-
-    private func finishLocationRequest(with location: CLLocation?) {
-        continuation?.resume(returning: location)
-        continuation = nil
-        manager?.delegate = nil
-        manager = nil
     }
 }

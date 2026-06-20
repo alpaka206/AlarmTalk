@@ -38,6 +38,28 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         }
     }
 
+    /// 한 pull 사이클의 집계. Android `RemoteAlarmPullResult` 와 동일한 카운터를
+    /// 가지며, `PushResult` 와 같은 스타일을 따른다.
+    ///   - imported: 신규 import (로컬에 없던 receivedRemote 를 새로 저장)
+    ///   - updated:  기존 receivedRemote 갱신
+    ///   - skipped:  time 등이 유효하지 않아 mapped 가 nil 인 행 (07:00 보정 없이 skip)
+    ///   - failed:   단일 알람 머지 중 throw 된 행 (사이클 전체를 중단시키지 않음)
+    struct PullResult: Equatable, Sendable {
+        var imported: Int
+        var updated: Int
+        var skipped: Int
+        var failed: Int
+    }
+
+    /// 단일 remote 알람 머지의 결과 분류. `runOnce` 의 카운터 집계에만 쓰인다.
+    private enum MergeOutcome {
+        case imported
+        case updated
+        /// 충돌 정책(`shouldApplyRemote == false`)으로 서버 응답을 적용하지 않음.
+        /// Android 와 동일하게 imported/updated/failed 어디에도 포함되지 않는다.
+        case unchanged
+    }
+
     private let api: AlarmTalkAPI
     private let store: LocalAlarmStore
     private let alarmKit: AlarmKitViewModel
@@ -66,7 +88,11 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
     }
 
     /// 한 번의 pull 사이클을 수행한다. 호출자가 동시 호출을 방지해야 한다.
-    func runOnce() async throws {
+    ///
+    /// 반환하는 `PullResult` 는 Android `RemoteAlarmPullSyncService.pullReceivedAlarms`
+    /// 의 카운터와 동일한 의미를 가진다. `BackgroundSyncTask` 가 retry 판단에 사용한다.
+    @discardableResult
+    func runOnce() async throws -> PullResult {
         guard let session = auth.session else { throw PullError.noSession }
         let userID = session.user.id
         let token = session.token
@@ -78,27 +104,60 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
         let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
 
         // 1. 신규/갱신 처리.
+        // Android `buildLocalAlarm` 과 동일하게, time 이 유효하지 않은 행(mapped == nil)은
+        // 07:00 같은 디폴트로 보정하지 않고 그대로 skip 하고 카운트만 남긴다.
+        var imported = 0
+        var updated = 0
+        var skipped = 0
+        var failed = 0
         for remote in receivedRemoteAlarms {
-            let mapped = RemoteAlarmMapper.toLocalRecord(
+            guard let mapped = RemoteAlarmMapper.toLocalRecord(
                 remote,
                 currentUserID: userID,
                 nowMillis: nowMillis
+            ) else {
+                skipped += 1
+                continue
+            }
+            // Android 의 per-alarm `runCatching` 와 동일하게, 단일 알람 머지 실패가
+            // 사이클 전체를 중단시키지 않도록 격리하고 failed 만 누적한다. (현재 iOS
+            // 머지 경로는 throw 하지 않으므로 failed 는 0 이지만, Android 카운터 의미를
+            // 보존하고 향후 throwing 작업이 추가돼도 retry 판단이 그대로 동작한다.)
+            do {
+                switch try await mergeRemote(remote: remote, mapped: mapped, token: token) {
+                case .imported: imported += 1
+                case .updated: updated += 1
+                case .unchanged: break
+                }
+            } catch {
+                failed += 1
+                Self.logger.error(
+                    "Pull sync: failed to merge remote alarm (id: \(remote.id, privacy: .public)): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        if skipped > 0 {
+            Self.logger.warning(
+                "Pull sync: skipped \(skipped, privacy: .public) remote alarm(s) with invalid time"
             )
-            await mergeRemote(remote: remote, mapped: mapped, token: token)
         }
 
         // 2. cascade 삭제: 서버에 더는 없는 receivedRemote 만 정리.
         await pruneOrphanReceivedRemotes(serverIDs: Set(remoteAlarms.map(\.id)))
+
+        return PullResult(imported: imported, updated: updated, skipped: skipped, failed: failed)
     }
 
     // MARK: Merge
 
-    /// 단일 remote 알람을 로컬 store 와 머지한다.
-    private func mergeRemote(remote: RemoteAlarm, mapped initialMapped: LocalAlarmRecord, token: String) async {
+    /// 단일 remote 알람을 로컬 store 와 머지하고, 집계용 결과를 반환한다.
+    @discardableResult
+    private func mergeRemote(remote: RemoteAlarm, mapped initialMapped: LocalAlarmRecord, token: String) async throws -> MergeOutcome {
         var mapped = initialMapped
         if let existing = store.alarms.first(where: { $0.remoteAlarmId == remote.id }) {
             // 충돌 정책 + last write wins.
-            guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return }
+            guard Self.shouldApplyRemote(existing: existing, mapped: mapped) else { return .unchanged }
 
             mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
 
@@ -110,6 +169,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
             if merged.originEnum == .receivedRemote && merged.enabled {
                 await rescheduleReceivedRemote(record: merged, existing: existing)
             }
+            return .updated
         } else {
             mapped = await recordWithCachedTTSIfNeeded(mapped, token: token)
 
@@ -125,6 +185,7 @@ final class RemoteAlarmPullSync: @unchecked Sendable {
                 title: RemoteAlarmMapper.resolveLabel(remote),
                 time: String(format: "%02d:%02d", mapped.hour, mapped.minute)
             )
+            return .imported
         }
     }
 

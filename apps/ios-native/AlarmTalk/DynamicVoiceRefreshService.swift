@@ -108,6 +108,10 @@ final class DynamicVoiceRefreshService {
             alarm.repeatDaysMask != 0 &&
             alarm.voiceRandomPrompt &&
             alarm.playModeEnum != .alarmOnly &&
+            // 스톡 클립(`stock_` prefix)은 고정 음원이므로 랜덤 TTS 로 덮어쓰지 않는다.
+            // 저장 시 voiceRandomPrompt=false 로 빠지지만, 그 이전에 저장된 알람까지
+            // 안전하게 제외하기 위한 방어선이다.
+            alarm.audioCacheKey?.hasPrefix("stock_") != true &&
             alarm.voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
@@ -137,7 +141,7 @@ final class DynamicVoiceRefreshService {
         case .sleep:
             return "night"
         case .exercise:
-            return "health"
+            return "exercise"
         case .love:
             return "love"
         default:
