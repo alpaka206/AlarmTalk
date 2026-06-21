@@ -5,6 +5,20 @@ struct AuthSession: Codable, Equatable {
     var user: AuthUser
 }
 
+// MARK: - Holiday API (GET /holiday)
+// 백엔드 다국가 공휴일 응답. decoder 가 convertFromSnakeCase 이므로 Swift 프로퍼티는 camelCase.
+struct HolidayApiResponse: Decodable {
+    let holidays: [HolidayApiItem]
+}
+
+struct HolidayApiItem: Decodable {
+    let date: String        // "yyyy-MM-dd"
+    let name: String
+    let type: String        // "public" 만 알람 skip 대상
+    let substitute: Bool?
+    let source: String?
+}
+
 struct FamilyAlarmQuietWindow: Codable, Equatable {
     var days: [Int]
     var start: String

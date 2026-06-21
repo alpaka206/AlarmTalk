@@ -175,7 +175,45 @@ final class HolidayStore: ObservableObject {
     nonisolated static let defaultCountryCode = "KR"
     nonisolated static let defaultLookaheadDays = 370
 
+    /// Phase 2: 지원 국가는 정확히 이 5개. (EU/GB 없음.)
+    nonisolated static let supportedCountryCodes = ["KR", "JP", "US", "VN", "CN"]
+
+    /// UserDefaults 키 — 앱 전역 단일 국가 설정.
+    nonisolated static let countryDefaultsKey = "holiday.selectedCountryCode"
+
+    /// region 코드를 현재 로케일 기준 표시명으로. ("KR" → "대한민국" / "South Korea")
+    nonisolated static func localizedCountryName(_ code: String) -> String {
+        Locale.current.localizedString(forRegionCode: code) ?? code
+    }
+
+    /// 디바이스 로케일 지역이 지원 집합에 있으면 그것을, 아니면 "KR".
+    nonisolated static func defaultCountryFromLocale() -> String {
+        let region = Locale.current.region?.identifier.uppercased() ?? ""
+        return supportedCountryCodes.contains(region) ? region : defaultCountryCode
+    }
+
     @Published private(set) var holidays: [HolidayEntity] = []
+
+    /// 앱 전역 단일 국가 설정 (per-alarm 아님). 변경 시 UserDefaults 영속 +
+    /// 선택 국가 sync + onCountryChanged 콜백.
+    @Published var selectedCountryCode: String {
+        didSet {
+            guard didFinishInit else { return }
+            UserDefaults.standard.set(selectedCountryCode, forKey: Self.countryDefaultsKey)
+            let cc = selectedCountryCode
+            Task { await self.ensureSynced(countryCode: cc) }
+            onCountryChanged?()
+        }
+    }
+
+    /// 국가 변경 시 재무장/재계산을 트리거하도록 AlarmTalkApp 이 설정한다.
+    var onCountryChanged: (() -> Void)?
+
+    /// init 단계에서 didSet 이 UserDefaults 를 다시 쓰지 않도록 가드.
+    private var didFinishInit = false
+
+    /// 동일 국가 중복 sync 방지.
+    private var inFlightSyncCountries: Set<String> = []
 
     private let persistence: HolidayPersistence
 
@@ -183,50 +221,107 @@ final class HolidayStore: ObservableObject {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let storageURL = directory.appendingPathComponent("voice-alarm-ios-holidays.json")
         self.persistence = HolidayPersistence(storageURL: storageURL)
+
+        // 영속된 국가 설정 로드 — 없거나 지원 외면 디바이스 로케일 기반 기본값.
+        let persisted = UserDefaults.standard.string(forKey: Self.countryDefaultsKey)
+        if let persisted, Self.supportedCountryCodes.contains(persisted.uppercased()) {
+            self.selectedCountryCode = persisted.uppercased()
+        } else {
+            self.selectedCountryCode = Self.defaultCountryFromLocale()
+        }
+        // init 이후부터 didSet 영속/sync 동작 허용.
+        self.didFinishInit = true
+
         Task { [persistence] in
             let loaded = await persistence.load()
             await MainActor.run { self.holidays = loaded }
             await self.seedDefaultsIfNeeded()
+            await self.ensureSynced(countryCode: self.selectedCountryCode)
         }
     }
 
     // MARK: Queries
 
     func isHoliday(_ date: Date,
-                   countryCode: String = HolidayStore.defaultCountryCode) -> Bool {
+                   countryCode: String? = nil) -> Bool {
+        let cc = countryCode ?? selectedCountryCode
         let epochDay = Self.epochDay(of: date)
         let inCache = holidays.contains { h in
-            h.countryCode.uppercased() == countryCode.uppercased() &&
+            h.countryCode.uppercased() == cc.uppercased() &&
                 h.epochDay == epochDay
         }
-        return inCache || LocalHolidayCalendar.isHoliday(date, countryCode: countryCode)
+        return inCache || LocalHolidayCalendar.isHoliday(date, countryCode: cc)
     }
 
     func holidaysIn(range: ClosedRange<Date>,
-                    countryCode: String = HolidayStore.defaultCountryCode) -> [HolidayEntity] {
+                    countryCode: String? = nil) -> [HolidayEntity] {
+        let cc = countryCode ?? selectedCountryCode
         let startEpoch = Self.epochDay(of: range.lowerBound)
         let endEpoch = Self.epochDay(of: range.upperBound)
         return holidays.filter { h in
-            h.countryCode.uppercased() == countryCode.uppercased() &&
+            h.countryCode.uppercased() == cc.uppercased() &&
                 h.epochDay >= startEpoch &&
                 h.epochDay <= endEpoch
         }
     }
 
     /// Android `holidayPredicate` 와 동일 의미. AlarmTimeCalculator 에 주입.
+    /// countryCode == nil 이면 평가 시점에 selectedCountryCode 로 resolve 해
+    /// 설정 변경에 반응적이다 (weak-self 폴백 분기는 defaultCountryCode 로 resolve).
     func holidayPredicate(
-        countryCode: String = HolidayStore.defaultCountryCode,
+        countryCode: String? = nil,
         startDate: Date = Date()
     ) -> (Date) -> Bool {
         return { [weak self] date in
             guard let self else {
-                return LocalHolidayCalendar.isHoliday(date, countryCode: countryCode)
+                let cc = countryCode ?? Self.defaultCountryCode
+                return LocalHolidayCalendar.isHoliday(date, countryCode: cc)
             }
             return self.isHoliday(date, countryCode: countryCode)
         }
     }
 
     // MARK: Seeding / sync
+
+    /// 선택 국가의 공휴일을 백엔드 `/holiday` 에서 가져와 캐시한다.
+    /// KR 은 온디바이스(시드 + 음력 엔진)라 네트워크가 필요 없어 즉시 return.
+    /// 이미 해당 국가 행이 있으면(=한 번 받음) 재요청하지 않는다. 실패는 삼켜
+    /// UI 가 placeholder 를 보이도록 한다.
+    func ensureSynced(countryCode: String) async {
+        let cc = countryCode.uppercased()
+        if cc == "KR" { return }
+        if holidays.contains(where: { $0.countryCode.uppercased() == cc }) { return }
+        if inFlightSyncCountries.contains(cc) { return }
+        inFlightSyncCountries.insert(cc)
+        defer { inFlightSyncCountries.remove(cc) }
+
+        // from = today, to = today + ~395일. HolidayStore.formatDate 와 동일한
+        // Asia/Seoul gregorian 시계로 문자열화.
+        let seoul = KoreanLunarHolidayEngine.seoulGregorian
+        let today = Date()
+        let toDate = seoul.date(byAdding: .day, value: 395, to: today) ?? today
+        let from = Self.formatDate(today)
+        let to = Self.formatDate(toDate)
+
+        do {
+            let result = try await AlarmTalkAPI.shared.fetchHolidays(
+                country: cc,
+                from: from,
+                to: to,
+                lang: Self.uiLanguageCode()
+            )
+            if !result.isEmpty {
+                upsertAll(result)
+            }
+        } catch {
+            // Swallow — UI 가 placeholder 를 표시한다.
+        }
+    }
+
+    /// 백엔드 `lang` 파라미터에 쓸 UI 언어 코드 (없으면 nil).
+    nonisolated private static func uiLanguageCode() -> String? {
+        Locale.preferredLanguages.first.flatMap { Locale(identifier: $0).language.languageCode?.identifier }
+    }
 
     /// 시드 데이터를 영속 캐시에 upsert. 본 phase 는 KR 2026 한 해 분만 채워둠.
     func seedDefaultsIfNeeded() async {

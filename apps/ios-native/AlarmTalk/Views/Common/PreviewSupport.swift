@@ -48,6 +48,10 @@ extension AppVersionGate {
     static var preview: AppVersionGate { AppVersionGate() }
 }
 
+extension HolidayStore {
+    static var preview: HolidayStore { HolidayStore() }
+}
+
 /// 한 곳에서 본 앱이 환경에 주입하는 ViewModel 을 모두 attach 해 주는 헬퍼 modifier.
 struct PreviewEnvironment: ViewModifier {
     func body(content: Content) -> some View {
@@ -61,6 +65,7 @@ struct PreviewEnvironment: ViewModifier {
             .environmentObject(CharacterEventStore.preview)
             .environmentObject(SubscriptionManager.preview)
             .environmentObject(AppVersionGate.preview)
+            .environmentObject(HolidayStore.preview)
     }
 }
 

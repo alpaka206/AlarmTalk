@@ -7,6 +7,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
+    @EnvironmentObject private var holidayStore: HolidayStore
     @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
 
     @State private var nicknameDraft: String = ""
@@ -63,6 +64,26 @@ struct SettingsView: View {
                     )
                 }
                 .settingsCard(title: "랜덤 문구 정보")
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker("공휴일 국가", selection: $holidayStore.selectedCountryCode) {
+                        ForEach(HolidayStore.supportedCountryCodes, id: \.self) { code in
+                            Text("\(HolidayCountryFlag.emoji(for: code)) \(HolidayStore.localizedCountryName(code))")
+                                .tag(code)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AlarmTalkTheme.primaryDark)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+
+                    Text("선택한 국가의 공휴일이 모든 알람의 ‘공휴일에는 끄기’ 기준이 돼요.")
+                        .font(.caption)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
+                }
+                .settingsCard(title: "공휴일")
 
                 if let user = auth.session?.user {
                     AccountPanel(

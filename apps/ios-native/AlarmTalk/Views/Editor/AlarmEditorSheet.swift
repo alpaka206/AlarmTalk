@@ -134,8 +134,31 @@ struct AlarmEditorSheet: View {
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                 HolidayOffToggle(
                     isOn: $draft.holidayOff,
-                    enabled: draft.repeatDaysMask != 0
+                    enabled: draft.repeatDaysMask != 0,
+                    // KR 은 nil 을 넘겨 기존 '대체·임시 공휴일 포함' 안내를 유지, 그 외만 국가 기준 표기.
+                    subtitleCountryName: holidayStore.selectedCountryCode == "KR"
+                        ? nil
+                        : HolidayStore.localizedCountryName(holidayStore.selectedCountryCode)
                 )
+
+                if draft.holidayOff {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            Text("공휴일 달력: \(HolidayCountryFlag.emoji(for: holidayStore.selectedCountryCode)) \(HolidayStore.localizedCountryName(holidayStore.selectedCountryCode))")
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurface)
+                            Spacer(minLength: 8)
+                            Text("설정에서 변경")
+                                .font(theme.typography.bodySmall)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                        }
+                        HolidayUpcomingList(
+                            countryCode: holidayStore.selectedCountryCode,
+                            holidayStore: holidayStore
+                        )
+                    }
+                    .padding(.top, 2)
+                }
             }
 
             if target.familyAlarmMode {

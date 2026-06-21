@@ -58,6 +58,8 @@ struct AlarmTalkApp: App {
                     .environmentObject(characterEvents)
                     .environmentObject(subscriptions)
                     .environmentObject(versionGate)
+                    // Phase 2: 앱 전역 단일 공휴일 국가 설정을 SettingsView 등이 공유.
+                    .environmentObject(holidayStore)
                     .task {
                         // Phase 4-D1: StoreKit 제품 fetch + currentEntitlements 동기화.
                         // 다른 await 들과 병렬로 실행해도 의존성이 없다.
@@ -96,6 +98,19 @@ struct AlarmTalkApp: App {
                         // AlarmAppContext.holidayPredicate·timezone 재무장과 동일한 공휴일
                         // 집합을 본다 (Android 단일 holidayCalendarStore parity).
                         alarmKit.configure(holidayStore: holidayStore)
+                        // Phase 2: 공휴일 국가가 바뀌면 활성 공휴일off 알람을 재계산+재무장한다.
+                        // (선택 국가의 공휴일 집합 기준으로 다음 발화 시각이 달라질 수 있으므로
+                        // timezone 변경과 동일하게 forceHolidayOffRecompute 로 강제.)
+                        holidayStore.onCountryChanged = { [weak alarmKit, weak alarmStore] in
+                            guard let alarmKit, let alarmStore else { return }
+                            Task { @MainActor in
+                                guard alarmStore.hasLoadedFromDisk else { return }
+                                await alarmKit.recoverScheduledAlarms(
+                                    store: alarmStore,
+                                    forceHolidayOffRecompute: true
+                                )
+                            }
+                        }
                         await characterEvents.loadFromDisk()
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)

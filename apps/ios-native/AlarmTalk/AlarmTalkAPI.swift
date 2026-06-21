@@ -407,6 +407,47 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("app/version?platform=\(platform)")
     }
 
+    /// 다국가 공휴일 조회. 인증 불필요 (no-token GET). Phase 2 — KR 외 국가 전용.
+    /// `type == "public"` 항목만 알람 skip 대상 HolidayEntity 로 매핑한다.
+    /// epochDay 는 KoreanLunarHolidayEngine 으로 파싱해 HolidayStore.epochDay 와 정합.
+    func fetchHolidays(
+        country: String,
+        from: String,
+        to: String,
+        lang: String? = nil
+    ) async throws -> [HolidayEntity] {
+        let cc = country.uppercased()
+        var path = "holiday?country=\(cc)&from=\(from)&to=\(to)"
+        if let lang, !lang.isEmpty {
+            path += "&lang=\(lang)"
+        }
+        let response: HolidayApiResponse = try await request(path)
+        let nowMillis = Int64(Date().timeIntervalSince1970 * 1000)
+        return response.holidays.compactMap { item -> HolidayEntity? in
+            guard item.type == "public" else { return nil }
+            guard let epochDay = Self.holidayEpochDay(from: item.date) else { return nil }
+            return HolidayEntity(
+                countryCode: cc,
+                regionCode: "",
+                epochDay: epochDay,
+                localDate: item.date,
+                name: item.name,
+                source: "server_sync",
+                updatedAtMillis: nowMillis
+            )
+        }
+    }
+
+    /// "yyyy-MM-dd" → epochDay. Asia/Seoul gregorian 으로 파싱해 HolidayStore.epochDay 와 일치.
+    private static func holidayEpochDay(from localDate: String) -> Int? {
+        let parts = localDate.split(separator: "-")
+        guard parts.count == 3,
+              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]) else {
+            return nil
+        }
+        return KoreanLunarHolidayEngine.epochDay(year: y, month: m, day: d)
+    }
+
     func getFamilyGroup(token: String) async throws -> FamilyGroupCurrentResponse {
         try await request("family/groups/current", token: token)
     }
