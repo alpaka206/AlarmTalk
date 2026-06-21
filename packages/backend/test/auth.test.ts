@@ -105,8 +105,9 @@ function registerBody(email: string, password = 'superSecret1', name = '김규�
 
 describe('POST /auth/email-code', () => {
   it('신규 이메일에 6자리 인증 코드를 발급한다', async () => {
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([]); // existing user lookup (none)
+    mockDB.pushResult([]); // recent codes (none → no cooldown/cap)
+    mockDB.pushResult([], 1); // INSERT
 
     const app = buildApp();
     const res = await app.request(
@@ -119,10 +120,11 @@ describe('POST /auth/email-code', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.debug_code).toMatch(/^\d{6}$/);
-    expect(mockDB.calls[1]?.args[1]).toBe('kim@test.com');
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
-  it('이미 가입된 이메일에는 인증 코드를 보내지 않는다', async () => {
+  it('이미 가입된 이메일에도 동일한 성공 응답을 반환한다(회원 여부 비노출)', async () => {
     mockDB.pushResult([{ id: 'u-1' }]);
 
     const app = buildApp();
@@ -132,9 +134,64 @@ describe('POST /auth/email-code', () => {
       ENV,
     );
 
-    expect(res.status).toBe(409);
+    // 계정 열거 방지: 409/AUTH_EMAIL_TAKEN 대신 신규 이메일과 동일한 성공 응답.
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+    expect(body.success).toBe(true);
+    expect(body.error_code).toBeUndefined();
+    // 코드를 발송/삽입하지 않으므로 debug_code 도 없다.
+    expect(body.debug_code).toBeUndefined();
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('쿨다운 내 재요청은 새 코드를 보내지 않고 동일 응답을 반환한다', async () => {
+    mockDB.pushResult([]); // existing user lookup (none)
+    // 최근(쿨다운 내) 미만료 코드가 존재
+    mockDB.pushResult([
+      {
+        created_at: new Date(Date.now() - 5 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 9 * 60 * 1000).toISOString(),
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'cooldown@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('일일 발급 상한 초과 시 새 코드를 보내지 않는다', async () => {
+    mockDB.pushResult([]); // existing user lookup (none)
+    // 24시간 내 발급 건수가 상한(10) 이상 — 모두 만료된 오래된 코드라도 카운트
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      created_at: new Date(Date.now() - (i + 2) * 60 * 1000).toISOString(),
+      expires_at: new Date(Date.now() - (i + 1) * 60 * 1000).toISOString(),
+    }));
+    mockDB.pushResult(rows);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'capped@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
   });
 });
 
@@ -179,10 +236,10 @@ describe('POST /auth/email-code/verify', () => {
 
 describe('POST /auth/register', () => {
   it('신규 가입 성공 → 201 + 토큰 반환', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('kim@test.com');
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
+    mockDB.pushResult([], 1); // 3) INSERT users
+    mockDB.pushResult([], 1); // 4) consume code UPDATE
 
     const app = buildApp();
     const res = await app.request(
@@ -199,8 +256,9 @@ describe('POST /auth/register', () => {
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
-  it('중복 이메일 → 409', async () => {
-    mockDB.pushResult([{ id: 'u-1' }]);
+  it('중복 이메일은 회원 여부를 노출하지 않고 generic 코드 무효 응답을 반환한다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 코드 검증 통과
+    mockDB.pushResult([{ id: 'u-1' }]); // 기존 이메일 존재
 
     const app = buildApp();
     const res = await app.request(
@@ -208,9 +266,12 @@ describe('POST /auth/register', () => {
       undefined,
       ENV,
     );
-    expect(res.status).toBe(409);
+    // 계정 열거 방지: 409/AUTH_EMAIL_TAKEN 대신 generic AUTH_EMAIL_CODE_INVALID(400).
+    expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+    expect(body.error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall).toBeUndefined();
   });
 
   it('약한 비밀번호 → 400', async () => {
@@ -325,7 +386,7 @@ describe('POST /auth/login', () => {
     expect(res.status).toBe(401);
   });
 
-  it('OAuth 전용 계정(비밀번호 없음) → 401 OAUTH_ONLY', async () => {
+  it('OAuth 전용 계정(비밀번호 없음) → 401 generic (가입 방식 비노출)', async () => {
     mockDB.pushResult([
       {
         id: 'u-1',
@@ -344,9 +405,27 @@ describe('POST /auth/login', () => {
       undefined,
       ENV,
     );
+    // 계정 열거 방지: AUTH_OAUTH_ONLY 로 가입 방식을 노출하지 않고 generic 응답.
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error_code).toBe('AUTH_OAUTH_ONLY');
+    expect(body.error_code).toBe('AUTH_INVALID_CREDENTIALS');
+  });
+
+  it('존재하지 않는 사용자도 generic 응답 + 더미 bcrypt 비교 수행', async () => {
+    mockDB.pushResult([]); // 사용자 없음
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/login', {
+        email: 'ghost@test.com',
+        password: 'superSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    // 존재하지 않는 이메일과 비밀번호 불일치가 동일한 error_code 를 반환한다.
+    expect(body.error_code).toBe('AUTH_INVALID_CREDENTIALS');
   });
 });
 
@@ -776,8 +855,8 @@ describe('GET /auth/me', () => {
   });
 
   it('가입 후 받은 토큰으로 /auth/me 호출 성공', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -831,8 +910,8 @@ describe('GET /auth/me', () => {
   });
 
   it('삭제된 사용자 토큰 → 404 AUTH_USER_NOT_FOUND', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('ghost@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -860,8 +939,8 @@ describe('GET /auth/me', () => {
   });
 
   it('/me 응답의 null name/plan → 기본값 매핑', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('null-test@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -896,10 +975,10 @@ describe('GET /auth/me', () => {
 
 describe('POST /auth/register — 엣지 케이스', () => {
   it('이메일 대소문자 정규화 (KIM@Test.COM → kim@test.com)', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('kim@test.com');
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT
+    mockDB.pushResult([], 1); // 3) INSERT
+    mockDB.pushResult([], 1); // 4) consume
 
     const app = buildApp();
     const res = await app.request(
@@ -911,7 +990,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     const body = await res.json();
     expect(body.user.email).toBe('kim@test.com');
 
-    const insertCall = mockDB.calls[2];
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
@@ -946,14 +1025,15 @@ describe('POST /auth/register — 엣지 케이스', () => {
   });
 
   it('DB INSERT 실패 → 500 AUTH_REGISTER_FAILED', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('fail@test.com');
+    await pushValidEmailVerification('fail@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
 
     const originalExecute = mockDB.client.execute;
     let callCount = 0;
     mockDB.client.execute = async (query: { sql: string; args: (string | number | null)[] }) => {
       callCount++;
       if (callCount === 3) {
+        // 3) INSERT INTO users 단계에서 실패
         throw new Error('DB connection lost');
       }
       return originalExecute(query);

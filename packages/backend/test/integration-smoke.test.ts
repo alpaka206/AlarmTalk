@@ -71,8 +71,23 @@ describe('Health & Public Routes', () => {
     expect(body.presets.length).toBeGreaterThan(0);
   });
 
-  it('POST /api/init-db → 200 DB 초기화', async () => {
+  it('POST /api/init-db → 시크릿 미설정(비프로덕션)이면 404 (익명 차단)', async () => {
+    // FIX 8: canRunInitDb 는 모든 환경에서 x-init-db-secret 를 요구한다.
+    // INIT_DB_SECRET 가 설정돼 있지 않으면 비프로덕션이라도 거부한다.
     const res = await fetchApp('POST', '/api/init-db');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/init-db → 올바른 시크릿 헤더면 200 DB 초기화', async () => {
+    const request = new Request('http://localhost/api/init-db', {
+      method: 'POST',
+      headers: { 'x-init-db-secret': 'init-secret' },
+    });
+    const res = await worker.fetch(
+      request,
+      { ...ENV, INIT_DB_SECRET: 'init-secret' },
+      {} as ExecutionContext,
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);

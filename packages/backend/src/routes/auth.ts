@@ -4,7 +4,7 @@ import type { Env } from '../types';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { typedRow } from '../lib/db-types';
-import { hashPassword, verifyPassword } from '../lib/password';
+import { DUMMY_BCRYPT_HASH, hashPassword, verifyPassword } from '../lib/password';
 import { signAppJwt, verifyAppJwt } from '../lib/jwt';
 import {
   RegisterRequestSchema,
@@ -21,7 +21,9 @@ import {
   dynamicPromptSettingsFromRow,
 } from '../lib/dynamic-prompt-settings';
 import {
+  EMAIL_VERIFICATION_DAILY_CAP,
   EMAIL_VERIFICATION_MAX_ATTEMPTS,
+  EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS,
   EMAIL_VERIFICATION_TTL_SECONDS,
   emailVerificationExpiresAt,
   generateEmailVerificationCode,
@@ -137,13 +139,49 @@ auth.post('/email-code', async (c) => {
   const email = normalizeAuthEmail(parsed.data.email);
   const db = getDB(c.env);
 
+  // 모든 분기에서 동일한 성공 응답을 돌려준다(계정 열거 방지). debug_code 는 코드를
+  // 실제로 새로 발송했을 때만 포함한다(쿨다운/상한/기존가입으로 미발송 시 생략).
+  const successResponse = (debugCode?: string) =>
+    c.json({
+      success: true,
+      expires_in_seconds: EMAIL_VERIFICATION_TTL_SECONDS,
+      ...(debugCode && shouldExposeDebugEmailCode(c.env) ? { debug_code: debugCode } : {}),
+    });
+
   try {
     const existing = await db.execute({
       sql: 'SELECT id FROM users WHERE email = ?',
       args: [email],
     });
+    // 이미 가입된 이메일이라도 409(AUTH_EMAIL_TAKEN)로 회원 여부를 노출하지 않고
+    // 동일한 성공 응답을 반환한다. 코드도 보내지 않는다.
     if (existing.rows.length > 0) {
-      return c.json(jsonError('AUTH_EMAIL_TAKEN', 'Email is already registered'), 409);
+      return successResponse();
+    }
+
+    const nowMs = Date.now();
+    // 최근 발급 이력 조회: (a) 쿨다운 내 미만료 코드가 있으면 재발송하지 않고
+    // 동일 응답, (b) 최근 24시간 발급 건수가 일일 상한을 넘으면 미발송.
+    const recent = await db.execute({
+      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
+            FROM email_verification_codes
+            WHERE email = ? AND purpose = ?
+              AND created_at >= datetime('now', '-1 day')
+            ORDER BY created_at DESC`,
+      args: [email, EMAIL_VERIFICATION_PURPOSE_REGISTER],
+    });
+
+    const cooldownActive = recent.rows.some((r) => {
+      const created = Date.parse(String(r.created_at ?? ''));
+      const expires = Date.parse(String(r.expires_at ?? ''));
+      if (!Number.isFinite(created)) return false;
+      const withinCooldown =
+        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
+      return withinCooldown && stillValid;
+    });
+    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+      return successResponse();
     }
 
     const code = generateEmailVerificationCode();
@@ -160,11 +198,7 @@ auth.post('/email-code', async (c) => {
 
     await sendEmailVerificationCode(c.env, email, code);
 
-    return c.json({
-      success: true,
-      expires_in_seconds: EMAIL_VERIFICATION_TTL_SECONDS,
-      ...(shouldExposeDebugEmailCode(c.env) ? { debug_code: code } : {}),
-    });
+    return successResponse(code);
   } catch (err) {
     logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
@@ -222,14 +256,9 @@ auth.post('/register', async (c) => {
   const db = getDB(c.env);
 
   try {
-    const existing = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [normalizedEmail],
-    });
-    if (existing.rows.length > 0) {
-      return c.json(jsonError('AUTH_EMAIL_TAKEN', 'Email is already registered'), 409);
-    }
-
+    // 계정 열거 방지: 이미 가입된 이메일이라도 409(AUTH_EMAIL_TAKEN)로 회원 여부를
+    // 노출하지 않는다. 가입된 이메일에는 /auth/email-code 가 코드를 발급하지 않으므로
+    // 아래 인증 코드 검증이 게이트 역할을 한다(미가입자만 유효 코드를 보유).
     const verification = await checkEmailVerificationCode(
       db,
       c.env,
@@ -238,6 +267,19 @@ auth.post('/register', async (c) => {
     );
     if (!verification.ok) {
       return c.json(jsonError(verification.code, verification.message), verification.status);
+    }
+
+    // 인증 코드를 통과했더라도(이론상 경쟁 상태) 이미 존재하는 이메일이면 generic
+    // 코드 무효 응답으로 통일한다 — 회원 가입 여부를 별도 코드로 노출하지 않는다.
+    const existing = await db.execute({
+      sql: 'SELECT id FROM users WHERE email = ?',
+      args: [normalizedEmail],
+    });
+    if (existing.rows.length > 0) {
+      return c.json(
+        jsonError('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'),
+        400,
+      );
     }
 
     const id = crypto.randomUUID();
@@ -304,7 +346,12 @@ auth.post('/login', async (c) => {
       args: [normalizedEmail],
     });
 
+    // 계정 열거(account enumeration) 방지: 존재하지 않는 이메일·OAuth 전용 계정·
+    // 비밀번호 불일치를 모두 동일한 응답(AUTH_INVALID_CREDENTIALS, 401)으로 처리한다.
+    // 또한 사용자가 없을 때도 고정 더미 해시로 bcrypt 비교를 수행해, 존재 여부가
+    // 응답 시간(타이밍 오라클)으로 새지 않게 한다.
     if (result.rows.length === 0) {
+      await verifyPassword(password, DUMMY_BCRYPT_HASH, c.env.PASSWORD_PEPPER);
       return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
@@ -317,12 +364,11 @@ auth.post('/login', async (c) => {
       plan: 'free' | 'plus' | 'family' | null;
     }>(result.rows[0]!);
 
-    if (!row.password_hash) {
-      return c.json(jsonError('AUTH_OAUTH_ONLY', 'This account uses OAuth sign-in'), 401);
-    }
-
-    const ok = await verifyPassword(password, row.password_hash, c.env.PASSWORD_PEPPER);
-    if (!ok) {
+    // OAuth 전용 계정(비밀번호 없음)도 더미 해시로 동일 비용 비교 후 동일 응답을
+    // 반환한다. 별도 error_code 로 가입 방식을 노출하면 계정 열거에 악용된다.
+    const passwordHash = row.password_hash ?? DUMMY_BCRYPT_HASH;
+    const ok = await verifyPassword(password, passwordHash, c.env.PASSWORD_PEPPER);
+    if (!row.password_hash || !ok) {
       return c.json(jsonError('AUTH_INVALID_CREDENTIALS', 'Invalid email or password'), 401);
     }
 
@@ -472,6 +518,9 @@ auth.post('/google', async (c) => {
       },
     });
   } catch (err) {
+    // 검증 실패 상세(err.message)는 서버에만 로깅하고, 클라이언트에는 provider/검증
+    // 내부 정보를 반영하지 않는 안정적인 generic 메시지만 반환한다(정보 노출 방지).
+    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     const status =
       detail.includes('Google token') ||
@@ -481,7 +530,7 @@ auth.post('/google', async (c) => {
       detail.includes('Token')
         ? 401
         : 500;
-    return c.json(jsonError('AUTH_GOOGLE_FAILED', detail), status);
+    return c.json(jsonError('AUTH_GOOGLE_FAILED', 'Google sign-in failed'), status);
   }
 });
 
@@ -644,9 +693,12 @@ auth.post('/apple', async (c) => {
       },
     });
   } catch (err) {
+    // 검증 실패 상세(err.message)는 서버에만 로깅하고, 클라이언트에는 provider/검증
+    // 내부 정보를 반영하지 않는 안정적인 generic 메시지만 반환한다(정보 노출 방지).
+    logRouteError(c, err);
     const detail = err instanceof Error ? err.message : String(err);
     if (detail.includes('nonce mismatch')) {
-      return c.json(jsonError('AUTH_APPLE_NONCE_MISMATCH', detail), 401);
+      return c.json(jsonError('AUTH_APPLE_NONCE_MISMATCH', 'Apple sign-in nonce mismatch'), 401);
     }
     const status =
       detail.includes('Apple token') ||
@@ -660,7 +712,7 @@ auth.post('/apple', async (c) => {
       detail.includes('format')
         ? 401
         : 500;
-    return c.json(jsonError('AUTH_APPLE_FAILED', detail), status);
+    return c.json(jsonError('AUTH_APPLE_FAILED', 'Apple sign-in failed'), status);
   }
 });
 

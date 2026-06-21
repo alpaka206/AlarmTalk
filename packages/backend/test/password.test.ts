@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { hashPassword, verifyPassword, applyPepper } from '../src/lib/password';
+import {
+  hashPassword,
+  verifyPassword,
+  applyPepper,
+  DUMMY_BCRYPT_HASH,
+} from '../src/lib/password';
 
 describe('password hashing', () => {
   it('같은 비밀번호라도 해시가 매번 달라야 한다 (salt 무작위)', async () => {
@@ -32,5 +37,12 @@ describe('password hashing', () => {
 
   it('applyPepper 는 페퍼를 비밀번호 뒤에 붙인다', () => {
     expect(applyPepper('pw', 'sauce')).toBe('pw::sauce');
+  });
+
+  it('DUMMY_BCRYPT_HASH 는 유효한 bcrypt 해시이며 어떤 평문과도 일치하지 않는다', async () => {
+    // 타이밍 오라클 방지를 위해 사용자 부재 시 비교하는 더미 해시.
+    expect(DUMMY_BCRYPT_HASH).toMatch(/^\$2[aby]\$\d{2}\$/);
+    expect(await verifyPassword('superSecret1', DUMMY_BCRYPT_HASH, 'pepper-test')).toBe(false);
+    expect(await verifyPassword('', DUMMY_BCRYPT_HASH, '')).toBe(false);
   });
 });

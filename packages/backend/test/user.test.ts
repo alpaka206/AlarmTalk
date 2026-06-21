@@ -279,12 +279,14 @@ describe('PATCH /user/plan', () => {
 });
 
 describe('GET /user/search', () => {
-  it('검색어 2자 미만이면 빈 배열', async () => {
+  it('검색어 4자 미만이면 빈 배열 (PII 하베스팅 방지)', async () => {
     const app = buildApp();
-    const res = await app.request(jsonReq('GET', '/user/search?q=a'));
+    const res = await app.request(jsonReq('GET', '/user/search?q=abc'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.users).toEqual([]);
+    // DB 를 건드리지 않는다.
+    expect(mockDB.calls).toHaveLength(0);
   });
 
   it('검색어 없으면 빈 배열', async () => {
@@ -294,24 +296,46 @@ describe('GET /user/search', () => {
     expect((await res.json()).users).toEqual([]);
   });
 
-  it('이메일 검색 결과 반환', async () => {
+  it('검색 결과에서 email 은 노출하지 않는다 (null)', async () => {
     mockDB.pushResult([
-      { google_id: 'u-2', email: 'friend@test.com', name: 'Friend', picture: '' },
+      { google_id: 'u-2', name: 'Friend', picture: '' },
     ]);
     const app = buildApp();
     const res = await app.request(jsonReq('GET', '/user/search?q=friend'));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.users).toHaveLength(1);
-    expect(body.users[0].email).toBe('friend@test.com');
+    expect(body.users[0]).toMatchObject({ id: 'u-2', name: 'Friend', picture: '' });
+    // email 키는 존재하지만 항상 null (클라이언트 옵셔널 디코딩 호환).
+    expect(body.users[0].email).toBeNull();
+    // SELECT 에 email 컬럼이 포함되지 않는다.
+    expect(mockDB.calls[0].sql).not.toContain('email,');
+    expect(mockDB.calls[0].sql).toContain('SELECT google_id, name, picture');
+  });
+
+  it('접두(prefix) 매칭만 사용한다 (substring %q% 아님)', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    await app.request(jsonReq('GET', '/user/search?q=friend'));
+    // LIKE 인자는 'friend%' 형태(접두). 앞에 % 가 붙지 않는다.
+    expect(mockDB.calls[0].args[1]).toBe('friend%');
+  });
+
+  it('LIKE 와일드카드(%,_) 는 이스케이프된다', async () => {
+    mockDB.pushResult([]);
+    const app = buildApp();
+    await app.request(jsonReq('GET', '/user/search?q=a%25b_c'));
+    // q = 'a%b_c' → 'a\%b\_c%' 로 이스케이프, ESCAPE 절 사용.
+    expect(mockDB.calls[0].args[1]).toBe('a\\%b\\_c%');
+    expect(mockDB.calls[0].sql).toContain("ESCAPE '\\'");
   });
 
   it('자기 자신은 제외', async () => {
     mockDB.pushResult([
-      { google_id: 'u-2', email: 'other@test.com', name: 'Other', picture: '' },
+      { google_id: 'u-2', name: 'Other', picture: '' },
     ]);
     const app = buildApp();
-    await app.request(jsonReq('GET', '/user/search?q=test'));
+    await app.request(jsonReq('GET', '/user/search?q=testuser'));
     expect(mockDB.calls[0].args[0]).toBe('user-1');
   });
 
@@ -354,6 +378,31 @@ describe('DELETE /user/me', () => {
     expect(friendshipCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1']);
     const giftCall = mockDB.calls.find((c) => c.sql.includes('DELETE FROM gifts'));
     expect(giftCall?.args).toEqual(['pk-1', 'user-1', 'pk-1', 'user-1', 'pk-1', 'user-1']);
+  });
+
+  it('userPk 조회에 apple_id 도 포함한다 (legacy Apple 계정 고아 방지)', async () => {
+    mockDB.pushResult([{ id: 'pk-apple' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    expect(res.status).toBe(200);
+    const lookup = mockDB.calls.find(
+      (c) => c.sql.includes('SELECT id FROM users') && c.sql.includes('apple_id'),
+    );
+    expect(lookup).toBeDefined();
+    // google_id / apple_id / id 세 컬럼 모두로 매칭한다.
+    expect(lookup?.sql).toContain('apple_id = ?');
+    expect(lookup?.args).toEqual(['user-1', 'user-1', 'user-1']);
+  });
+
+  it('userPk 미해석인데 사용자 행이 존재하면 throw → 500 (고아 PII 방지)', async () => {
+    // 1) SELECT id FROM users (DELETE 핸들러) → 미해석(null)
+    mockDB.pushResult([]);
+    // 2) purgeUserAccount 의 orphan guard SELECT → 사용자 행 존재
+    mockDB.pushResult([{ id: 'ghost-pk' }]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', '/user/me'));
+    expect(res.status).toBe(500);
+    expect((await res.json()).error_code).toBe('DELETE_ACCOUNT_FAILED');
   });
 
   it('DB 에러 → 500 DELETE_ACCOUNT_FAILED', async () => {

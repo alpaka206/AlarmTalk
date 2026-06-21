@@ -86,6 +86,56 @@ async function usesOnlySystemStockVoice(
   return false;
 }
 
+/**
+ * message_id 가 호출자(ownerIds) 소유이거나 시스템 스톡 프리셋인지 확인한다.
+ * POST 생성 경로(아래)와 GET /tts/messages/:id/audio 의 허용 규칙과 동일하게
+ * 맞춰, PATCH 에서 타인 메시지 id 를 알람에 끼워 넣는 IDOR 을 막는다.
+ */
+async function messageBelongsToCaller(
+  db: ReturnType<typeof getDB>,
+  messageId: string,
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const msg = await db.execute({
+    sql: `SELECT 1 FROM messages
+          WHERE id = ?
+            AND (
+              user_id IN (?, ?)
+              OR (
+                COALESCE(is_preset, 0) = 1
+                AND EXISTS (
+                  SELECT 1 FROM voice_profiles vp
+                  WHERE vp.id = messages.voice_profile_id
+                    AND COALESCE(vp.is_system, 0) = 1
+                )
+              )
+            )
+          LIMIT 1`,
+    args: [messageId, ...ownerIds],
+  });
+  return msg.rows.length > 0;
+}
+
+/**
+ * voice_profile_id 가 호출자 소유이거나 시스템 보이스인지 확인한다.
+ * 타인 voice_profile_id 를 알람에 기록하는 IDOR 을 막는다.
+ */
+async function voiceProfileBelongsToCaller(
+  db: ReturnType<typeof getDB>,
+  voiceProfileId: string,
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const vp = await db.execute({
+    sql: `SELECT 1 FROM voice_profiles
+          WHERE id = ?
+            AND deleted_at IS NULL
+            AND (user_id IN (?, ?) OR COALESCE(is_system, 0) = 1)
+          LIMIT 1`,
+    args: [voiceProfileId, ...ownerIds],
+  });
+  return vp.rows.length > 0;
+}
+
 alarmMutation.post('/', async (c) => {
   const userId = c.get('userId');
   const resolvedUserPk = c.get('userIdPK');
@@ -263,23 +313,7 @@ alarmMutation.post('/', async (c) => {
     // 허용한다. 무료 플랜은 스톡 클립으로 알람을 만들 수 있어야 하는데, 기존
     // 검증은 user_id 만 봐서 스톡 클립 알람을 404 로 막고 있었다
     // (GET /tts/messages/:id/audio 의 허용 규칙과 일치시킨다).
-    const msg = await db.execute({
-      sql: `SELECT id FROM messages
-            WHERE id = ?
-              AND (
-                user_id IN (?, ?)
-                OR (
-                  COALESCE(is_preset, 0) = 1
-                  AND EXISTS (
-                    SELECT 1 FROM voice_profiles vp
-                    WHERE vp.id = messages.voice_profile_id
-                      AND COALESCE(vp.is_system, 0) = 1
-                  )
-                )
-              )`,
-      args: [resolvedMessageId, ...ownerIds],
-    });
-    if (msg.rows.length === 0) {
+    if (!(await messageBelongsToCaller(db, resolvedMessageId, ownerIds))) {
       return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
     }
   }
@@ -404,6 +438,29 @@ alarmMutation.patch('/:id', async (c) => {
         error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
       },
       403,
+    );
+  }
+
+  // IDOR 방어: PATCH 로 새 message_id / voice_profile_id 를 기록하기 전에,
+  // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
+  // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
+  // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
+  const ownerIds = [resolvedUserPk || userId, userId] as [string, string];
+  if (
+    body.message_id !== undefined &&
+    body.message_id !== null &&
+    !(await messageBelongsToCaller(db, body.message_id, ownerIds))
+  ) {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
+  if (
+    body.voice_profile_id !== undefined &&
+    body.voice_profile_id !== null &&
+    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+  ) {
+    return c.json(
+      { error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
+      404,
     );
   }
 

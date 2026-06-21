@@ -315,9 +315,12 @@ user.delete('/me', async (c) => {
   const db = getDB(c.env);
 
   try {
+    // apple_id 도 함께 매칭한다. Apple 로그인 사용자의 JWT sub 는 google_id 가 아닌
+    // apple_id 컬럼에만 저장돼 있을 수 있어, 누락하면 userPk 가 null 이 되어 자식
+    // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId],
+      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      args: [userId, userId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
@@ -521,22 +524,28 @@ user.get('/search', async (c) => {
   const db = getDB(c.env);
   const q = (c.req.query('q') || '').trim();
 
-  if (q.length < 2) {
+  // PII 하베스팅 방지: 너무 짧은 질의로 광범위하게 긁지 못하도록 최소 4자를 요구한다.
+  if (q.length < 4) {
     return c.json({ users: [] });
   }
 
   try {
+    // 부분 문자열('%q%') 대신 접두(prefix) 매칭만 허용해 무차별 수집을 줄인다.
+    // LIKE 와일드카드(%,_) 는 리터럴로 이스케이프한다.
+    const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
     const result = await db.execute({
-      sql: `SELECT google_id, email, name, picture FROM users
-            WHERE google_id != ? AND email LIKE ?
+      sql: `SELECT google_id, name, picture FROM users
+            WHERE google_id != ? AND email LIKE ? ESCAPE '\\'
             LIMIT 10`,
-      args: [userId, `%${q}%`],
+      args: [userId, `${escaped}%`],
     });
 
     return c.json({
+      // 다른 사용자의 email 은 절대 반환하지 않는다(PII). iOS/Android 의
+      // UserSearchResult.email 은 옵셔널이라 null 로 두어도 디코딩이 깨지지 않는다.
       users: result.rows.map((r) => ({
         id: r.google_id,
-        email: r.email,
+        email: null,
         name: r.name,
         picture: r.picture,
       })),

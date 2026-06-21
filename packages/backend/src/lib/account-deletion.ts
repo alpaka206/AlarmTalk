@@ -65,6 +65,20 @@ export async function purgeUserAccount(
   userPk: string | null,
   userId: string,
 ): Promise<void> {
+  // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
+  // 결제·노트 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
+  // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
+  if (!userPk) {
+    const orphanGuard = await tx.execute({
+      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      args: [userId, userId, userId],
+    });
+    if (orphanGuard.rows.length > 0) {
+      throw new Error(
+        `purgeUserAccount: userPk unresolved for existing user (userId=${userId}); aborting to avoid orphaning child PII`,
+      );
+    }
+  }
   if (userPk) {
     const userIds = [userPk, userId];
     // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.

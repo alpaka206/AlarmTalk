@@ -1,10 +1,9 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
 import { getDB } from '../lib/db';
-import { loadAudioBytes, uint8ToBase64 } from '../lib/audio-loader';
+import { loadAudioBytes, uint8ToBase64, isStoredAudioUrl } from '../lib/audio-loader';
 
 const notes = new Hono<AppEnv>();
-const MAX_NOTE_AUDIO_URL_LENGTH = 2048;
 
 async function resolveUserPk(
   db: ReturnType<typeof getDB>,
@@ -37,8 +36,8 @@ notes.post('/', async (c) => {
   if (text.length > 500) return c.json({ error: 'text 는 최대 500자입니다', error_code: 'TEXT_TOO_LONG' }, 400);
   if (receiverId === senderPk) return c.json({ error: '자기 자신에게는 보낼 수 없습니다', error_code: 'SELF_NOTE' }, 400);
 
-  if (audioUrl && !isValidAudioUrl(audioUrl)) {
-    return c.json({ error: 'audio_url must be r2:// or https://', error_code: 'INVALID_AUDIO_URL' }, 400);
+  if (audioUrl && !isStoredAudioUrl(audioUrl)) {
+    return c.json({ error: 'audio_url must be a stored r2:// object', error_code: 'INVALID_AUDIO_URL' }, 400);
   }
 
   const receiverRes = await db.execute({
@@ -194,7 +193,11 @@ notes.get('/:id/audio', async (c) => {
   if (!userPk) return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
 
   const noteRes = await db.execute({
-    sql: 'SELECT id, sender_id, receiver_id, text, audio_url FROM notes WHERE id = ?',
+    sql: `SELECT n.id, n.sender_id, n.receiver_id, n.text, n.audio_url,
+                 s.google_id AS sender_google_id, s.apple_id AS sender_apple_id
+          FROM notes n
+          LEFT JOIN users s ON s.id = n.sender_id
+          WHERE n.id = ?`,
     args: [noteId],
   });
   if (noteRes.rows.length === 0) {
@@ -213,7 +216,21 @@ notes.get('/:id/audio', async (c) => {
     return c.json({ error: 'Note has no stored audio', error_code: 'NOTE_AUDIO_MISSING' }, 404);
   }
 
-  const loaded = await loadAudioBytes(c, audioUrl);
+  // 음성 쪽지의 R2 오브젝트는 발신자가 만든 것이므로, 키의 소유자 segment 가
+  // 발신자(users.id PK 또는 JWT sub = google_id/apple_id)와 일치해야만 로드한다.
+  // 그래야 타인 네임스페이스(r2://voices/{victim}/...) 키를 쪽지에 끼워 넣어
+  // 생체 음성을 빼내는 cross-tenant 읽기(IDOR)를 막을 수 있다.
+  // (Apple 전용 계정은 키가 apple_id 로 네임스페이스되므로 apple_id 도 허용.)
+  const senderGoogleId =
+    typeof note.sender_google_id === 'string' ? note.sender_google_id : null;
+  const senderAppleId =
+    typeof note.sender_apple_id === 'string' ? note.sender_apple_id : null;
+  const ownerIds = [
+    senderId,
+    ...(senderGoogleId ? [senderGoogleId] : []),
+    ...(senderAppleId ? [senderAppleId] : []),
+  ];
+  const loaded = await loadAudioBytes(c, audioUrl, { kind: 'owner', ownerIds });
   if (!loaded) {
     if (audioUrl.startsWith('r2://')) {
       await db.execute({
@@ -263,13 +280,5 @@ notes.patch('/:id/read', async (c) => {
 
   return c.json({ success: true, read_at: now });
 });
-
-function isValidAudioUrl(audioUrl: string): boolean {
-  return audioUrl.length <= MAX_NOTE_AUDIO_URL_LENGTH &&
-    (
-      audioUrl.startsWith('r2://') ||
-      audioUrl.startsWith('https://')
-    );
-}
 
 export default notes;

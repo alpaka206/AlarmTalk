@@ -88,11 +88,25 @@ async function healthPayload(env: Env) {
 app.get('/', async (c) => c.json(await healthPayload(c.env)));
 app.get('/health', async (c) => c.json(await healthPayload(c.env)));
 
+// init-db / seed 는 파괴적 DDL + 유료 합성을 수행하므로 모든 환경에서 INIT_DB_SECRET 헤더를
+// 요구한다. 시크릿이 설정돼 있지 않으면(=의도적으로 비활성) 무조건 거부한다(404).
+// 헤더 비교는 상수시간(timingSafeEqualStr)으로 수행해 타이밍 오라클을 차단한다.
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < ab.length; i++) diff |= ab[i]! ^ bb[i]!;
+  return diff === 0;
+}
+
 function canRunInitDb(c: { env: Env; req: { header: (name: string) => string | undefined } }) {
-  if (c.env.ENVIRONMENT !== 'production') return true;
   const expected = c.env.INIT_DB_SECRET;
   if (!expected) return false;
-  return c.req.header('x-init-db-secret') === expected;
+  const provided = c.req.header('x-init-db-secret');
+  if (!provided) return false;
+  return timingSafeEqualStr(provided, expected);
 }
 
 // DB 초기화 엔드포인트 — Workers free plan caps subrequests per invocation
@@ -118,13 +132,9 @@ app.post('/api/init-db', async (c) => {
     await initDB(c.env);
     return c.json({ success: true, message: 'Database initialized' });
   } catch (err) {
-    return c.json(
-      {
-        error: 'DB init failed',
-        detail: err instanceof Error ? err.message : 'Unknown error',
-      },
-      500,
-    );
+    // SQL/Turso 내부 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
+    logRouteError(c, err);
+    return c.json({ error: 'DB init failed' }, 500);
   }
 });
 
@@ -168,13 +178,9 @@ app.post('/api/admin/seed-stock-clips', async (c) => {
       remaining: missing.length - generated.length,
     });
   } catch (err) {
-    return c.json(
-      {
-        error: 'Stock clip seed failed',
-        detail: err instanceof Error ? err.message : 'Unknown error',
-      },
-      500,
-    );
+    // 합성/스토리지 내부 오류 메시지를 클라이언트로 반사하지 않는다 — 서버 로그로만 남긴다.
+    logRouteError(c, err);
+    return c.json({ error: 'Stock clip seed failed' }, 500);
   }
 });
 
@@ -255,6 +261,18 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     await drainExternalDeletions(db, env);
   } catch (err) {
     logStructured('error', { at: 'scheduled.audio_retention', error: String(err) });
+  }
+
+  // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
+  // 동일 포맷으로 비교한다. 만료 후 72h 유예를 두고 일괄 삭제(저렴·멱등).
+  try {
+    const pruneBefore = new Date(now.getTime() - 72 * 60 * 60 * 1000).toISOString();
+    await db.execute({
+      sql: 'DELETE FROM email_verification_codes WHERE expires_at < ?',
+      args: [pruneBefore],
+    });
+  } catch (err) {
+    logStructured('error', { at: 'scheduled.email_code_prune', error: String(err) });
   }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
