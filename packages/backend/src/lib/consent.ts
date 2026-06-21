@@ -41,8 +41,12 @@ export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfe
 /** 동의 상태 조회/충족 판정에 쓰는 일반 필수 동의 목록(GET /consents/status 호환). */
 export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
 
-/** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다. */
-export const CURRENT_POLICY_VERSION = '1';
+/** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다.
+ *  '2' (2026-06-22 개정): 운세(성별·생년월일·출생시각)의 Google Vertex(미국) 처리,
+ *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
+ *  Firebase/FCM·PortOne 수탁 추가를 반영한 처리방침/약관 개정과 동기화한다.
+ *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
+export const CURRENT_POLICY_VERSION = '2';
 
 /**
  * requiredTypes 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
