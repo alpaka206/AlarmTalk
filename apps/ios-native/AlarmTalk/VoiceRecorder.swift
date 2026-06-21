@@ -67,6 +67,13 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             latestDurationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
         }
         self.startedAt = nil
+        // 디렉터리 상속과 별개로, 완성된 녹음 파일에 가장 강한 보호 등급을 명시 적용한다.
+        if let url = latestRecordingURL {
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: url.path
+            )
+        }
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
@@ -122,7 +129,15 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let directory = base.appendingPathComponent("VoiceRecordings", isDirectory: true)
         if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                // 디렉터리 단위로 가장 강한 보호 등급을 건다. AVAudioRecorder 가 만드는
+                // 파일이 이 속성을 상속해, 기기가 잠긴 동안에는 디스크에서 복호화되지
+                // 않는다. raw 음성 클론 SOURCE 녹음은 업로드 후 즉시 삭제되며, 잠금
+                // 화면에서 재생될 필요가 없으므로 .complete 가 안전하다.
+                attributes: [.protectionKey: FileProtectionType.complete]
+            )
         }
         return directory.appendingPathComponent("voice-sample-\(UUID().uuidString).m4a")
     }

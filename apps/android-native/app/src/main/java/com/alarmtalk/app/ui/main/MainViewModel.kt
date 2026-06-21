@@ -78,8 +78,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         unauthorizedHandler = object : AlarmTalkApiClient.UnauthorizedHandler {
             override fun onUnauthorized() {
                 // 백엔드에 refresh 엔드포인트가 없어 같은 토큰으로 재시도해도 의미가 없다.
-                // 세션을 비우고 화면에 재로그인을 안내한다.
+                // 401(TOKEN_REVOKED 포함) 이면 세션을 비우고 화면에 재로그인을 안내한다.
                 handleUnauthorized()
+            }
+
+            override fun onConsentRequired() {
+                // 데이터 라우트가 403 CONSENT_REQUIRED 를 반환 → 동의 플로우로 유도한다.
+                handleConsentRequired()
             }
         },
         appVersionCode = appVersionCode,
@@ -121,6 +126,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             clearUserScopedRemoteState()
             authSession = null
             message = getApplication<android.app.Application>().getString(R.string.r3misc_session_expired)
+        }
+    }
+
+    /**
+     * 데이터 라우트의 403 CONSENT_REQUIRED 처리. okhttp 인터셉터(non-main)에서 호출될 수 있어
+     * UI 스레드로 옮긴 뒤 동의 게이트를 다시 열어, 동의 화면이 뜨도록 한다.
+     */
+    private fun handleConsentRequired() {
+        viewModelScope.launch {
+            if (authSession == null) return@launch
+            needsConsent = true
+            consentChecked = true
+            message = getApplication<android.app.Application>().getString(R.string.r3misc_consent_required)
         }
     }
 

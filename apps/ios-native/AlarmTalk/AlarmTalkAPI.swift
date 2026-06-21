@@ -64,6 +64,14 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.user
     }
 
+    /// W2 백엔드 토큰 폐기. 서버의 `token_epoch` 를 올려 기존에 발급된 모든 토큰을
+    /// 즉시 무효화(이후 요청은 401 TOKEN_REVOKED)한다. 로그아웃 시 로컬 세션을 지우기
+    /// **전에** best-effort 로 호출한다. 실패해도 로그아웃은 진행하므로 호출자가 무시한다.
+    /// `POST /auth/logout`.
+    func logout(token: String) async throws {
+        let _: EmptyResponse = try await request("auth/logout", method: "POST", token: token)
+    }
+
     func listAlarms(token: String) async throws -> [RemoteAlarm] {
         let response: RemoteAlarmListResponse = try await request("alarm", token: token)
         return response.alarms
@@ -754,6 +762,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             Self.handleUnauthorized()
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
+        if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
+            Self.handleConsentRequired()
+        }
         throw APIError.server(
             status: http.statusCode,
             message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
@@ -813,6 +824,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
             Self.handleUnauthorized()
         }
         let serverError = try? decoder.decode(ServerError.self, from: responseData)
+        if http.statusCode == 403, serverError?.errorCode == Self.consentRequiredErrorCode {
+            Self.handleConsentRequired()
+        }
         throw APIError.server(
             status: http.statusCode,
             message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
@@ -846,9 +860,21 @@ final class AlarmTalkAPI: @unchecked Sendable {
     /// 옵저버(`AuthViewModel`)가 main actor 에서 `signOut` 하도록 Notification 으로 전달한다.
     static let unauthorizedNotification = Notification.Name("AlarmTalkAPIUnauthorized")
 
+    /// W2 백엔드 동의 미들웨어가 403 `CONSENT_REQUIRED` 를 돌려줄 때 쏘는 알림.
+    /// `AuthViewModel` 이 받아 필수 동의 재기록 플로우(`needsConsent=true`)로 게이팅한다.
+    /// 401(세션 만료)과 달리 세션은 유지하고 동의 화면만 띄운다.
+    static let consentRequiredNotification = Notification.Name("AlarmTalkAPIConsentRequired")
+
+    /// 401 응답의 `error_code`. TOKEN_REVOKED(로그아웃으로 token_epoch 상향) 도
+    /// 일반 401 과 동일하게 강제 로그아웃 경로를 탄다 — 별도 분기 없이 status==401
+    /// 로 충분하지만, 호출자 참조용으로 상수를 노출한다.
+    static let tokenRevokedErrorCode = "TOKEN_REVOKED"
+    static let consentRequiredErrorCode = "CONSENT_REQUIRED"
+
     /// 디바운스용 상태. 동시 호출이 있을 수 있어 lock 으로 보호한다.
     private static let unauthorizedLock = NSLock()
     private nonisolated(unsafe) static var lastUnauthorizedAt: Date?
+    private nonisolated(unsafe) static var lastConsentRequiredAt: Date?
 
     private static func handleUnauthorized() {
         unauthorizedLock.lock()
@@ -860,6 +886,20 @@ final class AlarmTalkAPI: @unchecked Sendable {
         lastUnauthorizedAt = now
         unauthorizedLock.unlock()
         NotificationCenter.default.post(name: unauthorizedNotification, object: nil)
+    }
+
+    /// 403 + `CONSENT_REQUIRED` 을 받으면 한 번만 동의 필요 알림을 쏜다.
+    /// `handleUnauthorized` 와 동일하게 연발(동시 요청)을 디바운스해 1회로 묶는다.
+    private static func handleConsentRequired() {
+        unauthorizedLock.lock()
+        let now = Date()
+        if let last = lastConsentRequiredAt, now.timeIntervalSince(last) < 3 {
+            unauthorizedLock.unlock()
+            return
+        }
+        lastConsentRequiredAt = now
+        unauthorizedLock.unlock()
+        NotificationCenter.default.post(name: consentRequiredNotification, object: nil)
     }
 
     private static func defaultBaseURL() -> URL {

@@ -19,6 +19,12 @@ object AlarmTalkApiClient {
      */
     interface UnauthorizedHandler {
         fun onUnauthorized()
+
+        /**
+         * 데이터 라우트가 403 `CONSENT_REQUIRED` 를 반환했을 때 호출된다(서버 강제 동의 미들웨어).
+         * 동의 플로우로 유도하기 위해 호출하며, 기본 구현은 동작 없음(기존 호출부 호환).
+         */
+        fun onConsentRequired() {}
     }
 
     fun create(
@@ -42,11 +48,30 @@ object AlarmTalkApiClient {
                 .build()
             chain.proceed(request)
         }
+        // 403 CONSENT_REQUIRED 를 감지해 동의 플로우로 유도한다. 401(TOKEN_REVOKED 포함)은
+        // okhttp Authenticator 가 처리하므로 여기서는 403 본문의 error_code 만 검사한다.
+        val consentInterceptor = okhttp3.Interceptor { chain ->
+            val response = chain.proceed(chain.request())
+            if (unauthorizedHandler != null && response.code == 403) {
+                // peekBody 로 본문을 소비하지 않고 복제해 검사한다(이후 호출부가 본문을 정상 수신).
+                val errorCode = runCatching {
+                    val body = response.peekBody(MAX_ERROR_BODY_BYTES).string()
+                    body.takeIf { it.isNotBlank() }
+                        ?.let { org.json.JSONObject(it).optString("error_code") }
+                        ?.takeIf { it.isNotBlank() }
+                }.getOrNull()
+                if (errorCode == "CONSENT_REQUIRED") {
+                    runCatching { unauthorizedHandler.onConsentRequired() }
+                }
+            }
+            response
+        }
         val builder = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)
             .addInterceptor(versionHeader)
+            .addInterceptor(consentInterceptor)
             .addInterceptor(logging)
         if (unauthorizedHandler != null) {
             builder.authenticator(UnauthorizedAuthenticator(unauthorizedHandler))
@@ -62,6 +87,9 @@ object AlarmTalkApiClient {
     }
 
     fun bearer(token: String): String = "Bearer $token"
+
+    // 403 본문에서 error_code 만 확인하면 되므로 본문 전체를 메모리에 올리지 않도록 상한을 둔다.
+    private const val MAX_ERROR_BODY_BYTES = 64L * 1024L
 
     private fun normalizeBaseUrl(baseUrl: String): String {
         val normalized = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"

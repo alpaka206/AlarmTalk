@@ -54,6 +54,23 @@
 - [ ] **데이터 위치/리전**: 저장 리전(MS Azure) 및 한국 리전 사용 가능 여부.
 - [ ] **보안·인증**: ISMS/ISO27001 등 인증, 사고 통지 SLA.
 
+## 4-A. W2/W3 반영 사항 (서버 동의 강제 · 삭제 완전성 · 정책 버전)
+
+- **서버측 동의 강제(W2)**: 동의 유형이 `packages/backend/src/lib/consent.ts`로 단일화되어
+  `voice_biometric`(음성 생체정보), `overseas_transfer`(국외 이전)가 서버에서 enforce 된다.
+  음성 클론 라우트(`POST /voice-profile/clone`)는 `voice_biometric` 미동의 시 403(CONSENT_REQUIRED)으로
+  차단한다(코드: `voice-profile.ts`의 `needsConsent(db, userPk, ['voice_biometric'])`). 일반 필수 동의는
+  `age14`/`terms`/`privacy` 3종(`GENERAL_REQUIRED_CONSENTS`).
+- **음성 = 민감정보/생체정보 분류 확정(W3)**: 처리방침 §1.3·§6, 약관 제8조, 동의문구 §2, 스토어 고지를
+  생체정보 분류 및 별도 동의 기준으로 정정 반영했다. Perso는 운영(production) 음성 클론·TTS 수탁사로 유지한다.
+- **삭제 완전성(W3 확인)**: 계정 영구파기(`packages/backend/src/lib/account-deletion.ts`)는 (1) 행 삭제 *전에*
+  `enqueueUserVoiceArtifacts`로 클론 음성·R2 오디오의 외부(수탁사/R2) 삭제 참조를 큐에 적재하고, (2) `userPk`가
+  미해석인데 사용자 행이 실제 존재하면 throw 하여 자식 PII(클론 음성·결제·노트)가 고아로 남지 않게 한다(롤백 유도).
+  실제 외부 삭제는 cron의 `drainExternalDeletions`가 수행한다. → 출시 전 Perso 측 음성ID/원본/생성물 삭제가
+  계약/API로 보장되는지 §4 체크리스트 항목으로 재확인 필요(아래 미확정).
+- **정책 버전 동기화(W3)**: `CURRENT_POLICY_VERSION`을 `'1' → '2'`로 상향(2026-06-22). 처리방침·약관의
+  "최종 개정일 2026-06-22 / 정책 버전 2"와 일치. 기존 가입자 재동의 유도.
+
 ## 5. 코드 전환 메모 (법무 외)
 
 음성 제공자 추상화는 `packages/backend/src/lib/voice-provider.ts`에 있으나 식별자·환경변수가

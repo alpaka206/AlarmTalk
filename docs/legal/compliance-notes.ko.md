@@ -149,10 +149,32 @@
   - 음성 수탁사 **Perso는 자사 정책에 따라 입력 데이터를 자사 서비스 개선·AI 모델 학습에 이용할 수 있음**을 고지.
   - 이용자는 AI 학습 이용을 **거부할 수 있으나 거부 시 음성 클론·TTS 기능이 제한**될 수 있음을 고지.
   - 국외 이전(미국 등)·하위 처리자(Google, Microsoft/Azure 등)를 처리방침에 추가.
-- **정책 버전 상향 필요**: 본 개정은 수탁사·국외이전·학습 이용 등 중요한 변경이므로
-  `user.ts`의 `CURRENT_POLICY_VERSION`을 올려 **기존 가입자 재동의**를 유도해야 한다(동의 게이트 연동).
+- **정책 버전 상향(반영 완료)**: 정책 버전 상수는 `packages/backend/src/lib/consent.ts`의
+  `CURRENT_POLICY_VERSION`으로 이전되었으며, 본 개정(수탁사·국외이전·학습 이용·생체정보 분류 등 중요한 변경)에 맞춰
+  `'1' → '2'`로 상향(2026-06-22)했다. 처리방침·약관의 "정책 버전 2 / 최종 개정일 2026-06-22"와 동기화되어
+  기존 가입자 재동의를 유도한다(동의 게이트 연동).
 - **출시 전 확정**: Perso와의 실제 적용 약관(소비자 SaaS vs B2B/DPA) 확인 후 본 결정 재검토.
   B2B 계약에서 학습 옵트아웃이 가능하면 "학습 미사용"으로 되돌리는 것을 검토(신뢰 중심 제품에 유리).
+
+## 8. W2/W3: 서버측 동의 강제 · 생체정보 분류 · 삭제 완전성
+
+근거: 개인정보보호법 제15조·제22조(동의), 제23조(민감정보), 제21조(파기), 제28조의8(국외 이전).
+
+- **동의 유형 단일화·서버 강제(W2)**: `packages/backend/src/lib/consent.ts`가 동의 유형의 단일 진실
+  공급원이다. 일반 필수(`GENERAL_REQUIRED_CONSENTS` = `age14`/`terms`/`privacy`)와 민감/추가
+  (`SENSITIVE_REQUIRED_CONSENTS` = `voice_biometric`/`overseas_transfer`)를 구분한다. 동의는
+  (유형, 정책 버전, 동의 여부, 시각)으로 `user_consents`에 누적 기록되고, `needsConsent()`는 유형별
+  최신 1건 + 현재 정책 버전 일치까지 검사한다(버전 불일치 시 재동의 요구).
+- **음성 생체정보 게이트(W2)**: 음성 클론(`POST /voice-profile/clone`)은 `voice_biometric` 미동의 시
+  403(CONSENT_REQUIRED)로 차단된다 → 처리방침/약관/동의문구를 음성=민감정보·생체정보(제23조) 기준으로 정정(W3).
+- **운세 입력·동적 문구 국외 이전(W3)**: 운세 문구는 성별·생년월일·출생 시각을 수집하며
+  (`lib/dynamic-prompt-settings.ts`), 동적 문구/번역 시 알람 문구와 함께 Google Cloud Vertex AI(미국)로
+  전송된다(`routes/tts.ts`, `lib/vertex-translate.ts`). → 처리방침 §1.4·§5에 명시, `overseas_transfer`
+  별도 동의로 고지.
+- **삭제 완전성(W3 확인)**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
+  `userPk` 미해석 시 자식 PII 고아화를 막기 위해 throw 한다. 결제 거래기록은 가명처리 분리보관(제3절).
+- **수탁 항목 추가(W3)**: Firebase Cloud Messaging(푸시 토큰), PortOne(아임포트, 국내 PG 결제 검증),
+  Google Cloud Vertex AI(문구 생성/번역)를 처리방침 §5 위탁/국외이전 표에 추가.
 
 ## 출처
 - Perso 개인정보처리방침(영문): https://info.perso.ai/policy-perso-saas/policy/privacy-policy-en/docs/251106.html

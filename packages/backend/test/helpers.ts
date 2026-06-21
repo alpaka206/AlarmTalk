@@ -1,5 +1,6 @@
 import type { AppEnv } from '../src/types';
 import type { Context, Next } from 'hono';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 export interface MockRow {
   [key: string]: string | number | null;
@@ -71,7 +72,7 @@ export function createMockDB() {
         return {
           rows: CONSENT_TYPES_FOR_MOCK.map((t) => ({
             consent_type: t,
-            policy_version: '1',
+            policy_version: CURRENT_POLICY_VERSION,
             agreed: 1,
           })),
           rowsAffected: 0,

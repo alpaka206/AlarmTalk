@@ -1084,6 +1084,7 @@
     <string name="r3data_voice_preview_prompt">이 목소리로 깨워드릴까요?</string>
     <string name="r3misc_billing_purchase_pending">결제가 보류 중이에요. 결제 수단 승인이 끝나면 자동으로 적용돼요.</string>
     <string name="r3misc_session_expired">로그인이 만료되었어요. 다시 로그인해 주세요.</string>
+    <string name="r3misc_consent_required">계속하려면 필수 동의가 필요해요.</string>
     <string name="r3misc_login_required_generic">로그인 후 사용할 수 있어요</string>
     <string name="r3misc_google_signin_unavailable">현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요.</string>
     <string name="r3misc_google_signin_failed">Google 로그인에 실패했어요</string>

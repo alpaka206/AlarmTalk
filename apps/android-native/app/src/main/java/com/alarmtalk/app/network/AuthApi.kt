@@ -122,6 +122,10 @@ data class DeleteAccountResponse(
     val success: Boolean,
 )
 
+data class LogoutResponse(
+    val success: Boolean = false,
+)
+
 data class AccountDeletionResponse(
     val success: Boolean = false,
     val status: String = "pending_deletion",
@@ -180,6 +184,9 @@ interface AuthApi {
 
     @POST("auth/google")
     suspend fun loginGoogle(@Body request: GoogleLoginRequest): AuthTokenResponse
+
+    @POST("auth/logout")
+    suspend fun logout(@Header("Authorization") authorization: String): LogoutResponse
 
     @GET("auth/me")
     suspend fun me(@Header("Authorization") authorization: String): AuthMeResponse

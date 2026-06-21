@@ -175,6 +175,13 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         }.onSuccess { profiles ->
             val newIds = profiles.map { it.id }.toSet()
             voiceProfiles = profiles + voiceProfiles.filterNot { it.id in pendingIds || it.id in newIds }
+            // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
+            withContext(Dispatchers.IO) {
+                drafts.forEach { draft ->
+                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
+                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
+                }
+            }
             message = if (profiles.size == 1) {
                 getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, profiles.first().name)
             } else {

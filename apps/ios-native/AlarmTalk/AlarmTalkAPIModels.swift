@@ -89,7 +89,10 @@ struct DynamicPromptPreferences: Codable, Equatable {
     var fortuneBirthDate: String = ""
     var fortuneBirthTime: String = ""
 
-    private static let defaultsKey = "dynamic_prompt_preferences"
+    /// Keychain account 키. 과거 UserDefaults 키와 동일 문자열을 재사용하되 저장소만
+    /// Keychain 으로 옮긴다. 운세용 성별/생년월일/태어난 시각은 민감 정보라
+    /// UserDefaults(plist, 평문) 대신 Keychain 에 보관한다(audit low 대응).
+    private static let storageKey = "dynamic_prompt_preferences"
 
     static func from(settings: DynamicPromptSettings?) -> DynamicPromptPreferences {
         DynamicPromptPreferences(
@@ -101,17 +104,23 @@ struct DynamicPromptPreferences: Codable, Equatable {
         )
     }
 
+    /// Keychain 에서 로드한다. API 시그니처는 유지(`loadFromDefaults`)하되 저장소는
+    /// Keychain. 과거 UserDefaults 에 남아 있을 수 있는 평문 잔재가 있으면 본 호출에서
+    /// 정리한다(민감 정보가 plist 에 남지 않도록).
     static func loadFromDefaults() -> DynamicPromptPreferences {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+        // 평문 UserDefaults 잔재 제거(있다면). 신규 설치엔 없음.
+        UserDefaults.standard.removeObject(forKey: storageKey)
+        guard let data = KeychainStore.readData(account: storageKey),
               let decoded = try? JSONDecoder().decode(DynamicPromptPreferences.self, from: data) else {
             return DynamicPromptPreferences()
         }
         return decoded.normalized()
     }
 
+    /// Keychain 에 저장한다. API 시그니처는 유지(`saveToDefaults`).
     func saveToDefaults() {
         guard let data = try? JSONEncoder().encode(normalized()) else { return }
-        UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        KeychainStore.saveData(data, account: Self.storageKey)
     }
 
     func toSettings() -> DynamicPromptSettings {
