@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
+import com.alarmtalk.app.data.HolidayDate
+import com.alarmtalk.app.data.holidayCountryDisplayName
+import com.alarmtalk.app.data.holidayCountryFlagEmoji
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.R
@@ -47,6 +50,9 @@ internal fun ScheduleDetailsCard(
     onLabelChange: (String) -> Unit,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
+    holidayCountryCode: String,
+    upcomingHolidays: List<HolidayDate>,
+    onHolidayColdCache: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -59,6 +65,9 @@ internal fun ScheduleDetailsCard(
             holidayOff = holidayOff,
             onToggleDay = onToggleDay,
             onHolidayOffChange = onHolidayOffChange,
+            holidayCountryCode = holidayCountryCode,
+            upcomingHolidays = upcomingHolidays,
+            onHolidayColdCache = onHolidayColdCache,
         )
         OutlinedTextField(
             value = label,
@@ -81,6 +90,9 @@ internal fun RepeatSelector(
     holidayOff: Boolean,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
+    holidayCountryCode: String,
+    upcomingHolidays: List<HolidayDate>,
+    onHolidayColdCache: () -> Unit,
 ) {
     val holidayEnabled = repeatDaysMask != 0
     val context = LocalContext.current
@@ -129,6 +141,24 @@ internal fun RepeatSelector(
                 AlarmTalkSwitch(
                     checked = holidayOff,
                     onCheckedChange = onHolidayOffChange,
+                )
+            }
+            // 끄기가 켜졌을 때만: (a) 적용되는 공휴일 달력 국가 라벨, (b) 다가오는 공휴일 목록.
+            if (holidayOff) {
+                val flag = holidayCountryFlagEmoji(holidayCountryCode)
+                val countryName = holidayCountryDisplayName(holidayCountryCode)
+                val countryLabelValue = listOf(flag, countryName)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" ")
+                Text(
+                    text = stringResource(R.string.editor_holiday_country_label, countryLabelValue),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HolidayUpcomingList(
+                    holidays = upcomingHolidays,
+                    countryCode = holidayCountryCode,
+                    onColdCache = onHolidayColdCache,
                 )
             }
         }

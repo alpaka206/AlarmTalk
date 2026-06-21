@@ -38,6 +38,14 @@ export interface Env {
   APPLE_BUNDLE_ID?: string;
   /** PortOne(구 아임포트) V2 API Secret — 국내 PG 결제 검증. */
   PORTONE_API_SECRET?: string;
+  /**
+   * data.go.kr KASI 특일정보 OpenAPI 서비스키 (getRestDeInfo). KR 공휴일의 대체/임시공휴일
+   * 보정용 오버레이에 쓴다. 미설정 시 KR 오버레이를 생략하고 date-holidays 결과만 제공한다.
+   * 주의: data.go.kr 는 Encoding/Decoding 두 키를 발급한다 — **Decoding(디코딩) 키**를 넣어라.
+   * (URLSearchParams 로 한 번만 인코딩하므로 인코딩 키를 넣으면 이중 인코딩되어
+   *  SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다.)
+   */
+  KASI_SERVICE_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

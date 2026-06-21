@@ -8,8 +8,18 @@ struct HolidayOffToggle: View {
     @Binding var isOn: Bool
     /// 반복 요일이 하나도 없으면 의미가 없어 disable. 부모(에디터)가 mask 로 판단해 전달.
     var enabled: Bool = true
+    /// 선택된 국가명. nil 이면 기존 서브타이틀을 그대로 유지(2-arg 호출 호환).
+    var subtitleCountryName: String? = nil
 
     @Environment(\.voiceAlarmTheme) private var theme
+
+    private var subtitleText: String {
+        // subtitleCountryName == nil (KR 등) 이면 기존 '대체·임시 공휴일 포함' 안내를 유지.
+        guard let name = subtitleCountryName else {
+            return "대체 공휴일 및 임시 공휴일 포함"
+        }
+        return "\(name) 공휴일 기준"
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: theme.spacing.sm) {
@@ -24,7 +34,7 @@ struct HolidayOffToggle: View {
                     .font(theme.typography.titleSmall)
                     .fontWeight(.semibold)
                     .foregroundStyle(theme.palette.onSurface)
-                Text("대체 공휴일 및 임시 공휴일 포함")
+                Text(subtitleText)
                     .font(theme.typography.bodySmall)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
             }

@@ -10,20 +10,28 @@ import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
 import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.AlarmTalkApi
 import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.HolidayApi
+import com.alarmtalk.app.network.toPublicHolidayDates
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
     private val characterEventDao: CharacterEventDao,
     private val holidayCalendarStore: HolidayCalendarStore,
+    private val holidayCountryPreferenceStore: HolidayCountryPreferenceStore,
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
     private val context: Context,
+    // /holiday 는 인증이 필요 없어 토큰 없이 새 클라이언트를 생성한다(다른 워커와 동일).
+    private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
 ) {
     private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
@@ -108,7 +116,10 @@ class AlarmRepository(
         val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
         val now = System.currentTimeMillis()
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
@@ -185,7 +196,10 @@ class AlarmRepository(
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
         val now = System.currentTimeMillis()
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
@@ -254,7 +268,10 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
 
         val updated = if (enabled) {
-            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(
+                countryCode = currentHolidayCountry(),
+                startDate = currentLocalDate(now),
+            )
             current.copy(
                 fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                     hour = current.hour,
@@ -330,7 +347,10 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         val copiedTime = copyTargetTime(current.hour, current.minute)
         requireUniqueTime(copiedTime.hour, copiedTime.minute)
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val copied = current.copy(
             id = UUID.randomUUID().toString(),
             label = current.label.takeIf { it.isNotBlank() }
@@ -381,7 +401,10 @@ class AlarmRepository(
 
         val now = System.currentTimeMillis()
         if (current.repeatDaysMask != 0) {
-            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(
+                countryCode = currentHolidayCountry(),
+                startDate = currentLocalDate(now),
+            )
             val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
                 hour = current.hour,
                 minute = current.minute,
@@ -463,7 +486,10 @@ class AlarmRepository(
                 val alarmToSchedule = if (alarm.fireAtMillis > now) {
                     alarm
                 } else if (alarm.repeatDaysMask != 0) {
-                    val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+                    val holidayPredicate = holidayCalendarStore.holidayPredicate(
+                        countryCode = currentHolidayCountry(),
+                        startDate = currentLocalDate(now),
+                    )
                     alarm.copy(
                         fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
@@ -660,6 +686,60 @@ class AlarmRepository(
         Instant.ofEpochMilli(nowMillis)
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
+
+    /** 앱 전역 공휴일 달력 국가(알람별 아님). 모든 holidayPredicate 호출이 이를 사용한다. */
+    private suspend fun currentHolidayCountry(): String =
+        holidayCountryPreferenceStore.countryCode.first()
+
+    /**
+     * 비-KR 국가의 공휴일을 서버(/holiday)에서 받아 로컬 캐시에 채운다. 근접 윈도우에 이미
+     * 행이 있으면 네트워크를 건너뛴다. KR 은 온디바이스 엔진이 있어 동기화하지 않는다.
+     * Best-effort — 네트워크 오류는 삼키고 조용히 실패한다(공휴일 표시는 부가 기능).
+     */
+    suspend fun ensureHolidaysSynced(countryCode: String) {
+        val normalized = countryCode.trim().uppercase()
+        if (normalized.isEmpty() || normalized == HolidayCalendarStore.DEFAULT_COUNTRY_CODE) return
+        runCatching {
+            val today = currentLocalDate(System.currentTimeMillis())
+            val existing = holidayCalendarStore.upcomingHolidays(
+                countryCode = normalized,
+                from = today,
+                count = 1,
+            )
+            if (existing.isNotEmpty()) return
+            val from = today
+            val to = today.plusYears(1)
+            // iOS 와 동일하게 기기 UI 언어(ISO-639-1)를 보내 비-KR 공휴일 이름을 같은 로케일로 받는다.
+            val lang = Locale.getDefault().language.lowercase().ifBlank { null }
+            val response = holidayApiProvider().getHolidays(
+                country = normalized,
+                from = from.toString(),
+                to = to.toString(),
+                lang = lang,
+            )
+            val holidays = response.toPublicHolidayDates()
+            if (holidays.isNotEmpty()) {
+                holidayCalendarStore.syncFromRemote(
+                    countryCode = normalized,
+                    holidays = holidays,
+                )
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to sync holidays for country=$countryCode", error)
+        }
+    }
+
+    /** 토글 아래 표시할 다가오는 공휴일 목록(선택 국가 기준, 기본 5개). */
+    suspend fun upcomingHolidays(
+        countryCode: String,
+        from: LocalDate = currentLocalDate(System.currentTimeMillis()),
+        count: Int = 5,
+    ): List<HolidayDate> =
+        holidayCalendarStore.upcomingHolidays(
+            countryCode = countryCode,
+            from = from,
+            count = count,
+        )
 
     /**
      * 반복되는 랜덤 문구(동적 음성) 알람인지 판별한다.

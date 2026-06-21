@@ -26,10 +26,11 @@
     "wrangler": "^4.100.0"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.3",
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
+    "@libsql/client": "^0.17.3",
     "bcryptjs": "^3.0.3",
+    "date-holidays": "^3.30.2",
     "hono": "^4.12.25",
     "toucan-js": "^4.1.1"
   }

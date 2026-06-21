@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -49,8 +50,11 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
+import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
+import com.alarmtalk.app.data.HolidayCountryPreferenceStore
+import com.alarmtalk.app.data.HolidayDate
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -152,6 +156,17 @@ internal fun AlarmEditorScreen(
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
     var dynamicPromptPreferences by remember(appContext) {
         mutableStateOf(dynamicPromptPreferenceStore.read())
+    }
+    // 앱 전역 공휴일 달력 국가 + 그 국가의 다가오는 공휴일 목록(토글 아래 표시용).
+    val holidayCountryStore = remember(appContext) { HolidayCountryPreferenceStore(appContext) }
+    val alarmRepository = remember(appContext) { AlarmAppContainer.repository(appContext) }
+    val initialHolidayCountry = remember(appContext) { holidayCountryStore.read() }
+    val holidayCountryCode by holidayCountryStore.countryCode.collectAsState(initial = initialHolidayCountry)
+    var upcomingHolidays by remember { mutableStateOf<List<HolidayDate>>(emptyList()) }
+    LaunchedEffect(holidayCountryCode) {
+        upcomingHolidays = runCatching {
+            alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
+        }.getOrDefault(emptyList())
     }
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
     // 처음 새 알람을 만들 때 한 번만 자동 노출. 상단 도움말 버튼으로 다시 볼 수 있다.
@@ -1095,6 +1110,17 @@ internal fun AlarmEditorScreen(
                             },
                             onHolidayOffChange = { enabled ->
                                 if (editor.repeatDaysMask != 0) editor.holidayOff = enabled
+                            },
+                            holidayCountryCode = holidayCountryCode,
+                            upcomingHolidays = upcomingHolidays,
+                            onHolidayColdCache = {
+                                // 비-KR 캐시가 비었을 때 한 번 서버 동기화 후 목록을 다시 읽는다.
+                                scope.launch {
+                                    alarmRepository.ensureHolidaysSynced(holidayCountryCode)
+                                    upcomingHolidays = runCatching {
+                                        alarmRepository.upcomingHolidays(countryCode = holidayCountryCode)
+                                    }.getOrDefault(emptyList())
+                                }
                             },
                         )
                     }
