@@ -18,6 +18,7 @@ struct LoginPermissionGateView<Content: View>: View {
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @Environment(\.voiceAlarmTheme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var snapshot = LoginPermissionSnapshot.unknown
     @State private var sheetVisible = false
@@ -41,11 +42,18 @@ struct LoginPermissionGateView<Content: View>: View {
                     sheetVisible = false
                 }
             }
+            .onChange(of: scenePhase) { _, newPhase in
+                // 사용자가 설정 앱에서 권한을 켜고 돌아오면 스냅샷을 새로 읽어,
+                // 모두 허용됐다면 게이트가 자동으로 닫히도록 한다 (Android ON_RESUME refresh parity).
+                guard newPhase == .active else { return }
+                Task { await refreshSnapshot() }
+            }
             .sheet(isPresented: $sheetVisible) {
                 PermissionGateSheet(
                     snapshot: snapshot,
                     onRequestAlarmKit: requestAlarmAuthorization,
                     onRequestMicrophone: requestMicrophone,
+                    onOpenSettings: { openAppSettings() },
                     onClose: { sheetVisible = false }
                 )
                 .presentationDetents([.medium, .large])
@@ -97,6 +105,10 @@ struct LoginPermissionGateView<Content: View>: View {
 struct LoginPermissionSnapshot: Equatable {
     var alarmAuthorized: Bool
     var microphoneGranted: Bool
+    /// 권한이 `.denied`/`.restricted` 로 굳어 in-app 재프롬프트가 막힌 상태.
+    /// true 면 해당 항목의 CTA 를 설정 앱 이동으로 바꾼다 (`.notDetermined` 은 false).
+    var alarmRecoveryNeeded: Bool = false
+    var microphoneRecoveryNeeded: Bool = false
 
     var allGranted: Bool { alarmAuthorized && microphoneGranted }
 
@@ -114,21 +126,22 @@ struct LoginPermissionSnapshot: Equatable {
 
     @MainActor
     static func current(alarmKit: AlarmKitViewModel) -> LoginPermissionSnapshot {
-        LoginPermissionSnapshot(
-            alarmAuthorized: isAlarmAuthorized(alarmKit: alarmKit),
-            microphoneGranted: isMicrophoneGranted()
-        )
-    }
-
-    @MainActor
-    private static func isAlarmAuthorized(alarmKit: AlarmKitViewModel) -> Bool {
         #if canImport(AlarmKit)
+        // 단일 refresh 로 authorized + recoveryNeeded 를 함께 읽는다.
         alarmKit.refreshAuthorizationState()
-        return alarmKit.alarmAuthorized
+        let alarmAuthorized = alarmKit.alarmAuthorized
+        let alarmRecoveryNeeded = alarmKit.permissionRecoveryNeeded
         #else
         // AlarmKit 미사용 SDK 빌드는 게이트 통과로 간주.
-        return true
+        let alarmAuthorized = true
+        let alarmRecoveryNeeded = false
         #endif
+        return LoginPermissionSnapshot(
+            alarmAuthorized: alarmAuthorized,
+            microphoneGranted: isMicrophoneGranted(),
+            alarmRecoveryNeeded: alarmRecoveryNeeded,
+            microphoneRecoveryNeeded: isMicrophoneRecoveryNeeded()
+        )
     }
 
     private static func isMicrophoneGranted() -> Bool {
@@ -136,6 +149,15 @@ struct LoginPermissionSnapshot: Equatable {
             return AVAudioApplication.shared.recordPermission == .granted
         } else {
             return AVAudioSession.sharedInstance().recordPermission == .granted
+        }
+    }
+
+    /// 마이크가 `.denied` 로 굳었는지 — `.undetermined` 은 일반 요청으로 회복 가능하므로 false.
+    private static func isMicrophoneRecoveryNeeded() -> Bool {
+        if #available(iOS 17.0, *) {
+            return AVAudioApplication.shared.recordPermission == .denied
+        } else {
+            return AVAudioSession.sharedInstance().recordPermission == .denied
         }
     }
 }
@@ -168,6 +190,9 @@ enum PermissionTarget: String, Hashable {
     }
 
     var ctaLabel: String { "허용하기" }
+
+    /// 거부/제한으로 굳어 재프롬프트가 막힌 경우의 CTA — 설정 앱으로 이동.
+    var settingsCtaLabel: String { "설정 열기" }
 }
 
 private struct PermissionGateSheet: View {
@@ -175,6 +200,7 @@ private struct PermissionGateSheet: View {
     let snapshot: LoginPermissionSnapshot
     let onRequestAlarmKit: () -> Void
     let onRequestMicrophone: () -> Void
+    let onOpenSettings: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -205,12 +231,16 @@ private struct PermissionGateSheet: View {
             PermissionItemRow(
                 target: .alarmKit,
                 granted: snapshot.alarmAuthorized,
-                onTap: onRequestAlarmKit
+                recoveryNeeded: snapshot.alarmRecoveryNeeded,
+                onTap: onRequestAlarmKit,
+                onOpenSettings: onOpenSettings
             )
             PermissionItemRow(
                 target: .microphone,
                 granted: snapshot.microphoneGranted,
-                onTap: onRequestMicrophone
+                recoveryNeeded: snapshot.microphoneRecoveryNeeded,
+                onTap: onRequestMicrophone,
+                onOpenSettings: onOpenSettings
             )
         }
         .padding(18)
@@ -221,7 +251,9 @@ private struct PermissionItemRow: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let target: PermissionTarget
     let granted: Bool
+    let recoveryNeeded: Bool
     let onTap: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -249,6 +281,12 @@ private struct PermissionItemRow: View {
                     .foregroundStyle(theme.palette.primary)
                     .font(.system(size: 22, weight: .semibold))
                     .accessibilityLabel("허용됨")
+            } else if recoveryNeeded {
+                // 거부/제한으로 굳어 in-app 재요청이 막힘 — 설정 앱으로 보낸다.
+                Button(target.settingsCtaLabel, action: onOpenSettings)
+                    .buttonStyle(.borderedProminent)
+                    .tint(theme.palette.primary)
+                    .foregroundStyle(theme.palette.onPrimary)
             } else {
                 Button(target.ctaLabel, action: onTap)
                     .buttonStyle(.borderedProminent)

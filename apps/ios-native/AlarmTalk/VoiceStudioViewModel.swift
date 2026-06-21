@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 
 struct PreparedAlarmTalk {
     var messageID: String
@@ -30,6 +31,9 @@ final class VoiceStudioViewModel: ObservableObject {
     @Published var profiles: [VoiceProfile] = []
     @Published var familyVoices: [FamilyVoiceProfile] = []
     @Published var messages: [TtsMessage] = []
+    /// 기본 제공(스톡) 알람 클립 카탈로그. 무료 등급 + 시스템 보이스 선택 시
+    /// 에디터의 StockClipPicker 가 사용. 세션당 1회 로드한다.
+    @Published var stockClips: [StockClip] = []
     @Published var selectedProfileID: String?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
@@ -88,6 +92,7 @@ final class VoiceStudioViewModel: ObservableObject {
         profiles = []
         familyVoices = []
         messages = []
+        stockClips = []
         selectedProfileID = nil
         statusMessage = nil
         preparedAlarm = nil
@@ -98,6 +103,7 @@ final class VoiceStudioViewModel: ObservableObject {
         profiles = []
         familyVoices = []
         messages = []
+        stockClips = []
         selectedProfileID = nil
         preparedAlarm = nil
     }
@@ -198,6 +204,98 @@ final class VoiceStudioViewModel: ObservableObject {
             guard activeUserID == userID else { return }
             statusMessage = mapVoiceError(error)
         }
+    }
+
+    /// 기본 제공(스톡) 알람 클립 카탈로그를 1회 로드한다. Android
+    /// `MainViewModelVoiceActions.loadStockClips` 미러: 세션 없으면 무시,
+    /// 이미 채워져 있으면 재로딩하지 않고, 실패는 조용히 로그만 남긴다(비차단).
+    /// `isBusy` 와 독립적으로 동작해 refresh/generate 와 나란히 실행될 수 있다.
+    func loadStockClips(session: AuthSession?) async {
+        guard let token = session?.token else { return }
+        guard stockClips.isEmpty else { return }
+        do {
+            stockClips = try await api.getStockClips(token: token)
+        } catch {
+            // 비차단 — 카탈로그가 비면 picker 가 그냥 렌더되지 않는다.
+        }
+    }
+
+    /// 선택한 스톡 클립의 음원을 받아 캐싱하고, 알람 저장 경로가 그대로 쓸 수 있는
+    /// `PreparedAlarmTalk` 을 만든다. 생성 TTS 와 동일하게 `preparedAlarm` 에 실어
+    /// 저장 흐름(AlarmEditorSheet saveFlow)이 server_tts 로 병합하게 한다.
+    /// Android `selectStockClip` 의 다운로드 → base64 decode → 캐시 → setStockClipAudio
+    /// 경로 미러. cacheKey 는 `stock_<messageId>`.
+    func prepareStockClip(_ clip: StockClip, session: AuthSession?) async -> PreparedAlarmTalk? {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return nil
+        }
+        let stockKey = AudioCacheStore.stockCacheKey(messageId: clip.messageId)
+        do {
+            // 4-reuse: 미리듣기가 같은 음원을 stock_preview_<id> 로 이미 받아 캐싱했다면
+            // 재다운로드하지 않고 그 바이트를 stock_<id> 로 재키잉한다(Android 미러).
+            if let cached = try? reuseStockPreviewCache(for: clip, stockKey: stockKey) {
+                let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: nil)
+                preparedAlarm = prepared
+                return prepared
+            }
+            let response = try await api.getTTSMessageAudio(id: clip.messageId, token: token)
+            let cached = try await AudioCacheStore.cacheStockClipOffMain(
+                audio: response,
+                messageId: clip.messageId,
+                cacheKey: stockKey
+            )
+            let prepared = makeStockPrepared(clip: clip, cached: cached, rawAudioURL: response.audioUrl)
+            preparedAlarm = prepared
+            return prepared
+        } catch {
+            statusMessage = mapVoiceError(error)
+            return nil
+        }
+    }
+
+    /// 미리듣기가 캐싱해 둔 `stock_preview_<id>` 파일을 `stock_<id>` 자리로 복사해
+    /// 선택용 캐시를 만든다. 미리듣기 캐시가 없으면 nil 을 던져 정상 다운로드 경로로 보낸다.
+    private func reuseStockPreviewCache(for clip: StockClip, stockKey: String) throws -> CachedVoiceAudio {
+        let store = AudioCacheStore.shared
+        let previewKey = AudioCacheStore.stockPreviewCacheKey(messageId: clip.messageId)
+        guard let previewURL = store.cachedURL(for: previewKey) else {
+            throw LocalAlarmAudioError.missingSource
+        }
+        let data = try Data(contentsOf: previewURL)
+        let meta = store.readMetadata(cacheKey: previewKey)
+        let mimeType = meta?.mimeType ?? AudioCacheStore.mimeType(
+            forFormat: AudioCacheStore.normalizedFormat(previewURL.pathExtension)
+        )
+        // 저장 경로가 prepared.localAudioFileName 을 legacy URL 로 해석하므로 legacy
+        // 사본(<messageId>.<ext>)도 보장해야 한다 — cacheStockClip 와 동일.
+        let format = AudioCacheStore.fileExtension(forMimeType: mimeType)
+        let legacyName = "\(clip.messageId).\(format)"
+        let legacyURL = try AudioCacheStore.legacyAudioDirectory().appendingPathComponent(legacyName)
+        try data.write(to: legacyURL, options: [.atomic])
+        _ = try store.cacheBytes(
+            data,
+            cacheKey: stockKey,
+            mimeType: mimeType,
+            source: "tts",
+            messageId: clip.messageId,
+            rawAudioUri: meta?.rawAudioUri,
+            durationOverrideMs: meta?.durationMs,
+            enforceMaxDuration: false
+        )
+        return CachedVoiceAudio(url: legacyURL, fileName: legacyName, format: format, cacheKey: stockKey)
+    }
+
+    private func makeStockPrepared(clip: StockClip, cached: CachedVoiceAudio, rawAudioURL: String?) -> PreparedAlarmTalk {
+        PreparedAlarmTalk(
+            messageID: clip.messageId,
+            voiceProfileID: clip.voiceProfileId,
+            localAudioFileName: cached.fileName,
+            audioCacheKey: cached.cacheKey,
+            rawAudioURL: rawAudioURL,
+            text: clip.text,
+            language: clip.language ?? "ko"
+        )
     }
 
     func startRecording() async {
@@ -409,6 +507,8 @@ final class VoiceStudioViewModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
 
+        // 네트워크 합성이 끝날 때까지 미리듣기 버튼에 스피너를 띄운다(change 2).
+        previewPlayer.setPreparing(true)
         do {
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
@@ -428,10 +528,12 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: "ko",
                 serverCacheKey: response.cacheKey
             )
-            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
+            let cached = try await AudioCacheStore.cacheOffMain(tts: response, cacheKey: cacheKey)
+            // play(...) 가 isPreparing 을 false 로 내린다.
             try previewPlayer.play(url: AudioCacheStore.url(for: cached.fileName))
             statusMessage = "미리듣기를 재생하고 있어요."
         } catch {
+            previewPlayer.setPreparing(false)
             statusMessage = mapVoiceError(error)
         }
     }
@@ -562,7 +664,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 ),
                 token: token
             )
-            let cached = try AudioCacheStore.cache(
+            let cached = try await AudioCacheStore.cacheOffMain(
                 tts: response,
                 cacheKey: "draft_preview_\(profileId)"
             )
@@ -606,12 +708,17 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// - Parameter triggerSuccessHaptic: 생성 성공 시 `.success` 햅틱을 울릴지 여부.
+    ///   저장 흐름(AlarmEditorSheet)에서 인라인 생성으로 호출될 때는 false 를 넘긴다 —
+    ///   이어지는 finishScheduling 이 동일한 `.success` 햅틱을 울려 두 번 진동하기 때문.
+    ///   단독 생성(음성 탭 미리듣기 등) 호출은 기본값(true)을 유지한다.
     func generateTTS(
         session: AuthSession?,
         alarmHour: Int? = nil,
         alarmMinute: Int? = nil,
         targetUserId: String? = nil,
-        targetDynamicPromptState: DynamicPromptSettingsState? = nil
+        targetDynamicPromptState: DynamicPromptSettingsState? = nil,
+        triggerSuccessHaptic: Bool = true
     ) async -> PreparedAlarmTalk? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -626,7 +733,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return nil
         }
         guard randomPrompt || !ttsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusMessage = "깨워줄 말을 입력하거나 랜덤 생성을 켜 주세요."
+            statusMessage = "깨워줄 말을 입력하거나 '랜덤 문구 사용'을 켜 주세요."
             return nil
         }
         let promptContext = RandomPromptContext.normalized(randomContext)
@@ -648,10 +755,15 @@ final class VoiceStudioViewModel: ObservableObject {
             let shouldTranslate = !randomPrompt && translateText
             let activeLanguage = randomPrompt || shouldTranslate ? ttsLanguage : "ko"
             let activeCategory = randomPrompt ? promptContext.ttsCategory : "custom"
+            // 고정 문구는 trim 한 채로 전송한다. canReuseExistingTtsAudio(AlarmEditDraft:214)
+            // 와 위 검증 가드(681)가 trim 한 문구로 비교하므로, 여기서도 같은 문구를 보내야
+            // 로컬 ttsCacheKey 가 재사용 검사와 어긋나 불필요한 재생성을 유발하지 않는다.
+            // Android 는 editor.ttsTextForSave() 로 trim 한다.
+            let trimmedText = ttsText.trimmingCharacters(in: .whitespacesAndNewlines)
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
-                    text: randomPrompt ? "" : ttsText,
+                    text: randomPrompt ? "" : trimmedText,
                     category: activeCategory,
                     language: activeLanguage,
                     translate: shouldTranslate,
@@ -676,7 +788,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 language: activeLanguage,
                 serverCacheKey: response.cacheKey
             )
-            let cached = try AudioCacheStore.cache(tts: response, cacheKey: cacheKey)
+            let cached = try await AudioCacheStore.cacheOffMain(tts: response, cacheKey: cacheKey)
             let prepared = PreparedAlarmTalk(
                 messageID: response.messageId,
                 voiceProfileID: response.voiceProfileId,
@@ -688,21 +800,30 @@ final class VoiceStudioViewModel: ObservableObject {
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."
+            if triggerSuccessHaptic {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
             await refresh(session: session, force: true, successMessage: nil)
             return prepared
         } catch {
             statusMessage = mapVoiceError(error)
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
             return nil
         }
     }
 
-    func playPreparedAudio() {
+    /// 준비된(캐시된) 음원을 재생한다. 네트워크/생성 없이 로컬 캐시 파일만 재생한다.
+    /// 에디터의 단일 미리듣기 플레이어로 라우팅하기 위해 `player` 를 파라미터화했다 —
+    /// 기본값은 VM 소유 previewPlayer (음성 탭/관리 패널 경로 호환). 에디터의 chip 은
+    /// editorPreviewPlayer 를 넘긴다(change 1, 절대 generateTTS 를 부르지 않음).
+    func playPreparedAudio(using player: AudioPreviewPlayer? = nil) {
         guard let preparedAlarm else {
             statusMessage = "먼저 음성을 생성해 주세요."
             return
         }
+        let target = player ?? previewPlayer
         do {
-            try previewPlayer.play(url: AudioCacheStore.url(for: preparedAlarm.localAudioFileName))
+            try target.play(url: AudioCacheStore.url(for: preparedAlarm.localAudioFileName))
         } catch {
             statusMessage = mapVoiceError(error)
         }

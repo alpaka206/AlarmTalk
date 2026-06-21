@@ -5,6 +5,19 @@ import Foundation
 import AlarmKit
 #endif
 
+// MARK: - Target boundary
+//
+// 이 파일은 `Shared/` 에 있어 메인 앱(AlarmTalk)과 위젯 확장(AlarmTalkWidget)
+// 양쪽 타겟에 컴파일된다. 위젯은 LiveActivity 의 `Button(intent:)` 를 구성하기
+// 위해 이 인텐트 *타입* 이 필요하다 (ActivityKit 요구사항). 하지만 위젯에는
+// `AlarmAppContext` (앱 전용 상태 디스패처) 가 없으므로, 우리 측 상태 전이
+// 부킹은 앱 타겟에서만 정의되는 `ALARMTALK_APP` 컴파일 조건으로 감싼다.
+//
+// `LiveActivityIntent.perform()` 는 항상 호스트 앱 프로세스에서 실행되므로
+// (위젯 프로세스가 아님), 위젯은 버튼 구성을 위한 심볼만 필요하고 실제 동작은
+// 앱이 제공한다. AlarmKit `stop(id:)` / `countdown(id:)` 은 시스템 프레임워크라
+// 양쪽 타겟에서 모두 호출 가능하므로 가드하지 않는다.
+
 // MARK: - StopAlarmIntent
 //
 // LiveActivityIntent 로 등록되어 Lock Screen / Dynamic Island 의 Stop 버튼이
@@ -47,9 +60,11 @@ struct StopAlarmIntent: LiveActivityIntent {
         } catch {
             // ignored: AlarmKit 에서 이미 dismiss 된 알람일 가능성.
         }
+        #if ALARMTALK_APP
         if let ctx = AlarmAppContext.shared {
             await ctx.handleAlarmStopped(alarmKitIDString: uuid.uuidString)
         }
+        #endif
         return .result()
         #else
         return .result()
@@ -95,6 +110,7 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
         guard let uuid = UUID(uuidString: alarmID) else {
             return .result()
         }
+        #if ALARMTALK_APP
         // Android AlarmRepository.snooze() 와 동일하게 한도를 먼저 확인한다.
         // 다시 울림이 꺼져 있거나 snoozeRepeatLimit 에 도달했다면 countdown 으로
         // 재무장하지 않고 알람을 종료시켜야 한다.
@@ -126,6 +142,16 @@ struct SnoozeAlarmIntent: LiveActivityIntent {
                 snoozeMinutesOverride: snoozeMinutes > 0 ? snoozeMinutes : nil
             )
         }
+        #else
+        // 위젯 타겟: AlarmAppContext 가 없다. LiveActivityIntent.perform() 은 호스트
+        // 앱 프로세스에서 실행되므로 실제로 이 분기가 실행될 일은 없으나, 심볼만
+        // 컴파일되면 되도록 안전한 기본 동작(다시 울림 재무장)만 둔다.
+        do {
+            try AlarmManager.shared.countdown(id: uuid)
+        } catch {
+            // ignored
+        }
+        #endif
         return .result()
         #else
         return .result()

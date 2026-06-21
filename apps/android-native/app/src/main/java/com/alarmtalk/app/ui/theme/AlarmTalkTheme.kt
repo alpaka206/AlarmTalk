@@ -18,6 +18,38 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
+/**
+ * 앱 전역 다크 컬러 스킴(브랜드 블루 계열)의 단일 출처.
+ * 잠금화면 위에 항상 다크로 떠야 하는 RingingActivity 도 이 스킴을 참조해
+ * primary 계열 색을 인라인 리터럴로 중복 정의하지 않는다.
+ */
+internal val AlarmTalkDarkColorScheme = androidx.compose.material3.darkColorScheme(
+    primary = Color(0xFFA6D2FF),
+    onPrimary = Color(0xFF08243C),
+    primaryContainer = Color(0xFF1E4263),
+    onPrimaryContainer = Color(0xFFD9ECFF),
+    secondary = Color(0xFFB9DDEB),
+    onSecondary = Color(0xFF0F2B36),
+    secondaryContainer = Color(0xFF243F49),
+    onSecondaryContainer = Color(0xFFE2F5FC),
+    tertiary = Color(0xFFC7E5D6),
+    onTertiary = Color(0xFF123226),
+    tertiaryContainer = Color(0xFF28483B),
+    onTertiaryContainer = Color(0xFFE3F6EC),
+    background = Color(0xFF090A0F),
+    onBackground = Color(0xFFF7F7FA),
+    surface = Color(0xFF14161E),
+    surfaceVariant = Color(0xFF20232D),
+    onSurface = Color(0xFFF7F7FA),
+    onSurfaceVariant = Color(0xFFA8AEBA),
+    outline = Color(0xFF3A3D49),
+    outlineVariant = Color(0xFF2D313D),
+    error = Color(0xFFFF9A8A),
+    onError = Color(0xFF3D0703),
+    errorContainer = Color(0xFF5B211B),
+    onErrorContainer = Color(0xFFFFDAD4),
+)
+
 @Composable
 internal fun AlarmTalkTheme(
     themeMode: ThemeMode = ThemeMode.System,
@@ -30,37 +62,12 @@ internal fun AlarmTalkTheme(
         ThemeMode.Light -> false
     }
     val colorScheme = if (isDark) {
-        androidx.compose.material3.darkColorScheme(
-            primary = Color(0xFFA8D4FF),
-            onPrimary = Color(0xFF08243C),
-            primaryContainer = Color(0xFF1E4263),
-            onPrimaryContainer = Color(0xFFD9ECFF),
-            secondary = Color(0xFFB9DDEB),
-            onSecondary = Color(0xFF0F2B36),
-            secondaryContainer = Color(0xFF243F49),
-            onSecondaryContainer = Color(0xFFE2F5FC),
-            tertiary = Color(0xFFC7E5D6),
-            onTertiary = Color(0xFF123226),
-            tertiaryContainer = Color(0xFF28483B),
-            onTertiaryContainer = Color(0xFFE3F6EC),
-            background = Color(0xFF090A0F),
-            onBackground = Color(0xFFF7F7FA),
-            surface = Color(0xFF14161E),
-            surfaceVariant = Color(0xFF20232D),
-            onSurface = Color(0xFFF7F7FA),
-            onSurfaceVariant = Color(0xFFA8AEBA),
-            outline = Color(0xFF3A3D49),
-            outlineVariant = Color(0xFF2D313D),
-            error = Color(0xFFFF9A8A),
-            onError = Color(0xFF3D0703),
-            errorContainer = Color(0xFF5B211B),
-            onErrorContainer = Color(0xFFFFDAD4),
-        )
+        AlarmTalkDarkColorScheme
     } else {
         androidx.compose.material3.lightColorScheme(
-            primary = Color(0xFF3F6F9E),
+            primary = Color(0xFF175FB0),
             onPrimary = Color(0xFFFFFFFF),
-            primaryContainer = Color(0xFFDCEEFF),
+            primaryContainer = Color(0xFFD6E9FF),
             onPrimaryContainer = Color(0xFF0A2740),
             secondary = Color(0xFF5F8FAF),
             onSecondary = Color(0xFFFFFFFF),

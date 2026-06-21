@@ -5,6 +5,7 @@ import SwiftUI
 /// ContentView 의 `mainApp` 을 그대로 옮겨 router 책임에 집중시켰다.
 /// 설정/보조/편집 화면을 독립 sheet 로 관리한다.
 struct MainTabsView: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
@@ -16,6 +17,13 @@ struct MainTabsView: View {
     @State private var selectedTab: NativeTab = .home
     @State private var planGate: PlanGateState?
     @State private var receivedAlarmSeenAtMillis: Int64 = 0
+
+    /// 탭 전환 시 매번 네트워크 요청이 나가면 살짝 버벅인다. 탭+토큰별 마지막
+    /// 새로고침 시각을 기억해, 60초 안에 다시 들른 경우엔 재요청을 건너뛴다.
+    /// (토큰이 바뀌면 키가 달라져 자연히 새로 받는다.) Android `lastTabRefreshAt`
+    /// (`AlarmTalkApp.kt`) parity — 키는 "탭.token" 문자열.
+    @State private var lastRefreshAt: [String: Date] = [:]
+    private let tabRefreshThrottle: TimeInterval = 60
 
     /// `editorTarget` 이 nil 이 아니면 알람 편집 시트가 뜬다.
     @State private var editorTarget: AlarmEditorTarget?
@@ -37,7 +45,7 @@ struct MainTabsView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 24)
                 }
-                .background(AlarmTalkTheme.background)
+                .background(theme.palette.background)
 
                 BottomNavBar(
                     selected: $selectedTab,
@@ -45,7 +53,7 @@ struct MainTabsView: View {
                     onSelect: selectTab
                 )
             }
-            .background(AlarmTalkTheme.background)
+            .background(theme.palette.background)
             .navigationTitle(selectedTab.navigationTitle)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -258,7 +266,42 @@ struct MainTabsView: View {
     }
 
     private func refreshForSelectedTab(_ tab: NativeTab) async {
-        guard auth.session != nil else { return }
+        // 세션이 없으면 알람 탭은 로그인 안내를 띄우고(Android syncNow parity),
+        // 나머지 탭은 조용히 빠진다. (각 refresh 는 session nil 이면 자체 no-op)
+        guard auth.session != nil else {
+            if tab == .alarms {
+                remoteSync.statusMessage = "동기화하려면 먼저 로그인해 주세요"
+            }
+            return
+        }
+
+        // 알람 탭 진입 시 받은-알람 seen 기준선은 네트워크 새로고침과 무관하게 항상
+        // 갱신해야 한다. 60초 스로틀에 막혀 아래에서 일찍 return 되면 markReceivedAlarmsSeen
+        // 가 지연돼 배지가 늦게 사라지므로, 스로틀 판정 전에 먼저 갱신한다. 권한 상태
+        // 새로고침도 로컬-only 라 저렴해 함께 둔다.
+        if tab == .alarms {
+            alarmKit.refreshAuthorizationState()
+            markReceivedAlarmsSeen()
+        }
+
+        // 탭+토큰 키로 60초 스로틀. 탭에 필요한 데이터가 비어 있으면(예: 무료 플랜
+        // 정리로 목소리 목록이 비워진 직후) 스로틀을 무시하고 즉시 다시 불러와
+        // 빈 화면이 남지 않게 한다. (Android lastTabRefreshAt + tabDataEmpty parity)
+        let throttleKey = "\(tab).\(auth.session?.token ?? "")"
+        let now = Date()
+        let tabDataEmpty: Bool = {
+            switch tab {
+            case .voices: return voiceStudio.profiles.isEmpty
+            default: return false
+            }
+        }()
+        if !tabDataEmpty,
+           let last = lastRefreshAt[throttleKey],
+           now.timeIntervalSince(last) < tabRefreshThrottle {
+            return
+        }
+        lastRefreshAt[throttleKey] = now
+
         switch tab {
         case .home:
             await socialFeatures.refreshAll(session: auth.session)
@@ -266,8 +309,11 @@ struct MainTabsView: View {
             await voiceStudio.refresh(session: auth.session)
             await socialFeatures.refreshAll(session: auth.session)
         case .alarms:
-            await remoteSync.refresh(session: auth.session)
-            alarmKit.refreshAuthorizationState()
+            // Android: NativeTab.Alarms -> viewModel.syncNow() (push → pull).
+            // 기존 pull-only refresh 대신 전체 동기화로 로컬 변경을 먼저 밀어 올린다.
+            // 권한 상태는 스로틀 전에 이미 새로고침했다. seen 기준선은 풀로 새 받은-알람이
+            // 들어왔을 수 있으니 동기화 후 한 번 더 갱신한다.
+            await remoteSync.runFullSync()
             markReceivedAlarmsSeen()
         case .messages:
             await socialFeatures.refreshAll(session: auth.session)

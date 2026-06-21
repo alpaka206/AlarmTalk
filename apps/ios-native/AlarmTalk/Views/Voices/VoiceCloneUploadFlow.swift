@@ -1,5 +1,6 @@
 import AVFoundation
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 private enum VoiceCloneSourceMode: String, CaseIterable, Identifiable {
@@ -246,6 +247,7 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .center, spacing: 14) {
             // 큰 원형 녹음 버튼.
             Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 if voice.recorder.isRecording {
                     voice.stopRecording()
                     stopLevelAnimation()
@@ -443,8 +445,8 @@ struct VoiceCloneUploadFlow: View {
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
             if !isInValidRange && activeDurationMs > 0 {
                 Text(activeDurationMs < VoiceProfileLimits.minDurationMs
-                     ? "60초 이상 준비해야 등록할 수 있어요."
-                     : "120초 이내 구간만 사용할 수 있어요.")
+                     ? "1분 이상 준비해야 등록할 수 있어요."
+                     : "2분 이내 구간만 사용할 수 있어요.")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(AlarmTalkTheme.error)
             }

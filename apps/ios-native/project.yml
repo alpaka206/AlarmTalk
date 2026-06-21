@@ -48,6 +48,15 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+      configs:
+        # GROUP 3: Shared/AlarmIntents.swift 는 앱·위젯 양쪽에 컴파일된다.
+        # AlarmAppContext(앱 전용) 부킹 코드는 ALARMTALK_APP 플래그로 앱 타겟에서만 켠다.
+        # 위젯 타겟은 이 플래그가 없어 인텐트 *타입* 심볼만 컴파일한다.
+        # `$(inherited)` 로 프로젝트 레벨 configs(Debug 의 DEBUG)를 보존한다.
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALARMTALK_APP"
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALARMTALK_APP"
     scheme:
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.

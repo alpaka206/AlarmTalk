@@ -106,7 +106,7 @@ struct UsageGuideSheet: View {
                 UsageGuideStep(
                     systemImage: "waveform",
                     title: "재생 방식을 골라요",
-                    body: "'알람음+음성'을 고르면 등록한 목소리가 함께 울려요."
+                    body: "'알람 + 음성'을 고르면 등록한 목소리가 함께 울려요."
                 ),
             ],
             onFinish: {}

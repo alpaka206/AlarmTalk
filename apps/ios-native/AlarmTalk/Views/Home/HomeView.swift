@@ -31,12 +31,12 @@ struct HomeView: View {
                 if let nextAlarm {
                     openEditor(.edit(nextAlarm.id))
                 } else {
-                    openAlarmFromHome()
+                    Task { await openAlarmFromHome() }
                 }
             }
             QuickStartGrid(
                 onOpenVoices: openVoicesFromHome,
-                onOpenEditor: openAlarmFromHome,
+                onOpenEditor: { Task { await openAlarmFromHome() } },
                 canCreateFamilyAlarm: canCreateFamilyAlarm,
                 onOpenFamilyAlarm: openFamilyAlarmFromHome,
                 voiceLocked: !hasPaidVoiceAccess || !permissionSnapshot.microphoneGranted,
@@ -90,10 +90,17 @@ struct HomeView: View {
         selectTab(.voices)
     }
 
-    private func openAlarmFromHome() {
-        guard permissionSnapshot.alarmAuthorized else {
-            requestAlarmAuthorization()
-            return
+    /// 알람 권한을 같은 제스처 안에서 요청한 뒤 곧바로 에디터를 연다
+    /// (AlarmsListView.openCreateAlarm 미러). 거부되면 열지 않고, 거부해도
+    /// 에디터 저장 시 AlarmKitViewModel.schedule() 이 다시 권한을 요청한다.
+    @MainActor
+    private func openAlarmFromHome() async {
+        alarmKit.refreshAuthorizationState()
+        if !alarmKit.alarmAuthorized {
+            await alarmKit.requestAuthorization()
+            alarmKit.refreshAuthorizationState()
+            await refreshPermissionSnapshot()
+            guard alarmKit.alarmAuthorized else { return }
         }
         openEditor(.create())
     }

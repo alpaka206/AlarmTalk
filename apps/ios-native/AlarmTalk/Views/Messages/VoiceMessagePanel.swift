@@ -727,6 +727,18 @@ private func formatNoteCreatedAt(_ value: String?) -> String? {
         return output.string(from: date)
     }
 
+    // 서버가 오프셋 없이 보내는 UTC 타임스탬프(Android parseBackendTimestamp 와 동일한
+    // "yyyy-MM-dd HH:mm:ss" / "yyyy-MM-dd HH:mm")를 UTC 로 해석한 뒤 로컬 시간으로 변환한다.
+    let server = DateFormatter()
+    server.locale = Locale(identifier: "en_US_POSIX")
+    server.timeZone = TimeZone(identifier: "UTC")
+    for serverFormat in ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd HH:mm"] {
+        server.dateFormat = serverFormat
+        if let date = server.date(from: raw) {
+            return output.string(from: date)
+        }
+    }
+
     let fallback = raw.replacingOccurrences(of: "T", with: " ")
     return String(fallback.prefix(16))
 }

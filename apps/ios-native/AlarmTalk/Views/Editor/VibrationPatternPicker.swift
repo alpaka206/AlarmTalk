@@ -7,11 +7,21 @@ import UIKit
 /// iOS `UIImpactFeedbackGenerator` 의 펄스 시퀀스로 근사한다. (Core Haptics 의
 /// 풀 envelope 패턴은 별도 엔진 셋업이 필요해 본 picker 범위에서는 다루지
 /// 않는다.) Android `AlarmSettingsCard.kt:90-103` 의 라벨/정렬을 그대로 차용.
+///
+/// 정직한 한계: iOS 에서 알람이 울릴 때의 진동은 AlarmKit 이 소유하는 *시스템
+/// 알람 진동* 이다 — 시스템 알람음이 울리는 동안 임의의 진동 패턴을 반복시키는
+/// 공개 API 가 없다. 따라서 이 picker 는 사용자의 *의도 저장 + 미리듣기* 용도이며,
+/// 미리듣기 펄스는 위 햅틱 근사로만 재생된다. 실제 OS 알람 진동 패턴을 바꾸지
+/// 못한다. (Android 는 자체 ringing 을 소유해 패턴을 실제로 적용하지만, iOS 는
+/// 그 동등성을 갖지 못한다.)
 struct VibrationPatternPicker: View {
     @Binding var selected: VibrationPattern
 
     @Environment(\.voiceAlarmTheme) private var theme
 
+    /// 컨트롤(드롭다운 + 미리듣기 버튼)만 그린다. 안내 캡션은 호출부가 행 아래
+    /// 전체 너비로 배치하므로(레이아웃이 HStack 행 안에서 줄바꿈되지 않도록) 여기서는
+    /// 포함하지 않는다. 캡션 문구는 `Self.usageCaption` 으로 노출한다.
     var body: some View {
         HStack(spacing: 12) {
             Menu {
@@ -63,6 +73,9 @@ struct VibrationPatternPicker: View {
             .accessibilityLabel(Text("진동 미리듣기"))
         }
     }
+
+    /// 행 아래 전체 너비로 보여줄 안내 문구. iOS 알람 진동의 정직한 한계를 알린다.
+    static let usageCaption = "미리듣기/선택용입니다. 실제 알람 진동은 iOS 시스템 알람 진동으로 울립니다."
 
     private func commit(_ pattern: VibrationPattern) {
         guard pattern != selected else { return }

@@ -64,6 +64,10 @@ final class AuthViewModel: ObservableObject {
     /// `nonisolated(unsafe)` — deinit 은 nonisolated 컨텍스트인데 본 프로퍼티는
     /// init/deinit 외에서 건드리지 않으므로 동시성 race 없음.
     private nonisolated(unsafe) var appleRevokeObserver: NSObjectProtocol?
+    /// 모든 API 요청이 401 을 받으면 `AlarmTalkAPI` 가 쏘는 세션 만료 알림의 옵저버 토큰.
+    /// Android `UnauthorizedAuthenticator` → `handleUnauthorized` 강제 로그아웃과 동등.
+    /// `appleRevokeObserver` 와 동일한 수명 관리(deinit 에서 removeObserver).
+    private nonisolated(unsafe) var unauthorizedObserver: NSObjectProtocol?
     /// `verifyAppleCredentialStateIfNeeded` 가 같은 사용자에 대해 중복 동시 호출되는
     /// 일을 막는다. SwiftUI scenePhase 가 짧은 시간 안에 두 번 .active 가 되는
     /// 경우(예: 시스템 알림창 → 복귀) 가 있어 직렬화.
@@ -92,12 +96,27 @@ final class AuthViewModel: ObservableObject {
                 self?.handleAppleCredentialRevoked()
             }
         }
+
+        // 모든 API 요청 레이어가 401 을 받으면 강제 로그아웃. `AlarmTalkAPI` 가
+        // 디바운스(연발 401 → 1회) 후 알림을 쏘고, 여기서 main actor 로 받아 signOut.
+        unauthorizedObserver = NotificationCenter.default.addObserver(
+            forName: AlarmTalkAPI.unauthorizedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleUnauthorized()
+            }
+        }
     }
 
     deinit {
         // nonisolated deinit — main-actor isolated property 에는 접근하지 않는다.
         // appleRevokeObserver 는 nonisolated(unsafe) 이라 안전하게 읽을 수 있다.
         if let token = appleRevokeObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = unauthorizedObserver {
             NotificationCenter.default.removeObserver(token)
         }
     }
@@ -317,6 +336,15 @@ final class AuthViewModel: ObservableObject {
             // 알 수 없는 에러 — 보수적으로 세션 보존
             lastNetworkError = "잠시 후 다시 시도해 주세요."
         }
+    }
+
+    /// 어떤 API 요청이든 401 을 받으면 호출 — 세션 만료로 보고 강제 로그아웃.
+    /// `AlarmTalkAPI` 의 401 알림 핸들러가 호출한다. 이미 로그아웃된 상태면 no-op 으로
+    /// 두어 연발 401 이 단 한 번의 signOut 으로 수렴하게 한다.
+    /// Android `MainViewModel.handleUnauthorized()` 의 `if (authSession == null) return` 과 동등.
+    private func handleUnauthorized() {
+        guard session != nil else { return }
+        signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
     }
 
     /// Apple 자격 증명이 외부에서 revoke 되었을 때 — 강제 로그아웃.

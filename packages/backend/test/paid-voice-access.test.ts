@@ -57,8 +57,7 @@ beforeEach(() => {
 
 describe('paid voice access gates', () => {
   it('blocks TTS generation with a personal voice for a resolved free-plan user', async () => {
-    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: '2026-05-18' }]);
-    mockDB.pushResult([]); // daily_tts_count 리셋 UPDATE
+    mockDB.pushResult([{ plan: 'free' }]);
     // findUsableVoiceProfile: 본인 소유의 (시스템이 아닌) 보이스
     mockDB.pushResult([
       { id: ID.alarm, user_id: 'user-pk-1', status: 'ready', is_system: 0 },
@@ -73,8 +72,7 @@ describe('paid voice access gates', () => {
   });
 
   it('blocks custom-text TTS with a system stock voice for a free-plan user', async () => {
-    mockDB.pushResult([{ plan: 'free', daily_tts_count: 0, daily_tts_reset_at: '2026-05-18' }]);
-    mockDB.pushResult([]); // daily_tts_count 리셋 UPDATE
+    mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([]); // findUsableVoiceProfile: owned 보이스 없음
     // findUsableVoiceProfile: 시스템 스톡 보이스
     mockDB.pushResult([

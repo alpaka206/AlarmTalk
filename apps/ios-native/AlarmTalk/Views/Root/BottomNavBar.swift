@@ -6,6 +6,7 @@ import SwiftUI
 /// `badgeProvider` 클로저를 받는다. (호출부: MainTabsView 가 store.alarms,
 /// socialFeatures.unreadNoteCount 등을 합쳐서 넘긴다.)
 struct BottomNavBar: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @Binding var selected: NativeTab
     let badgeProvider: (NativeTab) -> Int
     var onSelect: ((NativeTab) -> Void)? = nil
@@ -31,7 +32,7 @@ struct BottomNavBar: View {
                                     .foregroundStyle(.white)
                                     .padding(.horizontal, 4)
                                     .padding(.vertical, 2)
-                                    .background(AlarmTalkTheme.error, in: Capsule())
+                                    .background(theme.palette.error, in: Capsule())
                                     .offset(x: 12, y: -8)
                             }
                         }
@@ -39,9 +40,9 @@ struct BottomNavBar: View {
                             .font(.caption2.weight(selected == tab ? .semibold : .medium))
                     }
                     .frame(maxWidth: .infinity, minHeight: 58)
-                    .foregroundStyle(selected == tab ? AlarmTalkTheme.text : AlarmTalkTheme.textSecondary)
+                    .foregroundStyle(selected == tab ? theme.palette.onSurface : theme.palette.onSurfaceVariant)
                     .background(
-                        selected == tab ? AlarmTalkTheme.surfaceVariant : Color.clear,
+                        selected == tab ? theme.palette.surfaceVariant : Color.clear,
                         in: RoundedRectangle(cornerRadius: 14)
                     )
                 }
@@ -52,10 +53,10 @@ struct BottomNavBar: View {
         .padding(.horizontal, 6)
         .padding(.top, 6)
         .padding(.bottom, 10)
-        .background(AlarmTalkTheme.surface)
+        .background(theme.palette.surface)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(AlarmTalkTheme.surfaceVariant)
+                .fill(theme.palette.surfaceVariant)
                 .frame(height: 1)
         }
     }

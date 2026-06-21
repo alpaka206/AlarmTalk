@@ -20,14 +20,27 @@ struct AlarmPermissionSection: View {
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
             }
-            Button {
-                Task { await alarmKit.requestAuthorization() }
-            } label: {
-                Label("알람 권한 허용", systemImage: "alarm.fill")
+            if alarmKit.permissionRecoveryNeeded {
+                // 권한이 거부/제한으로 굳으면 in-app 재요청 프롬프트가 더 이상 뜨지 않는다.
+                // 유일한 복구 경로인 설정 앱으로 보낸다 (Android openAppDetailsSettings parity).
+                Button {
+                    openAppSettings()
+                } label: {
+                    Label("설정에서 권한 켜기", systemImage: "gearshape.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AlarmTalkTheme.primary)
+                .foregroundStyle(AlarmTalkTheme.text)
+            } else {
+                Button {
+                    Task { await alarmKit.requestAuthorization() }
+                } label: {
+                    Label("알람 권한 허용", systemImage: "alarm.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(AlarmTalkTheme.primary)
+                .foregroundStyle(AlarmTalkTheme.text)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(AlarmTalkTheme.text)
         }
         .sectionSurface()
     }

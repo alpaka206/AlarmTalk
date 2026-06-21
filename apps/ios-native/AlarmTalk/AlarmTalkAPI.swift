@@ -13,7 +13,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
 
     init(
         baseURL: URL = AlarmTalkAPI.defaultBaseURL(),
-        session: URLSession = .shared
+        session: URLSession = AlarmTalkAPI.makeDefaultSession()
     ) {
         self.baseURL = baseURL
         self.session = session
@@ -21,6 +21,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
+    }
+
+    /// 모든 요청에 60초 타임아웃을 건다. Android `AlarmTalkApiClient` 의
+    /// connect/read/write 60s 와 동등(`URLSessionConfiguration.timeoutIntervalForRequest`).
+    /// `URLSession.shared` 의 기본 resource 타임아웃(~7일)을 짧게 줄여, ~25초밖에 없는
+    /// 백그라운드 처리 창에서 끝나지 않은 요청이 무한정 매달리지 않게 한다.
+    private static func makeDefaultSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 120
+        return URLSession(configuration: configuration)
     }
 
     func loginWithApple(
@@ -314,6 +325,15 @@ final class AlarmTalkAPI: @unchecked Sendable {
     func listTTSMessages(token: String) async throws -> [TtsMessage] {
         let response: TtsMessageListResponse = try await request("tts/messages", token: token)
         return response.messages
+    }
+
+    /// 기본 제공(스톡) 알람 클립 카탈로그 조회. 서버는 모든 인증 사용자에게 동일한
+    /// 전역 목록을 주며, 쿼리 파라미터를 받지 않는다(tts.ts:1287-1313). 언어/카테고리
+    /// 필터·정렬은 클라이언트(StockClipPicker)가 담당한다. 미리듣기/선택 시 음원은
+    /// 기존 `getTTSMessageAudio` 로 받는다(신규 오디오 엔드포인트 없음).
+    func getStockClips(token: String) async throws -> [StockClip] {
+        let response: StockClipListResponse = try await request("tts/stock-clips", token: token)
+        return response.clips
     }
 
     func getTTSMessageAudio(id: String, token: String) async throws -> TtsMessageAudioResponse {
@@ -670,6 +690,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        Self.applyAppMetadataHeaders(to: &request)
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -687,6 +708,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
                 return EmptyResponse() as! Response
             }
             return try decoder.decode(Response.self, from: data)
+        }
+        if http.statusCode == 401 {
+            Self.handleUnauthorized()
         }
         let serverError = try? decoder.decode(ServerError.self, from: data)
         throw APIError.server(
@@ -715,6 +739,7 @@ final class AlarmTalkAPI: @unchecked Sendable {
         var request = URLRequest(url: endpoint(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        Self.applyAppMetadataHeaders(to: &request)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
@@ -743,12 +768,57 @@ final class AlarmTalkAPI: @unchecked Sendable {
         if (200..<300).contains(http.statusCode) {
             return try decoder.decode(Response.self, from: responseData)
         }
+        if http.statusCode == 401 {
+            Self.handleUnauthorized()
+        }
         let serverError = try? decoder.decode(ServerError.self, from: responseData)
         throw APIError.server(
             status: http.statusCode,
             message: serverError?.error ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
             errorCode: serverError?.errorCode
         )
+    }
+
+    // MARK: - 공통 헤더 / 401 중앙 처리
+
+    /// 모든 요청에 플랫폼/버전 메타데이터를 싣는다. Android `AlarmTalkApiClient` 의
+    /// `versionHeader` 인터셉터와 동일한 헤더 이름·값 시맨틱.
+    /// - `X-App-Platform`: 리터럴 `"ios"` (Android 는 `"android"`).
+    /// - `X-App-Version`: 설치 빌드 번호(`CFBundleVersion`) 의 문자열. Android 는
+    ///   `appVersionCode.toString()` 을 보내므로, marketing 버전(`CFBundleShortVersionString`)
+    ///   이 아니라 정수 빌드 번호를 보내야 값 시맨틱이 일치한다.
+    ///   `AppVersionGate.installedVersionCode()` 와 동일한 키(`CFBundleVersion`)·변환을 쓰되,
+    ///   그쪽은 `@MainActor` 격리라 여기서 직접 읽어 actor 격리 위반을 피한다.
+    private static func applyAppMetadataHeaders(to request: inout URLRequest) {
+        request.setValue("ios", forHTTPHeaderField: "X-App-Platform")
+        request.setValue(appVersionHeaderValue, forHTTPHeaderField: "X-App-Version")
+    }
+
+    private static let appVersionHeaderValue: String = {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return String(Int(raw) ?? 1)
+    }()
+
+    /// 401 응답을 받으면 한 번만 세션 만료 알림을 쏜다. Android `UnauthorizedAuthenticator`
+    /// 가 응답 체인당 콜백을 한 번만 호출하는 동작과 동등.
+    /// 짧은 시간에 401 이 연발(여러 동시 요청)해도 디바운스해 로그아웃을 1회로 묶는다.
+    /// 옵저버(`AuthViewModel`)가 main actor 에서 `signOut` 하도록 Notification 으로 전달한다.
+    static let unauthorizedNotification = Notification.Name("AlarmTalkAPIUnauthorized")
+
+    /// 디바운스용 상태. 동시 호출이 있을 수 있어 lock 으로 보호한다.
+    private static let unauthorizedLock = NSLock()
+    private nonisolated(unsafe) static var lastUnauthorizedAt: Date?
+
+    private static func handleUnauthorized() {
+        unauthorizedLock.lock()
+        let now = Date()
+        if let last = lastUnauthorizedAt, now.timeIntervalSince(last) < 3 {
+            unauthorizedLock.unlock()
+            return
+        }
+        lastUnauthorizedAt = now
+        unauthorizedLock.unlock()
+        NotificationCenter.default.post(name: unauthorizedNotification, object: nil)
     }
 
     private static func defaultBaseURL() -> URL {

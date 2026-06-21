@@ -29,12 +29,15 @@ enum RemoteAlarmMapper {
     ///
     /// - Parameter currentUserID: 현재 로그인 유저 ID. origin 결정에 사용.
     /// - Parameter nowMillis: 동기화 시각. lastSyncedAtMillis 와 fireAtMillis 계산에 사용.
+    /// - Returns: 변환된 레코드. `time` 이 유효하지 않으면 (hour 0..23 / minute 0..59
+    ///   범위 밖이거나 파싱 불가) Android `buildLocalAlarm` 과 동일하게 `nil` 을 반환하고
+    ///   호출자가 해당 행을 skip 하도록 한다. (07:00 같은 임의 디폴트로 보정하지 않는다.)
     static func toLocalRecord(
         _ remote: RemoteAlarm,
         currentUserID: String,
         nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1000)
-    ) -> LocalAlarmRecord {
-        let (hour, minute) = parseTime(remote.time) ?? (7, 0)
+    ) -> LocalAlarmRecord? {
+        guard let (hour, minute) = parseTime(remote.time) else { return nil }
         let mask = repeatMask(from: remote.repeatDays)
         let origin = resolveOrigin(remote, currentUserID: currentUserID)
         let playMode = resolvePlayMode(remote)

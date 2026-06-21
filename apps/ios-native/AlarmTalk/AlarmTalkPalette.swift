@@ -5,6 +5,21 @@ import SwiftUI
 ///
 /// Light palette: lines 60-85 (lightColorScheme block).
 /// Dark palette: lines 32-58 (darkColorScheme block).
+///
+/// SINGLE SOURCE OF TRUTH for the iOS brand palette. All Swift color usage
+/// (including the legacy `AlarmTalkTheme` enum in `Theme.swift`) derives from
+/// the constants below — do NOT re-declare brand hexes elsewhere in code. The one
+/// exception is the canonical `primary` light/dark hex, which lives in
+/// `Shared/AlarmTalkBrand.swift` so the Live Activity widget (which cannot see this
+/// app-target file) can tint its UI from the same value; `light.primary` /
+/// `dark.primary` below derive from `AlarmTalkBrand.primaryLight/Dark`.
+///
+/// The ONE unavoidable hand-mirror is `Assets.xcassets/AccentColor.colorset`,
+/// which the OS reads at the asset-catalog level (Xcode's implicit global accent)
+/// and therefore cannot reference Swift. When `light.primary` / `dark.primary`
+/// below change, update `AccentColor.colorset`'s light & dark sRGB components to
+/// the byte-identical hex by hand. Current locked primary: light #175FB0,
+/// dark #A6D2FF. These hexes are byte-identical to Android `AlarmTalkTheme.kt`.
 struct AlarmTalkPalette: Equatable {
     let primary: Color
     let onPrimary: Color
@@ -41,9 +56,9 @@ struct AlarmTalkPalette: Equatable {
 extension AlarmTalkPalette {
     /// Mirrors `lightColorScheme(...)` in Android `AlarmTalkTheme.kt:60-85`.
     static let light = AlarmTalkPalette(
-        primary: .hex(0x3F6F9E),
+        primary: AlarmTalkBrand.primaryLight,
         onPrimary: .hex(0xFFFFFF),
-        primaryContainer: .hex(0xDCEEFF),
+        primaryContainer: .hex(0xD6E9FF),
         onPrimaryContainer: .hex(0x0A2740),
         secondary: .hex(0x5F8FAF),
         onSecondary: .hex(0xFFFFFF),
@@ -69,7 +84,7 @@ extension AlarmTalkPalette {
 
     /// Mirrors `darkColorScheme(...)` in Android `AlarmTalkTheme.kt:32-58`.
     static let dark = AlarmTalkPalette(
-        primary: .hex(0xA8D4FF),
+        primary: AlarmTalkBrand.primaryDark,
         onPrimary: .hex(0x08243C),
         primaryContainer: .hex(0x1E4263),
         onPrimaryContainer: .hex(0xD9ECFF),
@@ -96,12 +111,7 @@ extension AlarmTalkPalette {
     )
 }
 
-extension Color {
-    /// Constructs an opaque sRGB color from a 24-bit hex literal (e.g. `0x3F6F9E`).
-    static func hex(_ value: UInt32) -> Color {
-        let r = Double((value >> 16) & 0xFF) / 255.0
-        let g = Double((value >> 8) & 0xFF) / 255.0
-        let b = Double(value & 0xFF) / 255.0
-        return Color(.sRGB, red: r, green: g, blue: b, opacity: 1.0)
-    }
-}
+// `Color.hex(_:)` now lives in `Shared/AlarmTalkBrand.swift` so both the app and the
+// Live Activity widget target share one definition (the widget cannot see this file).
+// The light/dark `primary` above derive from `AlarmTalkBrand.primaryLight/Dark`, which
+// hold the canonical locked brand hexes (#175FB0 / #A6D2FF).

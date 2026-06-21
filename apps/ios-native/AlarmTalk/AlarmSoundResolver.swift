@@ -88,7 +88,14 @@ enum AlarmSoundResolver {
                 return .cachedAudio(url, duration)
             }
 
-            // 길이 초과 또는 측정 불가 — in-app 폴백
+            // 길이 초과 또는 측정 불가. 보통은 cacheBytes 단계의 auto-trim 으로 메타가
+            // 이미 <=30s 라 이 분기에 오지 않지만, 트림이 발화하지 않았거나 메타가
+            // 갱신되지 않은 경우를 대비해 staging 을 한 번 시도한다 — AlarmSoundStaging 이
+            // 첫 30초로 캡하므로 성공하면 .bundledNamed(잠금 시에도 울림)로 승격된다(change 6).
+            // 트림/transcode 가 진짜로 실패할 때만 .cachedAudio in-app 폴백으로 떨어진다.
+            if let bundled = try? AlarmSoundStaging.stage(url: url, key: key) {
+                return .bundledNamed(bundled)
+            }
             return .cachedAudio(url, duration)
         }
 
