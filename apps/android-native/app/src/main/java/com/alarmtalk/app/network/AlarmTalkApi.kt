@@ -9,4 +9,5 @@ interface AlarmTalkApi :
     CodeApi,
     CharacterApi,
     BillingApi,
-    NotesApi
+    NotesApi,
+    HolidayApi

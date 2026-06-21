@@ -223,6 +223,9 @@
     <string name="editor_generated_voice_saved_local">생성한 음성을 로컬에 저장했어요.</string>
     <string name="editor_holiday_off_subtitle">대체 공휴일 및 임시 공휴일 포함</string>
     <string name="editor_holiday_off_title">공휴일에는 끄기</string>
+    <string name="editor_holiday_country_label">공휴일 달력: %1$s</string>
+    <string name="editor_holiday_show_title">다가오는 공휴일</string>
+    <string name="editor_holiday_cold_cache">불러오는 중…</string>
     <string name="editor_in_use">사용 중</string>
     <string name="editor_label_alarm_name">알람 이름</string>
     <string name="editor_language">언어</string>
@@ -418,6 +421,7 @@
     <string name="hs_settings_theme">테마</string>
     <string name="hs_settings_title">설정</string>
     <string name="hs_settings_weather_region">날씨 지역</string>
+    <string name="settings_holiday_country_title">공휴일 달력</string>
     <string name="hs_start_now">바로 시작해봐요.</string>
     <string name="hs_theme_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
     <string name="hs_theme_dark_title">어둡게</string>
