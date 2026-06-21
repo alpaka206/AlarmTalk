@@ -59,29 +59,44 @@ struct BillingPanel: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AlarmTalkTheme.text)
 
-            ForEach(PlanTier.allCases, id: \.self) { tier in
-                let shareableVouchers = shareableVouchersForPlan(
-                    socialFeatures.vouchers,
-                    planKey: tier.apiKey
-                )
-                PlanCard(
-                    tier: tier,
-                    isCurrent: tier == currentTier,
-                    isBusy: socialFeatures.isBusy,
-                    vouchers: shareableVouchers,
-                    onPurchase: { product in
-                        Task { await purchase(product) }
-                    },
-                    onGiftPersonal: {
-                        showPersonalGiftSheet = true
-                    },
-                    onShareVouchers: {
-                        Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
-                    }
-                )
+            if subscriptions.isLoadingProducts && subscriptions.products.isEmpty {
+                // 첫 로딩 — 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 스켈레톤.
+                BillingPlansSkeleton()
+            } else if subscriptions.products.isEmpty
+                && subscriptions.productFetchFailed
+                && subscriptions.hasAttemptedProductFetch {
+                // 가져오기 실패(일시적 blip)로 제품이 비어버린 경우 — 영구 비활성
+                // 대신 "다시 시도" 로 재요청할 수 있게 한다.
+                BillingProductsErrorState(isRetrying: subscriptions.isLoadingProducts) {
+                    Task { await subscriptions.fetchProducts() }
+                }
+            } else {
+                ForEach(PlanTier.allCases, id: \.self) { tier in
+                    let shareableVouchers = shareableVouchersForPlan(
+                        socialFeatures.vouchers,
+                        planKey: tier.apiKey
+                    )
+                    PlanCard(
+                        tier: tier,
+                        isCurrent: tier == currentTier,
+                        isBusy: socialFeatures.isBusy,
+                        vouchers: shareableVouchers,
+                        onPurchase: { product in
+                            Task { await purchase(product) }
+                        },
+                        onGiftPersonal: {
+                            showPersonalGiftSheet = true
+                        },
+                        onShareVouchers: {
+                            Task { await refreshAndOpenVoucherShare(planKey: tier.apiKey) }
+                        }
+                    )
+                }
             }
 
             restorePurchasesButton
+
+            SubscriptionTermsFootnote()
 
             if let feedback = purchaseFeedback {
                 Text(feedback)
@@ -192,14 +207,24 @@ struct BillingPanel: View {
     private var restorePurchasesButton: some View {
         Button {
             Task {
-                await subscriptions.restorePurchases()
-                await subscriptions.resyncEntitlements()
-                await auth.refreshUser()
-                await socialFeatures.refreshAll(session: auth.session, force: true)
-                purchaseFeedback = "이전 구매를 확인했어요."
+                let result = await subscriptions.restorePurchases()
+                // 복원이 성공한 경우에만 백엔드 entitlement 재동기화 + 상태 새로고침.
+                if result.isSuccess {
+                    await subscriptions.resyncEntitlements()
+                    await auth.refreshUser()
+                    await socialFeatures.refreshAll(session: auth.session, force: true)
+                }
+                // 복원됨 N건 / 복원할 구매 없음 / 오류 를 구분해 안내한다.
+                purchaseFeedback = result.userMessage
             }
         } label: {
-            Label("이전 구매 복원", systemImage: "arrow.clockwise.circle")
+            HStack(spacing: 6) {
+                if subscriptions.isPurchasing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Label("이전 구매 복원", systemImage: "arrow.clockwise.circle")
+            }
         }
         .buttonStyle(.bordered)
         .disabled(subscriptions.isPurchasing)

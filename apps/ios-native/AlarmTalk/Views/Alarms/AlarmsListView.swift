@@ -32,13 +32,36 @@ struct AlarmsListView: View {
             if !alarmKit.alarmAuthorized {
                 AlarmPermissionSection()
             }
-            if let actionMessage {
-                Text(actionMessage)
+            // 인라인 액션 메시지(alarmKit 유래)를 우선 보여주고, 없을 때만 동기화 상태
+            // (로그인 필요 / push·pull 부분 실패)를 노출한다. 둘을 동시에 쌓지 않는다.
+            // Android syncNow / msg_sync_*_partial_failed parity.
+            if let displayedMessage {
+                Text(displayedMessage)
                     .font(.footnote)
                     .foregroundStyle(AlarmTalkTheme.textSecondary)
                     .padding(.horizontal, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { dismissDisplayedMessage() }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("탭하면 닫혀요")
             }
             localAlarmSection
+        }
+    }
+
+    /// 인라인 액션 메시지(alarmKit 유래) 우선, 없으면 동기화 상태 메시지. 둘 중 하나만.
+    private var displayedMessage: String? {
+        actionMessage ?? remoteSync.statusMessage
+    }
+
+    /// 표시 중인 메시지를 닫는다. actionMessage 가 떠 있으면 그것을, 아니면 동기화
+    /// 상태 메시지를 지운다(둘은 동시에 뜨지 않으므로 보이는 쪽만 비운다).
+    private func dismissDisplayedMessage() {
+        if actionMessage != nil {
+            actionMessage = nil
+        } else {
+            remoteSync.statusMessage = nil
         }
     }
 
@@ -47,7 +70,7 @@ struct AlarmsListView: View {
             if store.alarms.isEmpty {
                 EmptyStatePlaceholder(
                     title: "아직 알람이 없어요.",
-                    subtitle: "",
+                    subtitle: "새 알람을 만들면 기기에 바로 예약돼요.",
                     icon: "alarm"
                 )
                 Button {
@@ -132,6 +155,11 @@ struct AlarmsListView: View {
         }
     }
 
+    /// 알람 삭제 실행. 삭제 확인(AlarmRow 의 .alert)을 통과한 뒤에만 호출된다.
+    ///
+    /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
+    /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제되므로, 되돌릴
+    /// 안전장치는 호출 전 확인 알림 하나뿐이다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         await remoteSync.deleteRemote(record: alarm, session: auth.session)

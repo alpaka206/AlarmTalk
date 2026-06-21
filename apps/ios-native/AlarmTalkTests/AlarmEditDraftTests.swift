@@ -252,7 +252,9 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "en",
-            translateText: false
+            translateText: false,
+            // 고정 문구는 fireAt 무관 — 임의 값이어도 재사용 가능해야 한다.
+            fireAtMillis: 0
         ))
     }
 
@@ -271,7 +273,8 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false
+            translateText: false,
+            fireAtMillis: 0
         ))
         XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
             existing: record,
@@ -280,20 +283,24 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: false,
             randomContext: nil,
             language: "ko",
-            translateText: false
+            translateText: false,
+            fireAtMillis: 0
         ))
     }
 
     func testCanReuseExistingTtsAudioForUnchangedRandomPrompt() {
+        let preparedFireAt: Int64 = 1_700_000_000_000
         let record = makeTtsRecord(
             voiceProfileId: "voice-1",
             voiceText: "오늘 날씨에 맞춰 일어나세요",
             voiceCategory: RandomPromptContext.wakeWeather.ttsCategory,
             voiceLanguage: "ko",
             voiceRandomPrompt: true,
-            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue,
+            dynamicVoicePreparedForFireAtMillis: preparedFireAt
         )
 
+        // 같은 발화 시각이면 랜덤 클립도 재사용 가능.
         XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
             existing: record,
             selectedProfileID: "voice-1",
@@ -301,7 +308,53 @@ final class AlarmEditDraftTests: XCTestCase {
             randomPrompt: true,
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
-            translateText: false
+            translateText: false,
+            fireAtMillis: preparedFireAt
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioRejectsRandomPromptWithDifferentFireAt() {
+        let preparedFireAt: Int64 = 1_700_000_000_000
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "오늘 날씨에 맞춰 일어나세요",
+            voiceCategory: RandomPromptContext.wakeWeather.ttsCategory,
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue,
+            dynamicVoicePreparedForFireAtMillis: preparedFireAt
+        )
+
+        // 다른 발화 시각용 클립은 stale 이므로 재사용을 막아 재합성하게 한다.
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "",
+            randomPrompt: true,
+            randomContext: RandomPromptContext.wakeWeather.rawValue,
+            language: "ko",
+            translateText: false,
+            fireAtMillis: preparedFireAt + 60_000
+        ))
+
+        // 준비 시각이 비어 있으면(아직 refresh 안 됨) 재사용하지 않는다.
+        let unpreparedRecord = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "오늘 날씨에 맞춰 일어나세요",
+            voiceCategory: RandomPromptContext.wakeWeather.ttsCategory,
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.wakeWeather.rawValue
+        )
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: unpreparedRecord,
+            selectedProfileID: "voice-1",
+            text: "",
+            randomPrompt: true,
+            randomContext: RandomPromptContext.wakeWeather.rawValue,
+            language: "ko",
+            translateText: false,
+            fireAtMillis: preparedFireAt
         ))
     }
 
@@ -379,7 +432,8 @@ final class AlarmEditDraftTests: XCTestCase {
         voiceCategory: String,
         voiceLanguage: String,
         voiceRandomPrompt: Bool = false,
-        voiceRandomContext: String? = nil
+        voiceRandomContext: String? = nil,
+        dynamicVoicePreparedForFireAtMillis: Int64? = nil
     ) -> LocalAlarmRecord {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         return LocalAlarmRecord(
@@ -397,6 +451,7 @@ final class AlarmEditDraftTests: XCTestCase {
             voiceLanguage: voiceLanguage,
             voiceRandomPrompt: voiceRandomPrompt,
             voiceRandomContext: voiceRandomContext,
+            dynamicVoicePreparedForFireAtMillis: dynamicVoicePreparedForFireAtMillis,
             ttsMessageId: "message-1",
             createdAtMillis: now,
             updatedAtMillis: now

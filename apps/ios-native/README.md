@@ -4,7 +4,7 @@ SwiftUI + AlarmKit scaffold for Phase 7. This is source-ready for Xcode on macOS
 
 ## Scope
 
-- SwiftUI app shell using the same mustard/navy/terracotta brand direction as Android and the legacy app.
+- SwiftUI app shell using the same unified blue (azure) Material 3 brand direction as Android (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`.
 - Native Sign in with Apple using `AuthenticationServices`.
 - Backend `/api/auth/apple` session exchange and app JWT storage in Keychain.
 - AlarmKit authorization request.

@@ -51,7 +51,9 @@ struct AlarmEditDraft: Equatable {
             snoozeRepeatLimit: .three,
             vibrationPattern: .default,
             alarmVolumePercent: 100,
-            voiceRandomPrompt: false,
+            // 무료 한-탭 저장 경로: 새 알람은 랜덤 문구 ON + preset 컨텍스트로 시작한다.
+            // (Android `AlarmEditorState.from` line 331-333 동일.)
+            voiceRandomPrompt: true,
             voiceRandomContext: RandomPromptContext.defaultContext.rawValue,
             voiceWeatherCountry: "",
             voiceWeatherCity: "",
@@ -175,6 +177,11 @@ struct AlarmEditDraft: Equatable {
 
     /// Android `AlarmEditorState.hasFreshTtsAudio` 와 같은 목적.
     /// 기존 TTS 음원이 현재 선택한 목소리/문구/언어와 맞으면 재생성 없이 저장할 수 있다.
+    ///
+    /// `fireAtMillis` 는 랜덤 문구일 때만 의미가 있다. 랜덤 클립은 특정 발화 시각용으로
+    /// 합성되므로(record 의 `dynamicVoicePreparedForFireAtMillis` 에 그 시각이 박혀 있다),
+    /// 새 발화 시각이 다르면 재사용을 막아 stale 한 랜덤 음원이 저장되지 않게 한다. 고정 문구는
+    /// 시각과 무관하므로(문구/프로필/언어 동일성만 보면 됨) `fireAtMillis` 는 no-op 이다.
     static func canReuseExistingTtsAudio(
         existing record: LocalAlarmRecord?,
         selectedProfileID: String?,
@@ -182,7 +189,8 @@ struct AlarmEditDraft: Equatable {
         randomPrompt: Bool,
         randomContext: String?,
         language: String,
-        translateText: Bool
+        translateText: Bool,
+        fireAtMillis: Int64
     ) -> Bool {
         guard let record,
               record.playModeEnum != .alarmOnly,
@@ -205,6 +213,13 @@ struct AlarmEditDraft: Equatable {
         }
 
         if randomPrompt {
+            // 랜덤 클립은 발화 시각에 종속된다. record 가 어떤 시각용으로 준비됐는지
+            // (`dynamicVoicePreparedForFireAtMillis`) 새 시각과 다르면 stale 이므로 재합성한다.
+            // 준비 시각이 비어 있으면(아직 한 번도 refresh 되지 않은 알람) 재사용을 막는다.
+            guard let preparedFireAt = record.dynamicVoicePreparedForFireAtMillis,
+                  preparedFireAt == fireAtMillis else {
+                return false
+            }
             return record.voiceRandomPrompt &&
                 RandomPromptContext.normalized(record.voiceRandomContext) == promptContext
         }
@@ -242,7 +257,8 @@ struct AlarmEditDraft: Equatable {
             snoozeEnabled: snoozeEnabled,
             snoozeMinutes: snoozeMinutes,
             snoozeRepeatLimit: snoozeRepeatLimit.rawValue,
-            snoozeCount: existing?.snoozeCount ?? 0,
+            // Android `AlarmRepository.updateAlarm` 과 동일하게, 생성/수정 시 스누즈 횟수를 0 으로 초기화한다.
+            snoozeCount: 0,
             vibrationPattern: vibrationPattern.rawValue,
             playMode: playMode.rawValue,
             defaultAlarmSoundId: existing?.defaultAlarmSoundId ?? DefaultAlarmSounds.bundledDefault,

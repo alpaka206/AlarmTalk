@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - CachedVoiceAudio (legacy compat)
 
-struct CachedVoiceAudio: Equatable {
+struct CachedVoiceAudio: Equatable, Sendable {
     var url: URL
     var fileName: String
     var format: String
@@ -57,18 +57,24 @@ enum AudioCacheError: LocalizedError {
 final class AudioCacheStore {
     static let shared = AudioCacheStore()
 
-    init() {}
+    /// `nonisolated` — 빈 바디라 상태를 건드리지 않으며, `shared` 와 단위 테스트의
+    /// `AudioCacheStore()` 가 어떤 격리에서도 인스턴스를 만들 수 있게 한다(change 5:
+    /// nonisolated 캐싱 경로가 `Self.shared` 를 await 없이 접근).
+    nonisolated init() {}
 
     // MARK: Legacy API (기존 호출처 호환)
 
     /// 기존 `AudioCacheStore.cache(tts:)` 와 동일 시그니처.
     /// 새 cacheKey 규칙을 사용하지만, 파일명에는 messageId 도 살려 두기 위해 audio 파일은
     /// 기존 위치(`AlarmTalkAudio/<messageId>.<ext>`)에도 사본을 유지한다.
-    static func cache(tts: TtsGenerateResponse) throws -> CachedVoiceAudio {
+    nonisolated static func cache(tts: TtsGenerateResponse) throws -> CachedVoiceAudio {
         return try cache(tts: tts, cacheKey: nil)
     }
 
-    static func cache(tts: TtsGenerateResponse, cacheKey overrideCacheKey: String?) throws -> CachedVoiceAudio {
+    /// base64 decode + 디스크 쓰기 + 길이 측정은 모두 FileManager/AVAsset 만 건드리므로
+    /// `nonisolated` — `Task.detached` 등 백그라운드 컨텍스트에서 호출하면 메인 액터를
+    /// 막지 않는다(change 5, Android 의 Dispatchers.IO 캐싱과 동일 의도).
+    nonisolated static func cache(tts: TtsGenerateResponse, cacheKey overrideCacheKey: String?) throws -> CachedVoiceAudio {
         guard let data = Data(base64Encoded: tts.audioBase64) else {
             throw AudioCacheError.invalidBase64
         }
@@ -93,12 +99,113 @@ final class AudioCacheStore {
         return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
     }
 
+    /// 스톡 클립 음원(`GET /tts/messages/:id/audio` 응답)을 캐싱한다.
+    /// `cache(tts:cacheKey:)` 와 동일하게 (1) legacy 디렉터리에 `<messageId>.<ext>`
+    /// 파일을 쓰고 (저장 경로가 `prepared.localAudioFileName` 을 legacy URL 로
+    /// 해석하므로 필수) (2) cacheKey 기반 위치에도 저장한다.
+    /// - cacheKey: 선택은 `stock_<messageId>`, 미리듣기는 `stock_preview_<messageId>`.
+    ///   Android `AlarmEditorScreen.kt` 의 두 캐시 키와 동일.
+    /// 길이 한도는 메타에만 기록한다(enforceMaxDuration:false) — 생성 TTS 와 동일하게
+    /// 30초 초과 시 AlarmSoundResolver 가 in-app 재생으로 폴백한다.
+    @discardableResult
+    nonisolated static func cacheStockClip(
+        audio response: TtsMessageAudioResponse,
+        messageId: String,
+        cacheKey: String
+    ) throws -> CachedVoiceAudio {
+        guard let data = Data(base64Encoded: response.audioBase64) else {
+            throw AudioCacheError.invalidBase64
+        }
+        let format = Self.normalizedFormat(response.audioFormat)
+        let fileName = "\(messageId).\(format)"
+        let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
+        try data.write(to: url, options: [.atomic])
+
+        _ = try? Self.shared.cacheBytes(
+            data,
+            cacheKey: cacheKey,
+            mimeType: Self.mimeType(forFormat: format),
+            source: "tts",
+            messageId: messageId,
+            rawAudioUri: response.audioUrl,
+            durationOverrideMs: nil,
+            enforceMaxDuration: false
+        )
+
+        return CachedVoiceAudio(url: url, fileName: fileName, format: format, cacheKey: cacheKey)
+    }
+
+    /// 스톡 클립 선택용 cacheKey (`stock_<messageId>`). Android 와 동일 규칙.
+    nonisolated static func stockCacheKey(messageId: String) -> String { "stock_\(messageId)" }
+
+    /// 스톡 클립 미리듣기용 cacheKey (`stock_preview_<messageId>`). Android 와 동일.
+    nonisolated static func stockPreviewCacheKey(messageId: String) -> String { "stock_preview_\(messageId)" }
+
+    // MARK: Off-main caching (change 5)
+
+    /// `cacheStockClip` 의 off-main 래퍼. base64 디코드/디스크 쓰기/길이 측정을
+    /// `Task.detached` 로 돌려 메인 액터를 막지 않는다(Android Dispatchers.IO 대응).
+    /// 캐시 후 30초 초과면 자동 트림(change 6)을 시도한다.
+    static func cacheStockClipOffMain(
+        audio response: TtsMessageAudioResponse,
+        messageId: String,
+        cacheKey: String
+    ) async throws -> CachedVoiceAudio {
+        let cached = try await Task.detached(priority: .userInitiated) {
+            try cacheStockClip(audio: response, messageId: messageId, cacheKey: cacheKey)
+        }.value
+        await Self.shared.trimCachedAudioIfNeeded(cacheKey: cacheKey)
+        return cached
+    }
+
+    /// `cache(tts:cacheKey:)` 의 off-main 래퍼.
+    static func cacheOffMain(
+        tts: TtsGenerateResponse,
+        cacheKey: String?
+    ) async throws -> CachedVoiceAudio {
+        let cached = try await Task.detached(priority: .userInitiated) {
+            try cache(tts: tts, cacheKey: cacheKey)
+        }.value
+        await Self.shared.trimCachedAudioIfNeeded(cacheKey: cached.cacheKey)
+        return cached
+    }
+
+    /// `cacheBytes` 의 off-main 래퍼.
+    @discardableResult
+    func cacheBytesOffMain(
+        _ data: Data,
+        cacheKey: String,
+        mimeType: String,
+        source: String = "raw_audio",
+        messageId: String? = nil,
+        rawAudioUri: String? = nil,
+        durationOverrideMs: Int64? = nil,
+        enforceMaxDuration: Bool = true
+    ) async throws -> URL {
+        let url = try await Task.detached(priority: .userInitiated) { [self] in
+            try cacheBytes(
+                data,
+                cacheKey: cacheKey,
+                mimeType: mimeType,
+                source: source,
+                messageId: messageId,
+                rawAudioUri: rawAudioUri,
+                durationOverrideMs: durationOverrideMs,
+                enforceMaxDuration: enforceMaxDuration
+            )
+        }.value
+        if !enforceMaxDuration {
+            await trimCachedAudioIfNeeded(cacheKey: cacheKey)
+        }
+        return url
+    }
+
     /// Legacy URL 조회. messageId 기반 파일명용.
-    static func url(for fileName: String) throws -> URL {
+    nonisolated static func url(for fileName: String) throws -> URL {
         try Self.legacyAudioDirectory().appendingPathComponent(fileName)
     }
 
-    static func exists(fileName: String) -> Bool {
+    nonisolated static func exists(fileName: String) -> Bool {
         guard let url = try? Self.url(for: fileName) else { return false }
         return FileManager.default.fileExists(atPath: url.path)
     }
@@ -106,13 +213,13 @@ final class AudioCacheStore {
     // MARK: cacheKey-based API
 
     /// SHA-256 hex 해시 계산 (64 char).
-    static func computeCacheKey(_ data: Data) -> String {
+    nonisolated static func computeCacheKey(_ data: Data) -> String {
         let digest = SHA256.hash(data: Data(data))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     /// SHA-256 over UTF-8 input (텍스트 기반 cacheKey 도 동일 규칙).
-    static func computeCacheKey(text: String) -> String {
+    nonisolated static func computeCacheKey(text: String) -> String {
         let bytes = Data(text.utf8)
         return computeCacheKey(bytes)
     }
@@ -133,13 +240,30 @@ final class AudioCacheStore {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        return computeCacheKey(text: ["tts-v2", profileId, normalizedText, category, language].joined(separator: "|"))
+        let normalizedCategory = normalizedTtsCategory(category)
+        return computeCacheKey(text: ["tts-v2", profileId, normalizedText, normalizedCategory, language].joined(separator: "|"))
+    }
+
+    /// Android `AlarmEditorState.normalizedTtsCategory(...)` 의 레거시 remap 부분.
+    /// 마이그레이션된 알람의 레거시 카테고리 키를 정식 키로 옮겨 cacheKey 를 안정화한다.
+    /// Android `ttsCacheKey` 는 카테고리를 검증/치환하지 않으므로 (`custom` 등은 그대로 통과),
+    /// 여기서도 검증 후 `morning` 으로 떨구는 처리는 하지 않고 레거시 키만 remap 한다.
+    nonisolated static func normalizedTtsCategory(_ category: String) -> String {
+        let legacy: [String: String] = [
+            "afternoon": "cheer",
+            "sleep": "night",
+            "medicine": "medication",
+        ]
+        return legacy[category] ?? category
     }
 
     /// bytes 를 cacheKey 기반 위치에 기록하고 메타 사이드카를 생성한다.
     /// - enforceMaxDuration: true 면 durationMs > AlarmAudioLimits.maxDurationMillis 일 때 throw.
+    /// FileManager + AVAsset 만 다루고 actor state 를 건드리지 않으므로 `nonisolated` —
+    /// `Task.detached` 로 감싸 호출하면 디코드/쓰기/길이 측정이 메인 액터를 막지 않는다
+    /// (change 5).
     @discardableResult
-    func cacheBytes(
+    nonisolated func cacheBytes(
         _ data: Data,
         cacheKey: String,
         mimeType: String,
@@ -185,7 +309,7 @@ final class AudioCacheStore {
     }
 
     /// cacheKey 로 파일 URL 조회.
-    func cachedURL(for cacheKey: String) -> URL? {
+    nonisolated func cachedURL(for cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
@@ -200,13 +324,13 @@ final class AudioCacheStore {
     }
 
     /// 메타 사이드카 조회.
-    func readMetadata(cacheKey: String) -> AudioCacheMetadata? {
+    nonisolated func readMetadata(cacheKey: String) -> AudioCacheMetadata? {
         guard let url = metadataURL(cacheKey: cacheKey),
               let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(AudioCacheMetadata.self, from: data)
     }
 
-    func writeMetadata(_ metadata: AudioCacheMetadata) throws {
+    nonisolated func writeMetadata(_ metadata: AudioCacheMetadata) throws {
         guard let url = metadataURL(cacheKey: metadata.cacheKey) else {
             throw AudioCacheError.appGroupContainerUnavailable
         }
@@ -218,7 +342,7 @@ final class AudioCacheStore {
 
     /// 단일 cacheKey 의 파일 + 사이드카 삭제.
     /// Android `AlarmAudioStore.deleteCachedAudio` 와 동일 의미.
-    func deleteCachedAudio(cacheKey: String) throws {
+    nonisolated func deleteCachedAudio(cacheKey: String) throws {
         guard let directory = try? Self.audioDirectory() else { return }
         let safeKey = Self.safeCacheKey(cacheKey)
         let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
@@ -348,7 +472,8 @@ final class AudioCacheStore {
 
     /// Legacy 위치 (messageId 기반 파일명을 그대로 유지하는 디렉토리).
     /// 기존 `voiceStudio.preparedAlarm.localAudioFileName` 흐름이 여기에 의존.
-    static func legacyAudioDirectory() throws -> URL {
+    /// 파일 시스템만 다루므로 `nonisolated` — 백그라운드 캐싱에서도 호출 가능.
+    nonisolated static func legacyAudioDirectory() throws -> URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let directory = support.appendingPathComponent("AlarmTalkAudio", isDirectory: true)
         if !FileManager.default.fileExists(atPath: directory.path) {
@@ -357,7 +482,7 @@ final class AudioCacheStore {
         return directory
     }
 
-    private func metadataURL(cacheKey: String) -> URL? {
+    private nonisolated func metadataURL(cacheKey: String) -> URL? {
         guard let directory = try? Self.audioDirectory() else { return nil }
         let safeKey = Self.safeCacheKey(cacheKey)
         return directory.appendingPathComponent("\(safeKey).meta.json")
@@ -377,7 +502,7 @@ final class AudioCacheStore {
         return String(s.prefix(96))
     }
 
-    private static func nonBlank(_ value: String?) -> String? {
+    private nonisolated static func nonBlank(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {
             return nil
@@ -419,7 +544,7 @@ final class AudioCacheStore {
         }
     }
 
-    static func fileExtension(forMimeType mimeType: String) -> String {
+    nonisolated static func fileExtension(forMimeType mimeType: String) -> String {
         switch mimeType.lowercased() {
         case "audio/mpeg", "audio/mp3": return "mp3"
         case "audio/aac", "audio/mp4": return "m4a"
@@ -436,12 +561,88 @@ final class AudioCacheStore {
     /// AVFoundation 으로 음원 길이 측정. 측정 실패 시 nil.
     /// (AVURLAsset 의 duration 은 동기 접근이 deprecated 이므로 단위 테스트 등에선
     /// CMTime 직접 추출. 본 phase 에서는 best-effort.)
-    static func readDurationMillis(url: URL) -> Int64? {
+    nonisolated static func readDurationMillis(url: URL) -> Int64? {
         #if canImport(AVFoundation)
         return AVAssetDurationReader.readMillis(url: url)
         #else
         return nil
         #endif
+    }
+
+    /// 비동기 길이 측정. `AVAsset.load(.duration)` 를 사용해 메인 액터를 막지 않는다
+    /// (AlarmEditorSheet.readAudioDurationMs 와 동일 패턴). 측정 실패 시 nil.
+    nonisolated static func loadDurationMillis(url: URL) async -> Int64? {
+        #if canImport(AVFoundation)
+        let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
+        guard let cmTime = try? await asset.load(.duration),
+              cmTime.isValid, !cmTime.isIndefinite else { return nil }
+        let seconds = CMTimeGetSeconds(cmTime)
+        guard seconds.isFinite, seconds >= 0 else { return nil }
+        return Int64((seconds * 1000).rounded())
+        #else
+        return nil
+        #endif
+    }
+
+    // MARK: - Auto-trim (change 6)
+
+    /// 캐시된 음원이 30초(+tolerance)를 넘으면 첫 30초로 잘라 다시 저장하고 메타의
+    /// durationMs 를 <=30s 로 갱신한다. 이렇게 해두면 `AlarmSoundResolver` 의
+    /// withinLimit 검사가 통과돼 staging → `AlertSound.named` 경로를 타고,
+    /// 기기가 잠긴 상태에서도 알람음이 울린다(제품 결정: reject 대신 auto-trim).
+    ///
+    /// 트림은 `AudioCropper.crop(start:0, end:30000)` (AVAssetExportSession m4a) 로
+    /// 수행하며, 실패하면 원본을 그대로 두고 조용히 넘어간다 — 그 경우 resolver 가
+    /// `.cachedAudio` in-app 폴백을 쓴다. 로컬 오디오는 저장 전에 사용자의 크롭
+    /// 윈도우가 이미 적용돼 보통 <=30s 이므로 이 트림은 스톡/TTS·미크롭 경로에서만 발화한다.
+    ///
+    /// FileManager + AVAsset 만 다루므로 `nonisolated`. base64/I/O off-main 래퍼에서 호출된다.
+    nonisolated func trimCachedAudioIfNeeded(cacheKey: String) async {
+        #if canImport(AVFoundation)
+        guard let url = cachedURL(for: cacheKey) else { return }
+        let limit = AlarmAudioLimits.maxDurationMillis + AlarmAudioLimits.durationToleranceMillis
+        guard let durationMs = await Self.loadDurationMillis(url: url), durationMs > limit else {
+            return
+        }
+        let cap = Int(AlarmAudioLimits.maxDurationMillis)
+        guard let trimmed = try? await AudioCropper.crop(source: url, startMs: 0, endMs: cap) else {
+            // 트림 실패 — 원본 유지(메타 durationMs 도 그대로). resolver 가 in-app 폴백.
+            return
+        }
+        defer { try? FileManager.default.removeItem(at: trimmed) }
+        guard let data = try? Data(contentsOf: trimmed) else { return }
+
+        // 트림 결과를 같은 cacheKey 자리에 덮어쓴다. 확장자가 바뀔 수 있으므로(.m4a)
+        // 기존 음원 파일을 먼저 지우고, audio/aac(m4a) 로 다시 캐싱한다. 메타의
+        // durationMs 는 실제 트림 길이(<=30s)로 다시 기록된다.
+        let trimmedDuration = await Self.loadDurationMillis(url: trimmed) ?? AlarmAudioLimits.maxDurationMillis
+        removeAudioFile(forCacheKey: cacheKey)
+        _ = try? cacheBytes(
+            data,
+            cacheKey: cacheKey,
+            mimeType: "audio/aac",
+            source: "raw_audio",
+            durationOverrideMs: min(trimmedDuration, AlarmAudioLimits.maxDurationMillis),
+            enforceMaxDuration: false
+        )
+        // 트림 전 staged 파일이 남아 있으면 무효화해 다음 resolve 가 새 파일로 staging 한다.
+        // AlarmSoundStaging 은 @MainActor 이므로 메인에서 정리한다.
+        await MainActor.run { AlarmSoundStaging.clearStagedSound(forKey: cacheKey) }
+        #endif
+    }
+
+    /// cacheKey 에 해당하는 음원 본체(메타 사이드카 제외)만 삭제한다. 트림 시 확장자가
+    /// 달라질 수 있어 메타를 보존한 채 본체만 갈아끼우기 위해 사용한다.
+    private nonisolated func removeAudioFile(forCacheKey cacheKey: String) {
+        guard let directory = try? Self.audioDirectory() else { return }
+        let safeKey = Self.safeCacheKey(cacheKey)
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in files {
+            let (base, ext) = Self.splitName(name)
+            if base == safeKey, ext != "meta.json", ext != "json" {
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+            }
+        }
     }
 }
 

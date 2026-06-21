@@ -7,6 +7,15 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     @Published private(set) var elapsedSeconds: TimeInterval = 0
     @Published private(set) var latestRecordingURL: URL?
     @Published private(set) var latestDurationMs: Int?
+    /// Live waveform levels for the recording UI. Matches Android: 18 bars, idle baseline 0.08.
+    @Published private(set) var recordingLevels: [Float] = VoiceRecorder.idleLevels
+
+    /// Bar count + idle level mirror Android's recording waveform (List(18) { 0.08f }).
+    private static let barCount = 18
+    private static let idleLevel: Float = 0.08
+    /// Live levels clamp to the same floor as Android (coerceIn(0.06f, 1f)).
+    private static let minLevel: Float = 0.06
+    private static let idleLevels = [Float](repeating: idleLevel, count: barCount)
 
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
@@ -28,6 +37,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44_100,
             AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 128_000,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
 
@@ -40,6 +50,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         latestRecordingURL = url
         latestDurationMs = nil
         elapsedSeconds = 0
+        recordingLevels = VoiceRecorder.idleLevels
         startedAt = Date()
         isRecording = true
         startTimer()
@@ -51,6 +62,7 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         timer?.invalidate()
         timer = nil
         isRecording = false
+        recordingLevels = VoiceRecorder.idleLevels
         if let startedAt {
             latestDurationMs = max(0, Int(Date().timeIntervalSince(startedAt) * 1000))
         }
@@ -68,16 +80,34 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
         latestRecordingURL = nil
         latestDurationMs = nil
         elapsedSeconds = 0
+        recordingLevels = VoiceRecorder.idleLevels
     }
 
     private func startTimer() {
         timer?.invalidate()
+        // 250ms cadence matches Android's recording loop (delay(250)).
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, let startedAt = self.startedAt else { return }
                 self.elapsedSeconds = Date().timeIntervalSince(startedAt)
+                self.sampleLevel()
             }
         }
+    }
+
+    /// Polls the recorder's metering and appends a normalized level to the sliding
+    /// 18-bar window, mirroring Android (recordingLevels.drop(1) + level, clamped 0.06...1).
+    private func sampleLevel() {
+        guard let recorder else { return }
+        recorder.updateMeters()
+        // averagePower is in dBFS (~ -160 silence ... 0 max). Map to a 0...1 linear level.
+        let power = recorder.averagePower(forChannel: 0)
+        let normalized = pow(10, power / 20)
+        let level = min(max(normalized, VoiceRecorder.minLevel), 1)
+        var next = recordingLevels
+        next.removeFirst()
+        next.append(level)
+        recordingLevels = next
     }
 
     private func requestMicrophonePermission() async -> Bool {

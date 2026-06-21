@@ -1,5 +1,9 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
 @main
 struct AlarmTalkApp: App {
     @Environment(\.scenePhase) private var scenePhase
@@ -7,6 +11,11 @@ struct AlarmTalkApp: App {
 
     @StateObject private var alarmStore = LocalAlarmStore()
     @StateObject private var alarmKit = AlarmKitViewModel()
+    /// PR3: AlarmAppContext.holidayPredicate 와 timezone 재무장이 서버 sync 공휴일까지
+    /// 반영하도록 앱 lifetime 동안 살아있는 단일 HolidayStore. AlarmKitViewModel 에도
+    /// `configure(holidayStore:)` 로 이 동일 인스턴스를 주입해 공휴일 집합을 일원화한다
+    /// (Android 단일 holidayCalendarStore parity).
+    @StateObject private var holidayStore = HolidayStore()
     @StateObject private var auth = AuthViewModel()
     @StateObject private var remoteSync = RemoteAlarmSyncViewModel()
     @StateObject private var voiceStudio = VoiceStudioViewModel()
@@ -70,11 +79,23 @@ struct AlarmTalkApp: App {
                         // Phase 2-B5: characterEvents 를 실제 store 로 주입해 dismiss/
                         // snooze 시 자동 큐잉되게 한다.
                         if AlarmAppContext.shared == nil {
-                            _ = AlarmAppContext(
+                            let ctx = AlarmAppContext(
                                 store: alarmStore,
                                 characterEvents: characterEvents
                             )
+                            // PR3: dismiss-time 공휴일 recompute + `.fixed` one-shot 재무장 훅.
+                            // ViewModel 을 강하게 잡지 않도록 weak capture (weak-singleton 보존).
+                            ctx.holidayPredicate = holidayStore.holidayPredicate()
+                            ctx.rearmHolidayOffOneShot = { [weak alarmKit, weak alarmStore] id in
+                                guard let alarmKit, let alarmStore else { return }
+                                await alarmKit.rearmIfHolidayOffOneShot(localID: id, store: alarmStore)
+                            }
                         }
+                        // PR3 FIX: AlarmKitViewModel 이 앱-레벨 단일 HolidayStore 를
+                        // 쓰도록 주입한다. recoverScheduledAlarms / processAlarmUpdate 가
+                        // AlarmAppContext.holidayPredicate·timezone 재무장과 동일한 공휴일
+                        // 집합을 본다 (Android 단일 holidayCalendarStore parity).
+                        alarmKit.configure(holidayStore: holidayStore)
                         await characterEvents.loadFromDisk()
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
@@ -100,6 +121,14 @@ struct AlarmTalkApp: App {
                         // 최초 BGAppRefreshTask 예약. 다음 사이클은 백그라운드 진입/
                         // task 종료 시 재예약.
                         BackgroundSyncTask.scheduleNext()
+                    }
+                    .task {
+                        // PR3: timezone/시간 변경 관찰자 (Android BootCompletedReceiver 의
+                        // ACTION_TIMEZONE_CHANGED / ACTION_TIME_CHANGED parity).
+                        // `.fixed` one-shot 은 절대 instant 라 새 zone 에 자동 재anchor 되지
+                        // 않으므로, 두 알림에서 enabled 공휴일off 서브셋을 강제 recompute+재무장한다.
+                        // 네이티브 `.relative` 알람은 AlarmKit 이 스스로 재anchor 하므로 제외(narrow filter).
+                        await observeTimeAndTimezoneChanges()
                     }
                     .task(id: auth.session?.token) {
                         // 로그인 직후 또는 토큰 갱신 시 즉시 sync.
@@ -181,6 +210,43 @@ struct AlarmTalkApp: App {
         _ = await refresh.refreshDue(token: token)
     }
 
+    /// PR3: timezone / 시간 변경 알림을 관찰해 `.fixed` 공휴일off one-shot 을 새 시각으로
+    /// 재무장한다. Android BootCompletedReceiver 의 ACTION_TIMEZONE_CHANGED /
+    /// ACTION_TIME_CHANGED -> reschedulePendingAlarms() parity.
+    ///
+    ///  - NSSystemTimeZoneDidChange: 시간대 이동 / DST (ACTION_TIMEZONE_CHANGED parity)
+    ///  - UIApplication.significantTimeChangeNotification: 자정 / 수동 시계 변경 /
+    ///    DST / 통신사 시각 (ACTION_TIME_CHANGED parity)
+    ///
+    /// 절대 instant 인 `.fixed` 는 어느 방향으로든 이동할 수 있어 미래 건도 강제
+    /// recompute 가 필요하므로 forceHolidayOffRecompute:true 로 호출한다.
+    @MainActor
+    private func observeTimeAndTimezoneChanges() async {
+        // 두 알림 스트림을 하나로 합쳐 단일 .task 수명 안에서 관찰한다.
+        // self(App 값 타입) 를 task 경계로 넘기지 않도록 필요한 참조만 로컬로 캡처.
+        let store = alarmStore
+        let kit = alarmKit
+
+        var names: [Notification.Name] = [.NSSystemTimeZoneDidChange]
+        #if canImport(UIKit)
+        names.append(UIApplication.significantTimeChangeNotification)
+        #endif
+
+        await withTaskGroup(of: Void.self) { group in
+            for name in names {
+                group.addTask { @MainActor in
+                    for await _ in NotificationCenter.default.notifications(named: name) {
+                        guard store.hasLoadedFromDisk else { continue }
+                        await kit.recoverScheduledAlarms(
+                            store: store,
+                            forceHolidayOffRecompute: true
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private var freePlanVoiceLockKey: String {
         [
             auth.session?.user.id ?? "anonymous",
@@ -246,7 +312,10 @@ private final class Bootstrap {
             pull: pull,
             push: push,
             dynamicVoice: dynamicVoice,
-            socialFeatures: socialFeatures
+            socialFeatures: socialFeatures,
+            // PR3: 백그라운드 사이클의 `.fixed` one-shot proactive 재무장 sweep 용 약참조.
+            store: store,
+            alarmKit: alarmKit
         )
     }
 }

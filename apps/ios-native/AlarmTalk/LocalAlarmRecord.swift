@@ -74,11 +74,44 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
             !(ttsMessageId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
+    /// 시스템 스톡 보이스 클립 알람인지 — 무료 플랜에서도 보존되어야 한다.
+    /// 스톡 클립은 저장 시 스테이징된 `stock_<messageId>` 캐시 파일을 가지므로
+    /// `localAudioUri`/`rawAudioUri` 가 NON-blank 다. 따라서 빈 음원 가정에 의존하지 않고
+    /// `audioCacheKey` 의 `stock_` prefix(저장 경로 AlarmEditorSheet 1127 / Android
+    /// `setStockClipAudio` 와 동일 술어)를 1차 신호로 쓴다. 미래의 비-시스템 server_tts
+    /// 알람이 우연히 stock 모양 key 를 가져도 새지 않도록 `isSystemVoiceId(voiceProfileId)`
+    /// 를 함께 요구한다. `ttsMessageId` 는 생성 TTS 도 채우므로 단독 신호로 쓰지 않는다.
+    var isStockVoiceClip: Bool {
+        (audioCacheKey?.hasPrefix("stock_") ?? false) && isSystemVoiceId(voiceProfileId)
+    }
+
+    /// 무료 플랜 다운그레이드 시 삭제 대상인지.
+    /// Android `AlarmRepository.deletePaidAlarmTalks` 의 `usesVoice && !stockVoiceOnly` 동일.
+    /// 시스템 스톡 보이스 TTS 알람(로컬/raw 음원이 없고 voiceProfileId 가 시스템 보이스)은
+    /// 무료 플랜에서도 유효하므로 보존한다. 또한 스톡 클립 알람(스테이징된 `stock_` 캐시
+    /// 파일이 있어 localAudioUri 가 NON-blank)도 `isStockVoiceClip` 으로 보존한다.
+    var isPaidVoiceForDowngrade: Bool {
+        let stockVoiceOnly =
+            (localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
+            (rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
+            isSystemVoiceId(voiceProfileId)
+        return usesPaidVoiceFeatures && !stockVoiceOnly && !isStockVoiceClip
+    }
+
     var canSnooze: Bool {
         snoozeEnabled &&
             (snoozeRepeatLimit == SnoozeRepeatLimit.unlimited.rawValue ||
                 snoozeCount < snoozeRepeatLimit)
     }
+
+    /// PR3 하이브리드 분기의 단일 진실 원천.
+    /// `repeatDaysMask != 0 && holidayOff` 인 반복 알람만 `.fixed` one-shot 경로를 타며,
+    /// AlarmKit `.weekly` 가 표현할 수 없는 공휴일 skip 을 앱이 직접 재무장으로 구현한다.
+    /// 그 외(반복+공휴일off 아님 -> `.relative(.weekly)`, 단발 -> `.relative(.never)`)는
+    /// AlarmKit 네이티브 timezone 적응 + 자동 재무장을 그대로 유지한다.
+    /// makeSchedule / recoverScheduledAlarms 후보 필터 / markStopped / BackgroundSyncTask
+    /// 가 모두 이 헬퍼로 동일한 분기를 표현해 inline 술어 분기 발산을 막는다.
+    var isHolidayOffRecurring: Bool { repeatDaysMask != 0 && holidayOff }
 
     var timeString: String {
         String(format: "%02d:%02d", hour, minute)

@@ -34,6 +34,16 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var isPurchasing: Bool = false
     @Published private(set) var lastError: String? = nil
 
+    /// 최소 1회 이상 제품 fetch 가 끝났는지. UI 가 "로딩 중 스켈레톤" 과
+    /// "정말로 제품이 없음(준비중/실패)" 을 구분하는 데 쓴다.
+    /// 첫 진입의 일시적 빈 상태가 망가진 화면처럼 보이지 않도록 게이팅.
+    @Published private(set) var hasAttemptedProductFetch: Bool = false
+
+    /// 마지막 제품 fetch 가 (네트워크/StoreKit) 오류로 실패했는지.
+    /// 일시적 blip 으로 products 가 비어버린 경우, UI 가 영구 비활성 대신
+    /// "다시 시도" 재요청 버튼을 보여줄 수 있게 한다.
+    @Published private(set) var productFetchFailed: Bool = false
+
     private var transactionListenerTask: Task<Void, Never>? = nil
     private let api: AlarmTalkAPI
     private let authProvider: () -> AuthSession?
@@ -66,14 +76,19 @@ final class SubscriptionManager: ObservableObject {
     /// 다음 진입 시 재시도된다.
     func fetchProducts() async {
         isLoadingProducts = true
-        defer { isLoadingProducts = false }
+        defer {
+            isLoadingProducts = false
+            hasAttemptedProductFetch = true
+        }
         do {
             let allIDs = SubscriptionProduct.allCases.map(\.rawValue)
             let fetched = try await Product.products(for: allIDs)
             self.products = fetched
             self.lastError = nil
+            self.productFetchFailed = false
         } catch {
             self.lastError = "제품 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
+            self.productFetchFailed = true
         }
     }
 
@@ -126,14 +141,44 @@ final class SubscriptionManager: ObservableObject {
 
     /// 다른 기기에서 구매한 구독을 현재 기기로 가져온다.
     /// `AppStore.sync()` 는 사용자에게 Apple ID 비밀번호 입력을 강제할 수 있다.
-    func restorePurchases() async {
+    ///
+    /// 호출자가 "복원됨 N건 / 복원할 구매 없음 / 오류" 를 구분해 안내할 수 있도록
+    /// `RestoreResult` 를 돌려준다. (이전에는 성공/실패와 무관하게 항상 동일한
+    /// "이전 구매를 확인했어요." 토스트만 떠 사용자를 오도하고 심사 리스크가 있었다.)
+    @discardableResult
+    func restorePurchases() async -> RestoreResult {
+        guard !isPurchasing else {
+            return .failure(reason: "결제가 진행 중이에요. 잠시 후 다시 시도해 주세요.")
+        }
+        isPurchasing = true
+        defer { isPurchasing = false }
         do {
             try await AppStore.sync()
+            // sync 직후 fresh entitlement 를 다시 읽어 활성 구독 수를 센다.
+            let restoredCount = await countActiveEntitlements()
             await refreshPurchasedProducts()
             self.lastError = nil
+            return restoredCount > 0 ? .restored(count: restoredCount) : .nothingToRestore
         } catch {
-            self.lastError = "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요."
+            // 에러 메시지는 RestoreResult 로만 노출한다(호출자가 토스트로 안내).
+            // lastError 까지 세팅하면 동일 메시지가 화면에 중복 표시되므로 두지 않는다.
+            return .failure(
+                reason: Self.userFacingPurchaseError(
+                    error,
+                    fallback: "이전 구매를 복원하지 못했어요. 잠시 후 다시 시도해 주세요."
+                )
+            )
         }
+    }
+
+    /// 현재 verified 활성 entitlement 개수. 복원 결과 안내용.
+    private func countActiveEntitlements() async -> Int {
+        var count = 0
+        for await result in Transaction.currentEntitlements {
+            guard (try? checkVerified(result)) != nil else { continue }
+            count += 1
+        }
+        return count
     }
 
     /// `Transaction.currentEntitlements` 를 다시 읽어 `purchasedProductIDs` 와
@@ -302,6 +347,33 @@ enum PurchaseResult: Equatable {
         case .userCancelled:  return "결제를 취소했어요."
         case .pending:        return "결제 승인 대기 중이에요."
         case .failure(let r): return r
+        }
+    }
+}
+
+/// `SubscriptionManager.restorePurchases()` 결과.
+///
+/// - `restored`: 복원된 활성 구독이 N건 있었음.
+/// - `nothingToRestore`: sync 는 성공했지만 이 Apple ID 로 복원할 구매가 없음.
+/// - `failure`: sync 자체가 실패(네트워크/취소 등).
+enum RestoreResult: Equatable {
+    case restored(count: Int)
+    case nothingToRestore
+    case failure(reason: String)
+
+    var isSuccess: Bool {
+        switch self {
+        case .restored, .nothingToRestore: return true
+        case .failure:                     return false
+        }
+    }
+
+    /// UI 토스트 메시지 — 세 가지 결과를 명확히 구분해 안내한다.
+    var userMessage: String {
+        switch self {
+        case .restored(let count): return "이전 구매 \(count)건을 복원했어요."
+        case .nothingToRestore:    return "복원할 구매 내역이 없어요."
+        case .failure(let r):      return r
         }
     }
 }

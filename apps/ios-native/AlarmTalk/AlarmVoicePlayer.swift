@@ -11,6 +11,15 @@ import AVFoundation
 // 30초를 넘기거나 staging (트랜스코드) 이 실패하면 AlarmKit 으로는 `.default`
 // 만 울리고, 우리 앱이 활성화된 동안 AVAudioPlayer 로 같은 목소리를 재생한다.
 //
+// 음량에 대한 정직한 한계:
+//   AlarmKit 이 OS 알람음(.default 시스템 알람 톤)을 소유하며, iOS 에는 알람별
+//   음량을 지정하는 공개 API 가 없다. 즉 시스템 알람 톤은 항상 사용자의 *시스템
+//   알람 음량* 으로 울린다. 따라서 `voiceVolumePercent`/`alarmVolumePercent` 는
+//   여기 IN-APP 폴백 재생(AVAudioPlayer)의 게인에만 적용되며, OS 알람 톤에는
+//   영향을 주지 못한다. (Android 는 자체적으로 ringing 을 소유하므로 이 두 값을
+//   실제 알람음에 적용하지만, iOS 는 그 동등성을 가질 수 없다.)
+//   `alarmVolumePercent == 0` 이면 in-app 폴백 재생 자체를 건너뛴다.
+//
 // 동작 패턴:
 //   - Pattern A (앱 활성): 알람 fire 직후 ContentView 가 ringing 상태로 진입할 때
 //     `playIfNeeded(_:audioCache:)` 가 호출되어 voice 재생을 시작한다.
@@ -60,10 +69,17 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
     /// 캐시가 비어 있더라도 record.rawAudioUri 를 알고 있으면 짧은 타임아웃으로
     /// 원본 오디오를 받아 같은 cacheKey 로 저장한 뒤 재생하는 최후 폴백을 탄다.
     /// 그것도 불가하면 기존 동작(무음, AlarmKit .default 만 울림)을 유지한다.
+    ///
+    /// 음량: 이 재생은 in-app 폴백이므로 AVAudioPlayer.volume 으로
+    /// `voiceVolumePercent` 와 `alarmVolumePercent` 를 곱한 게인을 적용한다.
+    /// `alarmVolumePercent == 0` ("무음") 이면 in-app 폴백 재생 자체를 건너뛴다.
+    /// (OS 알람 톤은 AlarmKit 이 시스템 알람 음량으로 별도 재생하며 여기서 제어
+    /// 불가.)
     func playIfNeeded(for record: LocalAlarmRecord, audioCache: AudioCacheStore) {
         guard record.playModeEnum != .alarmOnly,
               let key = record.audioCacheKey,
-              record.voiceVolumePercent > 0 else {
+              record.voiceVolumePercent > 0,
+              record.alarmVolumePercent > 0 else {
             return
         }
 
@@ -149,7 +165,13 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
             currentRecordID = record.id
             currentVoiceURL = url
             currentRepeatVoice = record.voiceRepeat
-            currentVoiceVolumePercent = record.voiceVolumePercent
+            // in-app 폴백 게인: voice 음량 × 알람 음량 (둘 다 OS 톤이 아닌 우리
+            // AVAudioPlayer 재생에만 적용되는 상대 게인). 호출자가 이미 두 값이
+            // 모두 0 보다 큼을 보장한다.
+            currentVoiceVolumePercent = Self.combinedVolumePercent(
+                voicePercent: record.voiceVolumePercent,
+                alarmPercent: record.alarmVolumePercent
+            )
             voiceHasPlayedThisRing = false
             startVoicePlayback(url: url)
         } catch {
@@ -271,6 +293,15 @@ final class AlarmVoicePlayer: NSObject, AVAudioPlayerDelegate {
 
     static func voiceVolume(forPercent percent: Int) -> Float {
         max(0.0, min(1.0, Float(percent) / 100.0))
+    }
+
+    /// voice 음량(%)과 알람 음량(%)을 곱해 in-app 폴백 재생의 실효 게인(%)을
+    /// 구한다. 두 값 모두 OS 알람 톤이 아닌 우리 AVAudioPlayer 재생에만 적용되는
+    /// 상대값이다. 결과는 0...100 으로 클램프.
+    static func combinedVolumePercent(voicePercent: Int, alarmPercent: Int) -> Int {
+        let voice = max(0, min(100, voicePercent))
+        let alarm = max(0, min(100, alarmPercent))
+        return Int((Double(voice) * Double(alarm) / 100.0).rounded())
     }
 
     static let voiceFadeInNanos: UInt64 = 6_000_000_000

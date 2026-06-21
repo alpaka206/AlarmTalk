@@ -242,12 +242,11 @@ auth.post('/register', async (c) => {
 
     const id = crypto.randomUUID();
     const passwordHash = await hashPassword(password, c.env.PASSWORD_PEPPER);
-    const today = new Date().toISOString().split('T')[0]!;
 
     await db.execute({
-      sql: `INSERT INTO users (id, email, google_id, password_hash, name, daily_tts_reset_at)
-            VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [id, normalizedEmail, id, passwordHash, name, today],
+      sql: `INSERT INTO users (id, email, google_id, password_hash, name)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [id, normalizedEmail, id, passwordHash, name],
     });
 
     await consumeEmailVerificationCode(db, verification.id);

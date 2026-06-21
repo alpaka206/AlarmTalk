@@ -1186,6 +1186,25 @@ export const migrations: Migration[] = [
       ttsPresetUpsert('exercise'),
     ],
   },
+  {
+    // 일일 TTS 생성 횟수 제한(하루 N회) 폐지. daily_tts_count / daily_tts_reset_at
+    // 컬럼을 더 이상 읽거나 쓰지 않으므로 물리적으로 제거한다. 무료 플랜의 보이스/
+    // 프리셋 게이팅(VOICE_FEATURE_REQUIRES_PAID_PLAN / FREE_PLAN_PRESET_ONLY)은
+    // 이 컬럼과 무관하게 그대로 유지된다.
+    //  - users_kst 뷰가 daily_tts_reset_at 를 참조하므로 먼저 떨군 뒤 DROP COLUMN.
+    //    (libSQL/SQLite ≥ 3.35 의 ALTER TABLE DROP COLUMN 사용)
+    //  - 컬럼이 이미 없는 DB(컬럼을 만든 적 없는 신규 분기 등)에서 재실행돼도
+    //    'no such column'/'no such view' 는 idempotent 로 무시된다.
+    //  - 뷰는 daily_tts_reset_at_kst 없이 재생성한다(나머지 _kst 컬럼은 #46 과 동일).
+    id: 50,
+    name: 'drop-daily-tts-limit-columns',
+    statements: [
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `ALTER TABLE users DROP COLUMN daily_tts_count`,
+      `ALTER TABLE users DROP COLUMN daily_tts_reset_at`,
+      `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
@@ -1196,7 +1215,10 @@ function isIdempotentDDLError(message: string): boolean {
   return (
     lower.includes('duplicate column name') ||
     lower.includes('already exists') ||
-    lower.includes('no such index')
+    lower.includes('no such index') ||
+    // DROP COLUMN/VIEW 재실행 시(이미 제거된 컬럼/뷰) — 마이그레이션 #50.
+    lower.includes('no such column') ||
+    lower.includes('no such view')
   );
 }
 
