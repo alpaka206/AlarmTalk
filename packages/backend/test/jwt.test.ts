@@ -36,4 +36,16 @@ describe('appJwt', () => {
   it('빈 시크릿으로 서명 거부', async () => {
     await expect(signAppJwt({ sub: 'u1', email: 'u@test.com' }, '')).rejects.toThrow();
   });
+
+  it('epoch 클레임을 박아 넣고 검증 시 그대로 반환 (B5)', async () => {
+    const token = await signAppJwt({ sub: 'u1', email: 'u@test.com', epoch: 3 }, SECRET);
+    const payload = await verifyAppJwt(token, SECRET);
+    expect(payload.epoch).toBe(3);
+  });
+
+  it('epoch 미지정 시 기본 0 으로 서명/검증', async () => {
+    const token = await signAppJwt({ sub: 'u1', email: 'u@test.com' }, SECRET);
+    const payload = await verifyAppJwt(token, SECRET);
+    expect(payload.epoch).toBe(0);
+  });
 });

@@ -581,22 +581,51 @@ describe('GET /notes/sent — 페이지네이션', () => {
   });
 });
 
+function createMockR2Bucket(initial: Record<string, Uint8Array> = {}) {
+  const store = new Map<string, Uint8Array>();
+  for (const [k, v] of Object.entries(initial)) store.set(k, v);
+  const bucket = {
+    put: async () => {},
+    get: async (key: string) => {
+      const bytes = store.get(key);
+      if (!bytes) return null;
+      return {
+        customMetadata: { mimeType: 'audio/mpeg', userId: 'sender', sizeBytes: String(bytes.byteLength) },
+        httpMetadata: { contentType: 'audio/mpeg' },
+        size: bytes.byteLength,
+        uploaded: new Date('2026-05-01T00:00:00Z'),
+        arrayBuffer: async () =>
+          bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      };
+    },
+    delete: async (key: string) => {
+      store.delete(key);
+    },
+  };
+  return { bucket: bucket as unknown as R2Bucket, store };
+}
+
+const envWith = (bucket: R2Bucket) => ({ VOICE_BUCKET: bucket }) as unknown as AppEnv['Bindings'];
+
 describe('GET /notes/:id/audio', () => {
-  it('returns note audio as base64', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(
-      new Uint8Array([65, 66]).buffer,
-      { headers: { 'content-type': 'audio/mpeg' } },
-    )));
+  it('returns note audio as base64 for a sender-owned r2 key', async () => {
+    const key = 'voices/pk2/clip.mp3';
+    const r2 = createMockR2Bucket({ [key]: new Uint8Array([65, 66]) });
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{
       id: 'n1',
       sender_id: 'pk2',
       receiver_id: 'pk1',
       text: 'hello',
-      audio_url: 'https://cdn.example.com/audio.mp3',
+      audio_url: `r2://${key}`,
+      sender_google_id: 'sender-google-2',
     }]);
     const app = buildApp();
-    const res = await app.request(new Request('http://localhost/notes/n1/audio'));
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.note_id).toBe('n1');
@@ -604,23 +633,119 @@ describe('GET /notes/:id/audio', () => {
     expect(body.audio_format).toBe('mp3');
   });
 
-  it('clears stale r2 audio_url when stored note audio is gone', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
+  it('loads a key embedding the sender google_id namespace', async () => {
+    const key = 'voices/sender-google-2/clip.mp3';
+    const r2 = createMockR2Bucket({ [key]: new Uint8Array([65, 66]) });
     mockDB.pushResult([{ id: 'pk1' }]);
     mockDB.pushResult([{
       id: 'n1',
       sender_id: 'pk2',
       receiver_id: 'pk1',
       text: 'hello',
-      audio_url: 'r2://generated/missing.mp3',
+      audio_url: `r2://${key}`,
+      sender_google_id: 'sender-google-2',
     }]);
     const app = buildApp();
-    const res = await app.request(new Request('http://localhost/notes/n1/audio'));
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('loads a key embedding the sender apple_id namespace (Apple-only account)', async () => {
+    // Apple 전용 계정은 R2 키가 apple_id 로 네임스페이스되므로 google_id 없이도 로드돼야 한다.
+    const key = 'voices/sender-apple-9/clip.mp3';
+    const r2 = createMockR2Bucket({ [key]: new Uint8Array([65, 66]) });
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: `r2://${key}`,
+      sender_google_id: null,
+      sender_apple_id: 'sender-apple-9',
+    }]);
+    const app = buildApp();
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a cross-tenant r2 key even if the object exists', async () => {
+    // 공격자가 자기 쪽지에 피해자 네임스페이스 키를 끼워 넣은 상황.
+    const victimKey = 'voices/victim-pk/secret.mp3';
+    const r2 = createMockR2Bucket({ [victimKey]: new Uint8Array([1, 2, 3]) });
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: `r2://${victimKey}`,
+      sender_google_id: 'sender-google-2',
+    }]);
+    const app = buildApp();
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('NOTE_AUDIO_NOT_FOUND');
+  });
+
+  it('rejects an arbitrary https audio host (SSRF guard)', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const r2 = createMockR2Bucket();
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: 'https://attacker.example.com/audio.mp3',
+      sender_google_id: 'sender-google-2',
+    }]);
+    const app = buildApp();
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
+    expect(res.status).toBe(404);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('clears stale r2 audio_url when stored note audio is gone', async () => {
+    const key = 'voices/pk2/missing.mp3';
+    const r2 = createMockR2Bucket(); // object absent
+    mockDB.pushResult([{ id: 'pk1' }]);
+    mockDB.pushResult([{
+      id: 'n1',
+      sender_id: 'pk2',
+      receiver_id: 'pk1',
+      text: 'hello',
+      audio_url: `r2://${key}`,
+      sender_google_id: 'sender-google-2',
+    }]);
+    const app = buildApp();
+    const res = await app.request(
+      new Request('http://localhost/notes/n1/audio'),
+      undefined,
+      envWith(r2.bucket),
+    );
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe('NOTE_AUDIO_NOT_FOUND');
     const update = mockDB.calls.find((call) => call.sql.startsWith('UPDATE notes SET audio_url = NULL'));
     expect(update).toBeDefined();
-    expect(update!.args).toEqual(['n1', 'r2://generated/missing.mp3']);
+    expect(update!.args).toEqual(['n1', `r2://${key}`]);
   });
 
   it('forbids users outside the note sender and receiver', async () => {
@@ -630,7 +755,8 @@ describe('GET /notes/:id/audio', () => {
       sender_id: 'pk2',
       receiver_id: 'pk3',
       text: 'hello',
-      audio_url: 'https://cdn.example.com/audio.mp3',
+      audio_url: 'r2://voices/pk2/clip.mp3',
+      sender_google_id: 'sender-google-2',
     }]);
     const app = buildApp();
     const res = await app.request(new Request('http://localhost/notes/n1/audio'));

@@ -385,6 +385,7 @@ describe('PATCH /alarm/:id — 알람 수정', () => {
     const voiceProfileId = '40000000-0000-4000-8000-0000000000aa';
     const speakerId = '50000000-0000-4000-8000-0000000000bb';
     mockDB.pushResult([{ id: ID.alarm }]); // existing
+    mockDB.pushResult([{ '1': 1 }]); // voiceProfileBelongsToCaller → 소유 확인
     mockDB.pushResult([], 1); // update
     mockDB.pushResult([
       {

@@ -15,6 +15,11 @@ import {
   dynamicPromptSettingsFromRow,
   validateDynamicPromptSettings,
 } from '../lib/dynamic-prompt-settings';
+import {
+  ALLOWED_CONSENT_TYPES,
+  REQUIRED_CONSENT_TYPES,
+  CURRENT_POLICY_VERSION,
+} from '../lib/consent';
 
 const user = new Hono<AppEnv>();
 
@@ -315,9 +320,12 @@ user.delete('/me', async (c) => {
   const db = getDB(c.env);
 
   try {
+    // apple_id 도 함께 매칭한다. Apple 로그인 사용자의 JWT sub 는 google_id 가 아닌
+    // apple_id 컬럼에만 저장돼 있을 수 있어, 누락하면 userPk 가 null 이 되어 자식
+    // PII(생체 음성 등)가 고아로 남는다(auth.ts:94 의 조회 조건과 동일하게 맞춤).
     const userRes = await db.execute({
-      sql: `SELECT id FROM users WHERE google_id = ? OR id = ? LIMIT 1`,
-      args: [userId, userId],
+      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      args: [userId, userId, userId],
     });
     const userPk = userRes.rows.length > 0 ? String(userRes.rows[0]!.id) : null;
 
@@ -339,14 +347,8 @@ user.delete('/me', async (c) => {
   }
 });
 
-// 동의 기록 (개인정보보호법 제22조). 가입/이용 중 동의 사실을 누적 INSERT 로 보관한다.
-// consent_type: 'terms'(이용약관·필수), 'privacy'(개인정보·필수), 'marketing'(마케팅·선택),
-// 'age14'(만14세이상·필수). 동일 (user_id, consent_type) 최신 행이 현재 동의 상태.
-const ALLOWED_CONSENT_TYPES = new Set(['terms', 'privacy', 'marketing', 'age14']);
-// 가입/이용에 반드시 필요한 필수 동의. marketing(광고성 정보 수신) 은 선택이라 제외.
-const REQUIRED_CONSENT_TYPES = ['terms', 'privacy', 'age14'] as const;
-// 처리방침/약관 버전. 정책을 개정하면 이 값을 올려 기존 가입자 재동의를 유도한다.
-const CURRENT_POLICY_VERSION = '1';
+// 동의 설정(ALLOWED/REQUIRED/CURRENT_POLICY_VERSION)과 충족 판정 헬퍼(needsConsent)는
+// lib/consent.ts 로 일원화됐다(라우트 게이트 미들웨어와 공유). 여기서는 import 해 사용한다.
 const DELETION_GRACE_DAYS = 30;
 
 user.post('/consents', async (c) => {
@@ -375,7 +377,7 @@ user.post('/consents', async (c) => {
       version:
         typeof item.version === 'string' && item.version.trim()
           ? item.version.trim().slice(0, 40)
-          : '1',
+          : CURRENT_POLICY_VERSION,
       agreed: item.agreed === true || item.agreed === 1 || item.agreed === '1',
     });
   }
@@ -434,6 +436,8 @@ user.get('/consents/status', async (c) => {
   const userPk = c.get('userIdPK');
   const db = getDB(c.env);
   try {
+    // 미충족 유형 목록(missing)은 응답에 그대로 노출하므로 직접 계산하되, needs_consent
+    // 종합 판정은 게이트 미들웨어와 동일한 needsConsent 헬퍼로 일관성을 보장한다.
     const res = await db.execute({
       sql: `SELECT consent_type, policy_version, agreed
             FROM user_consents WHERE user_id = ? ORDER BY created_at DESC, rowid DESC`,
@@ -521,22 +525,28 @@ user.get('/search', async (c) => {
   const db = getDB(c.env);
   const q = (c.req.query('q') || '').trim();
 
-  if (q.length < 2) {
+  // PII 하베스팅 방지: 너무 짧은 질의로 광범위하게 긁지 못하도록 최소 4자를 요구한다.
+  if (q.length < 4) {
     return c.json({ users: [] });
   }
 
   try {
+    // 부분 문자열('%q%') 대신 접두(prefix) 매칭만 허용해 무차별 수집을 줄인다.
+    // LIKE 와일드카드(%,_) 는 리터럴로 이스케이프한다.
+    const escaped = q.replace(/[\\%_]/g, (ch) => `\\${ch}`);
     const result = await db.execute({
-      sql: `SELECT google_id, email, name, picture FROM users
-            WHERE google_id != ? AND email LIKE ?
+      sql: `SELECT google_id, name, picture FROM users
+            WHERE google_id != ? AND email LIKE ? ESCAPE '\\'
             LIMIT 10`,
-      args: [userId, `%${q}%`],
+      args: [userId, `${escaped}%`],
     });
 
     return c.json({
+      // 다른 사용자의 email 은 절대 반환하지 않는다(PII). iOS/Android 의
+      // UserSearchResult.email 은 옵셔널이라 null 로 두어도 디코딩이 깨지지 않는다.
       users: result.rows.map((r) => ({
         id: r.google_id,
-        email: r.email,
+        email: null,
         name: r.name,
         picture: r.picture,
       })),

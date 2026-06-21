@@ -3,10 +3,14 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../src/types';
 
 const captureExceptionMock = vi.hoisted(() => vi.fn());
+const toucanCtorMock = vi.hoisted(() => vi.fn());
 
 vi.mock('toucan-js', () => ({
   Toucan: class {
     captureException = captureExceptionMock;
+    constructor(opts: unknown) {
+      toucanCtorMock(opts);
+    }
   },
 }));
 
@@ -87,6 +91,39 @@ describe('sentryMiddleware', () => {
     const res = await app.fetch(req, env, fakeCtx as never);
     expect(res.status).toBe(500);
     expect(captureExceptionMock).toHaveBeenCalledWith(testError);
+  });
+
+  it('query string secrets are stripped before reaching Toucan', async () => {
+    const { app, env } = buildApp('https://key@sentry.io/123');
+    app.get('/api/billing/google', (c) => c.json({ ok: true }));
+
+    const req = new Request('http://localhost/api/billing/google?token=super-secret');
+    const res = await app.fetch(req, env, fakeCtx as never);
+    expect(res.status).toBe(200);
+
+    expect(toucanCtorMock).toHaveBeenCalled();
+    const opts = toucanCtorMock.mock.calls[0][0] as {
+      request: Request;
+      requestDataOptions?: { allowedSearchParams?: unknown };
+    };
+    // Toucan 으로 넘어가는 요청 URL 에 쿼리스트링(시크릿)이 없어야 한다.
+    expect(opts.request.url).not.toContain('token');
+    expect(opts.request.url).not.toContain('super-secret');
+    expect(new URL(opts.request.url).search).toBe('');
+    // 어떤 쿼리 파라미터도 캡처되지 않도록 명시적으로 비활성화한다.
+    expect(opts.requestDataOptions?.allowedSearchParams).toBe(false);
+  });
+
+  it('sanitized request preserves method and path for Toucan', async () => {
+    const { app, env } = buildApp('https://key@sentry.io/123');
+    app.get('/api/x', (c) => c.json({ ok: true }));
+
+    const req = new Request('http://localhost/api/x?a=1');
+    await app.fetch(req, env, fakeCtx as never);
+
+    const opts = toucanCtorMock.mock.calls[0][0] as { request: Request };
+    expect(opts.request.method).toBe('GET');
+    expect(new URL(opts.request.url).pathname).toBe('/api/x');
   });
 
   it('onError without DSN does not call captureException', async () => {

@@ -23,6 +23,7 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
+import { needsConsent } from '../lib/consent';
 import {
   type DynamicPromptSettings,
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -701,6 +702,24 @@ tts.post('/generate', async (c) => {
 
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
+
+    // 국외 이전 동의(B4): 동적 문구 생성(wake_weather/wake_fortune 등)과 번역은
+    // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
+    // 동의가 없으면 해당 크로스보더 경로를 차단(403)한다. 프리셋·동일언어 비번역
+    // 합성은 국외 이전이 없어 게이트 대상이 아니다.
+    const willUseCrossBorder =
+      body.translate === true || (randomRequested && randomContext !== 'preset');
+    if (willUseCrossBorder && (await needsConsent(db, userPk, ['overseas_transfer']))) {
+      return c.json(
+        {
+          error: 'Overseas transfer consent is required for translation or dynamic generation.',
+          error_code: 'CONSENT_REQUIRED',
+          consent: 'overseas_transfer',
+        },
+        403,
+      );
+    }
+
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
