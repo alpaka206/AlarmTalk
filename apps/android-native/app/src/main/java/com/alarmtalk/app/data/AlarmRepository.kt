@@ -317,6 +317,17 @@ class AlarmRepository(
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
+    /**
+     * 보이스 클론 업로드에 성공한 직후, 더 이상 필요 없는 로컬 녹음 샘플(음성 생체정보)을 즉시 지운다.
+     * 클론 소스 녹음은 알람 재생 오디오가 아니라 업로드 전용이므로, 어떤 알람도 같은 캐시키를
+     * 참조하지 않을 때만(즉 재생용으로 공유되지 않을 때만) 실제 파일을 삭제한다.
+     * 평문 .m4a 가 filesDir 에 오래 남지 않게 해 단말 분실/포렌식 시 노출 위험을 줄인다.
+     */
+    suspend fun deleteVoiceCloneSourceRecording(cacheKey: String?) {
+        if (cacheKey.isNullOrBlank()) return
+        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+    }
+
     suspend fun deletePaidAlarmTalks(): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
             val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||

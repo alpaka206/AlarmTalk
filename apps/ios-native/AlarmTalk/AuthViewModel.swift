@@ -14,6 +14,7 @@ protocol AuthAPIProviding: AnyObject, Sendable {
     func cancelAccountDeletion(token: String) async throws -> CancelDeletionResponse
     func consentStatus(token: String) async throws -> ConsentStatusResponse
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse
+    func logout(token: String) async throws
 }
 
 extension AlarmTalkAPI: AuthAPIProviding {}
@@ -68,6 +69,9 @@ final class AuthViewModel: ObservableObject {
     /// Android `UnauthorizedAuthenticator` → `handleUnauthorized` 강제 로그아웃과 동등.
     /// `appleRevokeObserver` 와 동일한 수명 관리(deinit 에서 removeObserver).
     private nonisolated(unsafe) var unauthorizedObserver: NSObjectProtocol?
+    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 `AlarmTalkAPI` 가 쏘는 알림의 옵저버.
+    /// 세션은 유지하되 동의 화면으로 게이팅하기 위해 `needsConsent=true` 로 둔다.
+    private nonisolated(unsafe) var consentRequiredObserver: NSObjectProtocol?
     /// `verifyAppleCredentialStateIfNeeded` 가 같은 사용자에 대해 중복 동시 호출되는
     /// 일을 막는다. SwiftUI scenePhase 가 짧은 시간 안에 두 번 .active 가 되는
     /// 경우(예: 시스템 알림창 → 복귀) 가 있어 직렬화.
@@ -108,6 +112,18 @@ final class AuthViewModel: ObservableObject {
                 self?.handleUnauthorized()
             }
         }
+
+        // 데이터 라우트가 403 CONSENT_REQUIRED 를 받으면 동의 화면으로 게이팅한다.
+        // 세션은 유지하므로 signOut 이 아니라 needsConsent 만 올린다(재기록 후 재시도).
+        consentRequiredObserver = NotificationCenter.default.addObserver(
+            forName: AlarmTalkAPI.consentRequiredNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleConsentRequired()
+            }
+        }
     }
 
     deinit {
@@ -117,6 +133,9 @@ final class AuthViewModel: ObservableObject {
             NotificationCenter.default.removeObserver(token)
         }
         if let token = unauthorizedObserver {
+            NotificationCenter.default.removeObserver(token)
+        }
+        if let token = consentRequiredObserver {
             NotificationCenter.default.removeObserver(token)
         }
     }
@@ -347,6 +366,16 @@ final class AuthViewModel: ObservableObject {
         signOut(message: "세션이 만료됐어요. 다시 로그인해 주세요.")
     }
 
+    /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때 — 동의 화면으로 게이팅.
+    /// 세션은 유지(로그아웃하지 않음). 서버에 최신 동의 상태를 다시 물어 정확히 반영하되,
+    /// 실패해도 일단 동의 화면을 띄워 사용자가 재기록할 수 있게 한다.
+    /// 로그인 상태가 아니면(이미 로그아웃) 무시한다.
+    private func handleConsentRequired() {
+        guard session != nil else { return }
+        needsConsent = true
+        Task { await checkConsentStatus() }
+    }
+
     /// Apple 자격 증명이 외부에서 revoke 되었을 때 — 강제 로그아웃.
     /// `credentialRevokedNotification` 핸들러가 호출한다.
     private func handleAppleCredentialRevoked() {
@@ -532,8 +561,30 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    /// 동의 화면 제출. 필수(terms/privacy/age14)는 항상 동의로, marketing 은 사용자 선택값으로
-    /// 기록한다. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
+    /// 서버 `CURRENT_POLICY_VERSION` 과 동일해야 하는 클라이언트 정책 버전.
+    /// W2 백엔드 하드닝으로 "2" 로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
+    static let currentPolicyVersion = "2"
+
+    /// 동의 기록 요청을 만든다. 필수(terms/privacy/age14)에 더해 W2 백엔드가
+    /// 서버측에서 강제하는 두 항목(voice_biometric/overseas_transfer)도 항상 동의로
+    /// 기록한다. 그래야 음성 클론(`POST /voice`)과 해외 이전 TTS(translate=true /
+    /// 동적 비-preset 생성)가 403 CONSENT_REQUIRED 없이 진행된다. marketing 은 선택값.
+    /// 모든 항목에 현재 정책 버전("2")을 동봉한다.
+    static func makeConsentsRequest(marketingAgreed: Bool) -> RecordConsentsRequest {
+        let version = currentPolicyVersion
+        return RecordConsentsRequest(consents: [
+            ConsentItemRequest(type: "terms", agreed: true, version: version),
+            ConsentItemRequest(type: "privacy", agreed: true, version: version),
+            ConsentItemRequest(type: "age14", agreed: true, version: version),
+            ConsentItemRequest(type: "voice_biometric", agreed: true, version: version),
+            ConsentItemRequest(type: "overseas_transfer", agreed: true, version: version),
+            ConsentItemRequest(type: "marketing", agreed: marketingAgreed, version: version),
+        ])
+    }
+
+    /// 동의 화면 제출. 필수(terms/privacy/age14/voice_biometric/overseas_transfer)는 항상
+    /// 동의로, marketing 은 사용자 선택값으로 기록한다. 성공 시 `needsConsent` 를 내려
+    /// 정상 진입. Android `MainViewModel.submitConsents()`.
     func submitConsents(marketingAgreed: Bool) async {
         guard let token else {
             statusMessage = "로그인이 필요해요."
@@ -545,12 +596,7 @@ final class AuthViewModel: ObservableObject {
 
         do {
             _ = try await api.recordConsents(
-                RecordConsentsRequest(consents: [
-                    ConsentItemRequest(type: "terms", agreed: true),
-                    ConsentItemRequest(type: "privacy", agreed: true),
-                    ConsentItemRequest(type: "age14", agreed: true),
-                    ConsentItemRequest(type: "marketing", agreed: marketingAgreed),
-                ]),
+                Self.makeConsentsRequest(marketingAgreed: marketingAgreed),
                 token: token
             )
             needsConsent = false
@@ -561,6 +607,15 @@ final class AuthViewModel: ObservableObject {
     }
 
     func signOut(message: String? = nil) {
+        // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
+        // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
+        // 이미 폐기/만료된 토큰으로 호출되는 경로(401 핸들러 등)에서도 안전하다.
+        if let revokeToken = session?.token.nilIfBlank {
+            let api = self.api
+            Task.detached {
+                try? await api.logout(token: revokeToken)
+            }
+        }
         KeychainStore.deleteSession()
         session = nil
         pendingDeletion = false

@@ -1084,6 +1084,7 @@
     <string name="r3data_voice_preview_prompt">この声で起こしましょうか？</string>
     <string name="r3misc_billing_purchase_pending">お支払いが保留中です。お支払い方法の承認が完了すると自動的に適用されます。</string>
     <string name="r3misc_session_expired">ログインの有効期限が切れました。もう一度ログインしてください。</string>
+    <string name="r3misc_consent_required">続けるには必須の同意が必要です。</string>
     <string name="r3misc_login_required_generic">ログイン後にご利用いただけます</string>
     <string name="r3misc_google_signin_unavailable">現在Googleログインはご利用いただけません。メールでログインしてください。</string>
     <string name="r3misc_google_signin_failed">Googleログインに失敗しました</string>

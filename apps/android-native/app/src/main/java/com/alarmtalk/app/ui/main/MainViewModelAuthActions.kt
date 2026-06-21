@@ -201,9 +201,19 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
 }
 
 internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
-    val shouldSignOutGoogle = authSession?.provider == AuthSessionStore.PROVIDER_GOOGLE
+    val session = authSession
+    val shouldSignOutGoogle = session?.provider == AuthSessionStore.PROVIDER_GOOGLE
     viewModelScope.launch {
         authBusy = true
+        // 서버에 로그아웃을 알려 token_epoch 를 올린다(남아있던 토큰 전부 401 TOKEN_REVOKED).
+        // 네트워크 실패가 로컬 로그아웃을 막지 않도록 best-effort 로 처리한다.
+        if (session != null) {
+            runCatching {
+                api.logout(com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token))
+            }.onFailure { error ->
+                Log.w(TAG, "Server logout failed (continuing local sign-out)", error)
+            }
+        }
         if (shouldSignOutGoogle) {
             runCatching {
                 signOutGoogle()
@@ -511,6 +521,10 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
                         com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
+                        // 서버 강제 동의 항목: 음성 생체정보(보이스 클론 전제) / 국외이전(번역·동적 TTS 전제).
+                        // 온보딩 동의 시 함께 기록해, 이후 데이터 라우트의 403 CONSENT_REQUIRED 를 막는다.
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "voice_biometric", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "overseas_transfer", agreed = true, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
                     ),
                 ),

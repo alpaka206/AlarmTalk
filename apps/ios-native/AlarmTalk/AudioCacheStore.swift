@@ -81,7 +81,7 @@ final class AudioCacheStore {
         let format = Self.normalizedFormat(tts.audioFormat)
         let fileName = "\(tts.messageId).\(format)"
         let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: [.atomic])
+        try data.write(to: url, options: Self.audioWriteOptions)
 
         // 새 cacheKey 캐시에도 동시 저장 (위젯 공유 캐시 + cascade cleanup 대상).
         let cacheKey = nonBlank(overrideCacheKey) ?? nonBlank(tts.cacheKey) ?? Self.computeCacheKey(data)
@@ -119,7 +119,7 @@ final class AudioCacheStore {
         let format = Self.normalizedFormat(response.audioFormat)
         let fileName = "\(messageId).\(format)"
         let url = try Self.legacyAudioDirectory().appendingPathComponent(fileName)
-        try data.write(to: url, options: [.atomic])
+        try data.write(to: url, options: Self.audioWriteOptions)
 
         _ = try? Self.shared.cacheBytes(
             data,
@@ -280,7 +280,7 @@ final class AudioCacheStore {
 
         if !FileManager.default.fileExists(atPath: target.path) {
             do {
-                try data.write(to: target, options: [.atomic])
+                try data.write(to: target, options: Self.audioWriteOptions)
             } catch {
                 throw AudioCacheError.writeFailed(error)
             }
@@ -337,7 +337,7 @@ final class AudioCacheStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(metadata)
-        try data.write(to: url, options: [.atomic])
+        try data.write(to: url, options: Self.audioWriteOptions)
     }
 
     /// 단일 cacheKey 의 파일 + 사이드카 삭제.
@@ -453,6 +453,16 @@ final class AudioCacheStore {
 
     // MARK: Helpers
 
+    /// 캐시 음원/메타 쓰기 시 적용하는 파일 보호 옵션.
+    ///
+    /// 알람음은 기기가 **잠긴 상태에서도** 재생돼야 하므로 가장 강한 `.complete`
+    /// (잠금 중 복호화 불가) 는 쓸 수 없다. `.completeUntilFirstUserAuthentication`
+    /// 은 부팅 후 사용자가 처음 잠금을 해제한 뒤부터 (이후 다시 잠겨도) 접근 가능
+    /// 하므로, 잠금 화면 알람 재생을 보장하면서도 콜드 부트 직후 평문 노출을 막는다.
+    /// (Android `EncryptedFile` 대비 iOS 의 동등 수준 보호.)
+    nonisolated static let audioWriteOptions: Data.WritingOptions =
+        [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+
     /// 메인 캐시 디렉토리. App Group 컨테이너가 있으면 위젯과 공유.
     /// 파일 시스템만 다루므로 `nonisolated` — 백그라운드 sweep 에서도 호출 가능.
     nonisolated static func audioDirectory() throws -> URL {
@@ -465,7 +475,13 @@ final class AudioCacheStore {
         }
         let directory = base.appendingPathComponent("audio-cache", isDirectory: true)
         if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                // 잠금 화면 알람 재생 호환 — 첫 잠금 해제 이후 접근 가능한 보호 등급을
+                // 디렉터리에 걸어 신규 캐시 파일이 상속하게 한다.
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+            )
         }
         return directory
     }
@@ -477,7 +493,11 @@ final class AudioCacheStore {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let directory = support.appendingPathComponent("AlarmTalkAudio", isDirectory: true)
         if !FileManager.default.fileExists(atPath: directory.path) {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+            )
         }
         return directory
     }

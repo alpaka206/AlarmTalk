@@ -496,7 +496,12 @@ final class AuthViewModelTests: XCTestCase {
         XCTAssertFalse(vm.needsConsent)
         XCTAssertEqual(api.recordConsentsCallCount, 1)
         let consents = api.lastRecordConsentsRequest?.consents ?? []
-        XCTAssertEqual(Set(consents.filter { $0.agreed }.map { $0.type }), ["terms", "privacy", "age14", "marketing"])
+        XCTAssertEqual(
+            Set(consents.filter { $0.agreed }.map { $0.type }),
+            ["terms", "privacy", "age14", "voice_biometric", "overseas_transfer", "marketing"]
+        )
+        // 모든 항목이 현재 정책 버전("2")을 동봉해야 한다.
+        XCTAssertTrue(consents.allSatisfy { $0.version == AuthViewModel.currentPolicyVersion })
     }
 }
 
@@ -609,6 +614,18 @@ private final class MockAuthAPI: AuthAPIProviding, @unchecked Sendable {
         case .success(let response):
             return response
         case .failure(let error):
+            throw error
+        }
+    }
+
+    private(set) var logoutCallCount = 0
+    private(set) var lastLogoutToken: String?
+    var logoutResult: Result<Void, Error> = .success(())
+
+    func logout(token: String) async throws {
+        logoutCallCount += 1
+        lastLogoutToken = token
+        if case .failure(let error) = logoutResult {
             throw error
         }
     }

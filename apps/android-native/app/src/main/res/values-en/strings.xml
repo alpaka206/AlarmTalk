@@ -1084,6 +1084,7 @@ for a smooth and secure experience.</string>
     <string name="r3data_voice_preview_prompt">Would you like to be woken up by this voice?</string>
     <string name="r3misc_billing_purchase_pending">Your payment is pending. It will be applied automatically once your payment method is approved.</string>
     <string name="r3misc_session_expired">Your session has expired. Please sign in again.</string>
+    <string name="r3misc_consent_required">Required consent is needed to continue.</string>
     <string name="r3misc_login_required_generic">Available after signing in</string>
     <string name="r3misc_google_signin_unavailable">Google sign-in isn\'t available right now. Please sign in with your email.</string>
     <string name="r3misc_google_signin_failed">Google sign-in failed</string>
