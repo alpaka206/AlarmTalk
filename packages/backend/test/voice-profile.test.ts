@@ -286,6 +286,31 @@ describe('GET /:id/stats — 통계 (voice-profile)', () => {
 /*  POST /vp/clone — 음성 클론                                         */
 /* ------------------------------------------------------------------ */
 describe('POST /clone — 음성 클론 (voice-profile)', () => {
+  it('voice_biometric 동의 없으면 403 CONSENT_REQUIRED (B4)', async () => {
+    // 생체정보(음성 클론) 별도 동의 미충족 시 클로닝을 차단한다. 동의 쿼리는
+    // missing 모드로 두고 빈 결과(미동의)를 돌려준다.
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([]); // user_consents 조회 결과: 동의 없음
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('voice_biometric');
+    // 동의 게이트에서 막혔으므로 ElevenLabs 클론은 호출되지 않는다.
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+  });
+
+  it('voice_biometric 동의가 있으면 클로닝 진행 (B4)', async () => {
+    // 기본 모드(setConsentMissing 미설정): 헬퍼가 모든 동의를 합성 충족 → 통과.
+    mockDB.pushResult([{ count: 0 }]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+    mockCreateInstantClone.mockResolvedValue({ voice_id: 'elv-consent-ok' });
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2]), '엄마 목소리'));
+    expect(res.status).toBe(201);
+    expect(mockCreateInstantClone).toHaveBeenCalledOnce();
+  });
+
   it('프로필 1개 이상이면 403 VOICE_LIMIT_REACHED', async () => {
     mockDB.pushResult([{ count: 1 }]);
     const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '테스트'));

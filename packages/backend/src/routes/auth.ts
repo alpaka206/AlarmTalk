@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Client } from '@libsql/client/web';
-import type { Env } from '../types';
+import type { Env, AppEnv } from '../types';
+import { authMiddleware } from '../middleware/auth';
 import { getDB } from '../lib/db';
 import { logRouteError } from '../lib/logger';
 import { typedRow } from '../lib/db-types';
@@ -293,7 +294,12 @@ auth.post('/register', async (c) => {
 
     await consumeEmailVerificationCode(db, verification.id);
 
-    const token = await signAppJwt({ sub: id, email: normalizedEmail, name }, c.env.JWT_SECRET);
+    // 신규 가입자는 token_epoch 가 항상 0 이지만(방금 INSERT), 폐기 로직과 일관되게
+    // 명시적으로 박아 둔다.
+    const token = await signAppJwt(
+      { sub: id, email: normalizedEmail, name, epoch: 0 },
+      c.env.JWT_SECRET,
+    );
 
     return c.json(
       {
@@ -338,7 +344,7 @@ auth.post('/login', async (c) => {
 
   try {
     const result = await db.execute({
-      sql: `SELECT id, google_id, email, password_hash, name, plan,
+      sql: `SELECT id, google_id, email, password_hash, name, plan, token_epoch,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
@@ -362,6 +368,7 @@ auth.post('/login', async (c) => {
       password_hash: string | null;
       name: string | null;
       plan: 'free' | 'plus' | 'family' | null;
+      token_epoch: number | string | null;
     }>(result.rows[0]!);
 
     // OAuth 전용 계정(비밀번호 없음)도 더미 해시로 동일 비용 비교 후 동일 응답을
@@ -380,7 +387,12 @@ auth.post('/login', async (c) => {
     }
 
     const token = await signAppJwt(
-      { sub: row.id, email: row.email, name: row.name ?? undefined },
+      {
+        sub: row.id,
+        email: row.email,
+        name: row.name ?? undefined,
+        epoch: Number(row.token_epoch ?? 0),
+      },
       c.env.JWT_SECRET,
     );
 
@@ -433,7 +445,7 @@ auth.post('/google', async (c) => {
     const name = google.name ?? '';
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, email, name, plan,
+      sql: `SELECT id, google_id, email, name, plan, token_epoch,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
@@ -445,6 +457,7 @@ auth.post('/google', async (c) => {
 
     let userId: string;
     let plan: 'free' | 'plus' | 'family';
+    let tokenEpoch = 0;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -454,10 +467,12 @@ auth.post('/google', async (c) => {
           email: string;
           name: string | null;
           plan: 'free' | 'plus' | 'family' | null;
+          token_epoch: number | string | null;
         } & Record<string, unknown>
       >(existing.rows[0]!);
       userId = row.id;
       plan = row.plan ?? 'free';
+      tokenEpoch = Number(row.token_epoch ?? 0);
 
       await db.execute({
         sql: `UPDATE users
@@ -476,7 +491,7 @@ auth.post('/google', async (c) => {
     }
 
     const token = await signAppJwt(
-      { sub: googleId, email, name: name || undefined },
+      { sub: googleId, email, name: name || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -593,7 +608,7 @@ auth.post('/apple', async (c) => {
     const name = parsed.data.name ?? apple.name ?? '';
 
     const existing = await db.execute({
-      sql: `SELECT id, google_id, apple_id, email, name, plan,
+      sql: `SELECT id, google_id, apple_id, email, name, plan, token_epoch,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
@@ -607,6 +622,7 @@ auth.post('/apple', async (c) => {
     let loginSub: string;
     let plan: 'free' | 'plus' | 'family';
     let resolvedName: string;
+    let tokenEpoch = 0;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -617,12 +633,14 @@ auth.post('/apple', async (c) => {
           email: string;
           name: string | null;
           plan: 'free' | 'plus' | 'family' | null;
+          token_epoch: number | string | null;
         } & Record<string, unknown>
       >(existing.rows[0]!);
       userId = row.id;
       loginSub = row.google_id ?? appleId;
       plan = row.plan ?? 'free';
       resolvedName = name || row.name || '';
+      tokenEpoch = Number(row.token_epoch ?? 0);
 
       await db.execute({
         sql: `UPDATE users
@@ -647,7 +665,7 @@ auth.post('/apple', async (c) => {
     }
 
     const token = await signAppJwt(
-      { sub: loginSub, email, name: resolvedName || undefined },
+      { sub: loginSub, email, name: resolvedName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -771,5 +789,32 @@ auth.get('/me', async (c) => {
     return c.json(jsonError('AUTH_INVALID_TOKEN', detail), 401);
   }
 });
+
+// POST /auth/logout — 전 기기 로그아웃(sign-out-all-devices). authMiddleware 를 통과한
+// 사용자의 users.token_epoch 를 +1 하여, 현재까지 발급된 모든 앱 JWT(이전 epoch)를
+// 즉시 폐기한다. 다음 로그인 시 새 epoch 가 박힌 토큰이 발급된다.
+// NOTE: 비밀번호 재설정 라우트는 아직 없다. 추가될 경우, 재설정 성공 시에도 반드시
+//       동일하게 token_epoch 를 +1 하여 유출된 기존 세션을 무효화해야 한다.
+// authMiddleware 가 userIdPK/userId 를 심으므로 별도 AppEnv 서브앱으로 마운트한다.
+const logout = new Hono<AppEnv>();
+logout.use('*', authMiddleware);
+logout.post('/', async (c) => {
+  const userPk = c.get('userIdPK');
+  const userId = c.get('userId');
+  const db = getDB(c.env);
+  try {
+    await db.execute({
+      sql: `UPDATE users
+            SET token_epoch = token_epoch + 1, updated_at = datetime('now')
+            WHERE id = ? OR google_id = ? OR apple_id = ?`,
+      args: [userPk ?? userId, userId, userId],
+    });
+    return c.json({ success: true });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json(jsonError('AUTH_LOGOUT_FAILED', 'Logout failed'), 500);
+  }
+});
+auth.route('/logout', logout);
 
 export default auth;

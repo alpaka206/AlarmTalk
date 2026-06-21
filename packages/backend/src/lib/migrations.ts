@@ -1205,6 +1205,18 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
     ],
   },
+  {
+    // 토큰 폐기(revocation) / 전 기기 로그아웃 지원 (B5).
+    //  - users.token_epoch: 발급된 앱 JWT 의 유효 세대(epoch). 로그아웃(POST /auth/logout)
+    //    이나 향후 비밀번호 재설정 시 이 값을 +1 한다. authMiddleware 는 JWT 의 epoch
+    //    클레임(기본 0)이 users.token_epoch 보다 작으면 TOKEN_REVOKED(401)로 거부한다.
+    //    이로써 탈취·유출된 기존 토큰을 만료 전에도 즉시 무효화할 수 있다.
+    id: 51,
+    name: 'user-token-epoch',
+    statements: [
+      `ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

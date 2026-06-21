@@ -9,6 +9,7 @@ import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { needsConsent } from '../lib/consent';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -583,6 +584,19 @@ voiceProfile.post('/clone', async (c) => {
   let insertedProfileId: string | null = null;
 
   try {
+    // 생체정보(음성 클론) 별도 동의 필수(B4). 클론된 목소리는 개인을 식별·재현할 수
+    // 있는 생체정보이므로 voice_biometric 동의가 없으면 클로닝을 차단한다.
+    if (await needsConsent(db, userPk, ['voice_biometric'])) {
+      return c.json(
+        {
+          error: 'Voice biometric consent is required to clone a voice.',
+          error_code: 'CONSENT_REQUIRED',
+          consent: 'voice_biometric',
+        },
+        403,
+      );
+    }
+
     if (resolvedUserPk) {
       const userPlan = await db.execute({
         sql: 'SELECT plan FROM users WHERE id = ? OR google_id = ? LIMIT 1',

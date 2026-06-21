@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Env, AppEnv } from './types';
 import { authMiddleware } from './middleware/auth';
+import { consentMiddleware } from './middleware/consent';
 import { loggerMiddleware } from './middleware/logger';
 import { rateLimitMiddleware, authRateLimitMiddleware } from './middleware/rateLimit';
 import { bodyLimitMiddleware } from './middleware/bodyLimit';
@@ -220,6 +221,9 @@ app.route('/api/billing/google', billingGoogleRtdn);
 // 인증이 필요한 라우트들
 const api = new Hono<AppEnv>();
 api.use('*', authMiddleware);
+// 서버측 동의 강제(B4) — authMiddleware 직후에 둬 userIdPK 를 사용한다. 데이터 수집
+// 라우트는 일반 필수 동의가 없으면 403. 면제 경로는 consentMiddleware 내부에서 통과.
+api.use('*', consentMiddleware);
 api.use('*', rateLimitMiddleware);
 api.use('*', async (c, next) => {
   const mw = c.req.method === 'GET' ? privateCache : noStore;

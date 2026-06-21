@@ -1,19 +1,20 @@
 /**
  * 인증 미들웨어. 모든 보호 라우트(`/api/*`)는 이 미들웨어를 통과한다.
  *
- * Firebase 없이 Bearer 토큰을 직접 검증한다. 토큰의 `iss`(발급자)를 보고
- * 세 가지 경로로 분기한다:
- *  - 자체 발급 앱 JWT(APP_JWT_ISSUER)  → verifyAppJwt
- *  - Google ID Token                   → verifyGoogleIdToken
- *  - Apple ID Token                    → verifyAppleIdToken
+ * **앱 JWT 전용(B5).** 과거에는 Google/Apple ID Token 을 Bearer 로 직접 받아
+ * 검증했으나, provider ID 토큰을 그대로 통과시키면 (a) 폐기/로그아웃 불가
+ * (token_epoch 가 없음) (b) audience/만료가 provider 정책에 종속되는 문제가 있다.
+ * 이제 provider 토큰은 오직 /auth/google · /auth/apple 교환 엔드포인트에서만
+ * 쓰이고, 그 외 모든 보호 라우트는 자체 발급 앱 JWT(APP_JWT_ISSUER) 만 받는다.
  *
  * 검증 후 `users` 행을 해석(없으면 즉석 생성)해 `userIdPK`(FK 기준 식별자)를
- * 컨텍스트에 심고, 탈퇴 유예(pending_deletion) 계정은 본인조회/철회 외 API를 막는다.
+ * 컨텍스트에 심고, (1) JWT epoch < users.token_epoch 이면 폐기된 토큰으로 보아
+ * 401(TOKEN_REVOKED), (2) 탈퇴 유예(pending_deletion) 계정은 본인조회/철회 외
+ * API 를 막는다.
  */
 import type { Context, Next } from 'hono';
 import type { AppEnv } from '../types';
-import { verifyAppJwt, APP_JWT_ISSUER } from '../lib/jwt';
-import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
+import { verifyAppJwt } from '../lib/jwt';
 
 interface TokenPayload {
   sub: string;
@@ -23,11 +24,11 @@ interface TokenPayload {
   iss: string;
   aud: string;
   exp: number;
+  epoch: number;
 }
 
 /**
- * Google / Apple ID Token 검증 미들웨어
- * Firebase 없이 직접 검증
+ * 앱 JWT 전용 인증 미들웨어 (provider ID 토큰 직접 수용 제거됨).
  */
 export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -47,34 +48,20 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
   }
 
   try {
-    const payload = decodeJwtPayload(token);
-
-    let verified: TokenPayload;
-
-    if (payload.iss === APP_JWT_ISSUER) {
-      const app = await verifyAppJwt(token, c.env.JWT_SECRET);
-      verified = {
-        sub: app.sub,
-        email: app.email,
-        name: app.name,
-        picture: undefined,
-        iss: app.iss,
-        aud: app.aud,
-        exp: app.exp,
-      };
-    } else if (payload.iss === 'https://appleid.apple.com') {
-      if (!c.env.APPLE_CLIENT_ID) {
-        throw new Error('Apple client ID is not configured');
-      }
-      verified = await verifyAppleIdToken(token, c.env.APPLE_CLIENT_ID);
-    } else if (
-      payload.iss === 'accounts.google.com' ||
-      payload.iss === 'https://accounts.google.com'
-    ) {
-      verified = await verifyGoogleIdToken(token, c.env.GOOGLE_CLIENT_ID);
-    } else {
-      throw new Error('Invalid token issuer');
-    }
+    // 앱 JWT 만 수용한다. provider(Apple/Google) ID 토큰은 여기서 거부되고,
+    // /auth/google·/auth/apple 교환 라우트(authMiddleware 비적용)에서만 처리된다.
+    // verifyAppJwt 가 iss/aud/exp/서명을 모두 검증하며 실패 시 throw → 401.
+    const app = await verifyAppJwt(token, c.env.JWT_SECRET);
+    const verified: TokenPayload = {
+      sub: app.sub,
+      email: app.email,
+      name: app.name,
+      picture: undefined,
+      iss: app.iss,
+      aud: app.aud,
+      exp: app.exp,
+      epoch: app.epoch ?? 0,
+    };
 
     // Legacy convention: most routes still query `WHERE google_id = ?`, so
     // `userId` keeps that meaning (the JWT sub).
@@ -89,36 +76,49 @@ export async function authMiddleware(c: Context<AppEnv>, next: Next) {
     try {
       const { getDB } = await import('../lib/db');
       const db = getDB(c.env);
-      const isApple = verified.iss === 'https://appleid.apple.com';
+      // 앱 JWT 의 sub 은 발급 시점의 loginSub(google_id ?? apple_id ?? id)이므로,
+      // 세 컬럼 모두에 대해 매칭한다. provider 사용자는 /auth 교환 단계에서 이미
+      // 행이 생성돼 있어 아래 fallback INSERT 는 사실상 이메일/레거시 경로의 안전망이다.
       const found = await db.execute({
-        sql: 'SELECT id, deletion_status FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
-        args: [verified.sub, isApple ? verified.sub : null, verified.sub],
+        sql: 'SELECT id, deletion_status, token_epoch FROM users WHERE google_id = ? OR apple_id = ? OR id = ?',
+        args: [verified.sub, verified.sub, verified.sub],
       });
       let pk: string;
       let deletionStatus = 'active';
+      let tokenEpoch = 0;
       if (found.rows.length > 0) {
         pk = String(found.rows[0]!.id);
         deletionStatus = String(found.rows[0]!.deletion_status ?? 'active');
+        tokenEpoch = Number(found.rows[0]!.token_epoch ?? 0);
       } else {
         // 최초 인증 시 users 행을 즉석에서 생성한다. 동일 사용자의 동시 첫 요청이
         // 둘 다 INSERT 를 시도해도 중복키 예외로 죽지 않도록 ON CONFLICT DO NOTHING
         // 으로 멱등화한다. 신규 계정은 id = sub 이므로 경쟁 상황에서도 pk 는 일관된다.
         await db.execute({
-          sql: `INSERT INTO users (id, google_id, apple_id, email, name, picture)
-                VALUES (?, ?, ?, ?, ?, ?)
+          sql: `INSERT INTO users (id, google_id, email, name, picture)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT DO NOTHING`,
           args: [
             verified.sub,
             verified.sub,
-            isApple ? verified.sub : null,
             verified.email || `${verified.sub}@unknown`,
             verified.name || null,
             verified.picture || null,
           ],
         });
         pk = verified.sub;
+        // 갓 만든 행의 token_epoch 는 DEFAULT 0. 토큰 epoch 도 0(또는 그 이상)이라 통과.
       }
       c.set('userIdPK', pk);
+
+      // 토큰 폐기 검사(B5): JWT epoch 가 현재 users.token_epoch 보다 낮으면, 로그아웃
+      // (전 기기) 또는 비밀번호 재설정으로 무효화된 구(舊) 토큰이다. 만료 전이라도 거부.
+      if (verified.epoch < tokenEpoch) {
+        return c.json(
+          { error: 'Token has been revoked', error_code: 'TOKEN_REVOKED' },
+          401,
+        );
+      }
 
       // 탈퇴 유예(pending_deletion) 계정은 본인정보 조회(GET /user/me)와 탈퇴 철회
       // (DELETE /user/me/deletion) 외의 인증 API 사용을 차단한다(개인정보보호법 제21조,
