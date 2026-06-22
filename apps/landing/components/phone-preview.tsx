@@ -1,6 +1,7 @@
 import { ArrowRight, Mic, AlarmClock, ChevronRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BrandMark } from "./brand-mark";
+import { LivingWaveform } from "./motion/living-waveform";
 
 const WAVEFORM = [
   0.18, 0.24, 0.16, 0.34, 0.28, 0.52, 0.38, 0.7, 0.42, 0.6, 0.32, 0.56, 0.24,
@@ -9,9 +10,9 @@ const WAVEFORM = [
   0.28,
 ];
 
-// Phone screen keeps the app's native dark UI (a real product shot), recolored
-// to the brand coral so it reads as one family with the warm light page.
-const CORAL = "#ec8c6c";
+// Phone screen mirrors the app's native dark UI, tinted to the brand blue so it
+// reads as one family with the light page (matches the native app's accent).
+const ACCENT = "#6ba8f0";
 const SAGE = "#8fbf9e";
 const SCREEN_TEXT = "#f7f4ee";
 const SCREEN_MUTED = "#b0a89c";
@@ -26,7 +27,7 @@ export function PhonePreview() {
       {/* warm glow behind device */}
       <div
         aria-hidden="true"
-        className="absolute -inset-x-12 -top-10 -bottom-6 -z-10 rounded-[60px] bg-[radial-gradient(circle_at_50%_30%,rgba(217,119,87,0.20),transparent_60%)] blur-2xl"
+        className="absolute -inset-x-12 -top-10 -bottom-6 -z-10 rounded-[60px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.20),transparent_60%)] blur-2xl"
       />
 
       {/* device bezel — 9:19.5 portrait */}
@@ -80,19 +81,20 @@ export function PhonePreview() {
                 07:30
               </p>
 
-              {/* mini waveform */}
-              <div className="mt-4 flex h-[28px] items-center justify-between gap-[1.5px]">
-                {WAVEFORM.map((level, i) => (
-                  <span
-                    key={i}
-                    className="block w-[1.5px] rounded-full"
-                    style={{
-                      height: `${5 + level * 22}px`,
-                      backgroundColor: CORAL,
-                      opacity: 0.45 + level * 0.55,
-                    }}
-                  />
-                ))}
+              {/* mini waveform — the signature, now quietly breathing */}
+              <div className="mt-4 h-[28px]">
+                <LivingWaveform
+                  bars={WAVEFORM}
+                  mode="breathe"
+                  color={ACCENT}
+                  barWidth={1.5}
+                  gapPx={1.5}
+                  minPx={5}
+                  spanPx={22}
+                  amplitude={0.12}
+                  opacityBase={0.45}
+                  opacityScale={0.55}
+                />
               </div>
 
               <div className="mt-4 flex items-center justify-between">
@@ -104,7 +106,7 @@ export function PhonePreview() {
                     {t("alarmEdit")}
                   </p>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: CORAL }} />
+                <ArrowRight className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} />
               </div>
             </div>
 
@@ -118,14 +120,14 @@ export function PhonePreview() {
               <QuickCard
                 icon={<Mic className="h-3.5 w-3.5" strokeWidth={2.2} />}
                 label={t("quickVoice")}
-                accentBg="#3a2a22"
-                accentFg="#f4d8c9"
+                accentBg="#16304d"
+                accentFg="#cfe3ff"
               />
               <QuickCard
                 icon={<AlarmClock className="h-3.5 w-3.5" strokeWidth={2.2} />}
                 label={t("quickAlarm")}
-                accentBg="#33291c"
-                accentFg="#f2e2c4"
+                accentBg="#1b3147"
+                accentFg="#d4e6ff"
               />
             </div>
 
@@ -172,7 +174,7 @@ export function PhonePreview() {
                 >
                   <span
                     className="block h-1 w-1 rounded-full"
-                    style={{ backgroundColor: tab.active ? CORAL : "transparent" }}
+                    style={{ backgroundColor: tab.active ? ACCENT : "transparent" }}
                   />
                   <span
                     className="whitespace-nowrap text-[9.5px] font-semibold"
