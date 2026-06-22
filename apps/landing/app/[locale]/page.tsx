@@ -9,9 +9,7 @@ import {
   LanguageVisual,
 } from "@/components/sections/feature-visuals";
 import { Scenarios } from "@/components/sections/scenarios";
-import { Quotes } from "@/components/sections/quotes";
 import { Faq } from "@/components/sections/faq";
-import { Waitlist } from "@/components/sections/waitlist";
 import { SiteFooter } from "@/components/sections/site-footer";
 import { SITE_NAME, STORE_LINKS, localeUrl } from "@/lib/site";
 
@@ -86,9 +84,7 @@ export default async function HomePage({
         />
         <FeatureSection namespace="language" visual={<LanguageVisual />} />
         <Scenarios />
-        <Quotes />
         <Faq />
-        <Waitlist />
       </main>
       <SiteFooter />
     </>

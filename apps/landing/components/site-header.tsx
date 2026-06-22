@@ -5,7 +5,6 @@ import { motion, useTransform } from "motion/react";
 import { Link } from "@/i18n/navigation";
 import { BrandMark } from "./brand-mark";
 import { MobileMenu } from "./mobile-menu";
-import { Magnetic } from "./motion/magnetic";
 import { useScrollProgress } from "./motion/use-scroll-progress";
 
 export function SiteHeader() {
@@ -30,7 +29,7 @@ export function SiteHeader() {
       />
       {/* faint static hairline */}
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-line to-transparent" />
-      {/* coral voice-spine — page scroll progress; resolves at the Waitlist */}
+      {/* coral voice-spine — tracks page scroll progress */}
       <motion.div
         aria-hidden="true"
         className="absolute inset-x-0 bottom-0 h-px origin-left bg-accent"
@@ -83,13 +82,6 @@ export function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <div className="hidden sm:block">
-            <Magnetic>
-              <Link href="/#waitlist" className="btn btn-primary btn-sm">
-                {t("cta")}
-              </Link>
-            </Magnetic>
-          </div>
           <MobileMenu />
         </div>
       </div>

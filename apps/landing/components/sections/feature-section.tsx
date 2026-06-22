@@ -24,18 +24,12 @@ export function FeatureSection({ namespace, reverse, visual, id }: Props) {
           <div className={`${reverse ? "lg:[direction:ltr]" : ""}`}>
             <RevealGroup stagger={0.08}>
               <RevealItem
-                as="span"
-                className="inline-flex w-fit whitespace-nowrap rounded-full border border-accent/25 bg-accent-soft px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-[0.12em] text-accent"
-              >
-                {t("eyebrow")}
-              </RevealItem>
-              <RevealItem
                 as="h2"
-                className="mt-5 text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
+                className="text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
               >
                 {t("headline1")}
                 <br />
-                <span className="text-text">{t("headline2")}</span>
+                {t("headline2")}
               </RevealItem>
               <RevealItem
                 as="p"

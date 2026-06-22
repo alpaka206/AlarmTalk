@@ -25,7 +25,7 @@ export function Trust() {
       <div className="mx-auto max-w-6xl px-5 py-16 md:px-8 lg:py-20">
         <Reveal
           as="h2"
-          className="max-w-2xl text-[28px] font-bold leading-[1.18] tracking-[-0.02em] text-text sm:text-[36px]"
+          className="max-w-2xl whitespace-pre-line text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
         >
           {t("headline")}
         </Reveal>
