@@ -1,7 +1,18 @@
 import { Mic, Heart, Languages, Send, ArrowRight } from "lucide-react";
+import { Reveal } from "../motion/reveal";
+import { RevealGroup, RevealItem } from "../motion/reveal-group";
+import { LivingWaveform } from "../motion/living-waveform";
 
 const CARD =
   "rounded-[28px] border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
+
+// 48-bar recording waveform; bars 0..31 are the "played" (coral) portion.
+const VOICE_BARS = [
+  0.2, 0.3, 0.5, 0.4, 0.7, 0.55, 0.85, 0.45, 0.6, 0.8, 0.4, 0.55, 0.75, 0.5,
+  0.35, 0.65, 0.9, 0.6, 0.45, 0.7, 0.5, 0.85, 0.55, 0.4, 0.7, 0.6, 0.45, 0.8,
+  0.35, 0.55, 0.7, 0.5, 0.85, 0.4, 0.6, 0.75, 0.45, 0.65, 0.5, 0.4, 0.6, 0.8,
+  0.45, 0.55, 0.7, 0.5, 0.35, 0.55,
+];
 
 // Visual for "voice" — recording UI
 export function VoiceVisual() {
@@ -18,30 +29,22 @@ export function VoiceVisual() {
             00:08
           </span>
         </div>
-        <div className="mt-6 grid h-16 grid-cols-[repeat(48,_minmax(0,1fr))] items-center gap-[2px]">
-          {Array.from({ length: 48 }).map((_, i) => {
-            const heights = [
-              0.2, 0.3, 0.5, 0.4, 0.7, 0.55, 0.85, 0.45, 0.6, 0.8, 0.4, 0.55,
-              0.75, 0.5, 0.35, 0.65, 0.9, 0.6, 0.45, 0.7, 0.5, 0.85, 0.55, 0.4,
-              0.7, 0.6, 0.45, 0.8, 0.35, 0.55, 0.7, 0.5, 0.85, 0.4, 0.6, 0.75,
-              0.45, 0.65, 0.5, 0.4, 0.6, 0.8, 0.45, 0.55, 0.7, 0.5, 0.35, 0.55,
-            ];
-            const h = heights[i] ?? 0.4;
-            const played = i < 32;
-            return (
-              <span
-                key={i}
-                className="block w-full rounded-full"
-                style={{
-                  height: `${h * 100}%`,
-                  backgroundColor: played
-                    ? "var(--color-accent)"
-                    : "var(--color-line)",
-                  opacity: played ? 0.9 : 1,
-                }}
-              />
-            );
-          })}
+        {/* the signature playback sweep */}
+        <div className="mt-6 h-16">
+          <LivingWaveform
+            bars={VOICE_BARS}
+            mode="playOnce"
+            playedTo={32}
+            color="var(--color-accent)"
+            restColor="var(--color-line)"
+            barWidth="flex"
+            gapPx={2}
+            minPx={2}
+            spanPx={62}
+            align="end"
+            activeOpacity={0.9}
+            restOpacity={1}
+          />
         </div>
         <div className="mt-6 flex items-center justify-between">
           <span className="text-[12.5px] text-text-muted">&ldquo;늦지 않게 일어나자.&rdquo;</span>
@@ -75,9 +78,9 @@ export function SharedVisual() {
             가족 공유
           </span>
         </div>
-        <div className="mt-5 space-y-2.5">
+        <RevealGroup className="mt-5 space-y-2.5" stagger={0.08} delay={0.1}>
           {profiles.map((p) => (
-            <div
+            <RevealItem
               key={p.name}
               className="flex items-center gap-3 rounded-2xl border border-line bg-raised p-3.5"
             >
@@ -94,9 +97,9 @@ export function SharedVisual() {
                 <p className="truncate text-[11px] text-text-muted">{p.from}</p>
               </div>
               <ArrowRight className="h-4 w-4 shrink-0 text-text-dim" />
-            </div>
+            </RevealItem>
           ))}
-        </div>
+        </RevealGroup>
       </div>
     </div>
   );
@@ -116,12 +119,22 @@ export function LanguageVisual() {
           <span className="inline-flex h-6 items-center rounded-full bg-accent-soft px-2 text-[10.5px] font-bold uppercase tracking-wider text-accent">
             EN · 원어민 발음
           </span>
-          <p className="mt-3 text-[15px] font-semibold text-text">
+          {/* transcript "plays" left-to-right, then the source line fades in */}
+          <Reveal
+            as="p"
+            variant="wipe"
+            delay={0.15}
+            className="mt-3 text-[15px] font-semibold text-text"
+          >
             &ldquo;Don&rsquo;t oversleep — today matters.&rdquo;
-          </p>
-          <p className="mt-2 text-[12px] text-text-muted">
+          </Reveal>
+          <Reveal
+            as="p"
+            delay={0.55}
+            className="mt-2 text-[12px] text-text-muted"
+          >
             늦잠 자지 마. 오늘이 중요한 날이야.
-          </p>
+          </Reveal>
         </div>
         <div className="mt-3 flex items-center justify-between rounded-2xl border border-line bg-raised p-3.5">
           <div>

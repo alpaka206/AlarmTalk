@@ -1,6 +1,7 @@
 import { ArrowRight, Mic, AlarmClock, ChevronRight } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BrandMark } from "./brand-mark";
+import { LivingWaveform } from "./motion/living-waveform";
 
 const WAVEFORM = [
   0.18, 0.24, 0.16, 0.34, 0.28, 0.52, 0.38, 0.7, 0.42, 0.6, 0.32, 0.56, 0.24,
@@ -80,19 +81,20 @@ export function PhonePreview() {
                 07:30
               </p>
 
-              {/* mini waveform */}
-              <div className="mt-4 flex h-[28px] items-center justify-between gap-[1.5px]">
-                {WAVEFORM.map((level, i) => (
-                  <span
-                    key={i}
-                    className="block w-[1.5px] rounded-full"
-                    style={{
-                      height: `${5 + level * 22}px`,
-                      backgroundColor: CORAL,
-                      opacity: 0.45 + level * 0.55,
-                    }}
-                  />
-                ))}
+              {/* mini waveform — the signature, now quietly breathing */}
+              <div className="mt-4 h-[28px]">
+                <LivingWaveform
+                  bars={WAVEFORM}
+                  mode="breathe"
+                  color={CORAL}
+                  barWidth={1.5}
+                  gapPx={1.5}
+                  minPx={5}
+                  spanPx={22}
+                  amplitude={0.12}
+                  opacityBase={0.45}
+                  opacityScale={0.55}
+                />
               </div>
 
               <div className="mt-4 flex items-center justify-between">
