@@ -33,26 +33,30 @@ export function StoreBadges() {
   const href = STORE_LINKS.googlePlay;
   const live = href !== "#";
 
+  // 텍스트는 aria-hidden 처리하고 접근형 이름은 링크/배지의 aria-label 한 줄로 노출한다.
+  // (검은 배경 위 흰색 텍스트 — WCAG 1.4.3 AA 대비 충분.)
   const inner = (
-    <>
+    <span aria-hidden="true" className="flex items-center gap-3">
       <GooglePlayGlyph />
       <span className="flex flex-col leading-tight">
-        <span className="text-[10px] uppercase tracking-wider text-text-faint">
+        <span className="text-[10px] uppercase tracking-wider text-white/70">
           {live ? t("googlePlayEyebrow") : t("comingSoonEyebrow")}
         </span>
-        <span className="text-[15px] font-semibold text-text">
+        <span className="text-[15px] font-semibold text-white">
           {t("googlePlayLabel")}
         </span>
       </span>
-    </>
+    </span>
   );
 
   // 정식 출시 전(URL 미설정)에는 죽은 링크 대신 정직한 '곧 출시' 상태로 노출한다.
+  // role="img" + aria-label 이라야 비대화형 배지도 스크린리더가 한 번에 읽는다.
   if (!live) {
     return (
       <span
+        role="img"
         aria-label={t("comingSoonAria")}
-        className="inline-flex w-fit cursor-default items-center gap-3 rounded-2xl border border-dashed border-line bg-surface/50 px-5 py-3"
+        className="inline-flex w-fit cursor-default items-center gap-3 rounded-[8px] bg-black/80 px-5 py-3"
       >
         {inner}
       </span>
@@ -63,7 +67,7 @@ export function StoreBadges() {
     <a
       href={href}
       aria-label={t("googlePlayAria")}
-      className="group inline-flex w-fit items-center gap-3 rounded-2xl border border-line bg-surface px-5 py-3 transition hover:border-line/0 hover:bg-raised"
+      className="group inline-flex w-fit items-center gap-3 rounded-[8px] bg-black px-5 py-3 transition hover:bg-neutral-800"
     >
       {inner}
     </a>

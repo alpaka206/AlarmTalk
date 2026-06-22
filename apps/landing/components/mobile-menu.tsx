@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { LocaleSwitcher } from "./locale-switcher";
+import { StoreBadges } from "./store-badges";
 
 export function MobileMenu() {
   const t = useTranslations("nav");
@@ -90,13 +91,7 @@ export function MobileMenu() {
 
           <div className="mt-auto flex flex-col gap-4 border-t border-line px-5 py-6">
             <LocaleSwitcher />
-            <Link
-              href="/#waitlist"
-              onClick={() => setOpen(false)}
-              className="btn btn-primary w-full"
-            >
-              {t("cta")}
-            </Link>
+            <StoreBadges />
           </div>
         </div>
       )}

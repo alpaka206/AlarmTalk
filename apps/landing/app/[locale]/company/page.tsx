@@ -7,6 +7,7 @@ import { hasLocale } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
+import { StoreBadges } from "@/components/store-badges";
 import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
 
 export function generateStaticParams() {
@@ -228,9 +229,7 @@ function CompanyCta() {
             {t("body")}
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/#waitlist" className="btn btn-primary">
-              {t("primary")}
-            </Link>
+            <StoreBadges />
             <Link href="/contact" className="btn btn-secondary">
               {t("secondary")}
             </Link>
