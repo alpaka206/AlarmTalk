@@ -28,10 +28,10 @@
   "dependencies": {
     "@alarmtalk/shared": "*",
     "@alarmtalk/voice": "*",
-    "@libsql/client": "^0.17.3",
+    "@libsql/client": "^0.17.4",
     "bcryptjs": "^3.0.3",
     "date-holidays": "^3.30.2",
-    "hono": "^4.12.25",
+    "hono": "^4.12.26",
     "toucan-js": "^4.1.1"
   }
 }
