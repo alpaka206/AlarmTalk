@@ -31,14 +31,14 @@
   --color-text-dim: #8a8377;
   --color-text-faint: #aaa395;
 
-  /* accent — Claude coral / clay */
-  --color-accent: #d97757;
-  --color-accent-strong: #c25d3a;
-  --color-accent-soft: rgba(217, 119, 87, 0.1);
-  --color-accent-fg: #2a1206;
+  /* accent — brand blue, unified with the native apps (#175FB0) */
+  --color-accent: #175fb0;
+  --color-accent-strong: #124e8c;
+  --color-accent-soft: rgba(23, 95, 176, 0.1);
+  --color-accent-fg: #06243c;
   --color-mint: #5e9b7d;
   --color-rose: #db7e63;
-  --color-indigo-deep: #f0e4da;
+  --color-indigo-deep: #d6e9ff;
 
   /* typography */
   --font-sans:
@@ -122,8 +122,8 @@
   .bg-aurora {
     background-color: var(--color-bg);
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(217, 119, 87, 0.1), transparent 60%),
-      radial-gradient(ellipse 60% 45% at 100% 0%, rgba(217, 119, 87, 0.06), transparent 55%),
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(23, 95, 176, 0.1), transparent 60%),
+      radial-gradient(ellipse 60% 45% at 100% 0%, rgba(23, 95, 176, 0.06), transparent 55%),
       radial-gradient(ellipse 55% 40% at 0% 25%, rgba(94, 155, 125, 0.05), transparent 55%);
   }
 
@@ -179,7 +179,7 @@
     height: 52px;
     padding: 0 1.75rem;
     font-size: 15px;
-    box-shadow: 0 1px 2px rgba(120, 60, 35, 0.18), 0 8px 24px rgba(217, 119, 87, 0.22);
+    box-shadow: 0 1px 2px rgba(15, 50, 90, 0.18), 0 8px 24px rgba(23, 95, 176, 0.22);
   }
   .btn-primary:hover {
     background: var(--color-accent-strong);

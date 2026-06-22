@@ -41,7 +41,7 @@ export default async function OpengraphImage() {
           padding: "64px",
           backgroundColor: "#FAF9F5",
           backgroundImage:
-            "radial-gradient(circle at 14% 22%, rgba(217,119,87,0.16), transparent 44%), radial-gradient(circle at 88% 24%, rgba(94,155,125,0.12), transparent 46%)",
+            "radial-gradient(circle at 14% 22%, rgba(23,95,176,0.16), transparent 44%), radial-gradient(circle at 88% 24%, rgba(94,155,125,0.12), transparent 46%)",
           color: "#1F1E1C",
           fontFamily: "system-ui, -apple-system, sans-serif",
         }}
@@ -91,7 +91,7 @@ export default async function OpengraphImage() {
               }}
             >
               <span>you</span>
-              <span style={{ color: "#c25d3a" }}>love</span>
+              <span style={{ color: "#175fb0" }}>love</span>
               <span>.</span>
             </div>
             <div

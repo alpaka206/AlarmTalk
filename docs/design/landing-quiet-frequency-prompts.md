@@ -2,7 +2,9 @@
 
 스크롤 구동 모션 라이브러리(animmasterlib / reactbits / Aceternity / Magic UI / Motion Primitives / Framer Motion)를 참고해, 기존 "Claude paper" 브랜드에 맞춰 재사용한 프롬프트 9종. 실제 구현(`apps/landing`)을 이 프롬프트들이 구동했다. 새 컴포넌트를 추가하거나 다른 프로젝트에 이식할 때 그대로 재사용 가능.
 
-공통 제약(모든 프롬프트에 적용): Next.js 16 App Router · React 19 · Tailwind v4 · next-intl(ko/en/ja) · 정적 export(`output:'export'`, 클라이언트 모션만) · SEO/JSON-LD/hreflang 무손상 · `prefers-reduced-motion` 폴백 필수 · 새 i18n 키 금지(기존 키 재사용) · transform/opacity/clip-path/filter만 애니메이트 · coral `#d97757`는 유일한 채도색.
+공통 제약(모든 프롬프트에 적용): Next.js 16 App Router · React 19 · Tailwind v4 · next-intl(ko/en/ja) · 정적 export(`output:'export'`, 클라이언트 모션만) · SEO/JSON-LD/hreflang 무손상 · `prefers-reduced-motion` 폴백 필수 · 새 i18n 키 금지(기존 키 재사용) · transform/opacity/clip-path/filter만 애니메이트 · 브랜드 액센트는 `var(--color-accent)`(블루 #175FB0, 네이티브 앱과 통일) 단일 채도색.
+
+> 참고: 브랜드 색은 **블루(#175FB0)** 로 통일됨. 아래 프롬프트 본문의 코랄(#d97757/#ec8c6c) 하드코딩 언급은 작성 당시 값으로, 현재 구현은 토큰 `var(--color-accent)`(=블루)을 따른다.
 
 ---
 

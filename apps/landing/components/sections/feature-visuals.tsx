@@ -18,7 +18,7 @@ const VOICE_BARS = [
 export function VoiceVisual() {
   return (
     <div className="relative w-full max-w-[420px]">
-      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(217,119,87,0.12),transparent_60%)] blur-2xl" />
+      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.12),transparent_60%)] blur-2xl" />
       <div className={CARD}>
         <div className="flex items-center justify-between">
           <span className="whitespace-nowrap text-[12px] font-semibold uppercase tracking-[0.12em] text-text-muted">
@@ -50,7 +50,7 @@ export function VoiceVisual() {
           <span className="text-[12.5px] text-text-muted">&ldquo;늦지 않게 일어나자.&rdquo;</span>
           <button
             type="button"
-            className="grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-[0_8px_20px_rgba(217,119,87,0.28)]"
+            className="grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-[0_8px_20px_rgba(23,95,176,0.28)]"
           >
             <Mic className="h-5 w-5" strokeWidth={2.2} />
           </button>
@@ -63,13 +63,13 @@ export function VoiceVisual() {
 // Visual for "shared" — voice library cards
 export function SharedVisual() {
   const profiles = [
-    { name: "엄마", from: "공유 받음 · 7일 전", color: "#db7e63" },
+    { name: "엄마", from: "공유 받음 · 7일 전", color: "#5e8fbf" },
     { name: "지수 (커플)", from: "공유 받음 · 어제", color: "#7fb096" },
     { name: "친구 민준", from: "공유 받음 · 3일 전", color: "#e0b15e" },
   ];
   return (
     <div className="relative w-full max-w-[420px]">
-      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(217,119,87,0.1),transparent_60%)] blur-2xl" />
+      <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.1),transparent_60%)] blur-2xl" />
       <div className={CARD}>
         <div className="flex items-center justify-between">
           <span className="text-[16px] font-bold text-text">공유 음성</span>
