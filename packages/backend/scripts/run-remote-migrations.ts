@@ -83,14 +83,13 @@ async function main(): Promise<void> {
     throw new Error('--from must be less than or equal to --to');
   }
 
-  const headers: Record<string, string> = {};
-  if (envName === 'production') {
-    const secret = process.env.INIT_DB_SECRET?.trim();
-    if (!secret) {
-      throw new Error('INIT_DB_SECRET is required for production migrations.');
-    }
-    headers['x-init-db-secret'] = secret;
+  // /api/init-db 는 모든 환경에서 x-init-db-secret 헤더를 요구한다(index.ts canRunInitDb).
+  // dev·production 모두 동일하게 INIT_DB_SECRET 을 보낸다 — 없으면 404 로 조용히 실패한다.
+  const secret = process.env.INIT_DB_SECRET?.trim();
+  if (!secret) {
+    throw new Error(`INIT_DB_SECRET is required for ${envName} migrations.`);
   }
+  const headers: Record<string, string> = { 'x-init-db-secret': secret };
 
   for (let id = from; id <= to; id += 1) {
     const url = `${baseUrl}/api/init-db?fromId=${id}&toId=${id}`;

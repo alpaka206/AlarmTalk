@@ -41,6 +41,8 @@ jobs:
 
       - name: Run dev DB migrations
         if: github.ref_name == 'develop'
+        env:
+          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET }}
         run: npm run migrate:dev
 
       - name: Deploy production to Cloudflare Workers
