@@ -20,7 +20,7 @@ export function planTypeToUserPlan(planType: string): 'free' | 'plus' | 'family'
  * 매핑 규칙 (월간만 판매 — 연간 SKU 는 제거됨):
  *   - `*_personal_monthly` → plans.key='personal'  (개인)
  *   - `*_couple_monthly`   → plans.key='couple'    (커플 — family plan_type, max_members=2)
- *   - `*_family_monthly`   → plans.key='family'    (가족 — family plan_type, max_members=6)
+ *   - `*_family_monthly`   → plans.key='family'    (가족 — family plan_type, max_members=5)
  *
  * 알려지지 않은 productID 는 null. 호출자가 400 응답을 내야 함.
  */

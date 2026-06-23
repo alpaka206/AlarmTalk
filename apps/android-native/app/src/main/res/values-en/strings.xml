@@ -95,13 +95,13 @@
     <string name="billing_plan_couple_feature_message">Messages</string>
     <string name="billing_plan_couple_feature_voice_share">Voice sharing</string>
     <string name="billing_plan_couple_name">Couple</string>
-    <string name="billing_plan_couple_price">$7.90/mo</string>
+    <string name="billing_plan_couple_price">$6.90/mo</string>
     <string name="billing_plan_family_description">Share voice alarms with your whole family.</string>
-    <string name="billing_plan_family_feature_max_six">Up to 6 people</string>
+    <string name="billing_plan_family_feature_max_six">Up to 5 people</string>
     <string name="billing_plan_family_feature_message">Messages</string>
     <string name="billing_plan_family_feature_voice_share">Voice sharing</string>
     <string name="billing_plan_family_name">Family</string>
-    <string name="billing_plan_family_price">$9.90/mo</string>
+    <string name="billing_plan_family_price">$14.90/mo</string>
     <string name="billing_plan_free_description">Try out the basic alarm first.</string>
     <string name="billing_plan_free_feature_basic_alarm">Standard alarm</string>
     <string name="billing_plan_free_feature_basic_growth">Basic character growth</string>
@@ -112,7 +112,7 @@
     <string name="billing_plan_personal_feature_voice">Voice</string>
     <string name="billing_plan_personal_feature_voice_message">Voice message</string>
     <string name="billing_plan_personal_name">Personal</string>
-    <string name="billing_plan_personal_price">$4.90/mo</string>
+    <string name="billing_plan_personal_price">$3.90/mo</string>
     <string name="billing_plan_select_title">Choose a pass</string>
     <string name="billing_play_purchase_description">Start your subscription with Google Play. You can review the price and renewal cycle on the payment screen.</string>
     <string name="billing_play_purchase_title">Subscribe to %1$s pass</string>

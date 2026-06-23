@@ -1217,6 +1217,20 @@ export const migrations: Migration[] = [
       `ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    // 가격정책 + 가족 정원 6→5인. (근거: 루트 PRICING.md)
+    //  - personal ₩3,900 / couple ₩6,900 / family ₩14,900 (저가 전환형, 사용량 과금 전제)
+    //  - family.max_members 6→5: 신규 가족 그룹부터 5인 정원 (store-billing/billing-mutation 이
+    //    plan_groups 생성 시 plan.max_members 를 복사). 기존 plan_groups 는 grandfathering(정원 유지).
+    //  - 가족 초대 바우처 maxUses 는 plannedMaxUses = max(1, max_members-1) 이라 자동 4로 조정.
+    id: 52,
+    name: 'plan-prices-and-family-5',
+    statements: [
+      `UPDATE plans SET price_krw = 3900 WHERE key = 'personal'`,
+      `UPDATE plans SET price_krw = 6900 WHERE key = 'couple'`,
+      `UPDATE plans SET price_krw = 14900, max_members = 5 WHERE key = 'family'`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
