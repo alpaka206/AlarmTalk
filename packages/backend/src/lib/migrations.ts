@@ -1221,7 +1221,10 @@ export const migrations: Migration[] = [
     // 가격정책 + 가족 정원 6→5인. (근거: 루트 PRICING.md)
     //  - personal ₩3,900 / couple ₩6,900 / family ₩14,900 (저가 전환형, 사용량 과금 전제)
     //  - family.max_members 6→5: 신규 가족 그룹부터 5인 정원 (store-billing/billing-mutation 이
-    //    plan_groups 생성 시 plan.max_members 를 복사). 기존 plan_groups 는 grandfathering(정원 유지).
+    //    plan_groups 생성 시 plan.max_members 를 복사). plan_groups 는 생성 시점 스냅샷이라 이미 만들어진
+    //    그룹은 값이 유지되지만, 출시 전 prod DB 초기화 예정이므로 6인 그룹은 실제로 존재하지 않음
+    //    (= grandfather 대상 없음). 따라서 /billing/subscription 이 plans.max_members(=5)를 그대로 노출해도
+    //    그룹 정원과 어긋나지 않음.
     //  - 가족 초대 바우처 maxUses 는 plannedMaxUses = max(1, max_members-1) 이라 자동 4로 조정.
     id: 52,
     name: 'plan-prices-and-family-5',

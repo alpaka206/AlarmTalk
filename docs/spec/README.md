@@ -66,7 +66,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | ID | Requirement | P | Status |
 |---|---|---|---|
 | FR-5.1 | Friend request by email, accept/decline/delete | P1 | ✅ |
-| FR-5.2 | Family / couple group creation, max 6 members | P0 | ✅ |
+| FR-5.2 | Family / couple group creation, max 5 members | P0 | ✅ |
 | FR-5.3 | 6-digit invite code (10-minute TTL, single-use) | P0 | ✅ |
 | FR-5.4 | Code entry → group join / leave / forced removal | P0 | ✅ |
 | FR-5.5 | Ownership transfer (owner-only) | P1 | ✅ |

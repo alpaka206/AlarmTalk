@@ -37,7 +37,7 @@
 | `family` (가족) | `family_monthly` | family | **5** | **₩14,900** |
 
 > ✅ **가격(저가 전환형) + 가족 5인이 코드/DB에 반영됨**(마이그레이션 `#52 plan-prices-and-family-5`, `migrations.ts`). 근거·수익률은 `PRICING.md`.
-> 기존 가족 그룹은 정원 6인으로 grandfathering(유지), **신규** 가족 그룹부터 5인 적용.
+> **신규** 가족 그룹부터 5인 정원 적용. (plan_groups 는 생성 시점 스냅샷이지만, 출시 전 prod DB 초기화 예정이라 기존 6인 그룹은 없음 — grandfather 대상 없음.)
 > Play Console 상품 가격도 위 표에 맞춰 설정하면 된다.
 
 이 매핑이 정의된 곳 (변경 시 **3곳을 같이** 맞춰야 한다 — 의도된 다중 진실 공급원, 서로 주석으로 교차참조됨):

@@ -41,7 +41,7 @@ AlarmTalk replaces beep-style mechanical alarms with a voice the user picked —
 | Free | Individual trial | 1 voice profile, 5 TTS/day |
 | Personal | Individual | 2 voice profiles, 30 TTS/day |
 | Couple | 2 people | Voice sharing, 2 members |
-| Family | Family | Voice sharing, up to 6 members |
+| Family | Family | Voice sharing, up to 5 members |
 
 Exact pricing will be set after PSM (Price Sensitivity Meter) research with target users. Until then, treat any price number as a placeholder.
 

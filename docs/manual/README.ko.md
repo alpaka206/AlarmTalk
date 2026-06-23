@@ -87,7 +87,7 @@
 
 - **Free**: 음성 프로필 1개, TTS 일 5회.
 - **Personal**: 음성 프로필 2개, TTS 일 30회.
-- **Couple / Family**: 음성 공유, 2~6명.
+- **Couple / Family**: 음성 공유, 2~5명.
 
 ### 코드
 

@@ -87,7 +87,7 @@ The Account tab shows the current permission state and links straight to the sys
 
 - **Free**: 1 voice profile, 5 TTS / day.
 - **Personal**: 2 voice profiles, 30 TTS / day.
-- **Couple / Family**: voice sharing for 2–6 members.
+- **Couple / Family**: voice sharing for 2–5 members.
 
 ### Codes
 
