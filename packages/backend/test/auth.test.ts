@@ -124,8 +124,8 @@ describe('POST /auth/email-code', () => {
     expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
-  it('이미 가입된 이메일에도 동일한 성공 응답을 반환한다(회원 여부 비노출)', async () => {
-    mockDB.pushResult([{ id: 'u-1' }]);
+  it('이미 가입된 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]);
 
     const app = buildApp();
     const res = await app.request(
@@ -134,13 +134,29 @@ describe('POST /auth/email-code', () => {
       ENV,
     );
 
-    // 계정 열거 방지: 409/AUTH_EMAIL_TAKEN 대신 신규 이메일과 동일한 성공 응답.
-    expect(res.status).toBe(200);
+    // 중복 이메일이면 회원가입을 막고 로그인으로 안내한다.
+    expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.error_code).toBeUndefined();
-    // 코드를 발송/삽입하지 않으므로 debug_code 도 없다.
-    expect(body.debug_code).toBeUndefined();
+    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+    // 코드를 발송/삽입하지 않는다.
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('이미 소셜로 가입된 이메일은 409 AUTH_EMAIL_SOCIAL(+provider)로 안내한다', async () => {
+    mockDB.pushResult([{ password_hash: null, apple_id: null }]); // 비번 없음 → google 소셜
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'social@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_SOCIAL');
+    expect(body.provider).toBe('google');
     const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
     expect(insertCall).toBeUndefined();
   });
@@ -256,9 +272,9 @@ describe('POST /auth/register', () => {
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
-  it('중복 이메일은 회원 여부를 노출하지 않고 generic 코드 무효 응답을 반환한다', async () => {
+  it('중복 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {
     await pushValidEmailVerification('kim@test.com'); // 코드 검증 통과
-    mockDB.pushResult([{ id: 'u-1' }]); // 기존 이메일 존재
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // 기존 비번 계정
 
     const app = buildApp();
     const res = await app.request(
@@ -266,10 +282,10 @@ describe('POST /auth/register', () => {
       undefined,
       ENV,
     );
-    // 계정 열거 방지: 409/AUTH_EMAIL_TAKEN 대신 generic AUTH_EMAIL_CODE_INVALID(400).
-    expect(res.status).toBe(400);
+    // 중복 이메일이면 회원가입을 막고 로그인으로 안내한다.
+    expect(res.status).toBe(409);
     const body = await res.json();
-    expect(body.error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+    expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
     const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall).toBeUndefined();
   });

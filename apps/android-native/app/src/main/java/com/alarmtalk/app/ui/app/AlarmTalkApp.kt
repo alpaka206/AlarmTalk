@@ -65,6 +65,14 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val selectedTab = currentTab ?: NativeTab.Home
     var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
     var authRoute by remember { mutableStateOf<AuthRoute>(AuthRoute.Landing) }
+    // 회원가입 시도 이메일이 이미 가입돼 있으면(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환한다.
+    // 입력한 이메일은 AuthScreen 의 remember 상태로 유지되므로 다시 입력할 필요가 없다.
+    LaunchedEffect(viewModel.authRedirectToLogin) {
+        if (viewModel.authRedirectToLogin) {
+            authRoute = AuthRoute.Auth(AuthMode.Login)
+            viewModel.authRedirectToLogin = false
+        }
+    }
     val themeMode = viewModel.themeMode
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionRouteKey = authSession?.user?.id

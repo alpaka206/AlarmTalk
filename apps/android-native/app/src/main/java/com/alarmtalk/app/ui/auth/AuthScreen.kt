@@ -72,7 +72,12 @@ internal fun AuthScreen(
     val emailLooksValid = Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()
     val passwordAtLeastMin = password.length >= 8
     val passwordUnderMax = password.length <= 128
-    val passwordLengthValid = passwordAtLeastMin && passwordUnderMax
+    val passwordHasLetter = password.any { it.isLetter() }
+    val passwordHasDigit = password.any { it.isDigit() }
+    val passwordHasLetterAndDigit = passwordHasLetter && passwordHasDigit
+    // 서버 정책(@alarmtalk/shared PasswordSchema)과 일치: 8~128자 + 영문·숫자 각 1자 이상.
+    val passwordPolicyValid =
+        passwordAtLeastMin && passwordUnderMax && passwordHasLetterAndDigit
     val passwordMatches = password.isNotBlank() && password == confirmPassword
     val isEmailVerified = mode == AuthMode.Login || emailVerified == normalizedEmail
     val codeSentForEmail = emailVerificationSentTo == normalizedEmail
@@ -82,7 +87,7 @@ internal fun AuthScreen(
         name.isNotBlank() &&
             emailLooksValid &&
             isEmailVerified &&
-            passwordLengthValid &&
+            passwordPolicyValid &&
             passwordMatches
     }
 
@@ -237,7 +242,7 @@ internal fun AuthScreen(
         if (mode == AuthMode.Register) {
             PasswordRules(
                 passwordAtLeastMin = passwordAtLeastMin,
-                passwordUnderMax = passwordUnderMax,
+                passwordHasLetterAndDigit = passwordHasLetterAndDigit,
                 passwordMatches = passwordMatches,
             )
 
@@ -326,12 +331,12 @@ internal fun AuthScreen(
 @Composable
 private fun PasswordRules(
     passwordAtLeastMin: Boolean,
-    passwordUnderMax: Boolean,
+    passwordHasLetterAndDigit: Boolean,
     passwordMatches: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         PasswordRuleRow(text = stringResource(R.string.auth_password_rule_min), satisfied = passwordAtLeastMin)
-        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_max), satisfied = passwordUnderMax)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_alnum), satisfied = passwordHasLetterAndDigit)
         PasswordRuleRow(text = stringResource(R.string.auth_password_rule_match), satisfied = passwordMatches)
     }
 }

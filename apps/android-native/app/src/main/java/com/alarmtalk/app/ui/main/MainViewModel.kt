@@ -160,6 +160,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var registerEmailVerified by mutableStateOf<String?>(null)
         internal set
 
+    // 가입 시도 이메일이 이미 가입돼 있을 때(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환하라는 신호.
+    var authRedirectToLogin by mutableStateOf(false)
+        internal set
+
     var syncBusy by mutableStateOf(false)
         internal set
 

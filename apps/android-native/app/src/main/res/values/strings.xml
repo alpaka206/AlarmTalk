@@ -40,6 +40,7 @@
     <string name="auth_onboarding_start">시작하기</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
+    <string name="auth_password_rule_alnum">영문·숫자 포함</string>
     <string name="auth_password_rule_match">비밀번호 확인 일치</string>
     <string name="auth_password_rule_max">128자 이하</string>
     <string name="auth_password_rule_min">8자 이상</string>
@@ -538,6 +539,9 @@
     <string name="msg_permission_notifications_required">알람 화면과 종료 버튼을 표시하려면 알림 권한이 필요해요.</string>
     <string name="msg_permission_record_audio_required">음성을 녹음하려면 마이크 권한이 필요해요.</string>
     <string name="msg_register_all_fields_required">회원가입 정보를 모두 입력해 주세요.</string>
+    <string name="msg_register_email_taken">이미 가입된 이메일이에요. 로그인해 주세요.</string>
+    <string name="msg_register_email_social_google">구글로 가입된 이메일이에요. \'Google로 계속하기\'로 로그인해 주세요.</string>
+    <string name="msg_register_email_social_apple">애플로 가입된 이메일이에요. Apple 로그인을 사용해 주세요.</string>
     <string name="msg_register_failed">회원가입에 실패했어요</string>
     <string name="msg_register_success">%1$s 계정을 만들었어요</string>
     <string name="msg_register_verify_email_first">이메일 인증을 먼저 완료해 주세요</string>
