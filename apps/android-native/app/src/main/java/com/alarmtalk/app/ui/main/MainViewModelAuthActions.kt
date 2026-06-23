@@ -101,9 +101,29 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
                 ?: getApplication<android.app.Application>().getString(R.string.msg_verification_code_sent)
         }.onFailure { error ->
             Log.e(TAG, "Email verification request failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
+            message = duplicateEmailMessage(error)
+                ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
         }
         authBusy = false
+    }
+}
+
+// 이미 가입된 이메일로 회원가입을 시도하면 백엔드가 409 로 막는다. 가입 방식에 맞는 안내
+// 메시지를 돌려주고, 비밀번호 계정(AUTH_EMAIL_TAKEN)이면 로그인 화면으로 전환을 요청한다.
+// 중복/소셜이 아니면 null 을 돌려 호출자가 기본 메시지를 쓰게 한다.
+private fun MainViewModel.duplicateEmailMessage(error: Throwable): String? {
+    val app = getApplication<android.app.Application>()
+    val parsed = com.alarmtalk.app.network.apiError(error)
+    return when (parsed.code) {
+        "AUTH_EMAIL_TAKEN" -> {
+            authRedirectToLogin = true
+            app.getString(R.string.msg_register_email_taken)
+        }
+        "AUTH_EMAIL_SOCIAL" -> when (parsed.provider) {
+            "apple" -> app.getString(R.string.msg_register_email_social_apple)
+            else -> app.getString(R.string.msg_register_email_social_google)
+        }
+        else -> null
     }
 }
 
@@ -171,7 +191,8 @@ internal fun MainViewModel.register(
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
             Log.e(TAG, "Email registration failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
+            message = duplicateEmailMessage(error)
+                ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
         }
         authBusy = false
     }

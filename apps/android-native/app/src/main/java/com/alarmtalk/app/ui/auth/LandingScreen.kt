@@ -75,8 +75,9 @@ private fun landingPalette(): LandingPalette {
             line = Color(0xFF2D313D),
             text = Color(0xFFF7F4EE),
             muted = Color(0xFFB0A89C),
-            accent = Color(0xFFEC8C6C),
-            accentText = Color(0xFFFFFFFF),
+            // 브랜드 블루(테마 단일 출처) 사용 — 랜딩만 코랄로 어긋나지 않도록 light 분기와 동일하게 scheme 참조.
+            accent = scheme.primary,
+            accentText = scheme.onPrimary,
         )
     } else {
         LandingPalette(

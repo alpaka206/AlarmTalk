@@ -4,21 +4,36 @@ import org.json.JSONObject
 import retrofit2.HttpException
 
 /**
- * 백엔드 에러 응답의 `error_code` 필드를 추출하는 공용 헬퍼.
+ * 백엔드 에러 응답에서 추출한 필드들.
  *
- * 백엔드는 4xx/5xx 에서 `{"error_code": "...", "message": "..."}` 형식 JSON 본문을 반환한다.
- * 여러 호출 지점에서 동일한 로직을 중복으로 갖고 있던 것을 한곳에 모은다.
- *
- * @return error_code 값. HTTP 예외가 아니거나 본문이 비어있거나 JSON 파싱 실패 시 null.
+ * 백엔드는 4xx/5xx 에서 `{"error_code": "...", "message": "...", "provider"?: "..."}` 형식
+ * JSON 본문을 반환한다. HttpException 의 errorBody 는 한 번만 읽을 수 있으므로 한 번 파싱해
+ * 필요한 필드를 함께 돌려준다.
  */
-fun apiErrorCode(error: Throwable): String? {
+data class ApiError(val code: String?, val provider: String?)
+
+fun apiError(error: Throwable): ApiError {
     val body = (error as? HttpException)
         ?.response()
         ?.errorBody()
         ?.string()
         ?.takeIf { it.isNotBlank() }
-        ?: return null
+        ?: return ApiError(null, null)
     return runCatching {
-        JSONObject(body).optString("error_code").takeIf { it.isNotBlank() }
-    }.getOrNull()
+        val json = JSONObject(body)
+        ApiError(
+            code = json.optString("error_code").takeIf { it.isNotBlank() },
+            provider = json.optString("provider").takeIf { it.isNotBlank() },
+        )
+    }.getOrElse { ApiError(null, null) }
 }
+
+/**
+ * error_code 값만 필요할 때의 단축 헬퍼.
+ *
+ * 주의: errorBody 는 한 번만 읽히므로, 같은 throwable 에 [apiError] 와 [apiErrorCode] 를
+ * 함께 호출하지 말 것(둘 중 하나만 사용).
+ *
+ * @return error_code 값. HTTP 예외가 아니거나 본문이 비어있거나 JSON 파싱 실패 시 null.
+ */
+fun apiErrorCode(error: Throwable): String? = apiError(error).code

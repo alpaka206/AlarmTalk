@@ -124,6 +124,42 @@ async function consumeEmailVerificationCode(db: Client, id: string): Promise<voi
   });
 }
 
+type ExistingAccount = { kind: 'password' } | { kind: 'social'; provider: 'google' | 'apple' };
+
+// 가입 시도 이메일이 이미 존재하면 그 가입 방식을 분류한다(중복 가입 차단·로그인 유도용).
+//   - password_hash 가 있으면 이메일/비밀번호 계정 → AUTH_EMAIL_TAKEN(로그인 유도)
+//   - 없으면 소셜 계정 → AUTH_EMAIL_SOCIAL(+provider; apple_id 있으면 apple, 아니면 google)
+// 주의(의도된 트레이드오프): 이 분기는 "이 이메일이 가입돼 있는가"를 노출하므로 계정 열거
+// (account enumeration)가 가능해진다. 제품 요구(중복 이메일이면 회원가입을 막고 로그인으로
+// 안내)를 위해 의도적으로 노출하며, /api/auth/* 의 authRateLimitMiddleware 로 무차별 조회를
+// 제한한다. (로그인 라우트는 기존대로 generic 응답을 유지해 비밀번호 추측 표면은 넓히지 않는다.)
+async function classifyExistingAccount(db: Client, email: string): Promise<ExistingAccount | null> {
+  const result = await db.execute({
+    sql: 'SELECT password_hash, apple_id FROM users WHERE email = ? LIMIT 1',
+    args: [email],
+  });
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0]!;
+  const passwordHash = row.password_hash;
+  if (passwordHash != null && String(passwordHash).length > 0) {
+    return { kind: 'password' };
+  }
+  return { kind: 'social', provider: row.apple_id != null ? 'apple' : 'google' };
+}
+
+function existingAccountConflict(account: ExistingAccount) {
+  if (account.kind === 'password') {
+    return { body: jsonError('AUTH_EMAIL_TAKEN', 'Email already registered'), status: 409 as const };
+  }
+  return {
+    body: {
+      ...jsonError('AUTH_EMAIL_SOCIAL', 'Email registered via social login'),
+      provider: account.provider,
+    },
+    status: 409 as const,
+  };
+}
+
 auth.post('/email-code', async (c) => {
   let body: unknown;
   try {
@@ -140,8 +176,8 @@ auth.post('/email-code', async (c) => {
   const email = normalizeAuthEmail(parsed.data.email);
   const db = getDB(c.env);
 
-  // 모든 분기에서 동일한 성공 응답을 돌려준다(계정 열거 방지). debug_code 는 코드를
-  // 실제로 새로 발송했을 때만 포함한다(쿨다운/상한/기존가입으로 미발송 시 생략).
+  // 신규(미가입) 이메일에만 코드를 발송한다. debug_code 는 코드를 실제로 새로 발송했을
+  // 때만 포함한다(쿨다운/상한으로 미발송 시 생략).
   const successResponse = (debugCode?: string) =>
     c.json({
       success: true,
@@ -150,14 +186,12 @@ auth.post('/email-code', async (c) => {
     });
 
   try {
-    const existing = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [email],
-    });
-    // 이미 가입된 이메일이라도 409(AUTH_EMAIL_TAKEN)로 회원 여부를 노출하지 않고
-    // 동일한 성공 응답을 반환한다. 코드도 보내지 않는다.
-    if (existing.rows.length > 0) {
-      return successResponse();
+    // 이미 가입된 이메일이면 가입 방식에 맞는 409 로 회원가입을 막고 로그인으로 안내한다.
+    // (AUTH_EMAIL_TAKEN=이메일/비번 계정, AUTH_EMAIL_SOCIAL+provider=소셜 계정)
+    const existingAccount = await classifyExistingAccount(db, email);
+    if (existingAccount) {
+      const conflict = existingAccountConflict(existingAccount);
+      return c.json(conflict.body, conflict.status);
     }
 
     const nowMs = Date.now();
@@ -257,9 +291,8 @@ auth.post('/register', async (c) => {
   const db = getDB(c.env);
 
   try {
-    // 계정 열거 방지: 이미 가입된 이메일이라도 409(AUTH_EMAIL_TAKEN)로 회원 여부를
-    // 노출하지 않는다. 가입된 이메일에는 /auth/email-code 가 코드를 발급하지 않으므로
-    // 아래 인증 코드 검증이 게이트 역할을 한다(미가입자만 유효 코드를 보유).
+    // 정상 흐름에선 /auth/email-code 가 미가입 이메일에만 코드를 발급하므로 인증 코드가
+    // 1차 게이트다. 여기선 방어적으로 한 번 더 검증한다.
     const verification = await checkEmailVerificationCode(
       db,
       c.env,
@@ -270,17 +303,12 @@ auth.post('/register', async (c) => {
       return c.json(jsonError(verification.code, verification.message), verification.status);
     }
 
-    // 인증 코드를 통과했더라도(이론상 경쟁 상태) 이미 존재하는 이메일이면 generic
-    // 코드 무효 응답으로 통일한다 — 회원 가입 여부를 별도 코드로 노출하지 않는다.
-    const existing = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [normalizedEmail],
-    });
-    if (existing.rows.length > 0) {
-      return c.json(
-        jsonError('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'),
-        400,
-      );
+    // 인증 코드를 통과했더라도(이론상 경쟁 상태) 이미 존재하는 이메일이면 가입 방식에 맞는
+    // 409 로 막고 로그인으로 안내한다(email-code 와 동일한 정책).
+    const existingAccount = await classifyExistingAccount(db, normalizedEmail);
+    if (existingAccount) {
+      const conflict = existingAccountConflict(existingAccount);
+      return c.json(conflict.body, conflict.status);
     }
 
     const id = crypto.randomUUID();

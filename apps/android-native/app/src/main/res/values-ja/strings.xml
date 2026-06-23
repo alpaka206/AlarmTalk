@@ -37,6 +37,7 @@
     <string name="auth_onboarding_start">始める</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
+    <string name="auth_password_rule_alnum">英字と数字を含む</string>
     <string name="auth_password_rule_match">パスワードが一致</string>
     <string name="auth_password_rule_max">128文字以下</string>
     <string name="auth_password_rule_min">8文字以上</string>
@@ -536,6 +537,9 @@
     <string name="msg_permission_notifications_required">アラーム画面と停止ボタンを表示するには、通知の許可が必要です。</string>
     <string name="msg_permission_record_audio_required">音声を録音するには、マイクの許可が必要です。</string>
     <string name="msg_register_all_fields_required">会員登録の情報をすべて入力してください。</string>
+    <string name="msg_register_email_taken">既に登録済みのメールです。ログインしてください。</string>
+    <string name="msg_register_email_social_google">Googleで登録済みのメールです。「Googleで続行」でログインしてください。</string>
+    <string name="msg_register_email_social_apple">Appleで登録済みのメールです。Appleでサインインを使用してください。</string>
     <string name="msg_register_failed">会員登録に失敗しました。</string>
     <string name="msg_register_success">%1$sアカウントを作成しました。</string>
     <string name="msg_register_verify_email_first">先にメールアドレスの認証を完了してください。</string>
