@@ -95,13 +95,13 @@
     <string name="billing_plan_couple_feature_message">メッセージ</string>
     <string name="billing_plan_couple_feature_voice_share">音声共有</string>
     <string name="billing_plan_couple_name">カップル</string>
-    <string name="billing_plan_couple_price">月額790円</string>
+    <string name="billing_plan_couple_price">月額690円</string>
     <string name="billing_plan_family_description">家族みんなで音声アラームを共有できます。</string>
-    <string name="billing_plan_family_feature_max_six">最大6人</string>
+    <string name="billing_plan_family_feature_max_six">最大5人</string>
     <string name="billing_plan_family_feature_message">メッセージ</string>
     <string name="billing_plan_family_feature_voice_share">音声共有</string>
     <string name="billing_plan_family_name">ファミリー</string>
-    <string name="billing_plan_family_price">月額990円</string>
+    <string name="billing_plan_family_price">月額1,490円</string>
     <string name="billing_plan_free_description">まずは基本のアラームをお試しいただけます。</string>
     <string name="billing_plan_free_feature_basic_alarm">通常アラーム</string>
     <string name="billing_plan_free_feature_basic_growth">基本キャラクター成長</string>
@@ -112,7 +112,7 @@
     <string name="billing_plan_personal_feature_voice">声</string>
     <string name="billing_plan_personal_feature_voice_message">音声メッセージ</string>
     <string name="billing_plan_personal_name">パーソナル</string>
-    <string name="billing_plan_personal_price">月額490円</string>
+    <string name="billing_plan_personal_price">月額390円</string>
     <string name="billing_plan_select_title">利用券を選択</string>
     <string name="billing_play_purchase_description">Google Play決済で購読を開始します。お支払い金額と更新サイクルは決済画面でご確認いただけます。</string>
     <string name="billing_play_purchase_title">%1$s利用券を購読</string>

@@ -151,12 +151,12 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "가족 플랜 월간 구독 (최대 6인)",
+              "description" : "가족 플랜 월간 구독 (최대 5인)",
               "displayName" : "가족 (월간)",
               "locale" : "ko_KR"
             },
             {
-              "description" : "Family plan, monthly (up to 6 members)",
+              "description" : "Family plan, monthly (up to 5 members)",
               "displayName" : "Family (Monthly)",
               "locale" : "en_US"
             }

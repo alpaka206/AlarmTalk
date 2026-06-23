@@ -98,13 +98,13 @@
     <string name="billing_plan_couple_feature_message">메시지</string>
     <string name="billing_plan_couple_feature_voice_share">음성 공유</string>
     <string name="billing_plan_couple_name">커플</string>
-    <string name="billing_plan_couple_price">월 7,900원</string>
+    <string name="billing_plan_couple_price">월 6,900원</string>
     <string name="billing_plan_family_description">가족이 함께 목소리 알람을 공유해요.</string>
-    <string name="billing_plan_family_feature_max_six">최대 6명</string>
+    <string name="billing_plan_family_feature_max_six">최대 5명</string>
     <string name="billing_plan_family_feature_message">메시지</string>
     <string name="billing_plan_family_feature_voice_share">음성 공유</string>
     <string name="billing_plan_family_name">가족</string>
-    <string name="billing_plan_family_price">월 9,900원</string>
+    <string name="billing_plan_family_price">월 14,900원</string>
     <string name="billing_plan_free_description">기본 알람을 먼저 써볼 수 있어요.</string>
     <string name="billing_plan_free_feature_basic_alarm">일반 알람</string>
     <string name="billing_plan_free_feature_basic_growth">기본 캐릭터 성장</string>
@@ -115,7 +115,7 @@
     <string name="billing_plan_personal_feature_voice">목소리</string>
     <string name="billing_plan_personal_feature_voice_message">음성 메시지</string>
     <string name="billing_plan_personal_name">개인</string>
-    <string name="billing_plan_personal_price">월 4,900원</string>
+    <string name="billing_plan_personal_price">월 3,900원</string>
     <string name="billing_plan_select_title">이용권 선택</string>
     <string name="billing_play_purchase_description">Google Play 결제로 구독을 시작해요. 결제 금액과 갱신 주기는 결제 화면에서 확인할 수 있어요.</string>
     <string name="billing_play_purchase_title">%1$s 이용권 구독</string>
