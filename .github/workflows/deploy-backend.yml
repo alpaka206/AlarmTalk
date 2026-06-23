@@ -42,7 +42,8 @@ jobs:
       - name: Run dev DB migrations
         if: github.ref_name == 'develop'
         env:
-          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET }}
+          # dev 전용 시크릿. dev 워커의 INIT_DB_SECRET(.dev.vars.dev → secrets:sync:dev)과 일치해야 함.
+          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET_DEV }}
         run: npm run migrate:dev
 
       - name: Deploy production to Cloudflare Workers
@@ -57,5 +58,6 @@ jobs:
       - name: Run production DB migrations
         if: github.ref_name == 'main'
         env:
-          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET }}
+          # prod 전용 시크릿. prod 워커의 INIT_DB_SECRET(.dev.vars.prod → secrets:sync:prod)과 일치해야 함.
+          INIT_DB_SECRET: ${{ secrets.INIT_DB_SECRET_PROD }}
         run: npm run migrate:prod
