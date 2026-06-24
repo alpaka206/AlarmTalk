@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
@@ -52,6 +51,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VibrationPatterns
@@ -208,7 +210,7 @@ internal fun VoiceAudioCard(
                 if (selectedProfileUnavailable) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.58f),
                     ) {
                         Column(
@@ -431,7 +433,7 @@ private fun NoUsableVoiceProfileCallout(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = WakerPanelShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
     ) {
         Row(
@@ -467,7 +469,7 @@ private fun VoiceProfileSelector(
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Column {
@@ -536,7 +538,7 @@ private fun VoiceProfileOptionRow(
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
@@ -592,7 +594,7 @@ private fun StockClipDropdown(
     var expanded by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Column {
@@ -687,7 +689,7 @@ private fun StockClipRow(
     Surface(
         onClick = onSelect,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
@@ -824,7 +826,7 @@ private fun ManualTranslationRow(
             if (enabled) onOpenSettings()
         },
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Row(
@@ -871,7 +873,7 @@ private fun RandomPromptSummaryRow(
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Row(
@@ -931,7 +933,7 @@ private fun VoiceRepeatChoice(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = WakerTileShape,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {

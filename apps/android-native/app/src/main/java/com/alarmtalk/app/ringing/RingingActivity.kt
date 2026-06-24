@@ -70,6 +70,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerCardShape
+import com.alarmtalk.app.WakerDialogShape
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
 import com.alarmtalk.app.alarm.RingingService
 import com.alarmtalk.app.data.AlarmAppContainer
@@ -276,7 +279,7 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
         modifier = Modifier
             .fillMaxWidth()
             .widthIn(max = 440.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = WakerDialogShape,
         color = Color(0xFF122034).copy(alpha = 0.66f),
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
@@ -348,7 +351,7 @@ private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .height(62.dp),
-        shape = RoundedCornerShape(22.dp),
+        shape = WakerCardShape,
         color = Color.White.copy(alpha = 0.07f),
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
@@ -531,7 +534,7 @@ private fun RingingVoiceWaveform() {
                             15, 16, 17 -> MaterialTheme.colorScheme.secondary
                             else -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.52f)
                         },
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WakerPillShape,
                     ),
             )
         }

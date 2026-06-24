@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
@@ -49,6 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
@@ -98,7 +99,7 @@ internal fun FileSpeakerModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
@@ -111,7 +112,7 @@ internal fun FileSpeakerModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
         ) {
             Text(label)
         }
@@ -139,7 +140,7 @@ internal fun RecordingLevelBars(
                         } else {
                             MaterialTheme.colorScheme.outlineVariant
                         },
-                        RoundedCornerShape(999.dp),
+                        WakerPillShape,
                     ),
             )
         }
@@ -418,7 +419,7 @@ internal fun SpeakerDraftRow(
             Button(
                 onClick = onSelect,
                 enabled = ready && !promotingBusy,
-                shape = RoundedCornerShape(999.dp),
+                shape = WakerPillShape,
             ) {
                 Text(stringResource(R.string.voicesr_select))
             }
@@ -534,7 +535,7 @@ internal fun VoiceProfileRow(
             if (!isProcessing && !isDeleting) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
                     border = wakerCardBorder(if (canShareVoice) 0.72f else 0.36f),
                 ) {
@@ -568,7 +569,7 @@ internal fun VoiceProfileRow(
 @Composable
 internal fun VoiceSharedBadge() {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WakerPillShape,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f),
     ) {
         Text(

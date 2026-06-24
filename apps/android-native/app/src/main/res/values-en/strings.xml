@@ -510,6 +510,7 @@
     <string name="msg_gb_share_code_info_load_failed">Couldn\'t load the share code info</string>
     <string name="msg_gb_share_code_load_failed">Couldn\'t load the %1$s share code.</string>
     <string name="msg_gb_share_code_ready">Your %1$s share code is ready.</string>
+    <string name="msg_gb_share_code_regenerated">Issued a new %1$s share code. The old code no longer works.</string>
     <string name="msg_gb_subscription_cancel_at_period_end">We\'ve scheduled it to cancel automatically after your next billing date.</string>
     <string name="msg_gb_subscription_cancel_failed">Couldn\'t cancel your plan.</string>
     <string name="msg_gb_subscription_canceled">Your plan has been canceled.</string>
@@ -622,6 +623,7 @@
     <string name="social_composer_message">Message</string>
     <string name="social_composer_recipient">Recipient</string>
     <string name="social_composer_send_method">Send method</string>
+    <string name="social_cancel_button">Cancel</string>
     <string name="social_composer_voice">Voice to send</string>
     <string name="social_connect_button">Connect</string>
     <string name="social_create_share_code">Create share code</string>
@@ -652,6 +654,10 @@
     <string name="social_quiet_time_label">Do-not-disturb hours</string>
     <string name="social_received_messages_title">Received messages</string>
     <string name="social_refresh_cd">Refresh</string>
+    <string name="social_regenerate_share_code">Regenerate code</string>
+    <string name="social_regenerate_share_code_dialog_message">Regenerating disables the current code. You\'ll need to resend the new code to anyone you already shared it with.</string>
+    <string name="social_regenerate_share_code_dialog_title">Regenerate share code</string>
+    <string name="social_regenerate_share_code_hint">If the code was exposed, regenerate it to disable the old one.</string>
     <string name="social_register_button">Register</string>
     <string name="social_register_dialog_message">Register this code?</string>
     <string name="social_register_dialog_message_active">If this code is valid, your current %1$s plan will end and switch to the new plan. Register?</string>

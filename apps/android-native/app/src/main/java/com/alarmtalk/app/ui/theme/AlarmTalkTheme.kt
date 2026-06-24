@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Build
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
@@ -15,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
 /**
@@ -106,12 +104,14 @@ internal fun AlarmTalkTheme(
     }
 }
 
+// 모서리 스케일의 단일 출처는 WakerDesign.kt 의 Waker*Shape 토큰이다.
+// 여기서는 그 토큰을 M3 Shapes 슬롯에 매핑만 한다(값 중복 정의 금지).
 private val AlarmTalkShapes = Shapes(
-    extraSmall = RoundedCornerShape(12.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = WakerTileShape,
+    small = WakerChipShape,
+    medium = WakerInputShape,
+    large = WakerCardShape,
+    extraLarge = WakerDialogShape,
 )
 
 @Composable

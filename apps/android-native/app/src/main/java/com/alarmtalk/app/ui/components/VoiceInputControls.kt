@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Pause
@@ -35,6 +34,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -125,7 +126,7 @@ internal fun VoiceInputModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
@@ -138,7 +139,7 @@ internal fun VoiceInputModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
         ) {
             Text(label)
         }
@@ -229,7 +230,7 @@ internal fun VoiceFileControls(
             onClick = onPickFile,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = WakerPanelShape,
         ) {
             Icon(Icons.Outlined.UploadFile, contentDescription = null)
             Spacer(Modifier.width(8.dp))
@@ -361,7 +362,7 @@ internal fun VoiceLevelBars(
                         } else {
                             MaterialTheme.colorScheme.outlineVariant
                         },
-                        RoundedCornerShape(999.dp),
+                        WakerPillShape,
                     ),
             )
         }
@@ -377,7 +378,7 @@ private fun RecordingProgressBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(6.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(999.dp)),
+            .background(MaterialTheme.colorScheme.outlineVariant, WakerPillShape),
     ) {
         Box(
             modifier = Modifier
@@ -385,7 +386,7 @@ private fun RecordingProgressBar(
                 .height(6.dp)
                 .background(
                     if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    RoundedCornerShape(999.dp),
+                    WakerPillShape,
                 ),
         )
     }

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,9 +48,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerScrimColor
 import kotlin.math.roundToInt
 
 /**
@@ -72,11 +74,23 @@ data class CoachMarkStep(
  */
 class CoachMarkRegistry {
     internal val bounds = mutableStateMapOf<String, Rect>()
+    /** 대상별 모서리 반경 — 스포트라이트 구멍이 대상과 동심(concentric)으로 떨어지도록 쓴다. */
+    internal val radii = mutableStateMapOf<String, Dp>()
 }
 
-/** 이 컴포저블을 [key] 코치마크의 스포트라이트 대상으로 등록한다. */
-fun Modifier.coachMarkTarget(registry: CoachMarkRegistry, key: String): Modifier =
-    onGloballyPositioned { coordinates -> registry.bounds[key] = coordinates.boundsInRoot() }
+/**
+ * 이 컴포저블을 [key] 코치마크의 스포트라이트 대상으로 등록한다.
+ * [targetRadius] 는 대상의 모서리 반경 — 구멍 라운드를 대상과 평행하게 맞추는 데 쓴다.
+ * 카드면 그 카드 shape 의 dp(예: 22), pill/원형이면 매우 큰 값(예: 999), 모르면 기본 16dp.
+ */
+fun Modifier.coachMarkTarget(
+    registry: CoachMarkRegistry,
+    key: String,
+    targetRadius: Dp = 16.dp,
+): Modifier = onGloballyPositioned { coordinates ->
+    registry.bounds[key] = coordinates.boundsInRoot()
+    registry.radii[key] = targetRadius
+}
 
 /**
  * 위치 앵커형 첫 사용 가이드 오버레이.
@@ -114,8 +128,12 @@ fun CoachMarkOverlay(
     val targetBounds = rawTarget?.translate(-overlayOrigin.x, -overlayOrigin.y)
 
     val density = LocalDensity.current
-    val holePaddingPx = with(density) { 6.dp.toPx() }
-    val holeCornerPx = with(density) { 16.dp.toPx() }
+    val holePaddingDp = 6.dp
+    val holePaddingPx = with(density) { holePaddingDp.toPx() }
+    // 구멍은 대상보다 holePadding 만큼 부풀려 그리므로, 동심으로 보이려면 구멍 반경 =
+    // 대상 반경 + holePadding 이어야 한다. 미등록 대상은 기존 동작(16dp)으로 폴백.
+    val targetRadiusDp = registry.radii[step.targetKey] ?: 16.dp
+    val holeCornerPx = with(density) { (targetRadiusDp + holePaddingDp).toPx() }
     val highlightColor = MaterialTheme.colorScheme.primary
 
     // 단계 전환 시 구멍이 이전 위치에서 새 위치로 미끄러지듯 이동.
@@ -145,20 +163,22 @@ fun CoachMarkOverlay(
                 .fillMaxSize()
                 .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen),
         ) {
-            drawRect(SCRIM_COLOR)
+            drawRect(WakerScrimColor)
             if (hole != null) {
+                // pill·원형·작은 타깃에서 사각이 깨지지 않도록 짧은 변의 절반으로 클램프.
+                val cornerPx = holeCornerPx.coerceAtMost(minOf(hole.size.width, hole.size.height) / 2f)
                 drawRoundRect(
                     color = Color.Transparent,
                     topLeft = hole.topLeft,
                     size = hole.size,
-                    cornerRadius = CornerRadius(holeCornerPx),
+                    cornerRadius = CornerRadius(cornerPx),
                     blendMode = BlendMode.Clear,
                 )
                 drawRoundRect(
                     color = highlightColor,
                     topLeft = hole.topLeft,
                     size = hole.size,
-                    cornerRadius = CornerRadius(holeCornerPx),
+                    cornerRadius = CornerRadius(cornerPx),
                     style = Stroke(width = 2.dp.toPx()),
                 )
             }
@@ -223,7 +243,7 @@ private fun CoachMarkCard(
                 .onSizeChanged { cardHeightPx = it.height }
                 // 첫 프레임에 높이를 모른 채 그려지는 깜빡임을 숨긴다.
                 .graphicsLayer { alpha = if (cardHeightPx == 0) 0f else 1f },
-            shape = RoundedCornerShape(18.dp),
+            shape = WakerPanelShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
@@ -266,6 +286,3 @@ private fun CoachMarkCard(
         }
     }
 }
-
-/** UsageGuideOverlay 의 코치마크 스크림과 같은 농도. */
-private val SCRIM_COLOR = Color(0xBD05080E)

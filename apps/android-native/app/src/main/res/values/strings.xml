@@ -512,6 +512,7 @@
     <string name="msg_gb_share_code_info_load_failed">공유 코드 정보를 불러오지 못했어요</string>
     <string name="msg_gb_share_code_load_failed">%1$s 공유 코드를 불러오지 못했어요</string>
     <string name="msg_gb_share_code_ready">%1$s 공유 코드를 준비했어요</string>
+    <string name="msg_gb_share_code_regenerated">%1$s 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요</string>
     <string name="msg_gb_subscription_cancel_at_period_end">다음 결제일까지 사용 후 자동 해지되도록 예약했어요</string>
     <string name="msg_gb_subscription_cancel_failed">해지에 실패했어요</string>
     <string name="msg_gb_subscription_canceled">이용권을 해지했어요</string>
@@ -622,6 +623,7 @@
     <string name="social_composer_message">메시지</string>
     <string name="social_composer_recipient">받는 사람</string>
     <string name="social_composer_send_method">보내기 방식</string>
+    <string name="social_cancel_button">취소</string>
     <string name="social_composer_voice">보낼 목소리</string>
     <string name="social_connect_button">연결하기</string>
     <string name="social_create_share_code">공유 코드 만들기</string>
@@ -652,6 +654,10 @@
     <string name="social_quiet_time_label">알람 받지 않을 시간</string>
     <string name="social_received_messages_title">받은 메시지</string>
     <string name="social_refresh_cd">새로고침</string>
+    <string name="social_regenerate_share_code">코드 재발급</string>
+    <string name="social_regenerate_share_code_dialog_message">재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.</string>
+    <string name="social_regenerate_share_code_dialog_title">공유 코드 재발급</string>
+    <string name="social_regenerate_share_code_hint">코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요.</string>
     <string name="social_register_button">등록</string>
     <string name="social_register_dialog_message">이 코드를 등록할까요?</string>
     <string name="social_register_dialog_message_active">등록 가능한 코드라면 현재 %1$s 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?</string>

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Pause
@@ -50,6 +49,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.WakerPillShape
+import com.alarmtalk.app.WakerTileShape
 import kotlinx.coroutines.delay
 
 private data class LandingPalette(
@@ -158,7 +159,7 @@ private fun WakerBrandHeader(colors: LandingPalette) {
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(42.dp)
-                .clip(RoundedCornerShape(12.dp)),
+                .clip(WakerTileShape),
         )
         Spacer(Modifier.width(10.dp))
         Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
@@ -222,7 +223,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+        shape = WakerHeroShape,
         color = colors.surface,
         border = BorderStroke(1.dp, colors.line),
     ) {
@@ -251,7 +252,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                 Surface(
                     onClick = ::togglePreview,
                     modifier = Modifier.size(54.dp),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = WakerPillShape,
                     color = colors.accent.copy(alpha = 0.14f),
                     contentColor = colors.accent,
                     border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
@@ -303,7 +304,7 @@ private fun LandingPreviewWaveform(
                     .height((9 + level * 34).dp)
                     .background(
                         color = color.copy(alpha = if (played) 1f else 0.78f),
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WakerPillShape,
                     ),
             )
         }
@@ -320,7 +321,7 @@ private fun LandingAuthPanel(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
+        shape = WakerDialogShape,
         color = colors.surfaceRaised,
         border = BorderStroke(1.dp, colors.line),
     ) {

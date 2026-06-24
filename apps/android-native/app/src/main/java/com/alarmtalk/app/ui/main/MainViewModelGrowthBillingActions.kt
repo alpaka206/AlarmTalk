@@ -572,6 +572,35 @@ internal fun MainViewModel.ensureFamilyShareCode() {
     }
 }
 
+internal fun MainViewModel.regenerateFamilyShareCode() {
+    val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_create_share_code)) ?: return
+    val planLabel = when (subscriptionResponse?.plan?.key) {
+        "couple" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_couple)
+        "family" -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_family)
+        else -> getApplication<android.app.Application>().getString(R.string.msg_gb_plan_label_shared)
+    }
+    viewModelScope.launch {
+        billingBusy = true
+        runCatching {
+            api.regenerateFamilyShareCode(authorization).voucher
+        }.onSuccess { voucher ->
+            // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
+            vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
+            message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
+            refreshCharacterBillingAfterMutation(authorization, "regenerate family share code")
+            refreshSocial()
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to regenerate family share code", error)
+            message = billingFailureMessage(
+                getApplication<android.app.Application>(),
+                apiErrorCode(error),
+                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_load_failed, planLabel)),
+            )
+        }
+        billingBusy = false
+    }
+}
+
 private fun com.alarmtalk.app.network.BillingPlan.isSharedPassPlan(): Boolean =
     key in setOf("couple", "family") || planType in setOf("couple", "family")
 

@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -63,6 +62,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -146,7 +148,7 @@ internal fun FamilyConnectionPanel(
                         onClick = { showLeaveDialog = true },
                         enabled = !socialBusy,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Text(
                             text = stringResource(R.string.social_leave_and_register_new_code),
@@ -158,7 +160,7 @@ internal fun FamilyConnectionPanel(
                         onClick = { showCodeInputs = true },
                         enabled = !socialBusy,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Text(stringResource(R.string.social_register_other_code))
                     }
@@ -468,7 +470,7 @@ internal fun VoiceMessagePanel(
                     Button(
                         onClick = { showComposer = true },
                         enabled = recipients.isNotEmpty() && !noteBusy,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = WakerTileShape,
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Add,
@@ -530,7 +532,7 @@ internal fun VoiceMessagePanel(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
                     .widthIn(max = 520.dp),
-                shape = WakerCardShape,
+                shape = WakerDialogShape,
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 0.dp,
                 shadowElevation = 18.dp,
@@ -651,7 +653,7 @@ private fun ComposerSection(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = WakerPanelShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.34f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
@@ -682,7 +684,7 @@ internal fun NoteRow(
     val unread = note.readAt == null
     Card(
         onClick = onMarkRead,
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         colors = CardDefaults.cardColors(
             containerColor = if (unread) {
                 MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.62f)

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -185,8 +184,8 @@ internal fun PrettySnackbar(message: String) {
     Snackbar(
         modifier = Modifier
             .padding(horizontal = 16.dp, vertical = 8.dp)
-            .shadow(elevation = 12.dp, shape = RoundedCornerShape(20.dp), clip = false),
-        shape = RoundedCornerShape(20.dp),
+            .shadow(elevation = 12.dp, shape = WakerCardShape, clip = false),
+        shape = WakerCardShape,
         containerColor = containerColor,
         contentColor = contentColor,
     ) {

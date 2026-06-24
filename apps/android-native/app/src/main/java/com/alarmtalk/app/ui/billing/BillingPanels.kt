@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
@@ -43,9 +42,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.billing.PlayBillingProducts
 import com.alarmtalk.app.network.BillingPlan
 import com.alarmtalk.app.network.BillingPlanSummary
@@ -463,7 +464,7 @@ private fun BillingActionDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -473,8 +474,12 @@ private fun BillingActionDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
             ) {
+                // 설명은 마침표(". ") 단위로 줄바꿈해 한 문장씩 읽기 쉽게 보여준다.
+                val formattedDescription = remember(description) {
+                    description.replace(". ", ".\n")
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -482,14 +487,19 @@ private fun BillingActionDialog(
                 ) {
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
                             text = title,
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                         )
-                        MutedText(description)
+                        Text(
+                            text = formattedDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp,
+                        )
                     }
                     IconButton(
                         onClick = onDismiss,
@@ -637,7 +647,7 @@ private fun CurrentPassSummaryCard(
 @Composable
 private fun PassSummaryChip(label: String) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WakerPillShape,
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
@@ -731,7 +741,7 @@ internal fun SubscriptionPlanCard(
                 }
                 if (isCurrent) {
                     Surface(
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WakerPillShape,
                         color = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ) {

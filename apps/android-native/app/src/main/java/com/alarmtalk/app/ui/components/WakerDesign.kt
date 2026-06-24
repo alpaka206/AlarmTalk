@@ -7,11 +7,31 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-internal val WakerCardShape = RoundedCornerShape(22.dp)
-internal val WakerInputShape = RoundedCornerShape(18.dp)
-internal val WakerButtonShape = RoundedCornerShape(18.dp)
+// ─────────────────────────────────────────────────────────────────────────────
+// 디자인 토큰 — 모서리 반경(코너 radius)의 단일 출처(single source of truth).
+//
+// 새 화면/컴포넌트는 생 RoundedCornerShape(n.dp) 대신 아래 토큰을 가져다 쓴다.
+// MaterialTheme.shapes(AlarmTalkTheme.kt)도 이 값들에서 파생되므로, shape 를
+// 지정하지 않은 M3 컴포넌트(Card/Dialog/Chip/TextField 기본형)까지 같은 스케일을 따른다.
+//
+// 예외(토큰화하지 않음): CircleShape(완전 원형 아바타/FAB/점), AlarmRow 스와이프
+// 비대칭 shape, 타임휠 전용 컨테이너 — 의도적 형태이므로 토큰 스케일에 흡수하지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+internal val WakerTileShape = RoundedCornerShape(12.dp)    // 작은 타일·아이콘 박스·인라인 배너
+internal val WakerChipShape = RoundedCornerShape(14.dp)    // 칩·세그먼트·작은 카드/리스트 행
+internal val WakerInputShape = RoundedCornerShape(18.dp)   // 입력 필드(OutlinedTextField)
+internal val WakerButtonShape = RoundedCornerShape(18.dp)  // 버튼
+internal val WakerPanelShape = RoundedCornerShape(18.dp)   // 표준 콘텐츠 카드/패널(구 16dp 흡수)
+internal val WakerCardShape = RoundedCornerShape(22.dp)    // 큰 콘텐츠 카드
+internal val WakerHeroShape = RoundedCornerShape(24.dp)    // 히어로/프로미넌트 카드(홈 NextAlarm), 타임피커 전용 다이얼로그
+internal val WakerDialogShape = RoundedCornerShape(28.dp)  // 모든 모달 다이얼로그 컨테이너 표준(M3 extra-large=28dp, AlertDialog 기본과 일치)
+internal val WakerPillShape = RoundedCornerShape(999.dp)   // 완전 캡슐(pill) — 진행바·세그먼트·상태 배지
+
+/** 오버레이/코치마크 스크림 — 테마 무관 고정 농도 rgba(5,8,14,.74). */
+internal val WakerScrimColor = Color(0xBD05080E)
 
 @Composable
 internal fun wakerCardBorder(alpha: Float = 1f): BorderStroke =

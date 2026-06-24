@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.PersonRemove
@@ -43,6 +42,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyAlarmQuietWindow
@@ -63,6 +64,7 @@ internal fun MemberManagementScreen(
     onBack: () -> Unit,
     onRemoveFamilyMember: (String, String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
+    onRegenerateFamilyShareCode: () -> Unit,
     onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
 ) {
     val group = familyGroup?.group
@@ -98,6 +100,7 @@ internal fun MemberManagementScreen(
 
     var pendingRemoveMember by remember { mutableStateOf<FamilyGroupMember?>(null) }
     var showFamilyAlarmDialog by remember { mutableStateOf(false) }
+    var showRegenerateConfirm by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -190,7 +193,7 @@ internal fun MemberManagementScreen(
                         onClick = onEnsureFamilyShareCode,
                         enabled = !billingBusy && !isCapacityFull,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Text(if (isCapacityFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_create_share_code))
                     }
@@ -200,7 +203,7 @@ internal fun MemberManagementScreen(
                     val isFull = isCapacityFull || shareVoucher.useCount >= shareVoucher.maxUses
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
@@ -232,10 +235,23 @@ internal fun MemberManagementScreen(
                                 onClick = { shareCode(shareVoucher.code) },
                                 enabled = !billingBusy && !isFull,
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
+                                shape = WakerChipShape,
                             ) {
                                 Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                             }
+                            OutlinedButton(
+                                onClick = { showRegenerateConfirm = true },
+                                enabled = !billingBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = WakerChipShape,
+                            ) {
+                                Text(stringResource(R.string.social_regenerate_share_code))
+                            }
+                            Text(
+                                text = stringResource(R.string.social_regenerate_share_code_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -297,6 +313,44 @@ internal fun MemberManagementScreen(
         )
     }
 
+    if (showRegenerateConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateConfirm = false },
+            title = {
+                ModalDialogTitle(
+                    title = stringResource(R.string.social_regenerate_share_code_dialog_title),
+                    onDismiss = { showRegenerateConfirm = false },
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.social_regenerate_share_code_dialog_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !billingBusy,
+                    onClick = {
+                        showRegenerateConfirm = false
+                        onRegenerateFamilyShareCode()
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.social_regenerate_share_code),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateConfirm = false }) {
+                    Text(stringResource(R.string.social_cancel_button))
+                }
+            },
+        )
+    }
+
     if (showFamilyAlarmDialog && authSession != null) {
         FamilyAlarmQuietTimeDialog(
             initialWindows = authSession.user.familyAlarmQuietWindows,
@@ -318,7 +372,7 @@ private fun FamilyAlarmPermissionCard(
 ) {
     val context = LocalContext.current
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -390,7 +444,7 @@ private fun MemberRow(
     onRemove: () -> Unit,
 ) {
     Card(
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         colors = CardDefaults.cardColors(
             containerColor = if (isMe) {
                 MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)

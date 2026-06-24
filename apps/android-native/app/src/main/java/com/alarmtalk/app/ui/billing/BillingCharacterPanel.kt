@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
@@ -33,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.CharacterEventStates
@@ -287,7 +287,7 @@ internal fun CharacterStatTile(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = WakerPanelShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
         contentColor = MaterialTheme.colorScheme.onSurface,
     ) {
@@ -316,7 +316,7 @@ internal fun CharacterSyncStatus(
 ) {
     val needsCheck = failedCount > 0
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = WakerPanelShape,
         color = if (needsCheck) {
             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.68f)
         } else {
@@ -447,7 +447,7 @@ internal fun CharacterXpBar(
     progress: Float,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(999.dp)
+    val shape = WakerPillShape
     Box(
         modifier = modifier
             .height(8.dp)

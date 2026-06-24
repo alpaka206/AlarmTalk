@@ -510,6 +510,7 @@
     <string name="msg_gb_share_code_info_load_failed">共有コード情報を読み込めませんでした</string>
     <string name="msg_gb_share_code_load_failed">%1$s共有コードを読み込めませんでした。</string>
     <string name="msg_gb_share_code_ready">%1$s共有コードを準備しました。</string>
+    <string name="msg_gb_share_code_regenerated">%1$s共有コードを新しく発行しました。以前のコードは使えません。</string>
     <string name="msg_gb_subscription_cancel_at_period_end">次回のお支払い日まで利用後、自動で解約されるよう予約しました。</string>
     <string name="msg_gb_subscription_cancel_failed">解約に失敗しました。</string>
     <string name="msg_gb_subscription_canceled">プランを解約しました。</string>
@@ -622,6 +623,7 @@
     <string name="social_composer_message">メッセージ</string>
     <string name="social_composer_recipient">宛先</string>
     <string name="social_composer_send_method">送信方法</string>
+    <string name="social_cancel_button">キャンセル</string>
     <string name="social_composer_voice">送る声</string>
     <string name="social_connect_button">連携する</string>
     <string name="social_create_share_code">共有コードを作成</string>
@@ -652,6 +654,10 @@
     <string name="social_quiet_time_label">アラームを受け取らない時間</string>
     <string name="social_received_messages_title">受信メッセージ</string>
     <string name="social_refresh_cd">更新</string>
+    <string name="social_regenerate_share_code">コードを再発行</string>
+    <string name="social_regenerate_share_code_dialog_message">再発行すると現在のコードは使えなくなります。すでに共有した相手には新しいコードを送り直してください。</string>
+    <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
+    <string name="social_regenerate_share_code_hint">コードが外部に漏れた場合は再発行して既存のコードを無効にできます。</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
     <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。登録しますか？</string>

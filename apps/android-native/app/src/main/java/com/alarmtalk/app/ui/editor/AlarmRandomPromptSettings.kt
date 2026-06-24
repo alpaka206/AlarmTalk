@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MyLocation
@@ -50,6 +49,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
@@ -173,7 +174,7 @@ internal fun RandomPromptSettingsPane(
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
                 ) {
                     Text(
@@ -297,7 +298,7 @@ internal fun RandomPromptDetailRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Column(
@@ -376,7 +377,7 @@ internal fun WeatherLocationDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 460.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -393,7 +394,7 @@ internal fun WeatherLocationDialog(
                     onDismiss = onDismissWithoutSave,
                 )
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {

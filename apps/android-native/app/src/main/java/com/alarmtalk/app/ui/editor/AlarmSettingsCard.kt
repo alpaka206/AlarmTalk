@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
@@ -35,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.VibrationPatterns
 
 @Composable
@@ -306,7 +306,7 @@ internal fun AlarmSoundSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
                 ) {
                     Row(
@@ -428,7 +428,7 @@ internal fun VibrationSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
                 ) {
                     Row(
