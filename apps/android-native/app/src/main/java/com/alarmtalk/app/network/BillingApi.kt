@@ -146,6 +146,12 @@ interface BillingApi {
         @Header("Authorization") authorization: String,
     ): EnsureFamilyShareCodeResponse
 
+    /** 기존 공유 코드를 무효화하고 새 코드를 발급한다(유출 의심 시 재발급). */
+    @POST("billing/vouchers/family-share/regenerate")
+    suspend fun regenerateFamilyShareCode(
+        @Header("Authorization") authorization: String,
+    ): EnsureFamilyShareCodeResponse
+
     @POST("billing/cancel")
     suspend fun cancelSubscription(
         @Header("Authorization") authorization: String,

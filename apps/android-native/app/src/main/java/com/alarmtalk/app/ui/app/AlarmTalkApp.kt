@@ -753,6 +753,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       onBack = ::goBackInApp,
                       onRemoveFamilyMember = viewModel::removeFamilyMember,
                       onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
+                      onRegenerateFamilyShareCode = viewModel::regenerateFamilyShareCode,
                       onChangeFamilyAlarmSettings = viewModel::updateFamilyAlarmSettings,
                   )
               }

@@ -104,6 +104,15 @@ export async function applyStoreEntitlement(
               WHERE id = ?`,
         args: [expiresAtIso, subscriptionId],
       });
+      // 갱신(다음 달 결제 등)으로 구독 만료가 연장되면, 같은 구독에 묶인 활성
+      // 공유 코드의 만료도 함께 밀어 코드가 끊기지 않게 한다. 코드 문자열은 그대로
+      // 유지되므로 이미 공유한 코드도 다음 기간 동안 계속 유효하다.
+      await tx.execute({
+        sql: `UPDATE voucher_codes
+              SET expires_at = ?
+              WHERE issuer_subscription_id = ? AND status = 'issued'`,
+        args: [expiresAtIso, subscriptionId],
+      });
       await tx.execute({
         sql: `UPDATE users SET plan = ?, updated_at = datetime('now') WHERE id = ?`,
         args: [planTypeToUserPlan(input.plan.plan_type), input.userPk],

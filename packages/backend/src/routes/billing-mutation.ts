@@ -451,6 +451,124 @@ billingMutation.post('/redeem', async (c) => {
   }
 });
 
+interface FamilyOwnerContext {
+  subscriptionId: string;
+  planId: string;
+  planKey: string;
+  planName: string;
+  planType: string;
+  maxMembers: number;
+  maxUses: number;
+  expiresAt: string;
+}
+
+type FamilyOwnerLookup =
+  | { ctx: FamilyOwnerContext }
+  | {
+      error: {
+        status: 404 | 409;
+        body: { error: string; error_code: string };
+      };
+    };
+
+/** 활성 가족 플랜 소유자 구독 + 그룹 정원 가드. 공유 코드 발급/재발급 공통. */
+async function loadActiveFamilyOwnerContext(
+  tx: DbExecutor,
+  userPk: string,
+): Promise<FamilyOwnerLookup> {
+  const subscriptionRes = await tx.execute({
+    sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
+                 pg.id AS plan_group_id, pg.max_members AS group_max_members,
+                 (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = pg.id) AS member_count,
+                 p.key AS plan_key, p.name AS plan_name, p.plan_type,
+                 p.period_days, p.max_members, p.price_krw
+          FROM subscriptions s
+          JOIN plans p ON p.id = s.plan_id
+          JOIN plan_groups pg ON pg.id = s.plan_group_id
+          WHERE s.user_id = ?
+            AND pg.owner_user_id = ?
+            AND s.status = 'active'
+            AND s.expires_at > datetime('now')
+            AND p.plan_type = 'family'
+          ORDER BY s.starts_at DESC
+          LIMIT 1`,
+    args: [userPk, userPk],
+  });
+
+  if (subscriptionRes.rows.length === 0) {
+    return {
+      error: {
+        status: 404,
+        body: {
+          error: 'Active family plan ownership is required',
+          error_code: 'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
+        },
+      },
+    };
+  }
+
+  const subscription = subscriptionRes.rows[0]!;
+  const planType = String(subscription.plan_type);
+  const maxMembers = Number(subscription.group_max_members ?? subscription.max_members) || 6;
+  const memberCount = Number(subscription.member_count ?? 0);
+  if (memberCount >= maxMembers) {
+    return {
+      error: {
+        status: 409,
+        body: {
+          error: `Group is full: max ${maxMembers}`,
+          error_code: 'GROUP_FULL',
+        },
+      },
+    };
+  }
+
+  return {
+    ctx: {
+      subscriptionId: String(subscription.subscription_id),
+      planId: String(subscription.plan_id),
+      planKey: String(subscription.plan_key),
+      planName: String(subscription.plan_name),
+      planType,
+      maxMembers,
+      maxUses: plannedMaxUses(planType, maxMembers),
+      expiresAt: String(subscription.expires_at),
+    },
+  };
+}
+
+/** 새 invite 코드를 발급해 공유용 응답 모양으로 만든다. */
+async function issueShareableVoucher(
+  tx: DbExecutor,
+  userPk: string,
+  ctx: FamilyOwnerContext,
+): Promise<ShareableVoucherCode> {
+  const issuedAt = new Date().toISOString();
+  const issued = await issueVoucherCode(tx, {
+    kind: 'invite',
+    planId: ctx.planId,
+    issuerUserId: userPk,
+    issuerSubscriptionId: ctx.subscriptionId,
+    issuedAt,
+    expiresAt: ctx.expiresAt,
+    maxUses: ctx.maxUses,
+  });
+  return {
+    id: issued.id,
+    code: issued.code,
+    plan_id: ctx.planId,
+    plan_key: ctx.planKey,
+    plan_name: ctx.planName,
+    plan_type: ctx.planType,
+    subscription_id: ctx.subscriptionId,
+    status: 'issued',
+    issued_at: issuedAt,
+    expires_at: issued.expires_at,
+    max_uses: issued.max_uses,
+    use_count: issued.use_count,
+  };
+}
+
 billingMutation.post('/vouchers/family-share', async (c) => {
   const userPk = await resolveUserPk(c);
   if (!userPk) {
@@ -459,57 +577,9 @@ billingMutation.post('/vouchers/family-share', async (c) => {
 
   const db = getDB(c.env);
   const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
-    const subscriptionRes = await tx.execute({
-      sql: `SELECT s.id AS subscription_id, s.plan_id, s.expires_at,
-                   pg.id AS plan_group_id, pg.max_members AS group_max_members,
-                   (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = pg.id) AS member_count,
-                   p.key AS plan_key, p.name AS plan_name, p.plan_type,
-                   p.period_days, p.max_members, p.price_krw
-            FROM subscriptions s
-            JOIN plans p ON p.id = s.plan_id
-            JOIN plan_groups pg ON pg.id = s.plan_group_id
-            WHERE s.user_id = ?
-              AND pg.owner_user_id = ?
-              AND s.status = 'active'
-              AND s.expires_at > datetime('now')
-              AND p.plan_type = 'family'
-            ORDER BY s.starts_at DESC
-            LIMIT 1`,
-      args: [userPk, userPk],
-    });
-
-    if (subscriptionRes.rows.length === 0) {
-      return {
-        error: {
-          status: 404,
-          body: {
-            error: 'Active family plan ownership is required',
-            error_code: 'NO_ACTIVE_FAMILY_OWNER_SUBSCRIPTION',
-          },
-        },
-      };
-    }
-
-    const subscription = subscriptionRes.rows[0]!;
-    const subscriptionId = String(subscription.subscription_id);
-    const planId = String(subscription.plan_id);
-    const planKey = String(subscription.plan_key);
-    const planName = String(subscription.plan_name);
-    const planType = String(subscription.plan_type);
-    const maxMembers = Number(subscription.group_max_members ?? subscription.max_members) || 6;
-    const memberCount = Number(subscription.member_count ?? 0);
-    if (memberCount >= maxMembers) {
-      return {
-        error: {
-          status: 409,
-          body: {
-            error: `Group is full: max ${maxMembers}`,
-            error_code: 'GROUP_FULL',
-          },
-        },
-      };
-    }
-    const maxUses = plannedMaxUses(planType, maxMembers);
+    const lookup = await loadActiveFamilyOwnerContext(tx, userPk);
+    if ('error' in lookup) return lookup;
+    const ctx = lookup.ctx;
 
     const existingRes = await tx.execute({
       sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
@@ -520,7 +590,7 @@ billingMutation.post('/vouchers/family-share', async (c) => {
               AND v.status = 'issued'
               AND v.expires_at > datetime('now')
             ORDER BY v.issued_at DESC`,
-      args: [userPk, subscriptionId],
+      args: [userPk, ctx.subscriptionId],
     });
 
     const existing = existingRes.rows.find((row) => {
@@ -533,46 +603,56 @@ billingMutation.post('/vouchers/family-share', async (c) => {
       const voucher: ShareableVoucherCode = {
         id: String(existing.id),
         code: String(existing.code),
-        plan_id: planId,
-        plan_key: planKey,
-        plan_name: planName,
-        plan_type: planType,
-        subscription_id: subscriptionId,
+        plan_id: ctx.planId,
+        plan_key: ctx.planKey,
+        plan_name: ctx.planName,
+        plan_type: ctx.planType,
+        subscription_id: ctx.subscriptionId,
         status: 'issued',
         issued_at: String(existing.issued_at),
         expires_at: String(existing.expires_at),
-        max_uses: Number(existing.max_uses ?? maxUses),
+        max_uses: Number(existing.max_uses ?? ctx.maxUses),
         use_count: Number(existing.use_count ?? 0),
       };
       return { voucher };
     }
 
-    const issuedAt = new Date().toISOString();
-    const issued = await issueVoucherCode(tx, {
-      kind: 'invite',
-      planId,
-      issuerUserId: userPk,
-      issuerSubscriptionId: subscriptionId,
-      issuedAt,
-      expiresAt: String(subscription.expires_at),
-      maxUses,
+    return { voucher: await issueShareableVoucher(tx, userPk, ctx) };
+  });
+
+  if ('error' in result) {
+    return c.json(result.error.body, result.error.status);
+  }
+
+  return c.json({ success: true, voucher: result.voucher });
+});
+
+// 공유 코드 재발급: 기존 활성 코드를 무효화(expired)하고 새 코드를 발급한다.
+// 유출이 의심될 때 사용자가 직접 코드를 끊고 새로 만들 수 있게 한다.
+billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
+  const userPk = await resolveUserPk(c);
+  if (!userPk) {
+    return c.json({ error: 'User not found', error_code: 'USER_NOT_FOUND' }, 404);
+  }
+
+  const db = getDB(c.env);
+  const result: FamilyShareCodeResult = await withWriteTransaction(db, async (tx) => {
+    const lookup = await loadActiveFamilyOwnerContext(tx, userPk);
+    if ('error' in lookup) return lookup;
+    const ctx = lookup.ctx;
+
+    // 같은 구독에 묶인 현재 발급 상태의 코드를 모두 만료 처리(이미 합류한 멤버는
+    // 별도 구독으로 유지되므로 영향 없음 — 남은 미사용 슬롯의 코드만 무효화된다).
+    await tx.execute({
+      sql: `UPDATE voucher_codes
+            SET status = 'expired'
+            WHERE issuer_user_id = ?
+              AND issuer_subscription_id = ?
+              AND status = 'issued'`,
+      args: [userPk, ctx.subscriptionId],
     });
 
-    const voucher: ShareableVoucherCode = {
-      id: issued.id,
-      code: issued.code,
-      plan_id: planId,
-      plan_key: planKey,
-      plan_name: planName,
-      plan_type: planType,
-      subscription_id: subscriptionId,
-      status: 'issued',
-      issued_at: issuedAt,
-      expires_at: issued.expires_at,
-      max_uses: issued.max_uses,
-      use_count: issued.use_count,
-    };
-    return { voucher };
+    return { voucher: await issueShareableVoucher(tx, userPk, ctx) };
   });
 
   if ('error' in result) {

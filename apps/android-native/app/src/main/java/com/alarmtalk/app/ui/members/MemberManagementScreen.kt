@@ -64,6 +64,7 @@ internal fun MemberManagementScreen(
     onBack: () -> Unit,
     onRemoveFamilyMember: (String, String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
+    onRegenerateFamilyShareCode: () -> Unit,
     onChangeFamilyAlarmSettings: (Boolean, List<FamilyAlarmQuietWindow>) -> Unit,
 ) {
     val group = familyGroup?.group
@@ -99,6 +100,7 @@ internal fun MemberManagementScreen(
 
     var pendingRemoveMember by remember { mutableStateOf<FamilyGroupMember?>(null) }
     var showFamilyAlarmDialog by remember { mutableStateOf(false) }
+    var showRegenerateConfirm by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -237,6 +239,19 @@ internal fun MemberManagementScreen(
                             ) {
                                 Text(if (isFull) stringResource(R.string.social_share_unavailable) else stringResource(R.string.social_share_button))
                             }
+                            OutlinedButton(
+                                onClick = { showRegenerateConfirm = true },
+                                enabled = !billingBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = WakerChipShape,
+                            ) {
+                                Text(stringResource(R.string.social_regenerate_share_code))
+                            }
+                            Text(
+                                text = stringResource(R.string.social_regenerate_share_code_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -293,6 +308,44 @@ internal fun MemberManagementScreen(
                         text = stringResource(R.string.social_remove_button),
                         color = MaterialTheme.colorScheme.error,
                     )
+                }
+            },
+        )
+    }
+
+    if (showRegenerateConfirm) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateConfirm = false },
+            title = {
+                ModalDialogTitle(
+                    title = stringResource(R.string.social_regenerate_share_code_dialog_title),
+                    onDismiss = { showRegenerateConfirm = false },
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.social_regenerate_share_code_dialog_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !billingBusy,
+                    onClick = {
+                        showRegenerateConfirm = false
+                        onRegenerateFamilyShareCode()
+                    },
+                ) {
+                    Text(
+                        text = stringResource(R.string.social_regenerate_share_code),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateConfirm = false }) {
+                    Text(stringResource(R.string.social_cancel_button))
                 }
             },
         )
