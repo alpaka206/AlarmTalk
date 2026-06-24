@@ -6,7 +6,6 @@ import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -161,7 +160,7 @@ internal fun WeatherLocationPreferenceDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .widthIn(max = 430.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -173,7 +172,7 @@ internal fun WeatherLocationPreferenceDialog(
             ) {
                 ModalDialogTitle(stringResource(R.string.hs_weather_dialog_title), onDismiss = onDismiss)
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
@@ -272,7 +271,7 @@ internal fun FamilyAlarmQuietTimeDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp),
-            shape = RoundedCornerShape(28.dp),
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
             shadowElevation = 18.dp,
@@ -369,7 +368,7 @@ internal fun FamilyAlarmQuietTimeDialog(
         )
         Dialog(onDismissRequest = { timePickerTarget = null }) {
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = WakerHeroShape,
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 6.dp,
                 shadowElevation = 18.dp,
@@ -500,7 +499,7 @@ internal fun QuietTimeChip(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
         modifier = modifier,
