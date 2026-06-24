@@ -210,6 +210,7 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
     // 알림을 놓쳤거나 순서가 뒤바뀌어 DB 만료가 과거값으로 남아 있으면,
     // processSubscriptionExpiry 가 기간이 남았는데도 즉시 해지해버리기 때문이다.
     // (decideSubscriptionAction 이 cancel_at_period_end 를 반환하는 조건상 expiryMs 는 유한값이다.)
+    const periodEndIso = new Date(expiryMs).toISOString();
     await db.execute({
       sql: `UPDATE subscriptions
             SET cancel_at_period_end = 1,
@@ -217,7 +218,20 @@ billingGoogleRtdn.post('/rtdn', async (c) => {
                 canceled_at = COALESCE(canceled_at, datetime('now')),
                 updated_at = datetime('now')
             WHERE user_id = ? AND status = 'active'`,
-      args: [new Date(expiryMs).toISOString(), userPk],
+      args: [periodEndIso, userPk],
+    });
+    // 구독 만료를 권위값으로 밀 때 같은 구독에 묶인 공유 코드 만료도 함께 동기화한다.
+    // (store-billing 갱신 경로와 동일 규칙) issued·used 모두 연장, expired 는 제외.
+    // 누락하면 만료가 미뤄진 구독에 옛 만료의 코드가 남아 redemption 이 만료로 거부된다.
+    await db.execute({
+      sql: `UPDATE voucher_codes
+            SET expires_at = ?
+            WHERE issuer_user_id = ?
+              AND status IN ('issued', 'used')
+              AND issuer_subscription_id IN (
+                SELECT id FROM subscriptions WHERE user_id = ? AND status = 'active'
+              )`,
+      args: [periodEndIso, userPk, userPk],
     });
     logStructured('info', { at: 'billing.google.rtdn', action: 'cancel_at_period_end', userPk });
     return c.json({ success: true, action: 'cancel_at_period_end' });
