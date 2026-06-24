@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Save
@@ -43,6 +42,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerHeroShape
+import com.alarmtalk.app.WakerPanelShape
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.text.SimpleDateFormat
@@ -80,7 +82,7 @@ internal fun FortuneInfoDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 460.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -100,7 +102,7 @@ internal fun FortuneInfoDialog(
                 )
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
                     border = wakerCardBorder(),
                 ) {
@@ -238,7 +240,7 @@ internal fun FortuneInfoDialog(
         )
         Dialog(onDismissRequest = { timePickerOpen = false }) {
             Surface(
-                shape = RoundedCornerShape(24.dp),
+                shape = WakerHeroShape,
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 6.dp,
                 shadowElevation = 18.dp,
@@ -390,7 +392,7 @@ internal fun FortuneInputSection(
     }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = WakerPanelShape,
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, borderColor),
     ) {
@@ -464,7 +466,7 @@ internal fun FortuneTimeChoice(
 ) {
     Surface(
         onClick = { onClick(value) },
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {
@@ -548,7 +550,7 @@ internal fun GenderChoice(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else {

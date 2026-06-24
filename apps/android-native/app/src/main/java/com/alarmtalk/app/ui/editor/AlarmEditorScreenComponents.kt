@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
@@ -46,6 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
+import com.alarmtalk.app.WakerTileShape
 import com.alarmtalk.app.data.AlarmTimeCalculator
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.network.DynamicPromptSettings
@@ -84,7 +87,7 @@ internal fun SharedVoiceInfoRequiredDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 460.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -103,7 +106,7 @@ internal fun SharedVoiceInfoRequiredDialog(
                 )
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
                     border = wakerCardBorder(),
                 ) {
@@ -312,7 +315,7 @@ internal fun FamilyAlarmTargetCard(
     }
 
     Card(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -399,7 +402,7 @@ internal fun RecipientSummaryRow(
         Surface(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            shape = WakerChipShape,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         ) {
             content()
@@ -407,7 +410,7 @@ internal fun RecipientSummaryRow(
     } else {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+            shape = WakerChipShape,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         ) {
             content()
@@ -425,7 +428,7 @@ internal fun RecipientPickerRow(
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+        shape = WakerTileShape,
         color = if (selected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
@@ -469,7 +472,7 @@ internal fun FamilyAlarmTargetStatus(
         else -> stringResource(R.string.editor_status_available)
     }
     Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp),
+        shape = WakerPillShape,
         color = if (blocked) {
             MaterialTheme.colorScheme.errorContainer
         } else {

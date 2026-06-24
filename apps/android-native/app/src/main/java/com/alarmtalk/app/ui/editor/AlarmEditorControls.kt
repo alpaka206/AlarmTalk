@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -27,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmAudioLimits
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.AlarmTimeCalculator
@@ -288,7 +289,7 @@ internal fun QuickChip(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
+        shape = WakerPillShape,
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Text(
@@ -372,7 +373,7 @@ internal fun PlayModeChip(
     Surface(
         onClick = onClick,
         modifier = modifier.alpha(if (locked && !selected) 0.58f else 1f),
-        shape = RoundedCornerShape(14.dp),
+        shape = WakerChipShape,
         color = if (selected) {
             MaterialTheme.colorScheme.primaryContainer
         } else if (locked) {

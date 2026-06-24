@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
@@ -48,6 +47,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.data.SnoozeRepeatLimits
 import com.alarmtalk.app.data.VibrationPatternLibrary
 import com.alarmtalk.app.data.VibrationPatterns
@@ -236,7 +237,7 @@ internal fun SnoozeSettingsPane(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.surface,
                 ) {
                     Row(
@@ -358,7 +359,7 @@ internal fun SnoozeOptionSection(
             modifier = Modifier.padding(start = 4.dp),
         )
         Surface(
-            shape = RoundedCornerShape(14.dp),
+            shape = WakerChipShape,
             color = MaterialTheme.colorScheme.surface,
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
