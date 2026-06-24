@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Mic
@@ -39,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 
 // VoiceProfileManagementPanel 에서 분리한 하위 컴포넌트/다이얼로그.
 // 동작/디자인 변경 없음 — top-level private→internal 가시성만 조정.
@@ -46,7 +47,7 @@ import com.alarmtalk.app.R
 @Composable
 internal fun VoiceProgressMessage(text: String) {
     Surface(
-        shape = RoundedCornerShape(999.dp),
+        shape = WakerPillShape,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
     ) {
         Row(
@@ -159,7 +160,7 @@ internal fun SharedVoiceViewerInfoDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 460.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -202,7 +203,7 @@ internal fun SharedVoiceViewerInfoDialog(
                 }
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
                     border = wakerCardBorder(),
                 ) {
@@ -299,7 +300,7 @@ internal fun VoiceFormDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -371,7 +372,7 @@ internal fun VoiceProfileDeleteDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
