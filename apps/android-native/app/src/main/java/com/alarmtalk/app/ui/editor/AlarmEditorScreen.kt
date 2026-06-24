@@ -1086,7 +1086,7 @@ internal fun AlarmEditorScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_TIME),
+                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_TIME, targetRadius = 34.dp),
                     )
                 }
 

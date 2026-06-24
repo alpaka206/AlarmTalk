@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerHeroShape
+import com.alarmtalk.app.WakerScrimColor
 
 /** 사용 가이드 한 단계의 내용. */
 data class UsageGuideStep(
@@ -65,7 +65,7 @@ fun UsageGuideOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(SCRIM_COLOR)
+            .background(WakerScrimColor)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -77,7 +77,7 @@ fun UsageGuideOverlay(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 28.dp),
-            shape = RoundedCornerShape(24.dp),
+            shape = WakerHeroShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
@@ -177,6 +177,3 @@ fun UsageGuideDialog(
         UsageGuideOverlay(steps = steps, onFinish = onFinish)
     }
 }
-
-/** handoff 프로토타입 코치마크 스크림 rgba(5,8,14,.74) 과 같은 농도. */
-private val SCRIM_COLOR = Color(0xBD05080E)

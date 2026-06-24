@@ -197,7 +197,7 @@ internal fun AlarmListScreen(
             NativeTab.Home -> {
                 item { HomeHeader() }
                 item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO)) {
+                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
                         NextAlarmHeroCard(
                             nextAlarm = nextAlarm,
                             onClick = {
