@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Alarm
@@ -29,6 +28,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 
 @Composable
 internal fun AlarmsHeader(
@@ -51,7 +52,7 @@ internal fun AlarmsHeader(
         ) {
             Button(
                 onClick = onCreateAlarm,
-                shape = RoundedCornerShape(999.dp),
+                shape = WakerPillShape,
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Icon(
@@ -70,7 +71,7 @@ internal fun AlarmsHeader(
 @Composable
 internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
@@ -92,7 +93,7 @@ internal fun EmptyAlarmCard(onCreateAlarm: () -> Unit) {
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
-            Button(onClick = onCreateAlarm, shape = RoundedCornerShape(999.dp)) {
+            Button(onClick = onCreateAlarm, shape = WakerPillShape) {
                 Text(stringResource(R.string.r3misc_alarms_create_new_button))
             }
         }

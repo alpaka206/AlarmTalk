@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DarkMode
@@ -43,6 +42,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerCardShape
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.widthIn
@@ -110,7 +112,7 @@ internal fun ProfileMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
             modifier = Modifier.width(232.dp),
-            shape = RoundedCornerShape(22.dp),
+            shape = WakerCardShape,
             containerColor = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 14.dp,
@@ -248,7 +250,7 @@ internal fun ThemeModePickerDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .widthIn(max = 420.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -295,7 +297,7 @@ private fun ThemeModeOptionRow(
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = WakerPanelShape,
         color = if (selected) {
             scheme.primaryContainer.copy(alpha = 0.62f)
         } else {
@@ -346,7 +348,7 @@ private fun ThemeModeOptionRow(
             }
             if (selected) {
                 Surface(
-                    shape = RoundedCornerShape(999.dp),
+                    shape = WakerPillShape,
                     color = scheme.primary,
                     contentColor = scheme.onPrimary,
                 ) {
@@ -382,7 +384,7 @@ internal fun NicknameEditDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .widthIn(max = 430.dp),
-            shape = WakerCardShape,
+            shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 0.dp,
             shadowElevation = 18.dp,
@@ -400,7 +402,7 @@ internal fun NicknameEditDialog(
                     dismissEnabled = !busy,
                 )
                 Surface(
-                    shape = RoundedCornerShape(18.dp),
+                    shape = WakerPanelShape,
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {

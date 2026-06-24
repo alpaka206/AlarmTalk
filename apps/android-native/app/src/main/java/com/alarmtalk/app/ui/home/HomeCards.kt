@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.Alarm
@@ -41,6 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerHeroShape
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.network.CharacterResponse
 import kotlin.math.PI
@@ -54,7 +56,7 @@ internal fun NextAlarmHeroCard(
     val hasAlarm = nextAlarm != null
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(24.dp),
+        shape = WakerHeroShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -180,7 +182,7 @@ private fun HomeVoiceWaveform(
                     .height((8 + animatedLevel * 34).dp)
                     .background(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WakerPillShape,
                     ),
             )
         }
@@ -256,7 +258,7 @@ internal fun HomeActionCard(
     Card(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -335,7 +337,7 @@ internal fun CharacterMiniCard(
 
     Card(
         onClick = onClick,
-        shape = RoundedCornerShape(20.dp),
+        shape = WakerPanelShape,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
@@ -385,13 +387,13 @@ internal fun CharacterMiniCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(5.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(999.dp)),
+                        .background(MaterialTheme.colorScheme.surfaceVariant, WakerPillShape),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(progress)
                             .height(5.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(999.dp)),
+                            .background(MaterialTheme.colorScheme.tertiary, WakerPillShape),
                     )
                 }
             }
