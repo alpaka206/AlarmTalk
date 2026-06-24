@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -20,6 +19,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerDialogShape
 
 @Composable
 internal fun PlanGateDialog(
@@ -40,7 +41,7 @@ internal fun PlanGateDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .widthIn(max = 380.dp),
-            shape = RoundedCornerShape(28.dp),
+            shape = WakerDialogShape,
             color = scheme.surface,
             tonalElevation = 6.dp,
             border = BorderStroke(1.dp, scheme.outlineVariant),
@@ -76,7 +77,7 @@ internal fun PlanGateDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Text(confirmLabel, maxLines = 1)
                     }

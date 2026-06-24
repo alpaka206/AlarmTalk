@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,6 +20,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerDialogShape
 
 /**
  * 같은 시각에 이미 알람이 있을 때 띄우는 확인 다이얼로그.
@@ -53,7 +54,7 @@ internal fun DuplicateAlarmDialog(
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .widthIn(max = 380.dp),
-            shape = RoundedCornerShape(28.dp),
+            shape = WakerDialogShape,
             color = scheme.surface,
             tonalElevation = 6.dp,
             border = BorderStroke(1.dp, scheme.outlineVariant),
@@ -79,7 +80,7 @@ internal fun DuplicateAlarmDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(48.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = WakerChipShape,
                     ) {
                         Text(stringResource(R.string.r3dlg_duplicate_alarm_replace), maxLines = 1)
                     }

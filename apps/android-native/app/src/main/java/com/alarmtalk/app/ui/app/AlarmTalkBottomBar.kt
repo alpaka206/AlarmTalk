@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
@@ -39,6 +38,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.alarmtalk.app.WakerChipShape
 
 @Composable
 internal fun AlarmTalkBottomBar(
@@ -142,7 +142,7 @@ internal fun AlarmTalkTabItem(
                 } else {
                     Color.Transparent
                 },
-                shape = RoundedCornerShape(14.dp),
+                shape = WakerChipShape,
             )
             .padding(vertical = 6.dp),
     ) {

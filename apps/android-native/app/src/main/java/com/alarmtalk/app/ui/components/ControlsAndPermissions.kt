@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerTileShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -163,7 +164,7 @@ internal fun PermissionRow(
         ) {
             Surface(
                 modifier = Modifier.size(38.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = WakerTileShape,
                 color = if (granted) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                 } else {
@@ -334,7 +335,7 @@ internal fun AlarmRow(
                 if (warningText != null) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = WakerTileShape,
                         color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     ) {
