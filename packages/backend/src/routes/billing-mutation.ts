@@ -463,15 +463,20 @@ interface FamilyOwnerContext {
 }
 
 type FamilyOwnerLookup =
-  | { ctx: FamilyOwnerContext }
+  | { ctx: FamilyOwnerContext; memberCount: number }
   | {
       error: {
-        status: 404 | 409;
+        status: 404;
         body: { error: string; error_code: string };
       };
     };
 
-/** 활성 가족 플랜 소유자 구독 + 그룹 정원 가드. 공유 코드 발급/재발급 공통. */
+/**
+ * 활성 가족 플랜 소유자 구독을 찾는다(정원 가드는 호출 측 책임).
+ *  - 발급(family-share)은 정원이 차면 새 코드가 무의미하므로 GROUP_FULL 로 막는다.
+ *  - 재발급(regenerate)은 *정원이 찼을 때도* 유출된 코드를 끊을 수 있어야 하므로
+ *    정원 가드를 적용하지 않는다. 그래서 가드를 여기서 빼고 memberCount 만 넘긴다.
+ */
 async function loadActiveFamilyOwnerContext(
   tx: DbExecutor,
   userPk: string,
@@ -511,17 +516,6 @@ async function loadActiveFamilyOwnerContext(
   const planType = String(subscription.plan_type);
   const maxMembers = Number(subscription.group_max_members ?? subscription.max_members) || 6;
   const memberCount = Number(subscription.member_count ?? 0);
-  if (memberCount >= maxMembers) {
-    return {
-      error: {
-        status: 409,
-        body: {
-          error: `Group is full: max ${maxMembers}`,
-          error_code: 'GROUP_FULL',
-        },
-      },
-    };
-  }
 
   return {
     ctx: {
@@ -534,6 +528,7 @@ async function loadActiveFamilyOwnerContext(
       maxUses: plannedMaxUses(planType, maxMembers),
       expiresAt: String(subscription.expires_at),
     },
+    memberCount,
   };
 }
 
@@ -581,6 +576,19 @@ billingMutation.post('/vouchers/family-share', async (c) => {
     if ('error' in lookup) return lookup;
     const ctx = lookup.ctx;
 
+    // 정원이 차면 더 초대할 수 없으므로 새 코드 발급/재사용을 막는다.
+    if (lookup.memberCount >= ctx.maxMembers) {
+      return {
+        error: {
+          status: 409,
+          body: {
+            error: `Group is full: max ${ctx.maxMembers}`,
+            error_code: 'GROUP_FULL',
+          },
+        },
+      };
+    }
+
     const existingRes = await tx.execute({
       sql: `SELECT v.id, v.code, v.status, v.issued_at, v.expires_at, v.max_uses,
                    (SELECT COUNT(*) FROM voucher_redemptions WHERE voucher_id = v.id) AS use_count
@@ -627,8 +635,9 @@ billingMutation.post('/vouchers/family-share', async (c) => {
   return c.json({ success: true, voucher: result.voucher });
 });
 
-// 공유 코드 재발급: 기존 활성 코드를 무효화(expired)하고 새 코드를 발급한다.
+// 공유 코드 재발급: 기존 코드를 무효화(expired)하고 새 코드를 발급한다.
 // 유출이 의심될 때 사용자가 직접 코드를 끊고 새로 만들 수 있게 한다.
+// 정원이 꽉 차도(유출 의심 시점이 보통 이때다) 허용해야 하므로 GROUP_FULL 가드를 두지 않는다.
 billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
   const userPk = await resolveUserPk(c);
   if (!userPk) {
@@ -641,14 +650,16 @@ billingMutation.post('/vouchers/family-share/regenerate', async (c) => {
     if ('error' in lookup) return lookup;
     const ctx = lookup.ctx;
 
-    // 같은 구독에 묶인 현재 발급 상태의 코드를 모두 만료 처리(이미 합류한 멤버는
-    // 별도 구독으로 유지되므로 영향 없음 — 남은 미사용 슬롯의 코드만 무효화된다).
+    // 같은 구독에 묶인 기존 코드를 issued·used 모두 만료 처리한다.
+    // used 만 빼면, 멤버 이탈 시 releaseInviteUseForMember 가 used→issued 로 되돌려
+    // 유출된 코드가 다시 사용 가능해질 수 있다(expired 는 되돌리지 않음).
+    // 이미 합류한 멤버의 구독 자체는 별도 행이라 영향 없다.
     await tx.execute({
       sql: `UPDATE voucher_codes
             SET status = 'expired'
             WHERE issuer_user_id = ?
               AND issuer_subscription_id = ?
-              AND status = 'issued'`,
+              AND status IN ('issued', 'used')`,
       args: [userPk, ctx.subscriptionId],
     });
 
