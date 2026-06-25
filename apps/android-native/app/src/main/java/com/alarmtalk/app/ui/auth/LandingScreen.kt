@@ -27,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -93,7 +94,8 @@ private fun landingPalette(): LandingPalette {
 @Composable
 internal fun LandingScreen(
     contentPadding: PaddingValues,
-    onGetStarted: () -> Unit,
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
 ) {
     val colors = landingPalette()
     Column(
@@ -103,6 +105,7 @@ internal fun LandingScreen(
             .padding(contentPadding)
             .padding(horizontal = 22.dp, vertical = 22.dp),
     ) {
+        Spacer(Modifier.height(16.dp))
         WakerBrandHeader()
         Spacer(Modifier.height(18.dp))
         Text(
@@ -115,7 +118,7 @@ internal fun LandingScreen(
         AlarmIdentityPreview(colors = colors)
         Spacer(Modifier.weight(1f))
         Button(
-            onClick = onGetStarted,
+            onClick = onRegister,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -126,9 +129,25 @@ internal fun LandingScreen(
             ),
         ) {
             Text(
-                text = stringResource(R.string.auth_landing_get_started),
+                text = stringResource(R.string.auth_title_register),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onLogin,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = WakerButtonShape,
+            border = BorderStroke(1.dp, colors.line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
+        ) {
+            Text(
+                text = stringResource(R.string.auth_title_login),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
             )
         }
     }

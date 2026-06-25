@@ -470,7 +470,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
                   contentPadding = padding,
-                  onGetStarted = { authRoute = AuthRoute.Auth(AuthMode.Login) },
+                  onLogin = { authRoute = AuthRoute.Auth(AuthMode.Login) },
+                  onRegister = { authRoute = AuthRoute.Auth(AuthMode.Register) },
               )
               is AuthRoute.Auth -> AuthScreen(
                   contentPadding = padding,
