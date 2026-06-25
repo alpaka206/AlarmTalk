@@ -1,4 +1,4 @@
-import { ArrowRight, Mic, AlarmClock, ChevronRight } from "lucide-react";
+import { ArrowRight, Mic, AlarmClock } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { BrandMark } from "./brand-mark";
 import { LivingWaveform } from "./motion/living-waveform";
@@ -13,7 +13,6 @@ const WAVEFORM = [
 // Phone screen mirrors the app's native dark UI, tinted to the brand blue so it
 // reads as one family with the light page (matches the native app's accent).
 const ACCENT = "#6ba8f0";
-const SAGE = "#8fbf9e";
 const SCREEN_TEXT = "#f7f4ee";
 const SCREEN_MUTED = "#b0a89c";
 const SCREEN_CARD = "#1c1813";
@@ -129,33 +128,6 @@ export function PhonePreview() {
                 accentBg="#1b3147"
                 accentFg="#d4e6ff"
               />
-            </div>
-
-            {/* CharacterMiniCard */}
-            <div className="mt-3 flex items-center gap-3 rounded-[18px] p-3" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
-              <div
-                className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[16px]"
-                style={{ backgroundColor: "#2e3a2c", color: "#dcebd6" }}
-              >
-                🌱
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between">
-                  <span className="whitespace-nowrap text-[11.5px] font-bold" style={{ color: SCREEN_TEXT }}>
-                    LV.3
-                  </span>
-                  <span className="whitespace-nowrap text-[10px]" style={{ color: SCREEN_MUTED }}>
-                    {t("streak")}
-                  </span>
-                </div>
-                <div className="mt-1.5 h-[3px] w-full overflow-hidden rounded-full" style={{ backgroundColor: "#262019" }}>
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: "62%", backgroundColor: SAGE }}
-                  />
-                </div>
-              </div>
-              <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: SAGE }} />
             </div>
           </div>
 

@@ -44,7 +44,6 @@ import com.alarmtalk.app.WakerHeroShape
 import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.data.AlarmEntity
-import com.alarmtalk.app.network.CharacterResponse
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -322,86 +321,3 @@ internal fun HomeActionCard(
     }
 }
 
-@Composable
-internal fun CharacterMiniCard(
-    characterResponse: CharacterResponse?,
-    onClick: () -> Unit,
-) {
-    val character = characterResponse?.character
-    val stage = character?.stage ?: "seed"
-    val level = character?.level ?: 1
-    val streak = characterResponse?.streak?.current ?: 0
-    val xpIntoLevel = characterResponse?.progress?.xpIntoLevel ?: 0
-    val levelSpan = characterResponse?.progress?.levelSpan ?: 100
-    val progress = (xpIntoLevel.toFloat() / levelSpan.toFloat().coerceAtLeast(1f)).coerceIn(0f, 1f)
-
-    Card(
-        onClick = onClick,
-        shape = WakerPanelShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                modifier = Modifier.size(52.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = stageEmoji(stage),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.hs_character_level, level),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = stringResource(R.string.hs_character_streak, streak),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, WakerPillShape),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(progress)
-                            .height(5.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, WakerPillShape),
-                    )
-                }
-            }
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.tertiary,
-            )
-        }
-    }
-}

@@ -17,7 +17,6 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
@@ -25,7 +24,6 @@ import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.CancelSubscriptionRequest
 import com.alarmtalk.app.network.ChangePlanRequest
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -61,8 +59,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 
-internal fun MainViewModel.refreshCharacterAndBilling() {
-    refreshCharacterAndBillingData(showMessage = true)
+internal fun MainViewModel.refreshBilling() {
+    refreshBillingData(showMessage = true)
 }
 
 internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
@@ -103,89 +101,61 @@ internal suspend fun MainViewModel.refreshShareCodeData(): List<VoucherItem> {
     }
 }
 
-internal fun MainViewModel.preloadCharacterAndBilling() {
-    if (authSession == null || characterBusy || billingRefreshing || billingBusy) return
-    refreshCharacterAndBillingData(showMessage = false)
+internal fun MainViewModel.preloadBilling() {
+    if (authSession == null || billingRefreshing || billingBusy) return
+    refreshBillingData(showMessage = false)
 }
 
 // read-only 새로고침은 billingRefreshing 만 올린다 — billingBusy 를 쓰면 패널 진입
-// 직후 구매 버튼이 네트워크 3개가 끝날 때까지 비활성화되는 문제가 있었다.
-private fun MainViewModel.refreshCharacterAndBillingData(showMessage: Boolean) {
-    if (characterBusy || billingRefreshing || billingBusy) return
+// 직후 구매 버튼이 네트워크 호출이 끝날 때까지 비활성화되는 문제가 있었다.
+private fun MainViewModel.refreshBillingData(showMessage: Boolean) {
+    if (billingRefreshing || billingBusy) return
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_growth_info)) ?: return
-    characterBusy = true
     billingRefreshing = true
     viewModelScope.launch {
         try {
             runCatching {
-                loadCharacterBillingSnapshot(authorization)
+                loadBillingSnapshot(authorization)
             }.onSuccess { snapshot ->
-                applyCharacterBillingSnapshot(snapshot)
+                applyBillingSnapshot(snapshot)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to load character or billing", error)
+                Log.e(TAG, "Failed to load billing", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_info_load_failed))
             }
         } finally {
-            characterBusy = false
             billingRefreshing = false
         }
     }
 }
 
-internal fun MainViewModel.syncCharacterEvents() {
-    val session = authSession
-    if (session == null) {
-        message = getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_sync_growth_records)
-        return
-    }
-    if (characterBusy) return
-    viewModelScope.launch {
-        characterBusy = true
-        val syncResult = runCatching {
-            repository.syncCharacterEvents(api, session.token)
-        }
-        characterBusy = false
-        syncResult.onSuccess { result ->
-            message = getApplication<android.app.Application>().getString(R.string.msg_gb_growth_records_applied, result.failed)
-            refreshCharacterAndBillingData(showMessage = false)
-        }.onFailure { error ->
-            Log.e(TAG, "Character event sync failed", error)
-            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_growth_records_apply_failed))
-        }
-    }
-}
-
-private suspend fun MainViewModel.loadCharacterBillingSnapshot(
+private suspend fun MainViewModel.loadBillingSnapshot(
     authorization: String,
-): CharacterBillingSnapshot =
+): BillingSnapshot =
     coroutineScope {
-        val character = async { api.getCharacter(authorization) }
         val subscription = async { api.getSubscription(authorization) }
         val vouchers = async { api.listVouchers(authorization).vouchers }
-        CharacterBillingSnapshot(
-            character = character.await(),
+        BillingSnapshot(
             subscription = subscription.await(),
             vouchers = vouchers.await(),
         )
     }
 
-private fun MainViewModel.applyCharacterBillingSnapshot(snapshot: CharacterBillingSnapshot) {
-    characterResponse = snapshot.character
+private fun MainViewModel.applyBillingSnapshot(snapshot: BillingSnapshot) {
     subscriptionResponse = snapshot.subscription
     saveSubscriptionSnapshot(snapshot.subscription)
     vouchers = snapshot.vouchers
 }
 
-private suspend fun MainViewModel.refreshCharacterBillingAfterMutation(
+private suspend fun MainViewModel.refreshBillingAfterMutation(
     authorization: String,
     reason: String,
 ) {
     runCatching {
-        loadCharacterBillingSnapshot(authorization)
+        loadBillingSnapshot(authorization)
     }.onSuccess { snapshot ->
-        applyCharacterBillingSnapshot(snapshot)
+        applyBillingSnapshot(snapshot)
     }.onFailure { error ->
-        Log.w(TAG, "Failed to refresh character or billing after $reason", error)
+        Log.w(TAG, "Failed to refresh billing after $reason", error)
     }
 }
 
@@ -218,25 +188,6 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         else -> fallback
     }
 
-internal fun MainViewModel.syncPendingCharacterEventsSilently() {
-    val session = authSession ?: return
-    if (characterBusy) return
-    viewModelScope.launch {
-        characterBusy = true
-        val syncResult = runCatching {
-            repository.syncCharacterEvents(api, session.token)
-        }
-        characterBusy = false
-        syncResult.onSuccess { result ->
-            if (result.synced > 0) {
-                refreshCharacterAndBillingData(showMessage = false)
-            }
-        }.onFailure { error ->
-            Log.e(TAG, "Silent character event sync failed", error)
-        }
-    }
-}
-
 internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code)) ?: return
     val trimmedCode = code.trim()
@@ -250,7 +201,7 @@ internal fun MainViewModel.registerCode(code: String) {
             api.registerCode(authorization, CodeRegisterRequest(trimmedCode))
         }.onSuccess { response ->
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_code_registered)
-            refreshCharacterBillingAfterMutation(authorization, "code registration")
+            refreshBillingAfterMutation(authorization, "code registration")
             refreshSocial()
             refreshAppSession()
             if (response.type == "invite" || trimmedCode.startsWith("INV-", ignoreCase = true)) {
@@ -456,7 +407,7 @@ internal fun MainViewModel.checkoutPlan(planKey: String, gift: Boolean = false) 
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied_named, response.plan.name)
             }
-            refreshCharacterBillingAfterMutation(authorization, "checkout")
+            refreshBillingAfterMutation(authorization, "checkout")
             if (!gift) {
                 refreshAppSession()
                 refreshSocial()
@@ -526,7 +477,7 @@ internal fun MainViewModel.confirmGooglePurchase(purchaseToken: String, productI
         }.onSuccess { response ->
             if (response.success) {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_plan_applied)
-                refreshCharacterBillingAfterMutation(authorization, "google play confirm")
+                refreshBillingAfterMutation(authorization, "google play confirm")
                 refreshAppSession()
                 refreshSocial()
             } else {
@@ -558,7 +509,7 @@ internal fun MainViewModel.ensureFamilyShareCode() {
         }.onSuccess { voucher ->
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_ready, planLabel)
-            refreshCharacterBillingAfterMutation(authorization, "family share code")
+            refreshBillingAfterMutation(authorization, "family share code")
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to ensure family share code", error)
@@ -587,7 +538,7 @@ internal fun MainViewModel.regenerateFamilyShareCode() {
             // 새 코드를 즉시 노출. 만료된 옛 코드는 아래 새로고침에서 서버 기준으로 정리된다.
             vouchers = listOf(voucher) + vouchers.filterNot { it.id == voucher.id }
             message = getApplication<android.app.Application>().getString(R.string.msg_gb_share_code_regenerated, planLabel)
-            refreshCharacterBillingAfterMutation(authorization, "regenerate family share code")
+            refreshBillingAfterMutation(authorization, "regenerate family share code")
             refreshSocial()
         }.onFailure { error ->
             Log.e(TAG, "Failed to regenerate family share code", error)
@@ -617,7 +568,7 @@ internal fun MainViewModel.cancelSubscription(atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_subscription_canceled)
             }
-            refreshCharacterBillingAfterMutation(authorization, "subscription cancellation")
+            refreshBillingAfterMutation(authorization, "subscription cancellation")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
@@ -665,7 +616,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             } else {
                 getApplication<android.app.Application>().getString(R.string.msg_gb_plan_changed)
             }
-            refreshCharacterBillingAfterMutation(authorization, "plan change")
+            refreshBillingAfterMutation(authorization, "plan change")
             refreshAppSession()
             refreshSocial()
         }.onFailure { error ->
@@ -679,7 +630,7 @@ internal fun MainViewModel.changePlan(planKey: String, atPeriodEnd: Boolean) {
             }
             if (errorCode == "SAME_PLAN") {
                 message = getApplication<android.app.Application>().getString(R.string.msg_gb_same_plan_in_use)
-                refreshCharacterBillingAfterMutation(authorization, "same plan check")
+                refreshBillingAfterMutation(authorization, "same plan check")
                 return@onFailure
             }
             message = billingFailureMessage(getApplication<android.app.Application>(), errorCode, userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_plan_change_failed)))

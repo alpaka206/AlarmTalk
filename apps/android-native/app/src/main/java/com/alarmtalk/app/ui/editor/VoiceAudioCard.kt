@@ -1,6 +1,8 @@
 package com.alarmtalk.app
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -473,40 +475,40 @@ private fun VoiceProfileSelector(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Column {
-            Surface(
-                onClick = { expanded = !expanded },
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text(
-                            text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        if (selectedOption != null) {
-                            MutedText(selectedOption.detail)
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text(
+                        text = selectedOption?.name ?: stringResource(R.string.editor_voice_select),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
                     )
+                    if (selectedOption != null) {
+                        MutedText(selectedOption.detail)
+                    }
                 }
+                Spacer(Modifier.width(12.dp))
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (expanded) {
                 Column(
@@ -598,34 +600,34 @@ private fun StockClipDropdown(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
     ) {
         Column {
-            Surface(
-                onClick = { expanded = !expanded },
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { expanded = !expanded }
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text(stringResource(R.string.editor_stock_clip_title), fontWeight = FontWeight.SemiBold)
-                        MutedText(stringResource(R.string.editor_stock_clip_subtitle))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(stringResource(R.string.editor_stock_clip_title), fontWeight = FontWeight.SemiBold)
+                    MutedText(stringResource(R.string.editor_stock_clip_subtitle))
                 }
+                Spacer(Modifier.width(12.dp))
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (expanded) {
                 // 언어를 먼저 고른 뒤, 해당 언어의 카테고리별 알람 클립을 모두 보여준다.

@@ -33,7 +33,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
-import com.alarmtalk.app.data.CharacterEventStates
 import com.alarmtalk.app.data.AlarmOrigins
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
@@ -51,9 +50,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val socialBusy = viewModel.socialBusy
     val familyGroup = viewModel.familyGroup
     val familyVoices = viewModel.familyVoices
-    val characterEvents by viewModel.characterEvents.collectAsStateWithLifecycle()
-    val characterBusy = viewModel.characterBusy
-    val characterResponse = viewModel.characterResponse
     val billingBusy = viewModel.billingBusy
     val subscriptionResponse = viewModel.subscriptionResponse
     val vouchers = viewModel.vouchers
@@ -82,9 +78,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             alarm.origin == AlarmOrigins.RECEIVED_REMOTE &&
                 alarm.createdAtMillis > viewModel.receivedAlarmSeenAtMillis
         }
-    }
-    val pendingCharacterEventCount = remember(characterEvents) {
-        characterEvents.count { it.state == CharacterEventStates.PENDING }
     }
     // 읽지 않은 메시지 수도 receivedNotes 가 바뀔 때만 계산(매 리컴포지션 재계산 방지).
     val unreadMessageCount = remember(receivedNotes) {
@@ -242,7 +235,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             viewModel.preloadVoiceProfiles()
             viewModel.loadStockClips()
             viewModel.preloadSocial()
-            viewModel.preloadCharacterAndBilling()
+            viewModel.preloadBilling()
             viewModel.preloadNotes()
         }
     }
@@ -256,14 +249,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     ) {
         if (authSession != null && subscriptionResponse != null && !hasPaidVoiceAccess(subscriptionResponse)) {
             viewModel.applyFreePlanVoiceLock()
-        }
-    }
-
-    // 목소리 탭은 무료 플랜에도 연다 — 시스템 스톡 보이스(미리듣기·알람 사용)는 무료,
-    // "내 목소리 만들기"만 탭 안에서 플랜 게이트를 거친다.
-    LaunchedEffect(authSession?.token, pendingCharacterEventCount, characterBusy) {
-        if (authSession != null && pendingCharacterEventCount > 0 && !characterBusy) {
-            viewModel.syncPendingCharacterEventsSilently()
         }
     }
 
@@ -288,7 +273,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         lastTabRefreshAt[throttleKey] = now
         when (tab) {
             NativeTab.Home -> {
-                viewModel.refreshCharacterAndBilling()
+                viewModel.refreshBilling()
                 viewModel.refreshSocial()
             }
             NativeTab.Voices -> {
@@ -299,14 +284,13 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             NativeTab.Alarms -> viewModel.syncNow()
             NativeTab.People -> {
                 viewModel.refreshSocial()
-                viewModel.refreshCharacterAndBilling()
+                viewModel.refreshBilling()
             }
             NativeTab.Messages -> {
                 viewModel.refreshSocial()
                 viewModel.refreshNotes()
             }
-            NativeTab.Growth,
-            NativeTab.Billing -> viewModel.refreshCharacterAndBilling()
+            NativeTab.Billing -> viewModel.refreshBilling()
         }
     }
 
@@ -562,9 +546,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           socialBusy = socialBusy,
                           familyGroup = familyGroup,
                           familyVoices = familyVoices,
-                          characterEvents = characterEvents,
-                          characterBusy = characterBusy,
-                          characterResponse = characterResponse,
                           billingBusy = billingBusy,
                           subscriptionResponse = subscriptionResponse,
                           vouchers = vouchers,
@@ -595,8 +576,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
-                          onRefreshCharacterBilling = viewModel::refreshCharacterAndBilling,
-                          onSyncCharacterEvents = viewModel::syncCharacterEvents,
                           onRegisterCode = viewModel::registerCode,
                           onEnsureFamilyShareCode = viewModel::ensureFamilyShareCode,
                           onRefreshNotes = viewModel::refreshNotes,

@@ -144,7 +144,6 @@ describe('Protected Routes — 인증 없이 요청 시 401', () => {
     ['GET', '/api/dub/languages'],
     ['GET', '/api/billing/vouchers'],
     ['GET', '/api/family/group'],
-    ['GET', '/api/characters/me'],
     ['POST', '/api/code/register'],
     ['GET', '/api/notes/received'],
   ];

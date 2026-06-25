@@ -9,6 +9,8 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -155,36 +158,37 @@ private fun VoiceRecordScriptCard() {
         ),
     ) {
         Column {
-            Surface(
-                onClick = { expanded = !expanded },
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                // 확장/축소 토글 — 눌림 리플(indication) 없이 조용히 동작.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { expanded = !expanded }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.voices_show_recommended_script),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (expanded) {
-                            stringResource(R.string.voices_collapse)
-                        } else {
-                            stringResource(R.string.voices_expand)
-                        },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.voices_show_recommended_script),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = if (expanded) {
+                        stringResource(R.string.voices_collapse)
+                    } else {
+                        stringResource(R.string.voices_expand)
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (expanded) {
                 Text(
@@ -916,14 +920,17 @@ internal fun VoiceProfileManagementPanel(
                 if (canCreateVoice) {
                     Text(stringResource(R.string.voices_add))
                 } else {
-                    Text(stringResource(R.string.voices_locked))
+                    // 무료 플랜: 텍스트 없이 자물쇠 아이콘만 — '유료 잠금'을 간결하게.
+                    // 보이는 라벨이 없으므로 contentDescription 으로 스크린리더 라벨('잠금')을 단다.
+                    Icon(
+                        imageVector = Icons.Outlined.Lock,
+                        contentDescription = stringResource(R.string.voices_locked),
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
             }
         }
 
-        if (!canCreateVoice) {
-            MutedText(stringResource(R.string.voices_create_paid_notice))
-        }
         if (localMessage != null && !showCreateForm && localMessage != paidVoiceRequiredMessage) {
             MutedText(localMessage.orEmpty())
         }
@@ -950,35 +957,36 @@ internal fun VoiceProfileManagementPanel(
         }
 
         if (systemVoices.isNotEmpty()) {
-            Surface(
-                onClick = { systemVoicesExpanded = !systemVoicesExpanded },
-                color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth(),
+            Row(
+                // 확장/축소 토글 — 눌림 리플(indication) 없이 조용히 동작.
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { systemVoicesExpanded = !systemVoicesExpanded }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(R.string.voices_system_voices_count, systemVoices.size),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Icon(
-                        imageVector = if (systemVoicesExpanded) {
-                            Icons.Outlined.KeyboardArrowUp
-                        } else {
-                            Icons.Outlined.KeyboardArrowDown
-                        },
-                        contentDescription = if (systemVoicesExpanded) {
-                            stringResource(R.string.voices_collapse)
-                        } else {
-                            stringResource(R.string.voices_expand)
-                        },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.voices_system_voices_count, systemVoices.size),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Icon(
+                    imageVector = if (systemVoicesExpanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = if (systemVoicesExpanded) {
+                        stringResource(R.string.voices_collapse)
+                    } else {
+                        stringResource(R.string.voices_expand)
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (systemVoicesExpanded) {
                 systemVoices.forEach { profile ->
@@ -1008,7 +1016,7 @@ internal fun VoiceProfileManagementPanel(
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
-            message = paidVoiceRequiredMessage,
+            message = stringResource(R.string.voices_create_paid_notice),
             onConfirm = {
                 voicePlanGateOpen = false
                 onOpenBilling()

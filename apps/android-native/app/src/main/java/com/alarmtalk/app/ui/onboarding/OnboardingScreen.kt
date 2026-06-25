@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
@@ -57,11 +56,6 @@ private val OnboardingPages = listOf(
         title = R.string.misc2_onboarding_together_title,
         description = R.string.misc2_onboarding_together_desc,
     ),
-    OnboardingPage(
-        icon = Icons.Outlined.AutoAwesome,
-        title = R.string.misc2_onboarding_grow_title,
-        description = R.string.misc2_onboarding_grow_desc,
-    ),
 )
 
 @Composable
@@ -94,14 +88,8 @@ internal fun OnboardingScreen(
                 .weight(1f),
         ) { pageIndex ->
             val page = OnboardingPages[pageIndex]
-            val iconContainerColor = when (pageIndex) {
-                2 -> MaterialTheme.colorScheme.tertiaryContainer
-                else -> MaterialTheme.colorScheme.secondaryContainer
-            }
-            val iconContentColor = when (pageIndex) {
-                2 -> MaterialTheme.colorScheme.onTertiaryContainer
-                else -> MaterialTheme.colorScheme.onSecondaryContainer
-            }
+            val iconContainerColor = MaterialTheme.colorScheme.secondaryContainer
+            val iconContentColor = MaterialTheme.colorScheme.onSecondaryContainer
             Column(
                 modifier = Modifier
                     .fillMaxSize()

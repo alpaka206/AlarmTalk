@@ -1,6 +1,6 @@
 # Standards
 
-Coding conventions, git workflow, security policy, XP rules, and key architecture decisions.
+Coding conventions, git workflow, security policy, and key architecture decisions.
 
 ## 1. Principles
 
@@ -235,90 +235,7 @@ The full external policy is in `SECURITY.md`. The internal rules are:
 - Personal data is never logged. Email and similar identifiers are hashed before logging if they appear at all.
 - Secret rotation every 90 days. Rotation owner: release engineer + tech lead.
 
-## 13. XP rules (single source of truth)
-
-The numbers below are the source of truth and must match `packages/backend/src/lib/xpRules.ts`. Update both in the same PR.
-
-### Event → XP / affection map
-
-| Event (`XpEvent`) | XP | Affection | Meaning |
-|---|---|---|---|
-| `alarm_completed` | 5 | 2 | User dismissed on time |
-| `alarm_snoozed` | -5 | 0 | User snoozed or missed the on-time completion path |
-| `alarm_dismissed` | -5 | 0 | Force-killed or dismissed outside the on-time completion path |
-| `family_alarm_received` | 10 | 3 | A family-sent alarm successfully played for the recipient |
-| `friend_invited` | 50 | 5 | Friend accepted an invite (one-time boost) |
-
-### Daily cap
-
-- `DAILY_XP_CAP = 200` XP.
-- Half-grant rule: if the request would push the day's earned XP past 200, only the remaining headroom is granted and the response sets `capped = true`.
-- Negative alarm XP is not counted against the daily cap.
-- Applied XP must never go below 0 or below the current level's minimum threshold, so level never decreases.
-- Affection has no cap: it represents a relationship dimension, not a level inflation lever.
-
-### Pure-function contract
-
-`packages/backend/src/lib/xpRules.ts` exposes:
-
-```ts
-type XpEvent =
-  | 'alarm_completed'
-  | 'alarm_snoozed'
-  | 'alarm_dismissed'
-  | 'family_alarm_received'
-  | 'friend_invited'
-  | 'streak_bonus_7'
-  | 'streak_bonus_30'
-  | 'streak_bonus_90';
-
-const DAILY_XP_CAP = 200;
-
-function computeXpForEvent(event: XpEvent): number;
-function computeAffectionForEvent(event: XpEvent): number;
-function isXpEvent(value: unknown): value is XpEvent;
-
-interface DailyCapResult {
-  grantedXp: number;
-  capped: boolean;
-  remainingCap: number;
-}
-function applyDailyXpCap(
-  earned: number,
-  alreadyEarnedToday: number,
-  cap?: number,
-): DailyCapResult;
-
-interface GrantResult {
-  xp: DailyCapResult;
-  affection: number;
-  event: XpEvent;
-}
-function computeGrant(
-  event: XpEvent,
-  alreadyEarnedToday: number,
-  cap?: number,
-): GrantResult;
-```
-
-### Edge-case guarantees
-
-- `earned < 0` → negative `grantedXp` is returned as a penalty candidate; the character mutation layer clamps applied XP to 0 and the current level floor.
-- `earned = 0` or `NaN` → `grantedXp = 0`, `capped = false`. The cap is untouched.
-- `alreadyEarnedToday < 0` is treated as 0.
-- `cap` defaults to 200; passing 0 makes every grant a no-op (test scenario).
-- The runtime guard `isXpEvent` rejects out-of-whitelist event names.
-
-### `POST /api/characters/xp` semantics
-
-Server reads `alreadyEarnedToday` (from `characters.daily_xp` or `character_xp_logs`), runs `computeGrant`, then in a transaction:
-
-1. `UPDATE characters SET xp += appliedGrantedXp, affection += affection`, clamping XP to 0 and the current level floor.
-2. `INSERT character_xp_logs` (with `(character_id, client_nonce)` unique constraint)
-3. Recompute `level` and `stage` and persist them
-4. Respond with the updated character snapshot
-
-## 14. Architecture decisions (selected)
+## 13. Architecture decisions (selected)
 
 ### A1. OS-native alarm scheduling, no push
 

@@ -363,85 +363,6 @@ export const migrations: Migration[] = [
     ],
   },
   {
-    id: 11,
-    name: 'characters',
-    statements: [
-      // 1 사용자 = 1 캐릭터. 알람을 정상 종료하면 XP 획득 → level/stage 성장.
-      // stage: 'seed'(씨앗) → 'sprout'(새싹) → 'tree'(나무) → 'bloom'(꽃)
-      `CREATE TABLE IF NOT EXISTS characters (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
-        name TEXT NOT NULL DEFAULT '내 캐릭터',
-        level INTEGER NOT NULL DEFAULT 1,
-        xp INTEGER NOT NULL DEFAULT 0,
-        affection INTEGER NOT NULL DEFAULT 0,
-        stage TEXT NOT NULL DEFAULT 'seed' CHECK(stage IN ('seed','sprout','tree','bloom')),
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_user ON characters(user_id)',
-    ],
-  },
-  {
-    id: 12,
-    name: 'character-xp-logs',
-    statements: [
-      // 일일 XP 캡 관리: 지급 시점 날짜(YYYY-MM-DD) 와 달라지면 daily_xp 리셋.
-      `ALTER TABLE characters ADD COLUMN daily_xp INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN daily_xp_reset_at TEXT`,
-      // 지급 이력 + 멱등성 로그. client_nonce 가 있으면 (character_id, client_nonce) 유니크.
-      `CREATE TABLE IF NOT EXISTS character_xp_logs (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL REFERENCES characters(id),
-        event TEXT NOT NULL,
-        client_nonce TEXT,
-        granted_xp INTEGER NOT NULL DEFAULT 0,
-        affection_delta INTEGER NOT NULL DEFAULT 0,
-        capped INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_character_xp_logs_character ON character_xp_logs(character_id)',
-      'CREATE INDEX IF NOT EXISTS idx_character_xp_logs_created ON character_xp_logs(created_at)',
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_character_xp_logs_nonce
-        ON character_xp_logs(character_id, client_nonce)
-        WHERE client_nonce IS NOT NULL`,
-    ],
-  },
-  {
-    id: 13,
-    name: 'character-streak-stats',
-    statements: [
-      // 연속 기상 스트릭 — 클라이언트가 local_date(YYYY-MM-DD)를 전송, 서버가 streak 갱신.
-      `ALTER TABLE characters ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN longest_streak INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN last_wakeup_date TEXT`,
-
-      // 능력치: 나무 테마 (뿌리깊이=diligence, 줄기튼튼함=health, 잎무성함=consistency)
-      // 1 캐릭터 = 1 stats 행. 값은 누적 카운트 기반으로 계산.
-      `CREATE TABLE IF NOT EXISTS character_stats (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL UNIQUE REFERENCES characters(id),
-        diligence INTEGER NOT NULL DEFAULT 0,
-        health INTEGER NOT NULL DEFAULT 0,
-        consistency INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_character_stats_character ON character_stats(character_id)',
-
-      // 마일스톤 달성 기록: 7일(100XP), 30일(500XP), 90일(2000XP)
-      `CREATE TABLE IF NOT EXISTS streak_achievements (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL REFERENCES characters(id),
-        milestone INTEGER NOT NULL,
-        bonus_xp INTEGER NOT NULL,
-        achieved_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_streak_achievements_character ON streak_achievements(character_id)',
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_streak_achievements_unique
-        ON streak_achievements(character_id, milestone)`,
-    ],
-  },
-  {
     id: 14,
     name: 'push-tokens',
     statements: [
@@ -1083,9 +1004,6 @@ export const migrations: Migration[] = [
     name: 'kst-readonly-views',
     statements: [
       `CREATE VIEW IF NOT EXISTS "alarms_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "alarms"`,
-      `CREATE VIEW IF NOT EXISTS "character_stats_kst" AS SELECT *, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "character_stats"`,
-      `CREATE VIEW IF NOT EXISTS "character_xp_logs_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "character_xp_logs"`,
-      `CREATE VIEW IF NOT EXISTS "characters_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("daily_xp_reset_at",'+9 hours') AS daily_xp_reset_at_kst FROM "characters"`,
       `CREATE VIEW IF NOT EXISTS "dub_jobs_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "dub_jobs"`,
       `CREATE VIEW IF NOT EXISTS "email_verification_codes_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("consumed_at",'+9 hours') AS consumed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "email_verification_codes"`,
       `CREATE VIEW IF NOT EXISTS "friendships_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "friendships"`,
@@ -1102,7 +1020,6 @@ export const migrations: Migration[] = [
       `CREATE VIEW IF NOT EXISTS "push_tokens_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "push_tokens"`,
       `CREATE VIEW IF NOT EXISTS "retained_billing_records_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "retained_billing_records"`,
       `CREATE VIEW IF NOT EXISTS "store_transactions_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "store_transactions"`,
-      `CREATE VIEW IF NOT EXISTS "streak_achievements_kst" AS SELECT *, datetime("achieved_at",'+9 hours') AS achieved_at_kst FROM "streak_achievements"`,
       `CREATE VIEW IF NOT EXISTS "subscriptions_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("canceled_at",'+9 hours') AS canceled_at_kst FROM "subscriptions"`,
       `CREATE VIEW IF NOT EXISTS "tts_presets_kst" AS SELECT *, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "tts_presets"`,
       `CREATE VIEW IF NOT EXISTS "user_consents_kst" AS SELECT *, datetime("agreed_at",'+9 hours') AS agreed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "user_consents"`,

@@ -15,7 +15,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.EmojiEvents
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
@@ -130,13 +129,6 @@ internal fun ProfileMenu(
                         expanded = false
                         onSelectTab(NativeTab.People)
                     }
-                }
-                ProfileMenuItem(
-                    icon = Icons.Outlined.EmojiEvents,
-                    label = stringResource(R.string.hs_profile_menu_character),
-                ) {
-                    expanded = false
-                    onSelectTab(NativeTab.Growth)
                 }
                 ProfileMenuItem(
                     icon = Icons.Outlined.CreditCard,

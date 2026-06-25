@@ -1,6 +1,6 @@
 # Voice Alarm Android Native PoC
 
-Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, social sharing, and post-alarm growth sync:
+Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, and social sharing:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -17,8 +17,7 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - manual alarm metadata sync to the deployed AlarmTalk API
 - friend list, pending friend requests, and friend request creation
 - family group, invite code creation/accept/revoke, and shared voice profile lookup
-- post-alarm character XP event queue with manual sync
-- character, streak, subscription, voucher, and unified code status surfaces
+- subscription, voucher, and unified code status surfaces
 - `AlarmManager.setAlarmClock`
 - full-screen ringing activity through a high-importance alarm foreground-service notification carrier
 - bundled local alarm tone generated into the APK at build time
@@ -329,25 +328,15 @@ Expected:
 - Shared voices use `GET /api/voice/family`.
 - Shared-voice TTS generation is not called.
 
-### Character / Billing
+### Billing
 
-Dismiss and snooze enqueue local character events in Room:
+Subscription and code surfaces load only on user-triggered refresh:
 
-- Dismiss queues `alarm_completed`.
-- Snooze queues `alarm_snoozed`.
-- Duplicate event nonces are ignored locally.
-- The app automatically syncs queued XP events to `POST /api/characters/xp` after sign-in/network is available.
-- The Growth refresh icon is a manual fallback for reloading server state.
-
-Verification flow:
-
-1. Let an alarm ring and tap Dismiss.
-2. Open the app and sign in if needed.
-3. Confirm Growth reflects the event automatically; use the refresh icon only as a fallback.
+1. Sign in.
+2. Open the billing/subscription surface.
 
 Expected:
 
-- Character/streak/XP refreshes from `/api/characters/me`; pending local events sync without requiring manual refresh.
 - Subscription loads from `/api/billing/subscription`.
 - Issued vouchers load from `/api/billing/vouchers`.
 - Coupon or invite code entry uses `/api/code/register`.

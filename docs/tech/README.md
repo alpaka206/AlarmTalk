@@ -21,15 +21,15 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
 │ Routes: /auth /user /voice /tts /alarm /friend /family         │
-│         /code /billing /character /library /dub /notes /stats  │
+│         /code /billing /library /dub /notes /stats             │
 │ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
            ▼                  ▼                 ▼
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ 22 tables    │  │ voice + tts  │  │ ElevenLabs           │
-   │ 35 migrations│  │ objects      │  │ Google JWKS          │
+   │ 18 tables    │  │ voice + tts  │  │ Perso / ElevenLabs   │
+   │ 32 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -111,7 +111,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Cloudflare Workers | API + cron | HTTP, ScheduledEvent |
 | Turso libSQL | Primary DB | libSQL HTTP client |
 | Cloudflare R2 | Object store (voice / TTS) | Workers binding `VOICE_BUCKET` |
-| ElevenLabs | Voice clone + TTS | HTTPS REST |
+| Perso (primary) / ElevenLabs (fallback) | Voice clone + TTS | HTTPS REST |
 | Google JWKS | ID token verification | HTTPS |
 | Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
 | Sentry | Error capture | toucan-js (server) + Android client SDK (DSN-gated) |
@@ -123,7 +123,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Cloudflare Workers down | None | Sign-in, sync, TTS generation paused |
 | Turso down | None | API 500, sync paused |
 | R2 down | None (mostly cache-hit locally) | TTS generation fails on miss |
-| ElevenLabs down | None | New TTS generation fails |
+| Voice provider down | None | New TTS generation fails |
 | Device-side Room corruption | Possible partial loss | Recoverable through server sync |
 
 ### Architecture Decision Records (ADR — summarized)
@@ -132,7 +132,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 |---|---|---|
 | 2025-12 | Rewrite from React Native/Expo to native | Alarm reliability could not be guaranteed under push/Expo notifications. |
 | 2026-02 | Android first | Only Android physical-device testing was available at that time. |
-| 2026-03 | ElevenLabs as primary voice provider | Perso's public developer surface does not expose a direct voice-clone TTS API. |
+| 2026-03 | Perso as primary voice provider, ElevenLabs as fallback | Migrating to Perso (ESTsoft) for voice clone + TTS; ElevenLabs remains as a fallback for paths Perso's developer surface does not yet expose. |
 | 2026-04 | 6-digit family invite code + deep-link hybrid | Works without collecting email; can be shared offline by voice; 10-minute TTL mitigates brute force. |
 | 2026-05 | Deterministic TTS caching | Same profile + text + language always maps to the same R2 object, eliminating duplicate cost. |
 
@@ -170,8 +170,8 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 ## 2. Database
 
 - **DB**: Turso (libSQL / SQLite)
-- **Tables**: 22 + `_migrations`
-- **Migrations**: 35, defined in `packages/backend/src/lib/migrations.ts`
+- **Tables**: 18 + `_migrations`
+- **Migrations**: 32, defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
@@ -191,7 +191,6 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 users ── push_tokens   notes (sender/receiver)
 users ── subscriptions ── plans ── voucher_codes
 users ── plan_group_members ── plan_groups ── plan_group_invites
-users ── characters ── character_xp_logs / character_stats / streak_achievements
 users ── dub_jobs
 ```
 
@@ -215,19 +214,14 @@ users ── dub_jobs
 | 14 | `plan_groups` | Family/couple group | `users(owner)` |
 | 15 | `plan_group_members` | Group membership | `plan_groups · users` |
 | 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
-| 17 | `characters` | Character state | `users 1:1` |
-| 18 | `character_xp_logs` | XP history (idempotent) | `characters × client_nonce` |
-| 19 | `character_stats` | Stats | `characters 1:1` |
-| 20 | `streak_achievements` | Streak milestones | `characters × milestone` |
-| 21 | `push_tokens` | FCM / APNs tokens (legacy, ring path does not use them) | `users · platform` |
-| 22 | `notes` | Text notes | `users × users` |
+| 17 | `push_tokens` | FCM / APNs tokens (legacy, ring path does not use them) | `users · platform` |
+| 18 | `notes` | Text notes | `users × users` |
 
 `dub_jobs` also exists for dubbing workflow but is not surfaced in the native app.
 
 ### Key constraints
 
 - `voice_profiles` at most 2 per user — enforced at the route layer with COUNT.
-- `character_xp_logs UNIQUE(character_id, client_nonce)` — guarantees idempotency.
 - `plan_group_invites.code` UNIQUE, 10-minute TTL, lazy `expired` transition on read.
 - Risk-of-rollback flows (subscription, voucher redemption, ownership transfer) use BEGIN/COMMIT through `lib/transactions.ts`.
 
@@ -284,18 +278,6 @@ CREATE TABLE plan_group_invites (
   used_by_user_id TEXT REFERENCES users(id),
   used_at TEXT
 );
-
-CREATE TABLE character_xp_logs (
-  id TEXT PRIMARY KEY,
-  character_id TEXT NOT NULL REFERENCES characters(id),
-  event TEXT NOT NULL,
-  client_nonce TEXT,
-  granted_xp INTEGER NOT NULL DEFAULT 0,
-  affection_delta INTEGER NOT NULL DEFAULT 0,
-  capped INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  UNIQUE(character_id, client_nonce)
-);
 ```
 
 ### Migrations
@@ -322,9 +304,6 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | 8 | plan-groups | `plan_groups`, `plan_group_members` |
 | 9 | plan-group-invites | `plan_group_invites` |
 | 10 | user-allow-family-alarms | `users.allow_family_alarms` |
-| 11 | characters | `characters` |
-| 12 | character-xp-logs | `character_xp_logs`, `characters.daily_xp` |
-| 13 | character-streak-stats | `character_stats`, `streak_achievements` |
 | 14 | push-tokens | `push_tokens` |
 | 15 | alarm-vibration-pattern | `alarms.vibration_pattern` |
 | 16 | user-last-active | `users.last_active_at` |
@@ -375,7 +354,6 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | `/alarm` | Alarm CRUD |
 | `/friend` | Friend |
 | `/family` | Family group, invites, family alarm |
-| `/characters` | Character, XP |
 | `/billing` | Subscription, voucher |
 | `/code` | Unified code register (VA-XXX / 6-digit) |
 | `/library` | Message library |
@@ -456,20 +434,6 @@ Res: {
 #### `POST /family/invites/:code/accept`
 
 Validates pending status, expiry, capacity, and self-invite block; inserts into `plan_group_members`; marks the invite `used`. All inside a transaction.
-
-#### `POST /characters/xp`
-
-```json
-Req:  { "event": "alarm_completed", "client_nonce": "unique", "local_date": "2026-05-12" }
-Res:  {
-  "character": { ... },
-  "granted":   { "xp": { "grantedXp": 10, "capped": false, "remainingCap": 190 },
-                 "affection": 2,
-                 "event": "alarm_completed" }
-}
-```
-
-Events: `alarm_completed` `alarm_snoozed` `alarm_dismissed` `family_alarm_received` `friend_invited`.
 
 #### `POST /code/register`
 

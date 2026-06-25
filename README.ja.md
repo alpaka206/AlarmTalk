@@ -25,7 +25,7 @@
 | Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (決定論的 TTS キャッシュ) |
-| Voice AI | ElevenLabs Instant Voice Clone + TTS |
+| Voice AI | Perso(1次) / ElevenLabs(フォールバック) — Instant Voice Clone + TTS |
 | Auth | JWT (HS256, 7日) · Google ID トークン · Apple ID トークン |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 

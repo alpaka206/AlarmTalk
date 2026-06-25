@@ -148,25 +148,6 @@ export async function purgeUserAccount(
       args: [userPk],
     });
     await tx.execute({
-      sql: `DELETE FROM character_xp_logs
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM character_stats
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM streak_achievements
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM characters WHERE user_id = ?`,
-      args: [userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM voice_speakers
             WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id = ?)`,
       args: [userPk],

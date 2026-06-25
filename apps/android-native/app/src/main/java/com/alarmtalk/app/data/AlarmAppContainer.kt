@@ -11,7 +11,6 @@ object AlarmAppContainer {
         repository ?: synchronized(this) {
             repository ?: AlarmRepository(
                 alarmDao = AlarmDatabase.getInstance(context).alarmDao(),
-                characterEventDao = AlarmDatabase.getInstance(context).characterEventDao(),
                 holidayCalendarStore = HolidayCalendarStore(AlarmDatabase.getInstance(context).holidayDao()),
                 holidayCountryPreferenceStore = holidayCountryPreferenceStore(context),
                 alarmScheduler = AlarmScheduler(context.applicationContext),

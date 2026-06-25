@@ -96,7 +96,6 @@ internal fun SubscriptionPanel(
             description = stringResource(R.string.billing_plan_free_description),
             features = listOf(
                 stringResource(R.string.billing_plan_free_feature_basic_alarm),
-                stringResource(R.string.billing_plan_free_feature_basic_growth),
             ),
         ),
         SubscriptionPlanOption(
@@ -757,7 +756,10 @@ internal fun SubscriptionPlanCard(
             if (option.description.isNotBlank()) {
                 MutedText(option.description)
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier.padding(bottom = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 option.features.forEach { feature ->
                     PlanFeatureRow(feature)
                 }

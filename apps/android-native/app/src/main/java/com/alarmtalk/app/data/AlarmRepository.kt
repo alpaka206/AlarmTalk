@@ -24,7 +24,6 @@ import kotlinx.coroutines.flow.first
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
-    private val characterEventDao: CharacterEventDao,
     private val holidayCalendarStore: HolidayCalendarStore,
     private val holidayCountryPreferenceStore: HolidayCountryPreferenceStore,
     private val alarmScheduler: AlarmScheduler,
@@ -33,7 +32,6 @@ class AlarmRepository(
     // /holiday 는 인증이 필요 없어 토큰 없이 새 클라이언트를 생성한다(다른 워커와 동일).
     private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
 ) {
-    private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
         alarmDao = alarmDao,
@@ -41,11 +39,8 @@ class AlarmRepository(
         alarmAudioStore = alarmAudioStore,
         context = context,
     )
-    private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
-
-    fun observeCharacterEvents(): Flow<List<CharacterEventEntity>> = characterEventDao.observeEvents()
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -442,11 +437,6 @@ class AlarmRepository(
                 updatedAtMillis = now,
             )
         }
-        characterEvents.queue(
-            event = CharacterEventTypes.ALARM_COMPLETED,
-            sourceAlarmId = alarmId,
-            nowMillis = now,
-        )
         Log.i(TAG, "Alarm dismissed id=$alarmId")
     }
 
@@ -478,11 +468,6 @@ class AlarmRepository(
         )
         alarmDao.upsert(next)
         alarmScheduler.schedule(next)
-        characterEvents.queue(
-            event = CharacterEventTypes.ALARM_SNOOZED,
-            sourceAlarmId = alarmId,
-            nowMillis = now,
-        )
         Log.i(TAG, "Alarm snoozed id=$alarmId minutes=${current.snoozeMinutes} nextFireAt=${next.fireAtMillis}")
         return next
     }
@@ -548,9 +533,6 @@ class AlarmRepository(
         myUserId: String,
     ): RemoteAlarmPullResult =
         remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
-
-    suspend fun syncCharacterEvents(api: AlarmTalkApi, token: String): CharacterEventSyncResult =
-        characterEventSyncService.sync(api, token)
 
     suspend fun refreshDueDynamicAlarmTalks(
         api: AlarmTalkApi,

@@ -95,8 +95,8 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
       const r = await db.execute({ sql, args });
       counts[label] = r.rowsAffected ?? 0;
     } catch (err) {
-      // Best-effort cleanup. Tables may not exist in every environment
-      // (e.g. characters added via later migration). Log and continue.
+      // Best-effort cleanup. Tables may not exist in every environment.
+      // Log and continue.
       // eslint-disable-next-line no-console
       console.log('[clear-mine skip]', label, err instanceof Error ? err.message : String(err));
       counts[label] = -1;
@@ -152,13 +152,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
   await tryDel('voice_profiles', `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, ids);
 
   // 3) Per-user satellite tables.
-  await tryDel('characters', `DELETE FROM characters WHERE user_id IN (${ph})`, ids);
-  await tryDel('character_xp_logs', `DELETE FROM character_xp_logs WHERE user_id IN (${ph})`, ids);
-  await tryDel(
-    'character_streak_stats',
-    `DELETE FROM character_streak_stats WHERE user_id IN (${ph})`,
-    ids,
-  );
   await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
   await tryDel(
     'friendships',

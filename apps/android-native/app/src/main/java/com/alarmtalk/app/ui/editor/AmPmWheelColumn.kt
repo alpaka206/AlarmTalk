@@ -3,6 +3,8 @@ package com.alarmtalk.app
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -131,27 +133,30 @@ internal fun AmPmWheelColumn(
             rows.forEach { (step, label) ->
                 val selected = step == 0
                 Surface(
-                    onClick = {
-                        if (step != null && step != 0) {
-                            scope.launch {
-                                animateWheelSettle(
-                                    startOffsetPx = 0f,
-                                    steps = step,
-                                    itemHeightPx = itemHeightPx,
-                                    onStep = { selectedStep ->
-                                        suppressNextAutoAnimation = true
-                                        onStep(selectedStep)
-                                    },
-                                    onOffsetChange = { dragOffsetPx = it },
-                                )
-                            }
-                        }
-                    },
                     color = Color.Transparent,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(itemHeight),
+                        .height(itemHeight)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            if (step != null && step != 0) {
+                                scope.launch {
+                                    animateWheelSettle(
+                                        startOffsetPx = 0f,
+                                        steps = step,
+                                        itemHeightPx = itemHeightPx,
+                                        onStep = { selectedStep ->
+                                            suppressNextAutoAnimation = true
+                                            onStep(selectedStep)
+                                        },
+                                        onOffsetChange = { dragOffsetPx = it },
+                                    )
+                                }
+                            }
+                        },
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
