@@ -845,8 +845,6 @@
     <string name="label_sync_state_dirty">저장 대기</string>
     <string name="label_sync_state_failed">서버에 저장하지 못했어요</string>
     <string name="label_sync_state_device_only">기기에만 저장됨</string>
-    <string name="editor2_coach_time_title">시각부터 맞춰요</string>
-    <string name="editor2_coach_time_body">휠을 위아래로 돌려 알람이 울릴 시각을 맞춰요.</string>
     <string name="editor2_coach_schedule_title">반복과 이름을 정해요</string>
     <string name="editor2_coach_schedule_body">요일을 누르면 매주 반복돼요. 반복을 켜면 공휴일에 끄기도 고를 수 있고, 알람 이름도 여기서 바꿔요.</string>
     <string name="editor2_coach_play_mode_title">재생 방식을 골라요</string>
