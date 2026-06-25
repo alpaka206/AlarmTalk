@@ -151,6 +151,8 @@ internal enum class MessageSeverity { Success, Error, Info }
 
 internal data class PlanGateDialogState(
     val message: String,
+    // null이면 PlanGateDialog의 현지화된 기본 제목을 사용한다.
+    val title: String? = null,
     // null이면 PlanGateDialog의 현지화된 기본 확인 라벨을 사용한다.
     val confirmLabel: String? = null,
 )

@@ -363,6 +363,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
             !hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)
         ) {
             planGateDialog = PlanGateDialogState(
+                title = context.getString(R.string.r3app_messages_plan_gate_title),
                 message = context.getString(R.string.r3app_messages_plan_gate),
             )
             return
@@ -416,6 +417,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     planGateDialog?.let { gate ->
         PlanGateDialog(
+            title = gate.title ?: stringResource(R.string.r3dlg_plan_gate_title),
             message = gate.message,
             confirmLabel = gate.confirmLabel ?: stringResource(R.string.r3app_plan_gate_confirm),
             onConfirm = {
