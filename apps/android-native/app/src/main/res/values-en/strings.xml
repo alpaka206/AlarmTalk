@@ -34,9 +34,6 @@
     <string name="auth_landing_tomorrow_morning">Tomorrow morning</string>
     <string name="auth_landing_sample_message">Morning, Minji ☀️\nHave a wonderful day!</string>
     <string name="auth_landing_sample_voice">· Mom\'s voice</string>
-    <string name="auth_landing_value_voice">Your voice</string>
-    <string name="auth_landing_value_family">Family</string>
-    <string name="auth_landing_value_daily">Daily message</string>
     <string name="auth_onboarding_next">Next</string>
     <string name="auth_onboarding_skip">Skip</string>
     <string name="auth_onboarding_start">Get started</string>

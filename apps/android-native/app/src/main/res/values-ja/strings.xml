@@ -34,9 +34,6 @@
     <string name="auth_landing_tomorrow_morning">明日の朝</string>
     <string name="auth_landing_sample_message">みんじ、おはよう ☀️\n今日も素敵な一日を！</string>
     <string name="auth_landing_sample_voice">· ママの声</string>
-    <string name="auth_landing_value_voice">自分の声</string>
-    <string name="auth_landing_value_family">家族と共有</string>
-    <string name="auth_landing_value_daily">毎日メッセージ</string>
     <string name="auth_onboarding_next">次へ</string>
     <string name="auth_onboarding_skip">スキップ</string>
     <string name="auth_onboarding_start">始める</string>

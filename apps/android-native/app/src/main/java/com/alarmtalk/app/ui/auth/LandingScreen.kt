@@ -17,11 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -43,10 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -93,7 +88,7 @@ private fun landingPalette(): LandingPalette {
 
 /**
  * 첫 진입 랜딩 — 가치 제안(히어로 + 목소리 미리듣기)만 보여주고, 단일 "시작하기" 로
- * 인증 진입(AuthEntryScreen)으로 넘긴다. 로그인/가입 선택지는 이 화면에 두지 않는다.
+ * 로그인 폼으로 넘긴다. 로그인/가입 선택지는 이 화면에 두지 않는다.
  */
 @Composable
 internal fun LandingScreen(
@@ -108,8 +103,7 @@ internal fun LandingScreen(
             .padding(contentPadding)
             .padding(horizontal = 22.dp, vertical = 22.dp),
     ) {
-        Spacer(Modifier.weight(0.5f))
-        WakerBrandHeader(colors = colors)
+        WakerBrandHeader()
         Spacer(Modifier.height(18.dp))
         Text(
             text = stringResource(R.string.auth_landing_headline),
@@ -117,11 +111,9 @@ internal fun LandingScreen(
             color = colors.text,
             fontWeight = FontWeight.Bold,
         )
-        Spacer(Modifier.height(26.dp))
+        Spacer(Modifier.weight(1f))
         AlarmIdentityPreview(colors = colors)
-        Spacer(Modifier.height(20.dp))
-        LandingValueRow(colors = colors)
-        Spacer(Modifier.weight(0.85f))
+        Spacer(Modifier.weight(1f))
         Button(
             onClick = onGetStarted,
             modifier = Modifier
@@ -143,27 +135,15 @@ internal fun LandingScreen(
 }
 
 @Composable
-private fun WakerBrandHeader(colors: LandingPalette) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(
-            painter = painterResource(R.drawable.ic_brand_logo),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(42.dp)
-                .clip(WakerTileShape),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = "AlarmTalk",
-            style = MaterialTheme.typography.titleLarge,
-            color = colors.text,
-            fontWeight = FontWeight.Bold,
-        )
-    }
+private fun WakerBrandHeader() {
+    Image(
+        painter = painterResource(R.drawable.ic_brand_logo),
+        contentDescription = "AlarmTalk",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .size(48.dp)
+            .clip(WakerTileShape),
+    )
 }
 
 @Composable
@@ -272,58 +252,6 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                 modifier = Modifier.align(Alignment.End),
             )
         }
-    }
-}
-
-@Composable
-private fun LandingValueRow(colors: LandingPalette) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        ValueItem(
-            icon = Icons.Outlined.Mic,
-            label = stringResource(R.string.auth_landing_value_voice),
-            colors = colors,
-            modifier = Modifier.weight(1f),
-        )
-        ValueItem(
-            icon = Icons.Outlined.Group,
-            label = stringResource(R.string.auth_landing_value_family),
-            colors = colors,
-            modifier = Modifier.weight(1f),
-        )
-        ValueItem(
-            icon = Icons.Outlined.WbSunny,
-            label = stringResource(R.string.auth_landing_value_daily),
-            colors = colors,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun ValueItem(
-    icon: ImageVector,
-    label: String,
-    colors: LandingPalette,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = colors.accent,
-            modifier = Modifier.size(22.dp),
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.muted,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-        )
     }
 }
 
