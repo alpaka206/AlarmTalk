@@ -60,12 +60,26 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     val currentTab = navBackStackEntry?.destination?.route.toNativeTab()
     val selectedTab = currentTab ?: NativeTab.Home
     var planGateDialog by remember { mutableStateOf<PlanGateDialogState?>(null) }
-    var authRoute by remember { mutableStateOf<AuthRoute>(AuthRoute.Landing) }
+    // 인증 화면 백스택 — 로그인↔회원가입 전환 히스토리를 보존해 뒤로가기가 한 단계씩 돌아가게 한다.
+    var authBackStack by remember { mutableStateOf(listOf<AuthRoute>(AuthRoute.Landing)) }
+    val authRoute = authBackStack.last()
+    fun authNavigate(route: AuthRoute) {
+        if (route == authRoute) return
+        // 직전 화면으로 되돌아가는 전환(예: 회원가입→로그인 토글)은 push 대신 pop 해 스택이 무한정 늘지 않게.
+        val prev = authBackStack.getOrNull(authBackStack.size - 2)
+        authBackStack = if (route == prev) authBackStack.dropLast(1) else authBackStack + route
+    }
+    fun authBack() {
+        if (authBackStack.size > 1) authBackStack = authBackStack.dropLast(1)
+    }
+    fun authResetToLanding() {
+        authBackStack = listOf(AuthRoute.Landing)
+    }
     // 회원가입 시도 이메일이 이미 가입돼 있으면(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환한다.
     // 입력한 이메일은 AuthScreen 의 remember 상태로 유지되므로 다시 입력할 필요가 없다.
     LaunchedEffect(viewModel.authRedirectToLogin) {
         if (viewModel.authRedirectToLogin) {
-            authRoute = AuthRoute.Auth(AuthMode.Login)
+            authNavigate(AuthRoute.Auth(AuthMode.Login))
             viewModel.authRedirectToLogin = false
         }
     }
@@ -218,7 +232,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
         }
         viewModel.loadReceivedAlarmBadgeState()
         planGateDialog = null
-        authRoute = AuthRoute.Landing
+        authResetToLanding()
     }
 
     LaunchedEffect(sessionRouteKey, alarms) {
@@ -377,8 +391,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     }
 
     if (authSession == null) {
-        BackHandler(enabled = authRoute !is AuthRoute.Landing) {
-            authRoute = AuthRoute.Landing
+        BackHandler(enabled = authBackStack.size > 1) {
+            authBack()
         }
     } else {
         BackHandler(
@@ -470,10 +484,18 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
                   contentPadding = padding,
+                  onLogin = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
+                  onRegister = { authNavigate(AuthRoute.Auth(AuthMode.Register)) },
+              )
+              AuthRoute.ResetPassword -> PasswordResetScreen(
+                  contentPadding = padding,
                   busy = authBusy,
-                  onGoToLogin = { authRoute = AuthRoute.Auth(AuthMode.Login) },
-                  onGoToRegister = { authRoute = AuthRoute.Auth(AuthMode.Register) },
-                  onGoogleSignIn = ::launchGoogleSignIn,
+                  codeSentTo = viewModel.passwordResetCodeSentTo,
+                  onBack = { authBack() },
+                  onRequestCode = viewModel::requestPasswordReset,
+                  onConfirm = { resetEmail, resetCode, newPassword ->
+                      viewModel.confirmPasswordReset(resetEmail, resetCode, newPassword) { authBack() }
+                  },
               )
               is AuthRoute.Auth -> AuthScreen(
                   contentPadding = padding,
@@ -481,16 +503,17 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                   busy = authBusy,
                   emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
                   emailVerified = viewModel.registerEmailVerified,
-                  onBack = { authRoute = AuthRoute.Landing },
+                  onBack = { authBack() },
                   onLogin = viewModel::login,
                   onRegister = viewModel::register,
                   onRequestEmailVerification = viewModel::requestEmailVerification,
                   onConfirmEmailVerification = viewModel::confirmEmailVerification,
                   onSwitchMode = {
                       val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
-                      authRoute = AuthRoute.Auth(nextMode)
+                      authNavigate(AuthRoute.Auth(nextMode))
                   },
                   onGoogleSignIn = ::launchGoogleSignIn,
+                  onFindPassword = { authNavigate(AuthRoute.ResetPassword) },
               )
           }
           return@Scaffold

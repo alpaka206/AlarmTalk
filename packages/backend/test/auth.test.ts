@@ -103,6 +103,96 @@ function registerBody(email: string, password = 'superSecret1', name = '김규�
   };
 }
 
+describe('POST /auth/password-reset', () => {
+  it('비밀번호 계정이면 reset 목적의 코드를 발급한다', async () => {
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // classifyExistingAccount → password
+    mockDB.pushResult([]); // recent codes (none → no cooldown/cap)
+    mockDB.pushResult([], 1); // INSERT
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset', { email: 'KIM@Test.COM' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toMatch(/^\d{6}$/);
+    const insertCall = mockDB.calls.find((c) =>
+      c.sql.includes('INSERT INTO email_verification_codes'),
+    );
+    expect(insertCall?.args[1]).toBe('kim@test.com');
+    expect(insertCall?.args[2]).toBe('reset'); // purpose
+  });
+
+  it('미가입/소셜 계정이면 코드를 보내지 않고 동일 성공 응답을 준다(계정 열거 방지)', async () => {
+    mockDB.pushResult([]); // classifyExistingAccount → none
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset', { email: 'nobody@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('INSERT INTO email_verification_codes')),
+    ).toBe(false);
+  });
+});
+
+describe('POST /auth/password-reset/confirm', () => {
+  it('유효한 코드 + 비밀번호 계정이면 비밀번호 교체 + token_epoch 증가', async () => {
+    await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // classify → password
+    mockDB.pushResult([], 1); // UPDATE users
+    mockDB.pushResult([], 1); // consume code
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'kim@test.com',
+        code: EMAIL_CODE,
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    const upd = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE users') && c.sql.includes('token_epoch'),
+    );
+    expect(upd).toBeTruthy();
+    expect(upd?.sql).toContain('password_hash');
+  });
+
+  it('코드가 없거나 틀리면 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    mockDB.pushResult([]); // checkEmailVerificationCode → no row
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'kim@test.com',
+        code: '000000',
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+});
+
 describe('POST /auth/email-code', () => {
   it('신규 이메일에 6자리 인증 코드를 발급한다', async () => {
     mockDB.pushResult([]); // existing user lookup (none)

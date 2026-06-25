@@ -93,6 +93,16 @@ data class EmailVerificationConfirmResponse(
     val success: Boolean,
 )
 
+data class PasswordResetRequest(
+    val email: String,
+)
+
+data class PasswordResetConfirmRequest(
+    val email: String,
+    val code: String,
+    val password: String,
+)
+
 data class GoogleLoginRequest(
     @SerializedName("id_token") val idToken: String,
 )
@@ -174,6 +184,14 @@ interface AuthApi {
     @POST("auth/email-code/verify")
     suspend fun confirmEmailVerification(
         @Body request: EmailVerificationConfirmRequest,
+    ): EmailVerificationConfirmResponse
+
+    @POST("auth/password-reset")
+    suspend fun requestPasswordReset(@Body request: PasswordResetRequest): EmailVerificationResponse
+
+    @POST("auth/password-reset/confirm")
+    suspend fun confirmPasswordReset(
+        @Body request: PasswordResetConfirmRequest,
     ): EmailVerificationConfirmResponse
 
     @POST("auth/register")

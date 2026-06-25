@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +61,7 @@ internal fun AuthScreen(
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    onFindPassword: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -309,21 +311,69 @@ internal fun AuthScreen(
             )
         }
 
-        GoogleSignInButton(
-            enabled = !busy,
-            onClick = onGoogleSignIn,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (mode == AuthMode.Login) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.auth_forgot_password),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onFindPassword) {
+                    Text(stringResource(R.string.auth_find_password))
+                }
+            }
+            // SSO 구분선 — 소셜 로그인은 여기 아래로 묶고, 추후 제공자 추가 시 이 섹션에 덧붙인다.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HorizontalDivider(
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Text(
+                    text = stringResource(R.string.auth_or),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+            GoogleSignInButton(
+                enabled = !busy,
+                onClick = onGoogleSignIn,
+                modifier = Modifier.fillMaxWidth(),
+                label = stringResource(R.string.common_google_login),
+            )
+        }
 
-        TextButton(
-            onClick = onSwitchMode,
-            enabled = !busy,
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (mode == AuthMode.Login) stringResource(R.string.auth_switch_to_register)
-                else stringResource(R.string.auth_switch_to_login),
+                text = if (mode == AuthMode.Login) {
+                    stringResource(R.string.auth_landing_first_time)
+                } else {
+                    stringResource(R.string.auth_already_have_account)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(onClick = onSwitchMode, enabled = !busy) {
+                Text(
+                    if (mode == AuthMode.Login) stringResource(R.string.auth_title_register)
+                    else stringResource(R.string.auth_title_login),
+                )
+            }
         }
     }
 }

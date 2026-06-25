@@ -29,6 +29,18 @@ export const EmailVerificationConfirmRequestSchema = z.object({
 });
 export type EmailVerificationConfirmRequest = z.infer<typeof EmailVerificationConfirmRequestSchema>;
 
+export const PasswordResetRequestSchema = z.object({
+  email: z.string().email(),
+});
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
+
+export const PasswordResetConfirmRequestSchema = z.object({
+  email: z.string().email(),
+  code: EmailVerificationCodeSchema,
+  password: PasswordSchema,
+});
+export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmRequestSchema>;
+
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),
   password: PasswordSchema,

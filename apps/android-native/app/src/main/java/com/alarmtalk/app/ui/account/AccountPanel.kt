@@ -178,6 +178,7 @@ internal fun GoogleSignInButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String = stringResource(R.string.common_google_continue),
 ) {
     val contentAlpha = if (enabled) 1f else 0.38f
     Surface(
@@ -204,7 +205,7 @@ internal fun GoogleSignInButton(
                 alpha = contentAlpha,
             )
             Text(
-                text = stringResource(R.string.common_google_continue),
+                text = label,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(horizontal = 32.dp),

@@ -155,6 +155,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var registerEmailVerified by mutableStateOf<String?>(null)
         internal set
 
+    // 비밀번호 재설정 코드를 보낸 이메일. 입력 이메일과 같으면 코드+새 비밀번호 입력을 노출한다.
+    var passwordResetCodeSentTo by mutableStateOf<String?>(null)
+        internal set
+
     // 가입 시도 이메일이 이미 가입돼 있을 때(AUTH_EMAIL_TAKEN) 로그인 화면으로 전환하라는 신호.
     var authRedirectToLogin by mutableStateOf(false)
         internal set
