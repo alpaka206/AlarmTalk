@@ -118,7 +118,7 @@ internal fun LandingScreen(
         AlarmIdentityPreview(colors = colors)
         Spacer(Modifier.weight(1f))
         Button(
-            onClick = onRegister,
+            onClick = onLogin,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -129,14 +129,14 @@ internal fun LandingScreen(
             ),
         ) {
             Text(
-                text = stringResource(R.string.auth_title_register),
+                text = stringResource(R.string.auth_title_login),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
         }
         Spacer(Modifier.height(10.dp))
         OutlinedButton(
-            onClick = onLogin,
+            onClick = onRegister,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -145,7 +145,7 @@ internal fun LandingScreen(
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
         ) {
             Text(
-                text = stringResource(R.string.auth_title_login),
+                text = stringResource(R.string.auth_title_register),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
             )
