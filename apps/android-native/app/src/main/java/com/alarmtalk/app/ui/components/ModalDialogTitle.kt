@@ -13,17 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-// 제목 글자 크기를 폰 가로폭에 비례시키는 기준/한계. 360dp 를 1.0 기준으로 좁은
-// 기기는 더 작게·넓은 기기는 더 크게 스케일하되, 과도해지지 않게 클램프한다.
-private const val TITLE_BASELINE_WIDTH_DP = 360f
-private const val TITLE_MIN_SCALE = 0.9f
-private const val TITLE_MAX_SCALE = 1.15f
 
 @Composable
 internal fun ModalDialogTitle(
@@ -32,19 +25,18 @@ internal fun ModalDialogTitle(
     modifier: Modifier = Modifier,
     dismissEnabled: Boolean = true,
 ) {
-    val widthScale = (LocalConfiguration.current.screenWidthDp / TITLE_BASELINE_WIDTH_DP)
-        .coerceIn(TITLE_MIN_SCALE, TITLE_MAX_SCALE)
-    val titleStyle = MaterialTheme.typography.titleLarge.let {
-        it.copy(fontWeight = FontWeight.Bold, fontSize = it.fontSize * widthScale)
-    }
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 앱 전체와 동일한 고정 타입스케일(Material titleLarge)을 사용한다. 화면 폭이 아니라
+        // 사용자 시스템 글꼴 설정에만 반응하는 표준 방식이며, 길이가 넘치면 줄바꿈 대신
+        // ellipsis 로 한 줄을 유지한다.
         Text(
             text = title,
-            style = titleStyle,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
