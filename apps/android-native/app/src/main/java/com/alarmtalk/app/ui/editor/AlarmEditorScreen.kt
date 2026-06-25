@@ -90,19 +90,12 @@ private enum class AudioPreviewTarget {
 
 // 처음 알람을 만드는 사용자를 위한 위치 앵커형 코치마크 가이드.
 // 각 단계가 실제 컨트롤에 스포트라이트를 비추므로 "어디서 하는지"가 함께 전달된다.
-private const val GUIDE_TARGET_TIME = "alarm_editor_time"
 private const val GUIDE_TARGET_SCHEDULE = "alarm_editor_schedule"
 private const val GUIDE_TARGET_PLAY_MODE = "alarm_editor_play_mode"
 private const val GUIDE_TARGET_SAVE = "alarm_editor_save"
 
 @Composable
 private fun alarmEditorCoachSteps(playModeItemIndex: Int) = listOf(
-    CoachMarkStep(
-        targetKey = GUIDE_TARGET_TIME,
-        title = stringResource(R.string.editor2_coach_time_title),
-        body = stringResource(R.string.editor2_coach_time_body),
-        lazyItemIndex = 0,
-    ),
     CoachMarkStep(
         targetKey = GUIDE_TARGET_SCHEDULE,
         title = stringResource(R.string.editor2_coach_schedule_title),
@@ -1084,9 +1077,7 @@ internal fun AlarmEditorScreen(
                             editor.hour = selectedHour
                             editor.minute = selectedMinute
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_TIME, targetRadius = 34.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
 

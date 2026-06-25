@@ -845,8 +845,6 @@
     <string name="label_sync_state_dirty">保存待ち</string>
     <string name="label_sync_state_failed">サーバーに保存できませんでした</string>
     <string name="label_sync_state_device_only">端末のみに保存</string>
-    <string name="editor2_coach_time_title">まずは時刻を合わせましょう</string>
-    <string name="editor2_coach_time_body">ホイールを上下に回して、アラームが鳴る時刻を合わせましょう。</string>
     <string name="editor2_coach_schedule_title">繰り返しと名前を決めましょう</string>
     <string name="editor2_coach_schedule_body">曜日をタップすると毎週繰り返します。繰り返しをオンにすると祝日にオフにすることも選べて、アラームの名前もここで変えられます。</string>
     <string name="editor2_coach_play_mode_title">再生方式を選びましょう</string>

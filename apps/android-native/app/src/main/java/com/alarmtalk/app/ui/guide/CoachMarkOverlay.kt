@@ -1,7 +1,10 @@
 package com.alarmtalk.app.ui.guide
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -136,16 +139,33 @@ fun CoachMarkOverlay(
     // 대상 반경 + holePadding 이어야 한다. 미등록 대상은 기존 동작(16dp)으로 폴백.
     val targetRadiusDp = registry.radii[step.targetKey] ?: 16.dp
     val holeCornerPx = with(density) { (targetRadiusDp + holePaddingDp).toPx() }
+    // 모서리 반경도 위치·크기와 같은 타임라인으로 보간해, 타깃 반경이 다른 단계로 넘어갈 때
+    // 라운드가 튀지 않고 함께 부드럽게 변하도록 한다.
+    val animatedCornerPx by animateFloatAsState(
+        targetValue = holeCornerPx,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        label = "holeCorner",
+    )
     val highlightColor = MaterialTheme.colorScheme.primary
 
-    // 단계 전환 시 구멍이 이전 위치에서 새 위치로 미끄러지듯 이동.
-    // 첫 등록 시에는 snap 해 (0,0) 에서 자라나는 아티팩트를 막는다.
+    // 단계 전환 시 구멍이 이전 위치에서 새 위치로 부드럽게 모핑한다.
+    // 핵심: 리스트가 스크롤되는 동안에는 대상 좌표가 매 프레임 바뀌는데, 그때마다 animateTo 를
+    // 재시작하면 위치는 따라가도 크기 보간이 계속 리셋돼 "이동이 끝난 뒤에야 크기가 변하는"
+    // 현상이 생긴다. → 스크롤 중에는 구멍을 대상에 그대로 붙이고(snap), 스크롤이 멎은 뒤
+    // (혹은 스크롤이 필요 없는 단계 전환)에만 위치·크기를 한 번에 모핑한다.
+    // 첫 등록 시에도 snap 해 (0,0) 에서 자라나는 아티팩트를 막는다.
     val holeAnim = remember { Animatable(Rect.Zero, Rect.VectorConverter) }
     val inflatedTarget = targetBounds?.inflate(holePaddingPx)
-    LaunchedEffect(inflatedTarget) {
-        if (inflatedTarget != null) {
-            if (holeAnim.value == Rect.Zero) holeAnim.snapTo(inflatedTarget)
-            else holeAnim.animateTo(inflatedTarget)
+    val isScrolling = listState?.isScrollInProgress ?: false
+    LaunchedEffect(inflatedTarget, isScrolling) {
+        if (inflatedTarget == null) return@LaunchedEffect
+        if (holeAnim.value == Rect.Zero || isScrolling) {
+            holeAnim.snapTo(inflatedTarget)
+        } else {
+            holeAnim.animateTo(
+                inflatedTarget,
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            )
         }
     }
     val hole = if (inflatedTarget != null && holeAnim.value != Rect.Zero) holeAnim.value else null
@@ -168,7 +188,7 @@ fun CoachMarkOverlay(
             drawRect(WakerScrimColor)
             if (hole != null) {
                 // pill·원형·작은 타깃에서 사각이 깨지지 않도록 짧은 변의 절반으로 클램프.
-                val cornerPx = holeCornerPx.coerceAtMost(minOf(hole.size.width, hole.size.height) / 2f)
+                val cornerPx = animatedCornerPx.coerceAtMost(minOf(hole.size.width, hole.size.height) / 2f)
                 drawRoundRect(
                     color = Color.Transparent,
                     topLeft = hole.topLeft,

@@ -845,8 +845,6 @@
     <string name="label_sync_state_dirty">Pending save</string>
     <string name="label_sync_state_failed">Couldn\'t save to the server</string>
     <string name="label_sync_state_device_only">Saved on device only</string>
-    <string name="editor2_coach_time_title">Set the time first</string>
-    <string name="editor2_coach_time_body">Spin the wheel up or down to set when the alarm goes off.</string>
     <string name="editor2_coach_schedule_title">Set the repeat and name</string>
     <string name="editor2_coach_schedule_body">Tap a weekday to repeat it every week. When repeat is on, you can also choose to skip holidays, and you can change the alarm name here too.</string>
     <string name="editor2_coach_play_mode_title">Choose the play mode</string>
