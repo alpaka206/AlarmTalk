@@ -1020,6 +1020,7 @@ for a smooth and secure experience.</string>
     <string name="r3app_google_signin_failed">Google sign-in failed</string>
     <string name="r3app_google_signin_no_info">We couldn\'t get your Google sign-in info. Please try again.</string>
     <string name="r3app_messages_plan_gate">Messages are available on the Couple/Family plan.</string>
+    <string name="r3app_messages_plan_gate_title">A shared feature</string>
     <string name="r3app_plan_gate_confirm">View plans</string>
     <string name="r3app_perm_required_notifications">Notification permission is needed to show the alarm screen and dismiss button.</string>
     <string name="r3app_perm_required_exact_alarms">Exact alarm permission is needed to ring at the set time.</string>

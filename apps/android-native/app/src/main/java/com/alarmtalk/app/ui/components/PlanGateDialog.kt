@@ -1,11 +1,11 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
@@ -15,11 +15,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.alarmtalk.app.WakerChipShape
+import com.alarmtalk.app.WakerButtonShape
 import com.alarmtalk.app.WakerDialogShape
+import com.alarmtalk.app.wakerCardBorder
 
 @Composable
 internal fun PlanGateDialog(
@@ -42,8 +44,9 @@ internal fun PlanGateDialog(
                 .widthIn(max = 380.dp),
             shape = WakerDialogShape,
             color = scheme.surface,
-            tonalElevation = 6.dp,
-            border = BorderStroke(1.dp, scheme.outlineVariant),
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier.padding(22.dp),
@@ -60,19 +63,14 @@ internal fun PlanGateDialog(
                     color = scheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(20.dp))
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                    shape = WakerButtonShape,
                 ) {
-                    Button(
-                        onClick = onConfirm,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = WakerChipShape,
-                    ) {
-                        Text(confirmLabel, maxLines = 1)
-                    }
+                    Text(confirmLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }

@@ -1020,6 +1020,7 @@
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>
     <string name="r3app_google_signin_no_info">Googleログイン情報を取得できませんでした。もう一度お試しください。</string>
     <string name="r3app_messages_plan_gate">メッセージはカップル・ファミリープランでご利用いただけます。</string>
+    <string name="r3app_messages_plan_gate_title">一緒に使う機能です</string>
     <string name="r3app_plan_gate_confirm">プランを見る</string>
     <string name="r3app_perm_required_notifications">アラーム画面と停止ボタンを表示するには、通知の権限が必要です。</string>
     <string name="r3app_perm_required_exact_alarms">設定した時刻に鳴らすには、正確なアラームの権限が必要です。</string>

@@ -21,6 +21,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.WakerHeroShape
 import com.alarmtalk.app.network.AuthSession
+import com.alarmtalk.app.wakerCardBorder
 
 /**
  * 로그인 후 첫 진입에서 알람 앱에 필요한 권한을 한 번에 안내한다.
@@ -72,7 +73,9 @@ internal fun LoginPermissionGate(
                 .widthIn(max = 520.dp),
             shape = WakerHeroShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
