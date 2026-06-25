@@ -19,6 +19,10 @@
     <string name="auth_email_verify">メール認証</string>
     <string name="auth_email_verify_done">メール認証完了</string>
     <string name="auth_email_verify_resend">認証コードを再送信</string>
+    <string name="auth_find_id">IDを探す</string>
+    <string name="auth_find_password">パスワード再設定</string>
+    <string name="auth_find_coming_soon">近日公開予定</string>
+    <string name="auth_or">または</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
     <string name="auth_label_name">ニックネーム</string>

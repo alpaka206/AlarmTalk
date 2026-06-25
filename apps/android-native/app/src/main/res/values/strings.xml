@@ -22,6 +22,10 @@
     <string name="auth_email_verify">이메일 인증</string>
     <string name="auth_email_verify_done">이메일 인증 완료</string>
     <string name="auth_email_verify_resend">인증 코드 다시 받기</string>
+    <string name="auth_find_id">아이디 찾기</string>
+    <string name="auth_find_password">비밀번호 찾기</string>
+    <string name="auth_find_coming_soon">곧 제공될 예정이에요</string>
+    <string name="auth_or">또는</string>
     <string name="auth_label_confirm_password">비밀번호 확인</string>
     <string name="auth_label_email">이메일</string>
     <string name="auth_label_name">닉네임</string>

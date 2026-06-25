@@ -489,6 +489,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       authRoute = AuthRoute.Auth(nextMode)
                   },
                   onGoogleSignIn = ::launchGoogleSignIn,
+                  onFindId = { viewModel.message = context.getString(R.string.auth_find_coming_soon) },
+                  onFindPassword = { viewModel.message = context.getString(R.string.auth_find_coming_soon) },
               )
           }
           return@Scaffold
