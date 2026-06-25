@@ -38,10 +38,12 @@ export function shouldExposeDebugEmailCode(env: Env): boolean {
   return env.ENVIRONMENT !== 'production' && !env.RESEND_API_KEY;
 }
 
-export async function sendEmailVerificationCode(
+async function sendAuthEmail(
   env: Env,
   email: string,
-  code: string,
+  subject: string,
+  text: string,
+  html: string,
 ): Promise<void> {
   if (!env.RESEND_API_KEY || !env.AUTH_EMAIL_FROM) {
     if (env.ENVIRONMENT !== 'production') return;
@@ -58,13 +60,41 @@ export async function sendEmailVerificationCode(
       from: env.AUTH_EMAIL_FROM,
       to: [email],
       reply_to: env.AUTH_EMAIL_REPLY_TO || undefined,
-      subject: 'AlarmTalk 이메일 인증 코드',
-      text: `AlarmTalk 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
-      html: `<p>AlarmTalk 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
+      subject,
+      text,
+      html,
     }),
   });
 
   if (!res.ok) {
     throw new Error(`Email delivery failed (${res.status})`);
   }
+}
+
+export async function sendEmailVerificationCode(
+  env: Env,
+  email: string,
+  code: string,
+): Promise<void> {
+  await sendAuthEmail(
+    env,
+    email,
+    'AlarmTalk 이메일 인증 코드',
+    `AlarmTalk 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
+    `<p>AlarmTalk 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
+  );
+}
+
+export async function sendPasswordResetCode(
+  env: Env,
+  email: string,
+  code: string,
+): Promise<void> {
+  await sendAuthEmail(
+    env,
+    email,
+    'AlarmTalk 비밀번호 재설정 코드',
+    `AlarmTalk 비밀번호 재설정 코드: ${code}\n10분 안에 입력해 주세요. 본인이 요청하지 않았다면 무시하세요.`,
+    `<p>AlarmTalk 비밀번호 재설정 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요. 본인이 요청하지 않았다면 무시하세요.</p>`,
+  );
 }

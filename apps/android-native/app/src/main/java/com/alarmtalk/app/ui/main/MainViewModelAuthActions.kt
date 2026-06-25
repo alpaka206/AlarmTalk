@@ -31,6 +31,8 @@ import com.alarmtalk.app.network.EmailVerificationConfirmRequest
 import com.alarmtalk.app.network.EmailVerificationRequest
 import com.alarmtalk.app.network.GoogleLoginRequest
 import com.alarmtalk.app.network.LoginRequest
+import com.alarmtalk.app.network.PasswordResetConfirmRequest
+import com.alarmtalk.app.network.PasswordResetRequest
 import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.SendNoteRequest
@@ -191,6 +193,66 @@ internal fun MainViewModel.register(
             Log.e(TAG, "Email registration failed", error)
             message = duplicateEmailMessage(error)
                 ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
+        }
+        authBusy = false
+    }
+}
+
+// 비밀번호 재설정 코드 요청. 백엔드는 계정 존재 여부를 노출하지 않으므로(비번 계정에만 발송),
+// 응답은 항상 성공이다. 코드를 보낸 이메일을 기억해 다음 단계(코드+새 비번)를 노출한다.
+internal fun MainViewModel.requestPasswordReset(email: String) {
+    val normalizedEmail = email.trim().lowercase()
+    if (normalizedEmail.isBlank()) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_email_required)
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.requestPasswordReset(PasswordResetRequest(email = normalizedEmail))
+        }.onSuccess { response ->
+            passwordResetCodeSentTo = normalizedEmail
+            message = response.debugCode
+                ?.takeIf { BuildConfig.DEBUG && it.isNotBlank() }
+                ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
+                ?: getApplication<android.app.Application>().getString(R.string.msg_password_reset_code_sent)
+        }.onFailure { error ->
+            Log.e(TAG, "Password reset request failed", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
+        }
+        authBusy = false
+    }
+}
+
+// 비밀번호 재설정 확정(코드+새 비밀번호). 성공 시 로그인 화면으로 돌아가도록 onSuccess 콜백을 호출한다.
+internal fun MainViewModel.confirmPasswordReset(
+    email: String,
+    code: String,
+    newPassword: String,
+    onSuccess: () -> Unit,
+) {
+    val normalizedEmail = email.trim().lowercase()
+    if (normalizedEmail.isBlank() || code.trim().length != 6 || newPassword.isBlank()) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_register_all_fields_required)
+        return
+    }
+    viewModelScope.launch {
+        authBusy = true
+        runCatching {
+            api.confirmPasswordReset(
+                PasswordResetConfirmRequest(
+                    email = normalizedEmail,
+                    code = code.trim(),
+                    password = newPassword,
+                ),
+            )
+        }.onSuccess {
+            passwordResetCodeSentTo = null
+            message = getApplication<android.app.Application>().getString(R.string.msg_password_reset_done)
+            onSuccess()
+        }.onFailure { error ->
+            Log.e(TAG, "Password reset confirm failed", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_password_reset_failed))
         }
         authBusy = false
     }

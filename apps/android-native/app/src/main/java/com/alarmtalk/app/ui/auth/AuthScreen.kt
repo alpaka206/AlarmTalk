@@ -61,7 +61,6 @@ internal fun AuthScreen(
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
     onGoogleSignIn: () -> Unit,
-    onFindId: () -> Unit,
     onFindPassword: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
@@ -318,18 +317,13 @@ internal fun AuthScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onFindId) {
-                    Text(
-                        text = stringResource(R.string.auth_find_id),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(text = "|", color = MaterialTheme.colorScheme.outlineVariant)
+                Text(
+                    text = stringResource(R.string.auth_forgot_password),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 TextButton(onClick = onFindPassword) {
-                    Text(
-                        text = stringResource(R.string.auth_find_password),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Text(stringResource(R.string.auth_find_password))
                 }
             }
             // SSO 구분선 — 소셜 로그인은 여기 아래로 묶고, 추후 제공자 추가 시 이 섹션에 덧붙인다.
@@ -356,18 +350,30 @@ internal fun AuthScreen(
                 enabled = !busy,
                 onClick = onGoogleSignIn,
                 modifier = Modifier.fillMaxWidth(),
+                label = stringResource(R.string.common_google_login),
             )
         }
 
-        TextButton(
-            onClick = onSwitchMode,
-            enabled = !busy,
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (mode == AuthMode.Login) stringResource(R.string.auth_switch_to_register)
-                else stringResource(R.string.auth_switch_to_login),
+                text = if (mode == AuthMode.Login) {
+                    stringResource(R.string.auth_landing_first_time)
+                } else {
+                    stringResource(R.string.auth_already_have_account)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(onClick = onSwitchMode, enabled = !busy) {
+                Text(
+                    if (mode == AuthMode.Login) stringResource(R.string.auth_title_register)
+                    else stringResource(R.string.auth_title_login),
+                )
+            }
         }
     }
 }

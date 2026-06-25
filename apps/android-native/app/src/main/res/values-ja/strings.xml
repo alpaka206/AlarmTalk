@@ -15,16 +15,24 @@
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_view">表示</string>
-    <string name="auth_create_account">アカウントを作成</string>
+    <string name="auth_already_have_account">すでにアカウントをお持ちですか？</string>
+    <string name="auth_create_account">新規登録</string>
     <string name="auth_email_verify">メール認証</string>
     <string name="auth_email_verify_done">メール認証完了</string>
-    <string name="auth_email_verify_resend">認証コードを再送信</string>
-    <string name="auth_find_id">IDを探す</string>
-    <string name="auth_find_password">パスワード再設定</string>
-    <string name="auth_find_coming_soon">近日公開予定</string>
-    <string name="auth_or">または</string>
+    <string name="auth_email_verify_resend">認証コードを再送信</string>    <string name="auth_find_password">再設定</string>
+    <string name="auth_forgot_password">パスワードをお忘れですか？</string>    <string name="auth_or">または</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
+    <string name="auth_reset_title">パスワード再設定</string>
+    <string name="auth_reset_subtitle">登録メールに認証コードをお送りします。</string>
+    <string name="auth_reset_send_code">認証コードを受け取る</string>
+    <string name="auth_reset_code_sent">コードを送信しました</string>
+    <string name="auth_reset_new_password">新しいパスワード</string>
+    <string name="auth_reset_password_hint">8文字以上、英字と数字を含む</string>
+    <string name="auth_reset_submit">パスワードを変更</string>
+    <string name="msg_password_reset_code_sent">認証コードを送りました。メールをご確認ください。</string>
+    <string name="msg_password_reset_done">パスワードを変更しました。新しいパスワードでログインしてください。</string>
+    <string name="msg_password_reset_failed">パスワードの再設定に失敗しました。</string>
     <string name="auth_label_name">ニックネーム</string>
     <string name="auth_label_password">パスワード</string>
     <string name="auth_label_verification_code">認証コード</string>
@@ -50,10 +58,7 @@
     <string name="auth_password_show">パスワードを表示</string>
     <string name="auth_processing">処理中</string>
     <string name="auth_subtitle_login">お気に入りの声のアラームをもう一度お呼びします。</string>
-    <string name="auth_subtitle_register">声のアラームを作るアカウントを準備しましょう。</string>
-    <string name="auth_switch_to_login">すでにアカウントをお持ちですか？ ログイン</string>
-    <string name="auth_switch_to_register">はじめてですか？アカウントを作成</string>
-    <string name="auth_title_login">ログイン</string>
+    <string name="auth_subtitle_register">声のアラームを作るアカウントを準備しましょう。</string>    <string name="auth_title_login">ログイン</string>
     <string name="auth_title_register">会員登録</string>
     <string name="auth_verification_code_hint">メールに届いた6桁のコードを入力してください。</string>
     <string name="billing_apply_button">適用する</string>
@@ -140,6 +145,7 @@
     <string name="common_day_tue">火</string>
     <string name="common_day_wed">水</string>
     <string name="common_google_continue">Googleで続ける</string>
+    <string name="common_google_login">Googleでログイン</string>
     <string name="common_permission_allow_action">許可する</string>
     <string name="common_permission_allow_all">必要な権限をすべて許可</string>
     <string name="common_permission_exact_alarm_label">正確なアラーム</string>

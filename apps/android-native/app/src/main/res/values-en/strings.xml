@@ -15,16 +15,24 @@
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_view">View</string>
-    <string name="auth_create_account">Create account</string>
+    <string name="auth_already_have_account">Already have an account?</string>
+    <string name="auth_create_account">Sign up</string>
     <string name="auth_email_verify">Verify email</string>
     <string name="auth_email_verify_done">Email verified</string>
-    <string name="auth_email_verify_resend">Resend code</string>
-    <string name="auth_find_id">Find ID</string>
-    <string name="auth_find_password">Forgot password</string>
-    <string name="auth_find_coming_soon">Coming soon</string>
-    <string name="auth_or">or</string>
+    <string name="auth_email_verify_resend">Resend code</string>    <string name="auth_find_password">Reset password</string>
+    <string name="auth_forgot_password">Forgot your password?</string>    <string name="auth_or">or</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
+    <string name="auth_reset_title">Reset password</string>
+    <string name="auth_reset_subtitle">We\'ll email a verification code to your account.</string>
+    <string name="auth_reset_send_code">Send code</string>
+    <string name="auth_reset_code_sent">Code sent</string>
+    <string name="auth_reset_new_password">New password</string>
+    <string name="auth_reset_password_hint">8+ characters, with letters and numbers</string>
+    <string name="auth_reset_submit">Reset password</string>
+    <string name="msg_password_reset_code_sent">We sent a code. Check your email.</string>
+    <string name="msg_password_reset_done">Password changed. Sign in with your new password.</string>
+    <string name="msg_password_reset_failed">Couldn\'t reset your password.</string>
     <string name="auth_label_name">Nickname</string>
     <string name="auth_label_password">Password</string>
     <string name="auth_label_verification_code">Verification code</string>
@@ -50,10 +58,7 @@
     <string name="auth_password_show">Show password</string>
     <string name="auth_processing">Processing</string>
     <string name="auth_subtitle_login">We\'ll bring back your favorite voice alarms.</string>
-    <string name="auth_subtitle_register">Let\'s set up an account to create voice alarms.</string>
-    <string name="auth_switch_to_login">Already have an account? Log in</string>
-    <string name="auth_switch_to_register">New here? Create account</string>
-    <string name="auth_title_login">Log in</string>
+    <string name="auth_subtitle_register">Let\'s set up an account to create voice alarms.</string>    <string name="auth_title_login">Log in</string>
     <string name="auth_title_register">Sign up</string>
     <string name="auth_verification_code_hint">Enter the 6-digit code from your email.</string>
     <string name="billing_apply_button">Apply</string>
@@ -140,6 +145,7 @@
     <string name="common_day_tue">Tue</string>
     <string name="common_day_wed">Wed</string>
     <string name="common_google_continue">Continue with Google</string>
+    <string name="common_google_login">Sign in with Google</string>
     <string name="common_permission_allow_action">Allow</string>
     <string name="common_permission_allow_all">Allow all required permissions</string>
     <string name="common_permission_exact_alarm_label">Exact alarms</string>

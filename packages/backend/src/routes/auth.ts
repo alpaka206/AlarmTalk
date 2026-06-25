@@ -14,6 +14,8 @@ import {
   AppleLoginRequestSchema,
   EmailVerificationRequestSchema,
   EmailVerificationConfirmRequestSchema,
+  PasswordResetRequestSchema,
+  PasswordResetConfirmRequestSchema,
 } from '@alarmtalk/shared';
 import { decodeJwtPayload, verifyAppleIdToken, verifyGoogleIdToken } from '../lib/oauth';
 import { familyAlarmSettingsFromRow } from '../lib/family-alarm-settings';
@@ -31,11 +33,13 @@ import {
   hashEmailVerificationCode,
   normalizeAuthEmail,
   sendEmailVerificationCode,
+  sendPasswordResetCode,
   shouldExposeDebugEmailCode,
 } from '../lib/email-verification';
 
 const auth = new Hono<{ Bindings: Env }>();
 const EMAIL_VERIFICATION_PURPOSE_REGISTER = 'register';
+const EMAIL_VERIFICATION_PURPOSE_RESET = 'reset';
 
 function jsonError(code: string, message: string) {
   return { error: message, error_code: code };
@@ -57,6 +61,7 @@ async function checkEmailVerificationCode(
   env: Env,
   email: string,
   code: string,
+  purpose: string = EMAIL_VERIFICATION_PURPOSE_REGISTER,
 ): Promise<EmailVerificationCheck> {
   const result = await db.execute({
     sql: `SELECT id, code_hash, attempts, expires_at
@@ -64,7 +69,7 @@ async function checkEmailVerificationCode(
           WHERE email = ? AND purpose = ? AND consumed_at IS NULL
           ORDER BY created_at DESC
           LIMIT 1`,
-    args: [email, EMAIL_VERIFICATION_PURPOSE_REGISTER],
+    args: [email, purpose],
   });
 
   if (result.rows.length === 0) {
@@ -267,6 +272,141 @@ auth.post('/email-code/verify', async (c) => {
   } catch (err) {
     logRouteError(c, err);
     return c.json(jsonError('AUTH_EMAIL_CODE_VERIFY_FAILED', 'Failed to verify email code'), 500);
+  }
+});
+
+// 비밀번호 재설정 코드 요청. 계정 존재 여부를 응답으로 드러내지 않는다(enumeration 방지):
+// 비밀번호 계정이 아니면(미가입·소셜) 코드를 보내지 않고 동일한 성공 응답을 돌려준다.
+auth.post('/password-reset', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = PasswordResetRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), 400);
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  // 코드를 실제로 새로 발송했을 때만 debug_code 를 포함한다.
+  const successResponse = (debugCode?: string) =>
+    c.json({
+      success: true,
+      expires_in_seconds: EMAIL_VERIFICATION_TTL_SECONDS,
+      ...(debugCode && shouldExposeDebugEmailCode(c.env) ? { debug_code: debugCode } : {}),
+    });
+
+  try {
+    // 비밀번호 계정에만 재설정 코드를 보낸다(소셜/미가입은 재설정할 비밀번호가 없음).
+    const account = await classifyExistingAccount(db, email);
+    if (!account || account.kind !== 'password') {
+      return successResponse();
+    }
+
+    const nowMs = Date.now();
+    const recent = await db.execute({
+      sql: `SELECT strftime('%Y-%m-%dT%H:%M:%fZ', created_at) AS created_at, expires_at
+            FROM email_verification_codes
+            WHERE email = ? AND purpose = ?
+              AND created_at >= datetime('now', '-1 day')
+            ORDER BY created_at DESC`,
+      args: [email, EMAIL_VERIFICATION_PURPOSE_RESET],
+    });
+
+    const cooldownActive = recent.rows.some((r) => {
+      const created = Date.parse(String(r.created_at ?? ''));
+      const expires = Date.parse(String(r.expires_at ?? ''));
+      if (!Number.isFinite(created)) return false;
+      const withinCooldown =
+        nowMs - created < EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS * 1000;
+      const stillValid = Number.isFinite(expires) ? expires > nowMs : false;
+      return withinCooldown && stillValid;
+    });
+    if (cooldownActive || recent.rows.length >= EMAIL_VERIFICATION_DAILY_CAP) {
+      return successResponse();
+    }
+
+    const code = generateEmailVerificationCode();
+    const codeHash = await hashEmailVerificationCode(email, code, c.env.PASSWORD_PEPPER);
+    const id = crypto.randomUUID();
+    const expiresAt = emailVerificationExpiresAt();
+
+    await db.execute({
+      sql: `INSERT INTO email_verification_codes
+              (id, email, purpose, code_hash, expires_at)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [id, email, EMAIL_VERIFICATION_PURPOSE_RESET, codeHash, expiresAt],
+    });
+
+    await sendPasswordResetCode(c.env, email, code);
+
+    return successResponse(code);
+  } catch (err) {
+    logRouteError(c, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    const status = detail.includes('Email delivery') ? 503 : 500;
+    return c.json(jsonError('AUTH_EMAIL_CODE_SEND_FAILED', 'Failed to send email code'), status);
+  }
+});
+
+// 비밀번호 재설정 확정: 코드 검증 → 새 비밀번호 해시로 교체 + token_epoch+1(유출된 기존 세션
+// 전부 폐기) → 코드 소모. 비밀번호 계정에만 허용한다.
+auth.post('/password-reset/confirm', async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json(jsonError('AUTH_INVALID_JSON', 'Invalid JSON body'), 400);
+  }
+
+  const parsed = PasswordResetConfirmRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json(
+      { ...jsonError('AUTH_VALIDATION_FAILED', 'Validation failed'), issues: parsed.error.issues },
+      400,
+    );
+  }
+
+  const email = normalizeAuthEmail(parsed.data.email);
+  const db = getDB(c.env);
+
+  try {
+    const check = await checkEmailVerificationCode(
+      db,
+      c.env,
+      email,
+      parsed.data.code,
+      EMAIL_VERIFICATION_PURPOSE_RESET,
+    );
+    if (!check.ok) {
+      return c.json(jsonError(check.code, check.message), check.status);
+    }
+
+    // 코드가 유효해도 비밀번호 계정이 아니면(소셜/미가입) 재설정하지 않는다.
+    const account = await classifyExistingAccount(db, email);
+    if (!account || account.kind !== 'password') {
+      return c.json(jsonError('AUTH_EMAIL_CODE_INVALID', 'Invalid email verification code'), 400);
+    }
+
+    const passwordHash = await hashPassword(parsed.data.password, c.env.PASSWORD_PEPPER);
+    await db.execute({
+      sql: `UPDATE users
+            SET password_hash = ?, token_epoch = token_epoch + 1, updated_at = datetime('now')
+            WHERE email = ?`,
+      args: [passwordHash, email],
+    });
+
+    await consumeEmailVerificationCode(db, check.id);
+
+    return c.json({ success: true });
+  } catch (err) {
+    logRouteError(c, err);
+    return c.json(jsonError('AUTH_PASSWORD_RESET_FAILED', 'Failed to reset password'), 500);
   }
 });
 
