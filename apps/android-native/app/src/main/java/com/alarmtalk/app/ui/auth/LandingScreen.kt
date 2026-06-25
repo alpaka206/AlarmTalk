@@ -7,7 +7,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,12 +14,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.ui.draw.clip
@@ -31,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -49,8 +49,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.alarmtalk.app.WakerPillShape
-import com.alarmtalk.app.WakerTileShape
 import kotlinx.coroutines.delay
 
 private data class LandingPalette(
@@ -94,55 +92,140 @@ private fun landingPalette(): LandingPalette {
     }
 }
 
+/**
+ * 첫 진입 랜딩 — 가치 제안(히어로 + 목소리 미리듣기)만 보여주고, 단일 "시작하기" 로
+ * 인증 진입(AuthEntryScreen)으로 넘긴다. 로그인/가입 선택지는 이 화면에 두지 않는다.
+ */
 @Composable
 internal fun LandingScreen(
     contentPadding: PaddingValues,
+    onGetStarted: () -> Unit,
+) {
+    val colors = landingPalette()
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.background)
+            .padding(contentPadding)
+            .padding(horizontal = 22.dp, vertical = 22.dp),
+    ) {
+        WakerBrandHeader(colors = colors)
+        Spacer(Modifier.weight(0.85f))
+        Text(
+            text = stringResource(R.string.auth_landing_headline),
+            style = MaterialTheme.typography.displaySmall,
+            color = colors.text,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(28.dp))
+        AlarmIdentityPreview(colors = colors)
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onGetStarted,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = WakerButtonShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = colors.accent,
+                contentColor = colors.accentText,
+            ),
+        ) {
+            Text(
+                text = stringResource(R.string.auth_landing_get_started),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+/**
+ * 인증 진입 화면 — "시작하기" 다음 단계. Google(주) + 이메일로 계속하기(보조) 만 두고,
+ * 소셜/이메일 선택을 한 곳에서 받는다. 이메일 폼(로그인/가입)에는 더 이상 Google 을
+ * 중복 노출하지 않는다.
+ */
+@Composable
+internal fun AuthEntryScreen(
+    contentPadding: PaddingValues,
     busy: Boolean,
+    onBack: () -> Unit,
     onGoToLogin: () -> Unit,
     onGoToRegister: () -> Unit,
     onGoogleSignIn: () -> Unit,
 ) {
     val colors = landingPalette()
-    BoxWithConstraints(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(contentPadding),
+            .padding(contentPadding)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 22.dp, vertical = 14.dp),
     ) {
-        val compact = maxHeight < 840.dp
-        Column(
+        IconButton(onClick = onBack) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = stringResource(R.string.auth_back),
+                tint = colors.text,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        WakerBrandHeader(colors = colors)
+        Spacer(Modifier.height(24.dp))
+        Text(
+            text = stringResource(R.string.auth_landing_get_started),
+            style = MaterialTheme.typography.headlineSmall,
+            color = colors.text,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.auth_landing_get_started_desc),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.muted,
+        )
+        Spacer(Modifier.height(28.dp))
+        GoogleSignInButton(
+            enabled = !busy,
+            onClick = onGoogleSignIn,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onGoToLogin,
+            enabled = !busy,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = maxHeight)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = 22.dp,
-                    vertical = if (compact) 16.dp else 22.dp,
-                ),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .height(56.dp),
+            shape = WakerButtonShape,
+            border = BorderStroke(1.dp, colors.line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                WakerBrandHeader(colors = colors)
-                Spacer(Modifier.height(if (compact) 28.dp else 48.dp))
-                Text(
-                    text = stringResource(R.string.auth_landing_headline),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = colors.text,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(if (compact) 24.dp else 34.dp))
-                AlarmIdentityPreview(colors = colors)
-            }
-            Spacer(Modifier.height(if (compact) 24.dp else 36.dp))
-            LandingAuthPanel(
-                colors = colors,
-                busy = busy,
-                onGoToLogin = onGoToLogin,
-                onGoToRegister = onGoToRegister,
-                onGoogleSignIn = onGoogleSignIn,
+            Text(stringResource(R.string.auth_continue_with_email))
+        }
+        Spacer(Modifier.height(20.dp))
+        HorizontalDivider(color = colors.line)
+        Spacer(Modifier.height(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.auth_landing_first_time),
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.muted,
             )
+            OutlinedButton(
+                onClick = onGoToRegister,
+                enabled = !busy,
+                shape = WakerButtonShape,
+                border = BorderStroke(1.dp, colors.line),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
+            ) {
+                Text(stringResource(R.string.auth_create_account))
+            }
         }
     }
 }
@@ -162,19 +245,12 @@ private fun WakerBrandHeader(colors: LandingPalette) {
                 .clip(WakerTileShape),
         )
         Spacer(Modifier.width(10.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                text = "AlarmTalk",
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.text,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "Voice alarm",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.muted,
-            )
-        }
+        Text(
+            text = "AlarmTalk",
+            style = MaterialTheme.typography.titleLarge,
+            color = colors.text,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -307,96 +383,6 @@ private fun LandingPreviewWaveform(
                         shape = WakerPillShape,
                     ),
             )
-        }
-    }
-}
-
-@Composable
-private fun LandingAuthPanel(
-    colors: LandingPalette,
-    busy: Boolean,
-    onGoToLogin: () -> Unit,
-    onGoToRegister: () -> Unit,
-    onGoogleSignIn: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerDialogShape,
-        color = colors.surfaceRaised,
-        border = BorderStroke(1.dp, colors.line),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.auth_landing_get_started),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.text,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = stringResource(R.string.auth_landing_get_started_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                )
-            }
-            Column(
-                modifier = Modifier.padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                GoogleSignInButton(
-                    enabled = !busy,
-                    onClick = onGoogleSignIn,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = onGoToLogin,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = WakerButtonShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.accent,
-                        contentColor = colors.accentText,
-                        disabledContainerColor = colors.accent.copy(alpha = 0.28f),
-                        disabledContentColor = colors.accentText.copy(alpha = 0.45f),
-                    ),
-                ) {
-                    Text(stringResource(R.string.auth_landing_login_with_email))
-                }
-            }
-            HorizontalDivider(color = colors.line)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.auth_landing_first_time),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.muted,
-                )
-                OutlinedButton(
-                    onClick = onGoToRegister,
-                    enabled = !busy,
-                    shape = WakerButtonShape,
-                    border = BorderStroke(1.dp, colors.line),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = colors.text,
-                        disabledContentColor = colors.muted.copy(alpha = 0.45f),
-                    ),
-                ) {
-                    Text(stringResource(R.string.auth_create_account))
-                }
-            }
         }
     }
 }

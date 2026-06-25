@@ -378,7 +378,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     if (authSession == null) {
         BackHandler(enabled = authRoute !is AuthRoute.Landing) {
-            authRoute = AuthRoute.Landing
+            authRoute = if (authRoute is AuthRoute.Auth) AuthRoute.Entry else AuthRoute.Landing
         }
     } else {
         BackHandler(
@@ -470,7 +470,12 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
                   contentPadding = padding,
+                  onGetStarted = { authRoute = AuthRoute.Entry },
+              )
+              AuthRoute.Entry -> AuthEntryScreen(
+                  contentPadding = padding,
                   busy = authBusy,
+                  onBack = { authRoute = AuthRoute.Landing },
                   onGoToLogin = { authRoute = AuthRoute.Auth(AuthMode.Login) },
                   onGoToRegister = { authRoute = AuthRoute.Auth(AuthMode.Register) },
                   onGoogleSignIn = ::launchGoogleSignIn,
@@ -481,7 +486,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                   busy = authBusy,
                   emailVerificationSentTo = viewModel.registerEmailVerificationSentTo,
                   emailVerified = viewModel.registerEmailVerified,
-                  onBack = { authRoute = AuthRoute.Landing },
+                  onBack = { authRoute = AuthRoute.Entry },
                   onLogin = viewModel::login,
                   onRegister = viewModel::register,
                   onRequestEmailVerification = viewModel::requestEmailVerification,
@@ -490,7 +495,6 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       val nextMode = if (route.mode == AuthMode.Login) AuthMode.Register else AuthMode.Login
                       authRoute = AuthRoute.Auth(nextMode)
                   },
-                  onGoogleSignIn = ::launchGoogleSignIn,
               )
           }
           return@Scaffold

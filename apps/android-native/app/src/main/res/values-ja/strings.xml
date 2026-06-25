@@ -15,13 +15,14 @@
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_view">表示</string>
+    <string name="auth_continue_with_email">メールで続ける</string>
     <string name="auth_create_account">アカウントを作成</string>
     <string name="auth_email_verify">メール認証</string>
     <string name="auth_email_verify_done">メール認証完了</string>
     <string name="auth_email_verify_resend">認証コードを再送信</string>
     <string name="auth_label_confirm_password">パスワードの確認</string>
     <string name="auth_label_email">メールアドレス</string>
-    <string name="auth_label_name">名前</string>
+    <string name="auth_label_name">ニックネーム</string>
     <string name="auth_label_password">パスワード</string>
     <string name="auth_label_verification_code">認証コード</string>
     <string name="auth_landing_first_time">はじめてのご利用ですか？</string>

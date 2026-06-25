@@ -59,7 +59,6 @@ internal fun AuthScreen(
     onRequestEmailVerification: (String) -> Unit,
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
-    onGoogleSignIn: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -308,12 +307,6 @@ internal fun AuthScreen(
                 },
             )
         }
-
-        GoogleSignInButton(
-            enabled = !busy,
-            onClick = onGoogleSignIn,
-            modifier = Modifier.fillMaxWidth(),
-        )
 
         TextButton(
             onClick = onSwitchMode,

@@ -15,13 +15,14 @@
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_view">View</string>
+    <string name="auth_continue_with_email">Continue with email</string>
     <string name="auth_create_account">Create account</string>
     <string name="auth_email_verify">Verify email</string>
     <string name="auth_email_verify_done">Email verified</string>
     <string name="auth_email_verify_resend">Resend code</string>
     <string name="auth_label_confirm_password">Confirm password</string>
     <string name="auth_label_email">Email</string>
-    <string name="auth_label_name">Name</string>
+    <string name="auth_label_name">Nickname</string>
     <string name="auth_label_password">Password</string>
     <string name="auth_label_verification_code">Verification code</string>
     <string name="auth_landing_first_time">First time here?</string>
