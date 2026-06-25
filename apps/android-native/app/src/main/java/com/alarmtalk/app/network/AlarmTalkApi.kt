@@ -7,7 +7,6 @@ interface AlarmTalkApi :
     TtsApi,
     FamilyApi,
     CodeApi,
-    CharacterApi,
     BillingApi,
     NotesApi,
     HolidayApi

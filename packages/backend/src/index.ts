@@ -25,7 +25,6 @@ import statsRoutes from './routes/stats';
 import billingRoutes from './routes/billing';
 import billingGoogleRtdn from './routes/billing-google-rtdn';
 import familyRoutes from './routes/family';
-import characterRoutes from './routes/character';
 import codeRoutes from './routes/code';
 import notesRoutes from './routes/notes';
 import holidayRoutes from './routes/holiday';
@@ -239,7 +238,6 @@ api.route('/gift', giftRoutes);
 api.route('/stats', statsRoutes);
 api.route('/billing', billingRoutes);
 api.route('/family', familyRoutes);
-api.route('/characters', characterRoutes);
 api.route('/code', codeRoutes);
 api.route('/notes', notesRoutes);
 

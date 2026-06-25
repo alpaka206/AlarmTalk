@@ -22,14 +22,12 @@ import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.VoiceSources
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse

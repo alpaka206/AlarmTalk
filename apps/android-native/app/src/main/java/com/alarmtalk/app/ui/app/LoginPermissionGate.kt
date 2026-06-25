@@ -91,6 +91,7 @@ internal fun LoginPermissionGate(
                     permissions = permissions,
                     onRequestPermission = onRequestPermission,
                     onRequestAllPermissions = onRequestAllPermissions,
+                    showHeader = false,
                 )
             }
         }

@@ -428,7 +428,17 @@
   가족초대 좌석 초과 TOCTOU(원자적 조건부 INSERT) (`character-mutation.ts`, `family-invite.ts`)
 - auth 전용 엄격 레이트리밋(15/분, 별도 버킷)로 무차별 대입 방어 (`rateLimit.ts`, `index.ts`)
 
-## ⏳ 남은 항목 (권장 다음 배치)
-- `pending_deletion` fail-open: fail-closed 전환은 일시적 DB 오류 시 인증 장애 위험 → 신중한 결정 필요(의도적 보류)
-- 저위험 리팩토링: resolveUserPk 중복 통합, ownerIds 헬퍼, 공통 에러 헬퍼, family-alarm 중복
-- 대형 구조 리팩토링(AlarmTalkApp God-composable 분할, AlarmListScreen 70-param 분할, strings.xml i18n): 출시 직전 리스크로 보류
+## ⏳ 남은 항목
+
+> 이 리포트는 6/22 감사 시점의 스냅샷이다. 그 뒤 코드와 다시 대조해 **미해결로 남은 것만**
+> [`docs/qa/launch-tracking.ko.md`](launch-tracking.ko.md) 한 곳에 모았다(읽기 편한 한국어 추적용).
+> 출시 전 남은 작업은 그 문서를 단일 출처로 본다.
+
+대조 후 추가로 해결 확인:
+- `pending_deletion`은 fail-closed로 전환됨(이전 "의도적 보류" 메모는 무효).
+- 캐릭터/성장 기능이 FE+BE에서 제거되면서 character `/xp` 관련 finding(클라 권위·논스 중복지급·streak 마일스톤 중복)은 전부 무효화됨.
+
+여전히 남은 것(상세는 launch-tracking.ko.md):
+- 음성 클론 업로드 바이트 상한, diarize 유료확인-선적재, 애플 결제 웹훅, 구글 nonce, RTDN 쿼리토큰, 애플 JWS 서명검증, 외부 클론 삭제 재시도, 제공자 오류 원문 반사, TTS 출력포맷 명시, 선물수락 트랜잭션, 이메일 코드 쿨다운.
+- 저위험 리팩토링: resolveUserPk 중복 통합, ownerIds 헬퍼, 공통 에러 헬퍼, family-alarm 중복.
+- 대형 구조 리팩토링(AlarmTalkApp God-composable 분할, AlarmListScreen 70-param 분할, strings.xml i18n): 출시 직전 리스크로 보류.

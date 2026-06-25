@@ -11,7 +11,6 @@ vi.mock('../src/lib/db', () => ({
 }));
 
 import alarmRoutes from '../src/routes/alarm';
-import characterRoutes from '../src/routes/character';
 import libraryRoutes from '../src/routes/library';
 import friendRoutes from '../src/routes/friend';
 import statsRoutes from '../src/routes/stats';
@@ -59,25 +58,6 @@ function alarmRow(overrides: Record<string, unknown> = {}) {
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
-  };
-}
-
-function characterRow() {
-  return {
-    id: 'char-1',
-    user_id: 'user-1',
-    name: 'Sprout',
-    level: 3,
-    xp: 250,
-    affection: 10,
-    stage: 'sprout',
-    daily_xp: 0,
-    daily_xp_reset_at: null,
-    current_streak: 5,
-    longest_streak: 10,
-    last_wakeup_date: '2026-04-23',
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
   };
 }
 
@@ -132,21 +112,6 @@ describe('API latency baselines', () => {
       );
       expect(res.status).toBe(201);
       expect(ms).toBeLessThan(WRITE_LATENCY_THRESHOLD_MS);
-    });
-  });
-
-  describe('GET /characters/me', () => {
-    it('responds within threshold (existing character)', async () => {
-      mockDB.pushResult([{ pk: 1 }]); // resolveUserPk
-      mockDB.pushResult([characterRow()]); // SELECT character
-      mockDB.pushResult([{ diligence: 50, health: 40, consistency: 60 }]); // stats
-      mockDB.pushResult([{ milestone: 7, bonus_xp: 50, achieved_at: '2026-04-20T00:00:00Z' }]); // achievements
-      const app = buildApp('/characters', characterRoutes);
-      const { res, ms } = await measureLatency(() => app.request(jsonReq('GET', '/characters/me')));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.character).toBeDefined();
-      expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
   });
 

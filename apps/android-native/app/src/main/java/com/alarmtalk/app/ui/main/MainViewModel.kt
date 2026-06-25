@@ -18,12 +18,10 @@ import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -145,9 +143,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val alarms: StateFlow<List<AlarmEntity>> = repository.observeAlarms()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val characterEvents: StateFlow<List<CharacterEventEntity>> = repository.observeCharacterEvents()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
     var authSession by mutableStateOf<AuthSession?>(initialAuthSession)
         internal set
 
@@ -189,12 +184,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     var familyVoices by mutableStateOf<List<FamilyVoiceProfile>>(emptyList())
-        internal set
-
-    var characterBusy by mutableStateOf(false)
-        internal set
-
-    var characterResponse by mutableStateOf<CharacterResponse?>(null)
         internal set
 
     var billingBusy by mutableStateOf(false)
@@ -373,7 +362,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
-        characterResponse = null
         subscriptionResponse = null
         vouchers = emptyList()
         receivedNotes = emptyList()

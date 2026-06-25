@@ -255,7 +255,7 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1. All pairs above pa
               │      cache miss?              │       │
               │      yes      no              ▼       ▼
               │       │       │            trim    save
-              │   ElevenLabs  R2 hit          │
+              │  Voice provider R2 hit        │
               │       │       │               │
               │       └───┬───┘               │
               │           ▼                   │
@@ -314,8 +314,6 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1. All pairs above pa
    │                        is_active=false
    └──────────────┬─────────────────┘
                   ▼
-       Enqueue character_event
-                  ▼
        RingingService.stopSelf()
 ```
 
@@ -339,7 +337,7 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1. All pairs above pa
 ### SEQ-3. TTS generation (cache miss)
 
 ```
-[Android]  [/api/tts/generate]  [DB]  [ElevenLabs]  [R2]
+[Android]  [/api/tts/generate]  [DB]  [Voice provider]  [R2]
    POST {voice_profile_id, text, language}
         → authMiddleware
         → cache_key = sha256(profile|text|lang|provider)

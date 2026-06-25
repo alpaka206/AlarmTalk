@@ -33,8 +33,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 
-// DateTimeFormatter 는 스레드 안전하며 불변이므로 호출마다 새로 만들 필요가 없다.
-// 코드베이스의 다른 곳(BillingCharacterPanel)과 동일하게 top-level val 로 1회만 할당한다.
+// DateTimeFormatter 는 스레드 안전하며 불변이므로 호출마다 새로 만들 필요가 없어
+// top-level val 로 1회만 할당한다.
 private val DateTimeMinuteFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 private val DotDateFormatter: DateTimeFormatter =
@@ -331,20 +331,6 @@ internal fun alarmStateLabel(context: Context, state: String?): String = when (s
     "missed" -> context.getString(R.string.label_alarm_state_missed)
     "failed" -> context.getString(R.string.label_alarm_state_failed)
     else -> state ?: context.getString(R.string.label_alarm_state_local)
-}
-
-internal fun stageEmoji(stage: String): String = when (stage) {
-    "sprout" -> "\uD83C\uDF31"
-    "tree" -> "\uD83C\uDF33"
-    "bloom" -> "\uD83C\uDF38"
-    else -> "\uD83C\uDF30"
-}
-
-internal fun stageLabel(context: Context, stage: String): String = when (stage) {
-    "sprout" -> context.getString(R.string.label_stage_sprout)
-    "tree" -> context.getString(R.string.label_stage_tree)
-    "bloom" -> context.getString(R.string.label_stage_bloom)
-    else -> context.getString(R.string.label_stage_seed)
 }
 
 internal fun syncStateLabel(context: Context, state: String): String = when (state) {

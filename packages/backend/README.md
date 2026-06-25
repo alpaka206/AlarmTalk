@@ -81,7 +81,6 @@ npm run typecheck # tsc --noEmit
 | `/api/gift/*` | 선물 전송/수신 |
 | `/api/billing/*` | 결제 스텁 + 이용권 코드 |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
-| `/api/characters/*` | 캐릭터 조회 + XP 지급 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 
 ## Apple Login

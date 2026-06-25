@@ -60,6 +60,9 @@ articles/
 # Local audit/QA scratch — screenshots, i18n gen scripts, raw data (not shared)
 .audit-shots/
 
+# Security audit reports (local-only, not tracked)
+docs/security/
+
 # Test audio files (사용자가 로컬에 두는 음성 파일들 - 커밋 금지)
 test/*
 !test/.gitkeep

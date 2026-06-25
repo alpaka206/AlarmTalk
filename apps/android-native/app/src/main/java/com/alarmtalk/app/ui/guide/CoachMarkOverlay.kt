@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -247,9 +249,10 @@ private fun CoachMarkCard(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp,
         ) {
+            // 모달 관례: 균일 간격 대신 그룹별로 다른 여백을 줘 '읽는 영역(제목·본문)'과
+            // '누르는 영역(액션 버튼)'을 시각적으로 분리한다. 제목·본문은 좁게 묶고, 본문↔버튼만 벌린다.
             Column(
-                modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 20.dp),
             ) {
                 // 단계가 여럿일 때만 진행 표시(가이드 N / M). 한 단계뿐이면 점·카운터 모두 생략.
                 if (stepCount > 1) {
@@ -259,17 +262,20 @@ private fun CoachMarkCard(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    Spacer(Modifier.height(8.dp))
                 }
                 Text(
                     text = step.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
+                Spacer(Modifier.height(6.dp))
                 Text(
                     text = step.body,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

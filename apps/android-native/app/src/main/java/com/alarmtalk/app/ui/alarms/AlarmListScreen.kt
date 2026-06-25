@@ -32,11 +32,9 @@ import com.alarmtalk.app.ui.guide.coachMarkTarget
 import kotlinx.coroutines.delay
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.NoteAudioResponse
@@ -68,9 +66,6 @@ internal fun AlarmListScreen(
     socialBusy: Boolean,
     familyGroup: FamilyGroupCurrentResponse?,
     familyVoices: List<FamilyVoiceProfile>,
-    characterEvents: List<CharacterEventEntity>,
-    characterBusy: Boolean,
-    characterResponse: CharacterResponse?,
     billingBusy: Boolean,
     subscriptionResponse: BillingSubscriptionResponse?,
     vouchers: List<VoucherItem>,
@@ -96,8 +91,6 @@ internal fun AlarmListScreen(
     onDeleteVoiceProfile: (String) -> Unit,
     onRefreshSocial: () -> Unit,
     onLeaveFamilyGroup: (String) -> Unit,
-    onRefreshCharacterBilling: () -> Unit,
-    onSyncCharacterEvents: () -> Unit,
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
     onRefreshNotes: () -> Unit,
@@ -228,12 +221,6 @@ internal fun AlarmListScreen(
                     )
                     }
                 }
-                item {
-                    CharacterMiniCard(
-                        characterResponse = characterResponse,
-                        onClick = { onSelectTab(NativeTab.Growth) },
-                    )
-                }
             }
 
             NativeTab.Voices -> {
@@ -335,26 +322,6 @@ internal fun AlarmListScreen(
                         onMarkNoteRead = onMarkNoteRead,
                         onOpenFamily = { onSelectTab(NativeTab.People) },
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
-                    )
-                }
-            }
-
-            NativeTab.Growth -> {
-                item {
-                    ScreenHeader(title = stringResource(R.string.common_tab_character))
-                }
-                item {
-                    CharacterBillingPanel(
-                        alarms = alarms,
-                        characterEvents = characterEvents,
-                        characterBusy = characterBusy,
-                        characterResponse = characterResponse,
-                        billingBusy = billingBusy,
-                        subscriptionResponse = subscriptionResponse,
-                        vouchers = vouchers,
-                        onRefresh = onRefreshCharacterBilling,
-                        onSyncEvents = onSyncCharacterEvents,
-                        onRegisterCode = onRegisterCode,
                     )
                 }
             }

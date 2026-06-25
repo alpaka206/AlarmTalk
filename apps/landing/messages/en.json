@@ -24,7 +24,6 @@
       "quickStart": "Quick start",
       "quickVoice": "Voice profiles",
       "quickAlarm": "New alarm",
-      "streak": "7 days streak",
       "tabHome": "Home",
       "tabVoice": "Voice",
       "tabAlarms": "Alarms",
@@ -122,7 +121,7 @@
       },
       {
         "q": "Is it free?",
-        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, auto-generated contexts (weather, fortune, etc.), and the character system are part of paid plans."
+        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, and auto-generated contexts (weather, fortune, etc.) are part of paid plans."
       },
       {
         "q": "Which devices are supported?",

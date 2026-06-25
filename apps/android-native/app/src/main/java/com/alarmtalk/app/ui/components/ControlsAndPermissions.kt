@@ -88,6 +88,7 @@ internal fun PermissionPanel(
     permissions: PermissionSnapshot,
     onRequestPermission: (PermissionTarget) -> Unit,
     onRequestAllPermissions: () -> Unit,
+    showHeader: Boolean = true,
 ) {
     OutlinedCard(
         shape = WakerCardShape,
@@ -97,11 +98,13 @@ internal fun PermissionPanel(
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = stringResource(R.string.common_permission_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (showHeader) {
+                Text(
+                    text = stringResource(R.string.common_permission_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             if (!permissions.allStartupGranted) {
                 Button(
                     onClick = onRequestAllPermissions,

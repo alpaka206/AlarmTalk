@@ -67,7 +67,7 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_left_group)
             refreshSocial()
-            refreshCharacterAndBilling()
+            refreshBilling()
             refreshAppSession()
         }.onFailure { error ->
             Log.e(TAG, "Failed to leave family group id=$groupId", error)
@@ -88,7 +88,7 @@ internal fun MainViewModel.removeFamilyMember(groupId: String, userId: String) {
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_member_removed)
             refreshSocial()
-            refreshCharacterAndBilling()
+            refreshBilling()
         }.onFailure { error ->
             Log.e(TAG, "Failed to remove family member group=$groupId user=$userId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_remove_member_failed))

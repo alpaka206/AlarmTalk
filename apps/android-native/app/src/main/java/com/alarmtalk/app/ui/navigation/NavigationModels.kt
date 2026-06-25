@@ -4,7 +4,6 @@ import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.People
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoucherItem
@@ -14,8 +13,7 @@ internal data class SocialSnapshot(
     val familyVoices: List<FamilyVoiceProfile>,
 )
 
-internal data class CharacterBillingSnapshot(
-    val character: CharacterResponse,
+internal data class BillingSnapshot(
     val subscription: BillingSubscriptionResponse,
     val vouchers: List<VoucherItem>,
 )
@@ -34,7 +32,6 @@ internal enum class NativeTab {
     Alarms,
     People,
     Messages,
-    Growth,
     Billing,
 }
 
