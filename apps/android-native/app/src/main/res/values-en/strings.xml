@@ -15,7 +15,6 @@
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_view">View</string>
-    <string name="auth_continue_with_email">Continue with email</string>
     <string name="auth_create_account">Create account</string>
     <string name="auth_email_verify">Verify email</string>
     <string name="auth_email_verify_done">Email verified</string>
@@ -33,6 +32,11 @@
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
     <string name="auth_landing_tomorrow_morning">Tomorrow morning</string>
+    <string name="auth_landing_sample_message">Morning, Minji ☀️\nHave a wonderful day!</string>
+    <string name="auth_landing_sample_voice">· Mom\'s voice</string>
+    <string name="auth_landing_value_voice">Your voice</string>
+    <string name="auth_landing_value_family">Family</string>
+    <string name="auth_landing_value_daily">Daily message</string>
     <string name="auth_onboarding_next">Next</string>
     <string name="auth_onboarding_skip">Skip</string>
     <string name="auth_onboarding_start">Get started</string>
@@ -47,7 +51,7 @@
     <string name="auth_subtitle_login">We\'ll bring back your favorite voice alarms.</string>
     <string name="auth_subtitle_register">Let\'s set up an account to create voice alarms.</string>
     <string name="auth_switch_to_login">Already have an account? Log in</string>
-    <string name="auth_switch_to_register">New here? Sign up</string>
+    <string name="auth_switch_to_register">New here? Create account</string>
     <string name="auth_title_login">Log in</string>
     <string name="auth_title_register">Sign up</string>
     <string name="auth_verification_code_hint">Enter the 6-digit code from your email.</string>

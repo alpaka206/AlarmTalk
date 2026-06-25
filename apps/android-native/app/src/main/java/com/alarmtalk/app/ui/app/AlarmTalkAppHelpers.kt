@@ -144,7 +144,6 @@ internal suspend fun Task<Void>.awaitCompletion() {
 
 internal sealed interface AuthRoute {
     data object Landing : AuthRoute
-    data object Entry : AuthRoute
     data class Auth(val mode: AuthMode) : AuthRoute
 }
 

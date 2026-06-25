@@ -59,6 +59,7 @@ internal fun AuthScreen(
     onRequestEmailVerification: (String) -> Unit,
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
+    onGoogleSignIn: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -305,6 +306,14 @@ internal fun AuthScreen(
                     mode == AuthMode.Register -> stringResource(R.string.auth_create_account)
                     else -> stringResource(R.string.auth_title_login)
                 },
+            )
+        }
+
+        if (mode == AuthMode.Login) {
+            GoogleSignInButton(
+                enabled = !busy,
+                onClick = onGoogleSignIn,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
 

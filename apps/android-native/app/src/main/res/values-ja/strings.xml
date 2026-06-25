@@ -15,7 +15,6 @@
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_view">表示</string>
-    <string name="auth_continue_with_email">メールで続ける</string>
     <string name="auth_create_account">アカウントを作成</string>
     <string name="auth_email_verify">メール認証</string>
     <string name="auth_email_verify_done">メール認証完了</string>
@@ -33,6 +32,11 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_tomorrow_morning">明日の朝</string>
+    <string name="auth_landing_sample_message">みんじ、おはよう ☀️\n今日も素敵な一日を！</string>
+    <string name="auth_landing_sample_voice">· ママの声</string>
+    <string name="auth_landing_value_voice">自分の声</string>
+    <string name="auth_landing_value_family">家族と共有</string>
+    <string name="auth_landing_value_daily">毎日メッセージ</string>
     <string name="auth_onboarding_next">次へ</string>
     <string name="auth_onboarding_skip">スキップ</string>
     <string name="auth_onboarding_start">始める</string>
@@ -47,7 +51,7 @@
     <string name="auth_subtitle_login">お気に入りの声のアラームをもう一度お呼びします。</string>
     <string name="auth_subtitle_register">声のアラームを作るアカウントを準備しましょう。</string>
     <string name="auth_switch_to_login">すでにアカウントをお持ちですか？ ログイン</string>
-    <string name="auth_switch_to_register">はじめての方はこちら 新規登録</string>
+    <string name="auth_switch_to_register">はじめてですか？アカウントを作成</string>
     <string name="auth_title_login">ログイン</string>
     <string name="auth_title_register">会員登録</string>
     <string name="auth_verification_code_hint">メールに届いた6桁のコードを入力してください。</string>
