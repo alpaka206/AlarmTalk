@@ -631,11 +631,14 @@ internal fun MainViewModel.loadMarketingConsent() {
     val session = authSession ?: return
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 이 로드가 시작된 시점의 generation 을 캡처해 둔다. 응답이 늦게 도착하는 사이 사용자가
+    // 토글을 바꾸거나 계정이 바뀌면 generation 이 올라가, 낡은 스냅샷을 폐기한다.
+    val generation = marketingConsentLoadGeneration
     viewModelScope.launch {
         runCatching {
             api.listConsents(authorization)
         }.onSuccess { response ->
-            if (authSession?.user?.id != userId) return@launch
+            if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
             marketingConsentAgreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
         }.onFailure { error ->
             Log.w(TAG, "Failed to load marketing consent", error)
@@ -654,6 +657,9 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     val previous = marketingConsentAgreed
+    // 토글로 사용자가 정한 값이 우선이다. 진행 중이던 로드(GET)의 결과가 이 값을 덮어쓰지 않도록
+    // generation 을 올려 무효화한 뒤, 낙관적으로 즉시 반영한다.
+    marketingConsentLoadGeneration++
     marketingConsentAgreed = agreed
     viewModelScope.launch {
         runCatching {

@@ -249,6 +249,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
         internal set
 
+    // loadMarketingConsent 요청 세대(generation). 토글(updateMarketingConsent)이나 계정 전환
+    // (clearUserScopedRemoteState)이 일어나면 증가시켜, 그 전에 시작된 GET 응답이 뒤늦게 도착해
+    // 최신 상태를 덮어쓰지 못하게 한다(레이스 가드).
+    internal var marketingConsentLoadGeneration: Int = 0
+
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
     var pendingDeletion by mutableStateOf(false)
         internal set
@@ -382,6 +387,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         needsConsent = false
         consentChecked = false
         pendingDeletion = false
+        // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
+        // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
+        marketingConsentAgreed = null
+        marketingConsentLoadGeneration++
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {
