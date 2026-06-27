@@ -663,6 +663,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     }
     // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
     if (marketingConsentWriteInFlight) return
+    val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     val previous = marketingConsentAgreed
@@ -671,8 +672,12 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     marketingConsentLoadGeneration++
     marketingConsentAgreed = agreed
     marketingConsentWriteInFlight = true
+    // 이 쓰기가 시작된 시점의 사용자/generation 을 캡처해 둔다. POST 가 끝나기 전 계정 전환
+    // (clearUserScopedRemoteState 가 generation 을 올림)이 일어나면 완료 처리가 새 사용자의
+    // 토글 상태를 옛 값으로 덮어쓰지 않도록, 로드(GET) 가드와 동일하게 완료도 가드한다.
+    val generation = marketingConsentLoadGeneration
     viewModelScope.launch {
-        runCatching {
+        val result = runCatching {
             api.recordConsents(
                 authorization,
                 com.alarmtalk.app.network.RecordConsentsRequest(
@@ -685,7 +690,14 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
                     ),
                 ),
             )
-        }.onSuccess {
+        }
+        result.exceptionOrNull()?.let { error ->
+            Log.e(TAG, "Failed to update marketing consent", error)
+        }
+        // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
+        // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
+        if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+        result.onSuccess {
             val app = getApplication<android.app.Application>()
             message = if (agreed) {
                 app.getString(R.string.msg_marketing_consent_on)
@@ -694,10 +706,9 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
             }
         }.onFailure { error ->
             marketingConsentAgreed = previous
-            Log.e(TAG, "Failed to update marketing consent", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
         }
-        // 성공·실패와 무관하게 쓰기 잠금 해제 → 다음 토글 허용.
+        // 성공·실패와 무관하게(단, 이 쓰기가 여전히 최신일 때만) 쓰기 잠금 해제 → 다음 토글 허용.
         marketingConsentWriteInFlight = false
     }
 }
