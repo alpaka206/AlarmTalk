@@ -654,6 +654,8 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
         return
     }
+    // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
+    if (marketingConsentWriteInFlight) return
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
     val policyVersion = cachedPolicyVersion()
     val previous = marketingConsentAgreed
@@ -661,6 +663,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
     // generation 을 올려 무효화한 뒤, 낙관적으로 즉시 반영한다.
     marketingConsentLoadGeneration++
     marketingConsentAgreed = agreed
+    marketingConsentWriteInFlight = true
     viewModelScope.launch {
         runCatching {
             api.recordConsents(
@@ -687,6 +690,8 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
             Log.e(TAG, "Failed to update marketing consent", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
         }
+        // 성공·실패와 무관하게 쓰기 잠금 해제 → 다음 토글 허용.
+        marketingConsentWriteInFlight = false
     }
 }
 

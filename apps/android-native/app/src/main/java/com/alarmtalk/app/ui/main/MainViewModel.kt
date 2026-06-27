@@ -254,6 +254,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // 최신 상태를 덮어쓰지 못하게 한다(레이스 가드).
     internal var marketingConsentLoadGeneration: Int = 0
 
+    // 마케팅 동의 POST 진행 중 여부. true 동안엔 토글을 비활성화해 동시/연속 쓰기를 막는다.
+    // (늦게 도착한 옛 POST 가 최신 의도 뒤에 INSERT 되어 opt-out 이 유실되는 것 방지)
+    var marketingConsentWriteInFlight by mutableStateOf(false)
+        internal set
+
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
     var pendingDeletion by mutableStateOf(false)
         internal set
@@ -391,6 +396,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
         marketingConsentAgreed = null
         marketingConsentLoadGeneration++
+        marketingConsentWriteInFlight = false
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {

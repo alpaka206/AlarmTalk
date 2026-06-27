@@ -115,6 +115,7 @@ internal fun SettingsToggleRow(
     value: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
@@ -136,6 +137,7 @@ internal fun SettingsToggleRow(
         AlarmTalkSwitch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
         )
     }
 }

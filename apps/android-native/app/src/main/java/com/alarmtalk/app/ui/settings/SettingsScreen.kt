@@ -48,6 +48,7 @@ internal fun SettingsScreen(
     authSession: AuthSession?,
     themeMode: ThemeMode,
     marketingConsentAgreed: Boolean?,
+    marketingConsentBusy: Boolean,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
@@ -164,6 +165,8 @@ internal fun SettingsScreen(
                         value = stringResource(R.string.settings_marketing_toggle_desc),
                         checked = marketingConsentAgreed == true,
                         onCheckedChange = onChangeMarketingConsent,
+                        // 쓰기 진행 중엔 비활성화해 동시/연속 토글로 인한 opt-out 유실을 막는다.
+                        enabled = !marketingConsentBusy,
                     )
                 }
             }

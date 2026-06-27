@@ -242,6 +242,10 @@ internal fun VoiceAudioCard(
                         ).orEmpty(),
                         onOverrideChange = {
                             editor.voiceListenerTitleOverride = it.take(30)
+                            // 호칭이 바뀌면 이미 생성·캐시된 오디오는 옛 호칭이라 무효다.
+                            // localAudioUri/audioCacheKey 까지 비워야 저장 경로의 freshness 판정
+                            // (audioCacheKey 매칭)이 통과하지 않고 새 호칭으로 재생성된다.
+                            editor.clearAudio()
                             editor.clearTtsMeta()
                         },
                     )
