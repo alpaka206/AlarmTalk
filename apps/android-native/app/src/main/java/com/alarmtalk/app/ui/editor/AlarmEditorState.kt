@@ -103,6 +103,9 @@ internal class AlarmEditorState(
     var rawAudioUri by mutableStateOf(rawAudioUri)
     var voiceSource by mutableStateOf(voiceSource)
     var voiceProfileId by mutableStateOf(voiceProfileId)
+    // 알람별 호칭 덮어쓰기. 비어 있으면 선택한 목소리 프로필의 호칭(listener_title)을 그대로 쓴다.
+    // (DB 저장 없이 편집 세션 동안만 유지 — TTS 생성 요청의 listenerTitle 로만 전달)
+    var voiceListenerTitleOverride by mutableStateOf("")
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")

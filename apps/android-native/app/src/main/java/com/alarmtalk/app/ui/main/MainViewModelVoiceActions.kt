@@ -91,6 +91,8 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
+    voiceGender: String,
+    speechFormality: String,
 ) {
     createVoiceProfiles(
         listOf(
@@ -100,6 +102,8 @@ internal fun MainViewModel.createVoiceProfile(
                 shared = shared,
                 relationshipLabel = relationshipLabel,
                 listenerTitle = listenerTitle,
+                voiceGender = voiceGender,
+                speechFormality = speechFormality,
             ),
         ),
     )
@@ -167,6 +171,8 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
+                        voiceGender = draft.voiceGender.toRequestBody("text/plain".toMediaType()),
+                        speechFormality = draft.speechFormality.toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
@@ -243,6 +249,8 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
             listenerTitle = "".toRequestBody("text/plain".toMediaType()),
             durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
             isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
+            voiceGender = "neutral".toRequestBody("text/plain".toMediaType()),
+            speechFormality = "auto".toRequestBody("text/plain".toMediaType()),
         ).profile
     }
 }

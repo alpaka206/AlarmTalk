@@ -88,6 +88,9 @@ export function createSynthesisAttempts(params: {
   text: string;
   language: string;
   category?: string;
+  // 모드별 보이스 세팅 오버라이드(예: sleep 모드 speed 0.95). 미지정 시 elevenlabs.ts의
+  // v3 디폴트(stability 0.5, similarity 0.8, style 0.4, speed 1.0, use_speaker_boost)를 따른다.
+  voiceSettings?: { stability?: number; similarity_boost?: number; style?: number; speed?: number; use_speaker_boost?: boolean };
 }): VoiceProviderAttempt[] {
   const attempts: VoiceProviderAttempt[] = [];
 
@@ -97,6 +100,7 @@ export function createSynthesisAttempts(params: {
       providerVoiceId: params.profile.elevenlabs_voice_id,
       modelId: ELEVENLABS_V3_MODEL_ID,
       outputFormat: 'mp3',
+      voiceSettings: params.voiceSettings,
       synthesize: async () => {
         const client = new ElevenLabsClient(params.env.ELEVENLABS_API_KEY);
         const audioBuffer = await client.textToSpeech(
@@ -105,6 +109,7 @@ export function createSynthesisAttempts(params: {
           {
             model_id: ELEVENLABS_V3_MODEL_ID,
             language_code: normalizeLanguageCode(params.language),
+            ...params.voiceSettings,
           },
         );
         return {

@@ -60,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -203,6 +204,90 @@ private fun VoiceRecordScriptCard() {
     }
 }
 
+// 목소리 성별 선택 칩(남성/여성/중립). 일본어 1인칭·말투 자연성을 위해 생성 시 함께 전송한다.
+@Composable
+private fun VoiceGenderSelector(
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    val options = listOf(
+        "male" to stringResource(R.string.voices_voice_gender_male),
+        "female" to stringResource(R.string.voices_voice_gender_female),
+        "neutral" to stringResource(R.string.voices_voice_gender_neutral),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.voices_voice_gender_label),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (value, label) ->
+                Surface(
+                    onClick = { onSelect(value) },
+                    modifier = Modifier.weight(1f),
+                    shape = WakerChipShape,
+                    color = if (selected == value) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    },
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 11.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        color = if (selected == value) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+// 일본어 정중체(です·ます) 토글. 켜면 speech_formality='polite', 끄면 'auto' 로 전송.
+@Composable
+private fun JapanesePoliteToggle(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.voices_speech_formality_label),
+                    fontWeight = FontWeight.SemiBold,
+                )
+                MutedText(stringResource(R.string.voices_speech_formality_hint))
+            }
+            Spacer(Modifier.width(12.dp))
+            AlarmTalkSwitch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+            )
+        }
+    }
+}
+
 @Composable
 internal fun VoiceLoginRequiredCard() {
     OutlinedCard {
@@ -228,7 +313,7 @@ internal fun VoiceProfileManagementPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     authSession: AuthSession?,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
@@ -251,6 +336,9 @@ internal fun VoiceProfileManagementPanel(
     var profileName by remember { mutableStateOf("") }
     var relationshipSelection by remember { mutableStateOf(RelationshipSelection()) }
     var profileListenerTitle by remember { mutableStateOf("") }
+    // 목소리 성별('male'|'female'|'neutral')과 일본어 정중체(speech_formality 'polite'|'auto') 선택.
+    var voiceGender by remember { mutableStateOf("neutral") }
+    var japanesePolite by remember { mutableStateOf(false) }
     var shareVoice by remember { mutableStateOf(false) }
     var currentStep by remember { mutableStateOf(VoiceRegistrationStep.Source) }
     var selectedAudio by remember { mutableStateOf<CachedAlarmAudio?>(null) }
@@ -478,6 +566,8 @@ internal fun VoiceProfileManagementPanel(
         profileName = ""
         relationshipSelection = RelationshipSelection()
         profileListenerTitle = ""
+        voiceGender = "neutral"
+        japanesePolite = false
         shareVoice = false
         currentStep = VoiceRegistrationStep.Source
         selectedAudio = null
@@ -866,7 +956,15 @@ internal fun VoiceProfileManagementPanel(
                 return
             }
             if (voiceProfileDurationError(context, audio.durationMillis) != null) return
-            onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
+            onCreateVoiceProfile(
+                trimmedName,
+                audio,
+                shareVoice,
+                trimmedRelationship,
+                trimmedListener,
+                voiceGender,
+                if (japanesePolite) "polite" else "auto",
+            )
             closeCreateDialog()
             return
         }
@@ -884,7 +982,15 @@ internal fun VoiceProfileManagementPanel(
                 if (error != null) {
                     localMessage = error
                 } else {
-                    onCreateVoiceProfile(trimmedName, audio, shareVoice, trimmedRelationship, trimmedListener)
+                    onCreateVoiceProfile(
+                        trimmedName,
+                        audio,
+                        shareVoice,
+                        trimmedRelationship,
+                        trimmedListener,
+                        voiceGender,
+                        if (japanesePolite) "polite" else "auto",
+                    )
                     closeCreateDialog()
                 }
             }.onFailure { error ->
@@ -1280,6 +1386,14 @@ internal fun VoiceProfileManagementPanel(
                                 ListenerTitlePreview(
                                     listenerTitle = profileListenerTitle.trim(),
                                     relationshipLabel = relationshipSelection.resolved,
+                                )
+                                VoiceGenderSelector(
+                                    selected = voiceGender,
+                                    onSelect = { voiceGender = it },
+                                )
+                                JapanesePoliteToggle(
+                                    checked = japanesePolite,
+                                    onCheckedChange = { japanesePolite = it },
                                 )
                             }
 

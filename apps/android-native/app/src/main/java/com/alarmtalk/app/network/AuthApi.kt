@@ -163,6 +163,17 @@ data class RecordConsentsResponse(
     val recorded: Int = 0,
 )
 
+data class ConsentRecord(
+    @SerializedName("consent_type") val consentType: String = "",
+    @SerializedName("policy_version") val policyVersion: String = "1",
+    val agreed: Boolean = false,
+    @SerializedName("agreed_at") val agreedAt: String? = null,
+)
+
+data class ConsentListResponse(
+    val consents: List<ConsentRecord> = emptyList(),
+)
+
 data class ConsentStatusResponse(
     @SerializedName("needs_consent") val needsConsent: Boolean = false,
     val required: List<String> = emptyList(),
@@ -230,6 +241,9 @@ interface AuthApi {
 
     @GET("user/consents/status")
     suspend fun consentStatus(@Header("Authorization") authorization: String): ConsentStatusResponse
+
+    @GET("user/consents")
+    suspend fun listConsents(@Header("Authorization") authorization: String): ConsentListResponse
 
     @POST("user/consents")
     suspend fun recordConsents(

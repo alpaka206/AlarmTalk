@@ -534,7 +534,8 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('수동 입력 문구에도 delivery tag가 자동 삽입된다', async () => {
     const text = '좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!';
-    const taggedText = `[encouraging] ${text}`;
+    // 신 allowlist 로컬 태깅: '힘' 키워드 → [cheerfully] (구 [encouraging] 폐기).
+    const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([2]).buffer);
@@ -551,11 +552,11 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(taggedText);
-    expect(body.tags).toEqual(['encouraging']);
+    expect(body.tags).toEqual(['cheerfully']);
     const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
     expect(inserted!.args[3]).toBe(text);
     expect(inserted!.args[4]).toBe(taggedText);
-    expect(inserted!.args[5]).toBe(JSON.stringify(['encouraging']));
+    expect(inserted!.args[5]).toBe(JSON.stringify(['cheerfully']));
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       taggedText,
@@ -573,7 +574,8 @@ describe('POST /tts/generate — edge cases', () => {
 
   it('영어 직접 입력은 번역 없이 language_code=en 으로 합성한다', async () => {
     const text = 'Good morning! Wake up! I hope you have a great day!';
-    const taggedText = `[warmly] ${text}`;
+    // 신 allowlist 로컬 기본 태그(구 [warmly] 폐기).
+    const taggedText = `[cheerfully] ${text}`;
     mockDB.pushResult([{ plan: 'free' }]);
     mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
     mockTextToSpeech.mockResolvedValue(new Uint8Array([3]).buffer);
@@ -595,7 +597,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.text).toBe(text);
     expect(body.original_text).toBe(text);
     expect(body.synthesis_text).toBe(taggedText);
-    expect(body.tags).toEqual(['warmly']);
+    expect(body.tags).toEqual(['cheerfully']);
     expect(body.language).toBe('en');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
@@ -657,7 +659,7 @@ describe('POST /tts/generate — edge cases', () => {
     expect(body.original_text).toBe('서버가 고른 아침 문구');
     expect(body.text).toBe(body.original_text);
     expect(body.synthesis_text).toContain(body.original_text);
-    expect(body.tags).toContain('warmly');
+    expect(body.tags).toContain('cheerfully');
     expect(mockTextToSpeech).toHaveBeenCalledWith(
       'el-voice-1',
       body.synthesis_text,
@@ -716,9 +718,9 @@ describe('POST /tts/generate — edge cases', () => {
   });
 
   it('random_context=wake_fortune can use target user dynamic prompt settings', async () => {
+    // 동적 모드는 단일 Vertex 호출로 {text, tag}를 받는다(2차 autoTag 호출 제거).
     const contentResponses = [
-      geminiText('{"text":"자기야, 오늘은 작은 행운이 온대."}'),
-      geminiText('{"text":"[warmly] 자기야, 오늘은 작은 행운이 온대.","tags":["warmly"]}'),
+      geminiText('{"text":"자기야, 오늘은 작은 행운이 온대.","tag":"playfully"}'),
     ];
     const mockFetch = vi.fn(async (url: unknown) => {
       if (String(url) === TOKEN_URI) {
@@ -781,7 +783,8 @@ describe('POST /tts/generate — edge cases', () => {
       expect(prompt).toContain('birth time=07:30');
       const body = await res.json();
       expect(body.original_text).toBe('자기야, 오늘은 작은 행운이 온대.');
-      expect(body.tags).toEqual(['warmly']);
+      expect(body.synthesis_text).toBe('[playfully] 자기야, 오늘은 작은 행운이 온대.');
+      expect(body.tags).toEqual(['playfully']);
     } finally {
       vi.unstubAllGlobals();
     }

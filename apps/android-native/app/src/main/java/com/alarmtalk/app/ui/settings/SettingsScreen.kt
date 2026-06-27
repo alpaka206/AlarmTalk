@@ -20,6 +20,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,10 +47,15 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
+    marketingConsentAgreed: Boolean?,
+    marketingConsentBusy: Boolean,
+    marketingConsentLoadFailed: Boolean,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onLoadMarketingConsent: () -> Unit,
+    onChangeMarketingConsent: (Boolean) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -63,6 +69,11 @@ internal fun SettingsScreen(
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
     var showHolidayCountryDialog by remember { mutableStateOf(false) }
+
+    // 설정 진입 시(로그인 상태) 현재 마케팅 수신 동의 상태를 서버에서 읽어 토글에 반영한다.
+    LaunchedEffect(authSession?.user?.id) {
+        if (authSession != null) onLoadMarketingConsent()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -148,6 +159,36 @@ internal fun SettingsScreen(
         }
 
         if (authSession != null) {
+            item {
+                SettingsCard(title = stringResource(R.string.settings_marketing_section)) {
+                    when {
+                        // 로드 완료(non-null): 정상 토글. 쓰기 진행 중엔 동시/연속 토글로 인한
+                        // opt-out 유실을 막기 위해 비활성화한다.
+                        marketingConsentAgreed != null -> SettingsToggleRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_toggle_desc),
+                            checked = marketingConsentAgreed == true,
+                            onCheckedChange = onChangeMarketingConsent,
+                            enabled = !marketingConsentBusy,
+                        )
+                        // 로드 실패: 'off'로 오인되지 않게 토글 대신 다시 시도 행을 보여준다.
+                        marketingConsentLoadFailed -> SettingsRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_load_failed),
+                            onClick = onLoadMarketingConsent,
+                        )
+                        // 로드 전(null·미실패): 비활성 토글 + '불러오는 중…'으로 미로드 상태를 명확히 한다.
+                        else -> SettingsToggleRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_loading),
+                            checked = false,
+                            onCheckedChange = {},
+                            enabled = false,
+                        )
+                    }
+                }
+            }
+
             item {
                 SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
                     SettingsRow(

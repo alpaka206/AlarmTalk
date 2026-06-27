@@ -109,12 +109,13 @@ describe('prepareAlarmTextWithVertex', () => {
 
     expect(prepared.text).toContain('Good morning. Wake up.');
     expect(prepared.text).not.toContain('json requested');
-    expect(prepared.tags).toEqual(['warmly']);
+    // 신 allowlist 기준 로컬 기본 태그(구 [warmly] 폐기).
+    expect(prepared.tags).toEqual(['cheerfully']);
   });
 
   it('parses JSON even when Gemini adds a short preamble', async () => {
     queueContent(
-      geminiText('Here is the JSON requested:\n{"text":"[warmly] Hello","tags":["warmly"]}'),
+      geminiText('Here is the JSON requested:\n{"text":"[cheerfully] Hello","tags":["cheerfully"]}'),
     );
 
     const prepared = await prepareAlarmTextWithVertex(ENV, 'Hello', {
@@ -124,15 +125,16 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toBe('[warmly] Hello');
-    expect(prepared.tags).toEqual(['warmly']);
+    // 큐레이트 세트에 있는 태그는 그대로 선두에 유지된다.
+    expect(prepared.text).toBe('[cheerfully] Hello');
+    expect(prepared.tags).toEqual(['cheerfully']);
   });
 
   it('keeps same-language auto-tagging to one leading tag without changing the text', async () => {
     const text = 'Today is your stage. Wake up with confidence.';
     queueContent(
       geminiText(
-        '{"text":"[warmly] Today is your stage. [brightly] Wake up with confidence.","tags":["warmly","brightly"]}',
+        '{"text":"[cheerfully] Today is your stage. [excited] Wake up with confidence.","tags":["cheerfully","excited"]}',
       ),
     );
 
@@ -143,8 +145,9 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toBe(`[warmly] ${text}`);
-    expect(prepared.tags).toEqual(['warmly']);
+    // 승인 태그가 여러 개여도 첫 번째만 선두에 남긴다(텍스트는 불변).
+    expect(prepared.text).toBe(`[cheerfully] ${text}`);
+    expect(prepared.tags).toEqual(['cheerfully']);
   });
 
   it('falls back to local tagging when same-language auto-tagging rewrites the text', async () => {
@@ -162,8 +165,9 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toBe(`[warmly] ${text}`);
-    expect(prepared.tags).toEqual(['warmly']);
+    // 텍스트가 변형돼 로컬 폴백 → 신 기본 태그 cheerfully.
+    expect(prepared.text).toBe(`[cheerfully] ${text}`);
+    expect(prepared.tags).toEqual(['cheerfully']);
   });
 
   it('does not synthesize malformed translation output', async () => {
@@ -181,7 +185,7 @@ describe('prepareAlarmTextWithVertex', () => {
 
   it('tags plain user-typed Korean text when autoTag is true', async () => {
     queueContent(
-      geminiText('{"text":"[gentle] 오늘도 화이팅","tags":["gentle"]}'),
+      geminiText('{"text":"[cheerfully] 오늘도 화이팅","tags":["cheerfully"]}'),
     );
 
     const prepared = await prepareAlarmTextWithVertex(ENV, '오늘도 화이팅', {
@@ -191,8 +195,8 @@ describe('prepareAlarmTextWithVertex', () => {
       autoTag: true,
     });
 
-    expect(prepared.text).toBe('[gentle] 오늘도 화이팅');
-    expect(prepared.tags).toEqual(['gentle']);
+    expect(prepared.text).toBe('[cheerfully] 오늘도 화이팅');
+    expect(prepared.tags).toEqual(['cheerfully']);
     expect(prepared.provider).not.toBe('local');
   });
 
@@ -238,7 +242,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '손녀',
-      weatherSummary: '최저 12도, 최고 19도, 강수 확률 70%, 우산을 챙기면 좋아요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     expect(generated.text).toContain('일어나실 시간');
@@ -262,7 +266,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '손녀',
-      weatherSummary: '최저 12도, 최고 19도, 강수 확률 70%, 우산을 챙기면 좋아요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     expect(generated.provider).toBe('local');
@@ -289,7 +293,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       alarmTimeLabel: '07:30',
       relationshipLabel: '손녀',
       listenerTitle: '할아버지',
-      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     const requestBody = contentRequestBody();
@@ -365,7 +369,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       alarmTimeLabel: '07:30',
       relationshipLabel: '남편',
       listenerTitle: '자기야',
-      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     const requestBody = contentRequestBody();
@@ -390,7 +394,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
         dateLabel: '5월 20일 수요일',
         relationshipLabel: '여자친구',
         listenerTitle: '자기야',
-        weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+        weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
       },
     );
 
@@ -415,7 +419,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
         dateLabel: '5월 20일 수요일',
         relationshipLabel: '아내',
         listenerTitle: '여보',
-        weatherSummary: '날씨가 좋아요. 잠깐 산책 가기에도 딱이에요',
+        weatherSignal: { conditions: [{ kind: 'nice', action: 'walk' }] },
       },
     );
 
@@ -461,7 +465,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '손녀',
       listenerTitle: '할머니',
-      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     expect(generated.provider).toBe('local');
@@ -499,7 +503,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       targetLanguage: 'ko',
       dateLabel: '5월 20일 수요일',
       relationshipLabel: '손녀',
-      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     expect(generated.provider).toBe('local');
@@ -518,7 +522,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       dateLabel: '5월 20일 수요일',
       alarmTimeLabel: '07:30',
       relationshipLabel: '손녀',
-      weatherSummary: '비가 올 수 있어요. 우산 꼭 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'rain', action: 'umbrella' }] },
     });
 
     expect(generated.provider).toBe('local');
@@ -540,7 +544,7 @@ describe('generateDynamicAlarmTextWithVertex', () => {
       alarmTimeLabel: '17:30',
       relationshipLabel: '손녀',
       listenerTitle: '할아버지',
-      weatherSummary: '미세먼지가 많아요. 외출할 땐 마스크 챙기세요',
+      weatherSignal: { conditions: [{ kind: 'dust', action: 'mask' }] },
     });
 
     expect(generated.provider).toBe('local');

@@ -778,11 +778,12 @@ internal fun AlarmEditorScreen(
                                 editor.voiceFortuneBirthTime.isNotBlank()
                         }?.trimmedOrNull(),
                         targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
-                        listenerTitle = resolveListenerTitle(
-                            profileId = profileId,
-                            voiceProfiles = voiceProfiles,
-                            familyVoices = familyVoices,
-                        ).trimmedOrNull(),
+                        listenerTitle = editor.voiceListenerTitleOverride.trimmedOrNull()
+                            ?: resolveListenerTitle(
+                                profileId = profileId,
+                                voiceProfiles = voiceProfiles,
+                                familyVoices = familyVoices,
+                            ).trimmedOrNull(),
                     ),
                 )
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }

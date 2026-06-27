@@ -245,6 +245,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentChecked by mutableStateOf(false)
         internal set
 
+    // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
+    var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
+        internal set
+
+    // loadMarketingConsent 요청 세대(generation). 토글(updateMarketingConsent)이나 계정 전환
+    // (clearUserScopedRemoteState)이 일어나면 증가시켜, 그 전에 시작된 GET 응답이 뒤늦게 도착해
+    // 최신 상태를 덮어쓰지 못하게 한다(레이스 가드).
+    internal var marketingConsentLoadGeneration: Int = 0
+
+    // 마케팅 동의 POST 진행 중 여부. true 동안엔 토글을 비활성화해 동시/연속 쓰기를 막는다.
+    // (늦게 도착한 옛 POST 가 최신 의도 뒤에 INSERT 되어 opt-out 이 유실되는 것 방지)
+    var marketingConsentWriteInFlight by mutableStateOf(false)
+        internal set
+
+    // 직전 마케팅 동의 로드(GET)가 실패했는지. marketingConsentAgreed 가 null 인 동안 '로딩 중'과
+    // '로드 실패(다시 시도)'를 구분해, 미로드 상태를 'off'로 오인하지 않게 한다.
+    var marketingConsentLoadFailed by mutableStateOf(false)
+        internal set
+
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
     var pendingDeletion by mutableStateOf(false)
         internal set
@@ -378,6 +397,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         needsConsent = false
         consentChecked = false
         pendingDeletion = false
+        // 마케팅 수신 토글도 user-scoped — 옛 사용자의 동의값이 다음 사용자 화면에 잔존하지 않게
+        // 비우고, 진행 중이던 로드는 generation 증가로 무효화한다.
+        marketingConsentAgreed = null
+        marketingConsentLoadGeneration++
+        marketingConsentWriteInFlight = false
+        marketingConsentLoadFailed = false
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {

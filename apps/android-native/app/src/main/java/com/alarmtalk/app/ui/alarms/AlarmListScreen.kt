@@ -76,7 +76,7 @@ internal fun AlarmListScreen(
     onGoogleSignIn: () -> Unit,
     onSyncNow: () -> Unit,
     onLogout: () -> Unit,
-    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String) -> Unit,
+    onCreateVoiceProfile: (String, CachedAlarmAudio, Boolean, String, String, String, String) -> Unit,
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,

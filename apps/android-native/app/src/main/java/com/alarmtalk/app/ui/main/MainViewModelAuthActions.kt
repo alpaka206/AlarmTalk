@@ -625,6 +625,94 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     }
 }
 
+// 설정 화면 진입 시 현재 마케팅(광고성 정보 수신) 동의 상태를 서버에서 읽어 토글에 반영한다.
+// GET /user/consents 는 유형별 최신값을 돌려주므로 marketing 의 agreed 를 그대로 쓴다.
+internal fun MainViewModel.loadMarketingConsent() {
+    val session = authSession ?: return
+    val userId = session.user.id
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 이 로드가 시작된 시점의 generation 을 캡처해 둔다. 응답이 늦게 도착하는 사이 사용자가
+    // 토글을 바꾸거나 계정이 바뀌면 generation 이 올라가, 낡은 스냅샷을 폐기한다.
+    val generation = marketingConsentLoadGeneration
+    // 새 시도가 시작되면(진입/재시도) 실패 표시를 지워 UI 가 '로딩 중'으로 돌아가게 한다.
+    marketingConsentLoadFailed = false
+    viewModelScope.launch {
+        runCatching {
+            api.listConsents(authorization)
+        }.onSuccess { response ->
+            if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+            marketingConsentLoadFailed = false
+            marketingConsentAgreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to load marketing consent", error)
+            // 이 로드가 아직 최신이고 같은 사용자일 때만 실패로 표시(레이스/계정전환 무시).
+            if (authSession?.user?.id == userId && generation == marketingConsentLoadGeneration) {
+                marketingConsentLoadFailed = true
+            }
+        }
+    }
+}
+
+// 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다(누적 저장,
+// 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로 되돌린다.
+internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return
+    }
+    // 쓰기가 진행 중이면(토글 disable 우회 등) 새 요청을 시작하지 않는다 — 동시 POST 직렬화.
+    if (marketingConsentWriteInFlight) return
+    val userId = session.user.id
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    val policyVersion = cachedPolicyVersion()
+    val previous = marketingConsentAgreed
+    // 토글로 사용자가 정한 값이 우선이다. 진행 중이던 로드(GET)의 결과가 이 값을 덮어쓰지 않도록
+    // generation 을 올려 무효화한 뒤, 낙관적으로 즉시 반영한다.
+    marketingConsentLoadGeneration++
+    marketingConsentAgreed = agreed
+    marketingConsentWriteInFlight = true
+    // 이 쓰기가 시작된 시점의 사용자/generation 을 캡처해 둔다. POST 가 끝나기 전 계정 전환
+    // (clearUserScopedRemoteState 가 generation 을 올림)이 일어나면 완료 처리가 새 사용자의
+    // 토글 상태를 옛 값으로 덮어쓰지 않도록, 로드(GET) 가드와 동일하게 완료도 가드한다.
+    val generation = marketingConsentLoadGeneration
+    viewModelScope.launch {
+        val result = runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = "marketing",
+                            agreed = agreed,
+                            version = policyVersion,
+                        ),
+                    ),
+                ),
+            )
+        }
+        result.exceptionOrNull()?.let { error ->
+            Log.e(TAG, "Failed to update marketing consent", error)
+        }
+        // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
+        // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
+        if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+        result.onSuccess {
+            val app = getApplication<android.app.Application>()
+            message = if (agreed) {
+                app.getString(R.string.msg_marketing_consent_on)
+            } else {
+                app.getString(R.string.msg_marketing_consent_off)
+            }
+        }.onFailure { error ->
+            marketingConsentAgreed = previous
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
+        }
+        // 성공·실패와 무관하게(단, 이 쓰기가 여전히 최신일 때만) 쓰기 잠금 해제 → 다음 토글 허용.
+        marketingConsentWriteInFlight = false
+    }
+}
+
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {

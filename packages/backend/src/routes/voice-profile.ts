@@ -39,6 +39,25 @@ function validateListenerTitle(label: string | undefined): boolean {
   return label === undefined || label.length <= MAX_LISTENER_TITLE_LENGTH;
 }
 
+const VOICE_GENDERS = ['male', 'female', 'neutral'] as const;
+const SPEECH_FORMALITIES = ['auto', 'polite'] as const;
+
+// 허용값이면 그 값, null/빈값이면 null, 그 외(잘못된 값)는 undefined(=검증 실패 신호)를 돌려준다.
+// 필드 미지정(undefined)도 undefined로 들어오므로, 검증은 "원본이 제공되었는지"와 함께 본다.
+function normalizeVoiceGender(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return (VOICE_GENDERS as readonly string[]).includes(String(value)) ? String(value) : undefined;
+}
+
+function normalizeSpeechFormality(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return (SPEECH_FORMALITIES as readonly string[]).includes(String(value))
+    ? String(value)
+    : undefined;
+}
+
 async function canUseSharedVoiceProfile(
   db: ReturnType<typeof getDB>,
   userPk: string,
@@ -353,6 +372,10 @@ voiceProfile.patch('/:id', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    voice_gender?: unknown;
+    voiceGender?: unknown;
+    speech_formality?: unknown;
+    speechFormality?: unknown;
   };
   try {
     body = await c.req.json();
@@ -375,9 +398,44 @@ voiceProfile.patch('/:id', async (c) => {
   );
   const hasListenerTitle = body.listener_title !== undefined || body.listenerTitle !== undefined;
   const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
-  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
+  const hasVoiceGender = body.voice_gender !== undefined || body.voiceGender !== undefined;
+  const voiceGenderRaw =
+    body.voice_gender !== undefined ? body.voice_gender : body.voiceGender;
+  const voiceGender = normalizeVoiceGender(voiceGenderRaw);
+  const hasSpeechFormality =
+    body.speech_formality !== undefined || body.speechFormality !== undefined;
+  const speechFormalityRaw =
+    body.speech_formality !== undefined ? body.speech_formality : body.speechFormality;
+  const speechFormality = normalizeSpeechFormality(speechFormalityRaw);
+  if (
+    !hasName &&
+    !hasShared &&
+    !hasDraft &&
+    !hasRelationship &&
+    !hasListenerTitle &&
+    !hasVoiceGender &&
+    !hasSpeechFormality
+  ) {
     return c.json(
       { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      400,
+    );
+  }
+  if (hasVoiceGender && voiceGender === undefined) {
+    return c.json(
+      {
+        error: "voice_gender must be one of 'male', 'female', 'neutral'",
+        error_code: 'INVALID_VOICE_GENDER',
+      },
+      400,
+    );
+  }
+  if (hasSpeechFormality && speechFormality === undefined) {
+    return c.json(
+      {
+        error: "speech_formality must be one of 'auto', 'polite'",
+        error_code: 'INVALID_SPEECH_FORMALITY',
+      },
       400,
     );
   }
@@ -436,7 +494,7 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   const updates: string[] = [];
-  const args: (string | number)[] = [];
+  const args: (string | number | null)[] = [];
   if (hasName) {
     updates.push('name = ?');
     args.push(name);
@@ -457,6 +515,14 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('listener_title = ?');
     args.push(listenerTitle ?? '');
   }
+  if (hasVoiceGender) {
+    updates.push('voice_gender = ?');
+    args.push(voiceGender ?? null);
+  }
+  if (hasSpeechFormality) {
+    updates.push('speech_formality = ?');
+    args.push(speechFormality ?? null);
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -473,6 +539,8 @@ voiceProfile.patch('/:id', async (c) => {
       ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
       ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
+      ...(hasVoiceGender ? { voice_gender: voiceGender ?? null } : {}),
+      ...(hasSpeechFormality ? { speech_formality: speechFormality ?? null } : {}),
     },
   });
 });
@@ -624,6 +692,18 @@ voiceProfile.post('/clone', async (c) => {
       normalizeListenerTitle(
         formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
       ) ?? '';
+    // 폼에 없으면(null/빈값) null로 저장하고, 값이 있는데 허용값이 아니면 undefined(=검증 실패).
+    const voiceGenderForm = formData.get('voiceGender') ?? formData.get('voice_gender');
+    const voiceGender =
+      voiceGenderForm == null || voiceGenderForm === ''
+        ? null
+        : normalizeVoiceGender(voiceGenderForm);
+    const speechFormalityForm =
+      formData.get('speechFormality') ?? formData.get('speech_formality');
+    const speechFormality =
+      speechFormalityForm == null || speechFormalityForm === ''
+        ? null
+        : normalizeSpeechFormality(speechFormalityForm);
 
     // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
     if (!isDraft) {
@@ -689,13 +769,31 @@ voiceProfile.post('/clone', async (c) => {
         400,
       );
     }
+    if (voiceGender === undefined) {
+      return c.json(
+        {
+          error: "voice_gender must be one of 'male', 'female', 'neutral'",
+          error_code: 'INVALID_VOICE_GENDER',
+        },
+        400,
+      );
+    }
+    if (speechFormality === undefined) {
+      return c.json(
+        {
+          error: "speech_formality must be one of 'auto', 'polite'",
+          error_code: 'INVALID_SPEECH_FORMALITY',
+        },
+        400,
+      );
+    }
 
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
-            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, voice_gender, speech_formality)
+            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?, ?)`,
       args: [
         profileId,
         userId,
@@ -704,6 +802,8 @@ voiceProfile.post('/clone', async (c) => {
         isDraft ? 1 : 0,
         relationshipLabel,
         listenerTitle,
+        voiceGender,
+        speechFormality,
       ],
     });
     insertedProfileId = profileId;
@@ -750,6 +850,8 @@ voiceProfile.post('/clone', async (c) => {
           is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
+          voice_gender: voiceGender,
+          speech_formality: speechFormality,
         },
       },
       201,
