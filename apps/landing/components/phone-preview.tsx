@@ -31,7 +31,7 @@ export function PhonePreview() {
 
       {/* device bezel — 9:19.5 portrait */}
       <div
-        className="relative aspect-[9/19.5] w-full rounded-[44px] p-2.5"
+        className="relative aspect-9/19.5 w-full rounded-[44px] p-2.5"
         style={{
           background:
             "linear-gradient(180deg, #2b2724 0%, #16130f 60%, #0c0a08 100%)",
@@ -72,7 +72,7 @@ export function PhonePreview() {
             </div>
 
             {/* NextAlarmHeroCard */}
-            <div className="mt-5 rounded-[20px] p-4" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
+            <div className="mt-5 rounded-xl p-4" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
               <p className="text-[10.5px] font-medium" style={{ color: SCREEN_MUTED }}>
                 {t("nextAlarm")}
               </p>

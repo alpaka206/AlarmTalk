@@ -4,7 +4,7 @@ import { RevealGroup, RevealItem } from "../motion/reveal-group";
 import { LivingWaveform } from "../motion/living-waveform";
 
 const CARD =
-  "rounded-[28px] border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
+  "rounded-3xl border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
 
 // 48-bar recording waveform; bars 0..31 are the "played" (coral) portion.
 const VOICE_BARS = [

@@ -28,7 +28,7 @@ jobs:
         run: npm ci || npm install
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Deploy dev to Cloudflare Workers
         if: github.ref_name == 'develop'

@@ -33,7 +33,7 @@ export function Scenarios() {
             <RevealItem
               as="article"
               key={i}
-              className="card group relative p-7 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]"
+              className="card group relative p-7 transition hover:-translate-y-0.5 hover:shadow-(--shadow-elevated)"
             >
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-7 items-center whitespace-nowrap rounded-full border border-line bg-raised px-2.5 text-[11.5px] font-semibold text-text-muted">
