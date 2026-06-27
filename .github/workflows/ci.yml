@@ -44,7 +44,7 @@ jobs:
 
       - name: Typecheck
         working-directory: ${{ matrix.package }}
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
   test:
     runs-on: ubuntu-latest

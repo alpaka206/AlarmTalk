@@ -56,7 +56,7 @@ export function StoreBadges() {
       <span
         role="img"
         aria-label={t("comingSoonAria")}
-        className="inline-flex w-fit cursor-default items-center gap-3 rounded-[8px] bg-black/80 px-5 py-3"
+        className="inline-flex w-fit cursor-default items-center gap-3 rounded-sm bg-black/80 px-5 py-3"
       >
         {inner}
       </span>
@@ -67,7 +67,7 @@ export function StoreBadges() {
     <a
       href={href}
       aria-label={t("googlePlayAria")}
-      className="group inline-flex w-fit items-center gap-3 rounded-[8px] bg-black px-5 py-3 transition hover:bg-neutral-800"
+      className="group inline-flex w-fit items-center gap-3 rounded-sm bg-black px-5 py-3 transition hover:bg-neutral-800"
     >
       {inner}
     </a>

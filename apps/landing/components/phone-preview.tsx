@@ -22,7 +22,7 @@ export function PhonePreview() {
   const t = useTranslations("hero.phone");
 
   return (
-    <div className="relative mx-auto w-full max-w-[340px]">
+    <div className="relative mx-auto w-full max-w-85">
       {/* warm glow behind device */}
       <div
         aria-hidden="true"
@@ -31,7 +31,7 @@ export function PhonePreview() {
 
       {/* device bezel — 9:19.5 portrait */}
       <div
-        className="relative aspect-[9/19.5] w-full rounded-[44px] p-[10px]"
+        className="relative aspect-9/19.5 w-full rounded-[44px] p-2.5"
         style={{
           background:
             "linear-gradient(180deg, #2b2724 0%, #16130f 60%, #0c0a08 100%)",
@@ -42,7 +42,7 @@ export function PhonePreview() {
         {/* punch hole camera */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-[18px] z-20 h-[10px] w-[10px] -translate-x-1/2 rounded-full bg-black ring-1 ring-white/10"
+          className="pointer-events-none absolute left-1/2 top-4.5 z-20 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-black ring-1 ring-white/10"
         />
 
         {/* screen */}
@@ -72,7 +72,7 @@ export function PhonePreview() {
             </div>
 
             {/* NextAlarmHeroCard */}
-            <div className="mt-5 rounded-[20px] p-4" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
+            <div className="mt-5 rounded-xl p-4" style={{ border: `1px solid ${SCREEN_LINE}`, background: SCREEN_CARD }}>
               <p className="text-[10.5px] font-medium" style={{ color: SCREEN_MUTED }}>
                 {t("nextAlarm")}
               </p>
@@ -81,7 +81,7 @@ export function PhonePreview() {
               </p>
 
               {/* mini waveform — the signature, now quietly breathing */}
-              <div className="mt-4 h-[28px]">
+              <div className="mt-4 h-7">
                 <LivingWaveform
                   bars={WAVEFORM}
                   mode="breathe"
@@ -159,7 +159,7 @@ export function PhonePreview() {
             </div>
             <div
               aria-hidden="true"
-              className="mx-auto mt-3 h-[3px] w-[88px] rounded-full bg-white/25"
+              className="mx-auto mt-3 h-0.75 w-22 rounded-full bg-white/25"
             />
           </div>
         </div>

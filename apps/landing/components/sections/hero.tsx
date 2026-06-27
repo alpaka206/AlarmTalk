@@ -23,7 +23,7 @@ export function Hero() {
 
           <RevealItem
             as="p"
-            className="mt-7 max-w-[540px] text-[17px] leading-[1.65] text-text-muted sm:text-[18px]"
+            className="mt-7 max-w-135 text-[17px] leading-[1.65] text-text-muted sm:text-[18px]"
           >
             {t("description")}
           </RevealItem>

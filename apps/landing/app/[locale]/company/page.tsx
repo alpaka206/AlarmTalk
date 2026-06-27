@@ -84,7 +84,7 @@ function CompanyHero() {
             <br />
             <span className="text-accent">{t("headline2")}</span>
           </h1>
-          <p className="mt-7 max-w-[640px] text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
+          <p className="mt-7 max-w-160 text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
             {t("description")}
           </p>
         </div>
@@ -155,7 +155,7 @@ function Products() {
         <div className="mt-12 grid gap-6 lg:grid-cols-2">
           <article className="card-raised p-8 lg:p-10">
             <span className="eyebrow">{alarm.tag}</span>
-            <h3 className="mt-5 text-[26px] font-semibold leading-[1.25] tracking-[-0.01em] text-text">
+            <h3 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.01em] text-text">
               {alarm.title}
             </h3>
             <p className="mt-4 max-w-[44ch] text-[15.5px] leading-[1.7] text-text-muted">

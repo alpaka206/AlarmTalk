@@ -4,7 +4,7 @@ import { RevealGroup, RevealItem } from "../motion/reveal-group";
 import { LivingWaveform } from "../motion/living-waveform";
 
 const CARD =
-  "rounded-[28px] border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
+  "rounded-3xl border border-line bg-surface p-6 shadow-[0_24px_60px_rgba(90,75,55,0.10)]";
 
 // 48-bar recording waveform; bars 0..31 are the "played" (coral) portion.
 const VOICE_BARS = [
@@ -17,7 +17,7 @@ const VOICE_BARS = [
 // Visual for "voice" — recording UI
 export function VoiceVisual() {
   return (
-    <div className="relative w-full max-w-[420px]">
+    <div className="relative w-full max-w-105">
       <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.12),transparent_60%)] blur-2xl" />
       <div className={CARD}>
         <div className="flex items-center justify-between">
@@ -68,7 +68,7 @@ export function SharedVisual() {
     { name: "친구 민준", from: "공유 받음 · 3일 전", color: "#e0b15e" },
   ];
   return (
-    <div className="relative w-full max-w-[420px]">
+    <div className="relative w-full max-w-105">
       <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(23,95,176,0.1),transparent_60%)] blur-2xl" />
       <div className={CARD}>
         <div className="flex items-center justify-between">
@@ -108,7 +108,7 @@ export function SharedVisual() {
 // Visual for "language" — translated sentence card
 export function LanguageVisual() {
   return (
-    <div className="relative w-full max-w-[420px]">
+    <div className="relative w-full max-w-105">
       <div className="absolute -inset-4 -z-10 rounded-[40px] bg-[radial-gradient(circle_at_50%_30%,rgba(143,191,158,0.12),transparent_60%)] blur-2xl" />
       <div className={CARD}>
         <div className="flex items-center justify-between">

@@ -23,7 +23,7 @@ export function SiteFooter() {
               aria-label="AlarmTalk"
               className="flex items-center gap-2.5 whitespace-nowrap"
             >
-              <BrandMark size={32} className="rounded-[8px]" />
+              <BrandMark size={32} className="rounded-sm" />
               <span className="text-[16px] font-bold tracking-tight text-text">
                 AlarmTalk
               </span>
