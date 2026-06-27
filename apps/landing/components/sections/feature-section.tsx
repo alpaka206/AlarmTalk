@@ -25,7 +25,7 @@ export function FeatureSection({ namespace, reverse, visual, id }: Props) {
             <RevealGroup stagger={0.08}>
               <RevealItem
                 as="h2"
-                className="text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
+                className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
               >
                 {t("headline1")}
                 <br />

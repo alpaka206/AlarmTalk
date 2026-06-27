@@ -84,7 +84,7 @@ function CompanyHero() {
             <br />
             <span className="text-accent">{t("headline2")}</span>
           </h1>
-          <p className="mt-7 max-w-[640px] text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
+          <p className="mt-7 max-w-160 text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
             {t("description")}
           </p>
         </div>

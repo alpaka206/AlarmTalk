@@ -188,7 +188,7 @@ export default async function AccountDeletionPage({
             <h1 className="mt-6 text-[40px] font-bold leading-[1.08] text-text sm:text-[56px] lg:text-[64px]">
               {copy.headline}
             </h1>
-            <p className="mt-7 max-w-[680px] text-[17px] leading-[1.7] text-text-muted">
+            <p className="mt-7 max-w-170 text-[17px] leading-[1.7] text-text-muted">
               {copy.intro}
             </p>
           </div>

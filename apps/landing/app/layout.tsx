@@ -21,7 +21,7 @@ export default function RootLayout({
           <style>{`[data-reveal]{opacity:1!important;transform:none!important;clip-path:none!important;filter:none!important}`}</style>
         </noscript>
         <div className="grain" aria-hidden="true" />
-        <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 -z-0 h-[640px]" />
+        <div className="bg-grid pointer-events-none absolute inset-x-0 top-0 z-0 h-160" />
         <div className="relative z-10">{children}</div>
       </body>
     </html>

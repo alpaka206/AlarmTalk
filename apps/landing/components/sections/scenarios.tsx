@@ -12,7 +12,7 @@ export function Scenarios() {
         <div className="max-w-2xl">
           <Reveal
             as="h2"
-            className="text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
+            className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
           >
             {t("headline")}
           </Reveal>

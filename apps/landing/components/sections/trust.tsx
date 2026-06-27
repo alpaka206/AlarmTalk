@@ -25,7 +25,7 @@ export function Trust() {
       <div className="mx-auto max-w-6xl px-5 py-16 md:px-8 lg:py-20">
         <Reveal
           as="h2"
-          className="max-w-2xl whitespace-pre-line text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
+          className="max-w-2xl whitespace-pre-line text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
         >
           {t("headline")}
         </Reveal>
@@ -34,7 +34,7 @@ export function Trust() {
           as="div"
           variant="wipe"
           delay={0.15}
-          className="mt-5 h-[2px] w-14 rounded-full bg-accent"
+          className="mt-5 h-0.5 w-14 rounded-full bg-accent"
         />
 
         <RevealGroup

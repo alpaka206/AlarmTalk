@@ -118,7 +118,7 @@ async function reseedPlans(client: ReturnType<typeof createClient>): Promise<voi
   console.log(`  ↻ reseeded plans (${seeds.length} rows)`);
 }
 
-async function clearR2Bucket(bucket: string, env: Record<string, string>): Promise<void> {
+async function clearR2Bucket(bucket: string, env: Record<string, string | undefined>): Promise<void> {
   // 우선 cloudflare REST API 시도 (한 번에 일괄 삭제 가능).
   const accountId = env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = env.CLOUDFLARE_API_TOKEN;

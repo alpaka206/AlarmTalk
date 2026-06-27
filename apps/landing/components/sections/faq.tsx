@@ -11,7 +11,7 @@ export function Faq() {
       <div className="mx-auto max-w-4xl px-5 py-24 md:px-8 lg:py-32">
         <Reveal
           as="h2"
-          className="text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]"
+          className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
         >
           {t("headline")}
         </Reveal>

@@ -92,7 +92,7 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
       blocks.push(
         <h1
           key={`heading-${blocks.length}`}
-          className="text-balance text-[34px] font-extrabold leading-tight tracking-[0] text-text md:text-[44px]"
+          className="text-balance text-[34px] font-extrabold leading-tight tracking-normal text-text md:text-[44px]"
         >
           {renderInline(trimmed.slice(2), `heading-${blocks.length}`)}
         </h1>,
@@ -106,7 +106,7 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
       blocks.push(
         <h2
           key={`heading-${blocks.length}`}
-          className="pt-6 text-[22px] font-bold leading-tight tracking-[0] text-text"
+          className="pt-6 text-[22px] font-bold leading-tight tracking-normal text-text"
         >
           {renderInline(trimmed.slice(3), `heading-${blocks.length}`)}
         </h2>,
@@ -120,7 +120,7 @@ export function LegalMarkdown({ content }: LegalMarkdownProps) {
       blocks.push(
         <h3
           key={`heading-${blocks.length}`}
-          className="pt-2 text-[17px] font-semibold leading-tight tracking-[0] text-text"
+          className="pt-2 text-[17px] font-semibold leading-tight tracking-normal text-text"
         >
           {renderInline(trimmed.slice(4), `heading-${blocks.length}`)}
         </h3>,
