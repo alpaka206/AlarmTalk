@@ -20,6 +20,10 @@ import {
   AlarmTextTranslationUnavailableError,
   generateDynamicAlarmTextWithVertex,
   prepareAlarmTextWithVertex,
+  type WeatherSignal,
+  type WeatherCondition,
+  type VoiceGender,
+  type SpeechFormality,
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
@@ -125,6 +129,14 @@ function normalizeRelationshipLabel(value: unknown): string | null {
   const label = value.trim();
   if (!label) return null;
   return label.slice(0, 30);
+}
+
+function normalizeVoiceGender(value: unknown): VoiceGender | null {
+  return value === 'male' || value === 'female' || value === 'neutral' ? value : null;
+}
+
+function normalizeSpeechFormality(value: unknown): SpeechFormality | null {
+  return value === 'auto' || value === 'polite' ? value : null;
 }
 
 function optionalInt(value: unknown, min: number, max: number): number | null {
@@ -311,13 +323,13 @@ async function findViewerListenerTitle(
 const RAIN_WMO_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const SNOW_WMO_CODES = [71, 73, 75, 77, 85, 86];
 
-async function loadWeatherSummary(args: {
+async function loadWeatherSignal(args: {
   latitude?: unknown;
   longitude?: unknown;
   locationLabel?: unknown;
   country?: unknown;
   city?: unknown;
-}): Promise<string | null> {
+}): Promise<WeatherSignal | null> {
   const location = await resolveWeatherLocation(args);
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(location.latitude));
@@ -348,31 +360,33 @@ async function loadWeatherSummary(args: {
     const minTemp = Number(json.daily.temperature_2m_min?.[0]);
     const rainProbability = Number(json.daily.precipitation_probability_max?.[0]);
     const precipitation = Number(json.daily.precipitation_sum?.[0]);
-    const dustAdvice = await loadAirQualitySummary(location);
-    return buildWeatherAdvice({
+    const hasDust = await loadDustSignal(location);
+    return buildWeatherSignal({
       code,
       maxTemp,
       minTemp,
       rainProbability,
       precipitation,
-      dustAdvice,
+      hasDust,
     });
   } catch {
     return null;
   }
 }
 
-interface WeatherAdviceInput {
+interface WeatherSignalInput {
   code: number;
   maxTemp: number;
   minTemp: number;
   rainProbability: number;
   precipitation: number;
-  dustAdvice: string | null;
+  hasDust: boolean;
 }
 
-function buildWeatherAdvice(input: WeatherAdviceInput): string | null {
-  const { code, maxTemp, minTemp, rainProbability, precipitation, dustAdvice } = input;
+// 날씨를 언어무관 구조화 시그널(condition+action, 최대 2개)로 환원한다(설계 #7). 한국어/타깃어
+// 표면 생성은 vertex-translate의 *WeatherSurface 헬퍼가 담당.
+function buildWeatherSignal(input: WeatherSignalInput): WeatherSignal | null {
+  const { code, maxTemp, minTemp, rainProbability, precipitation, hasDust } = input;
   const heavyRain =
     (Number.isFinite(rainProbability) && rainProbability >= 60) ||
     (Number.isFinite(precipitation) && precipitation > 1) ||
@@ -383,44 +397,42 @@ function buildWeatherAdvice(input: WeatherAdviceInput): string | null {
       (Number.isFinite(precipitation) && precipitation > 0));
   const snowy = SNOW_WMO_CODES.includes(code);
 
-  const advices: string[] = [];
+  const conditions: WeatherCondition[] = [];
   if (snowy) {
-    advices.push('눈이 올 수 있어요. 미끄럽지 않게 조심하세요');
-  } else if (heavyRain) {
-    advices.push('비가 올 수 있어요. 우산 꼭 챙기세요');
-  } else if (lightRain) {
-    advices.push('비가 살짝 올 수 있어요. 우산을 챙기면 안심돼요');
+    conditions.push({ kind: 'snow', action: 'coat' });
+  } else if (heavyRain || lightRain) {
+    conditions.push({ kind: 'rain', action: 'umbrella' });
   }
 
-  if (dustAdvice) {
-    advices.push(dustAdvice);
+  if (hasDust) {
+    conditions.push({ kind: 'dust', action: 'mask' });
   }
 
-  if (advices.length === 0) {
+  if (conditions.length === 0) {
     if (Number.isFinite(maxTemp) && maxTemp >= 30) {
-      advices.push('낮에 무더울 거예요. 시원하게 입고 물도 자주 드세요');
+      conditions.push({ kind: 'heat', action: 'water' });
     } else if (Number.isFinite(maxTemp) && maxTemp >= 25) {
-      advices.push('낮엔 따뜻해요. 가볍게 입고 나가도 좋겠어요');
+      conditions.push({ kind: 'nice', action: 'walk' });
     } else if (
       (Number.isFinite(minTemp) && minTemp <= 0) ||
       (Number.isFinite(maxTemp) && maxTemp <= 5)
     ) {
-      advices.push('많이 쌀쌀해요. 따뜻하게 입고 나가세요');
+      conditions.push({ kind: 'cold', action: 'coat' });
     } else if (Number.isFinite(maxTemp) && maxTemp <= 12) {
-      advices.push('쌀쌀해요. 겉옷 하나 챙기세요');
+      conditions.push({ kind: 'cold', action: 'coat' });
     } else if (Number.isFinite(maxTemp) && maxTemp >= 15 && maxTemp <= 24) {
-      advices.push('날씨가 좋아요. 잠깐 산책 가기에도 딱이에요');
+      conditions.push({ kind: 'nice', action: 'walk' });
     }
   }
 
-  if (advices.length === 0) return null;
-  return advices.slice(0, 2).join(' ');
+  if (conditions.length === 0) return null;
+  return { conditions: conditions.slice(0, 2) };
 }
 
-async function loadAirQualitySummary(location: {
+async function loadDustSignal(location: {
   latitude: number;
   longitude: number;
-}): Promise<string | null> {
+}): Promise<boolean> {
   const url = new URL('https://air-quality-api.open-meteo.com/v1/air-quality');
   url.searchParams.set('latitude', String(location.latitude));
   url.searchParams.set('longitude', String(location.longitude));
@@ -435,15 +447,14 @@ async function loadAirQualitySummary(location: {
     const json = await response
       .json<AirQualityForecastResponse>()
       .catch(() => ({}) as AirQualityForecastResponse);
-    if (!response.ok || !json.hourly) return null;
+    if (!response.ok || !json.hourly) return false;
     const pm10Max = maxFinite(json.hourly.pm10);
     const pm25Max = maxFinite(json.hourly.pm2_5);
     const pm10Bad = pm10Max != null && pm10Max > 80;
     const pm25Bad = pm25Max != null && pm25Max > 35;
-    if (!pm10Bad && !pm25Bad) return null;
-    return '미세먼지가 많아요. 외출할 땐 마스크 챙기세요';
+    return pm10Bad || pm25Bad;
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -720,6 +731,9 @@ tts.post('/generate', async (c) => {
       );
     }
 
+    let dynamicGenerated: Awaited<
+      ReturnType<typeof generateDynamicAlarmTextWithVertex>
+    > | null = null;
     if (randomRequested && randomContext !== 'preset') {
       const alarmHour = optionalInt(body.alarm_hour ?? body.alarmHour, 0, 23);
       const alarmMinute = optionalInt(body.alarm_minute ?? body.alarmMinute, 0, 59);
@@ -738,8 +752,8 @@ tts.post('/generate', async (c) => {
         normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
         (await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)) ??
         (isSharedVoiceProfile ? null : normalizeRelationshipLabel(vp.listener_title));
-      const weatherSummary = randomContextUsesWeather(randomContext)
-        ? await loadWeatherSummary({
+      const weatherSignal = randomContextUsesWeather(randomContext)
+        ? await loadWeatherSignal({
             latitude: body.weather_latitude ?? body.weatherLatitude,
             longitude: body.weather_longitude ?? body.weatherLongitude,
             locationLabel: body.weather_location_label ?? body.weatherLocationLabel,
@@ -755,6 +769,8 @@ tts.post('/generate', async (c) => {
             ),
           })
         : null;
+      // 화자 성별·어체 격식은 voice_profiles 행에서 읽는다(목소리 고유 속성). 공유 프로필도
+      // 소유자 행이므로 그대로 사용한다.
       const generated = await generateDynamicAlarmTextWithVertex(c.env, {
         mode: randomContext,
         category,
@@ -762,7 +778,9 @@ tts.post('/generate', async (c) => {
         dateLabel: todayKoreaLabel(),
         relationshipLabel,
         listenerTitle,
-        weatherSummary,
+        weatherSignal,
+        voiceGender: normalizeVoiceGender(vp.voice_gender),
+        speechFormality: normalizeSpeechFormality(vp.speech_formality),
         fortuneProfile:
           randomContext === 'wake_fortune'
             ? fortuneProfile({
@@ -790,6 +808,7 @@ tts.post('/generate', async (c) => {
         alarmTimeLabel: alarmTimeLabel(alarmHour, alarmMinute),
       });
       requestText = generated.text;
+      dynamicGenerated = generated;
     }
 
     if (!requestText) {
@@ -806,14 +825,31 @@ tts.post('/generate', async (c) => {
     }
 
     const sourceLanguage = inferSynthesisLanguage(requestText, 'ko');
-    const shouldTranslate =
-      body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
-    const prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
-      targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
-      sourceLanguage,
-      translate: shouldTranslate,
-      autoTag: true,
-    });
+    // 동적 모드는 생성 단계에서 이미 {text, tag}를 한 호출로 받았으므로(순환 모순 제거),
+    // 2차 Vertex 호출(prepareAlarmTextWithVertex autoTag) 없이 [tag] +text 를 직접 조립한다.
+    // prepare는 preset/custom + 번역 경로 전용으로 남긴다.
+    let prepared: { text: string; translated: boolean; tags: string[] };
+    if (dynamicGenerated) {
+      const dynamicTag = dynamicGenerated.tags[0] ?? '';
+      const taggedText = dynamicTag ? `[${dynamicTag}] ${dynamicGenerated.text}` : dynamicGenerated.text;
+      // 태그를 붙인 길이가 200자를 넘으면 태그를 버린다 — 이때 tags 배열도 비워서
+      // DB delivery_tags/캐시 메타와 실제 합성 텍스트가 어긋나지 않게 한다.
+      const tagApplied = dynamicTag !== '' && taggedText.length <= 200;
+      prepared = {
+        text: tagApplied ? taggedText : dynamicGenerated.text,
+        translated: false,
+        tags: tagApplied ? [dynamicTag] : [],
+      };
+    } else {
+      const shouldTranslate =
+        body.translate === true || (randomRequested && requestedLanguage !== sourceLanguage);
+      prepared = await prepareAlarmTextWithVertex(c.env, requestText, {
+        targetLanguage: shouldTranslate ? requestedLanguage : sourceLanguage,
+        sourceLanguage,
+        translate: shouldTranslate,
+        autoTag: true,
+      });
+    }
     const synthesisText = prepared.text;
     const messageText = requestText;
     const deliveryTagsJson = JSON.stringify(prepared.tags);
@@ -828,6 +864,11 @@ tts.post('/generate', async (c) => {
       );
     }
 
+    // 모드별 보이스 세팅: sleep은 저에너지를 위해 speed 0.95(그 외는 elevenlabs v3 디폴트
+    // stability 0.5/similarity 0.8/style 0.4/speed 1.0/use_speaker_boost 적용). sleep만
+    // 오버라이드하므로 캐시 키도 다른 모드와 자연히 분리된다.
+    const dynamicVoiceSettings =
+      randomRequested && randomContext === 'sleep' ? { speed: 0.95 } : undefined;
     const attempts = createSynthesisAttempts({
       env: c.env,
       profile: {
@@ -836,6 +877,7 @@ tts.post('/generate', async (c) => {
       text: synthesisText,
       language: synthesisLanguage,
       category,
+      voiceSettings: dynamicVoiceSettings,
     });
 
     if (attempts.length === 0) {
