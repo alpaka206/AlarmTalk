@@ -1151,6 +1151,19 @@ export const migrations: Migration[] = [
       `UPDATE plans SET price_krw = 14900, max_members = 5 WHERE key = 'family'`,
     ],
   },
+  {
+    // 음성 프로필에 화자 성별·어체 격식 신호 추가(동적 알람 문구의 일본어 1인칭/정중 격상용).
+    //  - voice_gender TEXT NULL ∈ {'male','female','neutral'}: 일본어 1인칭(僕/俺/私) 등 톤 보정.
+    //  - speech_formality TEXT NULL ∈ {'auto','polite'}(null=auto): 'polite'면 캐주얼 관계여도
+    //    ja=です·ます, ko=해요체로 격상.
+    // additive nullable. 출시 전 prod DB 초기화 예정이라 back-compat 부담 없음.
+    id: 53,
+    name: 'voice-profile-gender-and-formality',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN voice_gender TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN speech_formality TEXT`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
