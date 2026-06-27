@@ -429,6 +429,8 @@
     <string name="settings_marketing_section">Marketing</string>
     <string name="settings_marketing_toggle_label">Receive marketing messages</string>
     <string name="settings_marketing_toggle_desc">Get news about perks and events. You can turn this off anytime.</string>
+    <string name="settings_marketing_loading">Loading…</string>
+    <string name="settings_marketing_load_failed">Couldn\'t load · Tap to retry</string>
     <string name="hs_start_now">Let\'s get started.</string>
     <string name="hs_theme_dark_desc">A dark screen that\'s easy on the eyes at night.</string>
     <string name="hs_theme_dark_title">Dark</string>

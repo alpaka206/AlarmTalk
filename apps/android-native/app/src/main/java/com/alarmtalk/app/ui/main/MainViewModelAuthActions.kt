@@ -634,14 +634,21 @@ internal fun MainViewModel.loadMarketingConsent() {
     // 이 로드가 시작된 시점의 generation 을 캡처해 둔다. 응답이 늦게 도착하는 사이 사용자가
     // 토글을 바꾸거나 계정이 바뀌면 generation 이 올라가, 낡은 스냅샷을 폐기한다.
     val generation = marketingConsentLoadGeneration
+    // 새 시도가 시작되면(진입/재시도) 실패 표시를 지워 UI 가 '로딩 중'으로 돌아가게 한다.
+    marketingConsentLoadFailed = false
     viewModelScope.launch {
         runCatching {
             api.listConsents(authorization)
         }.onSuccess { response ->
             if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
+            marketingConsentLoadFailed = false
             marketingConsentAgreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
         }.onFailure { error ->
             Log.w(TAG, "Failed to load marketing consent", error)
+            // 이 로드가 아직 최신이고 같은 사용자일 때만 실패로 표시(레이스/계정전환 무시).
+            if (authSession?.user?.id == userId && generation == marketingConsentLoadGeneration) {
+                marketingConsentLoadFailed = true
+            }
         }
     }
 }

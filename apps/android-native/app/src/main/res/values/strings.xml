@@ -431,6 +431,8 @@
     <string name="settings_marketing_section">마케팅 수신</string>
     <string name="settings_marketing_toggle_label">광고성 정보 수신</string>
     <string name="settings_marketing_toggle_desc">혜택·이벤트 소식을 받아요. 언제든 끌 수 있어요.</string>
+    <string name="settings_marketing_loading">불러오는 중…</string>
+    <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_start_now">바로 시작해봐요.</string>
     <string name="hs_theme_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
     <string name="hs_theme_dark_title">어둡게</string>

@@ -259,6 +259,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var marketingConsentWriteInFlight by mutableStateOf(false)
         internal set
 
+    // 직전 마케팅 동의 로드(GET)가 실패했는지. marketingConsentAgreed 가 null 인 동안 '로딩 중'과
+    // '로드 실패(다시 시도)'를 구분해, 미로드 상태를 'off'로 오인하지 않게 한다.
+    var marketingConsentLoadFailed by mutableStateOf(false)
+        internal set
+
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
     var pendingDeletion by mutableStateOf(false)
         internal set
@@ -397,6 +402,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         marketingConsentAgreed = null
         marketingConsentLoadGeneration++
         marketingConsentWriteInFlight = false
+        marketingConsentLoadFailed = false
     }
 
     fun ensureReceivedAlarmBadgeBaseline(alarms: List<AlarmEntity>) {

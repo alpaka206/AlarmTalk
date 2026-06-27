@@ -738,6 +738,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       themeMode = themeMode,
                       marketingConsentAgreed = viewModel.marketingConsentAgreed,
                       marketingConsentBusy = viewModel.marketingConsentWriteInFlight,
+                      marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
                       onEditNickname = viewModel::requestEditNickname,

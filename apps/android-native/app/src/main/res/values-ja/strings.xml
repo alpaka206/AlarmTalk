@@ -429,6 +429,8 @@
     <string name="settings_marketing_section">マーケティング受信</string>
     <string name="settings_marketing_toggle_label">広告性情報の受信</string>
     <string name="settings_marketing_toggle_desc">特典・イベントのお知らせを受け取ります。いつでもオフにできます。</string>
+    <string name="settings_marketing_loading">読み込み中…</string>
+    <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_start_now">さっそく始めましょう。</string>
     <string name="hs_theme_dark_desc">夜に見やすい暗い画面です。</string>
     <string name="hs_theme_dark_title">ダーク</string>
