@@ -736,10 +736,13 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       contentPadding = padding,
                       authSession = authSession,
                       themeMode = themeMode,
+                      marketingConsentAgreed = viewModel.marketingConsentAgreed,
                       onBack = ::goBackInApp,
                       onChangeTheme = viewModel::setThemeMode,
                       onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
+                      onLoadMarketingConsent = viewModel::loadMarketingConsent,
+                      onChangeMarketingConsent = viewModel::updateMarketingConsent,
                       onLogout = ::logout,
                       onDeleteAccount = viewModel::requestDeleteAccount,
                   )

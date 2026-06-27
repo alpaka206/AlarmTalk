@@ -625,6 +625,65 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
     }
 }
 
+// 설정 화면 진입 시 현재 마케팅(광고성 정보 수신) 동의 상태를 서버에서 읽어 토글에 반영한다.
+// GET /user/consents 는 유형별 최신값을 돌려주므로 marketing 의 agreed 를 그대로 쓴다.
+internal fun MainViewModel.loadMarketingConsent() {
+    val session = authSession ?: return
+    val userId = session.user.id
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    viewModelScope.launch {
+        runCatching {
+            api.listConsents(authorization)
+        }.onSuccess { response ->
+            if (authSession?.user?.id != userId) return@launch
+            marketingConsentAgreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to load marketing consent", error)
+        }
+    }
+}
+
+// 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다(누적 저장,
+// 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로 되돌린다.
+internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
+    val session = authSession
+    if (session == null) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
+        return
+    }
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    val policyVersion = cachedPolicyVersion()
+    val previous = marketingConsentAgreed
+    marketingConsentAgreed = agreed
+    viewModelScope.launch {
+        runCatching {
+            api.recordConsents(
+                authorization,
+                com.alarmtalk.app.network.RecordConsentsRequest(
+                    consents = listOf(
+                        com.alarmtalk.app.network.ConsentItemRequest(
+                            type = "marketing",
+                            agreed = agreed,
+                            version = policyVersion,
+                        ),
+                    ),
+                ),
+            )
+        }.onSuccess {
+            val app = getApplication<android.app.Application>()
+            message = if (agreed) {
+                app.getString(R.string.msg_marketing_consent_on)
+            } else {
+                app.getString(R.string.msg_marketing_consent_off)
+            }
+        }.onFailure { error ->
+            marketingConsentAgreed = previous
+            Log.e(TAG, "Failed to update marketing consent", error)
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_marketing_consent_update_failed))
+        }
+    }
+}
+
 internal fun MainViewModel.syncNow() {
     val session = authSession
     if (session == null) {

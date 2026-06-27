@@ -132,9 +132,10 @@ internal fun RandomPromptSettingsPane(
 
     fun selectContext(context: String) {
         draftContext = context
+        // 날씨/운세가 들어가는 모드를 고르면 상세 입력을 놓치지 않도록 곧바로 다이얼로그를 띄운다.
         when {
-            randomContextUsesWeather(context) && !hasWeatherInfo() -> weatherDialogOpen = true
-            context == "wake_fortune" && !hasFortuneInfo() -> fortuneDialogOpen = true
+            randomContextUsesWeather(context) -> weatherDialogOpen = true
+            context == "wake_fortune" -> fortuneDialogOpen = true
         }
     }
 
@@ -195,6 +196,8 @@ internal fun RandomPromptSettingsPane(
                         if (index != RandomPromptContexts.lastIndex) SnoozeOptionDivider()
                     }
                 }
+
+                RandomPromptContextDescription(context = normalizedContext)
 
                 if (randomContextUsesWeather(normalizedContext)) {
                     RandomPromptDetailRow(
@@ -289,6 +292,35 @@ internal fun RandomPromptSettingsPane(
             },
         )
     }
+}
+
+// 선택한 문구 종류가 어떤 톤·내용인지 한 줄로 안내한다(기상=날씨, 운세=가벼운 운세 등).
+@Composable
+private fun RandomPromptContextDescription(context: String) {
+    val descriptionRes = randomPromptContextDescriptionRes(context) ?: return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Text(
+            text = stringResource(descriptionRes),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun randomPromptContextDescriptionRes(context: String): Int? = when (context) {
+    "preset" -> R.string.editorp_random_context_desc_preset
+    "wake_weather" -> R.string.editorp_random_context_desc_wake_weather
+    "wake_fortune" -> R.string.editorp_random_context_desc_wake_fortune
+    "meal" -> R.string.editorp_random_context_desc_meal
+    "sleep" -> R.string.editorp_random_context_desc_sleep
+    "exercise" -> R.string.editorp_random_context_desc_exercise
+    "love" -> R.string.editorp_random_context_desc_love
+    else -> null
 }
 
 @Composable

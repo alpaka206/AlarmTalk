@@ -56,6 +56,10 @@ data class VoiceProfileUpdateRequest(
     @SerializedName("is_draft") val isDraft: Boolean? = null,
     @SerializedName("relationship_label") val relationshipLabel: String? = null,
     @SerializedName("listener_title") val listenerTitle: String? = null,
+    // 'male' | 'female' | 'neutral'
+    @SerializedName("voice_gender") val voiceGender: String? = null,
+    // 'auto' | 'polite'
+    @SerializedName("speech_formality") val speechFormality: String? = null,
 )
 
 data class VoiceProfileRelationshipUpdateRequest(
@@ -110,6 +114,10 @@ interface VoiceProfileApi {
         @Part("listenerTitle") listenerTitle: RequestBody,
         @Part("durationMs") durationMs: RequestBody,
         @Part("isDraft") isDraft: RequestBody,
+        // 'male' | 'female' | 'neutral'
+        @Part("voiceGender") voiceGender: RequestBody,
+        // 'auto' | 'polite'
+        @Part("speechFormality") speechFormality: RequestBody,
     ): VoiceProfileResponse
 
     @Multipart

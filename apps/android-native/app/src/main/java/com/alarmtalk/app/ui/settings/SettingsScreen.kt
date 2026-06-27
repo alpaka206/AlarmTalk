@@ -20,6 +20,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,10 +47,13 @@ internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
+    marketingConsentAgreed: Boolean?,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onLoadMarketingConsent: () -> Unit,
+    onChangeMarketingConsent: (Boolean) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
@@ -63,6 +67,11 @@ internal fun SettingsScreen(
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
     var showHolidayCountryDialog by remember { mutableStateOf(false) }
+
+    // 설정 진입 시(로그인 상태) 현재 마케팅 수신 동의 상태를 서버에서 읽어 토글에 반영한다.
+    LaunchedEffect(authSession?.user?.id) {
+        if (authSession != null) onLoadMarketingConsent()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -148,6 +157,17 @@ internal fun SettingsScreen(
         }
 
         if (authSession != null) {
+            item {
+                SettingsCard(title = stringResource(R.string.settings_marketing_section)) {
+                    SettingsToggleRow(
+                        label = stringResource(R.string.settings_marketing_toggle_label),
+                        value = stringResource(R.string.settings_marketing_toggle_desc),
+                        checked = marketingConsentAgreed == true,
+                        onCheckedChange = onChangeMarketingConsent,
+                    )
+                }
+            }
+
             item {
                 SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
                     SettingsRow(

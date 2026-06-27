@@ -233,6 +233,18 @@ internal fun VoiceAudioCard(
                     }
                 }
                 if (profileOptions.isNotEmpty()) {
+                    AlarmListenerTitleField(
+                        override = editor.voiceListenerTitleOverride,
+                        resolvedTitle = resolveListenerTitle(
+                            profileId = editor.voiceProfileId.orEmpty(),
+                            voiceProfiles = voiceProfiles,
+                            familyVoices = familyVoices,
+                        ).orEmpty(),
+                        onOverrideChange = {
+                            editor.voiceListenerTitleOverride = it.take(30)
+                            editor.clearTtsMeta()
+                        },
+                    )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -330,12 +342,23 @@ internal fun VoiceAudioCard(
                                 active = isCachedAudioPreviewActive,
                                 preparing = isCachedAudioPreviewActive && isPreviewPreparing,
                             )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = when {
+                                    isCachedAudioPreviewActive && isPreviewPreparing ->
+                                        stringResource(R.string.editor_audio_preview_preparing)
+                                    isCachedAudioPreviewActive -> stringResource(R.string.editor_audio_preview_stop)
+                                    else -> stringResource(R.string.editor_audio_preview_play)
+                                },
+                            )
                         }
                         OutlinedButton(
                             onClick = onClear,
                             modifier = Modifier.weight(1f),
                         ) {
-                            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.editor_audio_clear))
+                            Icon(Icons.Outlined.Delete, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.editor_audio_clear))
                         }
                     }
                 }
@@ -857,6 +880,48 @@ private fun ManualTranslationRow(
                 checked = enabled,
                 onCheckedChange = onEnabledChange,
             )
+        }
+    }
+}
+
+// 알람별 호칭 인라인 편집. 비워두면 선택한 목소리의 기본 호칭을 쓰고, 입력하면 이 알람에서만
+// 그 호칭으로 부른다. (입력값은 TTS 생성 요청의 listenerTitle 로 전달)
+@Composable
+private fun AlarmListenerTitleField(
+    override: String,
+    resolvedTitle: String,
+    onOverrideChange: (String) -> Unit,
+) {
+    val effective = override.trim().ifBlank { resolvedTitle }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = WakerChipShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.editor_alarm_listener_title_label),
+                fontWeight = FontWeight.SemiBold,
+            )
+            OutlinedTextField(
+                value = override,
+                onValueChange = onOverrideChange,
+                placeholder = {
+                    Text(resolvedTitle.ifBlank { stringResource(R.string.editor_listener_title_placeholder) })
+                },
+                singleLine = true,
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (effective.isNotBlank()) {
+                MutedText(stringResource(R.string.editor_alarm_listener_title_current, effective))
+            } else {
+                MutedText(stringResource(R.string.editor_alarm_listener_title_hint))
+            }
         }
     }
 }

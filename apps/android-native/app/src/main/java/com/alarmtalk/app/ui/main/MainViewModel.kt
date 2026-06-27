@@ -245,6 +245,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var consentChecked by mutableStateOf(false)
         internal set
 
+    // 설정의 '광고성 정보 수신' 토글 상태. null = 아직 서버에서 못 읽음(로딩 전).
+    var marketingConsentAgreed by mutableStateOf<Boolean?>(null)
+        internal set
+
     // 탈퇴 유예(pending_deletion) 상태로 로그인하면 true → 복구/로그아웃만 가능한 화면을 띄운다.
     var pendingDeletion by mutableStateOf(false)
         internal set
