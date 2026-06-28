@@ -243,6 +243,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var defaultVoiceId by mutableStateOf<String?>(null)
         internal set
 
+    // 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
+    var defaultListenerTitle by mutableStateOf<String?>(null)
+        internal set
+
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
 
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
@@ -313,6 +317,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
         showOnboarding = userId !in seen
         defaultVoiceId = defaultVoiceStore.read(userId)
+        defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
     }
 
     fun completeOnboarding() {
@@ -327,9 +332,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         showVoiceSetup = userId != null && !defaultVoiceStore.hasChosen(userId)
     }
 
-    /** 온보딩 목소리 스텝에서 기본 목소리를 선택했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
-    fun completeVoiceSetup(voiceId: String) {
+    /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
+    fun completeVoiceSetup(voiceId: String, listenerTitle: String?) {
         setDefaultVoice(voiceId)
+        setDefaultListenerTitle(listenerTitle)
         showVoiceSetup = false
     }
 
@@ -343,6 +349,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
+    }
+
+    /** 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용). */
+    fun setDefaultListenerTitle(title: String?) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        defaultVoiceStore.setListenerTitle(userId, title)
+        defaultListenerTitle = title?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -414,6 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfiles = emptyList()
         showVoiceSetup = false
         defaultVoiceId = null
+        defaultListenerTitle = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()

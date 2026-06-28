@@ -329,6 +329,8 @@ internal fun VoiceProfileManagementPanel(
     onOpenBilling: () -> Unit,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
+    defaultListenerTitle: String? = null,
+    onSetListenerTitle: (String?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -1112,6 +1114,26 @@ internal fun VoiceProfileManagementPanel(
                         onSelect = { onSetDefaultVoice(profile.id) },
                     )
                 }
+            }
+            // 기본(시스템) 목소리가 정해졌으면 호칭을 여기서 수정(펼치지 않아도 보임).
+            if (defaultVoiceId != null) {
+                Spacer(Modifier.height(8.dp))
+                var nicknameDraft by remember(defaultVoiceId) {
+                    mutableStateOf(defaultListenerTitle.orEmpty())
+                }
+                OutlinedTextField(
+                    value = nicknameDraft,
+                    onValueChange = {
+                        val v = it.take(30)
+                        nicknameDraft = v
+                        onSetListenerTitle(v)
+                    },
+                    label = { Text(stringResource(R.string.voices_default_nickname_label)) },
+                    placeholder = { Text(stringResource(R.string.voices_default_nickname_placeholder)) },
+                    singleLine = true,
+                    shape = WakerInputShape,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 

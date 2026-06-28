@@ -1011,6 +1011,11 @@
     <string name="onb_voice_confirm">Start with this voice</string>
     <string name="onb_voice_skip">Choose later</string>
     <string name="onb_voice_preview">Preview</string>
+    <string name="onb_voice_nickname_label">What should this voice call you?</string>
+    <string name="onb_voice_nickname_placeholder">e.g. Jiho, honey, boss</string>
+    <string name="onb_voice_nickname_hint">Leave it blank to be woken without a name. You can change it later in the Voices tab.</string>
+    <string name="voices_default_nickname_label">Nickname</string>
+    <string name="voices_default_nickname_placeholder">e.g. Jiho, honey, boss</string>
     <string name="misc2_coach_home_hero_title">Your next alarm at a glance</string>
     <string name="misc2_coach_home_hero_body">Your next alarm shows up right here.</string>
     <string name="misc2_coach_home_quick_title">Get started right here</string>

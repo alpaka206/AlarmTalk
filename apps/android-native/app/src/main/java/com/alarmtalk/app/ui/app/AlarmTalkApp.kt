@@ -557,7 +557,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
               systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
               stockClips = viewModel.stockClips,
               onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
-              onChoose = { voiceId -> viewModel.completeVoiceSetup(voiceId) },
+              onChoose = { voiceId, listenerTitle -> viewModel.completeVoiceSetup(voiceId, listenerTitle) },
               onSkip = viewModel::skipVoiceSetup,
           )
           return@Scaffold
@@ -613,6 +613,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
                           defaultVoiceId = viewModel.defaultVoiceId,
                           onSetDefaultVoice = viewModel::setDefaultVoice,
+                          defaultListenerTitle = viewModel.defaultListenerTitle,
+                          onSetListenerTitle = viewModel::setDefaultListenerTitle,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
@@ -685,6 +687,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
                       defaultVoiceId = viewModel.defaultVoiceId,
+                      defaultListenerTitle = viewModel.defaultListenerTitle,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -726,6 +729,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
                           defaultVoiceId = viewModel.defaultVoiceId,
+                          defaultListenerTitle = viewModel.defaultListenerTitle,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },

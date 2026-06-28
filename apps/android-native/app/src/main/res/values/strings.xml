@@ -1011,6 +1011,11 @@
     <string name="onb_voice_confirm">이 목소리로 시작하기</string>
     <string name="onb_voice_skip">나중에 고르기</string>
     <string name="onb_voice_preview">들어보기</string>
+    <string name="onb_voice_nickname_label">이 목소리가 나를 뭐라고 부를까요?</string>
+    <string name="onb_voice_nickname_placeholder">예: 지호, 자기, 대표님</string>
+    <string name="onb_voice_nickname_hint">비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.</string>
+    <string name="voices_default_nickname_label">호칭</string>
+    <string name="voices_default_nickname_placeholder">예: 지호, 자기, 대표님</string>
     <string name="misc2_coach_home_hero_title">다음 알람을 한눈에</string>
     <string name="misc2_coach_home_hero_body">다음에 울릴 알람을 여기서 바로 볼 수 있어요.</string>
     <string name="misc2_coach_home_quick_title">여기서 바로 시작해요</string>

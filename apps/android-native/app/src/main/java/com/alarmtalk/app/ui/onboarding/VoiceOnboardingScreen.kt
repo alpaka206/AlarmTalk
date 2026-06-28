@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,7 +68,7 @@ internal fun VoiceOnboardingScreen(
     systemVoices: List<VoiceProfile>,
     stockClips: List<StockClip>,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
-    onChoose: (String) -> Unit,
+    onChoose: (String, String?) -> Unit,
     onSkip: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -76,6 +77,8 @@ internal fun VoiceOnboardingScreen(
     var selectedId by remember(systemVoices) {
         mutableStateOf(systemVoices.firstOrNull()?.id)
     }
+    // 이 기본 목소리가 사용자를 부를 호칭(선택 입력). 비우면 이름 없이.
+    var listenerTitle by remember { mutableStateOf("") }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var playingVoiceId by remember { mutableStateOf<String?>(null) }
     var preparingVoiceId by remember { mutableStateOf<String?>(null) }
@@ -187,6 +190,27 @@ internal fun VoiceOnboardingScreen(
                         )
                     }
                 }
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = stringResource(R.string.onb_voice_nickname_label),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = listenerTitle,
+                    onValueChange = { listenerTitle = it },
+                    placeholder = { Text(stringResource(R.string.onb_voice_nickname_placeholder)) },
+                    singleLine = true,
+                    shape = WakerInputShape,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.onb_voice_nickname_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -201,7 +225,7 @@ internal fun VoiceOnboardingScreen(
                 onClick = {
                     val id = selectedId ?: return@Button
                     stopPreview()
-                    onChoose(id)
+                    onChoose(id, listenerTitle.trim().takeIf { it.isNotEmpty() })
                 },
                 enabled = selectedId != null,
                 modifier = Modifier

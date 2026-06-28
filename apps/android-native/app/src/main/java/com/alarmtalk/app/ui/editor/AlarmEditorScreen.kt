@@ -128,6 +128,7 @@ internal fun AlarmEditorScreen(
     voiceProfileBusy: Boolean,
     stockClips: List<StockClip>,
     defaultVoiceId: String? = null,
+    defaultListenerTitle: String? = null,
     onCancel: () -> Unit,
     onOpenBilling: () -> Unit,
     onCreateVoiceProfile: () -> Unit,
@@ -784,7 +785,9 @@ internal fun AlarmEditorScreen(
                                 profileId = profileId,
                                 voiceProfiles = voiceProfiles,
                                 familyVoices = familyVoices,
-                            ).trimmedOrNull(),
+                            ).trimmedOrNull()
+                            // 시스템(기본) 목소리는 프로필 호칭이 없으니 온보딩/목소리탭에서 정한 기본 호칭 사용.
+                            ?: defaultListenerTitle?.trimmedOrNull(),
                     ),
                 )
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }

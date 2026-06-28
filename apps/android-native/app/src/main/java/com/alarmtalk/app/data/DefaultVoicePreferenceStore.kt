@@ -33,12 +33,34 @@ class DefaultVoicePreferenceStore(context: Context) {
     /** 사용자가 기본 목소리를 한 번이라도 골랐는지(온보딩 목소리 스텝 완료 판정). */
     fun hasChosen(userId: String?): Boolean = read(userId) != null
 
+    /**
+     * 기본(시스템) 목소리가 사용자를 부를 호칭(listener_title). 온보딩/목소리 탭에서 정하며,
+     * 시스템 음성 알람 TTS 생성 시 listenerTitle 로 쓰인다. (내/공유 음성은 각자 프로필 호칭 사용)
+     */
+    fun readListenerTitle(userId: String?): String? {
+        val key = listenerKeyFor(userId) ?: return null
+        return prefs.getString(key, null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun setListenerTitle(userId: String?, title: String?) {
+        val key = listenerKeyFor(userId) ?: return
+        prefs.edit().apply {
+            val trimmed = title?.trim()
+            if (trimmed.isNullOrEmpty()) remove(key) else putString(key, trimmed)
+        }.apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "default_voice_preferences"
 
         private fun keyFor(userId: String?): String? {
             val id = userId?.trim().orEmpty()
             return if (id.isEmpty()) null else "default_voice_$id"
+        }
+
+        private fun listenerKeyFor(userId: String?): String? {
+            val id = userId?.trim().orEmpty()
+            return if (id.isEmpty()) null else "default_listener_$id"
         }
     }
 }
