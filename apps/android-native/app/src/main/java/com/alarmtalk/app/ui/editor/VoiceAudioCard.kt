@@ -70,6 +70,7 @@ internal fun VoiceAudioCard(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    defaultVoiceId: String? = null,
     selectedStockMessageId: String?,
     previewingStockMessageId: String?,
     onPreviewStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
@@ -166,7 +167,10 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            editor.voiceProfileId = profileOptions.first().id
+                            // 온보딩에서 고른 기본 목소리를 우선 선택(없거나 목록에 없으면 첫 번째).
+                            editor.voiceProfileId =
+                                profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: profileOptions.first().id
                             editor.clearTtsMeta()
                         }
                     }

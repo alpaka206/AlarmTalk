@@ -770,6 +770,7 @@
     <string name="voices_step_sharing">공유 설정</string>
     <string name="voices_step_source">음성 준비</string>
     <string name="voices_system_voices_count">기본 목소리 %1$d종</string>
+    <string name="voices_default_voice_header">기본 목소리 · %1$s</string>
     <string name="voices_unsupported_audio_format">지원하지 않는 오디오 형식이에요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
     <string name="voices_usage_guide">사용 가이드</string>
@@ -1004,6 +1005,12 @@
     <string name="misc2_onboarding_voice_desc">녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.</string>
     <string name="misc2_onboarding_together_title">소중한 사람들과 함께</string>
     <string name="misc2_onboarding_together_desc">목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.</string>
+    <string name="onb_voice_title">기본 목소리를 골라보세요</string>
+    <string name="onb_voice_subtitle">마음에 드는 하나면 충분해요.\n나중에 언제든 바꿀 수 있어요.</string>
+    <string name="onb_voice_loading">목소리를 불러오는 중이에요…</string>
+    <string name="onb_voice_confirm">이 목소리로 시작하기</string>
+    <string name="onb_voice_skip">나중에 고르기</string>
+    <string name="onb_voice_preview">들어보기</string>
     <string name="misc2_coach_home_hero_title">다음 알람을 한눈에</string>
     <string name="misc2_coach_home_hero_body">다음에 울릴 알람을 여기서 바로 볼 수 있어요.</string>
     <string name="misc2_coach_home_quick_title">여기서 바로 시작해요</string>

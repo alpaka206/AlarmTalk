@@ -770,6 +770,7 @@
     <string name="voices_step_sharing">Sharing settings</string>
     <string name="voices_step_source">Prepare audio</string>
     <string name="voices_system_voices_count">%1$d default voices</string>
+    <string name="voices_default_voice_header">Default voice · %1$s</string>
     <string name="voices_unsupported_audio_format">This audio format isn\'t supported.</string>
     <string name="voices_upload_file_or_video">Upload a file or video</string>
     <string name="voices_usage_guide">Usage guide</string>
@@ -1004,6 +1005,12 @@
     <string name="misc2_onboarding_voice_desc">Set your alarm to a voice you record or create.</string>
     <string name="misc2_onboarding_together_title">Together with the people you love</string>
     <string name="misc2_onboarding_together_desc">Share voices and messages, and look after each other\'s mornings.</string>
+    <string name="onb_voice_title">Pick your default voice</string>
+    <string name="onb_voice_subtitle">Just one you like is enough.\nYou can change it anytime later.</string>
+    <string name="onb_voice_loading">Loading voices…</string>
+    <string name="onb_voice_confirm">Start with this voice</string>
+    <string name="onb_voice_skip">Choose later</string>
+    <string name="onb_voice_preview">Preview</string>
     <string name="misc2_coach_home_hero_title">Your next alarm at a glance</string>
     <string name="misc2_coach_home_hero_body">Your next alarm shows up right here.</string>
     <string name="misc2_coach_home_quick_title">Get started right here</string>

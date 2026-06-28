@@ -327,6 +327,8 @@ internal fun VoiceProfileManagementPanel(
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onOpenBilling: () -> Unit,
+    defaultVoiceId: String? = null,
+    onSetDefaultVoice: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -1075,8 +1077,14 @@ internal fun VoiceProfileManagementPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val defaultVoiceName = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
                 Text(
-                    text = stringResource(R.string.voices_system_voices_count, systemVoices.size),
+                    // 기본 목소리가 정해져 있으면 그 이름을, 아니면 종 수를 보여준다.
+                    text = if (defaultVoiceName != null) {
+                        stringResource(R.string.voices_default_voice_header, defaultVoiceName)
+                    } else {
+                        stringResource(R.string.voices_system_voices_count, systemVoices.size)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -1100,6 +1108,8 @@ internal fun VoiceProfileManagementPanel(
                         profile = profile,
                         playing = playingGreetingVoiceId == profile.id,
                         onPlay = { playGreeting(profile) },
+                        selected = profile.id == defaultVoiceId,
+                        onSelect = { onSetDefaultVoice(profile.id) },
                     )
                 }
             }

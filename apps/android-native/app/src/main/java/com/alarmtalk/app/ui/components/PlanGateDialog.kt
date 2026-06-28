@@ -1,78 +1,41 @@
 package com.alarmtalk.app
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import com.alarmtalk.app.WakerButtonShape
-import com.alarmtalk.app.WakerDialogShape
-import com.alarmtalk.app.wakerCardBorder
 
+/**
+ * 유료 기능 게이트 다이얼로그. iOS 시스템 알럿 스타일(`IosAlertDialog`)로 표시한다.
+ *
+ * 콘텐츠는 한 줄(message)을 굵은 제목으로 보여주고 별도 설명/헤드라인은 두지 않는다
+ * (Figma Alert 의 Title=True·Description=False 변형). 닫기(보조) + 이용권 보기(강조)
+ * 두 텍스트 액션.
+ */
 @Composable
 internal fun PlanGateDialog(
     message: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    @Suppress("UNUSED_PARAMETER")
     title: String = stringResource(R.string.r3dlg_plan_gate_title),
     confirmLabel: String = stringResource(R.string.r3dlg_plan_gate_confirm),
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .widthIn(max = 380.dp),
-            shape = WakerDialogShape,
-            color = scheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier.padding(22.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ModalDialogTitle(
-                    title = title,
-                    onDismiss = onDismiss,
-                )
-                Text(
-                    text = message,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = onConfirm,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
-                    shape = WakerButtonShape,
-                ) {
-                    Text(confirmLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
-    }
+    IosAlertDialog(
+        title = message,
+        message = null,
+        onDismiss = onDismiss,
+        modifier = modifier,
+        actions = listOf(
+            IosAlertAction(
+                label = stringResource(R.string.r3dlg_modal_dialog_close),
+                onClick = onDismiss,
+            ),
+            IosAlertAction(
+                label = confirmLabel,
+                emphasized = true,
+                onClick = onConfirm,
+            ),
+        ),
+    )
 }

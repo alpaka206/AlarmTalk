@@ -770,6 +770,7 @@
     <string name="voices_step_sharing">共有設定</string>
     <string name="voices_step_source">音声の準備</string>
     <string name="voices_system_voices_count">基本の声 %1$d種類</string>
+    <string name="voices_default_voice_header">基本の声・%1$s</string>
     <string name="voices_unsupported_audio_format">対応していない音声形式です。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>
     <string name="voices_usage_guide">使い方ガイド</string>
@@ -1004,6 +1005,12 @@
     <string name="misc2_onboarding_voice_desc">録音したり作ったりした声で、自分のアラームを鳴らせます。</string>
     <string name="misc2_onboarding_together_title">大切な人と一緒に</string>
     <string name="misc2_onboarding_together_desc">声やメッセージを送り合って、お互いの朝を見守れます。</string>
+    <string name="onb_voice_title">基本の声を選んでください</string>
+    <string name="onb_voice_subtitle">お気に入りの1つだけでOKです。\nあとからいつでも変更できます。</string>
+    <string name="onb_voice_loading">声を読み込んでいます…</string>
+    <string name="onb_voice_confirm">この声で始める</string>
+    <string name="onb_voice_skip">あとで選ぶ</string>
+    <string name="onb_voice_preview">試聴</string>
     <string name="misc2_coach_home_hero_title">次のアラームをひと目で</string>
     <string name="misc2_coach_home_hero_body">次に鳴るアラームがここに表示されます。</string>
     <string name="misc2_coach_home_quick_title">ここからすぐに始めましょう</string>

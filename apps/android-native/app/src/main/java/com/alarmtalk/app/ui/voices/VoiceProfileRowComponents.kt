@@ -588,18 +588,27 @@ internal fun SystemVoiceProfileRow(
     profile: VoiceProfile,
     playing: Boolean,
     onPlay: () -> Unit,
+    selected: Boolean = false,
+    onSelect: () -> Unit = {},
 ) {
+    // 카드 본문 탭 = 기본 목소리로 선택, ▶ 버튼 = 인사말 미리듣기. 선택된 건 강조 + 라디오 체크.
     OutlinedCard(
-        onClick = onPlay,
+        onClick = onSelect,
         shape = WakerCardShape,
         border = wakerCardBorder(),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = if (selected) {
+                MaterialTheme.colorScheme.secondaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -617,13 +626,21 @@ internal fun SystemVoiceProfileRow(
             Text(
                 text = profile.name,
                 fontWeight = FontWeight.SemiBold,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onSecondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
                 modifier = Modifier.weight(1f),
             )
-            Icon(
-                imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                contentDescription = if (playing) stringResource(R.string.voicesr_stop) else stringResource(R.string.voicesr_listen),
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            IconButton(onClick = onPlay) {
+                Icon(
+                    imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = if (playing) stringResource(R.string.voicesr_stop) else stringResource(R.string.voicesr_listen),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            RadioButton(selected = selected, onClick = onSelect)
         }
     }
 }

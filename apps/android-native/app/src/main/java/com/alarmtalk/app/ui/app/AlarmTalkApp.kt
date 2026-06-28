@@ -550,6 +550,18 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           )
           return@Scaffold
       }
+      // 온보딩 직후 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
+      if (viewModel.showVoiceSetup) {
+          VoiceOnboardingScreen(
+              contentPadding = padding,
+              systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
+              stockClips = viewModel.stockClips,
+              onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
+              onChoose = { voiceId -> viewModel.completeVoiceSetup(voiceId) },
+              onSkip = viewModel::skipVoiceSetup,
+          )
+          return@Scaffold
+      }
       Box(modifier = Modifier.fillMaxSize()) {
           NavHost(
               navController = navController,
@@ -599,6 +611,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                               viewModel.updateSharedVoiceViewerInfo(id, relationship, listener)
                           },
                           onDeleteVoiceProfile = viewModel::deleteVoiceProfile,
+                          defaultVoiceId = viewModel.defaultVoiceId,
+                          onSetDefaultVoice = viewModel::setDefaultVoice,
                           onRefreshSocial = viewModel::refreshSocial,
                           onLeaveFamilyGroup = viewModel::leaveFamilyGroup,
                           onRegisterCode = viewModel::registerCode,
@@ -670,6 +684,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                       familyVoices = familyVoices,
                       voiceProfileBusy = voiceProfileBusy,
                       stockClips = viewModel.stockClips,
+                      defaultVoiceId = viewModel.defaultVoiceId,
                       onCancel = ::goBackInApp,
                       onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                       onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
@@ -710,6 +725,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
                           familyVoices = familyVoices,
                           voiceProfileBusy = voiceProfileBusy,
                           stockClips = viewModel.stockClips,
+                          defaultVoiceId = viewModel.defaultVoiceId,
                           onCancel = ::goBackInApp,
                           onOpenBilling = { navController.navigateTopLevelTab(NativeTab.Billing) },
                           onCreateVoiceProfile = { navController.navigateTopLevelTab(NativeTab.Voices) },
