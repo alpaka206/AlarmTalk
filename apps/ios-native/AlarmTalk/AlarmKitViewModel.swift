@@ -146,7 +146,7 @@ final class AlarmKitViewModel: ObservableObject {
 
     /// 한 번의 alarmUpdates emit 을 처리. 별도 메서드로 분리해 테스트 가능성을
     /// 높이고 (직접 Alarm 배열을 주입 가능), 두 책임을 명시한다:
-    ///   1. 사라진 alarmKitID -> markStopped + CharacterEvent.alarmCompleted emit
+    ///   1. 사라진 alarmKitID -> markStopped (+ dismiss-time 공휴일 재계산/재무장)
     ///   2. 새로 `.alerting` 진입한 alarmKitID -> markRinging
     ///
     /// Apple `Alarm.State` (https://developer.apple.com/documentation/AlarmKit/Alarm/State):
@@ -178,9 +178,9 @@ final class AlarmKitViewModel: ObservableObject {
             let recordBeforeStop = store.recordByAlarmKitID(kitID)
             // In-app voice fallback 재생 중이면 정지 (AlarmKit 자체 stop 과 별개).
             AlarmVoicePlayer.shared.stop()
-            // CharacterEvent emit (LiveActivity 가 아닌 경로의 stop 도 포함).
-            // AlarmAppContext 는 멱등 nonce 를 사용하므로 LiveActivity Intent
-            // 가 이미 queue 했다면 store 측에서 중복 제거가 된다.
+            // LiveActivity 가 아닌 경로(앱이 살아있는 채 알람이 사라진 경우)의 stop 도
+            // AlarmAppContext 로 수렴시켜 markStopped + dismiss-time 공휴일 재계산/재무장을
+            // 한 곳에서 처리한다.
             if recordBeforeStop != nil, let ctx = AlarmAppContext.shared {
                 await ctx.handleAlarmStopped(alarmKitIDString: kitID)
             } else {

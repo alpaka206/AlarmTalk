@@ -377,19 +377,29 @@ struct VoiceProfileUpdateRequest: Encodable {
     var isDraft: Bool?
     var relationshipLabel: String?
     var listenerTitle: String?
+    /// 'male' | 'female' | 'neutral'. encoder 의 convertToSnakeCase 로 `voice_gender` 전송.
+    /// Android `VoiceProfileApi.kt:59-60`, backend voice-profile.ts PATCH(:519-520).
+    var voiceGender: String?
+    /// 'auto' | 'polite'(일본어 정중체). convertToSnakeCase 로 `speech_formality` 전송.
+    /// Android `VoiceProfileApi.kt:61-62`, backend voice-profile.ts PATCH(:523-524).
+    var speechFormality: String?
 
     init(
         name: String? = nil,
         isShared: Bool? = nil,
         isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        voiceGender: String? = nil,
+        speechFormality: String? = nil
     ) {
         self.name = name
         self.isShared = isShared
         self.isDraft = isDraft
         self.relationshipLabel = relationshipLabel
         self.listenerTitle = listenerTitle
+        self.voiceGender = voiceGender
+        self.speechFormality = speechFormality
     }
 }
 
@@ -710,73 +720,6 @@ struct NoteAudioResponse: Decodable, Equatable {
     var text: String
 }
 
-struct CharacterResponse: Decodable, Equatable {
-    var character: CharacterPayload
-    var progress: CharacterProgress
-    var streak: CharacterStreak
-    var stats: CharacterStats
-    var achievements: [StreakAchievement]?
-}
-
-struct CharacterPayload: Decodable, Identifiable, Equatable {
-    var id: String
-    var name: String
-    var level: Int
-    var xp: Int
-    var affection: Int
-    var stage: String
-    var dailyXp: Int?
-}
-
-struct CharacterProgress: Decodable, Equatable {
-    var xpIntoLevel: Int
-    var xpToNextLevel: Int
-    var levelSpan: Int
-    var progressRatio: Double
-}
-
-struct CharacterStreak: Decodable, Equatable {
-    var current: Int
-    var longest: Int
-    var lastWakeupDate: String?
-}
-
-struct CharacterStats: Decodable, Equatable {
-    var diligence: Int
-    var health: Int
-    var consistency: Int
-}
-
-struct StreakAchievement: Decodable, Equatable {
-    var milestone: Int
-    var bonusXp: Int
-    var achievedAt: String
-}
-
-struct CharacterXpRequest: Encodable {
-    var event: String
-    var clientNonce: String
-    var localDate: String
-}
-
-struct CharacterGrantResponse: Decodable, Equatable {
-    var character: CharacterPayload
-    var progress: CharacterProgress
-    var streak: CharacterStreak
-    var stats: CharacterStats
-    var achievements: [StreakAchievement]?
-    var grant: CharacterGrant
-}
-
-struct CharacterGrant: Decodable, Equatable {
-    var event: String
-    var grantedXp: Int
-    var affection: Int
-    var capped: Bool
-    var remainingCap: Int
-    var duplicated: Bool
-}
-
 struct BillingSubscriptionResponse: Codable, Equatable {
     var subscription: BillingSubscription?
     var plan: BillingPlan?
@@ -961,8 +904,13 @@ struct RequestEmailVerificationRequest: Encodable {
 
 struct RequestEmailVerificationResponse: Decodable, Equatable {
     var success: Bool
-    /// 디버그 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
-    var devCode: String?
+    /// 코드 유효시간(초). 백엔드 auth.ts:189/300 의 `expires_in_seconds`.
+    /// decoder 의 convertFromSnakeCase 로 자동 매핑. Android `AuthApi.kt:83`.
+    var expiresInSeconds: Int?
+    /// 디버그(dev) 환경에서 서버가 바로 코드를 돌려보내는 경우가 있어 옵셔널로 둔다.
+    /// 백엔드는 `debug_code` 키로 보낸다(auth.ts:190/301). convertFromSnakeCase 로
+    /// `debugCode` 에 매핑된다. Android `AuthApi.kt:84`.
+    var debugCode: String?
 }
 
 struct VerifyEmailCodeRequest: Encodable {
@@ -985,6 +933,46 @@ struct EmailRegisterRequest: Encodable {
 struct EmailLoginRequest: Encodable {
     var email: String
     var password: String
+}
+
+// MARK: - 비밀번호 재설정 (POST auth/password-reset, auth/password-reset/confirm)
+// Android `AuthApi.kt:96-104`, 백엔드 auth.ts:280/359, shared `PasswordReset*Schema`.
+
+/// 재설정 코드 발송 요청. 응답은 이메일 인증과 동일한 `RequestEmailVerificationResponse`.
+/// Android `PasswordResetRequest`.
+struct PasswordResetRequest: Encodable {
+    var email: String
+}
+
+/// 재설정 확정 — 코드 검증 후 새 비밀번호로 교체. 비밀번호는 8~128자 + 영문 + 숫자
+/// (shared `PasswordSchema`). Android `PasswordResetConfirmRequest`.
+struct PasswordResetConfirmRequest: Encodable {
+    var email: String
+    var code: String
+    var password: String
+}
+
+/// 재설정 확정 응답. 백엔드는 `{ success }` 만 돌려준다(auth.ts:406).
+/// Android `EmailVerificationConfirmResponse`.
+struct PasswordResetConfirmResponse: Decodable, Equatable {
+    var success: Bool
+}
+
+// MARK: - 동의 목록 (GET user/consents)
+// Android `AuthApi.kt:166-175`, 백엔드 user.ts:401-431.
+
+/// 동의 기록 1건(유형별 최신값). 백엔드는 snake_case 로 보내며 decoder 의
+/// convertFromSnakeCase 로 camelCase 에 매핑된다. Android `ConsentRecord`.
+struct ConsentRecord: Decodable, Equatable {
+    var consentType: String
+    var policyVersion: String
+    var agreed: Bool
+    var agreedAt: String?
+}
+
+/// `GET user/consents` 응답. 유형별 최신 동의값 목록. Android `ConsentListResponse`.
+struct ConsentListResponse: Decodable, Equatable {
+    var consents: [ConsentRecord]
 }
 
 struct FamilyAlarmTalkRequest: Encodable {

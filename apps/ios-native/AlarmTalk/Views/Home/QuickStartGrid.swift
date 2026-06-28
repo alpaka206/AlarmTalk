@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// 홈 화면 "바로 가기" 영역. 음성 탭 진입, 새 알람 만들기, 코드/공유 이용권 시트 진입.
+/// 홈 화면 "바로 가기" 영역. 음성 탭 진입, 새 알람 만들기, 상대 알람 시트 진입.
 ///
-/// ContentView 의 `quickStartGrid` 와 `quickActionCard(_:_:_:_:)` 헬퍼를 옮긴 것.
+/// Android `ui/home/HomeCards.kt:191-322` 의 `QuickStartGrid`/`HomeActionCard` 미러.
 /// 부모(HomeView)가 라우팅 의무를 가져가므로 각 카드는 단순 콜백을 호출한다.
+/// 아이콘 원형 배경/전경은 M3 컨테이너 토큰을 쓴다(목소리·상대=secondaryContainer,
+/// 새 알람=primaryContainer; 잠금 시 surfaceVariant).
 struct QuickStartGrid: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     let onOpenVoices: () -> Void
     let onOpenEditor: () -> Void
     let canCreateFamilyAlarm: Bool
@@ -16,19 +19,21 @@ struct QuickStartGrid: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("바로 가기")
                 .font(.headline)
-                .foregroundStyle(AlarmTalkTheme.text)
+                .foregroundStyle(theme.palette.onBackground)
             HStack(spacing: 12) {
                 QuickActionCard(
                     title: "목소리",
                     icon: "mic",
-                    background: Color(red: 0.86, green: 0.91, blue: 0.96),
+                    background: theme.palette.secondaryContainer,
+                    foreground: theme.palette.onSecondaryContainer,
                     locked: voiceLocked,
                     action: onOpenVoices
                 )
                 QuickActionCard(
                     title: "새 알람",
                     icon: "alarm",
-                    background: Color(red: 0.98, green: 0.89, blue: 0.58),
+                    background: theme.palette.primaryContainer,
+                    foreground: theme.palette.onPrimaryContainer,
                     locked: alarmLocked,
                     action: onOpenEditor
                 )
@@ -36,8 +41,9 @@ struct QuickStartGrid: View {
             if canCreateFamilyAlarm {
                 QuickActionCard(
                     title: "상대 알람 맞춰주기",
-                    icon: "bell.badge",
-                    background: Color(red: 0.88, green: 0.95, blue: 0.91),
+                    icon: "person.2",
+                    background: theme.palette.secondaryContainer,
+                    foreground: theme.palette.onSecondaryContainer,
                     locked: alarmLocked,
                     action: onOpenFamilyAlarm
                 )
@@ -46,11 +52,13 @@ struct QuickStartGrid: View {
     }
 }
 
-/// 홈 바로가기에서 쓰는 카드 한 장. 아이콘 + 라벨 + 우측 화살표.
+/// 홈 바로가기에서 쓰는 카드 한 장. 아이콘 + 라벨.
 struct QuickActionCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     let title: String
     let icon: String
     let background: Color
+    let foreground: Color
     var locked: Bool = false
     let action: () -> Void
 
@@ -59,10 +67,10 @@ struct QuickActionCard: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(locked ? AlarmTalkTheme.surfaceVariant : background)
+                        .fill(locked ? theme.palette.surfaceVariant : background)
                     Image(systemName: icon)
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(locked ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
+                        .foregroundStyle(locked ? theme.palette.onSurfaceVariant : foreground)
                     if locked {
                         FeatureLockBadge(size: 20, iconSize: 11)
                             .offset(x: 16, y: -16)
@@ -72,18 +80,18 @@ struct QuickActionCard: View {
 
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(locked ? AlarmTalkTheme.textSecondary : AlarmTalkTheme.text)
+                    .foregroundStyle(locked ? theme.palette.onSurfaceVariant : theme.palette.onSurface)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Spacer()
             }
             .padding(14)
             .frame(maxWidth: .infinity)
-            .background(AlarmTalkTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .background(theme.palette.surface)
+            .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(AlarmTalkTheme.surfaceVariant, lineWidth: 1)
+                RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -101,6 +109,7 @@ struct QuickActionCard: View {
         alarmLocked: false
     )
         .padding()
+        .voiceAlarmPreviewEnvironment()
 }
 
 #Preview("QuickStart (dark)") {
@@ -114,5 +123,6 @@ struct QuickActionCard: View {
     )
         .padding()
         .preferredColorScheme(.dark)
+        .voiceAlarmPreviewEnvironment()
 }
 #endif

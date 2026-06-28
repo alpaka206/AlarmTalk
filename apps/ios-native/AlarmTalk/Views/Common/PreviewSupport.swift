@@ -31,13 +31,6 @@ extension LocalAlarmStore {
     static var preview: LocalAlarmStore { LocalAlarmStore() }
 }
 
-extension CharacterEventStore {
-    /// Preview 용 더미 store. API 호출은 시도되지 않게 token provider 가 nil 만 돌려준다.
-    static var preview: CharacterEventStore {
-        CharacterEventStore(api: AlarmTalkAPI.shared, tokenProvider: { nil })
-    }
-}
-
 extension SubscriptionManager {
     static var preview: SubscriptionManager {
         SubscriptionManager(api: AlarmTalkAPI.shared, authProvider: { nil })
@@ -62,7 +55,6 @@ struct PreviewEnvironment: ViewModifier {
             .environmentObject(VoiceStudioViewModel.preview)
             .environmentObject(SocialFeatureViewModel.preview)
             .environmentObject(LocalAlarmStore.preview)
-            .environmentObject(CharacterEventStore.preview)
             .environmentObject(SubscriptionManager.preview)
             .environmentObject(AppVersionGate.preview)
             .environmentObject(HolidayStore.preview)

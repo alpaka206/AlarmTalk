@@ -116,13 +116,6 @@ struct AlarmEditorSheet: View {
                     .listRowBackground(Color.clear)
             }
 
-            Section {
-                TextField("알람 이름", text: $draft.label)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .submitLabel(.done)
-            }
-
             Section("반복") {
                 Text(repeatSummary)
                     .font(theme.typography.bodySmall)
@@ -132,33 +125,46 @@ struct AlarmEditorSheet: View {
                     .accessibilityLabel(Text("반복 \(repeatSummary)"))
                 RepeatWeekdayChips(mask: $draft.repeatDaysMask)
                     .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-                HolidayOffToggle(
-                    isOn: $draft.holidayOff,
-                    enabled: draft.repeatDaysMask != 0,
-                    // KR 은 nil 을 넘겨 기존 '대체·임시 공휴일 포함' 안내를 유지, 그 외만 국가 기준 표기.
-                    subtitleCountryName: holidayStore.selectedCountryCode == "KR"
-                        ? nil
-                        : HolidayStore.localizedCountryName(holidayStore.selectedCountryCode)
-                )
+                // Android `ScheduleDetailsCard` 와 동일: 반복 요일이 하나라도 선택됐을 때만
+                // 공휴일off 토글을 노출한다(미선택 시 dimmed 가 아니라 통째로 숨김).
+                if draft.repeatDaysMask != 0 {
+                    HolidayOffToggle(
+                        isOn: $draft.holidayOff,
+                        enabled: true,
+                        // KR 은 nil 을 넘겨 기존 '대체·임시 공휴일 포함' 안내를 유지, 그 외만 국가 기준 표기.
+                        subtitleCountryName: holidayStore.selectedCountryCode == "KR"
+                            ? nil
+                            : HolidayStore.localizedCountryName(holidayStore.selectedCountryCode)
+                    )
 
-                if draft.holidayOff {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
+                    if draft.holidayOff {
+                        VStack(alignment: .leading, spacing: 6) {
+                            // Android 와 동일: 보조 색(onSurfaceVariant), '설정에서 변경' 어포던스 없음.
                             Text("공휴일 달력: \(HolidayCountryFlag.emoji(for: holidayStore.selectedCountryCode)) \(HolidayStore.localizedCountryName(holidayStore.selectedCountryCode))")
                                 .font(theme.typography.bodySmall)
-                                .foregroundStyle(theme.palette.onSurface)
-                            Spacer(minLength: 8)
-                            Text("설정에서 변경")
-                                .font(theme.typography.bodySmall)
                                 .foregroundStyle(theme.palette.onSurfaceVariant)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            HolidayUpcomingList(
+                                countryCode: holidayStore.selectedCountryCode,
+                                holidayStore: holidayStore
+                            )
                         }
-                        HolidayUpcomingList(
-                            countryCode: holidayStore.selectedCountryCode,
-                            holidayStore: holidayStore
-                        )
+                        .padding(.top, 2)
                     }
-                    .padding(.top, 2)
                 }
+
+                // 알람 이름 필드는 반복 선택 바로 아래에 둔다 (Android ScheduleDetailsCard:
+                // RepeatSelector 다음에 라벨 입력). 플로팅 라벨(editor_label_alarm_name) +
+                // placeholder(editor_placeholder_alarm_name) 를 모두 노출한다.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("알람 이름")
+                        .font(theme.typography.titleSmall)
+                    TextField("예: 출근 준비", text: $draft.label)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .submitLabel(.done)
+                }
+                .padding(.top, 2)
             }
 
             if target.familyAlarmMode {
@@ -182,18 +188,14 @@ struct AlarmEditorSheet: View {
                     .tint(theme.palette.primary)
 
                 if draft.snoozeEnabled {
-                    Stepper(
-                        value: $draft.snoozeMinutes,
-                        in: 1...30
-                    ) {
-                        HStack {
-                            Text("간격")
-                            Spacer()
-                            Text("\(draft.snoozeMinutes)분")
-                                .foregroundStyle(theme.palette.primary)
-                                .monospacedDigit()
-                        }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("간격")
+                            .font(theme.typography.titleSmall)
+                        // Android `AlarmSnoozeSettings.kt` SnoozeIntervals(5/10/15/30) +
+                        // 직접 설정. 백엔드 계약(snooze_minutes 1–30)에 맞춰 직접 입력은 30 으로 캡한다.
+                        SnoozeIntervalPicker(minutes: $draft.snoozeMinutes)
                     }
+                    .padding(.vertical, 4)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("최대 반복 횟수")
@@ -206,23 +208,44 @@ struct AlarmEditorSheet: View {
 
             Section("사운드 & 진동") {
                 if draft.showsAlarmSoundControls {
-                    AlarmVolumeSlider(volume: $draft.alarmVolumePercent)
+                    // 알람음 on/off (Android `AlarmSettingsCard.kt:160-167` alarmVolumePercent>0 Switch;
+                    // 켜면 100, 끄면 0). iOS 는 AlarmKit 이 OS 알람 톤을 소유해 커스텀 링톤
+                    // 선택 API 가 없으므로, 사운드 종류는 '기본 알람음' 라벨로만 노출한다.
+                    Toggle("알람음", isOn: alarmSoundEnabledBinding)
+                        .tint(theme.palette.primary)
+                    if draft.alarmVolumePercent > 0 {
+                        HStack {
+                            Text("알람음 종류")
+                                .font(theme.typography.titleSmall)
+                            Spacer()
+                            Text(alarmSoundDisplayLabel)
+                                .font(theme.typography.bodyMedium)
+                                .foregroundStyle(theme.palette.onSurfaceVariant)
+                        }
+                        AlarmVolumeSlider(volume: alarmVolumeDecileBinding)
+                    }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("진동 패턴")
-                            .font(theme.typography.titleSmall)
-                        Spacer()
-                        VibrationPatternPicker(selected: $draft.vibrationPattern)
+                // 진동 on/off (Android `AlarmSettingsCard.kt:143-147` vibrationPattern != NONE Switch;
+                // 켜면 default, 끄면 none). '없음' 은 패턴 목록에서 빼고 이 토글이 대신한다.
+                Toggle("진동", isOn: vibrationEnabledBinding)
+                    .tint(theme.palette.primary)
+                if draft.vibrationPattern != .none {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("진동 패턴")
+                                .font(theme.typography.titleSmall)
+                            Spacer()
+                            VibrationPatternPicker(selected: $draft.vibrationPattern)
+                        }
+                        // 캡션은 picker 컨트롤 밖, 행 아래 전체 너비로 배치해 HStack 안에서
+                        // 어색하게 줄바꿈되는 문제를 없앤다.
+                        Text(VibrationPatternPicker.usageCaption)
+                            .font(theme.typography.bodySmall)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    // 캡션은 picker 컨트롤 밖, 행 아래 전체 너비로 배치해 HStack 안에서
-                    // 어색하게 줄바꿈되는 문제를 없앤다.
-                    Text(VibrationPatternPicker.usageCaption)
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
@@ -461,6 +484,41 @@ struct AlarmEditorSheet: View {
 
     var saveButtonTitle: String {
         target.editingAlarmID == nil ? "저장" : "수정 저장"
+    }
+
+    /// 알람음 on/off 바인딩 (Android `AlarmSettingsCard.kt:162-165`). 켜면 100%, 끄면 0%
+    /// (무음) 로 alarmVolumePercent 를 토글한다.
+    var alarmSoundEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.alarmVolumePercent > 0 },
+            set: { draft.alarmVolumePercent = $0 ? 100 : 0 }
+        )
+    }
+
+    /// 진동 on/off 바인딩 (Android `AlarmEditorScreen.kt:1263-1265`). 켜면 default 패턴,
+    /// 끄면 none. '없음' 은 패턴 picker 목록에서 제외하고 이 토글로만 끈다.
+    var vibrationEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.vibrationPattern != .none },
+            set: { draft.vibrationPattern = $0 ? .default : .none }
+        )
+    }
+
+    /// 알람음 종류 라벨. iOS 는 커스텀 링톤 선택 API 가 없어 기존 레코드에 저장된
+    /// alarmSoundLabel 이 있으면 그대로, 없으면 '기본 알람음' 을 보여준다
+    /// (Android `editor2_default_alarm_sound` 미러).
+    var alarmSoundDisplayLabel: String {
+        (editingAlarm?.alarmSoundLabel).nilIfBlank ?? "기본 알람음"
+    }
+
+    /// 알람 음량 슬라이더를 Android 와 동일하게 10단위(0/10/…/100, 11개 stop)로 스냅시킨다.
+    /// AlarmVolumeSlider 자체는 step 1 이므로, 호출부 바인딩 setter 가 가장 가까운 10의
+    /// 배수로 반올림해 deciles 로 제한한다 (Android `AlarmSettingsCard.kt:376` Slider steps=9 미러).
+    var alarmVolumeDecileBinding: Binding<Int> {
+        Binding(
+            get: { draft.alarmVolumePercent },
+            set: { draft.alarmVolumePercent = Int((Double($0) / 10.0).rounded()) * 10 }
+        )
     }
 
     /// 요일 칩 위에 보여줄 반복 요약(PR6). 0x7f=매일, 일부 요일=매주 목록, 0=다음 울릴 날짜.

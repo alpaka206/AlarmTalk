@@ -22,6 +22,7 @@ struct MemberManagementView: View {
     @State private var isSharePresented = false
     @State private var shareText: String = ""
     @State private var showFamilyAlarmDialog = false
+    @State private var showRegenerateConfirm = false
 
     private var familyGroup: FamilyGroupCurrentResponse? { socialFeatures.familyGroup }
     private var group: FamilyGroup? { familyGroup?.group }
@@ -109,10 +110,6 @@ struct MemberManagementView: View {
                             onRemove: { pendingRemoveMember = member }
                         )
                     }
-
-                    if !isOwner, let group, members.contains(where: { $0.userId == currentUserID }) {
-                        leaveButton(group: group)
-                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -145,6 +142,22 @@ struct MemberManagementView: View {
             }
         } message: { _ in
             Text("이 구성원을 내보낼까요? 다시 초대하려면 새 초대 코드가 필요해요.")
+        }
+        .alert(
+            "공유 코드 재발급",
+            isPresented: $showRegenerateConfirm
+        ) {
+            Button("코드 재발급", role: .destructive) {
+                showRegenerateConfirm = false
+                Task {
+                    await socialFeatures.regenerateFamilyShareCode(session: auth.session)
+                }
+            }
+            Button("취소", role: .cancel) {
+                showRegenerateConfirm = false
+            }
+        } message: {
+            Text("재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.")
         }
         .sheet(isPresented: $isSharePresented) {
             ActivityShareSheet(text: shareText)
@@ -268,6 +281,21 @@ struct MemberManagementView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .disabled(socialFeatures.isBusy || isFull)
             }
+
+            Button {
+                showRegenerateConfirm = true
+            } label: {
+                Text("코드 재발급")
+                    .font(theme.typography.labelLarge)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .disabled(socialFeatures.isBusy)
+
+            Text("코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요.")
+                .font(theme.typography.bodySmall)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
         }
         .padding(14)
         .background(
@@ -276,25 +304,6 @@ struct MemberManagementView: View {
         )
     }
 
-    private func leaveButton(group: FamilyGroup) -> some View {
-        Button(role: .destructive) {
-            Task {
-                await socialFeatures.leaveFamilyGroup(
-                    groupId: group.id,
-                    session: auth.session
-                )
-                await auth.refreshUser()
-            }
-        } label: {
-            Label("그룹 나가기", systemImage: "rectangle.portrait.and.arrow.right")
-                .font(theme.typography.labelLarge)
-                .frame(maxWidth: .infinity, minHeight: 48)
-        }
-        .buttonStyle(.bordered)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .disabled(socialFeatures.isBusy)
-        .padding(.top, 8)
-    }
 }
 
 /// 한 멤버 행. Android `MemberRow:264-332` 와 동등.

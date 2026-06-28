@@ -11,14 +11,13 @@ import SwiftUI
 /// - 4개 탭 라우터/시트 호스트: `Views/Root/MainTabsView.swift`
 /// - 바텀 네비: `Views/Root/BottomNavBar.swift`
 /// - 홈 화면: `Views/Home/HomeView.swift`, `NextAlarmHeroCard.swift`,
-///   `QuickStartGrid.swift`, `CharacterMiniCard.swift`
+///   `QuickStartGrid.swift`
 /// - 알람 화면: `Views/Alarms/AlarmsListView.swift`, `AlarmRow.swift`,
 ///   `AlarmPermissionSection.swift`
 /// - 음성 화면: `Views/Voices/VoicesPanelView.swift`, `VoiceProfilePicker.swift`
 /// - 메시지 화면: `Views/Messages/MessagesView.swift`, `VoiceMessagePanel.swift`
 /// - 설정 화면: `Views/Settings/SettingsView.swift`, `SettingsRow.swift`,
-///   `AccountPanel.swift`, `PeoplePanel.swift`, `GrowthPanel.swift`,
-///   `BillingPanel.swift`
+///   `AccountPanel.swift`, `PeoplePanel.swift`, `BillingPanel.swift`
 /// - 알람 편집 시트: `Views/Editor/AlarmEditorSheet.swift`
 /// - 보조 시트 호스트: `Views/Auxiliary/AuxiliarySheetHost.swift`
 /// - 라우팅 모델: `Views/Auxiliary/AuxiliaryScreen.swift` (NativeTab/AuxiliaryScreen/AlarmEditorTarget)

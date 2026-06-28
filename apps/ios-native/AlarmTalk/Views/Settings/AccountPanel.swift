@@ -18,9 +18,6 @@ struct AccountPanel: View {
                 nicknameDialogOpen = true
             } label: {
                 HStack {
-                    Image(systemName: "person.text.rectangle")
-                        .frame(width: 24)
-                        .foregroundStyle(AlarmTalkTheme.primaryDark)
                     Text("닉네임")
                         .fontWeight(.medium)
                         .foregroundStyle(AlarmTalkTheme.text)

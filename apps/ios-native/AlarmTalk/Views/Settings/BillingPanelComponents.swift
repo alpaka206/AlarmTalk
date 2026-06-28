@@ -5,6 +5,7 @@ import UIKit
 // BillingPanel 에서 분리한 하위 카드/시트 컴포넌트. 동작/디자인 변경 없음.
 
 struct CurrentPassSummaryCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     let subscription: BillingSubscription?
     let currentPlan: BillingPlan?
     let nextPlan: BillingPlanSummary?
@@ -12,14 +13,16 @@ struct CurrentPassSummaryCard: View {
     let isSharedMember: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        // Android `CurrentPassSummaryCard`(BillingPanels.kt:607-644): WakerCardShape(22)
+        // + primaryContainer.copy(alpha=0.36) + wakerCardBorder, 패딩 18 / 간격 16.
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("현재 이용권")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.primaryDark)
+                    .foregroundStyle(theme.palette.onPrimaryContainer)
                 Text(planName)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(AlarmTalkTheme.text)
+                    .foregroundStyle(theme.palette.onPrimaryContainer)
             }
 
             HStack(spacing: 8) {
@@ -29,15 +32,17 @@ struct CurrentPassSummaryCard: View {
 
             Text(statusText)
                 .font(.subheadline)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
+                .foregroundStyle(theme.palette.onPrimaryContainer.opacity(0.78))
         }
-        .padding(14)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AlarmTalkTheme.primary.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+                .fill(theme.palette.primaryContainer.opacity(0.36))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(AlarmTalkTheme.primary.opacity(0.18), lineWidth: 1)
+            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+                .stroke(theme.palette.outlineVariant, lineWidth: 1)
         )
     }
 
@@ -97,18 +102,21 @@ struct CurrentPassSummaryCard: View {
 }
 
 struct PassSummaryChip: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     let label: String
 
     var body: some View {
+        // Android `PassSummaryChip`(BillingPanels.kt:646-661): WakerPillShape,
+        // surface@0.7, onSurface 글자, outlineVariant@0.7 보더.
         Text(label)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(AlarmTalkTheme.text)
+            .foregroundStyle(theme.palette.onSurface)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(AlarmTalkTheme.surface.opacity(0.86), in: Capsule())
+            .background(theme.palette.surface.opacity(0.7), in: Capsule())
             .overlay(
                 Capsule()
-                    .stroke(AlarmTalkTheme.outline.opacity(0.8), lineWidth: 1)
+                    .stroke(theme.palette.outlineVariant.opacity(0.7), lineWidth: 1)
             )
     }
 }
@@ -173,6 +181,7 @@ let BillingKrwFormatter: NumberFormatter = {
 /// 결제 플랜 카드 한 장. IAP 가격은 StoreKit `Product.displayPrice` 를 그대로
 /// 사용해 region/통화/세금이 자동 반영된다.
 struct PlanCard: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var subscriptions: SubscriptionManager
     let tier: PlanTier
     let isCurrent: Bool
@@ -183,37 +192,41 @@ struct PlanCard: View {
     let onShareVouchers: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // Android `SubscriptionPlanCard`(BillingPanels.kt:682-826): WakerCardShape(22),
+        // 현재 플랜이면 primaryContainer@0.44 / primary@0.48 보더, 아니면 surface /
+        // outlineVariant 보더. 헤더에 잠금 뱃지를 두지 않고 기능 불릿 목록을 렌더한다.
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(tier.displayLabel)
-                            .font(.headline)
-                            .foregroundStyle(AlarmTalkTheme.text)
-                        if tier != .free {
-                            FeatureLockBadge(size: 20, iconSize: 11, tier: tier)
-                        }
-                    }
-                    Text(Self.description(for: tier))
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                        .multilineTextAlignment(.leading)
-                }
+                Text(tier.displayLabel)
+                    .font(.headline)
+                    .foregroundStyle(theme.palette.onSurface)
                 Spacer()
                 if isCurrent {
-                    Text("이용 중")
+                    Text("현재 이용권")
                         .font(.caption.weight(.semibold))
                         .padding(.vertical, 6)
                         .padding(.horizontal, 10)
-                        .background(Capsule().fill(AlarmTalkTheme.primary.opacity(0.15)))
-                        .foregroundStyle(AlarmTalkTheme.primary)
+                        .background(Capsule().fill(theme.palette.primary))
+                        .foregroundStyle(theme.palette.onPrimary)
+                }
+            }
+
+            Text(Self.description(for: tier))
+                .font(.footnote)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Self.features(for: tier), id: \.self) { feature in
+                    PlanFeatureRow(text: feature)
                 }
             }
 
             if tier == .free {
                 Text("₩0")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AlarmTalkTheme.text)
+                    .foregroundStyle(theme.palette.onSurface)
             } else {
                 purchaseButtons
             }
@@ -240,9 +253,19 @@ struct PlanCard: View {
                 .disabled(isBusy || subscriptions.isPurchasing)
             }
         }
-        .padding(12)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+                .fill(isCurrent ? theme.palette.primaryContainer.opacity(0.44) : theme.palette.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.shapes.vocaCard, style: .continuous)
+                .stroke(
+                    isCurrent ? theme.palette.primary.opacity(0.48) : theme.palette.outlineVariant,
+                    lineWidth: 1
+                )
+        )
     }
 
     /// 월간 가격 버튼 (월간만 판매). Product 가 아직 fetch 되지 않았으면 비활성.
@@ -264,7 +287,7 @@ struct PlanCard: View {
                         // 결제 진행 중 — 스피너로 in-progress 를 분명히 한다.
                         ProgressView()
                             .controlSize(.small)
-                            .tint(.white)
+                            .tint(theme.palette.onPrimary)
                     } else {
                         Text(product.displayPrice)
                             .font(.subheadline.weight(.semibold))
@@ -276,14 +299,14 @@ struct PlanCard: View {
                 .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
-            .tint(AlarmTalkTheme.primary)
-            .foregroundStyle(.white)
+            .tint(theme.palette.primary)
+            .foregroundStyle(theme.palette.onPrimary)
             .disabled(isBusy || subscriptions.isPurchasing || isCurrent)
         } else if subscriptions.isLoadingProducts || !subscriptions.hasAttemptedProductFetch {
             // 아직 첫 fetch 가 끝나지 않음 — "준비중" 대신 로딩 스켈레톤을 보여줘
             // 첫 진입이 망가진 화면처럼 보이지 않게 한다.
             RoundedRectangle(cornerRadius: 6)
-                .fill(AlarmTalkTheme.outline.opacity(0.18))
+                .fill(theme.palette.outline.opacity(0.18))
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .overlay(ProgressView().controlSize(.small))
@@ -313,6 +336,35 @@ struct PlanCard: View {
         case .personal: return "목소리 슬롯 무제한, 광고 제거, 개인 이용권 선물"
         case .couple:   return "두 사람의 알람과 메시지 공유"
         case .family:   return "최대 5인 가족 공유 알람"
+        }
+    }
+
+    /// 플랜별 기능 불릿 목록. Android `SubscriptionPanel`(BillingPanels.kt:91-134)의
+    /// `billing_plan_*_feature_*` 문자열과 1:1.
+    private static func features(for tier: PlanTier) -> [String] {
+        switch tier {
+        case .free:     return ["일반 알람"]
+        case .personal: return ["목소리", "음성 메시지", "개인 이용권 선물"]
+        case .couple:   return ["음성 공유", "메시지", "최대 2명"]
+        case .family:   return ["음성 공유", "메시지", "최대 5명"]
+        }
+    }
+}
+
+/// 플랜 카드 안의 기능 한 줄(점 + 텍스트). Android `PlanFeatureRow`
+/// (BillingPanels.kt:663-680): 6dp primary 점 + bodyMedium onSurfaceVariant 텍스트.
+struct PlanFeatureRow: View {
+    @Environment(\.voiceAlarmTheme) private var theme
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(theme.palette.primary)
+                .frame(width: 6, height: 6)
+            Text(text)
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
         }
     }
 }
@@ -649,27 +701,6 @@ func voucherShareSubtitle(_ voucher: VoucherItem) -> String {
     return "미등록"
 }
 
-/// 캐릭터 패널/기타 통계 화면에서 쓰는 작은 metric 박스.
-struct MetricTile: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            Text(value)
-                .font(.headline)
-                .foregroundStyle(AlarmTalkTheme.text)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AlarmTalkTheme.surfaceVariant)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-}
-
 #if DEBUG
 #Preview("BillingPanel (light)") {
     ScrollView {
@@ -684,14 +715,5 @@ struct MetricTile: View {
     }
     .preferredColorScheme(.dark)
     .voiceAlarmPreviewEnvironment()
-}
-
-#Preview("MetricTile") {
-    HStack(spacing: 10) {
-        MetricTile(title: "연속", value: "7일")
-        MetricTile(title: "최장", value: "30일")
-        MetricTile(title: "오늘 XP", value: "120")
-    }
-    .padding()
 }
 #endif

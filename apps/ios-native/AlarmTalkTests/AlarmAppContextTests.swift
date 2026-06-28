@@ -5,7 +5,6 @@ import XCTest
 final class AlarmAppContextTests: XCTestCase {
 
     private var store: LocalAlarmStore!
-    private var mockQueue: MockCharacterEventQueue!
     private var ctx: AlarmAppContext!
     private var fixedNow: Date!
 
@@ -22,8 +21,7 @@ final class AlarmAppContextTests: XCTestCase {
         // 안전망: load 가 남긴 게 있으면 비운다.
         for r in store.alarms { store.delete(r) }
 
-        mockQueue = MockCharacterEventQueue()
-        ctx = AlarmAppContext(store: store, characterEvents: mockQueue)
+        ctx = AlarmAppContext(store: store)
         fixedNow = Date(timeIntervalSince1970: 1_700_000_000)
         ctx.nowProvider = { [fixedNow] in fixedNow! }
     }
@@ -31,13 +29,12 @@ final class AlarmAppContextTests: XCTestCase {
     override func tearDown() async throws {
         AlarmAppContext.shared = nil
         ctx = nil
-        mockQueue = nil
         store = nil
     }
 
     // MARK: - Stop
 
-    func test_handleAlarmStopped_marksStoreAndQueuesEvent() async throws {
+    func test_handleAlarmStopped_marksStore() async throws {
         let kitID = UUID().uuidString
         let record = makeArmedRecord(alarmKitID: kitID)
         store.upsert(record)
@@ -48,41 +45,13 @@ final class AlarmAppContextTests: XCTestCase {
         let stored = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(stored.state, AlarmRuntimeState.dismissed.rawValue)
         XCTAssertFalse(stored.enabled)
-
-        // event queue: 1회 enqueue.
-        XCTAssertEqual(mockQueue.events.count, 1)
-        let evt = try XCTUnwrap(mockQueue.events.first)
-        XCTAssertEqual(evt.eventType, .alarmCompleted)
-        XCTAssertEqual(evt.context?["alarmId"], record.id)
-        XCTAssertEqual(evt.context?["alarmKitId"], kitID)
-        XCTAssertEqual(evt.context?["playMode"], record.playMode)
     }
 
-    func test_handleAlarmStopped_idempotentNonce_acrossDuplicateCalls() async throws {
-        let kitID = UUID().uuidString
-        let record = makeArmedRecord(alarmKitID: kitID)
-        store.upsert(record)
-
-        await ctx.handleAlarmStopped(alarmKitIDString: kitID)
-        await ctx.handleAlarmStopped(alarmKitIDString: kitID)
-
-        // 호출은 두 번 enqueue 되었지만 nonce 가 동일해야 한다.
-        XCTAssertEqual(mockQueue.events.count, 2)
-        XCTAssertEqual(mockQueue.events[0].clientNonce, mockQueue.events[1].clientNonce)
-        // 실제 dedup 은 CharacterEventStore (B5) 의 책임. 본 테스트는 nonce
-        // 값이 stable 함만 보장한다.
-        let expectedNonce = CharacterEventStore.buildClientNonce(
-            alarmID: record.id,
-            eventType: .alarmCompleted,
-            occurredAtMillis: Int64(fixedNow.timeIntervalSince1970 * 1000)
-        )
-        XCTAssertEqual(mockQueue.events.first?.clientNonce, expectedNonce)
-    }
-
-    func test_handleAlarmStopped_unknownKitID_noQueue() async {
+    func test_handleAlarmStopped_unknownKitID_noMutation() async {
         let unknown = UUID().uuidString
         await ctx.handleAlarmStopped(alarmKitIDString: unknown)
-        XCTAssertEqual(mockQueue.events.count, 0)
+        // 매칭되는 기록이 없으면 no-op — store 는 비어 있어야 한다.
+        XCTAssertTrue(store.alarms.isEmpty)
     }
 
     func test_handleAlarmStopped_repeatingAlarmRemainsArmed() async throws {
@@ -115,21 +84,6 @@ final class AlarmAppContextTests: XCTestCase {
         XCTAssertEqual(updated.snoozeCount, 2)
         let expectedFire = Int64(fixedNow.timeIntervalSince1970 * 1000) + 7 * 60_000
         XCTAssertEqual(updated.fireAtMillis, expectedFire)
-
-        XCTAssertEqual(mockQueue.events.count, 1)
-        let evt = try XCTUnwrap(mockQueue.events.first)
-        XCTAssertEqual(evt.eventType, .alarmSnoozed)
-        XCTAssertEqual(evt.context?["snoozeMinutes"], "7")
-        XCTAssertEqual(evt.context?["snoozeCount"], "2")
-        // nonce 는 호출 전 count 기준 +1.
-        XCTAssertEqual(
-            evt.clientNonce,
-            CharacterEventStore.buildClientNonce(
-                alarmID: record.id,
-                eventType: .alarmSnoozed,
-                occurredAtMillis: Int64(fixedNow.timeIntervalSince1970 * 1000)
-            )
-        )
     }
 
     func test_handleAlarmSnoozed_overridesSnoozeMinutes() async throws {
@@ -142,13 +96,12 @@ final class AlarmAppContextTests: XCTestCase {
         let updated = try XCTUnwrap(store.record(id: record.id))
         let expectedFire = Int64(fixedNow.timeIntervalSince1970 * 1000) + 12 * 60_000
         XCTAssertEqual(updated.fireAtMillis, expectedFire)
-        XCTAssertEqual(mockQueue.events.first?.context?["snoozeMinutes"], "12")
     }
 
-    func test_handleAlarmSnoozed_unknownKitID_noMutation_noQueue() async {
+    func test_handleAlarmSnoozed_unknownKitID_noMutation() async {
         let unknown = UUID().uuidString
         await ctx.handleAlarmSnoozed(alarmKitIDString: unknown, snoozeMinutesOverride: 5)
-        XCTAssertEqual(mockQueue.events.count, 0)
+        XCTAssertTrue(store.alarms.isEmpty)
     }
 
     func test_handleAlarmSnoozed_disabledNoOps() async throws {
@@ -162,7 +115,6 @@ final class AlarmAppContextTests: XCTestCase {
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.snoozeCount, record.snoozeCount)
         XCTAssertEqual(updated.state, record.state)
-        XCTAssertEqual(mockQueue.events.count, 0)
     }
 
     func test_handleAlarmSnoozed_limitReachedNoOps() async throws {
@@ -177,7 +129,6 @@ final class AlarmAppContextTests: XCTestCase {
         let updated = try XCTUnwrap(store.record(id: record.id))
         XCTAssertEqual(updated.snoozeCount, 3)
         XCTAssertEqual(updated.state, record.state)
-        XCTAssertEqual(mockQueue.events.count, 0)
     }
 
     // MARK: - Helpers
@@ -196,32 +147,5 @@ final class AlarmAppContextTests: XCTestCase {
             updatedAtMillis: now,
             alarmKitID: alarmKitID
         )
-    }
-}
-
-// MARK: - Mock
-
-@MainActor
-final class MockCharacterEventQueue: CharacterEventQueueing {
-    struct Captured {
-        let eventType: CharacterEventKind
-        let occurredAtMillis: Int64
-        let clientNonce: String
-        let context: [String: String]?
-    }
-    private(set) var events: [Captured] = []
-
-    func queueAlarmEvent(
-        eventType: CharacterEventKind,
-        occurredAtMillis: Int64,
-        clientNonce: String,
-        context: [String: String]?
-    ) async {
-        events.append(.init(
-            eventType: eventType,
-            occurredAtMillis: occurredAtMillis,
-            clientNonce: clientNonce,
-            context: context
-        ))
     }
 }

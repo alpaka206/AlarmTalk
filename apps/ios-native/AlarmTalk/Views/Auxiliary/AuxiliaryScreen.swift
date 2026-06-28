@@ -7,7 +7,6 @@ import Foundation
 enum AuxiliaryScreen: String, Identifiable {
     case people
     case members
-    case growth
     case billing
 
     var id: String { rawValue }
@@ -16,7 +15,6 @@ enum AuxiliaryScreen: String, Identifiable {
         switch self {
         case .people: return "코드 등록"
         case .members: return "공유 이용권"
-        case .growth: return "캐릭터"
         case .billing: return "이용권"
         }
     }

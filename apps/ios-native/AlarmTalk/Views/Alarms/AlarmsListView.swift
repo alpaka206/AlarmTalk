@@ -5,11 +5,11 @@ import SwiftUI
 /// ContentView 의 `alarmsScreen` / `localAlarmSection` 합본.
 /// 알람 추가 버튼/리스트 항목 액션은 부모(MainTabsView)가 넘긴 콜백을 호출한다.
 struct AlarmsListView: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var remoteSync: RemoteAlarmSyncViewModel
-    @StateObject private var holidayStore = HolidayStore()
     @State private var actionMessage: String?
 
     let openEditor: (AlarmEditorTarget) -> Void
@@ -65,32 +65,20 @@ struct AlarmsListView: View {
         }
     }
 
+    @ViewBuilder
     private var localAlarmSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if store.alarms.isEmpty {
-                EmptyStatePlaceholder(
-                    title: "아직 알람이 없어요.",
-                    subtitle: "새 알람을 만들면 기기에 바로 예약돼요.",
-                    icon: "alarm"
-                )
-                Button {
-                    Task { await openCreateAlarm() }
-                } label: {
-                    Text("새 알람 만들기")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                .foregroundStyle(AlarmTalkTheme.text)
-            } else {
+        if store.alarms.isEmpty {
+            emptyAlarmCard
+        } else {
+            // 각 알람을 독립 카드로 그리고 16pt 간격으로 쌓는다(Android LazyColumn
+            // spacedBy 16 + 카드형 AlarmRow 미러). 바깥을 한 장의 카드로 묶지 않는다.
+            VStack(alignment: .leading, spacing: 16) {
                 ForEach(sortedAlarms) { alarm in
                     AlarmRow(
                         alarm: alarm,
                         onTap: { openEditor(.edit(alarm.id)) },
                         onToggleEnabled: { enabled in
                             Task { await setAlarm(alarm, enabled: enabled) }
-                        },
-                        onCopy: {
-                            Task { await copyAlarm(alarm) }
                         },
                         onDelete: {
                             Task { await deleteAlarm(alarm) }
@@ -99,7 +87,33 @@ struct AlarmsListView: View {
                 }
             }
         }
-        .sectionSurface()
+    }
+
+    /// 빈 상태 카드. Android `EmptyAlarmCard` 미러: 가운데 정렬, 큰 secondary 알람
+    /// 아이콘, titleLarge 굵은 제목(부제 없음), 만들기 버튼을 한 장의 WakerPanelShape(18)
+    /// surface 카드에 담는다.
+    private var emptyAlarmCard: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "alarm")
+                .font(.system(size: 44))
+                .foregroundStyle(theme.palette.secondary)
+            Text("아직 알람이 없어요.")
+                .font(theme.typography.titleLarge)
+                .fontWeight(.bold)
+                .foregroundStyle(theme.palette.onSurface)
+            Button {
+                Task { await openCreateAlarm() }
+            } label: {
+                Text("새 알람 만들기")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(theme.palette.primary)
+            .foregroundStyle(theme.palette.onPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .background(theme.palette.surface)
+        .clipShape(RoundedRectangle(cornerRadius: theme.shapes.medium, style: .continuous))
     }
 
     private var sortedAlarms: [LocalAlarmRecord] {
@@ -155,11 +169,11 @@ struct AlarmsListView: View {
         }
     }
 
-    /// 알람 삭제 실행. 삭제 확인(AlarmRow 의 .alert)을 통과한 뒤에만 호출된다.
+    /// 알람 삭제 실행. 스와이프 삭제 버튼 또는 길게 누르기 메뉴에서 곧바로 호출된다
+    /// (Android 즉시 삭제 미러 — 별도 확인 다이얼로그 없음, 스와이프 제스처가 안전장치).
     ///
     /// 의도적 누락: 서버에 소프트 삭제(휴지통)가 없어 양 플랫폼 모두 실행취소/스낵바를
-    /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제되므로, 되돌릴
-    /// 안전장치는 호출 전 확인 알림 하나뿐이다.
+    /// 제공하지 않는다. 서버 + AlarmKit + 음원 캐시가 즉시·비가역 삭제된다.
     @MainActor
     private func deleteAlarm(_ alarm: LocalAlarmRecord) async {
         await remoteSync.deleteRemote(record: alarm, session: auth.session)
@@ -168,30 +182,6 @@ struct AlarmsListView: View {
             actionMessage = "알람을 삭제했어요."
         } else {
             actionMessage = alarmKit.statusMessage ?? "알람 삭제에 실패했어요."
-        }
-    }
-
-    @MainActor
-    private func copyAlarm(_ alarm: LocalAlarmRecord) async {
-        do {
-            let copied = try store.copyAlarm(
-                id: alarm.id,
-                isHoliday: holidayStore.holidayPredicate()
-            )
-            let scheduled = await alarmKit.schedule(record: copied, store: store)
-            if scheduled {
-                actionMessage = "알람을 10분 뒤로 복사했어요. \(copied.timeString)"
-            } else {
-                // cancel(record:store:) = store.delete + 마지막 참조였던
-                // audioCacheKey 의 캐시 음원까지 정리 (공유 키는 보존).
-                _ = await alarmKit.cancel(record: copied, store: store)
-                actionMessage = alarmKit.statusMessage ?? "알람 복사에 실패했어요."
-            }
-        } catch {
-            actionMessage = userFacingErrorMessage(
-                error,
-                fallback: "알람 복사에 실패했어요."
-            )
         }
     }
 }

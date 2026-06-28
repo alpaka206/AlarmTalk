@@ -68,8 +68,9 @@ struct FamilyAlarmQuietTimeDialog: View {
         .background(AlarmTalkTheme.background)
         .onAppear {
             // initialWindows 가 비어 있어도 최소 한 행을 채워 사용자가 입력을 시작할 수 있게 한다.
+            // Android `FamilyAlarmQuietWindow()` 기본값(평일 09:00~18:30)과 동일하게 시드한다.
             let seeds = initialWindows.isEmpty
-                ? [FamilyAlarmQuietWindow(days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00")]
+                ? [FamilyAlarmQuietWindow(days: [1, 2, 3, 4, 5], start: "09:00", end: "18:30")]
                 : initialWindows
             drafts = seeds.map(QuietWindowDraft.init(window:))
         }

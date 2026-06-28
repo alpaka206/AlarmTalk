@@ -18,12 +18,18 @@ struct PreparedAlarmTalk {
 /// 본 상수는 ViewModel 과 View 가 동일한 기준으로 다이얼로그/에러 메시지를 만들기 위해
 /// 존재한다.
 enum VoiceProfileLimits {
-    /// 사용자당 최대 목소리 프로필 수.
-    static let maxProfiles = 5
+    /// 사용자당 최대 목소리 프로필 수. Android `MAX_VOICE_PROFILES`(=1) 및
+    /// 백엔드 voice-profile.ts `MAX_VOICE_PROFILES`(=1) 와 동일해야 한다.
+    /// (5 였을 때 UI 는 5칸을 보여줬으나 서버가 2번째부터 거부해 불일치였음.)
+    static let maxProfiles = 1
     /// 클로닝에 허용되는 최소 음성 길이 (ms).
     static let minDurationMs = 60_000
     /// 클로닝에 허용되는 최대 음성 길이 (ms).
     static let maxDurationMs = 120_000
+    /// 길이 측정 반올림을 흡수하는 상단 허용 오차 (ms). Android
+    /// `AlarmAudioStore.MAX_DURATION_TOLERANCE_MILLIS`(=5_000) 와 동일 — 120s + 5s 까지
+    /// 받아들여 120.x~125s 파일/녹음이 측정 오차로 거부되지 않게 한다.
+    static let maxDurationToleranceMs = 5_000
 }
 
 @MainActor
@@ -121,7 +127,7 @@ final class VoiceStudioViewModel: ObservableObject {
     var canUploadRecording: Bool {
         recorder.latestRecordingURL != nil
             && (recorder.latestDurationMs ?? 0) >= VoiceProfileLimits.minDurationMs
-            && (recorder.latestDurationMs ?? 0) <= VoiceProfileLimits.maxDurationMs
+            && (recorder.latestDurationMs ?? 0) <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs
     }
 
     var hasWeatherInfo: Bool {
@@ -316,7 +322,9 @@ final class VoiceStudioViewModel: ObservableObject {
         session: AuthSession?,
         isShared: Bool = false,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        voiceGender: String = "neutral",
+        speechFormality: String = "auto"
     ) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -335,7 +343,7 @@ final class VoiceStudioViewModel: ObservableObject {
             statusMessage = "먼저 목소리를 녹음해 주세요."
             return
         }
-        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs else {
+        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
                 ? "1분 이상 녹음해 주세요."
                 : "2분 이하 음성으로 등록할 수 있어요."
@@ -353,7 +361,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 durationMs: durationMs,
                 token: token,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
+                listenerTitle: fields.listenerTitle,
+                voiceGender: voiceGender,
+                speechFormality: speechFormality
             )
             selectedProfileID = profile.id
             statusMessage = "목소리 학습을 등록했어요."
@@ -371,7 +381,9 @@ final class VoiceStudioViewModel: ObservableObject {
         isShared: Bool,
         session: AuthSession?,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        voiceGender: String = "neutral",
+        speechFormality: String = "auto"
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -396,7 +408,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 token: token,
                 noiseRemoval: true,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
+                listenerTitle: fields.listenerTitle,
+                voiceGender: voiceGender,
+                speechFormality: speechFormality
             )
             selectedProfileID = profile.id
             statusMessage = "배경음 제거 학습이 완료됐어요."
@@ -418,7 +432,9 @@ final class VoiceStudioViewModel: ObservableObject {
         noiseRemoval: Bool = false,
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
-        listenerTitle: String? = nil
+        listenerTitle: String? = nil,
+        voiceGender: String = "neutral",
+        speechFormality: String = "auto"
     ) async -> VoiceProfile? {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -431,7 +447,7 @@ final class VoiceStudioViewModel: ObservableObject {
         ) else {
             return nil
         }
-        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs else {
+        guard durationMs >= VoiceProfileLimits.minDurationMs && durationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs else {
             statusMessage = durationMs < VoiceProfileLimits.minDurationMs
                 ? "1분 이상 준비해 주세요."
                 : "2분 이하 음성으로 등록할 수 있어요."
@@ -450,7 +466,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 noiseRemoval: noiseRemoval,
                 uploadFileName: uploadFileName,
                 relationshipLabel: fields.relationshipLabel,
-                listenerTitle: fields.listenerTitle
+                listenerTitle: fields.listenerTitle,
+                voiceGender: voiceGender,
+                speechFormality: speechFormality
             )
             selectedProfileID = profile.id
             statusMessage = noiseRemoval ? "배경음 제거 학습이 완료됐어요." : "목소리 학습을 등록했어요."

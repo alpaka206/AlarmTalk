@@ -1,20 +1,19 @@
-﻿import AuthenticationServices
 import SwiftUI
 
 /// 비로그인 사용자가 처음 만나는 진입 화면.
 ///
-/// Android `apps/android-native/.../ui/auth/LandingScreen.kt:60-105` 를 1:1 포팅했다.
+/// Android `apps/android-native/.../ui/auth/LandingScreen.kt:90-154` 를 1:1 포팅했다.
 /// 구성 요소
-///   1. AlarmTalk 브랜드 헤더 (로고 + 슬로건)
+///   1. AlarmTalk 브랜드 표식(단일 로고 마크)
 ///   2. 큰 카피 ("좋아하는 목소리로\n깨어나는 알람")
 ///   3. 알람 미리듣기 카드 — 32-bar 파형 + 재생 버튼. 번들 mp3 가 없을 때는
 ///      시각 시뮬레이션(5초 동안 progress 가 0→1) 으로 동작한다.
-///   4. 하단 인증 패널 — Apple 로그인 + 이메일 로그인 + 회원가입 진입
+///   4. 하단 진입 버튼 2개 — [로그인] filled / [회원가입] outlined.
 ///
-/// Android 와 다른 점: Google 자리에 Apple 로그인이 들어간다. NavigationStack 의
-/// destination 으로 `LoginView` 를 push 한다.
+/// 소셜(Apple) 로그인은 이 화면에 두지 않고 로그인 화면 안에만 노출한다(Android 가
+/// Google 을 AuthScreen 안에만 두는 것과 동일). NavigationStack 의 destination 으로
+/// `LoginView` 를 push 한다.
 struct LandingView: View {
-    @EnvironmentObject private var auth: AuthViewModel
     @Environment(\.voiceAlarmTheme) private var theme
 
     @State private var navigateToLogin: LoginMode?
@@ -24,33 +23,52 @@ struct LandingView: View {
             theme.palette.background
                 .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    WakerBrandHeader()
-                        .padding(.top, 22)
+            VStack(alignment: .leading, spacing: 0) {
+                Color.clear.frame(height: 16)
 
-                    Color.clear.frame(height: 48)
+                WakerBrandHeader()
 
-                    VStack(alignment: .leading, spacing: 34) {
-                        Text("좋아하는 목소리로\n깨어나는 알람")
-                            .font(theme.typography.displaySmall)
-                            .foregroundStyle(theme.palette.onBackground)
-                            .multilineTextAlignment(.leading)
+                Color.clear.frame(height: 18)
 
-                        AlarmIdentityPreviewCard()
-                    }
+                Text("좋아하는 목소리로\n깨어나는 알람")
+                    .font(theme.typography.displaySmall)
+                    .foregroundStyle(theme.palette.onBackground)
+                    .multilineTextAlignment(.leading)
 
-                    Spacer().frame(height: 32)
+                // Android 의 weight(1) 스페이서 — 미리듣기 카드를 가운데로, 버튼을 아래로.
+                Spacer(minLength: 24)
 
-                    LandingAuthPanel(
-                        busy: auth.isBusy,
-                        onGoToLogin: { navigateToLogin = .login },
-                        onGoToRegister: { navigateToLogin = .register }
-                    )
-                    .padding(.bottom, 22)
+                AlarmIdentityPreviewCard()
+
+                Spacer(minLength: 24)
+
+                Button {
+                    navigateToLogin = .login
+                } label: {
+                    Text("로그인")
+                        .font(theme.typography.titleMedium)
+                        .frame(maxWidth: .infinity, minHeight: 56)
                 }
-                .padding(.horizontal, 22)
+                .buttonStyle(.borderedProminent)
+                .tint(theme.palette.primary)
+                .foregroundStyle(theme.palette.onPrimary)
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+
+                Color.clear.frame(height: 10)
+
+                Button {
+                    navigateToLogin = .register
+                } label: {
+                    Text("회원가입")
+                        .font(theme.typography.titleMedium)
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                }
+                .buttonStyle(.bordered)
+                .foregroundStyle(theme.palette.onSurface)
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
             }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 22)
         }
         .navigationBarBackButtonHidden(true)
         .navigationDestination(item: $navigateToLogin) { mode in
@@ -59,42 +77,32 @@ struct LandingView: View {
     }
 }
 
-/// 상단 좌측 브랜드 표식. Android `WakerBrandHeader:108-136` 1:1 대응.
+/// 상단 좌측 브랜드 표식 — 단일 로고 마크. Android `WakerBrandHeader:156-166` 의
+/// 48dp 로고 이미지(WakerTileShape clip)에 대응한다. iOS 에는 별도 로고 에셋이 없어
+/// 그라데이션 브랜드 박스 + 파형 심볼로 동일한 단일 마크를 그린다.
 private struct WakerBrandHeader: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [theme.palette.primary, theme.palette.secondary],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [theme.palette.primary, theme.palette.secondary],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-                .overlay(
-                    Image(systemName: "waveform")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(theme.palette.onPrimary)
-                )
-                .frame(width: 42, height: 42)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text("AlarmTalk")
-                    .font(theme.typography.titleLarge)
-                    .foregroundStyle(theme.palette.onBackground)
-                Text("Voice alarm")
-                    .font(theme.typography.labelMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-            }
-
-            Spacer()
-        }
+            )
+            .overlay(
+                Image(systemName: "waveform")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(theme.palette.onPrimary)
+            )
+            .frame(width: 48, height: 48)
+            .accessibilityLabel("AlarmTalk")
     }
 }
 
-/// 알람 미리듣기 카드 — Android `AlarmIdentityPreview:138-232` 와 동등.
+/// 알람 미리듣기 카드 — Android `AlarmIdentityPreview:168-275` 와 동등.
 private struct AlarmIdentityPreviewCard: View {
     @Environment(\.voiceAlarmTheme) private var theme
     @StateObject private var preview = LandingPreviewController()
@@ -145,7 +153,7 @@ private struct AlarmIdentityPreviewCard: View {
 }
 
 /// 32-bar 파형. 진행률에 따라 왼쪽부터 primary 색으로 채워진다.
-/// Android `LandingPreviewWaveform:234-267` 의 levels 배열을 그대로 가져왔다.
+/// Android `LandingPreviewWaveform:277-311` 의 levels 배열을 그대로 가져왔다.
 private struct LandingWaveformBar: View {
     @Environment(\.voiceAlarmTheme) private var theme
     let progress: Double
@@ -264,99 +272,6 @@ private final class LandingPreviewController: ObservableObject {
             return false
         }
         return true
-    }
-}
-
-/// 하단 인증 패널 — Apple 로그인 + 이메일 로그인 + 회원가입.
-private struct LandingAuthPanel: View {
-    @EnvironmentObject private var auth: AuthViewModel
-    @Environment(\.voiceAlarmTheme) private var theme
-    let busy: Bool
-    let onGoToLogin: () -> Void
-    let onGoToRegister: () -> Void
-
-    @State private var pendingRawNonce: String?
-
-    var body: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("시작하기")
-                    .font(theme.typography.titleMedium)
-                    .foregroundStyle(theme.palette.onSurface)
-                // Android `LandingScreen.kt:340` 과 동일한 문구.
-                Text("로그인하면 목소리 알람을 만들 수 있어요.")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .multilineTextAlignment(.leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 18)
-            .padding(.horizontal, 18)
-
-            VStack(spacing: 10) {
-                SignInWithAppleButton(.signIn) { request in
-                    let rawNonce = NonceGenerator.makeNonce()
-                    pendingRawNonce = rawNonce
-                    request.requestedScopes = [.fullName, .email]
-                    request.nonce = NonceGenerator.sha256(rawNonce)
-                } onCompletion: { result in
-                    let raw = pendingRawNonce
-                    pendingRawNonce = nil
-                    switch result {
-                    case .success(let authorization):
-                        Task { await auth.handleAppleAuthorization(authorization, rawNonce: raw) }
-                    case .failure(let error):
-                        Task { @MainActor in auth.handleAppleAuthorizationFailure(error) }
-                    }
-                }
-                .signInWithAppleButtonStyle(.black)
-                .frame(height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-                .disabled(busy)
-
-                Button(action: onGoToLogin) {
-                    Text("이메일로 로그인")
-                        .font(theme.typography.labelLarge)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.palette.primary)
-                .foregroundStyle(theme.palette.onPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
-                .disabled(busy)
-            }
-            .padding(.horizontal, 18)
-
-            Rectangle()
-                .fill(theme.palette.outlineVariant)
-                .frame(height: 1)
-
-            HStack {
-                Text("처음 사용하시나요?")
-                    .font(theme.typography.bodyMedium)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                Spacer()
-                Button(action: onGoToRegister) {
-                    Text("계정 만들기")
-                        .font(theme.typography.labelLarge)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 18)
-                }
-                .buttonStyle(.bordered)
-                .foregroundStyle(theme.palette.onSurface)
-                .disabled(busy)
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 18)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(theme.palette.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .stroke(theme.palette.outlineVariant, lineWidth: 1)
-        )
     }
 }
 

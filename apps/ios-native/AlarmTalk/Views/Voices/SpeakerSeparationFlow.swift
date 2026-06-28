@@ -245,21 +245,17 @@ struct SpeakerSeparationFlow: View {
                 .disabled(selectedFileURL == nil)
             }
 
-            if durationMs > VoiceProfileLimits.maxDurationMs {
+            if durationMs >= VoiceProfileLimits.minDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(cropEndMs))")
+                    Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))")
                         .font(.caption.weight(.semibold))
-                    Slider(
-                        value: Binding(
-                            get: { Double(cropStartMs) / 1000.0 },
-                            set: { seconds in
-                                let maxStart = max(0, durationMs - VoiceProfileLimits.maxDurationMs)
-                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
-                                cropEndMs = min(durationMs, cropStartMs + VoiceProfileLimits.maxDurationMs)
-                            }
-                        ),
-                        in: 0...(Double(max(0, durationMs - VoiceProfileLimits.maxDurationMs)) / 1000.0),
-                        step: 1
+                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 60~120초 구간을 직접 고른다.
+                    AudioCropRangeSlider(
+                        durationMs: durationMs,
+                        minDurationMs: VoiceProfileLimits.minDurationMs,
+                        maxDurationMs: VoiceProfileLimits.maxDurationMs,
+                        cropStartMs: $cropStartMs,
+                        cropEndMs: $cropEndMs
                     )
                 }
             }

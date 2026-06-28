@@ -90,7 +90,8 @@ enum KoreanLunarHolidayEngine {
     // MARK: 캐시 (per-gregorian-year). 공유 정적 상태이므로 lock 으로 보호.
 
     private struct YearHolidaySets {
-        /// 음력 공휴일(설날 3일·추석 3일·부처님) epochDay 집합
+        /// 음력 공휴일 멤버십(설날·추석·부처님 "법정 기준일" 앵커 1일씩) epochDay 집합.
+        /// 연휴(±1)는 의도적으로 시드/서버가 담당한다 — Android LunarHolidayCalendar 와 1:1.
         let lunar: Set<Int>
         /// 대체공휴일 epochDay 집합
         let substitute: Set<Int>
@@ -113,20 +114,30 @@ enum KoreanLunarHolidayEngine {
     // MARK: 공개 멤버십 테스트
 
     /// 설날·추석·부처님오신날(계산) 멤버십. countryCode 는 KR 전제(호출부에서 보장).
+    /// (Date 오버로드: Asia/Seoul 고정 시계로 민용일을 버킷팅 — 타임존 독립. 엔진 자체 테스트·고정 시계 경로용.)
     static func isLunarHoliday(_ date: Date) -> Bool {
-        let day = epochDay(of: date)
-        let y = seoulGregorian.component(.year, from: date)
-        // 설날/추석 연휴는 연말·연초 양력 경계를 넘을 수 있으므로 인접 연도까지 본다.
-        return sets(forYear: y).lunar.contains(day)
+        isLunarHoliday(epochDay: epochDay(of: date),
+                       year: seoulGregorian.component(.year, from: date))
+    }
+
+    /// 설날·추석·부처님 멤버십(civil epochDay + civil 연도 직접 입력).
+    /// 질의 쪽에서 디바이스/스케줄링 존으로 환산한 민용일을 그대로 넘길 때 사용한다(Android LocalDate 동등).
+    /// 음력 앵커는 해당 양력 연도 안에 떨어지므로 y-1/y/y+1 검사는 연 경계 보호용 잉여이다(오발화 없음).
+    static func isLunarHoliday(epochDay day: Int, year y: Int) -> Bool {
+        sets(forYear: y).lunar.contains(day)
             || sets(forYear: y - 1).lunar.contains(day)
             || sets(forYear: y + 1).lunar.contains(day)
     }
 
     /// 대체공휴일 멤버십. 제3조 규정대로 계산된 집합 기준.
     static func isSubstituteHoliday(_ date: Date) -> Bool {
-        let day = epochDay(of: date)
-        let y = seoulGregorian.component(.year, from: date)
-        return sets(forYear: y).substitute.contains(day)
+        isSubstituteHoliday(epochDay: epochDay(of: date),
+                            year: seoulGregorian.component(.year, from: date))
+    }
+
+    /// 대체공휴일 멤버십(civil epochDay + civil 연도 직접 입력).
+    static func isSubstituteHoliday(epochDay day: Int, year y: Int) -> Bool {
+        sets(forYear: y).substitute.contains(day)
             || sets(forYear: y - 1).substitute.contains(day)
             || sets(forYear: y + 1).substitute.contains(day)
     }
@@ -137,26 +148,19 @@ enum KoreanLunarHolidayEngine {
         // 1) 음력 앵커(설날/추석/부처님)의 양력 epochDay 도출.
         let anchors = lunarAnchorEpochDays(forYear: year)
 
-        // 2) 음력 공휴일 집합: 설날 3일 [-1,0,+1], 추석 3일 [-1,0,+1], 부처님 1일.
+        // 2) 음력 공휴일 멤버십 집합: 설날·추석·부처님오신날의 "법정 기준일"(앵커)만 담는다.
+        //    연휴(±1)는 의도적으로 시드/서버가 담당한다 — Android LunarHolidayCalendar.koreanLunarHolidays 와 1:1.
+        //    (시드 미커버 연도 2025·2030+ 에서 설날/추석 전날·다음날을 멤버십으로 잡지 않아야 Android 와 동일하게
+        //     알람 skip 이 앵커 1일에만 적용된다.)
         var lunar = Set<Int>()
-        if let seollal = anchors.seollal {
-            lunar.insert(seollal - 1)
-            lunar.insert(seollal)
-            lunar.insert(seollal + 1)
-        }
-        if let chuseok = anchors.chuseok {
-            lunar.insert(chuseok - 1)
-            lunar.insert(chuseok)
-            lunar.insert(chuseok + 1)
-        }
-        if let buddha = anchors.buddha {
-            lunar.insert(buddha)
-        }
+        if let seollal = anchors.seollal { lunar.insert(seollal) }
+        if let chuseok = anchors.chuseok { lunar.insert(chuseok) }
+        if let buddha = anchors.buddha { lunar.insert(buddha) }
 
-        // 3) 대체공휴일 계산: 기본 공휴일(고정양력 + 음력, 대체 제외) 집합에 제3조 적용.
+        // 3) 대체공휴일 계산: 기본 공휴일(고정양력 + 음력 3일 연휴, 대체 제외) 집합에 제3조 적용.
+        //    대체 계산은 연휴 블록(±1)을 단위로 보므로, 멤버십 집합(앵커만)과 무관하게 앵커에서 블록을 재구성한다.
         let substitute = computeSubstituteDays(
             forYear: year,
-            lunar: lunar,
             seollalDay1: anchors.seollal,
             chuseokDay15: anchors.chuseok,
             buddhaDay: anchors.buddha
@@ -234,15 +238,17 @@ enum KoreanLunarHolidayEngine {
     /// - 배치: 원래 공휴일 블록 뒤의 "공휴일도 주말도 아닌 첫 날" 로 전진 cascade.
     private static func computeSubstituteDays(
         forYear year: Int,
-        lunar: Set<Int>,
         seollalDay1: Int?,
         chuseokDay15: Int?,
         buddhaDay: Int?
     ) -> Set<Int> {
-        // 1) 기본 공휴일(대체 제외) 집합 = 고정양력 + 음력. 인접 연도의 설날/추석 꼬리도 포함해
-        //    겹침/배치가 연 경계에서 끊기지 않도록 한다.
+        // 1) 기본 공휴일(대체 제외) 집합 = 고정양력 + 음력 3일 연휴. 멤버십 집합(lunar)은 앵커만 담으므로,
+        //    여기서는 배치 cascade/겹침 정확도를 위해 설날·추석 3일 블록(±1)을 앵커에서 직접 재구성한다.
+        //    인접 연도의 설날/추석 꼬리도 포함해 겹침/배치가 연 경계에서 끊기지 않도록 한다.
         var basePublic = Set<Int>()
-        basePublic.formUnion(lunar)
+        if let s = seollalDay1 { basePublic.formUnion([s - 1, s, s + 1]) }
+        if let c = chuseokDay15 { basePublic.formUnion([c - 1, c, c + 1]) }
+        if let b = buddhaDay { basePublic.insert(b) }
         for (m, d) in fixedSolarMonthDays {
             basePublic.insert(epochDay(year: year, month: m, day: d))
         }

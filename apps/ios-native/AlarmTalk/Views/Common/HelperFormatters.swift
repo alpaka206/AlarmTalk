@@ -4,7 +4,7 @@ import SwiftUI
 /// 화면 분해 과정에서 떠다니던 작은 format/label 헬퍼를 한 곳으로 모았다.
 ///
 /// 모두 순수 함수라 어디서든 호출할 수 있고, 분리된 화면 파일들이
-/// 동일한 표기 규칙(요일 라벨/캐릭터 단계 라벨/시간 인사말)을 공유한다.
+/// 동일한 표기 규칙(요일 라벨/시간 인사말)을 공유한다.
 enum HelperFormatters {
     /// 알람 화면 weekday picker 에 쓰는 (Calendar.weekday, 한글 1글자) 쌍.
     /// `Calendar.weekday` 는 1=일요일, 2=월요일 … 7=토요일.
@@ -22,31 +22,6 @@ enum HelperFormatters {
     static func audioTimeLabel(_ millis: Int) -> String {
         let seconds = max(0, millis / 1000)
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-
-    /// Android `stageEmoji` 와 같은 캐릭터 단계 이모지. nil/unknown 은 씨앗.
-    static func characterStageEmoji(_ stage: String?) -> String {
-        switch stage {
-        case "sprout": return "🌱"
-        case "tree": return "🌳"
-        case "bloom", "flower": return "🌸"
-        default: return "🌰"
-        }
-    }
-
-    /// Android `stageLabel` 과 같은 캐릭터 단계 이름. nil/unknown 은 씨앗.
-    static func characterStageName(_ stage: String?) -> String {
-        switch stage {
-        case "sprout": return "새싹"
-        case "tree": return "나무"
-        case "bloom", "flower": return "꽃"
-        default: return "씨앗"
-        }
-    }
-
-    /// 이전 화면 분해 코드 호환용. 새 화면은 `characterStageEmoji` 를 직접 쓴다.
-    static func characterStageLabel(_ stage: String?) -> String {
-        characterStageEmoji(stage)
     }
 
     /// 홈 화면 인사말. 시각대별로 두 줄로 갈라진 문구를 돌려준다.

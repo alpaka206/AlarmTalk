@@ -28,61 +28,58 @@ struct HolidayUpcomingList: View {
 
     @Environment(\.voiceAlarmTheme) private var theme
 
+    /// from(오늘) 이후 가장 가까운 공휴일 최대 5개. Android DAO getUpcoming 과 동일하게 상한 없이 LIMIT 5.
     private var upcoming: [HolidayEntity] {
-        let now = Date()
-        let end = now.addingTimeInterval(370 * 86_400)
-        return holidayStore
-            .holidaysIn(range: now...end, countryCode: countryCode)
-            .sorted { $0.epochDay < $1.epochDay }
-            .prefix(5)
-            .map { $0 }
+        holidayStore.upcomingHolidays(countryCode: countryCode)
     }
 
     var body: some View {
         let items = upcoming
-        if items.isEmpty {
-            // KR 은 온디바이스라 비어 있을 일이 거의 없다. 비-KR 은 sync 대기 placeholder.
-            Group {
-                if countryCode.uppercased() != "KR" {
-                    Text("공휴일 정보를 불러오는 중…")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .task(id: countryCode) {
-                            await holidayStore.ensureSynced(countryCode: countryCode)
-                        }
-                } else {
-                    Text("다가오는 공휴일이 없어요.")
-                        .font(theme.typography.bodySmall)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: theme.spacing.xs) {
+        // Android HolidayUpcomingList: 섹션 제목은 빈/콜드캐시 상태 포함 모든 상태에서 항상 노출.
+        // Column verticalArrangement spacedBy(6.dp) 동등 (전용 토큰 없어 6 리터럴).
+        VStack(alignment: .leading, spacing: 6) {
+            Text("다가오는 공휴일")
+                .font(theme.typography.labelLarge)
+                .fontWeight(.semibold)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+
+            if items.isEmpty {
+                // Android 와 동일하게 국가 무관 단일 콜드캐시 문구. 비-KR 은 한 번 서버 동기화를 건다
+                // (KR 은 ensureSynced 가 즉시 return 하는 no-op).
+                Text("불러오는 중…")
+                    .font(theme.typography.bodySmall)
+                    .foregroundStyle(theme.palette.onSurfaceVariant)
+                    .task(id: countryCode) {
+                        await holidayStore.ensureSynced(countryCode: countryCode)
+                    }
+            } else {
                 ForEach(items, id: \.epochDay) { item in
+                    // Android HolidayRow: Row spacedBy(12.dp), 날짜는 고유 너비, 이름은 1줄 ellipsis.
                     HStack(spacing: theme.spacing.sm) {
                         Text(Self.shortDateLabel(epochDay: item.epochDay))
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurfaceVariant)
-                            .monospacedDigit()
-                            .frame(width: 96, alignment: .leading)
                         Text(item.name)
                             .font(theme.typography.bodySmall)
                             .foregroundStyle(theme.palette.onSurface)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// epochDay → 로컬라이즈된 짧은 날짜 (예: "2026. 1. 1. (목)").
+    /// epochDay → "M.d (E)" (예: "9.25 (금)" / "9.25 (Fri)"). Android HolidayDateFormatter 와 동일 패턴.
     private static func shortDateLabel(epochDay: Int) -> String {
         let date = KoreanLunarHolidayEngine.dateOf(epochDay: epochDay)
         let fmt = DateFormatter()
         fmt.calendar = KoreanLunarHolidayEngine.seoulGregorian
         fmt.timeZone = TimeZone(identifier: "Asia/Seoul") ?? .current
         fmt.locale = Locale.current
-        fmt.setLocalizedDateFormatFromTemplate("EEEMMMd")
+        fmt.dateFormat = "M.d (E)"
         return fmt.string(from: date)
     }
 }

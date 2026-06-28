@@ -23,14 +23,6 @@ struct AlarmTalkApp: App {
     /// 백엔드 최소지원버전 게이팅. 로그인 여부와 무관하게 앱 진입을 막을 수 있어
     /// 앱 lifetime 동안 떠 있어야 한다. Android `MainViewModel.checkAppVersion()`.
     @StateObject private var versionGate = AppVersionGate()
-    /// Phase 2-B5: 알람 dismiss/snooze 시 자동 emit 되는 캐릭터 XP 이벤트 큐.
-    /// tokenProvider 는 Keychain 직읽기로 둔다 — 클로저가 self.auth 를 capture
-    /// 할 수 없는 init 단계라 안전한 source-of-truth 가 Keychain 이다. flush
-    /// 호출은 .task(id: auth.session?.token) 에서 안전한 시점에 트리거된다.
-    @StateObject private var characterEvents = CharacterEventStore(
-        api: AlarmTalkAPI.shared,
-        tokenProvider: { KeychainStore.readSession()?.token }
-    )
 
     /// Phase 4-D1: Apple StoreKit2 IAP 관리자. 앱 lifetime 내내 떠 있어야
     /// `Transaction.updates` listener 가 가족 공유 / 자동 갱신 / 환불 등 외부
@@ -55,7 +47,6 @@ struct AlarmTalkApp: App {
                     .environmentObject(remoteSync)
                     .environmentObject(voiceStudio)
                     .environmentObject(socialFeatures)
-                    .environmentObject(characterEvents)
                     .environmentObject(subscriptions)
                     .environmentObject(versionGate)
                     // Phase 2: 앱 전역 단일 공휴일 국가 설정을 SettingsView 등이 공유.
@@ -78,13 +69,8 @@ struct AlarmTalkApp: App {
                     .task {
                         // AlarmAppContext: LiveActivity Intent 가 perform() 시점에
                         // 정적으로 참조한다. Scene 초기화 직후 1회만 설정.
-                        // Phase 2-B5: characterEvents 를 실제 store 로 주입해 dismiss/
-                        // snooze 시 자동 큐잉되게 한다.
                         if AlarmAppContext.shared == nil {
-                            let ctx = AlarmAppContext(
-                                store: alarmStore,
-                                characterEvents: characterEvents
-                            )
+                            let ctx = AlarmAppContext(store: alarmStore)
                             // PR3: dismiss-time 공휴일 recompute + `.fixed` one-shot 재무장 훅.
                             // ViewModel 을 강하게 잡지 않도록 weak capture (weak-singleton 보존).
                             ctx.holidayPredicate = holidayStore.holidayPredicate()
@@ -111,7 +97,6 @@ struct AlarmTalkApp: App {
                                 )
                             }
                         }
-                        await characterEvents.loadFromDisk()
                         await auth.restoreSession()
                         await alarmKit.startObserving(store: alarmStore)
 
@@ -151,8 +136,6 @@ struct AlarmTalkApp: App {
                         remoteSync.configure(store: alarmStore, alarmKit: alarmKit, auth: auth)
                         await remoteSync.runFullSync()
                         await refreshDynamicVoicesIfNeeded()
-                        // Phase 2-B5: 로그인 전에 쌓여 있던 PENDING/FAILED 캐릭터 이벤트를 비운다.
-                        await characterEvents.flushPending()
                         BackgroundSyncTask.scheduleNext()
                     }
                     .task(id: auth.session?.user.id) {
@@ -197,9 +180,6 @@ struct AlarmTalkApp: App {
                     await remoteSync.runFullSync()
                     await refreshDynamicVoicesIfNeeded()
                 }
-                // Phase 2-B5: 백그라운드에서 발생했을 수 있는 dismiss/snooze 이벤트의
-                // pending queue 를 비운다. 로그인 안 되어 있어도 호출은 안전 (no-op).
-                Task { await characterEvents.flushPending() }
                 // Phase 4-D1: 백엔드 entitlement 동기화가 직전에 실패했을 수 있다.
                 // foreground 진입 시 currentEntitlements 의 모든 verified 트랜잭션을
                 // 재전송해 catch-up. 백엔드 라우트 미배포 환경에서도 graceful 하다.
