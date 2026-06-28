@@ -17,7 +17,6 @@ final class SocialFeatureViewModel: ObservableObject {
     @Published var familyGroup: FamilyGroupCurrentResponse?
     @Published var familyVoices: [FamilyVoiceProfile] = []
     @Published var receivedNotes: [ReceivedNote] = []
-    @Published var character: CharacterResponse?
     @Published var subscription: BillingSubscriptionResponse?
     @Published var vouchers: [VoucherItem] = []
     @Published var selectedReceiverID: String?
@@ -72,7 +71,6 @@ final class SocialFeatureViewModel: ObservableObject {
         familyGroup = nil
         familyVoices = []
         receivedNotes = []
-        character = nil
         subscription = nil
         vouchers = []
         selectedReceiverID = nil
@@ -145,18 +143,6 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         do {
-            let nextCharacter = try await api.getCharacter(token: token)
-            guard activeUserID == userID else { return }
-            character = nextCharacter
-        } catch {
-            messages.append(Self.scopedRefreshErrorMessage(
-                label: "캐릭터",
-                error: error,
-                fallback: "성장 정보를 불러오지 못했어요"
-            ))
-        }
-
-        do {
             async let nextSubscription = api.getSubscription(token: token)
             async let nextVouchers = api.listVouchers(token: token)
             let resolvedSubscription = try await nextSubscription
@@ -174,7 +160,8 @@ final class SocialFeatureViewModel: ObservableObject {
         }
 
         guard activeUserID == userID else { return }
-        statusMessage = messages.isEmpty ? "소셜/이용권 정보를 불러왔어요." : messages.joined(separator: "\n")
+        // Android 의 social/notes refresh 는 실패 시에만 메시지를 노출한다(스낵바). 성공 토스트는 없음.
+        statusMessage = messages.isEmpty ? nil : messages.joined(separator: "\n")
     }
 
     func refreshNotesSilently(session: AuthSession?) async {
@@ -367,10 +354,6 @@ final class SocialFeatureViewModel: ObservableObject {
             !unavailableAudioNoteIDs.contains(note.id)
     }
 
-    func shouldRevealText(_ note: ReceivedNote) -> Bool {
-        !hasPlayableAudio(note) || note.readAt != nil || revealedNoteIDs.contains(note.id)
-    }
-
     func playNoteAudio(_ note: ReceivedNote, session: AuthSession?) async {
         guard let token = session?.token else {
             statusMessage = "로그인이 필요해요."
@@ -446,6 +429,35 @@ final class SocialFeatureViewModel: ObservableObject {
             await refreshAllAfterMutation(
                 session: session,
                 successMessage: "\(planLabel) 공유 코드를 준비했어요."
+            )
+        } catch {
+            let planLabel = Self.shareCodePlanLabel(subscription)
+            statusMessage = Self.billingErrorMessage(
+                error,
+                fallback: "\(planLabel) 공유 코드를 불러오지 못했어요"
+            )
+        }
+    }
+
+    /// 유출/소진된 공유 코드를 무효화(expired)하고 새 코드를 발급. Android
+    /// `MainViewModelGrowthBillingActions.regenerateFamilyShareCode` 와 동등.
+    /// 소유자 전용 보안 액션으로 MemberManagementView 에서 확인 후 호출한다.
+    func regenerateFamilyShareCode(session: AuthSession?) async {
+        guard let token = session?.token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let planLabel = Self.shareCodePlanLabel(subscription)
+            let voucher = try await api.regenerateFamilyShareCode(token: token)
+            vouchers = Self.upsertingVoucher(voucher, into: vouchers)
+            await refreshAllAfterMutation(
+                session: session,
+                successMessage: "\(planLabel) 공유 코드를 새로 발급했어요. 기존 코드는 더 이상 쓸 수 없어요."
             )
         } catch {
             let planLabel = Self.shareCodePlanLabel(subscription)
@@ -820,25 +832,5 @@ final class SocialFeatureViewModel: ObservableObject {
         }
     }
 
-    func grantWakeupXP(session: AuthSession?) async {
-        guard let token = session?.token else { return }
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        do {
-            let response = try await api.grantCharacterXP(event: "wake_success", token: token)
-            character = CharacterResponse(
-                character: response.character,
-                progress: response.progress,
-                streak: response.streak,
-                stats: response.stats,
-                achievements: response.achievements
-            )
-            statusMessage = "캐릭터 경험치를 반영했어요."
-        } catch {
-            statusMessage = userFacingErrorMessage(error, fallback: "성장 기록을 반영하지 못했어요")
-        }
-    }
 }
 

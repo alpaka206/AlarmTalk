@@ -37,6 +37,12 @@ struct LoginView: View {
     @State private var isConfirmPasswordVisible = false
 
     @State private var pendingRawNonce: String?
+    @State private var showPasswordReset = false
+
+    /// `AuthViewModel.requestEmailVerification` 가 발송 성공 시 세팅하는 statusMessage.
+    /// 발송 성공 여부를 view 에서 알 길이 이 메시지뿐이라(메서드가 결과를 반환하지 않음)
+    /// 동일 문구로 성공을 판별한다. VM 문구가 바뀌면 함께 맞춰야 한다.
+    private static let verificationCodeSentMessage = "인증 코드를 보냈어요. 메일을 확인해 주세요."
 
     init(initialMode: LoginMode) {
         self.initialMode = initialMode
@@ -54,6 +60,10 @@ struct LoginView: View {
     private var passwordAtLeastMin: Bool { password.count >= 8 }
     private var passwordUnderMax: Bool { password.count <= 128 }
     private var passwordLengthValid: Bool { passwordAtLeastMin && passwordUnderMax }
+    // 서버 정책(@alarmtalk/shared PasswordSchema)·Android 와 동일: 영문·숫자 각 1자 이상.
+    private var passwordHasLetter: Bool { password.contains(where: { $0.isLetter }) }
+    private var passwordHasDigit: Bool { password.contains(where: { $0.isNumber }) }
+    private var passwordHasLetterAndDigit: Bool { passwordHasLetter && passwordHasDigit }
     private var passwordMatches: Bool { !password.isEmpty && password == confirmPassword }
 
     private var isEmailVerifiedForCurrentInput: Bool {
@@ -69,6 +79,7 @@ struct LoginView: View {
             emailLooksValid &&
             isEmailVerifiedForCurrentInput &&
             passwordLengthValid &&
+            passwordHasLetterAndDigit &&
             passwordMatches
     }
 
@@ -112,7 +123,11 @@ struct LoginView: View {
 
                     submitButton
 
-                    appleSignInRow
+                    // SSO·비밀번호 찾기는 로그인 모드에서만 노출(Android AuthScreen.kt:314-355).
+                    if mode == .login {
+                        findPasswordRow
+                        appleSignInRow
+                    }
 
                     if let message = auth.statusMessage {
                         Text(message)
@@ -136,6 +151,9 @@ struct LoginView: View {
                 }
                 .accessibilityLabel("뒤로")
             }
+        }
+        .navigationDestination(isPresented: $showPasswordReset) {
+            PasswordResetView()
         }
     }
 
@@ -175,8 +193,13 @@ struct LoginView: View {
 
     private var verifyEmailRow: some View {
         Button {
-            Task { await auth.requestEmailVerification(email: normalizedEmail) }
-            verificationSent = true
+            Task {
+                await auth.requestEmailVerification(email: normalizedEmail)
+                // 발송이 성공했을 때만 코드 입력 단계를 노출한다. 중복 이메일(AUTH_EMAIL_TAKEN)
+                // 등으로 발송이 실패하면 verificationSent 가 켜지지 않아 6자리 코드 입력칸이
+                // 뜨지 않는다. Android 는 codeSentForEmail 을 발송 성공 시에만 세팅한다.
+                verificationSent = (auth.statusMessage == Self.verificationCodeSentMessage)
+            }
         } label: {
             Text(verificationLabel)
                 .font(theme.typography.labelLarge)
@@ -246,7 +269,7 @@ struct LoginView: View {
     private var passwordRules: some View {
         VStack(alignment: .leading, spacing: 6) {
             RuleRow(text: "8자 이상", satisfied: passwordAtLeastMin)
-            RuleRow(text: "128자 이하", satisfied: passwordUnderMax)
+            RuleRow(text: "영문·숫자 포함", satisfied: passwordHasLetterAndDigit)
             RuleRow(text: "비밀번호 확인 일치", satisfied: passwordMatches)
         }
     }
@@ -293,6 +316,25 @@ struct LoginView: View {
         .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
         .disabled(!canSubmit)
         .padding(.top, 4)
+    }
+
+    /// 비밀번호 찾기 진입 — 로그인 모드에서만 노출. Android `AuthScreen.kt:314-328`.
+    private var findPasswordRow: some View {
+        HStack(spacing: 4) {
+            Text("비밀번호를 잊으셨나요?")
+                .font(theme.typography.bodyMedium)
+                .foregroundStyle(theme.palette.onSurfaceVariant)
+            Button {
+                showPasswordReset = true
+            } label: {
+                Text("비밀번호 찾기")
+                    .font(theme.typography.labelLarge)
+                    .foregroundStyle(theme.palette.primary)
+            }
+            .buttonStyle(.plain)
+            .disabled(auth.isBusy)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var appleSignInRow: some View {

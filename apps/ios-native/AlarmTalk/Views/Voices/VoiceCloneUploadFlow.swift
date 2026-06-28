@@ -35,6 +35,10 @@ struct VoiceCloneUploadFlow: View {
     @State private var relationshipSelection = VoiceRelationshipSelection()
     @State private var noiseRemovalEnabled: Bool = false
     @State private var isShared: Bool = false
+    /// 목소리 성별('male'|'female'|'neutral', 기본 neutral)과 일본어 정중체 선택.
+    /// 켜면 speech_formality='polite', 끄면 'auto'(기본). Android `VoiceProfileManagementPanel.kt:340-341`.
+    @State private var voiceGender: String = "neutral"
+    @State private var japanesePolite: Bool = false
     /// Android 생성 플로우처럼 랜덤 문구와 공유 음성에서 쓸 호칭을 함께 저장한다.
     @State private var listenerTitle: String = ""
     @State private var submitted: Bool = false
@@ -81,9 +85,10 @@ struct VoiceCloneUploadFlow: View {
         max(0, cropEndMs - cropStartMs)
     }
 
-    /// 60~120초 구간 검증.
+    /// 60~120초 구간 검증. 상단은 Android 처럼 5초 허용 오차를 둬 120.x초 측정값도 받아들인다.
     private var isInValidRange: Bool {
-        activeDurationMs >= VoiceProfileLimits.minDurationMs && activeDurationMs <= VoiceProfileLimits.maxDurationMs
+        activeDurationMs >= VoiceProfileLimits.minDurationMs
+            && activeDurationMs <= VoiceProfileLimits.maxDurationMs + VoiceProfileLimits.maxDurationToleranceMs
     }
 
     private var hasPreparedSource: Bool {
@@ -107,6 +112,7 @@ struct VoiceCloneUploadFlow: View {
         VStack(alignment: .leading, spacing: 16) {
             header
             nameSection
+            voiceTuningSection
             sourceModeSection
             if sourceMode == .record {
                 recordingSection
@@ -150,6 +156,15 @@ struct VoiceCloneUploadFlow: View {
             if newValue == .file, voice.recorder.isRecording {
                 voice.stopRecording()
                 stopLevelAnimation()
+            }
+        }
+        .onChange(of: voice.recorder.isRecording) { wasRecording, isRecording in
+            // 2분 하드 캡(VoiceRecorder) 으로 녹음이 자동 정지되면, 수동 정지와 동일하게
+            // 파형 애니메이션을 멈추고 안내 문구를 '저장' 상태로 갱신한다. Android `:599-601`.
+            guard wasRecording, !isRecording else { return }
+            stopLevelAnimation()
+            if voice.recorder.latestRecordingURL != nil {
+                voice.statusMessage = "녹음을 저장했어요. \(voice.recordingDurationLabel)"
             }
         }
     }
@@ -241,6 +256,54 @@ struct VoiceCloneUploadFlow: View {
             }
         }
         .sectionSurface()
+    }
+
+    /// 목소리 성별(male/female/neutral)·일본어 정중체(speech_formality) 선택 카드.
+    /// Android `VoiceProfileManagementPanel.kt:207-289,1390-1397` 의 VoiceGenderSelector /
+    /// JapanesePoliteToggle 를 옮겼다. 생성 시 두 값을 항상 함께 전송해 일본어 1인칭·말투
+    /// 자연성과 성별 튜닝 기준을 백엔드와 맞춘다.
+    private var voiceTuningSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("목소리 성별")
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 8) {
+                    genderChip(value: "male", label: "남성")
+                    genderChip(value: "female", label: "여성")
+                    genderChip(value: "neutral", label: "중립")
+                }
+            }
+            Toggle(isOn: $japanesePolite) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("일본어 정중체")
+                        .font(.subheadline.weight(.semibold))
+                    Text("일본어로 말할 때 정중한 말투(です·ます)를 써요.")
+                        .font(.caption)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                }
+            }
+            .toggleStyle(.switch)
+            .tint(AlarmTalkTheme.primary)
+        }
+        .sectionSurface()
+    }
+
+    private func genderChip(value: String, label: String) -> some View {
+        let isSelected = voiceGender == value
+        return Button {
+            voiceGender = value
+        } label: {
+            Text(label)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(
+                    isSelected ? AlarmTalkTheme.primary.opacity(0.15) : AlarmTalkTheme.surfaceVariant.opacity(0.45),
+                    in: RoundedRectangle(cornerRadius: 14)
+                )
+                .foregroundStyle(isSelected ? AlarmTalkTheme.primary : AlarmTalkTheme.text)
+        }
+        .buttonStyle(.plain)
     }
 
     private var recordingSection: some View {
@@ -359,22 +422,22 @@ struct VoiceCloneUploadFlow: View {
                 .foregroundStyle(AlarmTalkTheme.textSecondary)
             }
 
-            if durationMs > VoiceProfileLimits.maxDurationMs {
+            if durationMs >= VoiceProfileLimits.minDurationMs {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("자를 구간 \(HelperFormatters.audioTimeLabel(cropStartMs)) - \(HelperFormatters.audioTimeLabel(effectiveEndMs))")
                         .font(.caption.weight(.semibold))
-                    Slider(
-                        value: Binding(
-                            get: { Double(cropStartMs) / 1000.0 },
-                            set: { seconds in
-                                let maxStart = max(0, durationMs - VoiceProfileLimits.maxDurationMs)
-                                cropStartMs = min(maxStart, max(0, Int(seconds * 1000)))
-                                cropEndMs = min(durationMs, cropStartMs + VoiceProfileLimits.maxDurationMs)
-                            }
-                        ),
-                        in: 0...(Double(max(0, durationMs - VoiceProfileLimits.maxDurationMs)) / 1000.0),
-                        step: 1
+                    // Android `AudioCropRangeSelector` 처럼 양쪽 핸들로 60~120초 구간을 직접 고른다
+                    // (이전엔 시작점만 움직이고 길이는 항상 120초로 고정됐음).
+                    AudioCropRangeSlider(
+                        durationMs: durationMs,
+                        minDurationMs: VoiceProfileLimits.minDurationMs,
+                        maxDurationMs: VoiceProfileLimits.maxDurationMs,
+                        cropStartMs: $cropStartMs,
+                        cropEndMs: $cropEndMs
                     )
+                    Text("1분 이상 2분 이하 구간을 골라 주세요.")
+                        .font(.caption2)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
                 }
             }
 
@@ -561,6 +624,8 @@ struct VoiceCloneUploadFlow: View {
             voice.statusMessage = "이 목소리가 나를 부를 이름을 입력해 주세요."
             return
         }
+        // 일본어 정중체 토글: 켜면 'polite', 끄면 'auto'. Android `:966,992` 미러.
+        let speechFormality = japanesePolite ? "polite" : "auto"
 
         switch sourceMode {
         case .record:
@@ -577,7 +642,9 @@ struct VoiceCloneUploadFlow: View {
                     isShared: shouldShareVoice,
                     session: auth.session,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener
+                    listenerTitle: trimmedListener,
+                    voiceGender: voiceGender,
+                    speechFormality: speechFormality
                 )
             } else {
                 voice.cloneName = trimmedName
@@ -585,7 +652,9 @@ struct VoiceCloneUploadFlow: View {
                     session: auth.session,
                     isShared: shouldShareVoice,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener
+                    listenerTitle: trimmedListener,
+                    voiceGender: voiceGender,
+                    speechFormality: speechFormality
                 )
             }
         case .file:
@@ -600,7 +669,9 @@ struct VoiceCloneUploadFlow: View {
                     noiseRemoval: noiseRemovalEnabled,
                     uploadFileName: prepared.uploadFileName,
                     relationshipLabel: trimmedRelationship,
-                    listenerTitle: trimmedListener
+                    listenerTitle: trimmedListener,
+                    voiceGender: voiceGender,
+                    speechFormality: speechFormality
                 )
             } catch {
                 let message = AudioUserFacingError.message(for: error, fallback: "선택한 음성을 준비하지 못했어요.")

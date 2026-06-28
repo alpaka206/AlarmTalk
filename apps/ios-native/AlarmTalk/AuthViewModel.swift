@@ -56,6 +56,15 @@ final class AuthViewModel: ObservableObject {
     /// 필수 약관 동의가 필요한지. true 면 RootView 가 동의 화면으로 게이팅한다.
     /// `/user/consents/status` 의 `needs_consent` 에서 설정된다. Android `MainViewModel.needsConsent`.
     @Published private(set) var needsConsent = false
+    /// 비밀번호 재설정 코드를 발송한 이메일. 비어 있지 않으면 UI(PasswordResetView)가
+    /// "코드 + 새 비밀번호" 입력 단계를 노출한다. Android `MainViewModel.passwordResetCodeSentTo`.
+    @Published var passwordResetCodeSentTo: String?
+    /// 설정 화면의 마케팅(광고성 정보 수신) 동의 토글 상태. `loadMarketingConsent` 로 채운다.
+    /// Android `MainViewModel.marketingConsentAgreed`.
+    @Published var marketingConsentAgreed = false
+    /// 마케팅 동의 상태 로드가 실패했는지. true 면 UI 가 재시도 안내를 노출할 수 있다.
+    /// Android `MainViewModel.marketingConsentLoadFailed`.
+    @Published private(set) var marketingConsentLoadFailed = false
 
     private let api: AuthAPIProviding
     private let appleCredentialProvider: AppleCredentialStateProviding
@@ -306,6 +315,57 @@ final class AuthViewModel: ObservableObject {
             await checkConsentStatus()
         } catch {
             statusMessage = userFacingErrorMessage(error, fallback: "회원가입에 실패했어요")
+        }
+    }
+
+    // MARK: - 비밀번호 재설정
+
+    /// 비밀번호 재설정 코드를 발송한다. 백엔드는 계정 존재 여부를 노출하지 않으므로(비번
+    /// 계정에만 발송) 응답은 항상 성공이다. 성공 시 `passwordResetCodeSentTo` 를 채워 UI 가
+    /// 다음 단계(코드 + 새 비밀번호)를 노출한다. Android `MainViewModel.requestPasswordReset`.
+    func requestPasswordReset(email: String) async {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !isBusy, !normalized.isEmpty else { return }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await AlarmTalkAPI.shared.requestPasswordReset(email: normalized)
+            passwordResetCodeSentTo = normalized
+            statusMessage = "재설정 코드를 보냈어요. 메일을 확인해 주세요."
+        } catch {
+            statusMessage = userFacingErrorMessage(error, fallback: "인증 코드를 보내지 못했어요")
+        }
+    }
+
+    /// 비밀번호 재설정 확정. 6자리 코드 검증 후 새 비밀번호로 교체한다. 성공하면 true 를
+    /// 돌려주고 `passwordResetCodeSentTo` 를 비워 UI 가 로그인 화면으로 돌아가게 한다.
+    /// 비밀번호 정책은 서버(8~128자 + 영문 + 숫자)와 동일하게 호출 측에서 1차 검증한다.
+    /// Android `MainViewModel.confirmPasswordReset`.
+    @discardableResult
+    func confirmPasswordReset(email: String, code: String, newPassword: String) async -> Bool {
+        let normalized = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isBusy else { return false }
+        guard !normalized.isEmpty, trimmedCode.count == 6, !newPassword.isEmpty else {
+            statusMessage = "모든 항목을 입력해 주세요."
+            return false
+        }
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            _ = try await AlarmTalkAPI.shared.confirmPasswordReset(
+                email: normalized,
+                code: trimmedCode,
+                password: newPassword
+            )
+            passwordResetCodeSentTo = nil
+            statusMessage = "비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요."
+            return true
+        } catch {
+            statusMessage = userFacingErrorMessage(error, fallback: "비밀번호 재설정에 실패했어요")
+            return false
         }
     }
 
@@ -606,6 +666,49 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 마케팅(광고성 정보 수신) 동의
+
+    /// 설정 화면 진입 시 현재 마케팅 동의 상태를 서버에서 읽어 토글에 반영한다.
+    /// `GET /user/consents` 는 유형별 최신값을 돌려주므로 marketing 의 agreed 를 그대로 쓴다.
+    /// 실패해도 앱을 막지 않고 `marketingConsentLoadFailed` 로만 표시한다.
+    /// Android `MainViewModel.loadMarketingConsent`.
+    func loadMarketingConsent() async {
+        guard let token else { return }
+        marketingConsentLoadFailed = false
+        do {
+            // listConsents 는 AuthAPIProviding 프로토콜 밖이므로(테스트 mock 불필요)
+            // requestEmailVerification 과 동일하게 공유 인스턴스로 직접 호출한다.
+            let response = try await AlarmTalkAPI.shared.listConsents(token: token)
+            marketingConsentAgreed = response.consents.first { $0.consentType == "marketing" }?.agreed ?? false
+        } catch {
+            marketingConsentLoadFailed = true
+        }
+    }
+
+    /// 설정의 '광고성 정보 수신' 토글 변경. marketing 동의를 현재 정책 버전으로 재기록한다
+    /// (누적 저장, 최신값이 현재 상태). 낙관적으로 즉시 반영하고, 실패하면 직전 값으로
+    /// 되돌린다. Android `MainViewModel.updateMarketingConsent`.
+    func updateMarketingConsent(_ agreed: Bool) async {
+        guard let token else {
+            statusMessage = "로그인이 필요해요."
+            return
+        }
+        let previous = marketingConsentAgreed
+        marketingConsentAgreed = agreed
+        do {
+            _ = try await api.recordConsents(
+                RecordConsentsRequest(consents: [
+                    ConsentItemRequest(type: "marketing", agreed: agreed, version: Self.currentPolicyVersion),
+                ]),
+                token: token
+            )
+            statusMessage = agreed ? "마케팅 정보 수신에 동의했어요." : "마케팅 정보 수신 동의를 해제했어요."
+        } catch {
+            marketingConsentAgreed = previous
+            statusMessage = userFacingErrorMessage(error, fallback: "마케팅 수신 설정을 변경하지 못했어요")
+        }
+    }
+
     func signOut(message: String? = nil) {
         // W2: 로컬 세션을 지우기 전에 서버 토큰을 폐기(token_epoch 상향)한다.
         // best-effort — 네트워크 실패/만료 토큰이어도 로그아웃은 그대로 진행한다.
@@ -620,6 +723,11 @@ final class AuthViewModel: ObservableObject {
         session = nil
         pendingDeletion = false
         needsConsent = false
+        // 사용자 범위 상태 초기화 — 계정 전환 시 옛 사용자 값이 새지 않게 한다.
+        // Android `clearUserScopedRemoteState` 와 동등.
+        passwordResetCodeSentTo = nil
+        marketingConsentAgreed = false
+        marketingConsentLoadFailed = false
         statusMessage = message
         lastNetworkError = nil
     }

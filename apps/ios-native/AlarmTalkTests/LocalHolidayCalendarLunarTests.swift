@@ -20,50 +20,34 @@ final class LocalHolidayCalendarLunarTests: XCTestCase {
         return cal.date(from: DateComponents(year: y, month: m, day: d, hour: 12))!
     }
 
-    // MARK: - 설날 (음력 1/1) 3일 연휴: [day1-1, day1, day1+1]
+    // MARK: - 설날 (음력 1/1) — 엔진은 "기준일(anchor)"만 계산. 연휴(±1일)는 시드/서버 담당.
+    // Android `LunarHolidayCalendar.kt:15-16` 와 동일: 엔진은 법정 기준일만, 연휴는 시드가.
 
     func test_seollal_goldenVectors() {
-        // 2026 설날 = 2/16,17,18
-        for d in [16, 17, 18] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, d)),
-                          "2026-02-\(d) 는 설날 연휴여야 함")
-        }
-        // 2027 설날 = 2/6,7,8
-        for d in [6, 7, 8] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 2, d)))
-        }
-        // 2028 설날 = 1/26,27,28
-        for d in [26, 27, 28] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 1, d)))
-        }
-        // 2029 설날 = 2/12,13,14
-        for d in [12, 13, 14] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 2, d)))
-        }
-        // 경계: 설날 직전/직후 평일은 음력 공휴일 아님
+        // 기준일(설날 당일)만 true: 2026=2/17, 2027=2/7, 2028=1/27, 2029=2/13
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 17)), "2026 설날 기준일")
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 2, 7)))
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 1, 27)))
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 2, 13)))
+        // 연휴 전날/다음날은 엔진 단독으로는 false (시드가 채운다)
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 16)))
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 18)))
+        // 경계: 연휴 바깥 평일도 false
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 15)))
         XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 2, 19)))
     }
 
-    // MARK: - 추석 (음력 8/15) 3일 연휴
+    // MARK: - 추석 (음력 8/15) — 엔진은 기준일(anchor)만.
 
     func test_chuseok_goldenVectors() {
-        // 2026 추석 = 9/24,25,26
-        for d in [24, 25, 26] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 9, d)))
-        }
-        // 2027 추석 = 9/14,15,16
-        for d in [14, 15, 16] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 9, d)))
-        }
-        // 2028 추석 = 10/2,3,4 (10/3 은 개천절 겹침)
-        for d in [2, 3, 4] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 10, d)))
-        }
-        // 2029 추석 = 9/21,22,23
-        for d in [21, 22, 23] {
-            XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 9, d)))
-        }
+        // 기준일(추석 당일)만 true: 2026=9/25, 2027=9/15, 2028=10/3, 2029=9/22
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 9, 25)))
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2027, 9, 15)))
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2028, 10, 3)))  // 개천절과 겹침
+        XCTAssertTrue(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2029, 9, 22)))
+        // 연휴 전날/다음날은 엔진 단독으로는 false
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 9, 24)))
+        XCTAssertFalse(KoreanLunarHolidayEngine.isLunarHoliday(seoulDate(2026, 9, 26)))
     }
 
     // MARK: - 부처님오신날 (음력 4/8) 단일일

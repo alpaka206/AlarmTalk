@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// 첫 로그인 후 노출되는 3페이지 페이저.
+/// 첫 로그인 후 노출되는 2페이지 페이저.
 ///
-/// Android `apps/android-native/.../ui/onboarding/OnboardingScreen.kt:63-179` 의
-/// 카피를 그대로 옮겼다. 첫 페이지 = 목소리, 두 번째 = 가족, 세 번째 = 캐릭터.
+/// Android `apps/android-native/.../ui/onboarding/OnboardingScreen.kt:47-171` 의
+/// 카피를 그대로 옮겼다. 첫 페이지 = 목소리, 두 번째 = 가족.
 /// dot indicator + skip + 다음/시작하기 버튼을 모두 포함한다.
 ///
 /// 사용처
@@ -84,7 +84,7 @@ struct OnboardingView: View {
     }
 }
 
-/// 한 페이지에 담기는 카피 + 일러스트 정의. Android `OnboardingPages:45-61` 와
+/// 한 페이지에 담기는 카피 + 일러스트 정의. Android `OnboardingPages:47-59` 와
 /// 동일한 카피, 동일한 순서를 유지한다.
 private struct OnboardingPage {
     let systemImage: String
@@ -98,20 +98,14 @@ private struct OnboardingPage {
         OnboardingPage(
             systemImage: "mic.fill",
             title: "좋아하는 목소리로 깨어나요",
-            description: "녹음하거나 만든 목소리로\n내 알람을 울릴 수 있어요.",
+            description: "녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.",
             useTertiary: false
         ),
         OnboardingPage(
             systemImage: "person.2.fill",
             title: "소중한 사람들과 함께",
-            description: "목소리와 메시지를 주고받고\n서로의 아침을 챙길 수 있어요.",
+            description: "목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.",
             useTertiary: false
-        ),
-        OnboardingPage(
-            systemImage: "sparkles",
-            title: "알람을 끄며 함께 성장해요",
-            description: "하루를 시작할 때마다\n캐릭터의 성장 기록이 쌓여요.",
-            useTertiary: true
         ),
     ]
 }

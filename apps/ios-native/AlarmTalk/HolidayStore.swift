@@ -138,26 +138,37 @@ enum HolidaySeedData {
 // 효과적 우선순위: 서버 캐시 > 번들 시드 > 계산 엔진 > 고정 양력 (boolean SUPERSET, 자세한 의미는
 // KoreanLunarHolidayEngine 상단 주석 참고).
 //
-// TIMEZONE: 모든 양력 판정을 KoreanLunarHolidayEngine 의 고정 Asia/Seoul 캘린더로 통일한다.
-// (기존 코드는 Calendar.current 를 써서 UTC-11/UTC+14 디바이스에서 HolidaySeedData.ymd(Asia/Seoul)와
-// 민용일이 어긋나는 latent 버그가 있었다 — 함께 수정.)
+// TIMEZONE: 공휴일 KEY(시드/엔진 epochDay·고정 월/일)는 존 독립 civil 값이다. 질의(알람 날짜) 쪽만
+// 스케줄링/디바이스 존(.current)으로 민용일을 환산해 평가한다 — Android AlarmTimeCalculator 가
+// LocalDate(systemDefault)를 그대로 isHoliday 에 넘기는 것과 동등. (질의를 고정 Asia/Seoul 로 버킷팅하면
+// 비-KST 디바이스에서 스케줄링하는 민용일과 하루 어긋나 휴일 skip 이 오작동하던 버그를 수정.)
 enum LocalHolidayCalendar {
+    /// Date instant 질의. 알람 스케줄링과 동일하게 디바이스(스케줄링) 존으로 민용일을 환산해 평가한다.
     static func isHoliday(_ date: Date,
+                          countryCode: String = HolidayStore.defaultCountryCode,
+                          timeZone: TimeZone = .current) -> Bool {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let comps = cal.dateComponents([.year, .month, .day], from: date)
+        guard let y = comps.year, let m = comps.month, let d = comps.day else { return false }
+        return isHoliday(year: y, month: m, day: d, countryCode: countryCode)
+    }
+
+    /// 민용일(y/m/d) 직접 질의. 존 독립 civil epochDay/월·일로 평가한다.
+    static func isHoliday(year y: Int, month m: Int, day d: Int,
                           countryCode: String = HolidayStore.defaultCountryCode) -> Bool {
         switch countryCode.uppercased() {
         case "KR":
-            return isKoreanFixedHoliday(date)
-                || KoreanLunarHolidayEngine.isLunarHoliday(date)
-                || KoreanLunarHolidayEngine.isSubstituteHoliday(date)
+            let epoch = KoreanLunarHolidayEngine.epochDay(year: y, month: m, day: d)
+            return isKoreanFixedHoliday(month: m, day: d)
+                || KoreanLunarHolidayEngine.isLunarHoliday(epochDay: epoch, year: y)
+                || KoreanLunarHolidayEngine.isSubstituteHoliday(epochDay: epoch, year: y)
         default:
             return false
         }
     }
 
-    private static func isKoreanFixedHoliday(_ date: Date) -> Bool {
-        // Asia/Seoul 고정 캘린더로 월/일 추출 — 시드/엔진과 동일 시계.
-        let comps = KoreanLunarHolidayEngine.seoulGregorian.dateComponents([.month, .day], from: date)
-        guard let m = comps.month, let d = comps.day else { return false }
+    private static func isKoreanFixedHoliday(month m: Int, day d: Int) -> Bool {
         switch (m, d) {
         case (1, 1), (3, 1), (5, 5), (6, 6), (8, 15), (10, 3), (10, 9), (12, 25):
             return true
@@ -243,14 +254,21 @@ final class HolidayStore: ObservableObject {
     // MARK: Queries
 
     func isHoliday(_ date: Date,
-                   countryCode: String? = nil) -> Bool {
+                   countryCode: String? = nil,
+                   timeZone: TimeZone = .current) -> Bool {
         let cc = countryCode ?? selectedCountryCode
-        let epochDay = Self.epochDay(of: date)
+        // 질의 날짜를 스케줄링/디바이스 존의 민용일(y/m/d)로 환산한다 (Android 의 LocalDate 동등).
+        // 캐시 KEY(epochDay)·고정공휴일 월/일은 존 독립 civil 값이므로 비교가 정확히 정렬된다.
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let comps = cal.dateComponents([.year, .month, .day], from: date)
+        guard let y = comps.year, let m = comps.month, let d = comps.day else { return false }
+        let epochDay = KoreanLunarHolidayEngine.epochDay(year: y, month: m, day: d)
         let inCache = holidays.contains { h in
             h.countryCode.uppercased() == cc.uppercased() &&
                 h.epochDay == epochDay
         }
-        return inCache || LocalHolidayCalendar.isHoliday(date, countryCode: cc)
+        return inCache || LocalHolidayCalendar.isHoliday(year: y, month: m, day: d, countryCode: cc)
     }
 
     func holidaysIn(range: ClosedRange<Date>,
@@ -263,6 +281,27 @@ final class HolidayStore: ObservableObject {
                 h.epochDay >= startEpoch &&
                 h.epochDay <= endEpoch
         }
+    }
+
+    /// Android `HolidayCalendarStore.upcomingHolidays` / DAO `getUpcoming` 동등.
+    /// from(기본 오늘) 이후 가장 가까운 공휴일 count(기본 5)개. 상한 날짜 없음(LIMIT 만) —
+    /// 370일 ceiling 으로 자르지 않아 Android 와 개수/윈도 시맨틱이 일치한다.
+    func upcomingHolidays(countryCode: String? = nil,
+                          from: Date = Date(),
+                          count: Int = 5,
+                          timeZone: TimeZone = .current) -> [HolidayEntity] {
+        let cc = countryCode ?? selectedCountryCode
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let c = cal.dateComponents([.year, .month, .day], from: from)
+        let startEpoch = KoreanLunarHolidayEngine.epochDay(
+            year: c.year ?? 1970, month: c.month ?? 1, day: c.day ?? 1
+        )
+        return holidays
+            .filter { $0.countryCode.uppercased() == cc.uppercased() && $0.epochDay >= startEpoch }
+            .sorted { $0.epochDay < $1.epochDay }
+            .prefix(count)
+            .map { $0 }
     }
 
     /// Android `holidayPredicate` 와 동일 의미. AlarmTimeCalculator 에 주입.

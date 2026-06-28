@@ -150,7 +150,7 @@ final class VoiceStudioViewModelTests: XCTestCase {
     // MARK: - VoiceProfileLimits
 
     func test_profileLimits_constants() {
-        XCTAssertEqual(VoiceProfileLimits.maxProfiles, 5)
+        XCTAssertEqual(VoiceProfileLimits.maxProfiles, 1)
         XCTAssertEqual(VoiceProfileLimits.minDurationMs, 60_000)
         XCTAssertEqual(VoiceProfileLimits.maxDurationMs, 120_000)
     }
@@ -241,8 +241,12 @@ final class VoiceStudioViewModelTests: XCTestCase {
         XCTAssertEqual(fields["relationshipLabel"], "")
         XCTAssertEqual(fields["listenerTitle"], "")
         XCTAssertEqual(fields["isDraft"], "true")
-        XCTAssertEqual(fields["noiseRemoval"], "true")
-        XCTAssertEqual(fields["noise_removal"], "true")
+        // noiseRemoval/noise_removal 필드는 제거됨(Android 도 더는 전송 안 함, 백엔드 무시).
+        XCTAssertNil(fields["noiseRemoval"])
+        XCTAssertNil(fields["noise_removal"])
+        // voiceGender/speechFormality 는 Android 와 동일하게 항상 기본값으로 전송된다.
+        XCTAssertEqual(fields["voiceGender"], "neutral")
+        XCTAssertEqual(fields["speechFormality"], "auto")
     }
 
     func test_multipartUploadFileName_prefersTrimmedSelectedFileName() {

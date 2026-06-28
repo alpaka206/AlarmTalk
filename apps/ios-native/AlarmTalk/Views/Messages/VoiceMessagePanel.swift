@@ -15,30 +15,22 @@ struct VoiceMessagePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Android VoiceMessagePanel 헤더(SocialPanels.kt:455-484): '받은 메시지' 제목 +
+            // 새로고침 아이콘 버튼 + 인라인 '작성' 버튼(상대가 없으면 비활성).
             HStack {
-                Text("가족 메시지")
+                Text("받은 메시지")
                     .font(.headline)
                 Spacer()
-                Button("새로고침") {
+                Button {
                     Task { await socialFeatures.refreshAll(session: auth.session) }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
                 }
+                .buttonStyle(.borderless)
+                .tint(AlarmTalkTheme.primary)
                 .disabled(socialFeatures.isBusy)
-            }
+                .accessibilityLabel("새로고침")
 
-            if let message = socialFeatures.statusMessage {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(AlarmTalkTheme.textSecondary)
-            }
-
-            if messageRecipients.isEmpty {
-                EmptyStatePlaceholder(
-                    title: "아직 연결된 가족 그룹이 없어요.",
-                    subtitle: "초대 코드를 등록하거나 가족 이용권 공유 코드를 만든 뒤 메시지를 보낼 수 있어요.",
-                    icon: "person.2"
-                )
-                CodeRegisterRow(onCodeRegistered: onCodeRegistered)
-            } else {
                 Button {
                     composerOpen = true
                 } label: {
@@ -47,7 +39,22 @@ struct VoiceMessagePanel: View {
                 .buttonStyle(.borderedProminent)
                 .tint(AlarmTalkTheme.primary)
                 .foregroundStyle(AlarmTalkTheme.text)
-                .disabled(socialFeatures.isBusy)
+                .disabled(messageRecipients.isEmpty || socialFeatures.isBusy)
+            }
+
+            if let message = socialFeatures.statusMessage {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+            }
+
+            // 상대가 없을 때 Android 는 '연결된 상대가 없어요.' 한 줄만 띄운다. iOS 는 코드 등록 진입점을
+            // 메시지 화면에서 함께 제공해야 하므로 안내 줄 아래에 CodeRegisterRow 를 유지한다.
+            if messageRecipients.isEmpty {
+                Text("연결된 상대가 없어요.")
+                    .font(.footnote)
+                    .foregroundStyle(AlarmTalkTheme.textSecondary)
+                CodeRegisterRow(onCodeRegistered: onCodeRegistered)
             }
 
             if socialFeatures.receivedNotes.isEmpty {
@@ -192,7 +199,8 @@ private struct VoiceMessageComposerSheet: View {
                     MessageComposerSection(title: "받는 사람") {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(recipients) { recipient in
+                                // Android 컴포저는 `recipients.take(3)` 로 최대 3명까지만 노출한다.
+                                ForEach(recipients.prefix(3)) { recipient in
                                     MessageChoiceChip(
                                         title: memberLabel(recipient),
                                         selected: recipientID == recipient.userId,
@@ -651,7 +659,6 @@ struct ReceivedNoteRow: View {
 
     var body: some View {
         let hasAudio = socialFeatures.hasPlayableAudio(note)
-        let revealText = socialFeatures.shouldRevealText(note)
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(note.senderName ?? note.senderEmail ?? "보낸 사람")
@@ -667,7 +674,8 @@ struct ReceivedNoteRow: View {
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(revealText ? note.text : "음성을 들으면 메시지가 보여요.")
+                    // Android NoteRow 는 음성 유무와 무관하게 항상 본문 텍스트를 보여준다(가리지 않음).
+                    Text(note.text)
                         .font(.footnote)
                         .foregroundStyle(AlarmTalkTheme.textSecondary)
                         .lineLimit(3)
@@ -701,8 +709,9 @@ struct ReceivedNoteRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(note.readAt == nil ? AlarmTalkTheme.surfaceVariant.opacity(0.82) : AlarmTalkTheme.surfaceVariant)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
         .onTapGesture {
-            guard !hasAudio else { return }
+            // Android `Card(onClick = onMarkRead)` 와 동일하게, 모든 노트 유형에서 행 탭으로 읽음 처리한다.
             Task { await socialFeatures.markRead(note, session: auth.session) }
         }
     }

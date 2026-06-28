@@ -31,7 +31,7 @@ struct MainTabsView: View {
     /// 설정 시트 표시 여부.
     @State private var settingsPresented = false
 
-    /// 보조 시트 표시 — People/Growth/Billing.
+    /// 보조 시트 표시 — People/Billing.
     @State private var auxiliaryScreen: AuxiliaryScreen?
 
     var body: some View {
@@ -64,11 +64,6 @@ struct MainTabsView: View {
                             } label: {
                                 Label("초대 코드 등록", systemImage: "qrcode")
                             }
-                        }
-                        Button {
-                            auxiliaryScreen = .growth
-                        } label: {
-                            Label("캐릭터", systemImage: "sparkles")
                         }
                         Button {
                             auxiliaryScreen = .billing
@@ -143,7 +138,6 @@ struct MainTabsView: View {
         switch selectedTab {
         case .home:
             HomeView(
-                openAuxiliary: { auxiliaryScreen = $0 },
                 openEditor: { editorTarget = $0 },
                 selectTab: selectTab
             )
@@ -181,18 +175,6 @@ struct MainTabsView: View {
 
     private func planGateFor(_ tab: NativeTab) -> PlanGateState? {
         switch tab {
-        case .voices:
-            guard auth.session != nil,
-                  socialFeatures.subscription != nil,
-                  !currentPlan.meetsOrExceeds(.personal)
-            else { return nil }
-            return PlanGateState(
-                title: "이용권이 필요한 기능이에요",
-                message: "유료 이용권에서 사용할 수 있어요.",
-                confirmLabel: "이용권 보기",
-                currentPlan: currentPlan,
-                requiredPlan: .personal
-            )
         case .messages:
             guard auth.session != nil,
                   socialFeatures.subscription != nil,
@@ -200,13 +182,16 @@ struct MainTabsView: View {
                   !canUseMessages
             else { return nil }
             return PlanGateState(
-                title: "이용권이 필요한 기능이에요",
+                // Android `r3app_messages_plan_gate_title` 와 동일한 메시지-전용 타이틀.
+                title: "함께 쓰는 기능이에요",
                 message: "메시지는 커플/가족 이용권에서 사용할 수 있어요.",
                 confirmLabel: "이용권 보기",
                 currentPlan: currentPlan,
                 requiredPlan: .couple
             )
-        case .home, .alarms:
+        case .home, .alarms, .voices:
+            // Android parity: 목소리 탭은 로그인 사용자 모두 접근 가능(스톡 보이스 무료).
+            // 커스텀 음성 생성만 패널 내부에서 per-action 게이팅된다.
             return nil
         }
     }

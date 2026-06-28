@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// People/Growth/Billing 보조 화면들의 단일 시트 진입점.
+/// People/Billing 보조 화면들의 단일 시트 진입점.
 ///
 /// ContentView 의 `auxiliarySheet(_:)` 를 옮긴 것. 시트의 NavigationStack 과
 /// X 닫기 버튼은 본 호스트가 표준화한다. 부모(MainTabsView)는 어떤 화면을 띄울지만
@@ -54,8 +54,6 @@ struct AuxiliarySheetHost: View {
                     switch screen {
                     case .people:
                         PeoplePanel(onCodeRegistered: onCodeRegistered)
-                    case .growth:
-                        GrowthPanel()
                     case .billing:
                         BillingPanel()
                     case .members:
@@ -94,8 +92,8 @@ private struct AuxiliaryStatusBanner: View {
         .voiceAlarmPreviewEnvironment()
 }
 
-#Preview("AuxiliarySheet — growth (dark)") {
-    AuxiliarySheetHost(screen: .growth, onClose: {})
+#Preview("AuxiliarySheet — billing (dark)") {
+    AuxiliarySheetHost(screen: .billing, onClose: {})
         .preferredColorScheme(.dark)
         .voiceAlarmPreviewEnvironment()
 }

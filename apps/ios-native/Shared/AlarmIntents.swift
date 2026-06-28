@@ -27,13 +27,12 @@ import AlarmKit
 // 1. AlarmKit 자체 stop — Apple 문서 `AlarmManager/stop(id:)` (throws, non-async)
 //    https://developer.apple.com/documentation/AlarmKit/AlarmManager/stop(id:)
 // 2. 우리 측 상태 전이 — `AlarmAppContext.shared` 를 통해 `LocalAlarmStore`
-//    의 markStopped, `CharacterEventStore` 의 alarmCompleted 이벤트 queue.
+//    의 markStopped (+ dismiss-time 공휴일 재계산/재무장).
 //
 // AlarmAppContext 가 nil 일 수 있는 시나리오: 앱이 백그라운드에서 콜드 부팅된
 // 직후 SwiftUI Scene 의 `.task` 가 아직 안 돌은 경우. 그 때라도 AlarmKit
 // 자체 stop 은 OS 에 의해 처리되고, 다음 앱 활성화 시 alarmUpdates 루프가
-// 사라진 alarmKitID 를 감지해 markStopped + characterEvents.queue 를 호출하므로
-// 멱등성이 유지된다 (clientNonce 는 동일 패턴이라 중복 enqueue 방지).
+// 사라진 alarmKitID 를 감지해 markStopped 를 호출하므로 멱등성이 유지된다.
 struct StopAlarmIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "알람 끄기"
 

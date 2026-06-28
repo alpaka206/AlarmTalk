@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// UX:
 /// - 가운데 정렬된 큰 숫자 + 위아래 흐릿한 인접 항목.
-/// - 드래그 거리에 따른 자석 스냅 (항목 높이 60pt).
+/// - 드래그 거리에 따른 자석 스냅 (항목 높이 72pt).
 /// - 항목 변경 시 `UISelectionFeedbackGenerator` 햅틱.
 /// - 상하단 fade gradient mask 로 wheel-edge 효과.
 /// - `snappy(duration: 0.25)` 스프링 애니메이션.
@@ -20,15 +20,15 @@ struct TimeWheelPicker: View {
     @Binding var hour: Int
     @Binding var minute: Int
 
-    /// Wheel 한 칸 높이. Android `itemHeight = 72.dp` 와 동일 톤.
-    static let itemHeight: CGFloat = 60
+    /// Wheel 한 칸 높이. Android `AlarmTimePicker.kt:56` 의 `itemHeight = 72.dp` 와 일치.
+    static let itemHeight: CGFloat = 72
     /// 위/아래로 보일 인접 항목 수. 항상 1.
     static let visibleNeighbours: Int = 1
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             AmPmWheelColumn(isPM: amPmBinding)
-                .frame(width: 92)
+                .frame(width: 96)
 
             DraggableNumberColumn(
                 value: hour12Binding,
@@ -129,7 +129,7 @@ struct DraggableNumberColumn: View {
                     let clamped = min(normalized, 1.4)
 
                     Text(formatter(displayValue))
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .font(.system(size: 56, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(theme.palette.onPrimaryContainer.opacity(textAlpha(for: clamped)))
                         .frame(maxWidth: .infinity)
@@ -288,8 +288,8 @@ struct AmPmWheelColumn: View {
     @ViewBuilder
     private func label(title: String, selected: Bool) -> some View {
         Text(title)
-            .font(.system(size: selected ? 36 : 30, weight: selected ? .bold : .semibold))
-            .foregroundStyle(theme.palette.onPrimaryContainer.opacity(selected ? 1.0 : 0.22))
+            .font(.system(size: selected ? 38 : 32, weight: selected ? .bold : .semibold))
+            .foregroundStyle(theme.palette.onPrimaryContainer.opacity(selected ? 1.0 : 0.18))
             .frame(maxWidth: .infinity)
     }
 }
@@ -301,7 +301,7 @@ private struct ColonSeparator: View {
 
     var body: some View {
         Text(":")
-            .font(.system(size: 48, weight: .bold, design: .rounded))
+            .font(.system(size: 56, weight: .bold, design: .rounded))
             .foregroundStyle(theme.palette.onPrimaryContainer)
             .frame(width: 18)
             .accessibilityHidden(true)

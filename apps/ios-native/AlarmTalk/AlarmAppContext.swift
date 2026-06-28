@@ -1,39 +1,5 @@
 import Foundation
 
-// MARK: - CharacterEventQueueing
-//
-// Phase 2-B5 의 `CharacterEventStore` 가 외부에서 enqueue 받기 위한 추상.
-// AlarmAppContext 는 구체 타입에 의존하지 않고 이 protocol 만 본다.
-// B5 머지 후 `CharacterEventStore` 는 다음과 같이 conform 한다:
-//
-//     extension CharacterEventStore: CharacterEventQueueing {
-//         func queueAlarmEvent(eventType: CharacterEventKind,
-//                              occurredAtMillis: Int64,
-//                              clientNonce: String,
-//                              context: [String: String]?) async {
-//             await queue(eventType: .init(rawValue: eventType.rawValue)!, ...)
-//         }
-//     }
-//
-// protocol 분리 이유:
-//   1. 컴파일 순서 독립성 — B2 가 B5 보다 먼저 머지될 수 있다.
-//   2. 테스트에서 mock 주입이 자명해진다 (`AlarmAppContextTests` 참고).
-//   3. clientNonce 멱등성 검증을 store 내부 책임으로 떠넘긴다.
-enum CharacterEventKind: String, Sendable {
-    case alarmCompleted = "alarm_completed"
-    case alarmSnoozed = "alarm_snoozed"
-}
-
-@MainActor
-protocol CharacterEventQueueing: AnyObject {
-    func queueAlarmEvent(
-        eventType: CharacterEventKind,
-        occurredAtMillis: Int64,
-        clientNonce: String,
-        context: [String: String]?
-    ) async
-}
-
 // MARK: - AlarmAppContext
 //
 // App Intent 가 ViewModel 인스턴스에 직접 접근할 수 없으므로 (`perform()` 은
@@ -54,13 +20,6 @@ final class AlarmAppContext {
     static var shared: AlarmAppContext?
 
     weak var store: LocalAlarmStore?
-    weak var characterEvents: AnyObject?
-
-    /// CharacterEventQueueing 으로 cast 해서 사용. weak any-protocol 은 Swift 에서
-    /// 직접 표현이 까다로워 AnyObject 로 보관 후 호출 시점에 cast.
-    private var queueing: CharacterEventQueueing? {
-        characterEvents as? CharacterEventQueueing
-    }
 
     /// `now()` 를 주입 가능하게 만들어 테스트에서 clock 을 고정한다.
     var nowProvider: () -> Date = { Date() }
@@ -77,21 +36,16 @@ final class AlarmAppContext {
     /// 기본은 no-op 이라 테스트/콜드부팅에서 안전하다.
     var rearmHolidayOffOneShot: (String) async -> Void = { _ in }
 
-    init(
-        store: LocalAlarmStore,
-        characterEvents: (AnyObject & CharacterEventQueueing)?
-    ) {
+    init(store: LocalAlarmStore) {
         self.store = store
-        self.characterEvents = characterEvents
         AlarmAppContext.shared = self
     }
 
     // MARK: - Stop / Dismiss
 
     /// LiveActivity 의 Stop 버튼 또는 alarmUpdates 의 disappearance 양쪽에서 호출된다.
-    /// 멱등성: clientNonce 가 `"{record.id}-stop-{record.updatedAtMillis}"` 형태로
-    /// 같은 알람의 같은 stop 시점에 항상 같은 값을 만들도록 한다 — 두 경로가
-    /// 1초 내 같은 stop 을 emit 해도 store 측 멱등 검사에서 한 번만 처리된다.
+    /// markStopped 가 alarmKitID 매칭이 안 되면 no-op 이므로 두 경로가 같은 stop 을
+    /// emit 해도 안전하다.
     func handleAlarmStopped(alarmKitIDString: String) async {
         guard let store else { return }
         let recordBeforeStop = store.recordByAlarmKitID(alarmKitIDString)
@@ -108,31 +62,6 @@ final class AlarmAppContext {
            let id = recordBeforeStop?.id {
             await rearmHolidayOffOneShot(id)
         }
-
-        guard let queueing else { return }
-        guard let record = recordBeforeStop else { return }
-        let now = nowProvider()
-        let occurredAtMillis = Int64(now.timeIntervalSince1970 * 1000)
-        // 멱등 nonce: 같은 알람 + 같은 updatedAt 이면 두 경로가 같은 값을 만든다.
-        // updatedAtMillis 는 markStopped 호출 직전 값을 쓰지 못하므로 record.id
-        // 와 fireAtMillis (해당 회차 발화 시각) 의 조합으로 충돌 회피.
-        // Android parity: event:alarmId:localDate.
-        let nonce = CharacterEventStore.buildClientNonce(
-            alarmID: record.id,
-            eventType: .alarmCompleted,
-            occurredAtMillis: occurredAtMillis
-        )
-        await queueing.queueAlarmEvent(
-            eventType: .alarmCompleted,
-            occurredAtMillis: occurredAtMillis,
-            clientNonce: nonce,
-            context: [
-                "alarmId": record.id,
-                "alarmKitId": alarmKitIDString,
-                "playMode": record.playMode,
-                "voiceProfileId": record.voiceProfileId ?? "",
-            ]
-        )
     }
 
     // MARK: - Snooze
@@ -166,34 +95,11 @@ final class AlarmAppContext {
         let now = nowProvider()
         let minutes = snoozeMinutesOverride ?? record.snoozeMinutes
         let newFireAtMillis = Int64(now.timeIntervalSince1970 * 1000) + Int64(minutes) * 60_000
-        // snoozeCount 는 markSnoozed 가 +1 해주므로 nonce 는 호출 *전* 값을 본다.
-        // 두 번 같은 snooze 가 들어와도 store.markSnoozed 가 두 번 +1 하면 nonce 가
-        // 달라져 중복이 흘러갈 수 있는데, 사실상 OS 가 같은 countdown 을 두 번
-        // 트리거하지 않으므로 (countdown 은 알람당 1회 큐) 실무적으로는 안전.
-        // Android parity: event:alarmId:localDate.
-        let nonce = CharacterEventStore.buildClientNonce(
-            alarmID: record.id,
-            eventType: .alarmSnoozed,
-            occurredAtMillis: Int64(now.timeIntervalSince1970 * 1000)
-        )
 
         store.markSnoozed(
             id: record.id,
             newFireAtMillis: newFireAtMillis,
             incrementCount: true
-        )
-
-        guard let queueing else { return }
-        await queueing.queueAlarmEvent(
-            eventType: .alarmSnoozed,
-            occurredAtMillis: Int64(now.timeIntervalSince1970 * 1000),
-            clientNonce: nonce,
-            context: [
-                "alarmId": record.id,
-                "alarmKitId": alarmKitIDString,
-                "snoozeMinutes": "\(minutes)",
-                "snoozeCount": "\(record.snoozeCount + 1)",
-            ]
         )
     }
 }

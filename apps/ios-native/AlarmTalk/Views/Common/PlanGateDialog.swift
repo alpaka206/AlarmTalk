@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// 유료 기능 게이팅 다이얼로그(시트).
+/// 유료 기능 게이팅 다이얼로그.
 ///
-/// Android `apps/android-native/.../ui/components/PlanGateDialog.kt:26-101` 의
-/// 디자인과 카피를 1:1 포팅했다. iOS 에서는 `.sheet` 또는 `.alert` 대신 본
-/// 커스텀 시트를 사용해 잠금 아이콘 + 카피 + 두 버튼 레이아웃을 유지한다.
+/// Android `apps/android-native/.../ui/components/PlanGateDialog.kt:26-78` 의
+/// 가벼운 **중앙 모달**(Dialog + Surface, WakerDialogShape 28dp)을 1:1 로 맞춘다.
+/// 제목 행(닫기 X) + bodyMedium 안내문 + 전체폭 확인 버튼 하나로만 구성하며,
+/// Android 에 없는 큰 잠금 뱃지·"현재 플랜 → 필요" 진행 행·바텀시트 표현은 두지
+/// 않는다.
 ///
 /// 사용처
 ///   - Voice Studio 에서 클론 슬롯이 부족할 때
@@ -14,7 +16,7 @@ import SwiftUI
 /// 호출 패턴은 두 가지 모두 지원한다.
 ///
 /// ```swift
-/// // 1) PlanGateState 를 직접 sheet item 으로 띄우기
+/// // 1) PlanGateState 를 직접 item 으로 띄우기
 /// @State private var planGate: PlanGateState?
 /// ...
 /// .planGate(item: $planGate, onConfirm: { ... open billing })
@@ -22,7 +24,7 @@ import SwiftUI
 /// // 2) Bool 트리거 + 미리 만들어 둔 message
 /// .planGate(
 ///     isPresented: $isPlanGatePresented,
-///     state: PlanGateState(requiredPlan: .plus, currentPlan: currentPlan),
+///     state: PlanGateState(requiredPlan: .personal, currentPlan: currentPlan),
 ///     onConfirm: openBilling
 /// )
 /// ```
@@ -34,84 +36,70 @@ struct PlanGateDialog: View {
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.headline)
-                        .foregroundStyle(theme.palette.onSurfaceVariant)
-                        .frame(width: 32, height: 32)
-                        .background(theme.palette.surfaceVariant, in: Circle())
+        ZStack {
+            // 바깥 스크림 — 탭하면 닫힌다(Android Dialog 의 바깥 영역 dismiss 와 동일).
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { dismiss() }
+
+            VStack(alignment: .leading, spacing: 12) {
+                // 제목 행 + 닫기 X (Android ModalDialogTitle: titleLarge Bold, 좌측 정렬).
+                HStack(alignment: .top, spacing: 12) {
+                    Text(state.title)
+                        .font(theme.typography.titleLarge)
+                        .fontWeight(.bold)
+                        .foregroundStyle(theme.palette.onSurface)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.headline)
+                            .foregroundStyle(theme.palette.onSurfaceVariant)
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("닫기"))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("닫기"))
-            }
-            .padding(.horizontal, 22)
-            .padding(.top, 16)
 
-            FeatureLockBadge(size: 58, iconSize: 27)
-                .padding(.top, 2)
-
-            VStack(spacing: 7) {
-                Text(state.title)
-                    .font(theme.typography.titleLarge)
-                    .foregroundStyle(theme.palette.onSurface)
-                    .multilineTextAlignment(.center)
                 Text(state.body)
                     .font(theme.typography.bodyMedium)
                     .foregroundStyle(theme.palette.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.horizontal, 22)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 8) {
-                Image(systemName: "lock.shield.fill")
-                    .foregroundStyle(theme.palette.primary)
-                Text("현재 플랜: \(state.currentPlan.displayLabel)")
-                    .font(theme.typography.bodySmall)
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                Spacer()
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(theme.palette.onSurfaceVariant)
-                Text("필요: \(state.requiredPlan.displayLabel)")
-                    .font(theme.typography.bodySmall.weight(.semibold))
-                    .foregroundStyle(theme.palette.onSurface)
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(theme.palette.surfaceVariant)
-            )
-            .padding(.horizontal, 22)
-
-            VStack(spacing: 8) {
                 Button(action: {
                     onConfirm()
                     dismiss()
                 }) {
                     Text(state.confirmLabel)
                         .font(theme.typography.labelLarge)
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity, minHeight: 48)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(theme.palette.primary)
                 .foregroundStyle(theme.palette.onPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
+                .clipShape(RoundedRectangle(cornerRadius: theme.shapes.vocaButton, style: .continuous))
+                // 안내문과 버튼 사이 간격을 Android(20dp)에 맞춘다(스택 12 + 8).
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
-
-            Spacer(minLength: 0)
+            .padding(22)
+            .frame(maxWidth: 380)
+            // WakerDialogShape(28dp) = extraLarge.
+            .background(
+                RoundedRectangle(cornerRadius: theme.shapes.extraLarge, style: .continuous)
+                    .fill(theme.palette.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: theme.shapes.extraLarge, style: .continuous)
+                    .stroke(theme.palette.outlineVariant, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.18), radius: 18, y: 6)
+            .padding(.horizontal, 24)
         }
-        .padding(.top, 6)
-        .background(theme.palette.surface)
-        .presentationDetents([.fraction(0.45), .medium])
-        .presentationDragIndicator(.visible)
     }
 }
 
@@ -231,13 +219,17 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
 // MARK: - View modifier
 
 extension View {
-    /// `PlanGateState` 가 nil 이 아니면 시트로 띄운다.
+    /// `PlanGateState` 가 nil 이 아니면 **중앙 모달**로 띄운다.
+    ///
+    /// 바텀시트(`.sheet`) 대신 투명 배경의 `fullScreenCover` 위에 자체 스크림+카드를
+    /// 올려 Android `Dialog` 와 동일한 화면 중앙 표현을 만든다.
     func planGate(
         item: Binding<PlanGateState?>,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        self.sheet(item: item) { state in
+        self.fullScreenCover(item: item) { state in
             PlanGateDialog(state: state, onConfirm: onConfirm)
+                .presentationBackground(.clear)
         }
     }
 
@@ -247,30 +239,27 @@ extension View {
         state: PlanGateState,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        self.sheet(isPresented: isPresented) {
+        self.fullScreenCover(isPresented: isPresented) {
             PlanGateDialog(state: state, onConfirm: onConfirm)
+                .presentationBackground(.clear)
         }
     }
 }
 
 #if DEBUG
 #Preview("PlanGateDialog (light)") {
-    Color.clear.sheet(isPresented: .constant(true)) {
-        PlanGateDialog(
-            state: PlanGateState(currentPlan: .free, requiredPlan: .personal),
-            onConfirm: {}
-        )
-    }
+    PlanGateDialog(
+        state: PlanGateState(currentPlan: .free, requiredPlan: .personal),
+        onConfirm: {}
+    )
     .voiceAlarmPreviewEnvironment()
 }
 
 #Preview("PlanGateDialog family (dark)") {
-    Color.clear.sheet(isPresented: .constant(true)) {
-        PlanGateDialog(
-            state: PlanGateState(currentPlan: .personal, requiredPlan: .family),
-            onConfirm: {}
-        )
-    }
+    PlanGateDialog(
+        state: PlanGateState(currentPlan: .personal, requiredPlan: .family),
+        onConfirm: {}
+    )
     .preferredColorScheme(.dark)
     .voiceAlarmPreviewEnvironment()
 }

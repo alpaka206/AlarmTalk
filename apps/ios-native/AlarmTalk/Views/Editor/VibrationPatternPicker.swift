@@ -25,7 +25,9 @@ struct VibrationPatternPicker: View {
     var body: some View {
         HStack(spacing: 12) {
             Menu {
-                ForEach(VibrationPattern.allCases, id: \.self) { pattern in
+                // '없음'(.none) 은 목록에서 제외한다 — 진동 on/off 는 호출부의 토글이
+                // 담당한다 (Android `AlarmSettingsCard.kt:459` VibrationOptions 가 NONE 제외).
+                ForEach(VibrationPattern.allCases.filter { $0 != .none }, id: \.self) { pattern in
                     Button {
                         commit(pattern)
                     } label: {
@@ -91,21 +93,22 @@ struct VibrationPatternPicker: View {
 // MARK: - Display labels
 
 extension VibrationPattern {
-    /// Android `VibrationOptions` 라벨 그대로 (한국어 폴백 동반).
+    /// Android `AlarmSettingsCard.kt:70-82` 의 `VibrationOptions` 영문 라벨과 1:1 일치시킨다.
+    /// (.none 은 패턴 목록에서 제외되며 on/off 토글로 끄므로 'Off' 표기만 둔다.)
     var displayName: String {
         switch self {
-        case .default: return "기본"
-        case .strong: return "강함"
-        case .short: return "짧게"
-        case .medium: return "보통"
-        case .heartbeat: return "심장박동"
-        case .ticktock: return "똑딱똑딱"
-        case .waltz: return "왈츠"
-        case .zigzag: return "지그재그"
-        case .offBeat: return "오프비트"
-        case .ripple: return "물결"
-        case .siren: return "사이렌"
-        case .none: return "없음"
+        case .default: return "Basic call"
+        case .strong: return "Strong"
+        case .short: return "Short"
+        case .medium: return "Medium"
+        case .heartbeat: return "Heartbeat"
+        case .ticktock: return "Ticktock"
+        case .waltz: return "Waltz"
+        case .zigzag: return "Zig-zig-zig"
+        case .offBeat: return "Off-beat"
+        case .ripple: return "Ripple"
+        case .siren: return "Siren"
+        case .none: return "Off"
         }
     }
 }

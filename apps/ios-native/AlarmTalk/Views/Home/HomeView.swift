@@ -6,13 +6,13 @@ import SwiftUI
 /// ContentView 의 `homeScreen` 을 옮긴 것. 자체 상태는 없고 라우팅 콜백을
 /// 자식 컴포넌트에 분배한다.
 struct HomeView: View {
+    @Environment(\.voiceAlarmTheme) private var theme
     @EnvironmentObject private var auth: AuthViewModel
     @EnvironmentObject private var store: LocalAlarmStore
     @EnvironmentObject private var alarmKit: AlarmKitViewModel
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var subscriptions: SubscriptionManager
 
-    let openAuxiliary: (AuxiliaryScreen) -> Void
     let openEditor: (AlarmEditorTarget) -> Void
     let selectTab: (NativeTab) -> Void
     @State private var permissionSnapshot = LoginPermissionSnapshot.unknown
@@ -42,9 +42,6 @@ struct HomeView: View {
                 voiceLocked: !hasPaidVoiceAccess || !permissionSnapshot.microphoneGranted,
                 alarmLocked: !permissionSnapshot.alarmAuthorized
             )
-            CharacterMiniCard {
-                openAuxiliary(.growth)
-            }
         }
         .task {
             await refreshPermissionSnapshot()
@@ -141,10 +138,10 @@ struct HomeView: View {
         return VStack(alignment: .leading, spacing: 2) {
             Text(greeting.top)
                 .font(.title.weight(.bold))
-                .foregroundStyle(AlarmTalkTheme.text)
+                .foregroundStyle(theme.palette.onBackground)
             Text(greeting.bottom)
                 .font(.title.weight(.bold))
-                .foregroundStyle(AlarmTalkTheme.text)
+                .foregroundStyle(theme.palette.onBackground)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -153,7 +150,6 @@ struct HomeView: View {
 #if DEBUG
 #Preview("HomeView (light)") {
     HomeView(
-        openAuxiliary: { _ in },
         openEditor: { _ in },
         selectTab: { _ in }
     )
@@ -163,7 +159,6 @@ struct HomeView: View {
 
 #Preview("HomeView (dark)") {
     HomeView(
-        openAuxiliary: { _ in },
         openEditor: { _ in },
         selectTab: { _ in }
     )

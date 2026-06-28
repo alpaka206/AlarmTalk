@@ -1,52 +1,33 @@
 import SwiftUI
 
-/// 잠금 표식 뱃지. Android `FeatureLockBadge.kt:18-41` 와 동등.
+/// 잠금 표식 뱃지. Android `FeatureLockBadge.kt:19-42` 와 1:1.
+///
+/// primaryContainer 원 + 1px surface 보더 + onPrimaryContainer **아웃라인** 자물쇠
+/// 하나로만 구성한다. 티어 라벨 칩(개인/커플/가족)은 두지 않는다 — Android 도 라벨
+/// 없이 자물쇠만 그린다.
 ///
 /// 사용처
-///   - PlanGateDialog 상단 큰 잠금
 ///   - 잠긴 기능 옆 작은 잠금 (예: 비활성화된 "목소리 슬롯 추가" 버튼)
-///
-/// `tier` 를 주면 잠금 아이콘 옆에 작은 라벨(`Personal` / `Couple` / `Family`)
-/// 칩이 함께 그려진다. 라벨 없이 잠금만 보이고 싶을 땐 nil 로 호출한다.
 struct FeatureLockBadge: View {
     @Environment(\.voiceAlarmTheme) private var theme
     var size: CGFloat = 22
     var iconSize: CGFloat = 12
-    var tier: PlanTier? = nil
     var accessibilityLabel: String? = "이용권 필요"
 
     var body: some View {
-        if let tier {
-            HStack(spacing: 4) {
-                circleLockIcon
-                Text(tier.displayLabel)
-                    .font(theme.typography.labelSmall)
-                    .foregroundStyle(theme.palette.onPrimaryContainer)
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 6)
-                    .background(
-                        Capsule().fill(theme.palette.primaryContainer)
-                    )
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel ?? "이용권 필요 (\(tier.displayLabel))")
-        } else {
-            circleLockIcon
-                .accessibilityLabel(accessibilityLabel ?? "이용권 필요")
-        }
-    }
-
-    private var circleLockIcon: some View {
         ZStack {
             Circle()
                 .fill(theme.palette.primaryContainer)
             Circle()
                 .stroke(theme.palette.surface, lineWidth: 1)
-            Image(systemName: "lock.fill")
+            // Android `Icons.Outlined.Lock` 와 동일한 아웃라인 자물쇠(채움 아님).
+            Image(systemName: "lock")
                 .font(.system(size: iconSize, weight: .semibold))
                 .foregroundStyle(theme.palette.onPrimaryContainer)
         }
         .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? "이용권 필요")
     }
 }
 
@@ -54,9 +35,8 @@ struct FeatureLockBadge: View {
 #Preview("FeatureLockBadge (light)") {
     HStack(spacing: 12) {
         FeatureLockBadge()
-        FeatureLockBadge(size: 36, iconSize: 18, tier: .personal)
-        FeatureLockBadge(size: 36, iconSize: 18, tier: .couple)
-        FeatureLockBadge(size: 36, iconSize: 18, tier: .family)
+        FeatureLockBadge(size: 36, iconSize: 18)
+        FeatureLockBadge(size: 58, iconSize: 27)
     }
     .padding()
     .voiceAlarmPreviewEnvironment()
@@ -65,7 +45,7 @@ struct FeatureLockBadge: View {
 #Preview("FeatureLockBadge (dark)") {
     HStack(spacing: 12) {
         FeatureLockBadge()
-        FeatureLockBadge(size: 36, iconSize: 18, tier: .family)
+        FeatureLockBadge(size: 36, iconSize: 18)
     }
     .padding()
     .preferredColorScheme(.dark)

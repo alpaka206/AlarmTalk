@@ -3,6 +3,11 @@ options:
   bundleIdPrefix: com.voicealarm.nativeapp.ios
   deploymentTarget:
     iOS: "26.0"
+  # 소스 문자열은 한국어. SwiftUI `Text("한국어")` 리터럴이 String Catalog 의 키로 쓰이고,
+  # ko=키 자체, en/ja 는 Localizable.xcstrings / InfoPlist.xcstrings 가 제공한다.
+  # (en·ja 를 knownRegions 에 활성화하려면 Mac 에서 Xcode 로 1회 언어 추가 필요 —
+  #  docs/qa/ios-localization.md 참고.)
+  developmentLanguage: ko
 configurations:
   Debug: debug
   Release: release

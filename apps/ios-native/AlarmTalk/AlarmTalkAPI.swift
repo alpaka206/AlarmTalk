@@ -106,6 +106,10 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.profiles
     }
 
+    /// noiseRemoval 파라미터는 호출부 소스 호환을 위해 유지하지만 더 이상 multipart 로
+    /// 전송하지 않는다. Android 는 이 필드를 보내지 않고, 백엔드도 읽지 않는다(stale).
+    /// 대신 Android 처럼 voiceGender(male/female/neutral)/speechFormality(auto/polite)를
+    /// **항상** 동봉한다. Android `VoiceProfileApi.kt:106-121`.
     static func voiceCloneMultipartFields(
         name: String,
         isShared: Bool,
@@ -113,20 +117,23 @@ final class AlarmTalkAPI: @unchecked Sendable {
         noiseRemoval: Bool = false,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        isDraft: Bool? = nil
+        isDraft: Bool? = nil,
+        voiceGender: String = "neutral",
+        speechFormality: String = "auto"
     ) -> [String: String] {
-        var fields: [String: String] = [
+        _ = noiseRemoval // stale: 더 이상 전송하지 않음(backend 무시, Android 미전송).
+        let fields: [String: String] = [
             "name": name.trimmingCharacters(in: .whitespacesAndNewlines),
             "isShared": isShared ? "true" : "false",
             "durationMs": String(durationMs),
             "relationshipLabel": relationshipLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "listenerTitle": listenerTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "isDraft": (isDraft ?? false) ? "true" : "false",
+            // Android 와 동일하게 항상 동봉(기본 neutral/auto). backend 가 폼이 없으면 null 로
+            // 저장하므로, 기본값을 명시 전송해 일본어 정중체·성별 튜닝 기준을 일치시킨다.
+            "voiceGender": voiceGender.trimmingCharacters(in: .whitespacesAndNewlines),
+            "speechFormality": speechFormality.trimmingCharacters(in: .whitespacesAndNewlines),
         ]
-        if noiseRemoval {
-            fields["noiseRemoval"] = "true"
-            fields["noise_removal"] = "true"
-        }
         return fields
     }
 
@@ -140,7 +147,9 @@ final class AlarmTalkAPI: @unchecked Sendable {
         uploadFileName: String? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
-        isDraft: Bool? = nil
+        isDraft: Bool? = nil,
+        voiceGender: String = "neutral",
+        speechFormality: String = "auto"
     ) async throws -> VoiceProfile {
         let fields = Self.voiceCloneMultipartFields(
             name: name,
@@ -149,12 +158,12 @@ final class AlarmTalkAPI: @unchecked Sendable {
             noiseRemoval: noiseRemoval,
             relationshipLabel: relationshipLabel,
             listenerTitle: listenerTitle,
-            isDraft: isDraft
+            isDraft: isDraft,
+            voiceGender: voiceGender,
+            speechFormality: speechFormality
         )
-        // noise_removal 플래그 — `feat/voice-clone-noise-removal` 머지 이후 backend 가
-        // 인식하지만, 미인식 환경(이전 deploy)에서도 무시되도록 옵션으로 추가.
-        // Android `VoiceProfileApi.kt:97-108` 와 동일하게 multipart 필드로 전송.
         // 관계/호칭이 비어 있어도 필드를 포함해 Android 와 같은 서버 검증 경로를 탄다.
+        // voiceGender/speechFormality 도 항상 동봉(Android `VoiceProfileApi.kt:117-120`).
         let response: VoiceProfileResponse = try await multipartRequest(
             "voice/clone",
             token: token,
@@ -258,18 +267,24 @@ final class AlarmTalkAPI: @unchecked Sendable {
         isDraft: Bool? = nil,
         relationshipLabel: String? = nil,
         listenerTitle: String? = nil,
+        voiceGender: String? = nil,
+        speechFormality: String? = nil,
         token: String
     ) async throws -> VoiceProfile {
         let response: VoiceProfileResponse = try await request(
             "voice/\(id)",
             method: "PATCH",
             token: token,
+            // voiceGender/speechFormality 는 convertToSnakeCase 로 voice_gender/speech_formality
+            // 로 인코딩되어 PATCH /voice/:id 가 갱신한다. Android `VoiceProfileApi.kt:53-63`.
             body: VoiceProfileUpdateRequest(
                 name: name.nilIfBlank,
                 isShared: isShared,
                 isDraft: isDraft,
                 relationshipLabel: relationshipLabel.nilIfBlank,
-                listenerTitle: listenerTitle.nilIfBlank
+                listenerTitle: listenerTitle.nilIfBlank,
+                voiceGender: voiceGender.nilIfBlank,
+                speechFormality: speechFormality.nilIfBlank
             )
         )
         return response.profile
@@ -405,9 +420,15 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("user/consents/status", token: token)
     }
 
-    /// 약관 동의 기록. Android `AuthApi.kt:209`.
+    /// 약관 동의 기록. Android `AuthApi.kt:248-252`.
     func recordConsents(_ requestBody: RecordConsentsRequest, token: String) async throws -> RecordConsentsResponse {
         try await request("user/consents", method: "POST", token: token, body: requestBody)
+    }
+
+    /// 유형별 최신 동의 기록 목록 조회. 설정 화면의 마케팅(광고성 정보 수신) 토글이
+    /// 현재 동의 상태를 읽을 때 사용. Android `AuthApi.kt:245-246`, 백엔드 user.ts:401.
+    func listConsents(token: String) async throws -> ConsentListResponse {
+        try await request("user/consents", token: token)
     }
 
     /// 앱 최소지원버전 정책 조회. 인증 불필요. Android `AuthApi.kt:215` (`platform` 만 ios).
@@ -491,49 +512,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         try await request("notes/\(id)/read", method: "PATCH", token: token)
     }
 
-    func getCharacter(token: String) async throws -> CharacterResponse {
-        try await request("characters/me", token: token)
-    }
-
-    func grantCharacterXP(event: String, token: String) async throws -> CharacterGrantResponse {
-        // 레거시 진입점. nonce 를 매번 새 UUID 로 만들어 서버 멱등성을 활용하지 못한다.
-        // 새 코드는 `CharacterEventStore` 가 nonce 를 만들고 아래
-        // `grantCharacterXP(event:clientNonce:localDate:token:)` 를 호출하도록 한다.
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone.current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return try await grantCharacterXP(
-            event: event,
-            clientNonce: UUID().uuidString,
-            localDate: formatter.string(from: Date()),
-            token: token
-        )
-    }
-
-    /// 멱등 grant — `CharacterEventStore.flushPending` 가 사용한다. 서버는 같은
-    /// (user, event, client_nonce, local_date) 조합을 받으면 200 + `duplicated=true`
-    /// 를 반환해 안전하게 재시도 가능. Android `CharacterXpRequest` 와 동일한 body
-    /// 형태 (`context` 없음).
-    func grantCharacterXP(
-        event: String,
-        clientNonce: String,
-        localDate: String,
-        token: String
-    ) async throws -> CharacterGrantResponse {
-        try await request(
-            "characters/xp",
-            method: "POST",
-            token: token,
-            body: CharacterXpRequest(
-                event: event,
-                clientNonce: clientNonce,
-                localDate: localDate
-            )
-        )
-    }
-
     func getSubscription(token: String) async throws -> BillingSubscriptionResponse {
         try await request("billing/subscription", token: token)
     }
@@ -604,6 +582,17 @@ final class AlarmTalkAPI: @unchecked Sendable {
         return response.voucher
     }
 
+    /// 기존 공유 코드를 무효화(expired)하고 새 코드를 발급한다(유출 의심 시 재발급).
+    /// Android `BillingApi.kt:150-153`, 백엔드 billing-mutation.ts:641.
+    func regenerateFamilyShareCode(token: String) async throws -> VoucherItem {
+        let response: EnsureFamilyShareCodeResponse = try await request(
+            "billing/vouchers/family-share/regenerate",
+            method: "POST",
+            token: token
+        )
+        return response.voucher
+    }
+
     func cancelSubscription(mode: String, token: String) async throws -> CancelSubscriptionResponse {
         try await request(
             "billing/cancel",
@@ -662,6 +651,33 @@ final class AlarmTalkAPI: @unchecked Sendable {
             "auth/login",
             method: "POST",
             body: EmailLoginRequest(email: email, password: password)
+        )
+    }
+
+    // MARK: - 비밀번호 재설정
+
+    /// 비밀번호 재설정 코드 발송. 계정 존재 여부를 노출하지 않으므로(비번 계정에만 발송)
+    /// 응답은 항상 성공이다. Android `AuthApi.kt:200-201`, 백엔드 auth.ts:280.
+    func requestPasswordReset(email: String) async throws -> RequestEmailVerificationResponse {
+        try await request(
+            "auth/password-reset",
+            method: "POST",
+            body: PasswordResetRequest(email: email)
+        )
+    }
+
+    /// 비밀번호 재설정 확정 — 6자리 코드 검증 후 새 비밀번호로 교체. 성공 시 서버가
+    /// token_epoch 를 올려 기존 세션을 전부 폐기한다. Android `AuthApi.kt:203-206`,
+    /// 백엔드 auth.ts:359.
+    func confirmPasswordReset(
+        email: String,
+        code: String,
+        password: String
+    ) async throws -> PasswordResetConfirmResponse {
+        try await request(
+            "auth/password-reset/confirm",
+            method: "POST",
+            body: PasswordResetConfirmRequest(email: email, code: code, password: password)
         )
     }
 
@@ -961,13 +977,6 @@ final class AlarmTalkAPI: @unchecked Sendable {
         }
     }
 }
-
-// MARK: - CharacterXPGranting conformance
-//
-// `CharacterEventStore` 는 protocol 의존성으로 grant API 를 호출한다. 이미 동일한
-// 시그니처 메서드 (`grantCharacterXP(event:clientNonce:localDate:token:)`) 가 위에
-// 정의되어 있으므로 declarative 한 conformance 선언만 추가.
-extension AlarmTalkAPI: CharacterXPGranting {}
 
 struct EmptyBody: Encodable {}
 struct EmptyResponse: Decodable {}
