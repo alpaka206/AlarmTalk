@@ -1047,8 +1047,11 @@ struct AlarmEditorSheet: View {
 
         // 무료 등급은 서버가 시스템 보이스만 허용한다(tts.ts:684-693).
         // 비-시스템 프로필이 선택돼 있으면 시스템 보이스로 갈아끼워 403 을 예방한다.
+        // 온보딩/목소리 탭에서 고른 기본 목소리(시스템)를 우선 선택 — Android VoiceAudioCard 미러.
+        let defaultVoice = readyOwn.first { $0.id == voiceStudio.defaultVoiceId }
+
         if freeVoiceTier {
-            let systemVoice = readyOwn.first { isSystemVoiceId($0.id) }
+            let systemVoice = defaultVoice ?? readyOwn.first { isSystemVoiceId($0.id) }
             let selectedIsSystem = selected.map { isSystemVoiceId($0) } ?? false
             if selectedIsSystem,
                readyOwn.contains(where: { $0.id == selected }) {
@@ -1067,7 +1070,9 @@ struct AlarmEditorSheet: View {
         if selectedStillAvailable {
             return
         }
-        if let first = readyOwn.first {
+        if let defaultVoice {
+            voiceStudio.selectedProfileID = defaultVoice.id
+        } else if let first = readyOwn.first {
             voiceStudio.selectedProfileID = first.id
         } else if let first = readyShared.first, !first.requiresViewerInfo {
             voiceStudio.selectedProfileID = first.id

@@ -39,6 +39,17 @@ struct VoiceProfileManagementPanel: View {
     /// Android `SharedVoiceViewerInfoDialog` (VoiceProfileManagementPanel.kt:1543) 와 동일한 의도.
     @State private var sharedViewerInfoTarget: FamilyVoiceProfile?
 
+    /// 시스템(기본) 목소리 섹션 접이식 상태.
+    @State private var systemVoicesExpanded: Bool = false
+
+    /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리/공유 목소리와 분리해 노출.
+    private var systemVoices: [VoiceProfile] {
+        voice.profiles.filter { isSystemVoiceId($0.id) }
+    }
+    private var ownVoices: [VoiceProfile] {
+        voice.profiles.filter { !isSystemVoiceId($0.id) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScreenHeader(title: "목소리", subtitle: nil)
@@ -57,8 +68,13 @@ struct VoiceProfileManagementPanel: View {
                     subtitle: "60초 이상 녹음한 뒤 학습을 등록해 주세요.",
                     icon: "mic.slash"
                 )
-            } else if !voice.profiles.isEmpty {
-                ownProfilesSection
+            } else {
+                if !ownVoices.isEmpty {
+                    ownProfilesSection
+                }
+                if !systemVoices.isEmpty {
+                    systemVoicesSection
+                }
             }
             familyProfilesSection
         }
@@ -259,7 +275,7 @@ struct VoiceProfileManagementPanel: View {
                 .font(.footnote)
                 .disabled(voice.isBusy)
             }
-            ForEach(voice.profiles) { profile in
+            ForEach(ownVoices) { profile in
                 VoiceProfileRow(
                     profile: profile,
                     isSelected: profile.id == voice.selectedProfileID,
@@ -300,6 +316,58 @@ struct VoiceProfileManagementPanel: View {
         }
     }
 
+    // MARK: - 기본(시스템) 목소리 (Android VoiceProfileManagementPanel.kt systemVoicesSection 미러)
+
+    private var defaultVoiceName: String? {
+        systemVoices.first { $0.id == voice.defaultVoiceId }?.name
+    }
+
+    @ViewBuilder
+    private var systemVoicesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { systemVoicesExpanded.toggle() }
+            } label: {
+                HStack {
+                    // 기본이 정해졌으면 그 이름을, 아니면 종 수를 보여준다.
+                    Text(defaultVoiceName.map { "기본 목소리 · \($0)" } ?? "기본 목소리 \(systemVoices.count)종")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Image(systemName: systemVoicesExpanded ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if systemVoicesExpanded {
+                ForEach(systemVoices) { profile in
+                    SystemVoiceProfileRow(
+                        profile: profile,
+                        selected: profile.id == voice.defaultVoiceId,
+                        playing: voice.previewingGreetingVoiceId == profile.id,
+                        onSelect: { voice.setDefaultVoice(profile.id) },
+                        onPlay: { Task { await voice.previewGreeting(voiceId: profile.id, session: auth.session) } }
+                    )
+                }
+            }
+
+            // 기본 목소리가 정해졌으면 호칭을 여기서 수정(펼치지 않아도 보임). 입력 즉시 저장.
+            if voice.defaultVoiceId != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("호칭")
+                        .font(.caption)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                    TextField("예: 지호, 자기, 대표님", text: Binding(
+                        get: { voice.defaultListenerTitle ?? "" },
+                        set: { voice.setDefaultListenerTitle(String($0.prefix(30))) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                }
+                .padding(.top, 4)
+            }
+        }
+    }
+
     private var canShareVoice: Bool {
         canShareVoiceWithOthers(
             subscriptionResponse: socialFeatures.subscription,
@@ -308,5 +376,60 @@ struct VoiceProfileManagementPanel: View {
             storeTier: subscriptions.currentTier,
             userPlan: auth.session?.user.plan
         )
+    }
+}
+
+/// 시스템(스톡) 목소리 행 — 카드 탭 = 기본 목소리로 선택, ▶ = 인사말 미리듣기, 라디오 = 선택 표시.
+/// Android `SystemVoiceProfileRow` 미러.
+private struct SystemVoiceProfileRow: View {
+    let profile: VoiceProfile
+    let selected: Bool
+    let playing: Bool
+    let onSelect: () -> Void
+    let onPlay: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(AlarmTalkTheme.primary.opacity(0.14))
+                    Image(systemName: "mic")
+                        .foregroundStyle(AlarmTalkTheme.primary)
+                }
+                .frame(width: 42, height: 42)
+
+                Text(profile.name)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button(action: onPlay) {
+                    Image(systemName: playing ? "stop.fill" : "play.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AlarmTalkTheme.primary)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+
+                ZStack {
+                    Circle()
+                        .strokeBorder(selected ? Color.clear : AlarmTalkTheme.outline, lineWidth: 2)
+                        .background(Circle().fill(selected ? AlarmTalkTheme.primary : Color.clear))
+                        .frame(width: 18, height: 18)
+                    if selected {
+                        Circle().fill(Color.white).frame(width: 7, height: 7)
+                    }
+                }
+                .frame(width: 22, height: 22)
+            }
+            .padding(EdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 6))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? AlarmTalkTheme.primary.opacity(0.10) : AlarmTalkTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(AlarmTalkTheme.outline.opacity(0.4), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -642,6 +642,8 @@ struct AlarmVoiceProfilePicker: View {
     let ownProfiles: [VoiceProfile]
     let familyVoices: [FamilyVoiceProfile]
     let selectedProfileID: String?
+    /// 온보딩/목소리 탭에서 고른 기본(시스템) 목소리. 시스템 음성은 이 1개만 목록에 노출한다.
+    var defaultVoiceId: String?
     /// 프로필 목록을 비동기로 불러오는 중인지. 초기 fetch 동안에는 ownProfiles /
     /// familyVoices 가 잠깐 비어 있어, loading 을 무시하면 '삭제된 목소리' 경고가
     /// 잘못 깜빡인다. Android `VoiceAudioCard.kt` 의 `!voiceProfileBusy` 게이트 미러.
@@ -652,7 +654,12 @@ struct AlarmVoiceProfilePicker: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
-        let readyOwnProfiles = ownProfiles.filter(\.isReadyForAlarmSelection)
+        // 알람창에선 기본(시스템) 목소리를 못 바꾼다(변경은 목소리 탭). 그래서 시스템 음성은
+        // 사용자가 고른 기본 1개만 노출하고, 내가 등록한 음성은 전부 노출한다.
+        // Android `VoiceAudioCard.kt` readyProfiles 필터 미러.
+        let readyOwnProfiles = ownProfiles
+            .filter(\.isReadyForAlarmSelection)
+            .filter { !isSystemVoiceId($0.id) || $0.id == defaultVoiceId }
         let readyFamilyVoices = familyVoices.filter(\.isReadyForAlarmSelection)
         // 저장된 voiceProfileId 가 더 이상 선택 가능한 목소리로 해석되지 않으면
         // 조용히 다른 목소리로 바꾸지 않고 빨간 경고만 띄운다. 선택값은 그대로 두어

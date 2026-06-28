@@ -56,6 +56,7 @@ extension AlarmEditorSheet {
                                 ownProfiles: voiceStudio.profiles,
                                 familyVoices: voiceStudio.familyVoices,
                                 selectedProfileID: voiceStudio.selectedProfileID,
+                                defaultVoiceId: voiceStudio.defaultVoiceId,
                                 loading: voiceStudio.isBusy,
                                 onSelectOwn: { profile in
                                     // 무료 등급은 시스템 보이스만 허용한다(서버 tts.ts:684-693).

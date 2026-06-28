@@ -41,6 +41,13 @@ final class VoiceStudioViewModel: ObservableObject {
     /// 에디터의 StockClipPicker 가 사용. 세션당 1회 로드한다.
     @Published var stockClips: [StockClip] = []
     @Published var selectedProfileID: String?
+    /// 사용자가 고른 기본 목소리 id(시스템 스톡 보이스). 로그인 후 기기 설정에서 로드.
+    /// 새 알람 에디터 미리선택 + 에디터 시스템음성 노출 제한 + 목소리 탭 표시에 사용.
+    @Published var defaultVoiceId: String?
+    /// 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
+    @Published var defaultListenerTitle: String?
+    /// 온보딩/목소리 탭에서 "들어보기"(greeting) 재생 중인 시스템 음성 id. nil 이면 정지 상태.
+    @Published var previewingGreetingVoiceId: String?
     @Published var ttsText = "좋은 아침이에요! 일어나세요! 오늘 하루도 힘내봐요!"
     @Published var ttsCategory = "morning"
     @Published var ttsLanguage = "ko"
@@ -64,6 +71,7 @@ final class VoiceStudioViewModel: ObservableObject {
     let previewPlayer = AudioPreviewPlayer()
 
     private let api: AlarmTalkAPI
+    private let defaultVoiceStore = DefaultVoicePreferenceStore()
     private var cancellables = Set<AnyCancellable>()
     private var activeUserID: String?
 
@@ -100,6 +108,9 @@ final class VoiceStudioViewModel: ObservableObject {
         messages = []
         stockClips = []
         selectedProfileID = nil
+        defaultVoiceId = nil
+        defaultListenerTitle = nil
+        previewingGreetingVoiceId = nil
         statusMessage = nil
         preparedAlarm = nil
     }
@@ -114,11 +125,55 @@ final class VoiceStudioViewModel: ObservableObject {
         preparedAlarm = nil
     }
 
+    // MARK: - 기본 목소리 + 호칭 (Android MainViewModel.setDefaultVoice / setDefaultListenerTitle / completeVoiceSetup 미러)
+
+    /// 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신.
+    func setDefaultVoice(_ voiceId: String?) {
+        defaultVoiceStore.setDefaultVoiceId(userID: activeUserID, voiceId: voiceId)
+        defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: activeUserID)
+    }
+
+    /// 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용).
+    func setDefaultListenerTitle(_ title: String?) {
+        defaultVoiceStore.setListenerTitle(userID: activeUserID, title: title)
+        defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: activeUserID)
+    }
+
+    /// 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때.
+    func completeVoiceSetup(voiceId: String, listenerTitle: String?) {
+        setDefaultVoice(voiceId)
+        setDefaultListenerTitle(listenerTitle)
+    }
+
+    /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
+    /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
+    func previewGreeting(voiceId: String, session: AuthSession?) async {
+        if previewingGreetingVoiceId == voiceId {
+            previewPlayer.stop()
+            previewingGreetingVoiceId = nil
+            return
+        }
+        let clip = stockClips.first { $0.voiceProfileId == voiceId && $0.category == "greeting" }
+            ?? stockClips.first { $0.voiceProfileId == voiceId }
+        guard let clip else { return }
+        previewPlayer.stop()
+        previewingGreetingVoiceId = voiceId
+        if await prepareStockClip(clip, session: session) != nil {
+            playPreparedAudio()
+        } else {
+            previewingGreetingVoiceId = nil
+        }
+    }
+
     private var selectedListenerTitle: String? {
         if let listener = selectedProfile?.listenerTitle, let trimmed = (listener).nilIfBlank {
             return trimmed
         }
         if let listener = selectedFamilyVoice?.listenerTitle, let trimmed = (listener).nilIfBlank {
+            return trimmed
+        }
+        // 시스템(기본) 목소리는 프로필 호칭이 없으니 온보딩/목소리 탭에서 정한 기본 호칭 사용.
+        if isSystemVoiceId(selectedProfileID), let trimmed = defaultListenerTitle?.nilIfBlank {
             return trimmed
         }
         return nil
@@ -164,6 +219,9 @@ final class VoiceStudioViewModel: ObservableObject {
             return
         }
         activeUserID = userID
+        // 기본 목소리/호칭은 기기 클라 설정(유저별). 프로필 로드와 무관하게 바로 채운다.
+        defaultVoiceId = defaultVoiceStore.defaultVoiceId(userID: userID)
+        defaultListenerTitle = defaultVoiceStore.listenerTitle(userID: userID)
         guard force || !isBusy else { return }
         let shouldManageBusy = !isBusy
         if shouldManageBusy {
@@ -197,7 +255,12 @@ final class VoiceStudioViewModel: ObservableObject {
                 self.selectedProfileID = nil
             }
             if selectedProfileID == nil {
-                selectedProfileID = profiles.first(where: { $0.status == "ready" })?.id ??
+                // 온보딩에서 고른 기본 목소리를 우선 선택(목록에 있으면).
+                let preferredDefault = defaultVoiceId.flatMap { id in
+                    profiles.first(where: { $0.id == id })?.id
+                }
+                selectedProfileID = preferredDefault ??
+                    profiles.first(where: { $0.status == "ready" })?.id ??
                     profiles.first?.id ??
                     familyVoices.first(where: { $0.status == "ready" })?.id ??
                     familyVoices.first?.id
