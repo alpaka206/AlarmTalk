@@ -117,7 +117,9 @@ final class VoiceStudioViewModel: ObservableObject {
 
     func clearPaidVoiceState() {
         previewPlayer.stop()
-        profiles = []
+        // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리" — 유료 음성만 제거하고 시스템 음성은 남긴다.
+        // 온보딩 "기본 목소리 고르기"가 빈 목록으로 멈추는 것 방지(Android applyFreePlanVoiceLock 미러, Codex P2).
+        profiles = profiles.filter { isSystemVoiceId($0.id) }
         familyVoices = []
         messages = []
         stockClips = []

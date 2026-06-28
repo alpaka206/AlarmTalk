@@ -552,6 +552,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
       }
       // 온보딩 직후 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
+          // 시스템 음성이 비어 있으면(무료 플랜 lock 등으로) 다시 받아와 빈 로딩 화면에 갇히지 않게 한다.
+          LaunchedEffect(Unit) { viewModel.preloadVoiceProfiles() }
           VoiceOnboardingScreen(
               contentPadding = padding,
               systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
