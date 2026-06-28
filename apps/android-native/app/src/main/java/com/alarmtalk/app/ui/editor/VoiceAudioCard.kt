@@ -107,11 +107,14 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 그래서 시스템 음성은
-    // 사용자가 고른 기본 1개만 노출하고, 내가 등록한 음성은 전부 노출한다.
+    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리가 정해졌고
+    // 그게 목록에 있으면 시스템 음성은 그 1개만, 아니면(기존 사용자·미선택 등) 시스템 음성을 전부
+    // 노출해 "쓸 목소리가 없음" 으로 갇히지 않게 한다(Codex P2). 내가 등록한 음성은 항상 전부 노출.
+    val hasDefaultSystemVoice = defaultVoiceId != null &&
+        voiceProfiles.any { it.id == defaultVoiceId && it.isSystem == true }
     val readyProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") &&
-            (it.isSystem != true || it.id == defaultVoiceId)
+            (it.isSystem != true || !hasDefaultSystemVoice || it.id == defaultVoiceId)
     }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
