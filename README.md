@@ -25,7 +25,7 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 | Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
-| Voice AI | Perso (primary) / ElevenLabs (fallback) — Instant Voice Clone + TTS |
+| Voice AI | ElevenLabs — Instant Voice Clone + TTS |
 | Auth | JWT (HS256, 7d) · Google ID token · Apple ID token |
 | Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 

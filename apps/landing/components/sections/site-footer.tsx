@@ -83,7 +83,7 @@ export function SiteFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/perso-devrel/voice_alarm"
+                    href="https://github.com/alarmtalk/voice_alarm"
                     target="_blank"
                     rel="noreferrer"
                     className="whitespace-nowrap text-text-muted hover:text-text"

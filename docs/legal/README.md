@@ -26,7 +26,6 @@ payment details, and processor list match the final production setup.
 - `terms-of-service.ko.md`: public 서비스 이용약관 draft
 - `consent-and-permission-copy.ko.md`: in-app consent and permission copy
 - `store-disclosures.ko.md`: Google Play / App Store disclosure checklist
-- `perso-processor-notes.ko.md`: 음성 AI 수탁사 Perso(이스트소프트) 처리 사실·근거·계약(DPA) 체크리스트
 
 ## Release Blockers
 
@@ -35,8 +34,8 @@ payment details, and processor list match the final production setup.
   Confirm 통신판매업 신고 if paid plans are sold directly.
 - Confirm support/privacy contact is live (current legal docs use `gyuwon05@gmail.com`).
 - Confirm third-party processors and countries:
-  Cloudflare, Turso/libSQL, Perso(이스트소프트), Sentry, Google, Apple, email providers,
-  payment providers. See `perso-processor-notes.ko.md` for the Perso processor details and DPA checklist.
+  Cloudflare, Turso/libSQL, ElevenLabs, Sentry, Google, Apple, email providers,
+  payment providers. Confirm ElevenLabs terms, privacy policy, DPA, retention settings, and sub-processor list before public release.
 - Confirm whether voice data is treated as biometric information under the final
   product flow and jurisdiction review. These drafts conservatively treat user
   voice recordings and cloned voice profiles as highly sensitive voice data that

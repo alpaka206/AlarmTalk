@@ -104,7 +104,7 @@ app.post('/auth/login', async (c) => {
 
 Physical-device verification: a real Android phone with the Physical Device Checklist in `apps/android-native/README.md`.
 
-External providers (ElevenLabs, Perso, FCM) must be stubbed in tests. Automated tests must not consume paid credits.
+External providers (ElevenLabs, FCM) must be stubbed in tests. Automated tests must not consume paid credits.
 
 ## 9. Tone and accessibility
 

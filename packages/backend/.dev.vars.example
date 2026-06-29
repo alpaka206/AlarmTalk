@@ -13,7 +13,7 @@ GOOGLE_CLIENT_ID=
 JWT_SECRET=
 PASSWORD_PEPPER=
 
-# === AI providers ===
+# === AI provider ===
 ELEVENLABS_API_KEY=
 
 # Translation (Vertex). Requires a service-account JSON.

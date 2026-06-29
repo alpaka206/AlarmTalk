@@ -13,7 +13,7 @@ Older versions receive no fixes. Always upgrade to the latest released version.
 Please report security issues **privately**, not through public GitHub issues.
 
 1. **Do not** create a public issue or PR describing the vulnerability.
-2. Open a private report via [GitHub Private Vulnerability Reporting](https://github.com/perso-devrel/voice_alarm/security/advisories/new).
+2. Open a private report via GitHub Private Vulnerability Reporting for this repository.
 3. Include:
    - A clear description of the issue
    - Step-by-step reproduction
