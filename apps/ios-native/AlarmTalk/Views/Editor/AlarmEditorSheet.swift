@@ -75,6 +75,7 @@ struct AlarmEditorSheet: View {
     /// 사라지게 한다. 매 call site 에서 stockSelectedMessageID 를 비우는 것을 잊는
     /// 실수를 원천 차단한다.
     @State var suppressProfileChangeInvalidation = false
+    @State var ttsProfileChangedDuringEdit = false
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
               prepared.audioCacheKey.hasPrefix("stock_") else {
@@ -417,8 +418,11 @@ struct AlarmEditorSheet: View {
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
         // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
         // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
-        .onChange(of: voiceStudio.selectedProfileID) { _, _ in
+        .onChange(of: voiceStudio.selectedProfileID) { oldProfileID, newProfileID in
             guard !suppressProfileChangeInvalidation else { return }
+            if (oldProfileID).nilIfBlank != (newProfileID).nilIfBlank {
+                ttsProfileChangedDuringEdit = true
+            }
             stopAllEditorPreviews()
             stockSelectedMessageID = nil
             voiceStudio.preparedAlarm = nil
@@ -648,8 +652,28 @@ struct AlarmEditorSheet: View {
             language: voiceStudio.ttsLanguage,
             translateText: voiceStudio.translateText,
             fireAtMillis: fireAt,
-            listenerTitle: voiceStudio.selectedListenerTitle
+            listenerTitle: ttsListenerTitleForCurrentSelection(existing: editingAlarm)
         )
+    }
+
+    private func shouldPreserveExistingTtsListenerTitle(existing: LocalAlarmRecord?) -> Bool {
+        guard let existing,
+              existing.playModeEnum != .alarmOnly,
+              existing.voiceSourceEnum != .localAudio,
+              !ttsProfileChangedDuringEdit,
+              (existing.voiceListenerTitle).nilIfBlank != nil,
+              let selectedProfileID = (voiceStudio.selectedProfileID).nilIfBlank,
+              selectedProfileID == (existing.voiceProfileId).nilIfBlank else {
+            return false
+        }
+        return true
+    }
+
+    private func ttsListenerTitleForCurrentSelection(existing: LocalAlarmRecord?) -> String? {
+        if shouldPreserveExistingTtsListenerTitle(existing: existing) {
+            return existing?.voiceListenerTitle
+        }
+        return voiceStudio.selectedListenerTitle
     }
 
     var navigationTitle: String {
@@ -854,6 +878,7 @@ struct AlarmEditorSheet: View {
 
     func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
         let saved = savedPromptPreferences()
+        ttsProfileChangedDuringEdit = false
         suppressProfileChangeInvalidation = true
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
@@ -1159,6 +1184,9 @@ struct AlarmEditorSheet: View {
         // 기존 음원도 재사용할 수 없으면 — 그냥 막지 않고 여기서 직접 생성한다. 생성이
         // 실패하면(generateTTS 가 mapVoiceError 로 statusMessage 를 채우고 nil 반환) 저장을
         // 중단해, 음성 없는 알람이 저장되거나 설정한 시간/이름/반복이 사라지는 일이 없다.
+        let shouldPreserveExistingListenerTitle = shouldPreserveExistingTtsListenerTitle(existing: existing)
+        let currentListenerTitle = ttsListenerTitleForCurrentSelection(existing: existing)
+
         if draft.playMode != .alarmOnly,
            voiceSourceMode == .ttsProfile,
            voiceStudio.preparedAlarm == nil,
@@ -1167,11 +1195,11 @@ struct AlarmEditorSheet: View {
                 selectedProfileID: voiceStudio.selectedProfileID,
                 text: voiceStudio.ttsText,
                 randomPrompt: voiceStudio.randomPrompt,
-                 randomContext: voiceStudio.randomContext,
-                 language: voiceStudio.ttsLanguage,
-                 translateText: voiceStudio.translateText,
-                 fireAtMillis: fireAt,
-                 listenerTitle: voiceStudio.selectedListenerTitle
+                randomContext: voiceStudio.randomContext,
+                language: voiceStudio.ttsLanguage,
+                translateText: voiceStudio.translateText,
+                fireAtMillis: fireAt,
+                listenerTitle: currentListenerTitle
             ) {
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
@@ -1179,6 +1207,8 @@ struct AlarmEditorSheet: View {
                 alarmMinute: draft.minute,
                 targetUserId: target.familyAlarmMode ? selectedFamilyRecipient?.userId : nil,
                 targetDynamicPromptState: target.familyAlarmMode ? selectedFamilyRecipient?.dynamicPromptSettingsState : nil,
+                listenerTitleOverride: currentListenerTitle,
+                useListenerTitleOverride: shouldPreserveExistingListenerTitle,
                 // 저장 흐름의 인라인 생성: 성공 햅틱은 이어지는 finishScheduling 이
                 // 울린다. 여기서도 울리면 두 번 진동하므로 억제한다.
                 triggerSuccessHaptic: false

@@ -828,6 +828,8 @@ final class VoiceStudioViewModel: ObservableObject {
         alarmMinute: Int? = nil,
         targetUserId: String? = nil,
         targetDynamicPromptState: DynamicPromptSettingsState? = nil,
+        listenerTitleOverride: String? = nil,
+        useListenerTitleOverride: Bool = false,
         triggerSuccessHaptic: Bool = true
     ) async -> PreparedAlarmTalk? {
         guard let token = session?.token else {
@@ -870,6 +872,9 @@ final class VoiceStudioViewModel: ObservableObject {
             // 로컬 ttsCacheKey 가 재사용 검사와 어긋나 불필요한 재생성을 유발하지 않는다.
             // Android 는 editor.ttsTextForSave() 로 trim 한다.
             let trimmedText = ttsText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let requestListenerTitle = useListenerTitleOverride
+                ? (listenerTitleOverride).nilIfBlank
+                : selectedListenerTitle
             let response = try await api.generateTTS(
                 TtsGenerateRequest(
                     voiceProfileId: profileID,
@@ -886,7 +891,7 @@ final class VoiceStudioViewModel: ObservableObject {
                     fortuneGender: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneGender).nilIfBlank : nil,
                     fortuneBirthDate: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneBirthDate).nilIfBlank : nil,
                     fortuneBirthTime: targetUserId == nil && randomPrompt && promptContext.usesFortune ? (fortuneBirthTime).nilIfBlank : nil,
-                    listenerTitle: selectedListenerTitle,
+                    listenerTitle: requestListenerTitle,
                     targetUserId: targetUserId
                 ),
                 token: token
@@ -907,7 +912,7 @@ final class VoiceStudioViewModel: ObservableObject {
                 rawAudioURL: response.remoteAudioURI,
                 text: response.text,
                 language: activeLanguage,
-                listenerTitle: selectedListenerTitle
+                listenerTitle: requestListenerTitle
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."
