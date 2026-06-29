@@ -17,9 +17,10 @@ struct VoiceSetupView: View {
 
     @State private var selectedVoiceId: String?
     @State private var listenerTitle: String = ""
+    @State private var voiceLoadFinished = false
 
     private var systemVoices: [VoiceProfile] {
-        voiceStudio.profiles.filter { isSystemVoiceId($0.id) }
+        voiceStudio.profiles.filter { isSystemVoice($0) }
     }
 
     private var effectiveSelectedId: String? {
@@ -101,8 +102,11 @@ struct VoiceSetupView: View {
                 .disabled(effectiveSelectedId == nil)
 
                 // 강제 1탭이라 정상 흐름엔 건너뛰기 없음. 목소리를 못 불러온 예외에만 노출.
-                if systemVoices.isEmpty && !voiceStudio.isBusy {
-                    Button("나중에 고르기") { onComplete?() }
+                if systemVoices.isEmpty && voiceLoadFinished && !voiceStudio.isBusy {
+                    Button("나중에 고르기") {
+                        voiceStudio.skipVoiceSetup()
+                        onComplete?()
+                    }
                         .buttonStyle(.plain)
                         .font(theme.typography.labelLarge)
                         .foregroundStyle(theme.palette.onSurfaceVariant)
@@ -115,7 +119,11 @@ struct VoiceSetupView: View {
         .navigationBarBackButtonHidden(true)
         .task {
             if voiceStudio.profiles.isEmpty {
+                voiceLoadFinished = false
                 await voiceStudio.refresh(session: auth.session, successMessage: nil)
+                voiceLoadFinished = true
+            } else {
+                voiceLoadFinished = true
             }
             await voiceStudio.loadStockClips(session: auth.session)
         }

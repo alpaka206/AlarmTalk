@@ -107,14 +107,19 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리가 정해졌고
-    // 그게 목록에 있으면 시스템 음성은 그 1개만, 아니면(기존 사용자·미선택 등) 시스템 음성을 전부
-    // 노출해 "쓸 목소리가 없음" 으로 갇히지 않게 한다(Codex P2). 내가 등록한 음성은 항상 전부 노출.
+    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리와
+    // 기존 알람의 저장된 시스템 목소리만 남겨, 편집 중 조용한 목소리 변경을 막는다.
     val hasDefaultSystemVoice = defaultVoiceId != null &&
         voiceProfiles.any { it.id == defaultVoiceId && it.isSystem == true }
+    val selectedProfileId = editor.voiceProfileId
     val readyProfiles = voiceProfiles.filter {
         (it.status == null || it.status == "ready") &&
-            (it.isSystem != true || !hasDefaultSystemVoice || it.id == defaultVoiceId)
+            (
+                it.isSystem != true ||
+                    !hasDefaultSystemVoice ||
+                    it.id == defaultVoiceId ||
+                    it.id == selectedProfileId
+                )
     }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
@@ -176,10 +181,10 @@ internal fun VoiceAudioCard(
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
                             // 온보딩에서 고른 기본 목소리를 우선 선택(없거나 목록에 없으면 첫 번째).
-                            editor.voiceProfileId =
+                            editor.selectVoiceProfile(
                                 profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
-                                    ?: profileOptions.first().id
-                            editor.clearTtsMeta()
+                                    ?: profileOptions.first().id,
+                            )
                         }
                     }
                 }
@@ -201,8 +206,7 @@ internal fun VoiceAudioCard(
                                 onSharedVoiceInfoRequired(sharedProfile)
                                 return@VoiceProfileSelector
                             }
-                            editor.voiceProfileId = option.id
-                            editor.clearTtsMeta()
+                            editor.selectVoiceProfile(option.id)
                         },
                     )
                 }

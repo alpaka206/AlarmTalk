@@ -106,6 +106,7 @@ class RemoteAlarmMapperTest {
             rawAudioUri = rawAudioUri,
             voiceSource = voiceSource,
             voiceProfileId = voiceProfileId,
+            voiceListenerTitle = null,
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,

@@ -172,6 +172,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileBusy by mutableStateOf(false)
         internal set
 
+    var voiceProfileLoadFinished by mutableStateOf(false)
+        internal set
+
     var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
         internal set
 
@@ -315,9 +318,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun checkOnboardingFor(userId: String) {
         if (userId.isBlank()) return
         val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
-        showOnboarding = userId !in seen
+        val shouldShowOnboarding = userId !in seen
+        showOnboarding = shouldShowOnboarding
         defaultVoiceId = defaultVoiceStore.read(userId)
         defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
+        showVoiceSetup = !shouldShowOnboarding && !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
     fun completeOnboarding() {
@@ -329,7 +334,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         showOnboarding = false
         // 온보딩 직후, 기본 목소리를 아직 안 골랐으면 "목소리 고르기" 스텝을 띄운다.
-        showVoiceSetup = userId != null && !defaultVoiceStore.hasChosen(userId)
+        showVoiceSetup = userId != null && !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
     /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
@@ -341,6 +346,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
     fun skipVoiceSetup() {
+        defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
         showVoiceSetup = false
     }
 
@@ -423,8 +429,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         accessSnapshotStore.clear(userId)
     }
 
+    internal fun clearCurrentDefaultVoicePreferences() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        defaultVoiceStore.clear(userId)
+    }
+
     internal fun clearUserScopedRemoteState() {
         voiceProfiles = emptyList()
+        voiceProfileLoadFinished = false
         showVoiceSetup = false
         defaultVoiceId = null
         defaultListenerTitle = null

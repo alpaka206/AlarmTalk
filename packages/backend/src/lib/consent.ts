@@ -42,22 +42,22 @@ export const SENSITIVE_REQUIRED_CONSENTS = ['voice_biometric', 'overseas_transfe
 export const REQUIRED_CONSENT_TYPES = GENERAL_REQUIRED_CONSENTS;
 
 /** 처리방침/약관 버전. 정책 개정 시 이 값을 올려 기존 가입자 재동의를 유도한다.
- *  '2' (2026-06-22 개정): 운세(성별·생년월일·출생시각)의 Google Vertex(미국) 처리,
+ *  '3' (2026-06-29 개정): 운영 음성 AI 제공자를 ElevenLabs 기준으로 정정하고,
  *  음성=민감정보/생체정보 분류, voice_biometric·overseas_transfer 별도 동의 서버 강제,
- *  Firebase/FCM·PortOne 수탁 추가를 반영한 처리방침/약관 개정과 동기화한다.
+ *  Firebase/FCM·PortOne 수탁 고지를 포함한 처리방침/약관 개정과 동기화한다.
  *  (docs/legal/*.ko.md 의 "최종 개정일"·"정책 버전"과 일치) */
-export const CURRENT_POLICY_VERSION = '2';
+export const CURRENT_POLICY_VERSION = '3';
 
 /**
  * requiredTypes 중 하나라도 (미기록 | 미동의 | 현재 정책버전과 불일치) 이면 true.
  * user_consents 의 유형별 최신 1건만 보고 판정한다 (created_at DESC, rowid DESC).
  */
-export async function needsConsent(
+export async function missingConsentType(
   db: Client,
   userIdPK: string,
   requiredTypes: readonly string[],
-): Promise<boolean> {
-  if (requiredTypes.length === 0) return false;
+): Promise<string | null> {
+  if (requiredTypes.length === 0) return null;
   const res = await db.execute({
     // created_at 은 초 단위라 같은 초에 토글하면 동점이 된다. rowid(삽입 순서)를
     // 보조 정렬로 두어 같은 초여도 항상 마지막 삽입을 최신으로 선택한다.
@@ -74,8 +74,17 @@ export async function needsConsent(
       version: String(row.policy_version),
     });
   }
-  return requiredTypes.some((type) => {
+  for (const type of requiredTypes) {
     const cur = latest.get(type);
-    return !cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION;
-  });
+    if (!cur || !cur.agreed || cur.version !== CURRENT_POLICY_VERSION) return type;
+  }
+  return null;
+}
+
+export async function needsConsent(
+  db: Client,
+  userIdPK: string,
+  requiredTypes: readonly string[],
+): Promise<boolean> {
+  return (await missingConsentType(db, userIdPK, requiredTypes)) !== null;
 }

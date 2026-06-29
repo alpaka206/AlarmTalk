@@ -88,12 +88,14 @@ describe('paid voice access gates', () => {
   });
 
   it('blocks voice cloning for a resolved free-plan user', async () => {
+    mockDB.setConsentMissing(true);
     mockDB.pushResult([{ plan: 'free' }]);
 
     const res = await buildApp().request(cloneRequest());
 
     expect(res.status).toBe(403);
     expect((await res.json()).error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+    expect(mockDB.calls.some((call) => /FROM user_consents/i.test(call.sql))).toBe(false);
   });
 
   it('blocks voice upload and diarization setup for a resolved free-plan user', async () => {

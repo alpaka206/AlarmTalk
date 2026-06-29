@@ -55,6 +55,7 @@ import com.alarmtalk.app.data.DynamicPromptPreferenceStore
 import com.alarmtalk.app.data.DynamicPromptPreferences
 import com.alarmtalk.app.data.HolidayCountryPreferenceStore
 import com.alarmtalk.app.data.HolidayDate
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.data.VibrationPatterns
 import com.alarmtalk.app.data.VoiceSources
@@ -699,15 +700,29 @@ internal fun AlarmEditorScreen(
             audioMessage = context.getString(R.string.editor_error_fortune_info_required)
             return
         }
+        fun resolvedVoiceListenerTitle(): String? {
+            val isSelectedSystemVoice = isSystemVoiceId(profileId) ||
+                voiceProfiles.any { it.id == profileId && it.isSystem == true }
+            if (editor.hasSelectedStockClipAudio(profileId, text)) return null
+            return editor.voiceListenerTitleOverride.trimmedOrNull()
+                ?: resolveListenerTitle(
+                    profileId = profileId,
+                    voiceProfiles = voiceProfiles,
+                    familyVoices = familyVoices,
+                ).trimmedOrNull()
+                ?: defaultListenerTitle?.takeIf { isSelectedSystemVoice }?.trimmedOrNull()
+        }
+        val listenerTitleForSave = resolvedVoiceListenerTitle()
         val usableProfileIds = (
             voiceProfiles.filter { it.status == null || it.status == "ready" }.map { it.id } +
                 familyVoices.filter { (it.status == null || it.status == "ready") && it.isShared != false }.map { it.id }
             ).toSet()
-        if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text)) {
+        if (profileId !in usableProfileIds && !editor.hasFreshTtsAudio(profileId, text, listenerTitleForSave)) {
             audioMessage = context.getString(R.string.editor_error_deleted_voice_cannot_edit)
             return
         }
-        if (editor.hasFreshTtsAudio(profileId, text)) {
+        if (editor.hasFreshTtsAudio(profileId, text, listenerTitleForSave)) {
+            editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
             submitDraft(editor.toDraft())
             return
         }
@@ -717,7 +732,7 @@ internal fun AlarmEditorScreen(
             category = editor.activeVoiceCategory(),
             language = editor.activeVoiceLanguage(),
         )
-        if (!editor.voiceRandomPrompt) {
+        if (!editor.voiceRandomPrompt && listenerTitleForSave.isNullOrBlank()) {
             audioStore.getCachedAudio(localTtsCacheKey, rawAudioUri = editor.rawAudioUri)?.let { cached ->
                 editor.setGeneratedTtsAudio(
                     audio = cached,
@@ -727,6 +742,7 @@ internal fun AlarmEditorScreen(
                     rawAudioUri = cached.rawAudioUri,
                 )
                 audioMessage = context.getString(R.string.editor_existing_voice_cache_used)
+                editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 submitDraft(editor.toDraft())
                 return
             }
@@ -780,14 +796,7 @@ internal fun AlarmEditorScreen(
                                 editor.voiceFortuneBirthTime.isNotBlank()
                         }?.trimmedOrNull(),
                         targetUserId = selectedFamilyRecipientId.takeIf { familyAlarmMode }?.trimmedOrNull(),
-                        listenerTitle = editor.voiceListenerTitleOverride.trimmedOrNull()
-                            ?: resolveListenerTitle(
-                                profileId = profileId,
-                                voiceProfiles = voiceProfiles,
-                                familyVoices = familyVoices,
-                            ).trimmedOrNull()
-                            // 시스템(기본) 목소리는 프로필 호칭이 없으니 온보딩/목소리탭에서 정한 기본 호칭 사용.
-                            ?: defaultListenerTitle?.trimmedOrNull(),
+                        listenerTitle = listenerTitleForSave,
                     ),
                 )
                 val rawAudioUri = response.audioUrl ?: response.audioObjectKey?.let { "r2://$it" }
@@ -815,7 +824,9 @@ internal fun AlarmEditorScreen(
                     text = response.text,
                     messageId = response.messageId,
                     rawAudioUri = rawAudioUri,
+                    listenerTitle = listenerTitleForSave,
                 )
+                editor.voiceListenerTitleOverride = listenerTitleForSave.orEmpty()
                 audioMessage = context.getString(R.string.editor_generated_voice_saved_local)
                 submitDraft(editor.toDraft())
             }.onFailure { error ->
@@ -890,7 +901,14 @@ internal fun AlarmEditorScreen(
                 editor.voiceRandomContext = "preset"
                 editor.clearTtsMeta()
             }
-            if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
+            if (editor.voiceLanguage != "ko") {
+                editor.voiceLanguage = "ko"
+                editor.clearTtsMeta()
+            }
+            if (editor.voiceTranslationEnabled) {
+                editor.voiceTranslationEnabled = false
+                editor.clearTtsMeta()
+            }
         }
     }
 
@@ -1432,8 +1450,7 @@ internal fun AlarmEditorScreen(
             onPreview = { playSharedVoiceInfoPreview(profile.id) },
             onConfirm = { relationship, listener ->
                 onUpdateSharedVoiceInfo(profile.id, relationship, listener) {
-                    editor.voiceProfileId = profile.id
-                    editor.clearTtsMeta()
+                    editor.selectVoiceProfile(profile.id)
                     stopPreview()
                     sharedVoiceInfoTarget = null
                 }

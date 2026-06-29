@@ -556,6 +556,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.deleteAccount(token: token)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
@@ -580,6 +581,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.requestAccountDeletion(token: token)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
@@ -622,14 +624,14 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 서버 `CURRENT_POLICY_VERSION` 과 동일해야 하는 클라이언트 정책 버전.
-    /// W2 백엔드 하드닝으로 "2" 로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
-    static let currentPolicyVersion = "2"
+    /// ElevenLabs 기준 법무 문서 정정으로 "3" 으로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
+    static let currentPolicyVersion = "3"
 
     /// 동의 기록 요청을 만든다. 필수(terms/privacy/age14)에 더해 W2 백엔드가
     /// 서버측에서 강제하는 두 항목(voice_biometric/overseas_transfer)도 항상 동의로
     /// 기록한다. 그래야 음성 클론(`POST /voice`)과 해외 이전 TTS(translate=true /
     /// 동적 비-preset 생성)가 403 CONSENT_REQUIRED 없이 진행된다. marketing 은 선택값.
-    /// 모든 항목에 현재 정책 버전("2")을 동봉한다.
+    /// 모든 항목에 현재 정책 버전을 동봉한다.
     static func makeConsentsRequest(marketingAgreed: Bool) -> RecordConsentsRequest {
         let version = currentPolicyVersion
         return RecordConsentsRequest(consents: [

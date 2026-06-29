@@ -18,6 +18,7 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
@@ -60,7 +61,12 @@ internal fun MainViewModel.loadVoiceProfiles() {
 }
 
 internal fun MainViewModel.preloadVoiceProfiles() {
-    if (authSession == null || voiceProfileBusy || voiceProfiles.isNotEmpty()) return
+    if (authSession == null || voiceProfileBusy) return
+    val cachedSystemOnly = voiceProfiles.isNotEmpty() && voiceProfiles.all { it.isSystem == true }
+    if (voiceProfiles.isNotEmpty() && !(cachedSystemOnly && hasPaidVoiceAccess(subscriptionResponse))) {
+        voiceProfileLoadFinished = true
+        return
+    }
     fetchVoiceProfiles(showMessage = false)
 }
 
@@ -72,16 +78,21 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     }
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
+        voiceProfileLoadFinished = false
         voiceProfileBusy = true
-        runCatching {
-            api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
-        }.onSuccess { profiles ->
-            voiceProfiles = profiles
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to load voice profiles", error)
-            if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
+        try {
+            runCatching {
+                api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+            }.onSuccess { profiles ->
+                voiceProfiles = profiles
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load voice profiles", error)
+                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
+            }
+        } finally {
+            voiceProfileBusy = false
+            voiceProfileLoadFinished = true
         }
-        voiceProfileBusy = false
     }
 }
 
@@ -496,7 +507,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
+    check(hasPaidVoiceAccess(subscriptionResponse) || request.isFreeSystemPresetRequest()) {
         getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
     }
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
@@ -504,6 +515,14 @@ internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest)
         api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
     }
 }
+
+internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
+    isSystemVoiceId(voiceProfileId) &&
+        random &&
+        randomContext == "preset" &&
+        !translate &&
+        language == "ko" &&
+        text.isBlank()
 
 internal fun MainViewModel.loadTtsMessages() {
     val session = authSession

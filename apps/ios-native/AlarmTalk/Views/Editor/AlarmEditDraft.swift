@@ -190,7 +190,8 @@ struct AlarmEditDraft: Equatable {
         randomContext: String?,
         language: String,
         translateText: Bool,
-        fireAtMillis: Int64
+        fireAtMillis: Int64,
+        listenerTitle: String?
     ) -> Bool {
         guard let record,
               record.playModeEnum != .alarmOnly,
@@ -208,7 +209,10 @@ struct AlarmEditDraft: Equatable {
             ? language.trimmingCharacters(in: .whitespacesAndNewlines)
             : "ko"
         guard activeCategory == ((record.voiceCategory).nilIfBlank ?? "custom"),
-              activeLanguage == ((record.voiceLanguage).nilIfBlank ?? "ko") else {
+               activeLanguage == ((record.voiceLanguage).nilIfBlank ?? "ko") else {
+            return false
+        }
+        guard (listenerTitle).nilIfBlank == (record.voiceListenerTitle).nilIfBlank else {
             return false
         }
 
@@ -267,6 +271,7 @@ struct AlarmEditDraft: Equatable {
             rawAudioUri: alarmOnly ? nil : existing?.rawAudioUri,
             voiceSource: alarmOnly ? VoiceSource.localAudio.rawValue : existing?.voiceSource ?? VoiceSource.ttsProfile.rawValue,
             voiceProfileId: alarmOnly ? nil : existing?.voiceProfileId,
+            voiceListenerTitle: alarmOnly ? nil : existing?.voiceListenerTitle,
             voiceText: alarmOnly ? nil : existing?.voiceText,
             voiceCategory: alarmOnly ? nil : existing?.voiceCategory,
             voiceLanguage: alarmOnly ? nil : existing?.voiceLanguage,

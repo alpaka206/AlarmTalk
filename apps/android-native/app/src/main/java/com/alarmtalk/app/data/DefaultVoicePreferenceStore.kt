@@ -25,13 +25,31 @@ class DefaultVoicePreferenceStore(context: Context) {
     /** 기본 목소리 선택을 저장한다. voiceId 가 비면 선택을 지운다. */
     fun set(userId: String?, voiceId: String?) {
         val key = keyFor(userId) ?: return
+        val skippedKey = skippedKeyFor(userId)
         prefs.edit().apply {
-            if (voiceId.isNullOrBlank()) remove(key) else putString(key, voiceId)
+            if (voiceId.isNullOrBlank()) {
+                remove(key)
+            } else {
+                putString(key, voiceId)
+                if (skippedKey != null) remove(skippedKey)
+            }
         }.apply()
     }
 
     /** 사용자가 기본 목소리를 한 번이라도 골랐는지(온보딩 목소리 스텝 완료 판정). */
     fun hasChosen(userId: String?): Boolean = read(userId) != null
+
+    fun hasCompletedSetup(userId: String?): Boolean = hasChosen(userId) || hasSkipped(userId)
+
+    fun markSkipped(userId: String?) {
+        val key = skippedKeyFor(userId) ?: return
+        prefs.edit().putBoolean(key, true).apply()
+    }
+
+    private fun hasSkipped(userId: String?): Boolean {
+        val key = skippedKeyFor(userId) ?: return false
+        return prefs.getBoolean(key, false)
+    }
 
     /**
      * 기본(시스템) 목소리가 사용자를 부를 호칭(listener_title). 온보딩/목소리 탭에서 정하며,
@@ -50,6 +68,17 @@ class DefaultVoicePreferenceStore(context: Context) {
         }.apply()
     }
 
+    fun clear(userId: String?) {
+        val voiceKey = keyFor(userId) ?: return
+        val listenerKey = listenerKeyFor(userId) ?: return
+        val skippedKey = skippedKeyFor(userId) ?: return
+        prefs.edit()
+            .remove(voiceKey)
+            .remove(listenerKey)
+            .remove(skippedKey)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "default_voice_preferences"
 
@@ -61,6 +90,11 @@ class DefaultVoicePreferenceStore(context: Context) {
         private fun listenerKeyFor(userId: String?): String? {
             val id = userId?.trim().orEmpty()
             return if (id.isEmpty()) null else "default_listener_$id"
+        }
+
+        private fun skippedKeyFor(userId: String?): String? {
+            val id = userId?.trim().orEmpty()
+            return if (id.isEmpty()) null else "default_voice_setup_skipped_$id"
         }
     }
 }

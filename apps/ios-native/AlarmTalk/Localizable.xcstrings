@@ -8762,13 +8762,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Go to change plan"
+            "value": "Change plan"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プラン変更へ"
+            "value": "プランを変更する"
           }
         }
       }
@@ -9425,13 +9425,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This feature is available on the Family plan. Share alarms and messages with your family."
+            "value": "This feature is available on the Family plan. Share alarms and messages with family members."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この機能はファミリープランでご利用いただけます。家族のみんなとアラームやメッセージを共有しましょう。"
+            "value": "この機能はファミリープランで利用できます。家族とアラームやメッセージを共有しましょう。"
           }
         }
       }
@@ -9459,13 +9459,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This feature is available even on the Free plan."
+            "value": "This feature is available on the free plan."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この機能は無料プランでもご利用いただけます。"
+            "value": "この機能は無料プランでも利用できます。"
           }
         }
       }
@@ -9476,13 +9476,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This feature is available on the Couple plan. Manage two people's alarms together."
+            "value": "This feature is available on the Couple plan. Manage alarms together for two people."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "この機能はカップルプランでご利用いただけます。ふたりのアラームを一緒に管理しましょう。"
+            "value": "この機能はカップルプランで利用できます。2人のアラームを一緒に管理しましょう。"
           }
         }
       }
@@ -13240,6 +13240,193 @@
           "stringUnit": {
             "state": "translated",
             "value": "携帯電話の設定とアプリの画面モードを選びます。"
+          }
+        }
+      }
+    },
+    "기본 목소리를 골라보세요": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a default voice"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトの声を選んでください"
+          }
+        }
+      }
+    },
+    "마음에 드는 하나면 충분해요.\n나중에 언제든 바꿀 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One voice you like is enough.\nYou can change it anytime later."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "気に入った声を1つ選べば十分です。\nあとからいつでも変更できます。"
+          }
+        }
+      }
+    },
+    "목소리를 불러오는 중이에요…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading voices..."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "声を読み込んでいます..."
+          }
+        }
+      }
+    },
+    "이 목소리가 나를 뭐라고 부를까요?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What should this voice call me?"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この声に何と呼ばれたいですか？"
+          }
+        }
+      }
+    },
+    "예: 지호, 자기, 대표님": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "E.g. Jiho, honey, boss"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "例: ジホ、あなた、代表"
+          }
+        }
+      }
+    },
+    "비워두면 이름 없이 깨워드려요. 나중에 목소리 탭에서 바꿀 수 있어요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave it blank to be woken without a name. You can change it later from the Voices tab."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄にすると名前なしで起こします。あとから「声」タブで変更できます。"
+          }
+        }
+      }
+    },
+    "이 목소리로 시작하기": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start with this voice"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この声ではじめる"
+          }
+        }
+      }
+    },
+    "나중에 고르기": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose later"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あとで選ぶ"
+          }
+        }
+      }
+    },
+    "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 녹음과 공유 목소리 기능을 사용해 보세요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This feature is available on the Personal plan. Upgrade to use recording and shared voice features."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この機能は個人プランで利用できます。アップグレードして録音と共有音声機能を使ってみましょう。"
+          }
+        }
+      }
+    },
+    "녹음과 화자 분리로 목소리를 만들려면 유료 플랜이 필요해요.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A paid plan is required to create voices with recording and speaker separation."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音と話者分離で声を作成するには有料プランが必要です。"
+          }
+        }
+      }
+    },
+    "내 목소리 만들기, 광고 제거, 개인 이용권 선물": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create your own voice, remove ads, and gift a Personal pass"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分の声の作成、広告非表示、個人パスのギフト"
           }
         }
       }

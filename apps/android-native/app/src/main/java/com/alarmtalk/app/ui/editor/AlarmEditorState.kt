@@ -69,6 +69,7 @@ internal class AlarmEditorState(
     rawAudioUri: String?,
     voiceSource: String,
     voiceProfileId: String?,
+    voiceListenerTitle: String?,
     voiceText: String?,
     voiceCategory: String?,
     voiceLanguage: String?,
@@ -105,7 +106,7 @@ internal class AlarmEditorState(
     var voiceProfileId by mutableStateOf(voiceProfileId)
     // 알람별 호칭 덮어쓰기. 비어 있으면 선택한 목소리 프로필의 호칭(listener_title)을 그대로 쓴다.
     // (DB 저장 없이 편집 세션 동안만 유지 — TTS 생성 요청의 listenerTitle 로만 전달)
-    var voiceListenerTitleOverride by mutableStateOf("")
+    var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
@@ -132,6 +133,7 @@ internal class AlarmEditorState(
                 text = voiceText.orEmpty(),
                 category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
                 language = voiceLanguage ?: "ko",
+                listenerTitle = voiceListenerTitle,
             )
         },
     )
@@ -154,6 +156,11 @@ internal class AlarmEditorState(
             rawAudioUri = if (alarmOnly) null else rawAudioUri,
             voiceSource = if (alarmOnly) VoiceSources.LOCAL_AUDIO else voiceSource,
             voiceProfileId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceProfileId,
+            voiceListenerTitle = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) {
+                null
+            } else {
+                voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
+            },
             voiceText = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsTextForSave(),
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceCategory(),
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceLanguage(),
@@ -220,12 +227,39 @@ internal class AlarmEditorState(
         generatedTtsKey = null
     }
 
+    fun selectVoiceProfile(profileId: String?) {
+        if (voiceProfileId != profileId) {
+            voiceListenerTitleOverride = ""
+        }
+        voiceProfileId = profileId
+        clearTtsMeta()
+    }
+
     fun ttsTextForSave(): String = if (voiceRandomPrompt) "" else voiceText.trim()
 
-    fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
-        !localAudioUri.isNullOrBlank() && (
-            generatedTtsKey == buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()) ||
-                audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    fun hasFreshTtsAudio(profileId: String, text: String, listenerTitle: String? = null): Boolean {
+        val listenerTitleForKey = listenerTitle?.trim()?.takeIf { it.isNotBlank() }
+            ?: voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
+        return !localAudioUri.isNullOrBlank() && (
+            generatedTtsKey == buildTtsKey(
+                profileId = profileId,
+                text = text,
+                category = activeVoiceCategory(),
+                language = activeVoiceLanguage(),
+                listenerTitle = listenerTitleForKey,
+            ) ||
+                (listenerTitleForKey.isNullOrBlank() && audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()))
+            )
+    }
+
+    fun hasSelectedStockClipAudio(profileId: String, text: String): Boolean =
+        !localAudioUri.isNullOrBlank() &&
+            audioCacheKey?.startsWith("stock_") == true &&
+            generatedTtsKey == buildTtsKey(
+                profileId = profileId,
+                text = text,
+                category = activeVoiceCategory(),
+                language = activeVoiceLanguage(),
             )
 
     fun setGeneratedTtsAudio(
@@ -234,6 +268,7 @@ internal class AlarmEditorState(
         text: String,
         messageId: String,
         rawAudioUri: String?,
+        listenerTitle: String? = null,
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
@@ -242,7 +277,7 @@ internal class AlarmEditorState(
         audioCacheKey = audio.cacheKey
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
-        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage(), listenerTitle)
     }
 
     fun setStockClipAudio(
@@ -253,6 +288,7 @@ internal class AlarmEditorState(
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
+        voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
         voiceTranslationEnabled = false
         voiceText = text
@@ -327,6 +363,7 @@ internal class AlarmEditorState(
                 rawAudioUri = alarm?.rawAudioUri,
                 voiceSource = alarm?.voiceSource ?: VoiceSources.TTS_PROFILE,
                 voiceProfileId = alarm?.voiceProfileId,
+                voiceListenerTitle = alarm?.voiceListenerTitle,
                 voiceText = alarm?.voiceText,
                 voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
@@ -351,8 +388,14 @@ internal class AlarmEditorState(
     }
 }
 
-internal fun buildTtsKey(profileId: String, text: String, category: String, language: String): String =
-    listOf(profileId, text.trim(), category, language).joinToString("|")
+internal fun buildTtsKey(
+    profileId: String,
+    text: String,
+    category: String,
+    language: String,
+    listenerTitle: String? = null,
+): String =
+    listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
 internal fun normalizedTtsCategory(category: String): String {
     val legacy = mapOf(

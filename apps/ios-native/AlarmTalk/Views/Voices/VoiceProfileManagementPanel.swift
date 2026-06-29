@@ -44,10 +44,10 @@ struct VoiceProfileManagementPanel: View {
 
     /// 시스템(스톡) 목소리 = 무료에서도 쓰는 기본 목소리. 내 목소리/공유 목소리와 분리해 노출.
     private var systemVoices: [VoiceProfile] {
-        voice.profiles.filter { isSystemVoiceId($0.id) }
+        voice.profiles.filter { isSystemVoice($0) }
     }
     private var ownVoices: [VoiceProfile] {
-        voice.profiles.filter { !isSystemVoiceId($0.id) }
+        voice.profiles.filter { !isSystemVoice($0) }
     }
 
     var body: some View {
@@ -134,18 +134,11 @@ struct VoiceProfileManagementPanel: View {
             )
             .presentationDetents([.medium])
         }
-        .sheet(isPresented: $planGateOpen) {
-            VoicePlanGateSheet(
-                onUpgrade: {
-                    planGateOpen = false
-                    // Phase 4-D1: 부모(MainTabsView)가 .billing auxiliary 시트를
-                    // 띄우도록 콜백 호출. 시트 충돌을 피하려 PlanGate 시트를 먼저
-                    // 닫고, 부모가 짧은 지연 뒤 빌링 시트를 연다.
-                    onRequestBilling?()
-                },
-                onClose: { planGateOpen = false }
-            )
-            .presentationDetents([.medium])
+        .alert("녹음과 화자 분리로 목소리를 만들려면 유료 플랜이 필요해요.", isPresented: $planGateOpen) {
+            Button("닫기", role: .cancel) {}
+            Button("플랜 보기") {
+                onRequestBilling?()
+            }
         }
         .sheet(item: $sharedViewerInfoTarget) { profile in
             SharedVoiceViewerInfoDialog(
@@ -179,9 +172,8 @@ struct VoiceProfileManagementPanel: View {
 
     // MARK: - Slot status card
 
-    /// 슬롯 카드 — `vm.profiles.count` / `maxProfiles` 진행률 + 가득 시 안내.
     private var slotStatusCard: some View {
-        let used = voice.profiles.count
+        let used = voice.usedProfileSlots
         let max = VoiceProfileLimits.maxProfiles
         let progress = max == 0 ? 0.0 : Double(used) / Double(max)
         let isFull = voice.isProfileLimitReached
@@ -217,9 +209,9 @@ struct VoiceProfileManagementPanel: View {
                 .font(.subheadline.weight(.semibold))
             HStack(spacing: 8) {
                 Button {
-                    if !hasPaidVoiceAccess || voice.isProfileLimitReached {
+                    if !hasPaidVoiceAccess {
                         planGateOpen = true
-                    } else {
+                    } else if !voice.isProfileLimitReached {
                         route = .clone
                     }
                 } label: {
@@ -228,12 +220,12 @@ struct VoiceProfileManagementPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(AlarmTalkTheme.primary)
-                .disabled(voice.isBusy)
+                .disabled(voice.isBusy || (hasPaidVoiceAccess && voice.isProfileLimitReached))
 
                 Button {
-                    if !hasPaidVoiceAccess || voice.isProfileLimitReached {
+                    if !hasPaidVoiceAccess {
                         planGateOpen = true
-                    } else {
+                    } else if !voice.isProfileLimitReached {
                         route = .separate
                     }
                 } label: {
@@ -241,7 +233,7 @@ struct VoiceProfileManagementPanel: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .disabled(voice.isBusy)
+                .disabled(voice.isBusy || (hasPaidVoiceAccess && voice.isProfileLimitReached))
             }
             if !hasPaidVoiceAccess {
                 Text("유료 이용권에서 사용할 수 있어요.")

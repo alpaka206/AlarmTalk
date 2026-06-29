@@ -10,6 +10,7 @@ struct PreparedAlarmTalk {
     var rawAudioURL: String?
     var text: String
     var language: String
+    var listenerTitle: String?
 }
 
 /// AlarmTalk 의 목소리 슬롯 / 길이 정책 상수.
@@ -74,6 +75,7 @@ final class VoiceStudioViewModel: ObservableObject {
     private let defaultVoiceStore = DefaultVoicePreferenceStore()
     private var cancellables = Set<AnyCancellable>()
     private var activeUserID: String?
+    private var greetingPreviewRequestId = 0
 
     init(api: AlarmTalkAPI = .shared) {
         self.api = api
@@ -87,6 +89,9 @@ final class VoiceStudioViewModel: ObservableObject {
                 Task { @MainActor in self?.objectWillChange.send() }
             }
             .store(in: &cancellables)
+        previewPlayer.onFinish = { [weak self] in
+            self?.previewingGreetingVoiceId = nil
+        }
     }
 
     var selectedProfile: VoiceProfile? {
@@ -101,6 +106,7 @@ final class VoiceStudioViewModel: ObservableObject {
 
     func clearUserScopedRemoteState() {
         activeUserID = nil
+        greetingPreviewRequestId += 1
         previewPlayer.stop()
         recorder.clearLatest()
         profiles = []
@@ -116,10 +122,11 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     func clearPaidVoiceState() {
+        greetingPreviewRequestId += 1
         previewPlayer.stop()
         // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리" — 유료 음성만 제거하고 시스템 음성은 남긴다.
         // 온보딩 "기본 목소리 고르기"가 빈 목록으로 멈추는 것 방지(Android applyFreePlanVoiceLock 미러, Codex P2).
-        profiles = profiles.filter { isSystemVoiceId($0.id) }
+        profiles = profiles.filter { isSystemVoice($0) }
         familyVoices = []
         messages = []
         stockClips = []
@@ -147,10 +154,15 @@ final class VoiceStudioViewModel: ObservableObject {
         setDefaultListenerTitle(listenerTitle)
     }
 
+    func skipVoiceSetup() {
+        defaultVoiceStore.markSkipped(userID: activeUserID)
+    }
+
     /// 온보딩/목소리 탭의 시스템 음성 "들어보기" — greeting 스톡 클립을 받아 미리 재생한다.
     /// 같은 음성을 다시 누르면 정지. (미리듣기 전용 — preparedAlarm 을 건드리지만 알람 흐름이 아니라 무해)
     func previewGreeting(voiceId: String, session: AuthSession?) async {
         if previewingGreetingVoiceId == voiceId {
+            greetingPreviewRequestId += 1
             previewPlayer.stop()
             previewingGreetingVoiceId = nil
             return
@@ -158,16 +170,21 @@ final class VoiceStudioViewModel: ObservableObject {
         let clip = stockClips.first { $0.voiceProfileId == voiceId && $0.category == "greeting" }
             ?? stockClips.first { $0.voiceProfileId == voiceId }
         guard let clip else { return }
+        greetingPreviewRequestId += 1
+        let requestId = greetingPreviewRequestId
         previewPlayer.stop()
         previewingGreetingVoiceId = voiceId
         if await prepareStockClip(clip, session: session) != nil {
+            guard requestId == greetingPreviewRequestId, previewingGreetingVoiceId == voiceId else { return }
             playPreparedAudio()
         } else {
-            previewingGreetingVoiceId = nil
+            if requestId == greetingPreviewRequestId {
+                previewingGreetingVoiceId = nil
+            }
         }
     }
 
-    private var selectedListenerTitle: String? {
+    var selectedListenerTitle: String? {
         if let listener = selectedProfile?.listenerTitle, let trimmed = (listener).nilIfBlank {
             return trimmed
         }
@@ -175,7 +192,7 @@ final class VoiceStudioViewModel: ObservableObject {
             return trimmed
         }
         // 시스템(기본) 목소리는 프로필 호칭이 없으니 온보딩/목소리 탭에서 정한 기본 호칭 사용.
-        if isSystemVoiceId(selectedProfileID), let trimmed = defaultListenerTitle?.nilIfBlank {
+        if isSystemVoiceProfile(id: selectedProfileID), let trimmed = defaultListenerTitle?.nilIfBlank {
             return trimmed
         }
         return nil
@@ -198,11 +215,20 @@ final class VoiceStudioViewModel: ObservableObject {
     }
 
     /// 슬롯이 가득 찼는지 — VoiceProfileManagementPanel 의 슬롯 카드/추가 버튼 비활성에 사용.
-    var isProfileLimitReached: Bool { profiles.count >= VoiceProfileLimits.maxProfiles }
+    var usedProfileSlots: Int {
+        profiles.filter { !isSystemVoice($0) }.count
+    }
+
+    func isSystemVoiceProfile(id: String?) -> Bool {
+        guard let id else { return false }
+        return profiles.first { $0.id == id }.map(isSystemVoice) ?? isSystemVoiceId(id)
+    }
+
+    var isProfileLimitReached: Bool { usedProfileSlots >= VoiceProfileLimits.maxProfiles }
 
     /// 남은 슬롯 — SpeakerSeparationFlow 가 동시에 여러 화자 선택을 허용할 때 cap.
     var remainingProfileSlots: Int {
-        max(0, VoiceProfileLimits.maxProfiles - profiles.count)
+        max(0, VoiceProfileLimits.maxProfiles - usedProfileSlots)
     }
 
     private func normalizedUserID(_ userID: String?) -> String? {
@@ -365,7 +391,8 @@ final class VoiceStudioViewModel: ObservableObject {
             audioCacheKey: cached.cacheKey,
             rawAudioURL: rawAudioURL,
             text: clip.text,
-            language: clip.language ?? "ko"
+            language: clip.language ?? "ko",
+            listenerTitle: nil
         )
     }
 
@@ -879,7 +906,8 @@ final class VoiceStudioViewModel: ObservableObject {
                 audioCacheKey: cached.cacheKey,
                 rawAudioURL: response.remoteAudioURI,
                 text: response.text,
-                language: activeLanguage
+                language: activeLanguage,
+                listenerTitle: selectedListenerTitle
             )
             preparedAlarm = prepared
             statusMessage = response.cacheHit == true ? "캐시된 음성을 준비했어요." : "새 음성을 생성하고 로컬에 저장했어요."

@@ -162,4 +162,50 @@ final class LocalAlarmRecordCodableTests: XCTestCase {
         XCTAssertEqual(decoded.alarmKitID?.uppercased(), "44444444-4444-4444-4444-444444444444")
         XCTAssertNotNil(decoded.alarmKitUUID)
     }
+
+    func test_generatedSystemPresetAudioIsNotPaidVoiceForDowngrade() {
+        let alarm = LocalAlarmRecord(
+            label: "Free preset",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: 1_700_000_000_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "file:///cache/generated.mp3",
+            audioCacheKey: "tts-cache",
+            rawAudioUri: "r2://tts/generated",
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: "70000000-0000-4000-9000-000000000001",
+            voiceText: "Buddy, wake now",
+            voiceCategory: "morning",
+            voiceLanguage: "ko",
+            voiceRandomPrompt: true,
+            voiceRandomContext: RandomPromptContext.preset.rawValue,
+            ttsMessageId: "message-1"
+        )
+
+        XCTAssertFalse(alarm.isPaidVoiceForDowngrade)
+    }
+
+    func test_customSystemGeneratedAudioIsPaidVoiceForDowngrade() {
+        let alarm = LocalAlarmRecord(
+            label: "Custom",
+            hour: 7,
+            minute: 30,
+            fireAtMillis: 1_700_000_000_000,
+            playMode: AlarmPlayMode.soundThenVoice.rawValue,
+            localAudioUri: "file:///cache/custom.mp3",
+            audioCacheKey: "tts-cache",
+            rawAudioUri: "r2://tts/custom",
+            voiceSource: VoiceSource.ttsProfile.rawValue,
+            voiceProfileId: "70000000-0000-4000-9000-000000000001",
+            voiceText: "Wake up with a custom paid line.",
+            voiceCategory: "custom",
+            voiceLanguage: "ko",
+            voiceRandomPrompt: false,
+            voiceRandomContext: nil,
+            ttsMessageId: "message-2"
+        )
+
+        XCTAssertTrue(alarm.isPaidVoiceForDowngrade)
+    }
 }

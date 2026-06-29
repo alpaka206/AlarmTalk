@@ -1,8 +1,5 @@
 package com.alarmtalk.app
 
-import android.media.MediaPlayer
-import android.net.Uri
-import android.util.Base64
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,11 +27,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,10 +44,6 @@ import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.network.StockClip
 import com.alarmtalk.app.network.TtsMessageAudioResponse
 import com.alarmtalk.app.network.VoiceProfile
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 온보딩 "목소리 고르기" 스텝. 무료 사용자에게 4개 기본 목소리를 한꺼번에 펼쳐 보여주는
@@ -66,70 +57,22 @@ import kotlinx.coroutines.withContext
 internal fun VoiceOnboardingScreen(
     contentPadding: PaddingValues,
     systemVoices: List<VoiceProfile>,
+    voiceProfileBusy: Boolean,
+    voiceProfileLoadFinished: Boolean,
     stockClips: List<StockClip>,
     onDownloadStockAudio: suspend (String) -> TtsMessageAudioResponse,
     onChoose: (String, String?) -> Unit,
     onSkip: () -> Unit,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val previewController = rememberVoiceOnboardingPreviewController(onDownloadStockAudio)
 
     var selectedId by remember(systemVoices) {
         mutableStateOf(systemVoices.firstOrNull()?.id)
     }
     // 이 기본 목소리가 사용자를 부를 호칭(선택 입력). 비우면 이름 없이.
     var listenerTitle by remember { mutableStateOf("") }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var playingVoiceId by remember { mutableStateOf<String?>(null) }
-    var preparingVoiceId by remember { mutableStateOf<String?>(null) }
-
-    fun stopPreview() {
-        mediaPlayer?.release()
-        mediaPlayer = null
-        playingVoiceId = null
-        preparingVoiceId = null
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { mediaPlayer?.release() }
-    }
-
-    fun previewVoice(profile: VoiceProfile) {
-        if (playingVoiceId == profile.id) {
-            stopPreview()
-            return
-        }
-        val clip = stockClips.firstOrNull {
-            it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
-        } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id } ?: return
-        scope.launch {
-            stopPreview()
-            preparingVoiceId = profile.id
-            runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                val file = withContext(Dispatchers.IO) {
-                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    val ext = response.audioFormat.ifBlank { "mp3" }
-                    File(context.cacheDir, "voice_onboarding_preview.$ext").apply { writeBytes(bytes) }
-                }
-                val player = MediaPlayer.create(context, Uri.fromFile(file)) ?: return@runCatching
-                preparingVoiceId = null
-                playingVoiceId = profile.id
-                mediaPlayer = player.apply {
-                    setOnCompletionListener {
-                        it.release()
-                        if (mediaPlayer === it) mediaPlayer = null
-                        if (playingVoiceId == profile.id) playingVoiceId = null
-                    }
-                    start()
-                }
-            }.onFailure {
-                preparingVoiceId = null
-                if (playingVoiceId == profile.id) playingVoiceId = null
-            }
-        }
-    }
-
+    val voiceLoadFinished = voiceProfileLoadFinished && !voiceProfileBusy
     fun sampleText(profile: VoiceProfile): String? =
         (stockClips.firstOrNull { it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY }
             ?: stockClips.firstOrNull { it.voiceProfileId == profile.id })?.text
@@ -160,7 +103,7 @@ internal fun VoiceOnboardingScreen(
             )
             Spacer(Modifier.height(20.dp))
 
-            if (systemVoices.isEmpty()) {
+            if (systemVoices.isEmpty() && !voiceLoadFinished) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -176,6 +119,14 @@ internal fun VoiceOnboardingScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            } else if (systemVoices.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.msg_voice_fetch_failed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 40.dp),
+                    textAlign = TextAlign.Center,
+                )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     systemVoices.forEach { profile ->
@@ -183,10 +134,10 @@ internal fun VoiceOnboardingScreen(
                             name = profile.name,
                             sample = sampleText(profile),
                             selected = profile.id == selectedId,
-                            previewing = playingVoiceId == profile.id,
-                            preparing = preparingVoiceId == profile.id,
+                            previewing = previewController.playingVoiceId == profile.id,
+                            preparing = previewController.preparingVoiceId == profile.id,
                             onSelect = { selectedId = profile.id },
-                            onPreview = { previewVoice(profile) },
+                            onPreview = { previewController.previewVoice(profile, stockClips) },
                         )
                     }
                 }
@@ -224,7 +175,7 @@ internal fun VoiceOnboardingScreen(
             Button(
                 onClick = {
                     val id = selectedId ?: return@Button
-                    stopPreview()
+                    previewController.stopPreview()
                     onChoose(id, listenerTitle.trim().takeIf { it.isNotEmpty() })
                 },
                 enabled = selectedId != null,
@@ -237,8 +188,8 @@ internal fun VoiceOnboardingScreen(
             }
             // 강제 1탭 선택이라 정상 흐름엔 "건너뛰기" 없음(항상 1개가 선택돼 있음).
             // 단, 목소리를 못 불러온 예외 상황에서만 사용자가 갇히지 않게 건너뛰기를 노출한다.
-            if (systemVoices.isEmpty()) {
-                TextButton(onClick = { stopPreview(); onSkip() }) {
+            if (systemVoices.isEmpty() && voiceLoadFinished) {
+                TextButton(onClick = { previewController.stopPreview(); onSkip() }) {
                     Text(
                         text = stringResource(R.string.onb_voice_skip),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

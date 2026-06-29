@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
+import type { Context, Next } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware } from './helpers';
 import { getSharedInMemoryVoiceStorage, resetSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 const UPLOAD_ID = '50000000-0000-4000-8000-000000000001';
 const SPEAKER_ID = '60000000-0000-4000-8000-000000000001';
@@ -40,6 +42,24 @@ function buildApp(userId = 'user-1') {
   return app;
 }
 
+function authWithResolvedPk(userId = 'user-1', userPk = 'user-pk-1') {
+  return async (c: Context<AppEnv>, next: Next) => {
+    c.set('userId', userId);
+    c.set('userIdPK', userPk);
+    c.set('userEmail', 'user@test.com');
+    c.set('userName', 'Test User');
+    c.set('userPicture', '');
+    await next();
+  };
+}
+
+function buildAppWithResolvedPk(userId = 'user-1', userPk = 'user-pk-1') {
+  const app = new Hono<AppEnv>();
+  app.use('*', authWithResolvedPk(userId, userPk));
+  app.route('/vu', voiceUpload);
+  return app;
+}
+
 function req(app: Hono<AppEnv>, r: Request) {
   return app.request(r, undefined, ENV);
 }
@@ -66,6 +86,10 @@ function diarizationResult(count = 3) {
       segments: [{ start: index, end: index + 0.75 }],
     })),
   };
+}
+
+function consentRow(type: string) {
+  return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
 function uploadForm(
@@ -140,6 +164,45 @@ describe('POST /upload — 오디오 업로드 (voice-upload)', () => {
     expect(body.upload.durationMs).toBe(90000);
     expect(body.upload.originalName).toBe('녹음파일.wav');
     expect(body.upload.objectKey).toContain('mem://');
+  });
+
+  it('blocks upload before storage when voice_biometric consent is missing', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([]);
+
+    const res = await req(
+      buildApp(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2, 3, 4]), type: 'audio/wav', name: 'my.wav' },
+        fields: { durationMs: '90000' },
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('voice_biometric');
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO voice_uploads'))).toBe(false);
+  });
+
+  it('returns paid-plan error before sensitive consent for free upload users', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'free' }]);
+
+    const res = await req(
+      buildAppWithResolvedPk(),
+      uploadForm({
+        audio: { bytes: new Uint8Array([1, 2, 3, 4]), type: 'audio/wav', name: 'my.wav' },
+        fields: { durationMs: '90000' },
+      }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('VOICE_FEATURE_REQUIRES_PAID_PLAN');
+    expect(body.consent).toBeUndefined();
+    expect(mockDB.calls.some((call) => /FROM user_consents/i.test(call.sql))).toBe(false);
+    expect(mockDB.calls.some((call) => call.sql.includes('INSERT INTO voice_uploads'))).toBe(false);
   });
 
   it('audio 파일 누락 → 400', async () => {
@@ -369,6 +432,25 @@ describe('POST /uploads/:id/separate — 화자 분리 (voice-upload)', () => {
     expect(body.speakers.length).toBeLessThanOrEqual(3);
     expect(body.provider).toBe('elevenlabs');
     expect(body.speakers[0].label).toMatch(/^화자 \d+$/);
+  });
+
+  it('blocks stored-upload diarization when overseas_transfer consent is missing', async () => {
+    const objectKey = await storeTestVoiceObject();
+    mockDB.setConsentMissing(true);
+    mockDiarize.mockResolvedValueOnce(diarizationResult());
+    mockDB.pushResult([{ id: UPLOAD_ID, user_id: 'user-1', object_key: objectKey }]);
+    mockDB.pushResult([consentRow('voice_biometric')]);
+
+    const res = await req(
+      buildApp(),
+      new Request(`http://localhost/vu/uploads/${UPLOAD_ID}/separate`, { method: 'POST' }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('overseas_transfer');
+    expect(mockDiarize).not.toHaveBeenCalled();
   });
 
   it('기존 화자 DELETE 후 새 INSERT (멱등성)', async () => {
@@ -622,6 +704,19 @@ describe('POST /diarize — ElevenLabs 화자 분리 (voice-upload)', () => {
     expect(body.speakers[0].total_duration).toBeCloseTo(7.2);
     expect(body.speakers[1].label).toBe('Speaker 2');
     expect(body.speakers[1].total_duration).toBeCloseTo(2.0);
+  });
+
+  it('blocks one-off diarization when overseas_transfer consent is missing', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([consentRow('voice_biometric')]);
+
+    const res = await req(buildApp(), diarizeReq(new Uint8Array([1, 2, 3])));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('overseas_transfer');
+    expect(mockDiarize).not.toHaveBeenCalled();
   });
 
   it('ElevenLabs 실패 → 500 DIARIZATION_FAILED', async () => {

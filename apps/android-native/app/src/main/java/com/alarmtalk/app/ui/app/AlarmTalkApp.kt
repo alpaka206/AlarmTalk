@@ -220,7 +220,7 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
     LoginPermissionGate(
         authSession = authSession,
         enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-            !viewModel.showOnboarding,
+            !viewModel.showOnboarding && !viewModel.showVoiceSetup,
         permissions = permissions,
         onRequestPermission = ::requestPermission,
         onRequestAllPermissions = ::requestAllMissingPermissions,
@@ -557,6 +557,8 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           VoiceOnboardingScreen(
               contentPadding = padding,
               systemVoices = viewModel.voiceProfiles.filter { it.isSystem == true },
+              voiceProfileBusy = voiceProfileBusy,
+              voiceProfileLoadFinished = viewModel.voiceProfileLoadFinished,
               stockClips = viewModel.stockClips,
               onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },
               onChoose = { voiceId, listenerTitle -> viewModel.completeVoiceSetup(voiceId, listenerTitle) },

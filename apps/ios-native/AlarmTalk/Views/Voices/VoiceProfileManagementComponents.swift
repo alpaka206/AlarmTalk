@@ -510,49 +510,6 @@ struct SharedVoiceViewerInfoDialog: View {
     }
 }
 
-// MARK: - Plan gate
-
-/// 슬롯 부족 / 유료 플랜 필요 시 노출하는 안내 시트.
-struct VoicePlanGateSheet: View {
-    let onUpgrade: () -> Void
-    let onClose: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("플랜 업그레이드가 필요해요")
-                    .font(.title3.weight(.bold))
-                Spacer()
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
-                .accessibilityLabel(Text("닫기"))
-            }
-            Text("목소리 슬롯이 가득 찼거나, 본 기능은 유료 플랜에서 사용할 수 있어요.")
-                .font(.subheadline)
-                .foregroundStyle(AlarmTalkTheme.textSecondary)
-            VStack(alignment: .leading, spacing: 8) {
-                bullet("기존 목소리를 삭제해 자리를 만들어요")
-                bullet("Family · Couple 플랜으로 업그레이드해 슬롯을 확장해요")
-            }
-            Button("플랜 보기", action: onUpgrade)
-                .buttonStyle(.borderedProminent)
-                .tint(AlarmTalkTheme.primary)
-                .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-    }
-
-    private func bullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(AlarmTalkTheme.primary)
-            Text(text).font(.footnote)
-        }
-    }
-}
 
 // MARK: - Audio crop range slider
 

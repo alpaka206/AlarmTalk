@@ -77,7 +77,7 @@ struct RootView: View {
             return
         }
         onboardingCompleted = OnboardingCompletionStore().hasCompleted(userID: userID)
-        voiceSetupDone = DefaultVoicePreferenceStore().hasChosen(userID: userID)
+        voiceSetupDone = DefaultVoicePreferenceStore().hasCompletedSetup(userID: userID)
     }
 
     private func completeOnboarding() {

@@ -654,14 +654,18 @@ struct AlarmVoiceProfilePicker: View {
     @Environment(\.voiceAlarmTheme) private var theme
 
     var body: some View {
-        // 알람창에선 기본(시스템) 목소리를 못 바꾼다(변경은 목소리 탭). 기본 목소리가 정해졌고 그게
-        // 목록에 있으면 시스템 음성은 그 1개만, 아니면(기존 사용자·미선택 등) 시스템 음성을 전부 노출해
-        // "쓸 목소리가 없음" 으로 갇히지 않게 한다(Codex P2). Android `VoiceAudioCard.kt` 미러.
+        // 알람창에선 기본(시스템) 목소리를 못 바꾼다(변경은 목소리 탭). 기본 목소리와
+        // 기존 알람의 저장된 시스템 목소리만 남겨, 편집 중 조용한 목소리 변경을 막는다.
         let hasDefaultSystemVoice = defaultVoiceId != nil &&
-            ownProfiles.contains { $0.id == defaultVoiceId && isSystemVoiceId($0.id) }
+            ownProfiles.contains { $0.id == defaultVoiceId && isSystemVoice($0) }
         let readyOwnProfiles = ownProfiles
             .filter(\.isReadyForAlarmSelection)
-            .filter { !isSystemVoiceId($0.id) || !hasDefaultSystemVoice || $0.id == defaultVoiceId }
+            .filter {
+                !isSystemVoice($0) ||
+                    !hasDefaultSystemVoice ||
+                    $0.id == defaultVoiceId ||
+                    $0.id == selectedProfileID
+            }
         let readyFamilyVoices = familyVoices.filter(\.isReadyForAlarmSelection)
         // 저장된 voiceProfileId 가 더 이상 선택 가능한 목소리로 해석되지 않으면
         // 조용히 다른 목소리로 바꾸지 않고 빨간 경고만 띄운다. 선택값은 그대로 두어

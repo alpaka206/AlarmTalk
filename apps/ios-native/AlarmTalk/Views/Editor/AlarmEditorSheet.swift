@@ -74,6 +74,7 @@ struct AlarmEditorSheet: View {
     /// (stock_ prefix 로 스톡 여부 확인) preparedAlarm 이 무효화되면 체크가 자동으로
     /// 사라지게 한다. 매 call site 에서 stockSelectedMessageID 를 비우는 것을 잊는
     /// 실수를 원천 차단한다.
+    @State var suppressProfileChangeInvalidation = false
     var selectedStockMessageID: String? {
         guard let prepared = voiceStudio.preparedAlarm,
               prepared.audioCacheKey.hasPrefix("stock_") else {
@@ -414,11 +415,13 @@ struct AlarmEditorSheet: View {
         // 달라질 때만 재할당하므로 무한 루프가 생기지 않는다.
         .onChange(of: freeVoiceTier) { _, _ in coerceFreeVoiceTierConstraints() }
         .onChange(of: currentPlan) { _, _ in coerceFreeVoiceTierConstraints() }
-        // 선택 목소리가 바뀌면 직전 스톡 선택을 비운다(다른 프로필의 클립 선택 표시
-        // 가 남지 않도록). 미리듣기 중이면 함께 정지한다.
+        // 선택 목소리가 바뀌면 직전 생성/스톡 선택을 비워, 다른 프로필의 오디오를
+        // 저장하지 않게 한다. 미리듣기 중이면 함께 정지한다.
         .onChange(of: voiceStudio.selectedProfileID) { _, _ in
+            guard !suppressProfileChangeInvalidation else { return }
             stopAllEditorPreviews()
             stockSelectedMessageID = nil
+            voiceStudio.preparedAlarm = nil
         }
         .onChange(of: voiceStudio.weatherCountry) { _, _ in voiceStudio.preparedAlarm = nil }
         .onChange(of: voiceStudio.weatherCity) { _, _ in voiceStudio.preparedAlarm = nil }
@@ -644,7 +647,8 @@ struct AlarmEditorSheet: View {
             randomContext: voiceStudio.randomContext,
             language: voiceStudio.ttsLanguage,
             translateText: voiceStudio.translateText,
-            fireAtMillis: fireAt
+            fireAtMillis: fireAt,
+            listenerTitle: voiceStudio.selectedListenerTitle
         )
     }
 
@@ -850,6 +854,7 @@ struct AlarmEditorSheet: View {
 
     func loadVoicePromptState(from alarm: LocalAlarmRecord?) {
         let saved = savedPromptPreferences()
+        suppressProfileChangeInvalidation = true
         voiceStudio.selectedProfileID = alarm?.voiceProfileId
         voiceStudio.preparedAlarm = nil
         stockSelectedMessageID = nil
@@ -874,6 +879,9 @@ struct AlarmEditorSheet: View {
         // 있어야 803 라인 가드가 4-값 강제를 건너뛴다.
         restoreStockClipSelectionIfNeeded(from: alarm)
         coerceFreeVoiceTierConstraints()
+        DispatchQueue.main.async {
+            suppressProfileChangeInvalidation = false
+        }
     }
 
     /// 기존에 저장된 스톡 클립 알람을 다시 "선택/준비" 상태로 복원한다(P2).
@@ -901,7 +909,8 @@ struct AlarmEditorSheet: View {
             audioCacheKey: cacheKey,
             rawAudioURL: alarm.rawAudioUri,
             text: alarm.voiceText ?? "",
-            language: alarm.voiceLanguage ?? "ko"
+            language: alarm.voiceLanguage ?? "ko",
+            listenerTitle: alarm.voiceListenerTitle
         )
         stockSelectedMessageID = messageID
         // 스톡 클립은 고정 음원이므로 랜덤 문구가 아니다(저장값 voiceRandomPrompt=false 미러).
@@ -1051,8 +1060,8 @@ struct AlarmEditorSheet: View {
         let defaultVoice = readyOwn.first { $0.id == voiceStudio.defaultVoiceId }
 
         if freeVoiceTier {
-            let systemVoice = defaultVoice ?? readyOwn.first { isSystemVoiceId($0.id) }
-            let selectedIsSystem = selected.map { isSystemVoiceId($0) } ?? false
+            let systemVoice = defaultVoice ?? readyOwn.first { isSystemVoice($0) }
+            let selectedIsSystem = voiceStudio.isSystemVoiceProfile(id: selected)
             if selectedIsSystem,
                readyOwn.contains(where: { $0.id == selected }) {
                 return
@@ -1158,11 +1167,12 @@ struct AlarmEditorSheet: View {
                 selectedProfileID: voiceStudio.selectedProfileID,
                 text: voiceStudio.ttsText,
                 randomPrompt: voiceStudio.randomPrompt,
-                randomContext: voiceStudio.randomContext,
-                language: voiceStudio.ttsLanguage,
-                translateText: voiceStudio.translateText,
-                fireAtMillis: fireAt
-           ) {
+                 randomContext: voiceStudio.randomContext,
+                 language: voiceStudio.ttsLanguage,
+                 translateText: voiceStudio.translateText,
+                 fireAtMillis: fireAt,
+                 listenerTitle: voiceStudio.selectedListenerTitle
+            ) {
             let prepared = await voiceStudio.generateTTS(
                 session: auth.session,
                 alarmHour: draft.hour,
@@ -1234,6 +1244,7 @@ struct AlarmEditorSheet: View {
             merged.audioCacheKey = cachedLocalAudio.cacheKey
             merged.rawAudioUri = nil
             merged.voiceProfileId = nil
+            merged.voiceListenerTitle = nil
             merged.voiceText = nil
             merged.voiceCategory = nil
             merged.voiceLanguage = nil
@@ -1258,6 +1269,7 @@ struct AlarmEditorSheet: View {
             merged.audioCacheKey = prepared.audioCacheKey
             merged.rawAudioUri = prepared.rawAudioURL ?? merged.rawAudioUri
             merged.voiceProfileId = prepared.voiceProfileID
+            merged.voiceListenerTitle = prepared.listenerTitle
             merged.voiceText = prepared.text
             let usesRandomPrompt = voiceStudio.randomPrompt && !isStockClip
             merged.voiceCategory = usesRandomPrompt ? activePromptContext.ttsCategory : "custom"

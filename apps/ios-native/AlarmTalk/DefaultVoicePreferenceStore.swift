@@ -31,6 +31,9 @@ struct DefaultVoicePreferenceStore {
         guard let key = voiceKey(userID) else { return }
         if let voiceId = voiceId?.trimmingCharacters(in: .whitespacesAndNewlines), !voiceId.isEmpty {
             defaults.set(voiceId, forKey: key)
+            if let skippedKey = skippedKey(userID) {
+                defaults.removeObject(forKey: skippedKey)
+            }
         } else {
             defaults.removeObject(forKey: key)
         }
@@ -39,6 +42,20 @@ struct DefaultVoicePreferenceStore {
     /// 사용자가 기본 목소리를 한 번이라도 골랐는지(온보딩 목소리 스텝 완료 판정).
     func hasChosen(userID: String?) -> Bool {
         defaultVoiceId(userID: userID) != nil
+    }
+
+    func hasCompletedSetup(userID: String?) -> Bool {
+        hasChosen(userID: userID) || hasSkipped(userID: userID)
+    }
+
+    func markSkipped(userID: String?) {
+        guard let key = skippedKey(userID) else { return }
+        defaults.set(true, forKey: key)
+    }
+
+    private func hasSkipped(userID: String?) -> Bool {
+        guard let key = skippedKey(userID) else { return false }
+        return defaults.bool(forKey: key)
     }
 
     /// 기본(시스템) 목소리가 사용자를 부를 호칭. 없으면 nil.
@@ -57,6 +74,15 @@ struct DefaultVoicePreferenceStore {
         }
     }
 
+    func clear(userID: String?) {
+        guard let voiceKey = voiceKey(userID),
+              let listenerKey = listenerKey(userID),
+              let skippedKey = skippedKey(userID) else { return }
+        defaults.removeObject(forKey: voiceKey)
+        defaults.removeObject(forKey: listenerKey)
+        defaults.removeObject(forKey: skippedKey)
+    }
+
     private func voiceKey(_ userID: String?) -> String? {
         guard let id = normalized(userID) else { return nil }
         return "default_voice_\(id)"
@@ -65,6 +91,11 @@ struct DefaultVoicePreferenceStore {
     private func listenerKey(_ userID: String?) -> String? {
         guard let id = normalized(userID) else { return nil }
         return "default_listener_\(id)"
+    }
+
+    private func skippedKey(_ userID: String?) -> String? {
+        guard let id = normalized(userID) else { return nil }
+        return "default_voice_setup_skipped_\(id)"
     }
 
     private func normalized(_ userID: String?) -> String? {

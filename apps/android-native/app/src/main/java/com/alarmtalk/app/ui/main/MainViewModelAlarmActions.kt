@@ -23,7 +23,7 @@ import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.DuplicateAlarmTimeException
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceSources
-import com.alarmtalk.app.data.isSystemVoiceId
+import com.alarmtalk.app.data.usesFreeSystemVoiceAlarm
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
@@ -86,9 +86,7 @@ private fun MainViewModel.alarmPermissionBlockedMessage(target: PermissionTarget
 private fun MainViewModel.voiceAlarmAllowed(draft: AlarmDraft): Boolean {
     if (draft.playMode == AlarmPlayModes.ALARM_ONLY) return true
     if (hasPaidVoiceAccess(subscriptionResponse)) return true
-    return draft.localAudioUri.isNullOrBlank() &&
-        draft.rawAudioUri.isNullOrBlank() &&
-        isSystemVoiceId(draft.voiceProfileId)
+    return draft.usesFreeSystemVoiceAlarm()
 }
 
 internal fun MainViewModel.createAlarm(

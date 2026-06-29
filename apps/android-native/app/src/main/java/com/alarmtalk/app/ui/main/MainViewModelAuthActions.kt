@@ -327,6 +327,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
+            clearCurrentDefaultVoicePreferences()
             authSessionStore.clear()
             clearUserScopedRemoteState()
             authSession = null
@@ -510,6 +511,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
             clearCurrentAccessSnapshot()
+            clearCurrentDefaultVoicePreferences()
             authSessionStore.clear()
             clearUserScopedRemoteState()
             authSession = null

@@ -500,7 +500,7 @@ final class AuthViewModelTests: XCTestCase {
             Set(consents.filter { $0.agreed }.map { $0.type }),
             ["terms", "privacy", "age14", "voice_biometric", "overseas_transfer", "marketing"]
         )
-        // 모든 항목이 현재 정책 버전("2")을 동봉해야 한다.
+        // 모든 항목이 현재 정책 버전을 동봉해야 한다.
         XCTAssertTrue(consents.allSatisfy { $0.version == AuthViewModel.currentPolicyVersion })
     }
 }
