@@ -537,7 +537,9 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
           ConsentScreen(
               contentPadding = padding,
               busy = authBusy,
-              onAgree = { marketingAgreed -> viewModel.submitConsents(marketingAgreed) },
+              onAgree = { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed ->
+                  viewModel.submitConsents(marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed)
+              },
               onOpenTerms = { context.openWebUrl("https://alarm-talk.com/ko/terms") },
               onOpenPrivacy = { context.openWebUrl("https://alarm-talk.com/ko/privacy") },
           )

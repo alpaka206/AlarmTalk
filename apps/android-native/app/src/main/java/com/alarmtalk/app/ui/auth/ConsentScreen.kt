@@ -35,29 +35,37 @@ import androidx.compose.ui.unit.dp
  * 로그인 후 필수 약관/개인정보 동의를 받는 게이트 화면.
  * 신규 가입자뿐 아니라 기존 가입자도 미동의 시 이 화면을 통과해야 앱을 쓸 수 있다.
  *
- * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침
+ * 필수: 만14세 이상 / 이용약관 / 개인정보 처리방침 / 음성 생체정보 / 국외 이전
  * 선택: 광고성 정보 수신(마케팅)
  */
 @Composable
 internal fun ConsentScreen(
     contentPadding: PaddingValues,
     busy: Boolean,
-    onAgree: (marketingAgreed: Boolean) -> Unit,
+    onAgree: (
+        marketingAgreed: Boolean,
+        voiceBiometricAgreed: Boolean,
+        overseasTransferAgreed: Boolean,
+    ) -> Unit,
     onOpenTerms: () -> Unit,
     onOpenPrivacy: () -> Unit,
 ) {
     var age14 by remember { mutableStateOf(false) }
     var terms by remember { mutableStateOf(false) }
     var privacy by remember { mutableStateOf(false) }
+    var voiceBiometric by remember { mutableStateOf(false) }
+    var overseasTransfer by remember { mutableStateOf(false) }
     var marketing by remember { mutableStateOf(false) }
 
-    val allRequiredChecked = age14 && terms && privacy
+    val allRequiredChecked = age14 && terms && privacy && voiceBiometric && overseasTransfer
     val allChecked = allRequiredChecked && marketing
 
     fun setAll(value: Boolean) {
         age14 = value
         terms = value
         privacy = value
+        voiceBiometric = value
+        overseasTransfer = value
         marketing = value
     }
 
@@ -113,6 +121,18 @@ internal fun ConsentScreen(
                 onOpenDetail = onOpenPrivacy,
             )
             ConsentRow(
+                checked = voiceBiometric,
+                onCheckedChange = { voiceBiometric = it },
+                label = stringResource(R.string.auth_consent_voice_biometric),
+                description = stringResource(R.string.auth_consent_voice_biometric_desc),
+            )
+            ConsentRow(
+                checked = overseasTransfer,
+                onCheckedChange = { overseasTransfer = it },
+                label = stringResource(R.string.auth_consent_overseas_transfer),
+                description = stringResource(R.string.auth_consent_overseas_transfer_desc),
+            )
+            ConsentRow(
                 checked = marketing,
                 onCheckedChange = { marketing = it },
                 label = stringResource(R.string.auth_consent_marketing),
@@ -120,7 +140,7 @@ internal fun ConsentScreen(
         }
 
         Button(
-            onClick = { onAgree(marketing) },
+            onClick = { onAgree(marketing, voiceBiometric, overseasTransfer) },
             enabled = allRequiredChecked && !busy,
             modifier = Modifier
                 .fillMaxWidth()
@@ -154,6 +174,7 @@ private fun ConsentRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     label: String,
+    description: String? = null,
     emphasized: Boolean = false,
     onOpenDetail: (() -> Unit)? = null,
 ) {
@@ -166,12 +187,23 @@ private fun ConsentRow(
     ) {
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
         Spacer(Modifier.height(0.dp))
-        Text(
-            text = label,
+        Column(
             modifier = Modifier.weight(1f),
-            style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
-            fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
-        )
+        ) {
+            Text(
+                text = label,
+                style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+                fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
+            )
+            if (description != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (onOpenDetail != null) {
             TextButton(onClick = onOpenDetail) { Text(stringResource(R.string.auth_consent_view)) }
         }

@@ -9,12 +9,16 @@
     <string name="auth_consent_agree_all">すべての規約に同意</string>
     <string name="auth_consent_agree_and_start">同意して始める</string>
     <string name="auth_consent_marketing">［任意］広告・宣伝情報の受信に同意</string>
+    <string name="auth_consent_overseas_transfer">［必須］音声AI処理のための国外移転に同意</string>
+    <string name="auth_consent_overseas_transfer_desc">音声AI、翻訳、動的文言処理のため、音声・アラーム文言・占い入力値がElevenLabsやGoogle Vertexなど国外の処理者へ送信される場合があります。</string>
     <string name="auth_consent_privacy">［必須］プライバシーポリシーに同意</string>
     <string name="auth_consent_processing">処理中…</string>
     <string name="auth_consent_subtitle">以下の項目を確認するだけ。すぐ終わります。</string>
     <string name="auth_consent_terms">［必須］利用規約に同意</string>
     <string name="auth_consent_title">サービスをご利用いただくために\n規約に同意してください</string>
     <string name="auth_consent_view">表示</string>
+    <string name="auth_consent_voice_biometric">［必須］音声生体情報の処理に同意</string>
+    <string name="auth_consent_voice_biometric_desc">録音またはアップロードした声を音声プロフィール作成・音声クローン・TTS生成に使用し、個人を識別または再現し得る生体情報として処理します。</string>
     <string name="auth_already_have_account">すでにアカウントをお持ちですか？</string>
     <string name="auth_create_account">新規登録</string>
     <string name="auth_email_verify">メール認証</string>

@@ -42,8 +42,14 @@ struct RootView: View {
                 // Android `ConsentScreen` 게이팅과 동등.
                 ConsentView(
                     busy: auth.isBusy,
-                    onAgree: { marketingAgreed in
-                        Task { await auth.submitConsents(marketingAgreed: marketingAgreed) }
+                    onAgree: { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed in
+                        Task {
+                            await auth.submitConsents(
+                                marketingAgreed: marketingAgreed,
+                                voiceBiometricAgreed: voiceBiometricAgreed,
+                                overseasTransferAgreed: overseasTransferAgreed
+                            )
+                        }
                     },
                     onOpenTerms: { openURL(Self.termsURL) },
                     onOpenPrivacy: { openURL(Self.privacyURL) }

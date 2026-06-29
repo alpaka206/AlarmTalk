@@ -9,12 +9,16 @@
     <string name="auth_consent_agree_all">Agree to all terms</string>
     <string name="auth_consent_agree_and_start">Agree and start</string>
     <string name="auth_consent_marketing">[Optional] Agree to receive marketing messages</string>
+    <string name="auth_consent_overseas_transfer">[Required] Agree to overseas transfer for voice AI processing</string>
+    <string name="auth_consent_overseas_transfer_desc">Voice, alarm text, and fortune inputs may be sent to overseas processors such as ElevenLabs and Google Vertex for voice AI, translation, and dynamic prompt processing.</string>
     <string name="auth_consent_privacy">[Required] Agree to Privacy Policy</string>
     <string name="auth_consent_processing">Processing…</string>
     <string name="auth_consent_subtitle">Just check the items below — it only takes a moment.</string>
     <string name="auth_consent_terms">[Required] Agree to Terms of Service</string>
     <string name="auth_consent_title">Please agree to the terms\nto use the service</string>
     <string name="auth_consent_view">View</string>
+    <string name="auth_consent_voice_biometric">[Required] Agree to voice biometric processing</string>
+    <string name="auth_consent_voice_biometric_desc">Recorded or uploaded voices are used to create voice profiles, clone voices, and generate TTS, and are processed as biometric information that can identify or reproduce a person.</string>
     <string name="auth_already_have_account">Already have an account?</string>
     <string name="auth_create_account">Sign up</string>
     <string name="auth_email_verify">Verify email</string>
