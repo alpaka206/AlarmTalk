@@ -32,7 +32,7 @@
     "@libsql/client": "^0.17.4",
     "bcryptjs": "^3.0.3",
     "date-holidays": "^3.30.2",
-    "hono": "^4.12.26",
+    "hono": "^4.12.27",
     "toucan-js": "^4.1.1"
   }
 }
