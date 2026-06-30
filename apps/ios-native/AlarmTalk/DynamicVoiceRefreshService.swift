@@ -113,6 +113,8 @@ final class DynamicVoiceRefreshService {
             // 저장 시 voiceRandomPrompt=false 로 빠지지만, 그 이전에 저장된 알람까지
             // 안전하게 제외하기 위한 방어선이다.
             alarm.audioCacheKey?.hasPrefix("stock_") != true &&
+            // 무료 버킷 회전 알람은 사전 렌더 정적 클립을 쓰므로 동적 음성 갱신 대상이 아니다.
+            alarm.voiceBucket == nil &&
             alarm.voiceProfileId?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
