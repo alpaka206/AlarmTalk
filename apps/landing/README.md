@@ -36,6 +36,14 @@ npm run build        # 정적 사이트를 out/ 디렉터리로 export
 - `i18n/navigation.ts` — 로케일 인식 `Link`/`useRouter` 등 내비게이션 헬퍼
 - `messages/{ko,en,ja}.json` — 네임스페이스별 카피(meta/hero/faq/waitlist 등)
 
+## 배포 (Vercel)
+
+프로덕션은 Vercel에 배포되어 있습니다.
+
+- **리디렉션은 `vercel.json`이 담당합니다.** `output: "export"`에서는 `next.config.ts`의 `redirects()`가 동작하지 않고, `public/_redirects`(Netlify/Cloudflare Pages 형식)는 Vercel이 무시합니다. `_redirects`는 다른 정적 호스트로 옮길 때를 대비한 백업입니다.
+- 로케일 프리픽스 없는 경로(`/privacy`, `/terms`, `/account-deletion`, `/company`, `/contact`)는 `/ko/...`로 308 리디렉션됩니다. 스토어 심사(Google Play 개인정보처리방침 URL 등)에 `https://alarm-talk.com/privacy` 같은 짧은 URL을 제출해도 동작해야 하기 때문입니다.
+- **도메인 설정**: 코드의 canonical/sitemap/robots는 모두 `https://alarm-talk.com`(non-www, `lib/site.ts`의 `SITE_URL`)을 기준으로 합니다. Vercel 대시보드의 Domains 설정에서 반드시 `alarm-talk.com`을 primary로 두고 `www.alarm-talk.com`을 308로 apex에 리디렉션해야 합니다. 반대로 설정하면 canonical URL이 리디렉션을 가리키게 되어 Search Console에서 색인 문제가 발생합니다.
+
 ## 디자인 토큰
 
 `apps/android-native`의 `LandingScreen.kt`와 동기화된 다크 톤입니다(`app/globals.css`의 `@theme` 블록). 앱과 랜딩의 첫 진입 톤을 일치시키기 위해 색·타이포·곡률을 같은 값으로 유지합니다. 폰트는 Pretendard Variable.
