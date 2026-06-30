@@ -793,6 +793,9 @@ auth.post('/apple', async (c) => {
     let plan: 'free' | 'plus' | 'family';
     let resolvedName: string;
     let tokenEpoch = 0;
+    // JWT/응답에 쓸 이메일. Apple 이 재로그인에서 email 을 생략하면 placeholder 대신
+    // 기존 행의 검증 이메일을 쓴다(아래 existing 분기에서 보정).
+    let profileEmail = email;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -811,6 +814,8 @@ auth.post('/apple', async (c) => {
       plan = row.plan ?? 'free';
       resolvedName = name || row.name || '';
       tokenEpoch = Number(row.token_epoch ?? 0);
+      // 토큰에 검증 email 이 없으면 기존 행 이메일을 토큰/응답에 쓴다(placeholder 노출 방지).
+      profileEmail = hasVerifiedEmail ? email : row.email;
 
       await db.execute({
         sql: `UPDATE users
@@ -836,7 +841,7 @@ auth.post('/apple', async (c) => {
     }
 
     const token = await signAppJwt(
-      { sub: loginSub, email, name: resolvedName || undefined, epoch: tokenEpoch },
+      { sub: loginSub, email: profileEmail, name: resolvedName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -866,7 +871,7 @@ auth.post('/apple', async (c) => {
       token,
       user: {
         id: userId,
-        email,
+        email: profileEmail,
         name: resolvedName,
         plan,
         // Phase 4-D2: 클라이언트가 ASAuthorizationAppleIDProvider.credentialState

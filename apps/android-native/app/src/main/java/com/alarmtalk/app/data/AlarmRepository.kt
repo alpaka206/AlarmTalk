@@ -519,7 +519,10 @@ class AlarmRepository(
                 // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
                 // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
                 // 미래 알람은 그대로 두고 과거(놓친) 알람만 재계산/정리한다.
-                val needsRecompute = recomputeFireTime || alarm.fireAtMillis <= now
+                // 스누즈 알람은 enabled=true 이고 fireAtMillis 가 "스누즈 마감(절대시각)"이라
+                // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
+                val isSnoozed = alarm.state == AlarmStates.SNOOZED
+                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
                 val alarmToSchedule = when {
                     !needsRecompute -> alarm
                     alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
