@@ -37,6 +37,7 @@ interface AlarmDao {
           AND voiceRandomPrompt = 1
           AND playMode != 'alarm_only'
           AND voiceProfileId IS NOT NULL
+          AND bucketId IS NULL
         ORDER BY fireAtMillis ASC
         """,
     )
@@ -146,4 +147,14 @@ interface AlarmDao {
         preparedForFireAtMillis: Long,
         updatedAtMillis: Long,
     )
+
+    /** 무료 버킷 회전 인덱스를 다음 값으로 영속화한다(알람이 울린 직후 호출). */
+    @Query(
+        """
+        UPDATE alarms
+        SET bucketRotationIndex = :index, updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateBucketRotationIndex(id: String, index: Int, updatedAtMillis: Long)
 }

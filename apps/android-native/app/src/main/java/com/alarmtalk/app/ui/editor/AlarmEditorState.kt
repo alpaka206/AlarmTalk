@@ -88,6 +88,8 @@ internal class AlarmEditorState(
     alarmVolumePercent: Int,
     alarmSoundUri: String?,
     alarmSoundLabel: String?,
+    bucketId: String? = null,
+    bucketClipKeysJson: String? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -126,6 +128,11 @@ internal class AlarmEditorState(
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
     var alarmSoundUri by mutableStateOf(alarmSoundUri)
     var alarmSoundLabel by mutableStateOf(alarmSoundLabel)
+    // 무료 버킷 회전: 선택한 버킷 카테고리, 미리 캐시한 N개 클립의 cacheKey JSON,
+    // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
+    var selectedBucket by mutableStateOf(bucketId)
+    var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
+    var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -202,6 +209,8 @@ internal class AlarmEditorState(
             voiceRepeat = if (alarmOnly) true else voiceRepeat,
             voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
+            bucketId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else selectedBucket,
+            bucketClipKeysJson = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else bucketClipKeysJson,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
@@ -299,8 +308,38 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    /**
+     * 무료 버킷 선택 결과를 상태에 반영한다. 대표(변형0) 클립을 단일 재생 폴백으로 박고,
+     * 회전용 N개 클립의 cacheKey 목록을 저장한다. 랜덤 문구 생성과는 무관(voiceRandomPrompt=false).
+     */
+    fun setBucketAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        messageId: String,
+        text: String,
+        language: String,
+        bucket: String,
+        clipKeys: List<String>,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceListenerTitleOverride = ""
+        voiceRandomPrompt = false
+        voiceTranslationEnabled = false
+        voiceText = text
+        voiceLanguage = language
+        localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
+        rawAudioUri = audio.rawAudioUri
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        selectedBucket = bucket
+        bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
+        bucketResolvedForProfileId = profileId
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    }
+
     fun activeVoiceLanguage(): String =
-        if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
+        if (selectedBucket != null || voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
@@ -383,6 +422,8 @@ internal class AlarmEditorState(
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
                 alarmSoundUri = alarm?.alarmSoundUri,
                 alarmSoundLabel = alarm?.alarmSoundLabel,
+                bucketId = alarm?.bucketId,
+                bucketClipKeysJson = alarm?.bucketClipKeysJson,
             )
         }
     }

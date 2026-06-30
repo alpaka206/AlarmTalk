@@ -1,5 +1,6 @@
 import { UUID_RE } from '../lib/validate';
 import { isStoredAudioUrl } from '../lib/audio-loader';
+import { FREE_BUCKET_CATEGORIES } from '../lib/stock-clips';
 
 export const ALARM_MODES = ['sound-only', 'tts'] as const;
 export type AlarmMode = (typeof ALARM_MODES)[number];
@@ -96,9 +97,19 @@ export function validateAlarmFields(body: {
   is_active?: boolean;
   target_user_id?: string;
   raw_audio_url?: string | null;
+  bucket_id?: string | null;
 }): FieldError | null {
   if (body.message_id != null && !UUID_RE.test(body.message_id)) {
     return { error: 'Invalid message_id format', error_code: 'INVALID_MESSAGE_ID' };
+  }
+
+  // 무료 버킷은 알려진 스톡 카테고리(기상/약 …)만 허용. null=버킷 해제.
+  if (
+    body.bucket_id !== undefined &&
+    body.bucket_id !== null &&
+    (typeof body.bucket_id !== 'string' || !FREE_BUCKET_CATEGORIES.includes(body.bucket_id))
+  ) {
+    return { error: 'Invalid bucket_id', error_code: 'INVALID_BUCKET_ID' };
   }
 
   if (body.target_user_id !== undefined && typeof body.target_user_id !== 'string') {

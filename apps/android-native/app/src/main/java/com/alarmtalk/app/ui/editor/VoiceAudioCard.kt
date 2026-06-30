@@ -75,6 +75,8 @@ internal fun VoiceAudioCard(
     previewingStockMessageId: String?,
     onPreviewStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
     onSelectStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
+    // 무료 버킷(기상/약) 선택 — 해당 버킷의 N개 클립을 캐시해 매 울림마다 순차 회전한다.
+    onSelectBucket: (String) -> Unit,
     // 무료 플랜 제한 모드 — 녹음/파일·직접 입력·동적 문구는 [onLockedFeature] 로 게이트.
     freeVoiceTier: Boolean,
     onLockedFeature: () -> Unit,
@@ -210,19 +212,14 @@ internal fun VoiceAudioCard(
                         },
                     )
                 }
-                // 유료 플랜은 랜덤 문구/직접 입력으로 충분하므로 기본 제공(스톡) 음성은
-                // 무료 플랜에서만 노출한다.
+                // 무료 플랜은 개별 문구 선택 대신 "테마(버킷)"만 고른다. 버킷 안 여러 문구는
+                // 매 울림마다 순차 회전돼 재생되며, 사용자에겐 내용을 노출하지 않는다.
+                // 유료 플랜은 랜덤 문구/직접 입력으로 충분하므로 버킷 UI 를 노출하지 않는다.
                 if (freeVoiceTier) {
-                    StockClipDropdown(
-                        clips = stockClips.filter {
-                            it.voiceProfileId == editor.voiceProfileId &&
-                                it.category != com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
-                        },
-                        isSystemVoice = com.alarmtalk.app.data.isSystemVoiceId(editor.voiceProfileId),
-                        selectedStockMessageId = selectedStockMessageId,
-                        previewingStockMessageId = previewingStockMessageId,
-                        onPreviewStockClip = onPreviewStockClip,
-                        onSelectStockClip = onSelectStockClip,
+                    FreeBucketSelector(
+                        buckets = freeBucketsFor(stockClips, editor.voiceProfileId, editor.voiceLanguage),
+                        selectedBucket = editor.selectedBucket,
+                        onSelectBucket = onSelectBucket,
                     )
                 }
                 if (selectedProfileUnavailable) {
@@ -248,7 +245,8 @@ internal fun VoiceAudioCard(
                         }
                     }
                 }
-                if (profileOptions.isNotEmpty()) {
+                // 무료 플랜은 위 버킷 선택만 노출한다(랜덤 문구 토글·직접 입력·동적 설정은 유료).
+                if (!freeVoiceTier && profileOptions.isNotEmpty()) {
                     // 호칭은 더 이상 알람창에서 받지 않는다. 시스템 음성은 온보딩/목소리 탭에서 정한
                     // 기본 호칭을 쓰고, 내/공유 음성은 각 프로필 호칭을 쓴다(저장 경로에서 resolve).
                     Row(
@@ -619,6 +617,40 @@ private fun VoiceProfileOptionRow(
             Spacer(Modifier.width(12.dp))
             VoiceSelectionDot(selected = selected)
         }
+    }
+}
+
+/**
+ * 무료 플랜 "테마(버킷)" 선택. 사용 가능한 버킷(기상/약 …) 칩만 노출하고, 각 버킷 안의
+ * 개별 문구는 보여주지 않는다. 선택하면 그 버킷의 N개 클립이 캐시되어 매 울림마다 순차 회전한다.
+ */
+@Composable
+private fun FreeBucketSelector(
+    buckets: List<String>,
+    selectedBucket: String?,
+    onSelectBucket: (String) -> Unit,
+) {
+    if (buckets.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.editor_free_bucket_title),
+            fontWeight = FontWeight.SemiBold,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            buckets.forEach { bucket ->
+                FilterChip(
+                    selected = selectedBucket == bucket,
+                    onClick = { onSelectBucket(bucket) },
+                    label = { Text(stringResource(freeBucketLabelRes(bucket))) },
+                    shape = WakerChipShape,
+                )
+            }
+        }
+        Text(
+            text = stringResource(R.string.editor_free_bucket_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

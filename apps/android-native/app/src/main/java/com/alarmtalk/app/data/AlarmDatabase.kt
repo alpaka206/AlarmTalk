@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 16,
+    version = 17,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -42,6 +42,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -178,6 +179,15 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceListenerTitle TEXT")
+            }
+        }
+
+        // 무료 버킷 회전: 알람이 가리키는 버킷과 매 울림 순차 회전 인덱스.
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketRotationIndex INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketClipKeysJson TEXT")
             }
         }
     }

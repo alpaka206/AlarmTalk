@@ -77,6 +77,8 @@ data class StockClip(
     @SerializedName("voice_name") val voiceName: String? = null,
     val category: String? = null,
     val language: String? = null,
+    // 같은 (보이스·카테고리·언어) 안의 문구 순서. 버킷 회전은 이 순서대로 재생한다.
+    val variant: Int = 0,
     val text: String = "",
     @SerializedName("audio_url") val audioUrl: String? = null,
 )

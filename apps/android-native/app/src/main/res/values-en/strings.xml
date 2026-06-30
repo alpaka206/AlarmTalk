@@ -295,6 +295,8 @@
     <string name="editor_stock_clip_selected">A built-in voice was selected.</string>
     <string name="editor_stock_clip_subtitle">Preview and use right away</string>
     <string name="editor_stock_clip_title">Built-in alarm voices</string>
+    <string name="editor_free_bucket_title">Theme</string>
+    <string name="editor_free_bucket_hint">A different line from the theme plays each time the alarm rings.</string>
     <string name="editor_stop">Stop</string>
     <string name="editor_title_edit_alarm">Edit alarm</string>
     <string name="editor_title_family_alarm">Set an alarm for someone</string>

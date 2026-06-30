@@ -1160,6 +1160,25 @@ export const migrations: Migration[] = [
       `ALTER TABLE voice_profiles ADD COLUMN speech_formality TEXT`,
     ],
   },
+  {
+    // 무료 버킷 회전(기상/약): 스톡 클립을 카테고리당 여러 'variant' 로 사전 합성해
+    // 앱이 전부 캐시한 뒤 알람마다 순차 회전한다. (옵션 B — 완전 오프라인)
+    //  - messages.variant: 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 인덱스.
+    //    idx_messages_stock 은 애초에 UNIQUE 가 아니므로(일반 인덱스) variant 를 더해
+    //    카테고리당 N행 조회·정렬만 빠르게 한다. 기존 프리셋 행은 variant=0 으로 백필된다.
+    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    //    대표(변형0) 클립을 그대로 유지해, 회전을 모르는 경로/구버전에선 단일 재생 폴백이 된다.
+    id: 54,
+    name: 'stock-clip-variants-and-alarm-bucket',
+    statements: [
+      `ALTER TABLE messages ADD COLUMN variant INTEGER NOT NULL DEFAULT 0`,
+      `DROP INDEX IF EXISTS idx_messages_stock`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_stock
+        ON messages(is_preset, voice_profile_id, category, language, variant)`,
+      `ALTER TABLE alarms ADD COLUMN bucket_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_bucket ON alarms(bucket_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so

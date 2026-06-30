@@ -23,67 +23,49 @@ export const STOCK_GREETING_CATEGORY = 'greeting';
  * (보이스 × 언어) 매트릭스를 채운다.
  */
 export const STOCK_CLIP_PRESETS = [
-  // 무료 플랜이 그대로 받아 쓰는 알람 스톡 클립. 앱의 voice 카테고리 10종
-  // (morning·lunch·evening·night·health·medication·study·cheer·love·exercise) 과 맞춰,
-  // 시스템 보이스마다 카테고리별 알람 음성을 한국어·영어·일본어로 미리 합성해 둔다.
-  // (보이스당 10 카테고리 × 3 언어 = 30 클립 + greeting 미리듣기 1. en/ja 는 Vertex 번역.)
+  // 무료 플랜 알람 "버킷". 카테고리당 여러 variants(문구)를 시스템 보이스마다 한국어·
+  // 영어·일본어로 미리 합성해 둔다(en/ja 는 Vertex 번역). 앱은 한 버킷의 변형들을 전부
+  // 로컬 캐시한 뒤, 알람이 울릴 때마다 순차로 돌려가며 재생한다(완전 오프라인).
+  //  - 무료 버킷 = 기상(morning) 8문구 + 약(medication) 2문구. (보이스당 (8+2)×3언어 = 30클립)
+  //  - greeting 은 알람이 아니라 목소리 미리듣기용 1문구(한국어).
+  //  - 버킷을 늘리려면 카테고리를 추가하고 재시드하면 된다(FREE_BUCKET_CATEGORIES 가 자동 반영).
   {
     category: 'morning',
-    baseText: '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
     languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'lunch',
-    baseText: '점심시간이에요. 잠깐 멈추고 따뜻한 밥 한 끼 제대로 챙겨 먹어요. 오후도 든든하게 가봐요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'evening',
-    baseText: '오늘 하루도 정말 고생 많았어요. 이제 천천히 마무리하고 편하게 쉬러 가요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'night',
-    baseText: '벌써 밤이 깊었어요. 오늘은 여기까지만 하고, 편안하게 잘 준비를 해봐요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'health',
-    baseText: '물 한 잔 마실 시간이에요. 어깨도 쭉 펴고, 잠깐 몸을 챙겨줘요.',
-    languages: ['ko', 'en', 'ja'],
+    variants: [
+      '좋은 아침이에요. 잘 잤어요? 천천히 기지개 켜고 오늘 하루도 산뜻하게 시작해 봐요.',
+      '아침이 밝았어요. 이불 속에서 조금만 더 있고 싶겠지만, 지금 살짝 일어나 볼까요?',
+      '일어날 시간이에요. 무겁게 생각하지 말고 발끝부터 꼼지락 움직이면서 깨워 봐요.',
+      '굿모닝! 오늘은 어떤 하루가 기다리고 있을까요. 가볍게 웃으면서 시작해요.',
+      '창밖이 벌써 환해졌어요. 물 한 잔 마시고 정신을 깨우면 하루가 한결 수월해질 거예요.',
+      '자, 이제 진짜 일어날 시간이에요. 딱 한 번 크게 기지개 켜고 몸을 일으켜 봐요.',
+      '오늘도 당신을 위한 아침이 왔어요. 서두르지 말고 천천히 하루를 열어 봐요.',
+      '알람이 울렸어요. 눈 한번 깜빡이고, 심호흡 한 번 하고, 가볍게 일어나 봐요.',
+    ],
   },
   {
     category: 'medication',
-    baseText: '약 먹을 시간이에요. 물 한 잔과 함께 잊지 말고 꼭 챙겨 드세요.',
     languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'study',
-    baseText: '집중할 시간이에요. 딱 한 페이지만 펼쳐 봐요. 시작하면 금방 흐름을 탈 거예요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'cheer',
-    baseText: '잘하고 있어요. 지금까지도 충분히 잘 해왔으니까, 조금만 더 힘내봐요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'love',
-    baseText: '오늘도 당신을 생각하고 있어요. 무리하지 말고, 끼니 잘 챙기면서 지내요.',
-    languages: ['ko', 'en', 'ja'],
-  },
-  {
-    category: 'exercise',
-    baseText: '운동할 시간이에요. 잠깐이라도 몸을 움직이면 하루가 한결 가벼워져요. 천천히 시작해 봐요.',
-    languages: ['ko', 'en', 'ja'],
+    variants: [
+      '약 먹을 시간이에요. 물 한 잔과 함께 잊지 말고 꼭 챙겨 드세요.',
+      '약 챙길 시간이에요. 잠깐이면 되니까 지금 바로 드시고 가요.',
+    ],
   },
   {
     category: STOCK_GREETING_CATEGORY,
     // 목소리 창에서 "이 목소리는 이런 느낌" 을 들려주는 짧은 인사 샘플(미리듣기, 한국어).
-    baseText: '안녕하세요? 만나서 반가워요. 앞으로 기분 좋은 아침을 함께할게요.',
     languages: ['ko'],
+    variants: ['안녕하세요? 만나서 반가워요. 앞으로 기분 좋은 아침을 함께할게요.'],
   },
 ] as const;
+
+/**
+ * 무료 플랜이 알람 버킷으로 고를 수 있는 카테고리(greeting 제외). 스톡 프리셋이 단일
+ * 출처이므로, STOCK_CLIP_PRESETS 에 카테고리를 추가하면 자동으로 버킷 후보가 된다.
+ */
+export const FREE_BUCKET_CATEGORIES: readonly string[] = STOCK_CLIP_PRESETS
+  .map((preset) => preset.category)
+  .filter((category) => category !== STOCK_GREETING_CATEGORY);
 
 /**
  * 보이스별 인사말(greeting 카테고리) 문구. 키는 elevenlabs_voice_id.
@@ -113,6 +95,8 @@ export interface StockClipTarget {
   category: string;
   baseText: string;
   language: string;
+  /** 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 0-based 인덱스. */
+  variantIndex: number;
 }
 
 export interface GeneratedStockClip {
@@ -121,6 +105,7 @@ export interface GeneratedStockClip {
   voice_name: string;
   category: string;
   language: string;
+  variant: number;
   text: string;
 }
 
@@ -150,37 +135,41 @@ export async function findMissingStockTargets(db: Client): Promise<StockClipTarg
   const voices = await listSystemVoices(db);
 
   const existing = await db.execute({
-    sql: `SELECT voice_profile_id, category, language
+    sql: `SELECT voice_profile_id, category, language, variant
           FROM messages
           WHERE COALESCE(is_preset, 0) = 1 AND audio_url IS NOT NULL`,
     args: [],
   });
   const seen = new Set(
     existing.rows.map(
-      (row) => `${row.voice_profile_id}|${row.category}|${row.language}`,
+      (row) =>
+        `${row.voice_profile_id}|${row.category}|${row.language}|${Number(row.variant ?? 0)}`,
     ),
   );
 
   const targets: StockClipTarget[] = [];
   for (const voice of voices) {
     for (const preset of STOCK_CLIP_PRESETS) {
-      for (const language of preset.languages) {
-        const lang = normalizeSynthesisLanguage(language);
-        if (seen.has(`${voice.id}|${preset.category}|${lang}`)) continue;
-        // greeting 은 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
-        const baseText =
-          preset.category === STOCK_GREETING_CATEGORY
-            ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? preset.baseText)
-            : preset.baseText;
-        targets.push({
-          voiceProfileId: voice.id,
-          voiceName: voice.name,
-          elevenlabsVoiceId: voice.elevenlabsVoiceId,
-          category: preset.category,
-          baseText,
-          language: lang,
-        });
-      }
+      preset.variants.forEach((variantText, variantIndex) => {
+        for (const language of preset.languages) {
+          const lang = normalizeSynthesisLanguage(language);
+          if (seen.has(`${voice.id}|${preset.category}|${lang}|${variantIndex}`)) continue;
+          // greeting 은 보이스별 개성 멘트가 있으면 그것을, 없으면 기본 문구를 쓴다.
+          const baseText =
+            preset.category === STOCK_GREETING_CATEGORY
+              ? (VOICE_GREETING_OVERRIDES[voice.elevenlabsVoiceId] ?? variantText)
+              : variantText;
+          targets.push({
+            voiceProfileId: voice.id,
+            voiceName: voice.name,
+            elevenlabsVoiceId: voice.elevenlabsVoiceId,
+            category: preset.category,
+            baseText,
+            language: lang,
+            variantIndex,
+          });
+        }
+      });
     }
   }
   return targets;
@@ -346,8 +335,8 @@ export async function generateStockClip(
   await db.execute({
     sql: `INSERT INTO messages
           (id, user_id, voice_profile_id, text, synthesis_text, delivery_tags_json,
-           category, language, is_preset, audio_url)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+           category, language, variant, is_preset, audio_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     args: [
       messageId,
       SYSTEM_VOICE_LIBRARY_USER_ID,
@@ -357,6 +346,7 @@ export async function generateStockClip(
       deliveryTagsJson,
       target.category,
       language,
+      target.variantIndex,
       audioUrl,
     ],
   });
@@ -395,6 +385,7 @@ export async function generateStockClip(
     voice_name: target.voiceName,
     category: target.category,
     language,
+    variant: target.variantIndex,
     text: displayText,
   };
 }

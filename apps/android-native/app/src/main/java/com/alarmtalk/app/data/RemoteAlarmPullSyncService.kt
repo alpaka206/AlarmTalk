@@ -189,6 +189,8 @@ internal class RemoteAlarmPullSyncService(
             voiceRepeat = existing?.voiceRepeat ?: true,
             voiceVolumePercent = existing?.voiceVolumePercent ?: 100,
             ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
+            // 받은 알람은 버킷 식별자만 보존(회전 클립은 미다운로드 → 대표 클립 단일 재생 폴백).
+            bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,
             syncState = AlarmSyncStates.SYNCED,

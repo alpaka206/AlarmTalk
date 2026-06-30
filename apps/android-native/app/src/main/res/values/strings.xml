@@ -297,6 +297,8 @@
     <string name="editor_stock_clip_selected">기본 제공 음성을 선택했어요.</string>
     <string name="editor_stock_clip_subtitle">미리 듣고 바로 사용할 수 있어요</string>
     <string name="editor_stock_clip_title">기본 제공 알람 음성</string>
+    <string name="editor_free_bucket_title">테마</string>
+    <string name="editor_free_bucket_hint">알람이 울릴 때마다 테마 안의 문구가 순서대로 바뀌어 재생돼요.</string>
     <string name="editor_stop">정지</string>
     <string name="editor_title_edit_alarm">알람 수정</string>
     <string name="editor_title_family_alarm">상대 알람 맞추기</string>
