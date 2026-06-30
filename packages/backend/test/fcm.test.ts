@@ -120,7 +120,7 @@ describe('sendPushNotifications — 실전송 경로 (fetch 모킹)', () => {
     );
     expect(results).toEqual([{ token: 'real-tok', success: true }]);
 
-    const fcmCall = fetchMock.mock.calls.find(([u]) => String(u).includes('fcm.googleapis.com'));
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
     expect(fcmCall).toBeDefined();
     const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
     expect(body.message.token).toBe('real-tok');
@@ -241,7 +241,7 @@ describe('sendAlarmPush', () => {
       '09:00',
       'en',
     );
-    const fcmCall = fetchMock.mock.calls.find(([u]) => String(u).includes('fcm.googleapis.com'));
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
     const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
     expect(body.message.notification.body).toBe('Alarm at 09:00');
   });
@@ -267,7 +267,7 @@ describe('sendAlarmPush', () => {
       'alarm-ko',
       '06:30',
     );
-    const fcmCall = fetchMock.mock.calls.find(([u]) => String(u).includes('fcm.googleapis.com'));
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
     const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
     expect(body.message.notification.body).toBe('06:30 알람이 울립니다');
     expect(body.message.notification.title).toBe('AlarmTalk');

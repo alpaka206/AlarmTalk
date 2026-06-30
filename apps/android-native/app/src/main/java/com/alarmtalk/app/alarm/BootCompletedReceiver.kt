@@ -31,9 +31,14 @@ class BootCompletedReceiver : BroadcastReceiver() {
         RemoteAlarmSyncScheduler.ensurePeriodic(context)
         RemoteAlarmSyncScheduler.runOnce(context)
         val pendingResult = goAsync()
+        // 시간대/시스템 시각 변경이면 저장된 절대 발화시각을 벽시계(hour/minute) 기준으로 재계산한다.
+        val recomputeFireTime = action == Intent.ACTION_TIMEZONE_CHANGED ||
+            action == Intent.ACTION_TIME_CHANGED
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching {
-                AlarmAppContainer.repository(context).reschedulePendingAlarms()
+                AlarmAppContainer.repository(context).reschedulePendingAlarms(
+                    recomputeFireTime = recomputeFireTime,
+                )
             }.onFailure { error ->
                 Log.e(TAG, "Failed to restore alarms after $action", error)
             }

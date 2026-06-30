@@ -773,6 +773,8 @@ auth.post('/apple', async (c) => {
     // (재로그인) 경우 공격자가 피해자 이메일을 주입해 기존 계정에 연동·탈취할 수
     // 있다. 토큰에 email 이 없으면 충돌하지 않는 placeholder 로 둔다.
     const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
+    // 토큰에 실제 email 클레임이 있었는지 — 없으면(재로그인) 기존 검증 이메일을 보존한다.
+    const hasVerifiedEmail = Boolean(apple.email);
     const name = parsed.data.name ?? apple.name ?? '';
 
     const existing = await db.execute({
@@ -791,6 +793,9 @@ auth.post('/apple', async (c) => {
     let plan: 'free' | 'plus' | 'family';
     let resolvedName: string;
     let tokenEpoch = 0;
+    // JWT/응답에 쓸 이메일. Apple 이 재로그인에서 email 을 생략하면 placeholder 대신
+    // 기존 행의 검증 이메일을 쓴다(아래 existing 분기에서 보정).
+    let profileEmail = email;
 
     if (existing.rows.length > 0) {
       const row = typedRow<
@@ -809,16 +814,19 @@ auth.post('/apple', async (c) => {
       plan = row.plan ?? 'free';
       resolvedName = name || row.name || '';
       tokenEpoch = Number(row.token_epoch ?? 0);
+      // 토큰에 검증 email 이 없으면 기존 행 이메일을 토큰/응답에 쓴다(placeholder 노출 방지).
+      profileEmail = hasVerifiedEmail ? email : row.email;
 
       await db.execute({
         sql: `UPDATE users
               SET apple_id = ?,
                   google_id = COALESCE(google_id, ?),
-                  email = ?,
+                  email = COALESCE(NULLIF(?, ''), email),
                   name = COALESCE(NULLIF(?, ''), name),
                   updated_at = datetime('now')
               WHERE id = ?`,
-        args: [appleId, appleId, email, name, userId],
+        // Apple 재로그인 시 email 클레임이 없으면 placeholder 대신 기존 email 유지.
+        args: [appleId, appleId, hasVerifiedEmail ? email : '', name, userId],
       });
     } else {
       userId = appleId;
@@ -833,7 +841,7 @@ auth.post('/apple', async (c) => {
     }
 
     const token = await signAppJwt(
-      { sub: loginSub, email, name: resolvedName || undefined, epoch: tokenEpoch },
+      { sub: loginSub, email: profileEmail, name: resolvedName || undefined, epoch: tokenEpoch },
       c.env.JWT_SECRET,
     );
 
@@ -863,7 +871,7 @@ auth.post('/apple', async (c) => {
       token,
       user: {
         id: userId,
-        email,
+        email: profileEmail,
         name: resolvedName,
         plan,
         // Phase 4-D2: 클라이언트가 ASAuthorizationAppleIDProvider.credentialState
