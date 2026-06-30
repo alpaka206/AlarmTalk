@@ -922,7 +922,7 @@ auth.get('/me', async (c) => {
     // Phase 4-D2: apple_id 컬럼도 함께 조회·매칭한다. Apple 로그인 사용자의 JWT sub
     // 는 google_id 칼럼이 아닌 apple_id 칼럼에만 저장돼 있을 수 있다.
     const result = await db.execute({
-      sql: `SELECT id, email, name, plan, apple_id,
+      sql: `SELECT id, email, name, plan, apple_id, token_epoch, deletion_status,
                    allow_family_alarms, family_alarm_quiet_days,
                    family_alarm_quiet_start, family_alarm_quiet_end,
                    family_alarm_quiet_windows, dynamic_prompt_settings_json
@@ -939,8 +939,16 @@ auth.get('/me', async (c) => {
         name: string | null;
         plan: 'free' | 'plus' | 'family' | null;
         apple_id: string | null;
+        token_epoch: number | string | null;
+        deletion_status: string | null;
       } & Record<string, unknown>
     >(result.rows[0]!);
+    // 토큰 폐기 검사(authMiddleware 와 동일): JWT epoch 가 users.token_epoch 보다 낮으면
+    // 로그아웃(전 기기)/비밀번호 재설정으로 무효화된 구 토큰 → 401. /auth/me 가 세션
+    // 검증 역할을 하므로 보호 API 도달 전에 여기서 막아 폐기된 세션 재저장을 방지한다.
+    if ((payload.epoch ?? 0) < Number(row.token_epoch ?? 0)) {
+      return c.json(jsonError('TOKEN_REVOKED', 'Token has been revoked'), 401);
+    }
     const familyAlarmSettings = familyAlarmSettingsFromRow(row);
     const dynamicPromptSettings = dynamicPromptSettingsFromRow(row);
     return c.json({
@@ -949,6 +957,8 @@ auth.get('/me', async (c) => {
         email: row.email,
         name: row.name ?? '',
         plan: row.plan ?? 'free',
+        // 탈퇴 유예 상태 — iOS 가 복구 전용 화면 게이팅에 쓴다(누락 시 active 로 오인해 진입).
+        deletion_status: (row.deletion_status as string | null) ?? 'active',
         // Phase 4-D2: iOS 클라이언트가 credentialState 조회에 사용. 비-Apple 사용자
         // 는 null. iOS AuthUser.appleUserId 는 옵셔널이라 누락도 호환.
         apple_user_id: row.apple_id ?? null,

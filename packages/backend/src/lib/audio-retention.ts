@@ -215,6 +215,14 @@ export async function cleanupExpiredAudio(db: Client, now: Date): Promise<void> 
               JOIN messages m ON m.id = a.message_id
               WHERE m.audio_url = 'r2://' || g.audio_object_key
             )
+            -- 시스템 스톡(프리셋) 클립은 무료 버킷 회전·미리듣기용으로 의도적으로 보관한다.
+            -- 다수 variant 가 alarm.message_id 로 직접 참조되지 않으므로 TTL 정리에서 제외한다
+            -- (제외 안 하면 30일 후 audio_url 이 비워져 /tts/stock-clips 가 끊기고 재시드 전까지
+            -- 무료 음성이 무음이 된다).
+            AND NOT EXISTS (
+              SELECT 1 FROM messages mp
+              WHERE mp.id = g.message_id AND COALESCE(mp.is_preset, 0) = 1
+            )
           ORDER BY g.created_at ASC
           LIMIT ?`,
     args: [generatedCutoff, TTL_BATCH_SIZE],
