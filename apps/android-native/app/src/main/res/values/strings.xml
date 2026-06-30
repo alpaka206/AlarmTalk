@@ -294,9 +294,6 @@
     <string name="editor_status_available">설정 가능</string>
     <string name="editor_status_lead_too_soon">지금부터 30분 뒤 알람부터 설정할 수 있어요.</string>
     <string name="editor_status_quiet_unavailable">상대가 이 시간에는 알람을 받지 않도록 해뒀어요.</string>
-    <string name="editor_stock_clip_selected">기본 제공 음성을 선택했어요.</string>
-    <string name="editor_stock_clip_subtitle">미리 듣고 바로 사용할 수 있어요</string>
-    <string name="editor_stock_clip_title">기본 제공 알람 음성</string>
     <string name="editor_free_bucket_title">테마</string>
     <string name="editor_free_bucket_hint">알람이 울릴 때마다 테마 안의 문구가 순서대로 바뀌어 재생돼요.</string>
     <string name="editor_stop">정지</string>

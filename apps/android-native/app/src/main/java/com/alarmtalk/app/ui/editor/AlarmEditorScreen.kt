@@ -202,7 +202,6 @@ internal fun AlarmEditorScreen(
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
-    var previewingStockMessageId by remember { mutableStateOf<String?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
@@ -305,7 +304,6 @@ internal fun AlarmEditorScreen(
         mediaPlayer = null
         previewTarget = null
         previewPreparing = false
-        previewingStockMessageId = null
     }
 
     fun startPreparedPreview(
@@ -475,77 +473,6 @@ internal fun AlarmEditorScreen(
                 Log.e(TAG, "Failed to preview shared voice in alarm editor", error)
                 stopPreview()
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
-            }
-        }
-    }
-
-    fun previewStockClip(clip: StockClip) {
-        if (previewPreparing) return
-        // 이미 같은 클립을 재생 중이면 정지.
-        if (previewingStockMessageId == clip.messageId && mediaPlayer != null) {
-            stopPreview()
-            return
-        }
-        scope.launch {
-            stopPreview()
-            previewTarget = AudioPreviewTarget.StockClip
-            previewPreparing = true
-            previewingStockMessageId = clip.messageId
-            runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "stock_preview_${clip.messageId}",
-                        cacheKey = "stock_preview_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
-                }
-            }.onSuccess { cached ->
-                startPreparedPreview(
-                    uri = Uri.parse(cached.localAudioUri),
-                    target = AudioPreviewTarget.StockClip,
-                )
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to preview stock clip in alarm editor", error)
-                stopPreview()
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
-            }
-        }
-    }
-
-    fun selectStockClip(clip: StockClip) {
-        if (isSaving || previewPreparing) return
-        scope.launch {
-            runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "stock_${clip.messageId}",
-                        cacheKey = "stock_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
-                }
-            }.onSuccess { cached ->
-                editor.setStockClipAudio(
-                    audio = cached,
-                    profileId = clip.voiceProfileId,
-                    messageId = clip.messageId,
-                    text = clip.text,
-                )
-                audioMessage = context.getString(R.string.editor_stock_clip_selected)
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to select stock clip in alarm editor", error)
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
         }
     }
@@ -1256,10 +1183,6 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
-                                selectedStockMessageId = editor.ttsMessageId,
-                                previewingStockMessageId = previewingStockMessageId,
-                                onPreviewStockClip = { clip -> previewStockClip(clip) },
-                                onSelectStockClip = { clip -> selectStockClip(clip) },
                                 onSelectBucket = { bucket -> selectBucket(bucket) },
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
