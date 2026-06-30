@@ -34,9 +34,9 @@
 
 공유 여부:
 
-- Cloudflare, Turso, Perso(이스트소프트), Google Cloud Vertex AI(미국), Firebase Cloud Messaging(Google), PortOne(아임포트), Sentry, Google, Apple, 이메일 발송 제공자, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
+- Cloudflare, Turso, ElevenLabs, Google Cloud Vertex AI(미국), Firebase Cloud Messaging(Google), PortOne(아임포트), Sentry, Google, Apple, 이메일 발송 제공자, payment providers are processors/service providers. Google Play form의 "sharing" 정의에 따라 최종 판단해야 합니다.
 - 광고 네트워크 또는 데이터 브로커에 제공하지 않는다면 "advertising or marketing sharing"은 아니라고 보는 방향이 합리적입니다.
-- ⚠️ Perso(이스트소프트)는 약관·방침상 제출된 입력 데이터(음성 포함)를 제공자 측 서비스 개선 및 AI 모델 학습에 이용할 수 있습니다. Google Play Data safety에서 audio/user content 항목의 목적에 이를 정확히 반영하고, 앱 내 음성 동의 화면에 AI 학습 이용 및 거부 경로(거부 시 기능 제한)를 고지해야 합니다.
+- ⚠️ ElevenLabs 처리 조건은 실제 적용 계약·정책·DPA·보관 설정에 맞춰 Google Play Data safety의 audio/user content 항목과 앱 내 음성 동의 화면에 반영해야 합니다.
 - ⚠️ 동적 알람 문구·번역 사용 시 알람 문구와 운세 입력값(성별·생년월일·출생 시각)이 Google Cloud Vertex AI(미국)로 전송됩니다. Personal info(생년월일 등) 및 User content(알람 문구)의 국외 처리/공유 항목에 반영하고, 앱 내에 국외 이전 별도 동의(`overseas_transfer`)를 고지해야 합니다.
 - ⚠️ 음성 클론은 생체정보 처리에 해당하므로, 앱 내 별도 동의(`voice_biometric`)가 서버에서 강제됩니다. Data safety의 audio/voice 항목과 in-app 동의가 이를 일치하게 반영해야 합니다.
 
@@ -113,7 +113,7 @@ Account deletion:
 
 - Is the final app targeted to users under 14 or likely to be used by children?
 - Is voice data legally treated as biometric information in the launch jurisdictions?
-- Perso(ESTsoft) uses submitted voice/audio for provider-side model training and quality improvement (stated in Perso's terms/privacy policy). Confirm the in-app voice consent and Data safety form accurately disclose this, and that the AI-learning opt-out path (with feature-limit notice) is surfaced.
+- Does the ElevenLabs contract/DPA and retention setting match the in-app voice consent, Data safety form, and privacy-policy processor table?
 - Are all provider DPAs and cross-border transfer notices in place?
 - Does account deletion delete R2 objects and provider-side cloned voice IDs?
 - Does the app provide a way to withdraw voice sharing consent?

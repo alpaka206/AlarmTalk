@@ -12,3 +12,7 @@ let systemVoiceIDPrefix = "70000000-0000-4000-9000-"
 func isSystemVoiceId(_ id: String?) -> Bool {
     id?.hasPrefix(systemVoiceIDPrefix) == true
 }
+
+func isSystemVoice(_ profile: VoiceProfile) -> Bool {
+    profile.isSystem == true || isSystemVoiceId(profile.id)
+}

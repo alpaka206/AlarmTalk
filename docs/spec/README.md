@@ -29,7 +29,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-2.1 | Max 2 voice profiles per user | P0 | ✅ |
 | FR-2.2 | In-app voice recording (max 30 seconds, requires mic permission) | P0 | ✅ |
 | FR-2.3 | Audio file upload with automatic 30-second trim on overflow | P0 | ✅ |
-| FR-2.4 | Instant Voice Clone (Perso primary / ElevenLabs fallback) | P0 | ✅ |
+| FR-2.4 | Instant Voice Clone (ElevenLabs) | P0 | ✅ |
 | FR-2.5 | Voice-profile rename and delete | P0 | ✅ |
 | FR-2.6 | Read-only listing of family-group members' voice profiles | P1 | ✅ |
 | FR-2.7 | Speaker diarization on uploaded files | P2 | ✅ backend / 🚧 UI |
@@ -54,7 +54,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 
 | ID | Requirement | P | Status |
 |---|---|---|---|
-| FR-4.1 | Voice profile + text → TTS audio | P0 | ✅ (Perso primary / ElevenLabs fallback) |
+| FR-4.1 | Voice profile + text → TTS audio | P0 | ✅ (ElevenLabs) |
 | FR-4.2 | Deterministic cache by (profile, text, language, provider) | P0 | ✅ |
 | FR-4.3 | Response returns base64 + R2 key + message id | P0 | ✅ |
 | FR-4.4 | Android side caches in app-private storage; ring uses local file | P0 | ✅ |
@@ -173,7 +173,7 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
   5. User selects voice profile and types the message (or picks a preset).
   6. User taps save.
   7. Android calls `POST /api/tts/generate`.
-  8. Backend checks the deterministic cache; on miss, calls the voice provider (Perso primary / ElevenLabs fallback) and stores the result in R2.
+  8. Backend checks the deterministic cache; on miss, calls ElevenLabs and stores the result in R2.
   9. Backend returns base64 + cache key + R2 key + message id.
   10. Android decodes and writes to app-private storage with a stable local cache key.
   11. Room inserts the alarm. `AlarmScheduler` registers the next fire time via `AlarmManager.setAlarmClock`.
@@ -205,8 +205,7 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 - Source: `packages/backend/src/routes/tts.ts`, `lib/audio-cache.ts`, `lib/voice-provider.ts`
 - Cache key: `sha256(voice_profile_id | text | language | provider)`
 - Cache hit → R2 GET → base64 response.
-- Cache miss → provider chain (Perso direct → ElevenLabs) → mp3 bytes → R2 PUT → `generated_audio` insert → base64 response.
-- Provider chain currently falls through Perso (no direct voice-clone TTS API yet) to ElevenLabs.
+- Cache miss → ElevenLabs → mp3 bytes → R2 PUT → `generated_audio` insert → base64 response.
 
 ### F-06. Family invite code
 

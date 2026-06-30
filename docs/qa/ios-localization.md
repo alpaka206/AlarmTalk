@@ -33,7 +33,7 @@ SwiftUI `Text("좋은 아침이에요")` 의 인자는 `LocalizedStringKey` 다.
 
 - **보간 포맷 문자열**: `"남은 슬롯 \(n)개"` 같은 동적 문자열은 카탈로그에서 `%lld` 형태 포맷 키로 다뤄야 해 1차 추출에서 제외했다. Xcode 자동 추출 후 포맷 키로 번역 채우기.
 - **String(format:) / 비-Text 경로**: `Text` 가 아닌 곳(예: 알림 본문, 일부 에러 문자열)은 `String(localized:)` 로 감싸야 로컬라이즈된다. 점진 적용.
-- **번역 검수**: `src="translated"`(Android 매칭 없이 자동 번역) 항목은 네이티브 검수 권장. 일본어는 [[project_perso_migration]] 톤과 음성 프롬프트 정합성 유의.
+- **번역 검수**: `src="translated"`(Android 매칭 없이 자동 번역) 항목은 네이티브 검수 권장. 일본어는 음성 프롬프트 톤과 정합성 유의.
 
 ## 매핑 규칙(요약)
 

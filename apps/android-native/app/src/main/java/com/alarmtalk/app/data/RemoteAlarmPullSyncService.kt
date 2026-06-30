@@ -174,6 +174,7 @@ internal class RemoteAlarmPullSyncService(
             rawAudioUri = cachedAudio?.rawAudioUri,
             voiceSource = if (hasVoiceAudio) VoiceSources.SERVER_TTS else VoiceSources.LOCAL_AUDIO,
             voiceProfileId = remote.voiceProfileId.takeIf { hasVoiceAudio },
+            voiceListenerTitle = null,
             voiceText = remote.messageText.takeIf { hasVoiceAudio },
             voiceCategory = remote.category.takeIf { hasVoiceAudio },
             voiceLanguage = null,

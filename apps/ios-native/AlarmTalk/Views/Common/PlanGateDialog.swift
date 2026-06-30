@@ -113,9 +113,9 @@ struct PlanGateState: Identifiable, Equatable {
     let requiredPlan: PlanTier
 
     init(
-        title: String = "유료 기능이에요",
+        title: String = String(localized: "유료 기능이에요"),
         message: String? = nil,
-        confirmLabel: String = "요금제 변경하러 가기",
+        confirmLabel: String = String(localized: "요금제 변경하러 가기"),
         currentPlan: PlanTier,
         requiredPlan: PlanTier
     ) {
@@ -129,13 +129,13 @@ struct PlanGateState: Identifiable, Equatable {
     static func defaultMessage(requiredPlan: PlanTier) -> String {
         switch requiredPlan {
         case .free:
-            return "이 기능은 무료 플랜에서도 사용할 수 있어요."
+            return String(localized: "이 기능은 무료 플랜에서도 사용할 수 있어요.")
         case .personal:
-            return "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 더 많은 목소리 슬롯을 열어보세요."
+            return String(localized: "이 기능은 개인 플랜에서 사용할 수 있어요. 업그레이드해서 녹음과 공유 목소리 기능을 사용해 보세요.")
         case .couple:
-            return "이 기능은 커플 플랜에서 사용할 수 있어요. 두 사람의 알람을 함께 관리해 보세요."
+            return String(localized: "이 기능은 커플 플랜에서 사용할 수 있어요. 두 사람의 알람을 함께 관리해 보세요.")
         case .family:
-            return "이 기능은 가족 플랜에서 사용할 수 있어요. 가족 구성원과 알람과 메시지를 함께 나눠보세요."
+            return String(localized: "이 기능은 가족 플랜에서 사용할 수 있어요. 가족 구성원과 알람과 메시지를 함께 나눠보세요.")
         }
     }
 }
@@ -219,17 +219,27 @@ enum PlanTier: String, CaseIterable, Codable, Equatable {
 // MARK: - View modifier
 
 extension View {
-    /// `PlanGateState` 가 nil 이 아니면 **중앙 모달**로 띄운다.
-    ///
-    /// 바텀시트(`.sheet`) 대신 투명 배경의 `fullScreenCover` 위에 자체 스크림+카드를
-    /// 올려 Android `Dialog` 와 동일한 화면 중앙 표현을 만든다.
+    /// `PlanGateState` 가 nil 이 아니면 네이티브 시스템 alert 로 띄운다.
     func planGate(
         item: Binding<PlanGateState?>,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        self.fullScreenCover(item: item) { state in
-            PlanGateDialog(state: state, onConfirm: onConfirm)
-                .presentationBackground(.clear)
+        self.alert(
+            item.wrappedValue?.title ?? "",
+            isPresented: Binding(
+                get: { item.wrappedValue != nil },
+                set: { if !$0 { item.wrappedValue = nil } }
+            )
+        ) {
+            Button("닫기", role: .cancel) {
+                item.wrappedValue = nil
+            }
+            Button(item.wrappedValue?.confirmLabel ?? String(localized: "요금제 변경하러 가기")) {
+                onConfirm()
+                item.wrappedValue = nil
+            }
+        } message: {
+            Text(item.wrappedValue?.body ?? "")
         }
     }
 
@@ -239,9 +249,13 @@ extension View {
         state: PlanGateState,
         onConfirm: @escaping () -> Void
     ) -> some View {
-        self.fullScreenCover(isPresented: isPresented) {
-            PlanGateDialog(state: state, onConfirm: onConfirm)
-                .presentationBackground(.clear)
+        self.alert(state.title, isPresented: isPresented) {
+            Button("닫기", role: .cancel) {}
+            Button(state.confirmLabel) {
+                onConfirm()
+            }
+        } message: {
+            Text(state.body)
         }
     }
 }

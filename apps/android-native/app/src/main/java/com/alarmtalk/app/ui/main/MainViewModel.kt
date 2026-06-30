@@ -172,6 +172,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var voiceProfileBusy by mutableStateOf(false)
         internal set
 
+    var voiceProfileLoadFinished by mutableStateOf(false)
+        internal set
+
     var ttsMessages by mutableStateOf<List<TtsMessage>>(emptyList())
         internal set
 
@@ -231,7 +234,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     private val onboardingPrefs = application.getSharedPreferences("voice_alarm_onboarding", android.content.Context.MODE_PRIVATE)
+    private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
     var showOnboarding by mutableStateOf(false)
+        internal set
+
+    // 온보딩 직후 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
+    var showVoiceSetup by mutableStateOf(false)
+        internal set
+
+    // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
+    var defaultVoiceId by mutableStateOf<String?>(null)
+        internal set
+
+    // 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
+    var defaultListenerTitle by mutableStateOf<String?>(null)
         internal set
 
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
@@ -302,7 +318,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun checkOnboardingFor(userId: String) {
         if (userId.isBlank()) return
         val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
-        showOnboarding = userId !in seen
+        val shouldShowOnboarding = userId !in seen
+        showOnboarding = shouldShowOnboarding
+        defaultVoiceId = defaultVoiceStore.read(userId)
+        defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
+        showVoiceSetup = !shouldShowOnboarding && !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
     fun completeOnboarding() {
@@ -313,6 +333,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
         }
         showOnboarding = false
+        // 온보딩 직후, 기본 목소리를 아직 안 골랐으면 "목소리 고르기" 스텝을 띄운다.
+        showVoiceSetup = userId != null && !defaultVoiceStore.hasCompletedSetup(userId)
+    }
+
+    /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
+    fun completeVoiceSetup(voiceId: String, listenerTitle: String?) {
+        setDefaultVoice(voiceId)
+        setDefaultListenerTitle(listenerTitle)
+        showVoiceSetup = false
+    }
+
+    /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
+    fun skipVoiceSetup() {
+        defaultVoiceStore.markSkipped(authSession?.user?.id?.takeIf { it.isNotBlank() })
+        showVoiceSetup = false
+    }
+
+    /** 기본 목소리를 설정/변경한다(온보딩·목소리 탭 공용). 기기 설정 + 상태를 함께 갱신. */
+    fun setDefaultVoice(voiceId: String) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        defaultVoiceStore.set(userId, voiceId)
+        defaultVoiceId = voiceId
+    }
+
+    /** 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용). */
+    fun setDefaultListenerTitle(title: String?) {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
+        defaultVoiceStore.setListenerTitle(userId, title)
+        defaultListenerTitle = title?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -380,8 +429,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         accessSnapshotStore.clear(userId)
     }
 
+    internal fun clearCurrentDefaultVoicePreferences() {
+        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() } ?: return
+        defaultVoiceStore.clear(userId)
+    }
+
     internal fun clearUserScopedRemoteState() {
         voiceProfiles = emptyList()
+        voiceProfileLoadFinished = false
+        showVoiceSetup = false
+        defaultVoiceId = null
+        defaultListenerTitle = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()

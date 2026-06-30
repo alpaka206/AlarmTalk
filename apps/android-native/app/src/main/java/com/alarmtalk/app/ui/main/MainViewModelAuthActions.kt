@@ -327,6 +327,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             if (shouldSignOutGoogle) {
                 runCatching { signOutGoogle() }.onFailure { Log.w(TAG, "Google sign-out failed", it) }
             }
+            clearCurrentDefaultVoicePreferences()
             authSessionStore.clear()
             clearUserScopedRemoteState()
             authSession = null
@@ -510,6 +511,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 Log.w(TAG, "Failed to revoke Google account access after account deletion", revokeError)
             }
             clearCurrentAccessSnapshot()
+            clearCurrentDefaultVoicePreferences()
             authSessionStore.clear()
             clearUserScopedRemoteState()
             authSession = null
@@ -579,9 +581,13 @@ internal fun MainViewModel.checkConsentStatus() {
     }
 }
 
-// 동의 화면 제출. 필수(terms/privacy/age14)는 항상 동의로, marketing(광고성 정보 수신)은
+// 동의 화면 제출. 필수 항목은 화면의 체크값으로, marketing(광고성 정보 수신)은
 // 사용자 선택값으로 기록한다. 성공 시 동의 화면을 닫는다.
-internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
+internal fun MainViewModel.submitConsents(
+    marketingAgreed: Boolean,
+    voiceBiometricAgreed: Boolean,
+    overseasTransferAgreed: Boolean,
+) {
     val session = authSession
     if (session == null) {
         message = getApplication<android.app.Application>().getString(R.string.msg_login_required_to_use)
@@ -602,10 +608,8 @@ internal fun MainViewModel.submitConsents(marketingAgreed: Boolean) {
                         com.alarmtalk.app.network.ConsentItemRequest(type = "terms", agreed = true, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "privacy", agreed = true, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "age14", agreed = true, version = policyVersion),
-                        // 서버 강제 동의 항목: 음성 생체정보(보이스 클론 전제) / 국외이전(번역·동적 TTS 전제).
-                        // 온보딩 동의 시 함께 기록해, 이후 데이터 라우트의 403 CONSENT_REQUIRED 를 막는다.
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "voice_biometric", agreed = true, version = policyVersion),
-                        com.alarmtalk.app.network.ConsentItemRequest(type = "overseas_transfer", agreed = true, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "voice_biometric", agreed = voiceBiometricAgreed, version = policyVersion),
+                        com.alarmtalk.app.network.ConsentItemRequest(type = "overseas_transfer", agreed = overseasTransferAgreed, version = policyVersion),
                         com.alarmtalk.app.network.ConsentItemRequest(type = "marketing", agreed = marketingAgreed, version = policyVersion),
                     ),
                 ),

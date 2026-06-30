@@ -27,7 +27,7 @@ import {
 } from '../lib/vertex-translate';
 import { loadTtsPresets, type TtsPreset } from '../lib/tts-presets';
 import { isPaidVoicePlan } from './billing-helpers';
-import { needsConsent } from '../lib/consent';
+import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 import {
   type DynamicPromptSettings,
   EMPTY_DYNAMIC_PROMPT_SETTINGS,
@@ -70,6 +70,14 @@ const LEGACY_RANDOM_CONTEXT_ALIASES: Record<string, RandomContext> = {
   weather: 'wake_weather',
   fortune: 'wake_fortune',
 };
+
+function consentRequired(c: Context<AppEnv>, consent: string) {
+  const error =
+    consent === 'voice_biometric'
+      ? 'Voice biometric consent is required to use a custom voice for TTS.'
+      : 'Overseas transfer consent is required for ElevenLabs TTS generation.';
+  return c.json({ error, error_code: 'CONSENT_REQUIRED', consent }, 403);
+}
 
 type WeatherForecastResponse = {
   daily?: {
@@ -242,6 +250,14 @@ async function pickRandomPresetText(
   const messages = preset?.messages.map((message) => message.trim()).filter(Boolean) ?? [];
   if (messages.length === 0) return null;
   return messages[randomIndex(messages.length)]!;
+}
+
+function presetTextWithListenerTitle(text: string, listenerTitle: string | null): string {
+  const title = listenerTitle?.trim();
+  const base = text.trim();
+  if (!title || !base || base.startsWith(title)) return base;
+  const withTitle = `${title}, ${base}`;
+  return withTitle.length <= 200 ? withTitle : base;
 }
 
 async function findUsableVoiceProfile(
@@ -673,6 +689,17 @@ tts.post('/generate', async (c) => {
   }
 
   const isSystemVoice = Boolean(Number(vp.is_system ?? 0));
+  if (randomRequested && randomContext === 'preset') {
+    const isSharedVoiceProfileForPreset =
+      typeof vp.owner_pk === 'string' && vp.owner_pk.trim() !== '' && vp.owner_pk !== userPk;
+    const listenerTitle =
+      normalizeRelationshipLabel(body.listener_title ?? body.listenerTitle) ??
+      (isSharedVoiceProfileForPreset
+        ? await findViewerListenerTitle(db, userPk, userId, body.voice_profile_id)
+        : null) ??
+      normalizeRelationshipLabel(vp.listener_title);
+    requestText = presetTextWithListenerTitle(requestText, listenerTitle);
+  }
   if (freePlanRestricted) {
     if (!isSystemVoice) {
       return c.json(
@@ -711,6 +738,12 @@ tts.post('/generate', async (c) => {
     }
   }
 
+  const requiredSensitiveConsents = isSystemVoice
+    ? ['overseas_transfer']
+    : SENSITIVE_REQUIRED_CONSENTS;
+  const missingTtsConsent = await missingConsentType(db, userPk, requiredSensitiveConsents);
+  if (missingTtsConsent) return consentRequired(c, missingTtsConsent);
+
   try {
     const requestedLanguage = normalizeSynthesisLanguage(body.language);
 
@@ -718,19 +751,6 @@ tts.post('/generate', async (c) => {
     // 텍스트를 국외(Google Vertex)로 전송하므로 overseas_transfer 동의가 필요하다.
     // 동의가 없으면 해당 크로스보더 경로를 차단(403)한다. 프리셋·동일언어 비번역
     // 합성은 국외 이전이 없어 게이트 대상이 아니다.
-    const willUseCrossBorder =
-      body.translate === true || (randomRequested && randomContext !== 'preset');
-    if (willUseCrossBorder && (await needsConsent(db, userPk, ['overseas_transfer']))) {
-      return c.json(
-        {
-          error: 'Overseas transfer consent is required for translation or dynamic generation.',
-          error_code: 'CONSENT_REQUIRED',
-          consent: 'overseas_transfer',
-        },
-        403,
-      );
-    }
-
     let dynamicGenerated: Awaited<
       ReturnType<typeof generateDynamicAlarmTextWithVertex>
     > | null = null;

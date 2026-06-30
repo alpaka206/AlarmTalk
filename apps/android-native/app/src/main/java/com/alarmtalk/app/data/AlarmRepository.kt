@@ -73,6 +73,7 @@ class AlarmRepository(
             rawAudioUri = null,
             voiceSource = VoiceSources.LOCAL_AUDIO,
             voiceProfileId = null,
+            voiceListenerTitle = null,
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,
@@ -143,6 +144,7 @@ class AlarmRepository(
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
+            voiceListenerTitle = draft.voiceListenerTitle,
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
@@ -222,6 +224,7 @@ class AlarmRepository(
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
+            voiceListenerTitle = draft.voiceListenerTitle,
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
@@ -330,11 +333,7 @@ class AlarmRepository(
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
-            // 시스템 스톡 보이스 TTS 알람은 무료 플랜에서도 유효하므로 보존한다.
-            val stockVoiceOnly = alarm.localAudioUri.isNullOrBlank() &&
-                alarm.rawAudioUri.isNullOrBlank() &&
-                isSystemVoiceId(alarm.voiceProfileId)
-            usesVoice && !stockVoiceOnly
+            usesVoice && !alarm.usesFreeSystemVoiceAlarm()
         }
         targets.forEach { alarm ->
             alarmScheduler.cancel(alarm.id)
@@ -561,6 +560,7 @@ class AlarmRepository(
                         fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
                         fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
                         fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
+                        listenerTitle = alarm.voiceListenerTitle.trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)

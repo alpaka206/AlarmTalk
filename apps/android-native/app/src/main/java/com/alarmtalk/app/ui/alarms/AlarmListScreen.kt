@@ -84,6 +84,10 @@ internal fun AlarmListScreen(
     onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    defaultVoiceId: String? = null,
+    onSetDefaultVoice: (String) -> Unit = {},
+    defaultListenerTitle: String? = null,
+    onSetListenerTitle: (String?) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -250,6 +254,10 @@ internal fun AlarmListScreen(
                         onUpdateSharedVoiceInfo = onUpdateSharedVoiceInfo,
                         onDeleteVoiceProfile = onDeleteVoiceProfile,
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                        defaultVoiceId = defaultVoiceId,
+                        onSetDefaultVoice = onSetDefaultVoice,
+                        defaultListenerTitle = defaultListenerTitle,
+                        onSetListenerTitle = onSetListenerTitle,
                     )
                     }
                 }

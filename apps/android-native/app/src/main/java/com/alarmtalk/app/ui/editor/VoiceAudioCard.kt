@@ -70,6 +70,7 @@ internal fun VoiceAudioCard(
     familyVoices: List<FamilyVoiceProfile>,
     voiceProfileBusy: Boolean,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
+    defaultVoiceId: String? = null,
     selectedStockMessageId: String?,
     previewingStockMessageId: String?,
     onPreviewStockClip: (com.alarmtalk.app.network.StockClip) -> Unit,
@@ -106,7 +107,20 @@ internal fun VoiceAudioCard(
     } else {
         editor.voiceSource
     }
-    val readyProfiles = voiceProfiles.filter { it.status == null || it.status == "ready" }
+    // 알람창에선 기본(시스템) 목소리를 바꿀 수 없다(변경은 목소리 탭). 기본 목소리와
+    // 기존 알람의 저장된 시스템 목소리만 남겨, 편집 중 조용한 목소리 변경을 막는다.
+    val hasDefaultSystemVoice = defaultVoiceId != null &&
+        voiceProfiles.any { it.id == defaultVoiceId && it.isSystem == true }
+    val selectedProfileId = editor.voiceProfileId
+    val readyProfiles = voiceProfiles.filter {
+        (it.status == null || it.status == "ready") &&
+            (
+                it.isSystem != true ||
+                    !hasDefaultSystemVoice ||
+                    it.id == defaultVoiceId ||
+                    it.id == selectedProfileId
+                )
+    }
     val readyFamilyVoices = familyVoices.filter {
         (it.status == null || it.status == "ready") && it.isShared != false
     }
@@ -166,8 +180,11 @@ internal fun VoiceAudioCard(
                     ) {
                         val selectedProfileAvailable = profileOptions.any { it.id == editor.voiceProfileId }
                         if (editor.voiceProfileId.isNullOrBlank() || !selectedProfileAvailable) {
-                            editor.voiceProfileId = profileOptions.first().id
-                            editor.clearTtsMeta()
+                            // 온보딩에서 고른 기본 목소리를 우선 선택(없거나 목록에 없으면 첫 번째).
+                            editor.selectVoiceProfile(
+                                profileOptions.firstOrNull { it.id == defaultVoiceId }?.id
+                                    ?: profileOptions.first().id,
+                            )
                         }
                     }
                 }
@@ -189,8 +206,7 @@ internal fun VoiceAudioCard(
                                 onSharedVoiceInfoRequired(sharedProfile)
                                 return@VoiceProfileSelector
                             }
-                            editor.voiceProfileId = option.id
-                            editor.clearTtsMeta()
+                            editor.selectVoiceProfile(option.id)
                         },
                     )
                 }
@@ -233,22 +249,8 @@ internal fun VoiceAudioCard(
                     }
                 }
                 if (profileOptions.isNotEmpty()) {
-                    AlarmListenerTitleField(
-                        override = editor.voiceListenerTitleOverride,
-                        resolvedTitle = resolveListenerTitle(
-                            profileId = editor.voiceProfileId.orEmpty(),
-                            voiceProfiles = voiceProfiles,
-                            familyVoices = familyVoices,
-                        ).orEmpty(),
-                        onOverrideChange = {
-                            editor.voiceListenerTitleOverride = it.take(30)
-                            // 호칭이 바뀌면 이미 생성·캐시된 오디오는 옛 호칭이라 무효다.
-                            // localAudioUri/audioCacheKey 까지 비워야 저장 경로의 freshness 판정
-                            // (audioCacheKey 매칭)이 통과하지 않고 새 호칭으로 재생성된다.
-                            editor.clearAudio()
-                            editor.clearTtsMeta()
-                        },
-                    )
+                    // 호칭은 더 이상 알람창에서 받지 않는다. 시스템 음성은 온보딩/목소리 탭에서 정한
+                    // 기본 호칭을 쓰고, 내/공유 음성은 각 프로필 호칭을 쓴다(저장 경로에서 resolve).
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -496,6 +498,9 @@ private fun VoiceProfileSelector(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedOption = options.firstOrNull { it.id == selectedId } ?: options.firstOrNull()
+    // 고를 게 2개 이상일 때(내 음성·공유 음성이 있을 때)만 펼치는 드롭다운.
+    // 기본 목소리 1개뿐이면 어차피 고정이라 펼침/셰브론 없이 그냥 표시한다.
+    val canExpand = options.size > 1
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerChipShape,
@@ -505,10 +510,16 @@ private fun VoiceProfileSelector(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { expanded = !expanded }
+                    .then(
+                        if (canExpand) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { expanded = !expanded }
+                        } else {
+                            Modifier
+                        },
+                    )
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
@@ -526,18 +537,20 @@ private fun VoiceProfileSelector(
                         MutedText(selectedOption.detail)
                     }
                 }
-                Spacer(Modifier.width(12.dp))
-                Icon(
-                    imageVector = if (expanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
-                    contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (canExpand) {
+                    Spacer(Modifier.width(12.dp))
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.KeyboardArrowDown
+                        },
+                        contentDescription = if (expanded) stringResource(R.string.editor_collapse) else stringResource(R.string.editor_expand),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            if (expanded) {
+            if (canExpand && expanded) {
                 Column(
                     modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -884,48 +897,6 @@ private fun ManualTranslationRow(
                 checked = enabled,
                 onCheckedChange = onEnabledChange,
             )
-        }
-    }
-}
-
-// 알람별 호칭 인라인 편집. 비워두면 선택한 목소리의 기본 호칭을 쓰고, 입력하면 이 알람에서만
-// 그 호칭으로 부른다. (입력값은 TTS 생성 요청의 listenerTitle 로 전달)
-@Composable
-private fun AlarmListenerTitleField(
-    override: String,
-    resolvedTitle: String,
-    onOverrideChange: (String) -> Unit,
-) {
-    val effective = override.trim().ifBlank { resolvedTitle }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = WakerChipShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.editor_alarm_listener_title_label),
-                fontWeight = FontWeight.SemiBold,
-            )
-            OutlinedTextField(
-                value = override,
-                onValueChange = onOverrideChange,
-                placeholder = {
-                    Text(resolvedTitle.ifBlank { stringResource(R.string.editor_listener_title_placeholder) })
-                },
-                singleLine = true,
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            if (effective.isNotBlank()) {
-                MutedText(stringResource(R.string.editor_alarm_listener_title_current, effective))
-            } else {
-                MutedText(stringResource(R.string.editor_alarm_listener_title_hint))
-            }
         }
     }
 }

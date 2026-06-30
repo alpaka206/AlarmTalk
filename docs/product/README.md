@@ -72,7 +72,7 @@ Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost b
 |---|---|
 | Per-manufacturer Android background restrictions (Samsung One UI, Xiaomi MIUI, etc.) | In-app permission guide screens; deep links to OS settings; battery-optimization exemption flow |
 | iOS AlarmKit may not fully support custom sounds in all scenarios | PoC verification on physical iOS 26+ devices before iOS 1.0; fallback as pre/post in-app voice playback if needed |
-| Voice-provider pricing volatility | Deterministic TTS caching (same input → same output → same R2 object); daily TTS cap per plan; Perso primary with ElevenLabs fallback |
+| Voice-provider pricing volatility | Deterministic TTS caching (same input → same output → same R2 object); daily TTS cap per plan; ElevenLabs spend monitoring |
 | Voice rights disputes | Sharing only inside a user's family/partner group; in-app legal notice during voice registration; account deletion cascades remove voice data |
 
 ## Non-negotiable Rules

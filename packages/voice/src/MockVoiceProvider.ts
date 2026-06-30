@@ -18,7 +18,6 @@ import {
   VoiceProvider,
 } from './types.js';
 
-// TODO: real perso.ai integration
 // TODO: real elevenlabs integration
 export class MockVoiceProvider implements VoiceProvider {
   readonly name = 'mock';

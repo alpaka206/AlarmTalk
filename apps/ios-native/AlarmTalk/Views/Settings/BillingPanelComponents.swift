@@ -333,7 +333,7 @@ struct PlanCard: View {
     private static func description(for tier: PlanTier) -> String {
         switch tier {
         case .free:     return "기본 알람과 무료 목소리 한 슬롯"
-        case .personal: return "목소리 슬롯 무제한, 광고 제거, 개인 이용권 선물"
+        case .personal: return "내 목소리 만들기, 광고 제거, 개인 이용권 선물"
         case .couple:   return "두 사람의 알람과 메시지 공유"
         case .family:   return "최대 5인 가족 공유 알람"
         }

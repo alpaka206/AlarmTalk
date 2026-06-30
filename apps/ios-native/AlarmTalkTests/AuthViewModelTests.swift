@@ -491,7 +491,11 @@ final class AuthViewModelTests: XCTestCase {
         await vm.checkConsentStatus()
         XCTAssertTrue(vm.needsConsent)
 
-        await vm.submitConsents(marketingAgreed: true)
+        await vm.submitConsents(
+            marketingAgreed: true,
+            voiceBiometricAgreed: true,
+            overseasTransferAgreed: true
+        )
 
         XCTAssertFalse(vm.needsConsent)
         XCTAssertEqual(api.recordConsentsCallCount, 1)
@@ -500,8 +504,41 @@ final class AuthViewModelTests: XCTestCase {
             Set(consents.filter { $0.agreed }.map { $0.type }),
             ["terms", "privacy", "age14", "voice_biometric", "overseas_transfer", "marketing"]
         )
-        // 모든 항목이 현재 정책 버전("2")을 동봉해야 한다.
+        // 모든 항목이 현재 정책 버전을 동봉해야 한다.
         XCTAssertTrue(consents.allSatisfy { $0.version == AuthViewModel.currentPolicyVersion })
+    }
+
+    func test_makeConsentsRequest_usesSensitiveConsentChoices() {
+        let request = AuthViewModel.makeConsentsRequest(
+            marketingAgreed: false,
+            voiceBiometricAgreed: false,
+            overseasTransferAgreed: true
+        )
+        let values = Dictionary(uniqueKeysWithValues: request.consents.map { ($0.type, $0.agreed) })
+
+        XCTAssertEqual(values["terms"], true)
+        XCTAssertEqual(values["privacy"], true)
+        XCTAssertEqual(values["age14"], true)
+        XCTAssertEqual(values["voice_biometric"], false)
+        XCTAssertEqual(values["overseas_transfer"], true)
+        XCTAssertEqual(values["marketing"], false)
+    }
+
+    func test_consentRequiredNotification_keepsGateOpenWithoutStatusRecheck() async {
+        let api = MockAuthAPI()
+        api.consentStatusResult = .success(ConsentStatusResponse(needsConsent: false))
+        let vm = AuthViewModel(
+            api: api,
+            appleCredentialProvider: MockAppleCredentialProvider(),
+            accessSnapshotStore: AccessSnapshotStore(defaults: UserDefaults(suiteName: "consent3-\(UUID().uuidString)")!)
+        )
+        vm._setSessionForTesting(makeEmailSession())
+
+        NotificationCenter.default.post(name: AlarmTalkAPI.consentRequiredNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertTrue(vm.needsConsent)
+        XCTAssertEqual(api.consentStatusCallCount, 0)
     }
 }
 

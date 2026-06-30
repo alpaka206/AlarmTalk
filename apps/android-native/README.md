@@ -56,9 +56,8 @@ Provider-costing endpoints are only called from explicit user actions such as sa
 ### Voice Provider Status
 
 - ElevenLabs is the active direct voice provider. The backend uses its Instant Voice Clone flow and `POST /v1/text-to-speech/:voice_id` TTS flow.
-- Perso remains first in the product strategy, but the currently public Perso developer surface is video dubbing, lip sync, media, editing, STT, audio separation, and language APIs. Direct `voice_id` cloning/TTS is treated as unavailable until that API contract is confirmed.
-- The backend provider layer keeps Perso first in the attempt chain, but the current Perso direct clone/TTS attempt exits locally as unsupported and falls through to ElevenLabs without making an uncertain paid Perso call.
-- References: ElevenLabs TTS `https://elevenlabs.io/docs/api-reference/text-to-speech/convert`, ElevenLabs Instant Voice Clone `https://elevenlabs.io/docs/eleven-api/guides/how-to/voices/instant-voice-cloning`, Perso developers `https://developers.perso.ai/overview`.
+- There is no secondary voice-provider attempt chain in the current product direction. Keep provider-costing calls behind explicit user actions and deterministic cache misses.
+- References: ElevenLabs TTS `https://elevenlabs.io/docs/api-reference/text-to-speech/convert`, ElevenLabs Instant Voice Clone `https://elevenlabs.io/docs/eleven-api/guides/how-to/voices/instant-voice-cloning`.
 
 ### Google Sign-In Config
 
@@ -270,12 +269,12 @@ This path calls paid providers only when the user taps Save for a voice-profile 
 Expected:
 
 - Android calls `POST /api/tts/generate`.
-- The backend checks the deterministic generated-audio cache first. On a cache hit, it returns existing audio without calling Perso or ElevenLabs.
-- On a cache miss, the backend tries the provider chain. Perso direct voice TTS is currently treated as unsupported until its direct API contract is proven, then ElevenLabs is used.
+- The backend checks the deterministic generated-audio cache first. On a cache hit, it returns existing audio without calling ElevenLabs.
+- On a cache miss, the backend calls ElevenLabs.
 - The backend stores generated mp3 bytes in Cloudflare R2 under a deterministic key when `VOICE_BUCKET` is bound and returns base64 audio plus `message_id`, `cache_key`, and object metadata.
 - Android decodes the response, caches it under app-private storage with a stable local cache key, and stores only local audio for the ring path.
 - Editing only the alarm time, copying an alarm, or recreating the same profile/text/category/language on the same device reuses the local cached audio and does not call the provider again.
-- At ring time, no ElevenLabs, Perso, R2, push, cron, or network fetch is used.
+- At ring time, no ElevenLabs, R2, push, cron, or network fetch is used.
 
 Cache reuse QA without provider spend:
 
@@ -284,7 +283,7 @@ Cache reuse QA without provider spend:
 3. Copy the alarm from the alarm list.
 4. Create another alarm with the same voice profile, text, category, and language on the same device.
 
-Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call Perso or ElevenLabs.
+Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call ElevenLabs.
 
 ### Backend Auth / Manual Sync
 

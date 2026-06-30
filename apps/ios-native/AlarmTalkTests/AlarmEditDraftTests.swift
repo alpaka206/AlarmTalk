@@ -254,7 +254,8 @@ final class AlarmEditDraftTests: XCTestCase {
             language: "en",
             translateText: false,
             // 고정 문구는 fireAt 무관 — 임의 값이어도 재사용 가능해야 한다.
-            fireAtMillis: 0
+            fireAtMillis: 0,
+            listenerTitle: nil
         ))
     }
 
@@ -274,7 +275,8 @@ final class AlarmEditDraftTests: XCTestCase {
             randomContext: nil,
             language: "ko",
             translateText: false,
-            fireAtMillis: 0
+            fireAtMillis: 0,
+            listenerTitle: nil
         ))
         XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
             existing: record,
@@ -284,7 +286,52 @@ final class AlarmEditDraftTests: XCTestCase {
             randomContext: nil,
             language: "ko",
             translateText: false,
-            fireAtMillis: 0
+            fireAtMillis: 0,
+            listenerTitle: nil
+        ))
+    }
+
+    func testCanReuseExistingTtsAudioMatchesSavedListenerTitle() {
+        let record = makeTtsRecord(
+            voiceProfileId: "voice-1",
+            voiceText: "일어나세요",
+            voiceCategory: "custom",
+            voiceLanguage: "ko",
+            voiceListenerTitle: "공주님"
+        )
+
+        XCTAssertTrue(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "일어나세요",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false,
+            fireAtMillis: 0,
+            listenerTitle: "  공주님  "
+        ))
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "일어나세요",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false,
+            fireAtMillis: 0,
+            listenerTitle: "친구"
+        ))
+        XCTAssertFalse(AlarmEditDraft.canReuseExistingTtsAudio(
+            existing: record,
+            selectedProfileID: "voice-1",
+            text: "일어나세요",
+            randomPrompt: false,
+            randomContext: nil,
+            language: "ko",
+            translateText: false,
+            fireAtMillis: 0,
+            listenerTitle: nil
         ))
     }
 
@@ -309,7 +356,8 @@ final class AlarmEditDraftTests: XCTestCase {
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
             translateText: false,
-            fireAtMillis: preparedFireAt
+            fireAtMillis: preparedFireAt,
+            listenerTitle: nil
         ))
     }
 
@@ -334,7 +382,8 @@ final class AlarmEditDraftTests: XCTestCase {
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
             translateText: false,
-            fireAtMillis: preparedFireAt + 60_000
+            fireAtMillis: preparedFireAt + 60_000,
+            listenerTitle: nil
         ))
 
         // 준비 시각이 비어 있으면(아직 refresh 안 됨) 재사용하지 않는다.
@@ -354,7 +403,8 @@ final class AlarmEditDraftTests: XCTestCase {
             randomContext: RandomPromptContext.wakeWeather.rawValue,
             language: "ko",
             translateText: false,
-            fireAtMillis: preparedFireAt
+            fireAtMillis: preparedFireAt,
+            listenerTitle: nil
         ))
     }
 
@@ -431,6 +481,7 @@ final class AlarmEditDraftTests: XCTestCase {
         voiceText: String,
         voiceCategory: String,
         voiceLanguage: String,
+        voiceListenerTitle: String? = nil,
         voiceRandomPrompt: Bool = false,
         voiceRandomContext: String? = nil,
         dynamicVoicePreparedForFireAtMillis: Int64? = nil
@@ -446,6 +497,7 @@ final class AlarmEditDraftTests: XCTestCase {
             audioCacheKey: "voice-cache",
             voiceSource: VoiceSource.serverTts.rawValue,
             voiceProfileId: voiceProfileId,
+            voiceListenerTitle: voiceListenerTitle,
             voiceText: voiceText,
             voiceCategory: voiceCategory,
             voiceLanguage: voiceLanguage,

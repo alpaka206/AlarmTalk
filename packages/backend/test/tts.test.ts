@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const M1 = '10000000-0000-4000-8000-000000000001';
@@ -137,6 +138,10 @@ function geminiText(text: string) {
       headers: { 'content-type': 'application/json' },
     },
   );
+}
+
+function consentRow(type: string) {
+  return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
 }
 
 beforeEach(() => {
@@ -366,6 +371,62 @@ describe('POST /tts/generate — edge cases', () => {
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe('NO_VOICE_ID');
+  });
+
+  it('blocks custom voice TTS when voice_biometric consent is missing', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([]);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('voice_biometric');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
+  it('blocks custom voice TTS when overseas_transfer consent is missing', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([{ id: V1, status: 'ready', elevenlabs_voice_id: 'el-voice-1' }]);
+    mockDB.pushResult([consentRow('voice_biometric')]);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('overseas_transfer');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
+  });
+
+  it('blocks system voice TTS when overseas_transfer consent is missing', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([{ plan: 'plus' }]);
+    mockDB.pushResult([
+      { id: V1, status: 'ready', is_system: 1, elevenlabs_voice_id: 'el-system-1' },
+    ]);
+    mockDB.pushResult([]);
+
+    const res = await reqWithEnv(
+      buildApp(),
+      jsonReq('POST', '/tts/generate', { voice_profile_id: V1, text: 'hello' }),
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('overseas_transfer');
+    expect(mockTextToSpeech).not.toHaveBeenCalled();
   });
 
   it('ElevenLabs 실패 시 500 + detail 포함', async () => {
@@ -670,6 +731,56 @@ describe('POST /tts/generate — edge cases', () => {
     expect(inserted!.args[4]).toBe(body.synthesis_text);
     expect(inserted!.args[5]).toBe(JSON.stringify(body.tags));
     expect(inserted!.args[6]).toBe('morning');
+  });
+
+  it('applies listener_title to preset TTS before synthesis', async () => {
+    mockDB.pushResult([
+      {
+        category: 'morning',
+        label: 'Morning',
+        emoji: 'sun',
+        messages_json: JSON.stringify(['wake now']),
+      },
+    ]);
+    mockDB.pushResult([{ plan: 'free' }]);
+    mockDB.pushResult([
+      {
+        id: V1,
+        status: 'ready',
+        is_system: 1,
+        elevenlabs_voice_id: 'el-system-1',
+      },
+    ]);
+    mockTextToSpeech.mockResolvedValue(new Uint8Array([10]).buffer);
+    mockDB.pushResult([]);
+    mockDB.pushResult([], 1);
+    mockDB.pushResult([], 1);
+
+    const app = buildApp();
+    const res = await reqWithEnv(
+      app,
+      jsonReq('POST', '/tts/generate', {
+        voice_profile_id: V1,
+        category: 'morning',
+        language: 'en',
+        random: true,
+        random_context: 'preset',
+        listener_title: 'Buddy',
+      }),
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.original_text).toBe('Buddy, wake now');
+    expect(body.text).toBe('Buddy, wake now');
+    expect(body.synthesis_text).toContain('Buddy, wake now');
+    expect(mockTextToSpeech).toHaveBeenCalledWith(
+      'el-system-1',
+      expect.stringContaining('Buddy, wake now'),
+      expect.any(Object),
+    );
+    const inserted = mockDB.calls.find((c) => c.sql.includes('INSERT INTO messages'));
+    expect(inserted!.args[3]).toBe('Buddy, wake now');
   });
 
   it('random_context=wake_fortune creates a dynamic relationship-aware prompt', async () => {

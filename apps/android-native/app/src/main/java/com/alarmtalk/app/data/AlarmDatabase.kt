@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [AlarmEntity::class, HolidayEntity::class],
-    version = 15,
+    version = 16,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
@@ -41,6 +41,7 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_12_13,
                     MIGRATION_13_14,
                     MIGRATION_14_15,
+                    MIGRATION_15_16,
                 )
                     // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
                     // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
@@ -171,6 +172,12 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DROP TABLE IF EXISTS character_events")
+            }
+        }
+
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceListenerTitle TEXT")
             }
         }
     }

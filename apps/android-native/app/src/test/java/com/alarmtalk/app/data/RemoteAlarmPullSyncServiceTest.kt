@@ -115,6 +115,7 @@ class RemoteAlarmPullSyncServiceTest {
             rawAudioUri = null,
             voiceSource = VoiceSources.LOCAL_AUDIO,
             voiceProfileId = null,
+            voiceListenerTitle = null,
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,

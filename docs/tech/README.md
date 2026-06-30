@@ -28,7 +28,7 @@ System architecture, database schema, and HTTP API for AlarmTalk.
            ▼                  ▼                 ▼
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ 18 tables    │  │ voice + tts  │  │ Perso / ElevenLabs   │
+   │ 18 tables    │  │ voice + tts  │  │ ElevenLabs           │
    │ 32 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
@@ -111,7 +111,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Cloudflare Workers | API + cron | HTTP, ScheduledEvent |
 | Turso libSQL | Primary DB | libSQL HTTP client |
 | Cloudflare R2 | Object store (voice / TTS) | Workers binding `VOICE_BUCKET` |
-| Perso (primary) / ElevenLabs (fallback) | Voice clone + TTS | HTTPS REST |
+| ElevenLabs | Voice clone + TTS | HTTPS REST |
 | Google JWKS | ID token verification | HTTPS |
 | Apple JWKS | Sign in with Apple ID token signature verification | HTTPS |
 | Sentry | Error capture | toucan-js (server) + Android client SDK (DSN-gated) |
@@ -132,7 +132,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 |---|---|---|
 | 2025-12 | Rewrite from React Native/Expo to native | Alarm reliability could not be guaranteed under push/Expo notifications. |
 | 2026-02 | Android first | Only Android physical-device testing was available at that time. |
-| 2026-03 | Perso as primary voice provider, ElevenLabs as fallback | Migrating to Perso (ESTsoft) for voice clone + TTS; ElevenLabs remains as a fallback for paths Perso's developer surface does not yet expose. |
+| 2026-03 | ElevenLabs as the active voice provider | Use one proven Instant Voice Clone + TTS provider while keeping deterministic caching to control spend. |
 | 2026-04 | 6-digit family invite code + deep-link hybrid | Works without collecting email; can be shared offline by voice; 10-minute TTL mitigates brute force. |
 | 2026-05 | Deterministic TTS caching | Same profile + text + language always maps to the same R2 object, eliminating duplicate cost. |
 
@@ -359,7 +359,7 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | `/library` | Message library |
 | `/notes` | Notes |
 | `/gift` | Gift |
-| `/dub` | Dubbing (Perso) |
+| `/dub` | Speaker separation and derived voice tooling |
 | `/stats` | Stats |
 
 ### Selected endpoints
@@ -403,7 +403,7 @@ The backend verifies the Apple token signature against Apple JWKS, checks issuer
 
 - Body: `audio` (file), `name` (string)
 - 422 on size > limit, `VOICE_LIMIT_REACHED` when user already has 2 profiles.
-- Provider chain: Perso (currently no direct voice-clone TTS → falls through) → ElevenLabs.
+- Provider: ElevenLabs.
 
 #### `POST /tts/generate`
 

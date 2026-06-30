@@ -13,6 +13,9 @@ struct RootView: View {
     @EnvironmentObject private var versionGate: AppVersionGate
     @Environment(\.openURL) private var openURL
     @State private var onboardingCompleted: Bool?
+    /// 온보딩 완료 후 기본 목소리를 한 번이라도 골랐는지. 안 골랐으면 `VoiceSetupView` 노출.
+    /// Android `MainViewModel.showVoiceSetup`(= !hasChosen) 게이팅 미러.
+    @State private var voiceSetupDone: Bool?
 
     // 약관/개인정보 처리방침 외부 링크. Android `AlarmTalkApp.kt:539`.
     private static let termsURL = URL(string: "https://alarm-talk.com/ko/terms")!
@@ -39,19 +42,30 @@ struct RootView: View {
                 // Android `ConsentScreen` 게이팅과 동등.
                 ConsentView(
                     busy: auth.isBusy,
-                    onAgree: { marketingAgreed in
-                        Task { await auth.submitConsents(marketingAgreed: marketingAgreed) }
+                    onAgree: { marketingAgreed, voiceBiometricAgreed, overseasTransferAgreed in
+                        Task {
+                            await auth.submitConsents(
+                                marketingAgreed: marketingAgreed,
+                                voiceBiometricAgreed: voiceBiometricAgreed,
+                                overseasTransferAgreed: overseasTransferAgreed
+                            )
+                        }
                     },
                     onOpenTerms: { openURL(Self.termsURL) },
                     onOpenPrivacy: { openURL(Self.privacyURL) }
                 )
-            } else if onboardingCompleted == nil {
+            } else if onboardingCompleted == nil || voiceSetupDone == nil {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(AlarmTalkTheme.background)
             } else if onboardingCompleted == false {
                 NavigationStack {
                     OnboardingView(onComplete: completeOnboarding)
+                }
+            } else if voiceSetupDone == false {
+                // 온보딩 직후 "기본 목소리 고르기" — 기본 목소리를 아직 안 고른 사용자에게만 1회.
+                NavigationStack {
+                    VoiceSetupView(onComplete: completeVoiceSetup)
                 }
             } else {
                 MainTabsView()
@@ -65,9 +79,11 @@ struct RootView: View {
     private func refreshOnboardingCompletion() {
         guard let userID = auth.session?.user.id else {
             onboardingCompleted = nil
+            voiceSetupDone = nil
             return
         }
         onboardingCompleted = OnboardingCompletionStore().hasCompleted(userID: userID)
+        voiceSetupDone = DefaultVoicePreferenceStore().hasCompletedSetup(userID: userID)
     }
 
     private func completeOnboarding() {
@@ -75,6 +91,10 @@ struct RootView: View {
             OnboardingCompletionStore().markCompleted(userID: userID)
         }
         onboardingCompleted = true
+    }
+
+    private func completeVoiceSetup() {
+        voiceSetupDone = true
     }
 }
 

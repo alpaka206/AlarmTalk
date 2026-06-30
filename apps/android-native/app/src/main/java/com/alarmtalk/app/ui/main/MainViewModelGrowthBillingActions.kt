@@ -584,7 +584,11 @@ internal fun MainViewModel.applyFreePlanVoiceLock() {
         runCatching {
             repository.deletePaidAlarmTalks()
         }.onSuccess { deletedAlarms ->
-            if (voiceProfiles.isNotEmpty()) voiceProfiles = emptyList()
+            // 시스템(스톡) 목소리는 무료에서도 쓰는 "기본 목소리"다. 유료 음성만 제거하고
+            // 시스템 음성은 남긴다 — 온보딩 "기본 목소리 고르기"가 빈 목록으로 멈추는 것 방지(Codex P2).
+            if (voiceProfiles.any { it.isSystem != true }) {
+                voiceProfiles = voiceProfiles.filter { it.isSystem == true }
+            }
             if (familyVoices.isNotEmpty()) familyVoices = emptyList()
             if (ttsMessages.isNotEmpty()) ttsMessages = emptyList()
             if (receivedNotes.isNotEmpty()) receivedNotes = emptyList()

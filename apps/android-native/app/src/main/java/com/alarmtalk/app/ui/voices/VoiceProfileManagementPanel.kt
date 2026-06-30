@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -327,6 +328,10 @@ internal fun VoiceProfileManagementPanel(
     onUpdateSharedVoiceInfo: (String, String, String) -> Unit,
     onDeleteVoiceProfile: (String) -> Unit,
     onOpenBilling: () -> Unit,
+    defaultVoiceId: String? = null,
+    onSetDefaultVoice: (String) -> Unit = {},
+    defaultListenerTitle: String? = null,
+    onSetListenerTitle: (String?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -387,6 +392,7 @@ internal fun VoiceProfileManagementPanel(
     var systemVoicesExpanded by remember { mutableStateOf(false) }
     // 지금 인사말 샘플을 재생 중인 기본 목소리 id (재생 아이콘 토글용).
     var playingGreetingVoiceId by remember { mutableStateOf<String?>(null) }
+    var greetingPreviewRequestId by remember { mutableIntStateOf(0) }
     // 시스템 스톡 보이스는 "내 목소리" 수 제한·관리 액션에서 제외한다.
     // 매 리컴포지션마다 재계산하지 않도록 voiceProfiles 가 바뀔 때만 다시 분류한다.
     val systemVoices = remember(voiceProfiles) { voiceProfiles.filter { it.isSystem == true } }
@@ -396,7 +402,8 @@ internal fun VoiceProfileManagementPanel(
     val canShareVoice = canShareVoiceWithOthers(subscriptionResponse, familyGroup, authSession)
     val paidVoiceRequiredMessage = stringResource(R.string.voices_paid_required)
 
-    fun stopMediaPreview() {
+    fun stopMediaPreview(invalidateGreetingPreview: Boolean = true) {
+        if (invalidateGreetingPreview) greetingPreviewRequestId += 1
         mediaPlayer?.release()
         mediaPlayer = null
         filePreviewPreparing = false
@@ -417,8 +424,10 @@ internal fun VoiceProfileManagementPanel(
             localMessage = context.getString(R.string.voices_greeting_preview_preparing)
             return
         }
+        val requestId = greetingPreviewRequestId + 1
+        greetingPreviewRequestId = requestId
         scope.launch {
-            stopMediaPreview()
+            stopMediaPreview(invalidateGreetingPreview = false)
             playingGreetingVoiceId = profile.id
             runCatching {
                 val response = onDownloadStockAudio(clip.messageId)
@@ -435,7 +444,11 @@ internal fun VoiceProfileManagementPanel(
                     )
                 }
                 val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
-                    ?: return@runCatching
+                    ?: error("Failed to create greeting preview player.")
+                if (greetingPreviewRequestId != requestId) {
+                    player.release()
+                    return@runCatching
+                }
                 mediaPlayer = player.apply {
                     setOnCompletionListener {
                         it.release()
@@ -446,8 +459,10 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to play greeting preview", error)
-                if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
-                localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                if (greetingPreviewRequestId == requestId) {
+                    if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
+                    localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
+                }
             }
         }
     }
@@ -1075,8 +1090,14 @@ internal fun VoiceProfileManagementPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val defaultVoiceName = systemVoices.firstOrNull { it.id == defaultVoiceId }?.name
                 Text(
-                    text = stringResource(R.string.voices_system_voices_count, systemVoices.size),
+                    // 기본 목소리가 정해져 있으면 그 이름을, 아니면 종 수를 보여준다.
+                    text = if (defaultVoiceName != null) {
+                        stringResource(R.string.voices_default_voice_header, defaultVoiceName)
+                    } else {
+                        stringResource(R.string.voices_system_voices_count, systemVoices.size)
+                    },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -1100,8 +1121,30 @@ internal fun VoiceProfileManagementPanel(
                         profile = profile,
                         playing = playingGreetingVoiceId == profile.id,
                         onPlay = { playGreeting(profile) },
+                        selected = profile.id == defaultVoiceId,
+                        onSelect = { onSetDefaultVoice(profile.id) },
                     )
                 }
+            }
+            // 기본(시스템) 목소리가 정해졌으면 호칭을 여기서 수정(펼치지 않아도 보임).
+            if (defaultVoiceId != null) {
+                Spacer(Modifier.height(8.dp))
+                var nicknameDraft by remember(defaultVoiceId) {
+                    mutableStateOf(defaultListenerTitle.orEmpty())
+                }
+                OutlinedTextField(
+                    value = nicknameDraft,
+                    onValueChange = {
+                        val v = it.take(30)
+                        nicknameDraft = v
+                        onSetListenerTitle(v)
+                    },
+                    label = { Text(stringResource(R.string.voices_default_nickname_label)) },
+                    placeholder = { Text(stringResource(R.string.voices_default_nickname_placeholder)) },
+                    singleLine = true,
+                    shape = WakerInputShape,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 

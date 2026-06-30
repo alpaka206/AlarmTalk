@@ -23,6 +23,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
     var rawAudioUri: String?
     var voiceSource: String         // VoiceSource.rawValue
     var voiceProfileId: String?
+    var voiceListenerTitle: String?
     var voiceText: String?
     var voiceCategory: String?
     var voiceLanguage: String?      // ISO 639-1
@@ -85,17 +86,31 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         (audioCacheKey?.hasPrefix("stock_") ?? false) && isSystemVoiceId(voiceProfileId)
     }
 
+    var isGeneratedFreeSystemPresetVoice: Bool {
+        guard voiceSource != VoiceSource.localAudio.rawValue,
+              isSystemVoiceId(voiceProfileId),
+              voiceRandomPrompt else {
+            return false
+        }
+        let language = voiceLanguage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return RandomPromptContext.normalized(voiceRandomContext) == .preset &&
+            (language.isEmpty || language == "ko")
+    }
+
     /// 무료 플랜 다운그레이드 시 삭제 대상인지.
     /// Android `AlarmRepository.deletePaidAlarmTalks` 의 `usesVoice && !stockVoiceOnly` 동일.
     /// 시스템 스톡 보이스 TTS 알람(로컬/raw 음원이 없고 voiceProfileId 가 시스템 보이스)은
     /// 무료 플랜에서도 유효하므로 보존한다. 또한 스톡 클립 알람(스테이징된 `stock_` 캐시
-    /// 파일이 있어 localAudioUri 가 NON-blank)도 `isStockVoiceClip` 으로 보존한다.
+    /// 파일이 있어 localAudioUri 가 NON-blank)과 생성된 시스템 프리셋 TTS도 보존한다.
     var isPaidVoiceForDowngrade: Bool {
         let stockVoiceOnly =
             (localAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
             (rawAudioUri?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) &&
             isSystemVoiceId(voiceProfileId)
-        return usesPaidVoiceFeatures && !stockVoiceOnly && !isStockVoiceClip
+        return usesPaidVoiceFeatures &&
+            !stockVoiceOnly &&
+            !isStockVoiceClip &&
+            !isGeneratedFreeSystemPresetVoice
     }
 
     var canSnooze: Bool {
@@ -155,6 +170,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         rawAudioUri: String? = nil,
         voiceSource: String = VoiceSource.ttsProfile.rawValue,
         voiceProfileId: String? = nil,
+        voiceListenerTitle: String? = nil,
         voiceText: String? = nil,
         voiceCategory: String? = nil,
         voiceLanguage: String? = nil,
@@ -201,6 +217,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         self.rawAudioUri = rawAudioUri
         self.voiceSource = voiceSource
         self.voiceProfileId = voiceProfileId
+        self.voiceListenerTitle = voiceListenerTitle
         self.voiceText = voiceText
         self.voiceCategory = voiceCategory
         self.voiceLanguage = voiceLanguage
@@ -249,6 +266,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         case rawAudioUri
         case voiceSource
         case voiceProfileId
+        case voiceListenerTitle
         case voiceText
         case voiceCategory
         case voiceLanguage
@@ -348,6 +366,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
             ?? VoiceSource.ttsProfile.rawValue
         self.voiceProfileId = try c.decodeIfPresent(String.self, forKey: .voiceProfileId)
             ?? c.decodeIfPresent(String.self, forKey: .legacyVoiceProfileID)
+        self.voiceListenerTitle = try c.decodeIfPresent(String.self, forKey: .voiceListenerTitle)
         self.voiceText = try c.decodeIfPresent(String.self, forKey: .voiceText)
         self.voiceCategory = try c.decodeIfPresent(String.self, forKey: .voiceCategory)
         self.voiceLanguage = try c.decodeIfPresent(String.self, forKey: .voiceLanguage)
@@ -443,6 +462,7 @@ struct LocalAlarmRecord: Identifiable, Codable, Equatable, Hashable {
         try c.encodeIfPresent(rawAudioUri, forKey: .rawAudioUri)
         try c.encode(voiceSource, forKey: .voiceSource)
         try c.encodeIfPresent(voiceProfileId, forKey: .voiceProfileId)
+        try c.encodeIfPresent(voiceListenerTitle, forKey: .voiceListenerTitle)
         try c.encodeIfPresent(voiceText, forKey: .voiceText)
         try c.encodeIfPresent(voiceCategory, forKey: .voiceCategory)
         try c.encodeIfPresent(voiceLanguage, forKey: .voiceLanguage)

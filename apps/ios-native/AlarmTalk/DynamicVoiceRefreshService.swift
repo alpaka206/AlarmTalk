@@ -67,7 +67,8 @@ final class DynamicVoiceRefreshService {
                         weatherCity: (alarm.voiceWeatherCity).nilIfBlank,
                         fortuneGender: (alarm.voiceFortuneGender).nilIfBlank,
                         fortuneBirthDate: (alarm.voiceFortuneBirthDate).nilIfBlank,
-                        fortuneBirthTime: (alarm.voiceFortuneBirthTime).nilIfBlank
+                        fortuneBirthTime: (alarm.voiceFortuneBirthTime).nilIfBlank,
+                        listenerTitle: (alarm.voiceListenerTitle).nilIfBlank
                     ),
                     token: token
                 )

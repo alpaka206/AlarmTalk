@@ -427,13 +427,12 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 데이터 라우트가 403 CONSENT_REQUIRED 를 받았을 때 — 동의 화면으로 게이팅.
-    /// 세션은 유지(로그아웃하지 않음). 서버에 최신 동의 상태를 다시 물어 정확히 반영하되,
-    /// 실패해도 일단 동의 화면을 띄워 사용자가 재기록할 수 있게 한다.
+    /// 세션은 유지(로그아웃하지 않음). 민감/국외이전 동의만 빠진 경우 일반 동의 상태
+    /// 재조회가 게이트를 다시 닫을 수 있으므로 여기서는 화면만 연다.
     /// 로그인 상태가 아니면(이미 로그아웃) 무시한다.
     private func handleConsentRequired() {
         guard session != nil else { return }
         needsConsent = true
-        Task { await checkConsentStatus() }
     }
 
     /// Apple 자격 증명이 외부에서 revoke 되었을 때 — 강제 로그아웃.
@@ -556,6 +555,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.deleteAccount(token: token)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 완료됐어요.")
         } catch {
@@ -580,6 +580,7 @@ final class AuthViewModel: ObservableObject {
             _ = try await api.requestAccountDeletion(token: token)
             if let currentUserID, !currentUserID.isEmpty {
                 accessSnapshotStore.clear(userID: currentUserID)
+                DefaultVoicePreferenceStore().clear(userID: currentUserID)
             }
             signOut(message: "회원 탈퇴가 접수됐어요. 30일 안에 다시 로그인하면 취소할 수 있어요.")
         } catch {
@@ -622,30 +623,33 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// 서버 `CURRENT_POLICY_VERSION` 과 동일해야 하는 클라이언트 정책 버전.
-    /// W2 백엔드 하드닝으로 "2" 로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
-    static let currentPolicyVersion = "2"
+    /// ElevenLabs 기준 법무 문서 정정으로 "3" 으로 상향됨 — 동의 기록 시 이 버전을 동봉한다.
+    static let currentPolicyVersion = "3"
 
-    /// 동의 기록 요청을 만든다. 필수(terms/privacy/age14)에 더해 W2 백엔드가
-    /// 서버측에서 강제하는 두 항목(voice_biometric/overseas_transfer)도 항상 동의로
-    /// 기록한다. 그래야 음성 클론(`POST /voice`)과 해외 이전 TTS(translate=true /
-    /// 동적 비-preset 생성)가 403 CONSENT_REQUIRED 없이 진행된다. marketing 은 선택값.
-    /// 모든 항목에 현재 정책 버전("2")을 동봉한다.
-    static func makeConsentsRequest(marketingAgreed: Bool) -> RecordConsentsRequest {
+    /// 동의 기록 요청을 만든다. 필수 항목은 화면의 체크값을 기록하고, marketing 은 선택값으로 기록한다.
+    /// 모든 항목에 현재 정책 버전을 동봉한다.
+    static func makeConsentsRequest(
+        marketingAgreed: Bool,
+        voiceBiometricAgreed: Bool,
+        overseasTransferAgreed: Bool
+    ) -> RecordConsentsRequest {
         let version = currentPolicyVersion
         return RecordConsentsRequest(consents: [
             ConsentItemRequest(type: "terms", agreed: true, version: version),
             ConsentItemRequest(type: "privacy", agreed: true, version: version),
             ConsentItemRequest(type: "age14", agreed: true, version: version),
-            ConsentItemRequest(type: "voice_biometric", agreed: true, version: version),
-            ConsentItemRequest(type: "overseas_transfer", agreed: true, version: version),
+            ConsentItemRequest(type: "voice_biometric", agreed: voiceBiometricAgreed, version: version),
+            ConsentItemRequest(type: "overseas_transfer", agreed: overseasTransferAgreed, version: version),
             ConsentItemRequest(type: "marketing", agreed: marketingAgreed, version: version),
         ])
     }
 
-    /// 동의 화면 제출. 필수(terms/privacy/age14/voice_biometric/overseas_transfer)는 항상
-    /// 동의로, marketing 은 사용자 선택값으로 기록한다. 성공 시 `needsConsent` 를 내려
-    /// 정상 진입. Android `MainViewModel.submitConsents()`.
-    func submitConsents(marketingAgreed: Bool) async {
+    /// 동의 화면 제출. 성공 시 `needsConsent` 를 내려 정상 진입. Android `MainViewModel.submitConsents()`.
+    func submitConsents(
+        marketingAgreed: Bool,
+        voiceBiometricAgreed: Bool,
+        overseasTransferAgreed: Bool
+    ) async {
         guard let token else {
             statusMessage = "로그인이 필요해요."
             return
@@ -656,7 +660,11 @@ final class AuthViewModel: ObservableObject {
 
         do {
             _ = try await api.recordConsents(
-                Self.makeConsentsRequest(marketingAgreed: marketingAgreed),
+                Self.makeConsentsRequest(
+                    marketingAgreed: marketingAgreed,
+                    voiceBiometricAgreed: voiceBiometricAgreed,
+                    overseasTransferAgreed: overseasTransferAgreed
+                ),
                 token: token
             )
             needsConsent = false

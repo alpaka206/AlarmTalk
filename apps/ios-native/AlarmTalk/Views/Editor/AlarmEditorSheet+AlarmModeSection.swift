@@ -56,13 +56,14 @@ extension AlarmEditorSheet {
                                 ownProfiles: voiceStudio.profiles,
                                 familyVoices: voiceStudio.familyVoices,
                                 selectedProfileID: voiceStudio.selectedProfileID,
+                                defaultVoiceId: voiceStudio.defaultVoiceId,
                                 loading: voiceStudio.isBusy,
                                 onSelectOwn: { profile in
                                     // 무료 등급은 시스템 보이스만 허용한다(서버 tts.ts:684-693).
                                     // 비-시스템 목소리 선택은 유료 잠금으로 안내해 generateTTS
                                     // 403(VOICE_FEATURE_REQUIRES_PAID_PLAN)을 미연에 막는다
                                     // (Android `VoiceAudioCard.kt` onLockedFeature 게이팅 미러).
-                                    if freeVoiceTier && !isSystemVoiceId(profile.id) {
+                                    if freeVoiceTier && !isSystemVoice(profile) {
                                         showVoicePlanLockedAlert()
                                         return
                                     }
@@ -72,7 +73,7 @@ extension AlarmEditorSheet {
                                 onSelectShared: { profile in
                                     // 공유/가족 목소리는 비-시스템이므로 무료 등급에선 선택을
                                     // 막고 유료 잠금으로 안내한다 (행은 숨기지 않고 선택만 게이트).
-                                    if freeVoiceTier && !isSystemVoiceId(profile.id) {
+                                    if freeVoiceTier {
                                         showVoicePlanLockedAlert()
                                         return
                                     }
@@ -97,7 +98,7 @@ extension AlarmEditorSheet {
                         // 목록을 노출한다 (Android `VoiceAudioCard.kt:195` freeVoiceTier
                         // gate + `if (!isSystemVoice) return` 미러). greeting 카테고리는
                         // 제외하고 선택 프로필로 스코프한다.
-                        if freeVoiceTier && isSystemVoiceId(voiceStudio.selectedProfileID) {
+                        if freeVoiceTier && voiceStudio.isSystemVoiceProfile(id: voiceStudio.selectedProfileID) {
                             StockClipPicker(
                                 clips: voiceStudio.stockClips.filter {
                                     $0.voiceProfileId == voiceStudio.selectedProfileID &&

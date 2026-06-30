@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { AppEnv, Env } from '../src/types';
 import { createMockDB, fakeAuthMiddleware, jsonReq } from './helpers';
+import { CURRENT_POLICY_VERSION } from '../src/lib/consent';
 
 const V1 = '40000000-0000-4000-8000-000000000001';
 const V2 = '40000000-0000-4000-8000-000000000002';
@@ -10,6 +11,10 @@ const V_BAD = 'not-a-uuid';
 const mockDB = createMockDB();
 const mockCreateInstantClone = vi.fn();
 const mockDeleteVoice = vi.fn();
+
+function consentRow(type: string) {
+  return { consent_type: type, policy_version: CURRENT_POLICY_VERSION, agreed: 1 };
+}
 
 vi.mock('../src/lib/db', () => ({
   getDB: () => mockDB.client,
@@ -297,6 +302,19 @@ describe('POST /clone — 음성 클론 (voice-profile)', () => {
     expect(body.error_code).toBe('CONSENT_REQUIRED');
     expect(body.consent).toBe('voice_biometric');
     // 동의 게이트에서 막혔으므로 ElevenLabs 클론은 호출되지 않는다.
+    expect(mockCreateInstantClone).not.toHaveBeenCalled();
+  });
+
+  it('overseas_transfer 동의 없으면 ElevenLabs 클론을 호출하지 않음', async () => {
+    mockDB.setConsentMissing(true);
+    mockDB.pushResult([consentRow('voice_biometric')]);
+
+    const res = await req(buildApp(), cloneForm(new Uint8Array([1, 2, 3]), '엄마 목소리'));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error_code).toBe('CONSENT_REQUIRED');
+    expect(body.consent).toBe('overseas_transfer');
     expect(mockCreateInstantClone).not.toHaveBeenCalled();
   });
 
