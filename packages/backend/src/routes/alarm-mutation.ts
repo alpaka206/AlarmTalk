@@ -157,6 +157,9 @@ alarmMutation.post('/', async (c) => {
     raw_audio_url?: string;
     raw_audio_duration_ms?: number;
     timezone?: string;
+    // 무료 버킷 회전 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
+    bucket_id?: string | null;
   }>();
 
   if (!body.time) {
@@ -329,8 +332,8 @@ alarmMutation.post('/', async (c) => {
     sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
-             raw_audio_url, raw_audio_duration_ms, timezone)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       alarmId,
       userId,
@@ -347,6 +350,7 @@ alarmMutation.post('/', async (c) => {
       body.raw_audio_url ?? null,
       body.raw_audio_duration_ms ?? null,
       timezone,
+      body.bucket_id ?? null,
     ],
   });
 
@@ -389,6 +393,7 @@ alarmMutation.patch('/:id', async (c) => {
     raw_audio_url?: string | null;
     raw_audio_duration_ms?: number | null;
     timezone?: string | null;
+    bucket_id?: string | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -519,6 +524,10 @@ alarmMutation.patch('/:id', async (c) => {
     updates.push('timezone = ?');
     args.push(normalizeTimezone(body.timezone));
   }
+  if (body.bucket_id !== undefined) {
+    updates.push('bucket_id = ?');
+    args.push(body.bucket_id);
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
@@ -555,7 +564,7 @@ alarmMutation.patch('/:id', async (c) => {
   const updated = await db.execute({
     sql: `SELECT id, user_id, target_user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
-                 voice_profile_id, speaker_id, created_at, updated_at
+                 voice_profile_id, speaker_id, bucket_id, created_at, updated_at
           FROM alarms WHERE id = ?`,
     args: [id],
   });

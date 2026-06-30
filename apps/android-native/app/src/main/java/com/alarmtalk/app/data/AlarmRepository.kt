@@ -160,6 +160,9 @@ class AlarmRepository(
             voiceRepeat = draft.voiceRepeat,
             voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
+            bucketId = draft.bucketId,
+            bucketRotationIndex = 0,
+            bucketClipKeysJson = draft.bucketClipKeysJson,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -240,6 +243,11 @@ class AlarmRepository(
             voiceRepeat = draft.voiceRepeat,
             voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
+            bucketId = draft.bucketId,
+            // 같은 버킷이면 회전 위치 유지, 버킷이 바뀌었으면(또는 해제) 0 으로 리셋.
+            bucketRotationIndex =
+                if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
+            bucketClipKeysJson = draft.bucketClipKeysJson,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -422,6 +430,9 @@ class AlarmRepository(
                 fireAtMillis = nextFireAt,
                 enabled = true,
                 snoozeCount = 0,
+                // 에피소드 종료(dismiss) 시 다음 회전 클립으로 +1. 스누즈는 회전하지 않으므로
+                // 같은 에피소드 내 모든 울림은 동일 클립을 재생한다.
+                bucketRotationIndex = advancedBucketRotationIndex(current),
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
             )
@@ -469,6 +480,29 @@ class AlarmRepository(
         alarmScheduler.schedule(next)
         Log.i(TAG, "Alarm snoozed id=$alarmId minutes=${current.snoozeMinutes} nextFireAt=${next.fireAtMillis}")
         return next
+    }
+
+    /**
+     * 버킷 회전 알람의 "현재 회전 클립" 로컬 재생 URI. 미리 캐시한 N개 중 bucketRotationIndex
+     * 위치의 클립을 돌려준다. 해당 클립이 캐시에 없으면 같은 버킷의 다른 클립으로 폴백하고,
+     * 그래도 없으면 null(호출자가 alarm.localAudioUri = 대표 클립으로 폴백).
+     */
+    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
+        val keys = alarm.bucketClipKeys()
+        if (alarm.bucketId == null || keys.isEmpty()) return null
+        val index = ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
+        alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
+        for (key in keys) {
+            alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
+        }
+        return null
+    }
+
+    /** dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립이 1개 이하면 그대로. */
+    private fun advancedBucketRotationIndex(alarm: AlarmEntity): Int {
+        val size = alarm.bucketClipKeys().size
+        if (alarm.bucketId == null || size <= 1) return alarm.bucketRotationIndex
+        return (alarm.bucketRotationIndex + 1) % size
     }
 
     suspend fun reschedulePendingAlarms(): Int {
@@ -618,6 +652,10 @@ class AlarmRepository(
                     val path = runCatching { android.net.Uri.parse(uriString).path }.getOrNull()
                     if (!path.isNullOrBlank()) add(java.io.File(path).nameWithoutExtension)
                 }
+                // 버킷 회전 알람이 미리 캐시해 둔 N개 클립이 sweep 으로 지워지지 않도록 보존한다.
+                alarm.bucketClipKeys().forEach { key ->
+                    add(AlarmAudioStore.safeCacheKey(key))
+                }
             }
         }
         return alarmAudioStore.sweepStaleCache(inUseFileNames)
@@ -743,7 +781,9 @@ class AlarmRepository(
             alarm.repeatDaysMask != 0 &&
             alarm.voiceRandomPrompt &&
             alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
-            !alarm.voiceProfileId.isNullOrBlank()
+            !alarm.voiceProfileId.isNullOrBlank() &&
+            // 무료 버킷 회전 알람은 사전 렌더 정적 클립을 쓰므로 동적 음성 갱신 대상이 아니다.
+            alarm.bucketId == null
 
     /**
      * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시

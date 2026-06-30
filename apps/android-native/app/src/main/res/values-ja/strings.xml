@@ -292,9 +292,8 @@
     <string name="editor_status_available">設定可能</string>
     <string name="editor_status_lead_too_soon">今から30分後以降のアラームから設定できます。</string>
     <string name="editor_status_quiet_unavailable">相手はこの時間にアラームを受け取らない設定にしています。</string>
-    <string name="editor_stock_clip_selected">標準提供の音声を選択しました。</string>
-    <string name="editor_stock_clip_subtitle">試聴してすぐに使えます</string>
-    <string name="editor_stock_clip_title">標準提供のアラーム音声</string>
+    <string name="editor_free_bucket_title">テーマ</string>
+    <string name="editor_free_bucket_hint">アラームが鳴るたびに、テーマ内のフレーズが順番に再生されます。</string>
     <string name="editor_stop">停止</string>
     <string name="editor_title_edit_alarm">アラームの編集</string>
     <string name="editor_title_family_alarm">相手のアラームを設定</string>

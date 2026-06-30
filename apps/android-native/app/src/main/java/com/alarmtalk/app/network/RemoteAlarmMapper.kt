@@ -29,6 +29,7 @@ object RemoteAlarmMapper {
             rawAudioDurationMs = null,
             targetUserId = null,
             timezone = TimeZone.getDefault().id,
+            bucketId = alarm.bucketId.trimmedOrNull(),
         )
     }
 

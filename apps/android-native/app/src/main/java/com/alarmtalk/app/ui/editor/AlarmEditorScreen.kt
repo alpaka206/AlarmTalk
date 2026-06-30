@@ -147,6 +147,16 @@ internal fun AlarmEditorScreen(
     val defaultPlayMode = if (voicePlanLocked) AlarmPlayModes.ALARM_ONLY else AlarmPlayModes.ALARM_VOICE
     val editor = remember(alarm?.id) { AlarmEditorState.from(alarm, defaultPlayMode = defaultPlayMode) }
     val context = LocalContext.current
+    // 무료 버킷 회전은 앱 로케일(ko/en/ja, 그 외 ko 폴백) 언어의 클립만 재생한다.
+    val appBucketLanguage = remember(context) {
+        val lang = context.resources.configuration.locales.get(0)?.language
+            ?: java.util.Locale.getDefault().language
+        when (lang) {
+            "en" -> "en"
+            "ja" -> "ja"
+            else -> "ko"
+        }
+    }
     val appContext = context.applicationContext
     val audioStore = remember(appContext) { AlarmAudioStore(appContext) }
     val dynamicPromptPreferenceStore = remember(appContext) { DynamicPromptPreferenceStore(appContext) }
@@ -192,7 +202,6 @@ internal fun AlarmEditorScreen(
     var previewTarget by remember { mutableStateOf<AudioPreviewTarget?>(null) }
     var previewPreparing by remember { mutableStateOf(false) }
     var previewStopJob by remember { mutableStateOf<Job?>(null) }
-    var previewingStockMessageId by remember { mutableStateOf<String?>(null) }
     var voicePlanGateOpen by remember { mutableStateOf(false) }
     var sharedVoiceInfoTarget by remember { mutableStateOf<FamilyVoiceProfile?>(null) }
     val familyRecipients = remember(familyGroup, authSession?.user?.id, authSession?.user?.email) {
@@ -295,7 +304,6 @@ internal fun AlarmEditorScreen(
         mediaPlayer = null
         previewTarget = null
         previewPreparing = false
-        previewingStockMessageId = null
     }
 
     fun startPreparedPreview(
@@ -469,72 +477,52 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    fun previewStockClip(clip: StockClip) {
-        if (previewPreparing) return
-        // 이미 같은 클립을 재생 중이면 정지.
-        if (previewingStockMessageId == clip.messageId && mediaPlayer != null) {
-            stopPreview()
-            return
-        }
-        scope.launch {
-            stopPreview()
-            previewTarget = AudioPreviewTarget.StockClip
-            previewPreparing = true
-            previewingStockMessageId = clip.messageId
-            runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "stock_preview_${clip.messageId}",
-                        cacheKey = "stock_preview_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
-                }
-            }.onSuccess { cached ->
-                startPreparedPreview(
-                    uri = Uri.parse(cached.localAudioUri),
-                    target = AudioPreviewTarget.StockClip,
-                )
-            }.onFailure { error ->
-                Log.e(TAG, "Failed to preview stock clip in alarm editor", error)
-                stopPreview()
-                audioMessage = userFacingError(error, context.getString(R.string.editor_error_preview_failed))
-            }
-        }
-    }
-
-    fun selectStockClip(clip: StockClip) {
+    // 무료 버킷 선택: 해당 (보이스·버킷·앱 언어)의 N개 클립을 모두 로컬 캐시한 뒤(이미 있으면 재사용),
+    // 대표(변형0) 클립을 단일 재생 폴백으로 박고 회전용 cacheKey 목록을 상태에 저장한다.
+    fun selectBucket(bucket: String) {
         if (isSaving || previewPreparing) return
+        val profileId = editor.voiceProfileId ?: return
+        val clips = stockClips
+            .filter { it.voiceProfileId == profileId && it.category == bucket && (it.language ?: "ko") == appBucketLanguage }
+            .sortedBy { it.variant }
+        if (clips.isEmpty()) return
         scope.launch {
             runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = audioBytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "stock_${clip.messageId}",
-                        cacheKey = "stock_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
+                val keys = mutableListOf<String>()
+                val cachedClips = ArrayList<CachedAlarmAudio>(clips.size)
+                clips.forEach { clip ->
+                    val cacheKey = "stock_${clip.messageId}"
+                    val cached = audioStore.getCachedAudio(cacheKey) ?: run {
+                        val response = onDownloadStockAudio(clip.messageId)
+                        withContext(Dispatchers.IO) {
+                            audioStore.cacheGeneratedAudio(
+                                bytes = Base64.decode(response.audioBase64, Base64.DEFAULT),
+                                format = response.audioFormat,
+                                rawAudioUri = response.audioUrl,
+                                displayName = cacheKey,
+                                cacheKey = cacheKey,
+                                messageId = clip.messageId,
+                            )
+                        }
+                    }
+                    keys.add(cached.cacheKey ?: cacheKey)
+                    cachedClips.add(cached)
                 }
-            }.onSuccess { cached ->
-                editor.setStockClipAudio(
-                    audio = cached,
-                    profileId = clip.voiceProfileId,
-                    messageId = clip.messageId,
-                    text = clip.text,
+                keys to cachedClips
+            }.onSuccess { (keys, cachedClips) ->
+                val representative = cachedClips.firstOrNull() ?: return@onSuccess
+                val first = clips.first()
+                editor.setBucketAudio(
+                    audio = representative,
+                    profileId = profileId,
+                    messageId = first.messageId,
+                    text = first.text,
+                    language = appBucketLanguage,
+                    bucket = bucket,
+                    clipKeys = keys,
                 )
-                audioMessage = context.getString(R.string.editor_stock_clip_selected)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to select stock clip in alarm editor", error)
+                Log.e(TAG, "Failed to select free bucket in alarm editor bucket=$bucket", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_stock_clip_select_failed))
             }
         }
@@ -884,30 +872,30 @@ internal fun AlarmEditorScreen(
         }
     }
 
-    // 무료 플랜: 음성 모드는 시스템 스톡 보이스 + 프리셋 랜덤 문구 조합으로 고정.
-    // 녹음/파일·직접 입력·동적 문구·번역은 유료 게이트 (백엔드도 동일 규칙으로 차단).
-    LaunchedEffect(freeVoiceTier, editor.playMode) {
+    // 무료 플랜: 음성 모드는 시스템 스톡 보이스 + 버킷(기상/약) 회전으로 고정.
+    // 개별 문구 선택·직접 입력·동적(날씨/운세) 문구·번역·랜덤 생성은 모두 유료 게이트.
+    // 버킷 회전은 랜덤 생성과 무관하므로 voiceRandomPrompt=false 로 두고, 앱 로케일 언어를 쓴다.
+    LaunchedEffect(freeVoiceTier, editor.playMode, editor.voiceProfileId, stockClips, appBucketLanguage) {
         if (freeVoiceTier && editor.playMode != AlarmPlayModes.ALARM_ONLY) {
             if (editor.voiceSource != VoiceSources.TTS_PROFILE) {
                 editor.voiceSource = VoiceSources.TTS_PROFILE
                 editor.clearAudio()
                 editor.clearTtsMeta()
+                editor.selectedBucket = null
             }
-            if (!editor.voiceRandomPrompt) {
-                editor.voiceRandomPrompt = true
-                editor.clearTtsMeta()
-            }
-            if (normalizedRandomPromptContext(editor.voiceRandomContext) != "preset") {
-                editor.voiceRandomContext = "preset"
-                editor.clearTtsMeta()
-            }
-            if (editor.voiceLanguage != "ko") {
-                editor.voiceLanguage = "ko"
-                editor.clearTtsMeta()
-            }
-            if (editor.voiceTranslationEnabled) {
-                editor.voiceTranslationEnabled = false
-                editor.clearTtsMeta()
+            if (editor.voiceRandomPrompt) editor.voiceRandomPrompt = false
+            if (editor.voiceTranslationEnabled) editor.voiceTranslationEnabled = false
+            if (editor.voiceLanguage != appBucketLanguage) editor.voiceLanguage = appBucketLanguage
+            // 버킷 미선택(신규) 또는 보이스 변경 시, 사용 가능한 버킷 중 현재 선택(없으면 첫째)을 해석한다.
+            val profileId = editor.voiceProfileId
+            if (!profileId.isNullOrBlank()) {
+                val buckets = freeBucketsFor(stockClips, profileId, appBucketLanguage)
+                val target = editor.selectedBucket?.takeIf { it in buckets } ?: buckets.firstOrNull()
+                if (target != null &&
+                    (editor.selectedBucket != target || editor.bucketResolvedForProfileId != profileId)
+                ) {
+                    selectBucket(target)
+                }
             }
         }
     }
@@ -1195,10 +1183,7 @@ internal fun AlarmEditorScreen(
                                 voiceProfileBusy = voiceProfileBusy,
                                 stockClips = stockClips,
                                 defaultVoiceId = defaultVoiceId,
-                                selectedStockMessageId = editor.ttsMessageId,
-                                previewingStockMessageId = previewingStockMessageId,
-                                onPreviewStockClip = { clip -> previewStockClip(clip) },
-                                onSelectStockClip = { clip -> selectStockClip(clip) },
+                                onSelectBucket = { bucket -> selectBucket(bucket) },
                                 freeVoiceTier = freeVoiceTier,
                                 onLockedFeature = ::showVoicePlanGate,
                                 audioMessage = audioMessage,

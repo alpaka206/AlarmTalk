@@ -88,6 +88,8 @@ internal class AlarmEditorState(
     alarmVolumePercent: Int,
     alarmSoundUri: String?,
     alarmSoundLabel: String?,
+    bucketId: String? = null,
+    bucketClipKeysJson: String? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -126,6 +128,11 @@ internal class AlarmEditorState(
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
     var alarmSoundUri by mutableStateOf(alarmSoundUri)
     var alarmSoundLabel by mutableStateOf(alarmSoundLabel)
+    // 무료 버킷 회전: 선택한 버킷 카테고리, 미리 캐시한 N개 클립의 cacheKey JSON,
+    // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
+    var selectedBucket by mutableStateOf(bucketId)
+    var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
+    var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -202,6 +209,10 @@ internal class AlarmEditorState(
             voiceRepeat = if (alarmOnly) true else voiceRepeat,
             voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
+            // 실제 버킷 회전 알람일 때만 저장 — 유료가 기존 버킷 알람을 일반/랜덤 TTS 로 바꾸면
+            // 남아 있던 selectedBucket/clipKeys 를 persist 하지 않도록(울림 시 옛 버킷 오디오 방지).
+            bucketId = if (isActiveBucketAlarm()) selectedBucket else null,
+            bucketClipKeysJson = if (isActiveBucketAlarm()) bucketClipKeysJson else null,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
@@ -213,6 +224,7 @@ internal class AlarmEditorState(
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
         rawAudioUri = audio.rawAudioUri
+        clearBucketSelection()
         clearTtsMeta()
     }
 
@@ -225,6 +237,21 @@ internal class AlarmEditorState(
     fun clearTtsMeta() {
         ttsMessageId = null
         generatedTtsKey = null
+    }
+
+    /** 현재 편집 상태가 실제 버킷 회전 알람인지 — 대표 클립이 버킷 클립 목록에 포함될 때만 true. */
+    private fun isActiveBucketAlarm(): Boolean {
+        if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        if (selectedBucket == null) return false
+        val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
+        return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
+    }
+
+    /** 버킷(회전) 메타데이터를 비운다. 일반/생성/녹음 등 비-버킷 경로로 전환할 때 호출. */
+    private fun clearBucketSelection() {
+        selectedBucket = null
+        bucketClipKeysJson = null
+        bucketResolvedForProfileId = null
     }
 
     fun selectVoiceProfile(profileId: String?) {
@@ -272,6 +299,8 @@ internal class AlarmEditorState(
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
+        // 생성 TTS 로 전환 — 버킷 메타를 비워 activeVoiceLanguage/저장이 옛 버킷에 끌리지 않게.
+        clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
@@ -291,6 +320,7 @@ internal class AlarmEditorState(
         voiceListenerTitleOverride = ""
         voiceRandomPrompt = false
         voiceTranslationEnabled = false
+        clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
@@ -299,8 +329,38 @@ internal class AlarmEditorState(
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
+    /**
+     * 무료 버킷 선택 결과를 상태에 반영한다. 대표(변형0) 클립을 단일 재생 폴백으로 박고,
+     * 회전용 N개 클립의 cacheKey 목록을 저장한다. 랜덤 문구 생성과는 무관(voiceRandomPrompt=false).
+     */
+    fun setBucketAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        messageId: String,
+        text: String,
+        language: String,
+        bucket: String,
+        clipKeys: List<String>,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceListenerTitleOverride = ""
+        voiceRandomPrompt = false
+        voiceTranslationEnabled = false
+        voiceText = text
+        voiceLanguage = language
+        localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
+        rawAudioUri = audio.rawAudioUri
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        selectedBucket = bucket
+        bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
+        bucketResolvedForProfileId = profileId
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    }
+
     fun activeVoiceLanguage(): String =
-        if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
+        if (selectedBucket != null || voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
@@ -315,6 +375,7 @@ internal class AlarmEditorState(
         voiceText = message.text
         voiceCategory = message.category ?: "custom"
         voiceRandomPrompt = false
+        clearBucketSelection()
         localAudioUri = null
         audioCacheKey = null
         rawAudioUri = message.audioUrl
@@ -334,6 +395,7 @@ internal class AlarmEditorState(
         voiceText = text
         voiceCategory = category ?: "custom"
         voiceRandomPrompt = false
+        clearBucketSelection()
         this.voiceProfileId = voiceProfileId
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
@@ -383,6 +445,8 @@ internal class AlarmEditorState(
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
                 alarmSoundUri = alarm?.alarmSoundUri,
                 alarmSoundLabel = alarm?.alarmSoundLabel,
+                bucketId = alarm?.bucketId,
+                bucketClipKeysJson = alarm?.bucketClipKeysJson,
             )
         }
     }

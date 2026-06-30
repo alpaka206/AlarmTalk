@@ -1320,14 +1320,14 @@ tts.get('/stock-clips', async (c) => {
   const db = getDB(c.env);
   const result = await db.execute({
     sql: `SELECT m.id AS message_id, m.voice_profile_id, m.text, m.category, m.language,
-                 m.delivery_tags_json, m.audio_url, vp.name AS voice_name
+                 m.variant, m.delivery_tags_json, m.audio_url, vp.name AS voice_name
           FROM messages m
           JOIN voice_profiles vp ON vp.id = m.voice_profile_id
           WHERE COALESCE(m.is_preset, 0) = 1
             AND COALESCE(vp.is_system, 0) = 1
             AND vp.deleted_at IS NULL
             AND m.audio_url IS NOT NULL
-          ORDER BY vp.id ASC, m.category ASC, m.language ASC`,
+          ORDER BY vp.id ASC, m.category ASC, m.language ASC, m.variant ASC`,
     args: [],
   });
   return c.json({
@@ -1337,6 +1337,7 @@ tts.get('/stock-clips', async (c) => {
       voice_name: row.voice_name,
       category: row.category,
       language: row.language,
+      variant: Number(row.variant ?? 0),
       text: row.text,
       audio_url: row.audio_url,
       tags: parseDeliveryTags(row.delivery_tags_json),

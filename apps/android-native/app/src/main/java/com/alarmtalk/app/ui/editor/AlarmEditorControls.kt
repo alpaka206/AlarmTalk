@@ -434,6 +434,31 @@ internal val TtsCategories: List<Pair<String, Int>> = listOf(
     "exercise" to R.string.editor2_cat_exercise,
 )
 
+/**
+ * 무료 플랜이 알람 "버킷"으로 고를 수 있는 카테고리(노출 순서). 실제 노출은 stockClips
+ * manifest 와 교차한다 → 서버에 버킷을 추가/재시드하면 여기에만 추가하면 칩이 늘어난다.
+ */
+internal val FreeBucketOrder: List<String> = listOf("morning", "medication")
+
+/** 버킷 칩 라벨. 카테고리 라벨 문자열을 재사용한다(기상·약 …). */
+internal fun freeBucketLabelRes(category: String): Int =
+    (TtsCategories.firstOrNull { it.first == category }?.second) ?: R.string.editor2_cat_morning
+
+/** stockClips manifest 에서 (해당 보이스·언어) 로 실제 존재하는 무료 버킷을 노출 순서대로. */
+internal fun freeBucketsFor(
+    stockClips: List<com.alarmtalk.app.network.StockClip>,
+    voiceProfileId: String?,
+    language: String,
+): List<String> {
+    if (voiceProfileId.isNullOrBlank()) return emptyList()
+    val available = stockClips
+        .asSequence()
+        .filter { it.voiceProfileId == voiceProfileId && (it.language ?: "ko") == language }
+        .mapNotNull { it.category }
+        .toSet()
+    return FreeBucketOrder.filter { it in available }
+}
+
 internal val RandomPromptContexts: List<Pair<String, Int>> = listOf(
     // 추가 정보 없이 바로 쓰는 고정 문구 풀 — 새 알람의 기본값. 무료 플랜은 이것만 사용 가능.
     "preset" to R.string.editor2_ctx_preset,
