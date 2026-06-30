@@ -1,0 +1,51 @@
+name: Android Build
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "feat/**"
+      - "fix/**"
+      - "ci/**"
+      - "refactor/**"
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-build:
+    name: AlarmTalk (Android devDebug)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/android-native
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Assemble devDebug + run unit tests
+        run: ./gradlew :app:assembleDevDebug :app:testDevDebugUnitTest --stacktrace
+
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-unit-test-report
+          path: apps/android-native/app/build/reports/tests/testDevDebugUnitTest
+          retention-days: 7
+          if-no-files-found: warn

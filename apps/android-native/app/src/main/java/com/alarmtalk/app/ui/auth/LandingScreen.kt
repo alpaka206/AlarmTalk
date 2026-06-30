@@ -4,10 +4,8 @@ import android.media.MediaPlayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,21 +13,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -72,10 +67,11 @@ private fun landingPalette(): LandingPalette {
             surface = Color(0xFF14161E),
             surfaceRaised = Color(0xFF191C25),
             line = Color(0xFF2D313D),
-            text = Color(0xFFF7F7FA),
-            muted = Color(0xFFA8AEBA),
-            accent = Color(0xFFA8D4FF),
-            accentText = Color(0xFF08243C),
+            text = Color(0xFFF7F4EE),
+            muted = Color(0xFFB0A89C),
+            // 브랜드 블루(테마 단일 출처) 사용 — 랜딩만 코랄로 어긋나지 않도록 light 분기와 동일하게 scheme 참조.
+            accent = scheme.primary,
+            accentText = scheme.onPrimary,
         )
     } else {
         LandingPalette(
@@ -91,88 +87,82 @@ private fun landingPalette(): LandingPalette {
     }
 }
 
+/**
+ * 첫 진입 랜딩 — 가치 제안(히어로 + 목소리 미리듣기)만 보여주고, 단일 "시작하기" 로
+ * 로그인 폼으로 넘긴다. 로그인/가입 선택지는 이 화면에 두지 않는다.
+ */
 @Composable
 internal fun LandingScreen(
     contentPadding: PaddingValues,
-    busy: Boolean,
-    onGoToLogin: () -> Unit,
-    onGoToRegister: () -> Unit,
-    onGoogleSignIn: () -> Unit,
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
 ) {
     val colors = landingPalette()
-    BoxWithConstraints(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(contentPadding),
+            .padding(contentPadding)
+            .padding(horizontal = 22.dp, vertical = 22.dp),
     ) {
-        val compact = maxHeight < 840.dp
-        Column(
+        Spacer(Modifier.height(16.dp))
+        WakerBrandHeader()
+        Spacer(Modifier.height(18.dp))
+        Text(
+            text = stringResource(R.string.auth_landing_headline),
+            style = MaterialTheme.typography.displaySmall,
+            color = colors.text,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.weight(1f))
+        AlarmIdentityPreview(colors = colors)
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onLogin,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = maxHeight)
-                .verticalScroll(rememberScrollState())
-                .padding(
-                    horizontal = 22.dp,
-                    vertical = if (compact) 16.dp else 22.dp,
-                ),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .height(56.dp),
+            shape = WakerButtonShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = colors.accent,
+                contentColor = colors.accentText,
+            ),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                WakerBrandHeader(colors = colors)
-                Spacer(Modifier.height(if (compact) 28.dp else 48.dp))
-                Text(
-                    text = "좋아하는 목소리로\n깨어나는 알람",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = colors.text,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(if (compact) 24.dp else 34.dp))
-                AlarmIdentityPreview(colors = colors)
-            }
-            Spacer(Modifier.height(if (compact) 24.dp else 36.dp))
-            LandingAuthPanel(
-                colors = colors,
-                busy = busy,
-                onGoToLogin = onGoToLogin,
-                onGoToRegister = onGoToRegister,
-                onGoogleSignIn = onGoogleSignIn,
+            Text(
+                text = stringResource(R.string.auth_title_login),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onRegister,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = WakerButtonShape,
+            border = BorderStroke(1.dp, colors.line),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
+        ) {
+            Text(
+                text = stringResource(R.string.auth_title_register),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
             )
         }
     }
 }
 
 @Composable
-private fun WakerBrandHeader(colors: LandingPalette) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(
-            painter = painterResource(R.drawable.ic_brand_logo),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(12.dp)),
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                text = "AlarmTalk",
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.text,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "Voice alarm",
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.muted,
-            )
-        }
-    }
+private fun WakerBrandHeader() {
+    Image(
+        painter = painterResource(R.drawable.ic_brand_logo),
+        contentDescription = "AlarmTalk",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .size(48.dp)
+            .clip(WakerTileShape),
+    )
 }
 
 @Composable
@@ -220,13 +210,13 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+        shape = WakerHeroShape,
         color = colors.surface,
         border = BorderStroke(1.dp, colors.line),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -235,7 +225,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        text = "내일 아침",
+                        text = stringResource(R.string.auth_landing_tomorrow_morning),
                         style = MaterialTheme.typography.bodyMedium,
                         color = colors.muted,
                     )
@@ -249,7 +239,7 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                 Surface(
                     onClick = ::togglePreview,
                     modifier = Modifier.size(54.dp),
-                    shape = RoundedCornerShape(999.dp),
+                    shape = WakerPillShape,
                     color = colors.accent.copy(alpha = 0.14f),
                     contentColor = colors.accent,
                     border = BorderStroke(1.dp, colors.accent.copy(alpha = 0.28f)),
@@ -257,16 +247,28 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                            contentDescription = if (isPlaying) "미리듣기 일시정지" else "목소리 미리듣기",
+                            contentDescription = if (isPlaying) stringResource(R.string.auth_landing_preview_pause) else stringResource(R.string.auth_landing_preview_play),
                             modifier = Modifier.size(29.dp),
                         )
                     }
                 }
             }
+            Text(
+                text = stringResource(R.string.auth_landing_sample_message),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = colors.text,
+            )
             LandingPreviewWaveform(
                 colors = colors,
                 progress = playbackProgress,
                 isPlaying = isPlaying,
+            )
+            Text(
+                text = stringResource(R.string.auth_landing_sample_voice),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.muted,
+                modifier = Modifier.align(Alignment.End),
             )
         }
     }
@@ -301,99 +303,9 @@ private fun LandingPreviewWaveform(
                     .height((9 + level * 34).dp)
                     .background(
                         color = color.copy(alpha = if (played) 1f else 0.78f),
-                        shape = RoundedCornerShape(999.dp),
+                        shape = WakerPillShape,
                     ),
             )
-        }
-    }
-}
-
-@Composable
-private fun LandingAuthPanel(
-    colors: LandingPalette,
-    busy: Boolean,
-    onGoToLogin: () -> Unit,
-    onGoToRegister: () -> Unit,
-    onGoogleSignIn: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
-        color = colors.surfaceRaised,
-        border = BorderStroke(1.dp, colors.line),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(
-                modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = "시작하기",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = colors.text,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "로그인하면 목소리 알람을 만들 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.muted,
-                )
-            }
-            Column(
-                modifier = Modifier.padding(horizontal = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                GoogleSignInButton(
-                    enabled = !busy,
-                    onClick = onGoogleSignIn,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = onGoToLogin,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = WakerButtonShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.accent,
-                        contentColor = colors.accentText,
-                        disabledContainerColor = colors.accent.copy(alpha = 0.28f),
-                        disabledContentColor = colors.accentText.copy(alpha = 0.45f),
-                    ),
-                ) {
-                    Text("이메일로 로그인")
-                }
-            }
-            HorizontalDivider(color = colors.line)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "처음 사용하시나요?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.muted,
-                )
-                OutlinedButton(
-                    onClick = onGoToRegister,
-                    enabled = !busy,
-                    shape = WakerButtonShape,
-                    border = BorderStroke(1.dp, colors.line),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = colors.text,
-                        disabledContentColor = colors.muted.copy(alpha = 0.45f),
-                    ),
-                ) {
-                    Text("계정 만들기")
-                }
-            }
         }
     }
 }

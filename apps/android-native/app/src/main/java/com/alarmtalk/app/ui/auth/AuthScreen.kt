@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -59,6 +61,7 @@ internal fun AuthScreen(
     onConfirmEmailVerification: (String, String) -> Unit,
     onSwitchMode: () -> Unit,
     onGoogleSignIn: () -> Unit,
+    onFindPassword: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -71,7 +74,12 @@ internal fun AuthScreen(
     val emailLooksValid = Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()
     val passwordAtLeastMin = password.length >= 8
     val passwordUnderMax = password.length <= 128
-    val passwordLengthValid = passwordAtLeastMin && passwordUnderMax
+    val passwordHasLetter = password.any { it.isLetter() }
+    val passwordHasDigit = password.any { it.isDigit() }
+    val passwordHasLetterAndDigit = passwordHasLetter && passwordHasDigit
+    // 서버 정책(@alarmtalk/shared PasswordSchema)과 일치: 8~128자 + 영문·숫자 각 1자 이상.
+    val passwordPolicyValid =
+        passwordAtLeastMin && passwordUnderMax && passwordHasLetterAndDigit
     val passwordMatches = password.isNotBlank() && password == confirmPassword
     val isEmailVerified = mode == AuthMode.Login || emailVerified == normalizedEmail
     val codeSentForEmail = emailVerificationSentTo == normalizedEmail
@@ -81,7 +89,7 @@ internal fun AuthScreen(
         name.isNotBlank() &&
             emailLooksValid &&
             isEmailVerified &&
-            passwordLengthValid &&
+            passwordPolicyValid &&
             passwordMatches
     }
 
@@ -98,19 +106,19 @@ internal fun AuthScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "뒤로")
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.auth_back))
             }
             Text(
-                text = if (mode == AuthMode.Login) "로그인" else "회원가입",
+                text = if (mode == AuthMode.Login) stringResource(R.string.auth_title_login) else stringResource(R.string.auth_title_register),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
             )
         }
         Text(
             text = if (mode == AuthMode.Login) {
-                "좋아하는 목소리 알람을 다시 불러올게요."
+                stringResource(R.string.auth_subtitle_login)
             } else {
-                "목소리 알람을 만들 계정을 준비해요."
+                stringResource(R.string.auth_subtitle_register)
             },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -120,7 +128,7 @@ internal fun AuthScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it.take(30) },
-                label = { Text("이름") },
+                label = { Text(stringResource(R.string.auth_label_name)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -136,7 +144,7 @@ internal fun AuthScreen(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("이메일") },
+            label = { Text(stringResource(R.string.auth_label_email)) },
             singleLine = true,
             enabled = !busy,
             shape = WakerInputShape,
@@ -161,9 +169,9 @@ internal fun AuthScreen(
             ) {
                 Text(
                     when {
-                        isEmailVerified -> "이메일 인증 완료"
-                        codeSentForEmail -> "인증 코드 다시 받기"
-                        else -> "이메일 인증"
+                        isEmailVerified -> stringResource(R.string.auth_email_verify_done)
+                        codeSentForEmail -> stringResource(R.string.auth_email_verify_resend)
+                        else -> stringResource(R.string.auth_email_verify)
                     },
                 )
             }
@@ -177,7 +185,7 @@ internal fun AuthScreen(
                     OutlinedTextField(
                         value = emailCode,
                         onValueChange = { emailCode = it.filter(Char::isDigit).take(6) },
-                        label = { Text("인증 코드") },
+                        label = { Text(stringResource(R.string.auth_label_verification_code)) },
                         singleLine = true,
                         enabled = !busy,
                         shape = WakerInputShape,
@@ -196,23 +204,23 @@ internal fun AuthScreen(
                         border = wakerCardBorder(),
                         colors = wakerOutlinedButtonColors(),
                     ) {
-                        Text("확인")
+                        Text(stringResource(R.string.auth_confirm))
                     }
                 }
                 Text(
-                    text = "메일로 받은 6자리 코드를 입력해 주세요.",
+                    text = stringResource(R.string.auth_verification_code_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             } else if (isEmailVerified) {
-                PasswordRuleRow(text = "이메일 인증 완료", satisfied = true)
+                PasswordRuleRow(text = stringResource(R.string.auth_email_verify_done), satisfied = true)
             }
         }
 
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("비밀번호") },
+            label = { Text(stringResource(R.string.auth_label_password)) },
             singleLine = true,
             enabled = !busy,
             shape = WakerInputShape,
@@ -222,7 +230,7 @@ internal fun AuthScreen(
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        contentDescription = if (passwordVisible) "비밀번호 숨기기" else "비밀번호 보기",
+                        contentDescription = if (passwordVisible) stringResource(R.string.auth_password_hide) else stringResource(R.string.auth_password_show),
                     )
                 }
             },
@@ -236,14 +244,14 @@ internal fun AuthScreen(
         if (mode == AuthMode.Register) {
             PasswordRules(
                 passwordAtLeastMin = passwordAtLeastMin,
-                passwordUnderMax = passwordUnderMax,
+                passwordHasLetterAndDigit = passwordHasLetterAndDigit,
                 passwordMatches = passwordMatches,
             )
 
             OutlinedTextField(
                 value = confirmPassword,
                 onValueChange = { confirmPassword = it },
-                label = { Text("비밀번호 확인") },
+                label = { Text(stringResource(R.string.auth_label_confirm_password)) },
                 singleLine = true,
                 enabled = !busy,
                 shape = WakerInputShape,
@@ -263,16 +271,16 @@ internal fun AuthScreen(
                                 Icons.Outlined.Visibility
                             },
                             contentDescription = if (confirmPasswordVisible) {
-                                "비밀번호 확인 숨기기"
+                                stringResource(R.string.auth_confirm_password_hide)
                             } else {
-                                "비밀번호 확인 보기"
+                                stringResource(R.string.auth_confirm_password_show)
                             },
                         )
                     }
                 },
                 supportingText = {
                     if (confirmPassword.isNotBlank() && !passwordMatches) {
-                        Text("비밀번호가 일치하지 않아요.")
+                        Text(stringResource(R.string.auth_password_mismatch))
                     }
                 },
                 keyboardOptions = KeyboardOptions(
@@ -296,28 +304,76 @@ internal fun AuthScreen(
         ) {
             Text(
                 when {
-                    busy -> "처리 중"
-                    mode == AuthMode.Register -> "계정 만들기"
-                    else -> "로그인"
+                    busy -> stringResource(R.string.auth_processing)
+                    mode == AuthMode.Register -> stringResource(R.string.auth_create_account)
+                    else -> stringResource(R.string.auth_title_login)
                 },
             )
         }
 
-        GoogleSignInButton(
-            enabled = !busy,
-            onClick = onGoogleSignIn,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        if (mode == AuthMode.Login) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.auth_forgot_password),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onFindPassword) {
+                    Text(stringResource(R.string.auth_find_password))
+                }
+            }
+            // SSO 구분선 — 소셜 로그인은 여기 아래로 묶고, 추후 제공자 추가 시 이 섹션에 덧붙인다.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HorizontalDivider(
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                Text(
+                    text = stringResource(R.string.auth_or),
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                HorizontalDivider(
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+            }
+            GoogleSignInButton(
+                enabled = !busy,
+                onClick = onGoogleSignIn,
+                modifier = Modifier.fillMaxWidth(),
+                label = stringResource(R.string.common_google_login),
+            )
+        }
 
-        TextButton(
-            onClick = onSwitchMode,
-            enabled = !busy,
+        Row(
             modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                if (mode == AuthMode.Login) "처음이신가요? 회원가입"
-                else "이미 계정이 있나요? 로그인",
+                text = if (mode == AuthMode.Login) {
+                    stringResource(R.string.auth_landing_first_time)
+                } else {
+                    stringResource(R.string.auth_already_have_account)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            TextButton(onClick = onSwitchMode, enabled = !busy) {
+                Text(
+                    if (mode == AuthMode.Login) stringResource(R.string.auth_title_register)
+                    else stringResource(R.string.auth_title_login),
+                )
+            }
         }
     }
 }
@@ -325,13 +381,13 @@ internal fun AuthScreen(
 @Composable
 private fun PasswordRules(
     passwordAtLeastMin: Boolean,
-    passwordUnderMax: Boolean,
+    passwordHasLetterAndDigit: Boolean,
     passwordMatches: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        PasswordRuleRow(text = "8자 이상", satisfied = passwordAtLeastMin)
-        PasswordRuleRow(text = "128자 이하", satisfied = passwordUnderMax)
-        PasswordRuleRow(text = "비밀번호 확인 일치", satisfied = passwordMatches)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_min), satisfied = passwordAtLeastMin)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_alnum), satisfied = passwordHasLetterAndDigit)
+        PasswordRuleRow(text = stringResource(R.string.auth_password_rule_match), satisfied = passwordMatches)
     }
 }
 

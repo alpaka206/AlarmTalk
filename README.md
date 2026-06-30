@@ -25,9 +25,9 @@ Most voice-alarm apps depend on push notifications or server cron, which can sil
 | Backend | TypeScript 6 · Hono 4 · Cloudflare Workers · Zod · Vitest |
 | Database | Turso (libSQL / SQLite) |
 | Storage | Cloudflare R2 (deterministic TTS cache) |
-| Voice AI | ElevenLabs Instant Voice Clone + TTS |
+| Voice AI | ElevenLabs — Instant Voice Clone + TTS |
 | Auth | JWT (HS256, 7d) · Google ID token · Apple ID token |
-| Landing | Static HTML + Tailwind CDN + Iconify (`apps/landing`) |
+| Landing | Next.js (App Router) + next-intl + Tailwind v4 (`apps/landing`) |
 
 ## Repository Layout
 
@@ -76,7 +76,7 @@ If the Android SDK is not auto-detected, create an ignored `apps/android-native/
 cd apps/ios-native
 brew install xcodegen
 xcodegen generate
-open VoiceAlarmNative.xcodeproj
+open AlarmTalkNative.xcodeproj
 ```
 
 ## Non-negotiable Rules

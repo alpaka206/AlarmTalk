@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -16,10 +15,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.alarmtalk.app.WakerHeroShape
 import com.alarmtalk.app.network.AuthSession
+import com.alarmtalk.app.wakerCardBorder
 
 /**
  * 로그인 후 첫 진입에서 알람 앱에 필요한 권한을 한 번에 안내한다.
@@ -69,20 +71,22 @@ internal fun LoginPermissionGate(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .widthIn(max = 520.dp),
-            shape = RoundedCornerShape(24.dp),
+            shape = WakerHeroShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
+            shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(
-                    title = "알람 권한을 허용해 주세요",
+                    title = stringResource(R.string.r3app_permission_gate_title),
                     onDismiss = { visible = false },
                 )
                 Text(
-                    text = "정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.",
+                    text = stringResource(R.string.r3app_permission_gate_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -90,6 +94,7 @@ internal fun LoginPermissionGate(
                     permissions = permissions,
                     onRequestPermission = onRequestPermission,
                     onRequestAllPermissions = onRequestAllPermissions,
+                    showHeader = false,
                 )
             }
         }

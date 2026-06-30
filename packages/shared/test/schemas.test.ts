@@ -63,6 +63,26 @@ describe('RegisterRequestSchema', () => {
       }),
     ).toThrow();
   });
+  it('rejects password without a digit', () => {
+    expect(() =>
+      RegisterRequestSchema.parse({
+        email: 'kim@example.com',
+        password: 'onlyletters',
+        name: 'kim',
+        email_verification_code: '123456',
+      }),
+    ).toThrow();
+  });
+  it('rejects password without a letter', () => {
+    expect(() =>
+      RegisterRequestSchema.parse({
+        email: 'kim@example.com',
+        password: '12345678',
+        name: 'kim',
+        email_verification_code: '123456',
+      }),
+    ).toThrow();
+  });
   it('rejects malformed email', () => {
     expect(() =>
       RegisterRequestSchema.parse({

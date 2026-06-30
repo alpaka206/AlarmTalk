@@ -29,13 +29,13 @@ payment details, and processor list match the final production setup.
 
 ## Release Blockers
 
-- Confirm the final public brand: `AlarmTalk` (Korean: `알람톡`).
-- Confirm operator entity, representative, address, business registration number,
-  mail-order business registration if paid plans are sold directly.
-- Confirm support/privacy email domains are live.
+- Public brand: `AlarmTalk` (Korean: `알람톡`). Operator entity: 베일런(Vailen),
+  대표 김규원, 사업자등록번호 819-32-01933, 인천광역시 서구 서곶로 45, 103동 4301호.
+  Confirm 통신판매업 신고 if paid plans are sold directly.
+- Confirm support/privacy contact is live (current legal docs use `gyuwon05@gmail.com`).
 - Confirm third-party processors and countries:
   Cloudflare, Turso/libSQL, ElevenLabs, Sentry, Google, Apple, email providers,
-  payment providers.
+  payment providers. Confirm ElevenLabs terms, privacy policy, DPA, retention settings, and sub-processor list before public release.
 - Confirm whether voice data is treated as biometric information under the final
   product flow and jurisdiction review. These drafts conservatively treat user
   voice recordings and cloned voice profiles as highly sensitive voice data that

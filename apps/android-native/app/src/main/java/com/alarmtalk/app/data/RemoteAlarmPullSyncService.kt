@@ -4,10 +4,10 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.alarm.SocialNotificationFactory
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import java.util.UUID
 
 data class RemoteAlarmPullResult(
@@ -25,11 +25,11 @@ internal class RemoteAlarmPullSyncService(
     private val context: android.content.Context,
 ) {
     suspend fun pullReceivedAlarms(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         token: String,
         myUserId: String,
     ): RemoteAlarmPullResult {
-        val authorization = VoiceAlarmApiClient.bearer(token)
+        val authorization = AlarmTalkApiClient.bearer(token)
         // 서버는 user_id IN (...) OR target_user_id IN (...) 로 이미 스코프해서 보내준다.
         // 그중 "내가 만든 게 아니라 누군가가 나를 target 으로 만든" 알람만 가져온다.
         // 기존에는 isReceivedFamilyAlarm(=family/family-voice 카테고리)로 좁혀져 있어서
@@ -67,6 +67,11 @@ internal class RemoteAlarmPullSyncService(
                 // upsert 를 먼저. schedule 이 권한 부족 등으로 throw 해도 알람은
                 // 로컬 DB 에 남아 리스트에 표시되고, 권한 받은 뒤 reschedule 가능.
                 alarmDao.upsert(local)
+                // 받은 알람의 메시지(음성)가 새 캐시로 교체됐으면 이전 캐시는 미참조일 때만 정리.
+                val previousCacheKey = existing?.audioCacheKey
+                if (!previousCacheKey.isNullOrBlank() && previousCacheKey != local.audioCacheKey) {
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, previousCacheKey)
+                }
                 if (local.enabled) {
                     runCatching { alarmScheduler.schedule(local) }
                         .onFailure { error ->
@@ -106,7 +111,7 @@ internal class RemoteAlarmPullSyncService(
     }
 
     private suspend fun buildLocalAlarm(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         authorization: String,
         remote: RemoteAlarm,
         existing: AlarmEntity?,
@@ -147,7 +152,7 @@ internal class RemoteAlarmPullSyncService(
             remote.wakeMode == "voice_only" -> AlarmPlayModes.VOICE_ONLY
             else -> AlarmPlayModes.ALARM_VOICE
         }
-        val label = receivedRemoteAlarmLabel(remote.senderName, remote.senderEmail)
+        val label = receivedRemoteAlarmLabel(context, remote.senderName, remote.senderEmail)
 
         return AlarmEntity(
             id = existing?.id ?: UUID.randomUUID().toString(),
@@ -169,6 +174,7 @@ internal class RemoteAlarmPullSyncService(
             rawAudioUri = cachedAudio?.rawAudioUri,
             voiceSource = if (hasVoiceAudio) VoiceSources.SERVER_TTS else VoiceSources.LOCAL_AUDIO,
             voiceProfileId = remote.voiceProfileId.takeIf { hasVoiceAudio },
+            voiceListenerTitle = null,
             voiceText = remote.messageText.takeIf { hasVoiceAudio },
             voiceCategory = remote.category.takeIf { hasVoiceAudio },
             voiceLanguage = null,
@@ -183,6 +189,8 @@ internal class RemoteAlarmPullSyncService(
             voiceRepeat = existing?.voiceRepeat ?: true,
             voiceVolumePercent = existing?.voiceVolumePercent ?: 100,
             ttsMessageId = remote.messageId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
+            // 받은 알람은 버킷 식별자만 보존(회전 클립은 미다운로드 → 대표 클립 단일 재생 폴백).
+            bucketId = remote.bucketId?.trim()?.takeIf { hasVoiceAudio && it.isNotBlank() },
             remoteAlarmId = remote.id,
             lastSyncedAtMillis = now,
             syncState = AlarmSyncStates.SYNCED,

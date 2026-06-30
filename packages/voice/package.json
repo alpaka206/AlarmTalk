@@ -1,5 +1,5 @@
 {
-  "name": "@voice-alarm/voice",
+  "name": "@alarmtalk/voice",
   "version": "0.1.0",
   "description": "Voice provider adapter layer (VoiceProvider interface + MockVoiceProvider) for voice_alarm monorepo",
   "type": "module",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "private": true
 }

@@ -1,9 +1,18 @@
+/**
+ * 인증 관련 요청/응답 스키마.
+ *
+ * 이메일+비밀번호 가입/로그인, 이메일 인증 코드(6자리), Google/Apple
+ * 소셜 로그인, 그리고 공통 인증 응답(JWT 토큰 + 사용자 요약)을 정의한다.
+ * 백엔드 `routes/auth.ts` 가 이 스키마로 입력을 검증한다.
+ */
 import { z } from 'zod';
 
 export const PasswordSchema = z
   .string()
   .min(8, '비밀번호는 최소 8자 이상이어야 합니다')
-  .max(128, '비밀번호는 최대 128자까지 허용됩니다');
+  .max(128, '비밀번호는 최대 128자까지 허용됩니다')
+  .regex(/[A-Za-z]/, '영문자를 최소 1자 포함해야 합니다')
+  .regex(/[0-9]/, '숫자를 최소 1자 포함해야 합니다');
 
 export const EmailVerificationCodeSchema = z
   .string()
@@ -19,6 +28,18 @@ export const EmailVerificationConfirmRequestSchema = z.object({
   code: EmailVerificationCodeSchema,
 });
 export type EmailVerificationConfirmRequest = z.infer<typeof EmailVerificationConfirmRequestSchema>;
+
+export const PasswordResetRequestSchema = z.object({
+  email: z.string().email(),
+});
+export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>;
+
+export const PasswordResetConfirmRequestSchema = z.object({
+  email: z.string().email(),
+  code: EmailVerificationCodeSchema,
+  password: PasswordSchema,
+});
+export type PasswordResetConfirmRequest = z.infer<typeof PasswordResetConfirmRequestSchema>;
 
 export const RegisterRequestSchema = z.object({
   email: z.string().email(),

@@ -22,6 +22,18 @@ import { isPaidVoicePlan } from './billing-helpers';
 
 const alarmMutation = new Hono<AppEnv>();
 
+/**
+ * 클라이언트가 보낸 IANA timezone 을 정규화한다. 푸시 스케줄러가 알람 HH:mm 을
+ * 이 시간대로 판정한다. 형식이 어긋나면 null (스케줄러가 Asia/Seoul 폴백).
+ */
+function normalizeTimezone(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 64) return null;
+  if (!/^[A-Za-z][A-Za-z0-9_+\-/]*$/.test(trimmed)) return null;
+  return trimmed;
+}
+
 function alarmUsesPaidVoice(body: {
   mode?: string | null;
   wake_mode?: string | null;
@@ -36,6 +48,92 @@ function alarmUsesPaidVoice(body: {
     !!body.voice_profile_id ||
     !!body.speaker_id ||
     !!body.raw_audio_url;
+}
+
+/**
+ * 무료 플랜도 시스템 스톡 보이스 기반 TTS 알람은 허용한다.
+ * 녹음/파일(raw_audio_url, speaker_id) 알람은 여전히 유료 전용.
+ */
+async function usesOnlySystemStockVoice(
+  db: ReturnType<typeof getDB>,
+  body: {
+    message_id?: string | null;
+    voice_profile_id?: string | null;
+    speaker_id?: string | null;
+    raw_audio_url?: string | null;
+  },
+): Promise<boolean> {
+  if (body.raw_audio_url || body.speaker_id) return false;
+  if (body.voice_profile_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM voice_profiles
+            WHERE id = ? AND COALESCE(is_system, 0) = 1 AND deleted_at IS NULL
+            LIMIT 1`,
+      args: [body.voice_profile_id],
+    });
+    return res.rows.length > 0;
+  }
+  if (body.message_id) {
+    const res = await db.execute({
+      sql: `SELECT 1 FROM messages m
+            JOIN voice_profiles vp ON vp.id = m.voice_profile_id
+            WHERE m.id = ? AND COALESCE(vp.is_system, 0) = 1
+            LIMIT 1`,
+      args: [body.message_id],
+    });
+    return res.rows.length > 0;
+  }
+  return false;
+}
+
+/**
+ * message_id 가 호출자(ownerIds) 소유이거나 시스템 스톡 프리셋인지 확인한다.
+ * POST 생성 경로(아래)와 GET /tts/messages/:id/audio 의 허용 규칙과 동일하게
+ * 맞춰, PATCH 에서 타인 메시지 id 를 알람에 끼워 넣는 IDOR 을 막는다.
+ */
+async function messageBelongsToCaller(
+  db: ReturnType<typeof getDB>,
+  messageId: string,
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const msg = await db.execute({
+    sql: `SELECT 1 FROM messages
+          WHERE id = ?
+            AND (
+              user_id IN (?, ?)
+              OR (
+                COALESCE(is_preset, 0) = 1
+                AND EXISTS (
+                  SELECT 1 FROM voice_profiles vp
+                  WHERE vp.id = messages.voice_profile_id
+                    AND COALESCE(vp.is_system, 0) = 1
+                )
+              )
+            )
+          LIMIT 1`,
+    args: [messageId, ...ownerIds],
+  });
+  return msg.rows.length > 0;
+}
+
+/**
+ * voice_profile_id 가 호출자 소유이거나 시스템 보이스인지 확인한다.
+ * 타인 voice_profile_id 를 알람에 기록하는 IDOR 을 막는다.
+ */
+async function voiceProfileBelongsToCaller(
+  db: ReturnType<typeof getDB>,
+  voiceProfileId: string,
+  ownerIds: [string, string],
+): Promise<boolean> {
+  const vp = await db.execute({
+    sql: `SELECT 1 FROM voice_profiles
+          WHERE id = ?
+            AND deleted_at IS NULL
+            AND (user_id IN (?, ?) OR COALESCE(is_system, 0) = 1)
+          LIMIT 1`,
+    args: [voiceProfileId, ...ownerIds],
+  });
+  return vp.rows.length > 0;
 }
 
 alarmMutation.post('/', async (c) => {
@@ -58,11 +156,16 @@ alarmMutation.post('/', async (c) => {
     speaker_id?: string;
     raw_audio_url?: string;
     raw_audio_duration_ms?: number;
+    timezone?: string;
+    // 무료 버킷 회전 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    // 대표(변형0) 스톡 클립을 그대로 유지하므로 회전 미지원 경로에선 폴백 단일 재생.
+    bucket_id?: string | null;
   }>();
 
   if (!body.time) {
     return c.json({ error: 'time is required', error_code: 'REQUIRED_FIELDS_MISSING' }, 400);
   }
+  const timezone = normalizeTimezone(body.timezone);
   // Three valid sources for what the alarm plays:
   //   1. message_id          → TTS / saved voice clip
   //   2. raw_audio_url       → user-recorded raw audio
@@ -168,7 +271,11 @@ alarmMutation.post('/', async (c) => {
   const creatorHasPaidVoice = !resolvedUserPk ||
     creatorPlanValue === undefined ||
     isPaidVoicePlan(creatorPlanValue);
-  if (!creatorHasPaidVoice && alarmUsesPaidVoice(body)) {
+  if (
+    !creatorHasPaidVoice &&
+    alarmUsesPaidVoice(body) &&
+    !(await usesOnlySystemStockVoice(db, body))
+  ) {
     return c.json(
       {
         error: 'Voice alarms require a paid plan.',
@@ -205,11 +312,11 @@ alarmMutation.post('/', async (c) => {
     });
     resolvedMessageId = placeholderMsgId;
   } else if (resolvedMessageId) {
-    const msg = await db.execute({
-      sql: 'SELECT id FROM messages WHERE id = ? AND user_id IN (?, ?)',
-      args: [resolvedMessageId, ...ownerIds],
-    });
-    if (msg.rows.length === 0) {
+    // 본인 소유 메시지뿐 아니라 시스템 스톡 클립(is_preset=1 + 시스템 보이스)도
+    // 허용한다. 무료 플랜은 스톡 클립으로 알람을 만들 수 있어야 하는데, 기존
+    // 검증은 user_id 만 봐서 스톡 클립 알람을 404 로 막고 있었다
+    // (GET /tts/messages/:id/audio 의 허용 규칙과 일치시킨다).
+    if (!(await messageBelongsToCaller(db, resolvedMessageId, ownerIds))) {
       return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
     }
   }
@@ -225,8 +332,8 @@ alarmMutation.post('/', async (c) => {
     sql: `INSERT INTO alarms
             (id, user_id, target_user_id, message_id, time, repeat_days, snooze_minutes,
              mode, vibration_pattern, wake_mode, voice_profile_id, speaker_id,
-             raw_audio_url, raw_audio_duration_ms)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             raw_audio_url, raw_audio_duration_ms, timezone, bucket_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       alarmId,
       userId,
@@ -242,6 +349,8 @@ alarmMutation.post('/', async (c) => {
       body.speaker_id ?? null,
       body.raw_audio_url ?? null,
       body.raw_audio_duration_ms ?? null,
+      timezone,
+      body.bucket_id ?? null,
     ],
   });
 
@@ -283,6 +392,8 @@ alarmMutation.patch('/:id', async (c) => {
     speaker_id?: string | null;
     raw_audio_url?: string | null;
     raw_audio_duration_ms?: number | null;
+    timezone?: string | null;
+    bucket_id?: string | null;
   }>();
 
   const fieldError = validateAlarmFields(body);
@@ -313,20 +424,48 @@ alarmMutation.patch('/:id', async (c) => {
   const creatorHasPaidVoice = !resolvedUserPk ||
     current.user_plan === undefined ||
     isPaidVoicePlan(current.user_plan);
-  if (!creatorHasPaidVoice && alarmUsesPaidVoice({
+  const effectiveVoiceFields = {
     mode: body.mode !== undefined ? body.mode : current.mode,
     wake_mode: body.wake_mode !== undefined ? body.wake_mode : current.wake_mode,
     message_id: body.message_id !== undefined ? body.message_id : current.message_id,
     voice_profile_id: body.voice_profile_id !== undefined ? body.voice_profile_id : current.voice_profile_id,
     speaker_id: body.speaker_id !== undefined ? body.speaker_id : current.speaker_id,
     raw_audio_url: body.raw_audio_url !== undefined ? body.raw_audio_url : current.raw_audio_url,
-  })) {
+  };
+  if (
+    !creatorHasPaidVoice &&
+    alarmUsesPaidVoice(effectiveVoiceFields) &&
+    !(await usesOnlySystemStockVoice(db, effectiveVoiceFields))
+  ) {
     return c.json(
       {
         error: 'Voice alarms require a paid plan.',
         error_code: 'VOICE_FEATURE_REQUIRES_PAID_PLAN',
       },
       403,
+    );
+  }
+
+  // IDOR 방어: PATCH 로 새 message_id / voice_profile_id 를 기록하기 전에,
+  // POST 생성 경로와 동일한 소유권/프리셋 검증을 다시 수행한다. 이 검증이
+  // 없으면 호출자가 타인 소유 message_id(타인 음성 클립)나 voice_profile_id 를
+  // 자기 알람에 끼워 넣어 cross-tenant 리소스를 참조/재생할 수 있다.
+  const ownerIds = [resolvedUserPk || userId, userId] as [string, string];
+  if (
+    body.message_id !== undefined &&
+    body.message_id !== null &&
+    !(await messageBelongsToCaller(db, body.message_id, ownerIds))
+  ) {
+    return c.json({ error: 'Message not found', error_code: 'MESSAGE_NOT_FOUND' }, 404);
+  }
+  if (
+    body.voice_profile_id !== undefined &&
+    body.voice_profile_id !== null &&
+    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+  ) {
+    return c.json(
+      { error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' },
+      404,
     );
   }
 
@@ -381,6 +520,14 @@ alarmMutation.patch('/:id', async (c) => {
     updates.push('raw_audio_duration_ms = ?');
     args.push(body.raw_audio_duration_ms);
   }
+  if (body.timezone !== undefined) {
+    updates.push('timezone = ?');
+    args.push(normalizeTimezone(body.timezone));
+  }
+  if (body.bucket_id !== undefined) {
+    updates.push('bucket_id = ?');
+    args.push(body.bucket_id);
+  }
 
   if (updates.length === 0) {
     return c.json({ error: 'No fields to update', error_code: 'NO_UPDATE_FIELDS' }, 400);
@@ -394,10 +541,30 @@ alarmMutation.patch('/:id', async (c) => {
     args,
   });
 
+  // raw_audio_url 을 새 값으로 교체하면 이전 R2 녹음이 어떤 알람에서도 참조되지
+  // 않을 수 있다. DELETE 핸들러와 동일하게, 더 이상 쓰이지 않는 이전 오브젝트를
+  // 삭제 큐에 적재해 영구 고아를 막는다(교체 경로에는 기존에 이 정리가 없었다).
+  if (body.raw_audio_url !== undefined) {
+    const previousRawUrl = current.raw_audio_url;
+    if (
+      previousRawUrl?.startsWith('r2://') &&
+      previousRawUrl !== body.raw_audio_url
+    ) {
+      const stillReferenced = await db.execute({
+        sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
+        args: [previousRawUrl],
+      });
+      if (Number(typedRow<{ cnt: number }>(stillReferenced.rows[0]!).cnt ?? 0) === 0) {
+        const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+        await enqueueExternalDeletion(db, 'r2_object', previousRawUrl.replace(/^r2:\/\//, ''));
+      }
+    }
+  }
+
   const updated = await db.execute({
     sql: `SELECT id, user_id, target_user_id, message_id, time, repeat_days,
                  is_active, snooze_minutes, mode, vibration_pattern, wake_mode,
-                 voice_profile_id, speaker_id, created_at, updated_at
+                 voice_profile_id, speaker_id, bucket_id, created_at, updated_at
           FROM alarms WHERE id = ?`,
     args: [id],
   });
@@ -418,12 +585,14 @@ alarmMutation.delete('/:id', async (c) => {
   }
 
   const targetRes = await db.execute({
-    sql: 'SELECT message_id FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
+    sql: 'SELECT message_id, raw_audio_url FROM alarms WHERE id = ? AND user_id = ? LIMIT 1',
     args: [id, userId],
   });
-  const messageId = targetRes.rows.length > 0
-    ? (typedRow<{ message_id: string | null }>(targetRes.rows[0]!).message_id ?? null)
+  const targetAlarm = targetRes.rows.length > 0
+    ? typedRow<{ message_id: string | null; raw_audio_url: string | null }>(targetRes.rows[0]!)
     : null;
+  const messageId = targetAlarm?.message_id ?? null;
+  const rawAudioUrl = targetAlarm?.raw_audio_url ?? null;
 
   const result = await db.execute({
     sql: 'DELETE FROM alarms WHERE id = ? AND user_id = ?',
@@ -432,6 +601,18 @@ alarmMutation.delete('/:id', async (c) => {
 
   if (result.rowsAffected === 0) {
     return c.json({ error: 'Alarm not found', error_code: 'ALARM_NOT_FOUND' }, 404);
+  }
+
+  // 사용자 녹음 원본(r2://)이 더 이상 어떤 알람에도 쓰이지 않으면 R2 삭제 큐에 적재.
+  if (rawAudioUrl?.startsWith('r2://')) {
+    const rawRefRes = await db.execute({
+      sql: 'SELECT COUNT(*) AS cnt FROM alarms WHERE raw_audio_url = ?',
+      args: [rawAudioUrl],
+    });
+    if (Number(typedRow<{ cnt: number }>(rawRefRes.rows[0]!).cnt ?? 0) === 0) {
+      const { enqueueExternalDeletion } = await import('../lib/audio-retention');
+      await enqueueExternalDeletion(db, 'r2_object', rawAudioUrl.replace(/^r2:\/\//, ''));
+    }
   }
 
   if (messageId) {

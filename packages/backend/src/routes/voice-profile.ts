@@ -9,6 +9,7 @@ import { R2VoiceStorage } from '../lib/r2-storage';
 import { createEnrollmentAttempts, UnsupportedVoiceProviderError } from '../lib/voice-provider';
 import { assertSameGroup, resolveUserPk } from '../lib/family-helpers';
 import { isPaidVoicePlan } from './billing-helpers';
+import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
@@ -36,6 +37,25 @@ function normalizeListenerTitle(value: unknown): string | undefined {
 
 function validateListenerTitle(label: string | undefined): boolean {
   return label === undefined || label.length <= MAX_LISTENER_TITLE_LENGTH;
+}
+
+const VOICE_GENDERS = ['male', 'female', 'neutral'] as const;
+const SPEECH_FORMALITIES = ['auto', 'polite'] as const;
+
+// 허용값이면 그 값, null/빈값이면 null, 그 외(잘못된 값)는 undefined(=검증 실패 신호)를 돌려준다.
+// 필드 미지정(undefined)도 undefined로 들어오므로, 검증은 "원본이 제공되었는지"와 함께 본다.
+function normalizeVoiceGender(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return (VOICE_GENDERS as readonly string[]).includes(String(value)) ? String(value) : undefined;
+}
+
+function normalizeSpeechFormality(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return (SPEECH_FORMALITIES as readonly string[]).includes(String(value))
+    ? String(value)
+    : undefined;
 }
 
 async function canUseSharedVoiceProfile(
@@ -94,8 +114,8 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
       const r = await db.execute({ sql, args });
       counts[label] = r.rowsAffected ?? 0;
     } catch (err) {
-      // Best-effort cleanup. Tables may not exist in every environment
-      // (e.g. characters added via later migration). Log and continue.
+      // Best-effort cleanup. Tables may not exist in every environment.
+      // Log and continue.
       // eslint-disable-next-line no-console
       console.log('[clear-mine skip]', label, err instanceof Error ? err.message : String(err));
       counts[label] = -1;
@@ -151,13 +171,6 @@ voiceProfile.delete('/_dev/clear-mine', async (c) => {
   await tryDel('voice_profiles', `DELETE FROM voice_profiles WHERE user_id IN (${ph})`, ids);
 
   // 3) Per-user satellite tables.
-  await tryDel('characters', `DELETE FROM characters WHERE user_id IN (${ph})`, ids);
-  await tryDel('character_xp_logs', `DELETE FROM character_xp_logs WHERE user_id IN (${ph})`, ids);
-  await tryDel(
-    'character_streak_stats',
-    `DELETE FROM character_streak_stats WHERE user_id IN (${ph})`,
-    ids,
-  );
   await tryDel('push_tokens', `DELETE FROM push_tokens WHERE user_id IN (${ph})`, ids);
   await tryDel(
     'friendships',
@@ -196,13 +209,15 @@ voiceProfile.get('/', async (c) => {
     baseArgs.push(status);
   }
 
+  // 시스템 제공(스톡) 보이스는 모든 사용자에게 노출 — 무료 플랜의 기본 목소리.
+  // 내 목소리가 먼저, 시스템 보이스가 뒤에 오도록 정렬한다.
   const [countRes, result] = await Promise.all([
     db.execute({
-      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
+      sql: `SELECT COUNT(*) as total FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause}`,
       args: baseArgs,
     }),
     db.execute({
-      sql: `SELECT * FROM voice_profiles WHERE user_id IN (${ph}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      sql: `SELECT * FROM voice_profiles WHERE (user_id IN (${ph}) OR COALESCE(is_system, 0) = 1) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0${statusClause} ORDER BY COALESCE(is_system, 0) ASC, created_at DESC LIMIT ? OFFSET ?`,
       args: [...baseArgs, limit, offset],
     }),
   ]);
@@ -213,6 +228,7 @@ voiceProfile.get('/', async (c) => {
       ...row,
       is_shared: Boolean(Number(row.is_shared ?? 0)),
       is_draft: Boolean(Number(row.is_draft ?? 0)),
+      is_system: Boolean(Number(row.is_system ?? 0)),
     })),
     total,
     limit,
@@ -356,6 +372,10 @@ voiceProfile.patch('/:id', async (c) => {
     relationshipLabel?: unknown;
     listener_title?: unknown;
     listenerTitle?: unknown;
+    voice_gender?: unknown;
+    voiceGender?: unknown;
+    speech_formality?: unknown;
+    speechFormality?: unknown;
   };
   try {
     body = await c.req.json();
@@ -378,9 +398,44 @@ voiceProfile.patch('/:id', async (c) => {
   );
   const hasListenerTitle = body.listener_title !== undefined || body.listenerTitle !== undefined;
   const listenerTitle = normalizeListenerTitle(body.listener_title ?? body.listenerTitle);
-  if (!hasName && !hasShared && !hasDraft && !hasRelationship && !hasListenerTitle) {
+  const hasVoiceGender = body.voice_gender !== undefined || body.voiceGender !== undefined;
+  const voiceGenderRaw =
+    body.voice_gender !== undefined ? body.voice_gender : body.voiceGender;
+  const voiceGender = normalizeVoiceGender(voiceGenderRaw);
+  const hasSpeechFormality =
+    body.speech_formality !== undefined || body.speechFormality !== undefined;
+  const speechFormalityRaw =
+    body.speech_formality !== undefined ? body.speech_formality : body.speechFormality;
+  const speechFormality = normalizeSpeechFormality(speechFormalityRaw);
+  if (
+    !hasName &&
+    !hasShared &&
+    !hasDraft &&
+    !hasRelationship &&
+    !hasListenerTitle &&
+    !hasVoiceGender &&
+    !hasSpeechFormality
+  ) {
     return c.json(
       { error: 'name must be 1-50 characters', error_code: 'INVALID_NAME_LENGTH' },
+      400,
+    );
+  }
+  if (hasVoiceGender && voiceGender === undefined) {
+    return c.json(
+      {
+        error: "voice_gender must be one of 'male', 'female', 'neutral'",
+        error_code: 'INVALID_VOICE_GENDER',
+      },
+      400,
+    );
+  }
+  if (hasSpeechFormality && speechFormality === undefined) {
+    return c.json(
+      {
+        error: "speech_formality must be one of 'auto', 'polite'",
+        error_code: 'INVALID_SPEECH_FORMALITY',
+      },
       400,
     );
   }
@@ -439,7 +494,7 @@ voiceProfile.patch('/:id', async (c) => {
   }
 
   const updates: string[] = [];
-  const args: (string | number)[] = [];
+  const args: (string | number | null)[] = [];
   if (hasName) {
     updates.push('name = ?');
     args.push(name);
@@ -460,6 +515,14 @@ voiceProfile.patch('/:id', async (c) => {
     updates.push('listener_title = ?');
     args.push(listenerTitle ?? '');
   }
+  if (hasVoiceGender) {
+    updates.push('voice_gender = ?');
+    args.push(voiceGender ?? null);
+  }
+  if (hasSpeechFormality) {
+    updates.push('speech_formality = ?');
+    args.push(speechFormality ?? null);
+  }
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
@@ -476,6 +539,8 @@ voiceProfile.patch('/:id', async (c) => {
       ...(hasDraft ? { is_draft: Boolean(isDraftUpdate) } : {}),
       ...(hasRelationship ? { relationship_label: relationshipLabel ?? '' } : {}),
       ...(hasListenerTitle ? { listener_title: listenerTitle ?? '' } : {}),
+      ...(hasVoiceGender ? { voice_gender: voiceGender ?? null } : {}),
+      ...(hasSpeechFormality ? { speech_formality: speechFormality ?? null } : {}),
     },
   });
 });
@@ -596,6 +661,21 @@ voiceProfile.post('/clone', async (c) => {
       }
     }
 
+    const missingSensitiveConsent = await missingConsentType(db, userPk, SENSITIVE_REQUIRED_CONSENTS);
+    if (missingSensitiveConsent) {
+      return c.json(
+        {
+          error:
+            missingSensitiveConsent === 'voice_biometric'
+              ? 'Voice biometric consent is required to clone a voice.'
+              : 'Overseas transfer consent is required for ElevenLabs voice cloning.',
+          error_code: 'CONSENT_REQUIRED',
+          consent: missingSensitiveConsent,
+        },
+        403,
+      );
+    }
+
     const formData = await c.req.formData();
     const audioFile = getFormFile(formData, 'audio');
     const rawName = formData.get('name');
@@ -614,6 +694,18 @@ voiceProfile.post('/clone', async (c) => {
       normalizeListenerTitle(
         formData.get('listenerTitle') ?? formData.get('listener_title') ?? undefined,
       ) ?? '';
+    // 폼에 없으면(null/빈값) null로 저장하고, 값이 있는데 허용값이 아니면 undefined(=검증 실패).
+    const voiceGenderForm = formData.get('voiceGender') ?? formData.get('voice_gender');
+    const voiceGender =
+      voiceGenderForm == null || voiceGenderForm === ''
+        ? null
+        : normalizeVoiceGender(voiceGenderForm);
+    const speechFormalityForm =
+      formData.get('speechFormality') ?? formData.get('speech_formality');
+    const speechFormality =
+      speechFormalityForm == null || speechFormalityForm === ''
+        ? null
+        : normalizeSpeechFormality(speechFormalityForm);
 
     // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
     if (!isDraft) {
@@ -679,13 +771,31 @@ voiceProfile.post('/clone', async (c) => {
         400,
       );
     }
+    if (voiceGender === undefined) {
+      return c.json(
+        {
+          error: "voice_gender must be one of 'male', 'female', 'neutral'",
+          error_code: 'INVALID_VOICE_GENDER',
+        },
+        400,
+      );
+    }
+    if (speechFormality === undefined) {
+      return c.json(
+        {
+          error: "speech_formality must be one of 'auto', 'polite'",
+          error_code: 'INVALID_SPEECH_FORMALITY',
+        },
+        400,
+      );
+    }
 
     const audioBuffer = await audioFile.arrayBuffer();
     const profileId = crypto.randomUUID();
 
     await db.execute({
-      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title)
-            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?)`,
+      sql: `INSERT INTO voice_profiles (id, user_id, name, status, is_shared, is_draft, relationship_label, listener_title, voice_gender, speech_formality)
+            VALUES (?, ?, ?, 'processing', ?, ?, ?, ?, ?, ?)`,
       args: [
         profileId,
         userId,
@@ -694,6 +804,8 @@ voiceProfile.post('/clone', async (c) => {
         isDraft ? 1 : 0,
         relationshipLabel,
         listenerTitle,
+        voiceGender,
+        speechFormality,
       ],
     });
     insertedProfileId = profileId;
@@ -740,6 +852,8 @@ voiceProfile.post('/clone', async (c) => {
           is_draft: isDraft,
           relationship_label: relationshipLabel,
           listener_title: listenerTitle,
+          voice_gender: voiceGender,
+          speech_formality: speechFormality,
         },
       },
       201,

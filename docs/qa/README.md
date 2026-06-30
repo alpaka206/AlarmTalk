@@ -119,17 +119,6 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 | TC-BILL-002 | Expiry tick | Force expiry → cron tick | Status `expired`; plan = free | P1 |
 | TC-BILL-003 | Invalid format | Mix letters and digits | `INVALID_FORMAT` error | P2 |
 
-### Character (CHA)
-
-| ID | Title | Steps | Expected | P |
-|---|---|---|---|---|
-| TC-CHA-001 | On-time dismiss event | Let alarm finish, dismiss on time, then allow auto sync | +5 XP, +2 affection (within cap) | P1 |
-| TC-CHA-002 | Daily cap reached | Earn 200 XP, then more | `grantedXp = 0`, `capped = true`, affection still increases | P1 |
-| TC-CHA-002B | Missed/snoozed event | Snooze or miss the on-time path | -5 XP, but XP does not go below 0 and level does not decrease | P1 |
-| TC-CHA-003 | Streak +1 | Dismiss yesterday and today | `current_streak += 1`; date updated | P1 |
-| TC-CHA-004 | Streak break | Skip a day | Streak resets to 1 on next dismiss; `longest_streak` preserved | P1 |
-| TC-CHA-005 | Stage transition | Cross level threshold | Stage advances; animation shown | P2 |
-
 ### Sync (SYNC)
 
 | ID | Title | Steps | Expected | P |
@@ -171,7 +160,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 3. Voice tab → "+ New voice" → record 15 s, name it.
 4. Alarm tab → "+ New alarm" → time = now+2 min, voice profile + a preset message, save.
 5. Lock the device, wait.
-6. Expected: alarm rings full-screen; dismiss; +5 XP event queues locally and syncs automatically after sign-in/network is available.
+6. Expected: alarm rings full-screen; dismiss stops sound and vibration.
 
 ### TS-2. Family share and partner alarm
 
@@ -220,13 +209,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 1. Create 10 alarms, edit / delete them in sequence.
 2. Expected: no leaks; OS alarm count matches the active subset.
 
-### TS-9. Long-running character
-
-1. Seed a QA account with 200 days of streak / XP history.
-2. Verify list, level, stage, milestones render consistently.
-3. Verify the server response from `/api/characters/me` matches the rendered values.
-
-### TS-10. International UAT
+### TS-9. International UAT
 
 1. Switch UI to English; set device timezone JST.
 2. Create alarm; observe local-time rendering.
@@ -258,7 +241,7 @@ ID rule: `TC-<area>-<###>`. Each case has preconditions / steps / expected / pri
 
 ## Logs / artifacts
 ```
-adb logcat | grep VoiceAlarm
+adb logcat | grep AlarmTalk
 ...
 ```
 
@@ -296,7 +279,7 @@ adb logcat | grep VoiceAlarm
 
 ```bash
 adb logcat -c
-adb logcat | grep VoiceAlarm > logcat.txt
+adb logcat | grep AlarmTalk > logcat.txt
 adb shell dumpsys alarm | grep voicealarm > alarms_dump.txt
 adb bugreport bugreport_$(date +%Y%m%d_%H%M%S).zip
 ```

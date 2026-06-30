@@ -1,14 +1,15 @@
 name: iOS Build
 
 on:
-  push:
-    branches:
-      - develop
-      - main
-      - "feat/**"
-      - "fix/**"
-  pull_request:
-    branches: [develop, main]
+  # iOS 도입 보류(2026-06) — 자동 빌드 비활성화. 출시하지 않을 앱을 매 push/PR 마다
+  # 유료 macOS 러너로 빌드하지 않도록 수동 트리거(workflow_dispatch)만 남긴다.
+  # iOS 재개 시 아래 push/pull_request 트리거를 복원하면 된다. (iOS 체크는 develop
+  # 브랜치 보호의 필수 상태 체크가 아니므로 비활성해도 PR 머지를 막지 않는다.)
+  #
+  # push:
+  #   branches: [develop, main, "feat/**", "fix/**", "ci/**", "refactor/**"]
+  # pull_request:
+  #   branches: [develop, main]
   workflow_dispatch:
 
 concurrency:
@@ -17,7 +18,7 @@ concurrency:
 
 jobs:
   ios-build:
-    name: VoiceAlarm (iOS Simulator)
+    name: AlarmTalk (iOS Simulator)
     runs-on: macos-latest
     timeout-minutes: 30
     defaults:
@@ -25,7 +26,7 @@ jobs:
         working-directory: apps/ios-native
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Show toolchain / SDK info
         run: |
@@ -53,12 +54,12 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build VoiceAlarm
+      - name: Build AlarmTalk
         run: |
           set -o pipefail
           xcodebuild \
-            -project VoiceAlarmNative.xcodeproj \
-            -scheme VoiceAlarm \
+            -project AlarmTalkNative.xcodeproj \
+            -scheme AlarmTalk \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
@@ -71,5 +72,85 @@ jobs:
         with:
           name: ios-xcodebuild-log
           path: apps/ios-native/xcodebuild.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  ios-tests:
+    name: AlarmTalk Unit Tests (iOS Simulator)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/ios-native
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Show toolchain / SDK info
+        run: |
+          sw_vers
+          xcodebuild -version
+          xcrun --show-sdk-version --sdk iphonesimulator
+
+      - name: Select latest installed Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$latest" ]; then
+            sudo xcode-select -s "$latest/Contents/Developer"
+          fi
+          xcodebuild -version
+
+      - name: Install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve newest iPhone simulator
+        id: sim
+        run: |
+          # 사용 가능한 iPhone 시뮬레이터 중 가장 최신 런타임의 UDID 를 고른다.
+          # simctl 은 런타임을 오름차순으로 나열하므로 마지막 iPhone 이 최신 iOS 다.
+          # (앱 deploymentTarget 이 높아 구형 런타임을 피해야 테스트가 부팅된다.)
+          UDID=$(xcrun simctl list devices available \
+            | grep -E "iPhone" \
+            | grep -oE "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}" \
+            | tail -1)
+          if [ -z "$UDID" ]; then
+            echo "No available iPhone simulator found"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "Using simulator UDID: $UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          # 시뮬레이터 ad-hoc 서명("-")으로 빌드해 앱에 Keychain / App Group 엔타이틀먼트가
+          # 부여되도록 한다. (CODE_SIGNING_ALLOWED=NO 면 엔타이틀먼트가 없어
+          # KeychainStore.saveSession / App Group 컨테이너 접근이 실패한다.)
+          xcodebuild \
+            -project AlarmTalkNative.xcodeproj \
+            -scheme AlarmTalk \
+            -configuration Debug \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipPackagePluginValidation \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES \
+            GENERATE_INFOPLIST_FILE=YES \
+            test 2>&1 | tee xcodebuild-test.log
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-xcodebuild-test-log
+          path: apps/ios-native/xcodebuild-test.log
           retention-days: 7
           if-no-files-found: warn

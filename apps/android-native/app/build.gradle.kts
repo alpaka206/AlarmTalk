@@ -79,6 +79,16 @@ val releaseKeystoreProps = rootProject.file("keystore.properties")
         Properties().apply { propsFile.inputStream().use { load(it) } }
     }
 
+// dev 플레이버 디버그 서명을 팀 공용 키스토어로 고정한다. 이렇게 해야 어느 PC/CI 에서 빌드해도
+// SHA-1 이 동일하게 유지되어 Google 로그인(OAuth Android 클라이언트의 SHA-1 매칭)이 항상 통과한다.
+// 파일이 없으면(예: 외부 기여자) 기본 debug.keystore 로 폴백한다.
+val devDebugKeystoreProps = rootProject.file("dev-debug-keystore.properties")
+    .takeIf { it.exists() }
+    ?.let { propsFile ->
+        Properties().apply { propsFile.inputStream().use { load(it) } }
+    }
+    ?.takeIf { rootProject.file(it.getProperty("storeFile") ?: "").exists() }
+
 android {
     namespace = "com.alarmtalk.app"
     compileSdk = 35
@@ -87,10 +97,14 @@ android {
         applicationId = "com.alarmtalk.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
+        versionCode = 10
         versionName = "0.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // 지원 로케일을 한국어(기본)·영어·일본어로 선언한다. 기기 언어가 en/ja 면
+        // values-en/values-ja 가, 그 외에는 기본 values(한국어)가 적용된다.
+        resourceConfigurations += listOf("ko", "en", "ja")
     }
 
     sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/res/alarmTone"))
@@ -100,67 +114,24 @@ android {
         buildConfig = true
     }
 
-    val voiceAlarmDevApiBaseUrl = providers.gradleProperty("voiceAlarmDevApiBaseUrl")
+    val alarmTalkDevApiBaseUrl = providers.gradleProperty("alarmTalkDevApiBaseUrl")
         .orElse("https://api-dev.alarm-talk.com/api/")
         .get()
-    val voiceAlarmProdApiBaseUrl = providers.gradleProperty("voiceAlarmProdApiBaseUrl")
+    val alarmTalkProdApiBaseUrl = providers.gradleProperty("alarmTalkProdApiBaseUrl")
         .orElse("https://api.alarm-talk.com/api/")
         .get()
-    val voiceAlarmDevGoogleWebClientId = providers.gradleProperty("voiceAlarmDevGoogleWebClientId")
+    val alarmTalkDevGoogleWebClientId = providers.gradleProperty("alarmTalkDevGoogleWebClientId")
         .orElse("")
         .get()
-    val voiceAlarmProdGoogleWebClientId = providers.gradleProperty("voiceAlarmProdGoogleWebClientId")
+    val alarmTalkProdGoogleWebClientId = providers.gradleProperty("alarmTalkProdGoogleWebClientId")
         .orElse("")
         .get()
-    val voiceAlarmDevSentryDsn = providers.gradleProperty("voiceAlarmDevSentryDsn")
+    val alarmTalkDevSentryDsn = providers.gradleProperty("alarmTalkDevSentryDsn")
         .orElse("")
         .get()
-    val voiceAlarmProdSentryDsn = providers.gradleProperty("voiceAlarmProdSentryDsn")
+    val alarmTalkProdSentryDsn = providers.gradleProperty("alarmTalkProdSentryDsn")
         .orElse("")
         .get()
-
-    flavorDimensions += "environment"
-    productFlavors {
-        create("dev") {
-            dimension = "environment"
-            applicationIdSuffix = ".dev"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmDevApiBaseUrl.asBuildConfigString())
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                voiceAlarmDevGoogleWebClientId.asBuildConfigString(),
-            )
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_SENTRY_DSN",
-                voiceAlarmDevSentryDsn.asBuildConfigString(),
-            )
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_SENTRY_ENVIRONMENT",
-                "development".asBuildConfigString(),
-            )
-        }
-        create("prod") {
-            dimension = "environment"
-            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", voiceAlarmProdApiBaseUrl.asBuildConfigString())
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
-                voiceAlarmProdGoogleWebClientId.asBuildConfigString(),
-            )
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_SENTRY_DSN",
-                voiceAlarmProdSentryDsn.asBuildConfigString(),
-            )
-            buildConfigField(
-                "String",
-                "VOICE_ALARM_SENTRY_ENVIRONMENT",
-                "production".asBuildConfigString(),
-            )
-        }
-    }
 
     signingConfigs {
         if (releaseKeystoreProps != null) {
@@ -171,9 +142,68 @@ android {
                 keyPassword = releaseKeystoreProps.getProperty("keyPassword")
             }
         }
+        if (devDebugKeystoreProps != null) {
+            create("devDebug") {
+                storeFile = rootProject.file(devDebugKeystoreProps.getProperty("storeFile"))
+                storePassword = devDebugKeystoreProps.getProperty("storePassword")
+                keyAlias = devDebugKeystoreProps.getProperty("keyAlias")
+                keyPassword = devDebugKeystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", alarmTalkDevApiBaseUrl.asBuildConfigString())
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
+                alarmTalkDevGoogleWebClientId.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_DSN",
+                alarmTalkDevSentryDsn.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_ENVIRONMENT",
+                "development".asBuildConfigString(),
+            )
+        }
+        create("prod") {
+            dimension = "environment"
+            buildConfigField("String", "VOICE_ALARM_API_BASE_URL", alarmTalkProdApiBaseUrl.asBuildConfigString())
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_GOOGLE_WEB_CLIENT_ID",
+                alarmTalkProdGoogleWebClientId.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_DSN",
+                alarmTalkProdSentryDsn.asBuildConfigString(),
+            )
+            buildConfigField(
+                "String",
+                "VOICE_ALARM_SENTRY_ENVIRONMENT",
+                "production".asBuildConfigString(),
+            )
+        }
     }
 
     buildTypes {
+        debug {
+            // 디버그 빌드를 공용 키스토어로 고정 서명 → 어느 PC/CI 에서 빌드해도 SHA-1 동일.
+            // (Google 로그인은 패키지명 + SHA-1 매칭이라 dev OAuth 클라이언트에 등록된
+            // 8E:05:92… 와 항상 일치해야 통과.) 파일이 없으면 기본 debug.keystore 폴백.
+            if (devDebugKeystoreProps != null) {
+                signingConfig = signingConfigs.getByName("devDebug")
+            }
+        }
         release {
             if (releaseKeystoreProps != null) {
                 signingConfig = signingConfigs.getByName("release")
@@ -197,6 +227,13 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    testOptions {
+        unitTests {
+            // Robolectric 단위 테스트가 앱 리소스(strings.xml 등)에 접근할 수 있도록 한다.
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -222,7 +259,9 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
     implementation("androidx.room:room-ktx:2.6.1")
     implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("io.sentry:sentry-android-core:8.43.0")
@@ -236,6 +275,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     testImplementation("junit:junit:4.13.2")
+    // Context/리소스가 필요한 라벨 함수의 단위 테스트용(앱 기본 로케일 = 한국어 리소스 로드).
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core-ktx:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }

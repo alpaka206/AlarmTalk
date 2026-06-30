@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Pause
@@ -29,9 +28,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import com.alarmtalk.app.R
+import com.alarmtalk.app.WakerPanelShape
+import com.alarmtalk.app.WakerPillShape
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToLong
@@ -47,12 +51,13 @@ internal fun audioTimeLabel(millis: Long): String {
 }
 
 internal fun voicePreviewContentDescription(
+    context: android.content.Context,
     active: Boolean,
     preparing: Boolean,
 ): String = when {
-    preparing -> "미리듣기 준비 중"
-    active -> "미리듣기 일시정지"
-    else -> "미리듣기 재생"
+    preparing -> context.getString(R.string.misc2_voice_preview_preparing)
+    active -> context.getString(R.string.misc2_voice_preview_pause)
+    else -> context.getString(R.string.misc2_voice_preview_play)
 }
 
 @Composable
@@ -61,19 +66,20 @@ internal fun VoicePreviewButtonIcon(
     preparing: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     if (preparing) {
         CircularProgressIndicator(
             modifier = modifier
                 .size(20.dp)
                 .semantics {
-                    contentDescription = voicePreviewContentDescription(active = active, preparing = true)
+                    contentDescription = voicePreviewContentDescription(context, active = active, preparing = true)
                 },
             strokeWidth = 2.dp,
         )
     } else {
         Icon(
             imageVector = if (active) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-            contentDescription = voicePreviewContentDescription(active = active, preparing = false),
+            contentDescription = voicePreviewContentDescription(context, active = active, preparing = false),
             modifier = modifier.size(22.dp),
         )
     }
@@ -91,14 +97,14 @@ internal fun VoiceCaptureModeSelector(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         VoiceInputModeButton(
-            label = "녹음",
+            label = stringResource(R.string.common_voice_capture_mode_record),
             selected = selected == VoiceCaptureMode.Record,
             enabled = enabled,
             onClick = { onSelect(VoiceCaptureMode.Record) },
             modifier = Modifier.weight(1f),
         )
         VoiceInputModeButton(
-            label = "파일",
+            label = stringResource(R.string.common_voice_capture_mode_file),
             selected = selected == VoiceCaptureMode.File,
             enabled = enabled,
             onClick = { onSelect(VoiceCaptureMode.File) },
@@ -120,7 +126,7 @@ internal fun VoiceInputModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.secondary,
                 contentColor = MaterialTheme.colorScheme.onSecondary,
@@ -133,7 +139,7 @@ internal fun VoiceInputModeButton(
             onClick = onClick,
             enabled = enabled,
             modifier = modifier,
-            shape = RoundedCornerShape(999.dp),
+            shape = WakerPillShape,
         ) {
             Text(label)
         }
@@ -172,7 +178,11 @@ internal fun VoiceRecordControls(
         ) {
             Icon(
                 imageVector = Icons.Outlined.Mic,
-                contentDescription = if (isRecording) "녹음 종료" else "녹음",
+                contentDescription = if (isRecording) {
+                    stringResource(R.string.common_voice_record_stop)
+                } else {
+                    stringResource(R.string.common_voice_record_start)
+                },
                 modifier = Modifier.size(34.dp),
             )
         }
@@ -204,6 +214,7 @@ internal fun VoiceFileControls(
     enabled: Boolean,
     uploadLabel: String,
     notice: String,
+    noticeAfterUpload: Boolean = false,
     isPreviewActive: Boolean = false,
     isPreviewPreparing: Boolean = false,
     onPickFile: () -> Unit,
@@ -211,18 +222,24 @@ internal fun VoiceFileControls(
     onPreviewCrop: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        MutedText(notice)
+        // 업로드 후에만 의미 있는 안내(자를 구간 선택 등)는 파일 선택 전까지 숨긴다.
+        if (!noticeAfterUpload) {
+            MutedText(notice)
+        }
         Button(
             onClick = onPickFile,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = WakerPanelShape,
         ) {
             Icon(Icons.Outlined.UploadFile, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text(uploadLabel)
         }
         durationMillis?.let { duration ->
+            if (noticeAfterUpload) {
+                MutedText(notice)
+            }
             AudioCropRangeSelector(
                 durationMillis = duration,
                 cropStartMillis = cropStartMillis,
@@ -267,7 +284,13 @@ internal fun AudioCropRangeSelector(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText("선택 ${audioTimeLabel(selectedDuration)} / 전체 ${audioTimeLabel(safeDuration)}")
+                MutedText(
+                    stringResource(
+                        R.string.common_voice_crop_selected_total,
+                        audioTimeLabel(selectedDuration),
+                        audioTimeLabel(safeDuration),
+                    ),
+                )
             }
             OutlinedButton(
                 onClick = onPreviewCrop,
@@ -339,7 +362,7 @@ internal fun VoiceLevelBars(
                         } else {
                             MaterialTheme.colorScheme.outlineVariant
                         },
-                        RoundedCornerShape(999.dp),
+                        WakerPillShape,
                     ),
             )
         }
@@ -355,7 +378,7 @@ private fun RecordingProgressBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(6.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(999.dp)),
+            .background(MaterialTheme.colorScheme.outlineVariant, WakerPillShape),
     ) {
         Box(
             modifier = Modifier
@@ -363,7 +386,7 @@ private fun RecordingProgressBar(
                 .height(6.dp)
                 .background(
                     if (active) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
-                    RoundedCornerShape(999.dp),
+                    WakerPillShape,
                 ),
         )
     }

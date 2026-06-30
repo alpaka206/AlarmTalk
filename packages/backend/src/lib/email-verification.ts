@@ -2,6 +2,11 @@ import type { Env } from '../types';
 
 export const EMAIL_VERIFICATION_TTL_SECONDS = 10 * 60;
 export const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
+// 재발송 쿨다운: 동일 이메일로 이 시간 안에 이미 코드를 발급했다면 새 코드를
+// 보내지 않고(이메일 폭탄/Resend 비용 남용 방지) 기존 코드를 그대로 둔다.
+export const EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = 60;
+// 동일 이메일 1일 발급 상한(IP 와 무관). 초과 시 추가 발송하지 않는다.
+export const EMAIL_VERIFICATION_DAILY_CAP = 10;
 
 export function normalizeAuthEmail(email: string): string {
   return email.toLowerCase().trim();
@@ -33,10 +38,12 @@ export function shouldExposeDebugEmailCode(env: Env): boolean {
   return env.ENVIRONMENT !== 'production' && !env.RESEND_API_KEY;
 }
 
-export async function sendEmailVerificationCode(
+async function sendAuthEmail(
   env: Env,
   email: string,
-  code: string,
+  subject: string,
+  text: string,
+  html: string,
 ): Promise<void> {
   if (!env.RESEND_API_KEY || !env.AUTH_EMAIL_FROM) {
     if (env.ENVIRONMENT !== 'production') return;
@@ -53,13 +60,41 @@ export async function sendEmailVerificationCode(
       from: env.AUTH_EMAIL_FROM,
       to: [email],
       reply_to: env.AUTH_EMAIL_REPLY_TO || undefined,
-      subject: 'AlarmTalk 이메일 인증 코드',
-      text: `AlarmTalk 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
-      html: `<p>AlarmTalk 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
+      subject,
+      text,
+      html,
     }),
   });
 
   if (!res.ok) {
     throw new Error(`Email delivery failed (${res.status})`);
   }
+}
+
+export async function sendEmailVerificationCode(
+  env: Env,
+  email: string,
+  code: string,
+): Promise<void> {
+  await sendAuthEmail(
+    env,
+    email,
+    'AlarmTalk 이메일 인증 코드',
+    `AlarmTalk 인증 코드: ${code}\n10분 안에 입력해 주세요.`,
+    `<p>AlarmTalk 인증 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요.</p>`,
+  );
+}
+
+export async function sendPasswordResetCode(
+  env: Env,
+  email: string,
+  code: string,
+): Promise<void> {
+  await sendAuthEmail(
+    env,
+    email,
+    'AlarmTalk 비밀번호 재설정 코드',
+    `AlarmTalk 비밀번호 재설정 코드: ${code}\n10분 안에 입력해 주세요. 본인이 요청하지 않았다면 무시하세요.`,
+    `<p>AlarmTalk 비밀번호 재설정 코드입니다.</p><p style="font-size:24px;font-weight:700;letter-spacing:4px">${code}</p><p>10분 안에 입력해 주세요. 본인이 요청하지 않았다면 무시하세요.</p>`,
+  );
 }

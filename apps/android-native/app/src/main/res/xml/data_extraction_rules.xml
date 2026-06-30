@@ -4,10 +4,23 @@
         <exclude
             domain="database"
             path="voice-alarm.db" />
+        <!-- 인증 세션(JWT) prefs 는 백업/이전에서 제외. 암호화 키는 기기 키스토어에 묶여 있어 복원해도 복호화할 수 없다. -->
+        <exclude
+            domain="sharedpref"
+            path="voice_alarm_auth.xml" />
+        <exclude
+            domain="sharedpref"
+            path="voice_alarm_auth_secure.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude
             domain="database"
             path="voice-alarm.db" />
+        <exclude
+            domain="sharedpref"
+            path="voice_alarm_auth.xml" />
+        <exclude
+            domain="sharedpref"
+            path="voice_alarm_auth_secure.xml" />
     </device-transfer>
 </data-extraction-rules>

@@ -160,16 +160,29 @@ When recording voice
 
 ### Color palette
 
+The brand is a unified blue (azure) Material 3 palette. Android `AlarmTalkTheme.kt` is the source of truth; iOS (`AlarmTalkPalette.swift` + `AccentColor.colorset`) mirrors the same byte-identical hex values.
+
+**Light theme**
+
 | Role | Hex | Usage |
 |---|---|---|
-| Cream | `#FFFAF4` | Primary background |
-| Ink | `#17130F` | Text, emphasis |
-| Cocoa | `#39281F` | Secondary text, card |
-| Rose | `#D8665B` | Primary CTA, alarm action |
-| Honey | `#F2B56B` | Highlight accent |
-| Mint | `#7FA28D` | Settings ON, success state |
+| primary | `#175FB0` | Primary CTA, alarm action |
+| onPrimary | `#FFFFFF` | Text/icon on primary |
+| primaryContainer | `#D6E9FF` | Filled container, highlight surface |
+| onPrimaryContainer | `#0A2740` | Text/icon on primaryContainer |
 
-Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1.
+**Dark theme**
+
+| Role | Hex | Usage |
+|---|---|---|
+| primary | `#A6D2FF` | Primary CTA, alarm action |
+| onPrimary | `#08243C` | Text/icon on primary |
+| primaryContainer | `#1E4263` | Filled container, highlight surface |
+| onPrimaryContainer | `#D9ECFF` | Text/icon on primaryContainer |
+
+The RingingActivity dismiss/slide accent is `#8FC4FF` over its midnight-blue gradient (`#11355A` → `#0A1726` → `#06080E`).
+
+Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1. All pairs above pass WCAG AA (light onPrimary 6.36:1, light onPrimaryContainer 12.31:1, dark onPrimary 10.00:1, dark onPrimaryContainer 8.63:1).
 
 ### Typography
 
@@ -200,10 +213,10 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1.
 
 ### Components
 
-- **Buttons** — `Primary` (Rose / White), `Secondary` (translucent white / Cocoa), `Ghost` (transparent / Cocoa), `Destructive` (deep red / White). Height ≥ 52 dp. Touch target ≥ 48 dp.
+- **Buttons** — `Primary` (primary blue / onPrimary), `Secondary` (translucent surface / onSurface), `Ghost` (transparent / onSurface), `Destructive` (deep red / White). Height ≥ 52 dp. Touch target ≥ 48 dp.
 - **Cards** — surface level 1. Subtle shadow on landing only; on app, use `Elevation 2.dp`.
 - **Wave animation** — used in voice-playing buttons. 7 bars, `1.25s ease-in-out infinite`.
-- **Spinners** — `CircularProgressIndicator` with Rose color.
+- **Spinners** — `CircularProgressIndicator` with the primary blue color.
 - **Empty states** — short copy + single CTA. No illustrations on critical paths.
 
 ### Accessibility
@@ -242,7 +255,7 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1.
               │      cache miss?              │       │
               │      yes      no              ▼       ▼
               │       │       │            trim    save
-              │   ElevenLabs  R2 hit          │
+              │  Voice provider R2 hit        │
               │       │       │               │
               │       └───┬───┘               │
               │           ▼                   │
@@ -301,8 +314,6 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1.
    │                        is_active=false
    └──────────────┬─────────────────┘
                   ▼
-       Enqueue character_event
-                  ▼
        RingingService.stopSelf()
 ```
 
@@ -326,7 +337,7 @@ Body text contrast ≥ 4.5:1. Large text (≥ 18 pt) ≥ 3:1.
 ### SEQ-3. TTS generation (cache miss)
 
 ```
-[Android]  [/api/tts/generate]  [DB]  [ElevenLabs]  [R2]
+[Android]  [/api/tts/generate]  [DB]  [Voice provider]  [R2]
    POST {voice_profile_id, text, language}
         → authMiddleware
         → cache_key = sha256(profile|text|lang|provider)

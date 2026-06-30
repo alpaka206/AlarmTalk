@@ -8,7 +8,8 @@
     "deploy": "wrangler deploy --env production",
     "deploy:dev": "wrangler deploy --env dev",
     "deploy:prod": "wrangler deploy --env production",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p scripts/tsconfig.json",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "test": "vitest run",
     "reset:test-data": "node --experimental-strip-types scripts/reset-test-data.ts",
     "reset:test-data:dev": "node --experimental-strip-types scripts/reset-test-data.ts --env-file .dev.vars.dev",
@@ -19,18 +20,19 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260604.1",
+    "@cloudflare/workers-types": "^4.20260629.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8",
-    "wrangler": "^4.97.0"
+    "vitest": "^4.1.9",
+    "wrangler": "^4.105.0"
   },
   "dependencies": {
-    "@libsql/client": "^0.17.3",
-    "@voice-alarm/shared": "*",
-    "@voice-alarm/voice": "*",
+    "@alarmtalk/shared": "*",
+    "@alarmtalk/voice": "*",
+    "@libsql/client": "^0.17.4",
     "bcryptjs": "^3.0.3",
-    "hono": "^4.12.23",
+    "date-holidays": "^3.32.0",
+    "hono": "^4.12.27",
     "toucan-js": "^4.1.1"
   }
 }

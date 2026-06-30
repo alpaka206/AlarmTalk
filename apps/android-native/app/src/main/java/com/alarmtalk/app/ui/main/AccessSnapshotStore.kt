@@ -3,7 +3,7 @@ package com.alarmtalk.app
 import android.content.Context
 import android.util.Log
 import com.google.gson.Gson
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.BillingSubscriptionResponse
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
 

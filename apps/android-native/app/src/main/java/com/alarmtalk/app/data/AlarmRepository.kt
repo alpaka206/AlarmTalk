@@ -3,27 +3,35 @@ package com.alarmtalk.app.data
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmScheduler
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
+import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
 import com.alarmtalk.app.network.TtsGenerateRequest
-import com.alarmtalk.app.network.VoiceAlarmApi
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApi
+import com.alarmtalk.app.network.AlarmTalkApiClient
+import com.alarmtalk.app.network.HolidayApi
+import com.alarmtalk.app.network.toPublicHolidayDates
 import com.alarmtalk.app.network.trimmedOrNull
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class AlarmRepository(
     private val alarmDao: AlarmDao,
-    private val characterEventDao: CharacterEventDao,
     private val holidayCalendarStore: HolidayCalendarStore,
+    private val holidayCountryPreferenceStore: HolidayCountryPreferenceStore,
     private val alarmScheduler: AlarmScheduler,
     private val alarmAudioStore: AlarmAudioStore,
     private val context: Context,
+    // /holiday 는 인증이 필요 없어 토큰 없이 새 클라이언트를 생성한다(다른 워커와 동일).
+    private val holidayApiProvider: () -> HolidayApi = { AlarmTalkApiClient.create() },
 ) {
-    private val characterEvents = CharacterEventRepository(characterEventDao)
     private val alarmSyncService = AlarmSyncService(alarmDao)
     private val remoteAlarmPullSyncService = RemoteAlarmPullSyncService(
         alarmDao = alarmDao,
@@ -31,11 +39,8 @@ class AlarmRepository(
         alarmAudioStore = alarmAudioStore,
         context = context,
     )
-    private val characterEventSyncService = CharacterEventSyncService(characterEventDao)
 
     fun observeAlarms(): Flow<List<AlarmEntity>> = alarmDao.observeAlarms()
-
-    fun observeCharacterEvents(): Flow<List<CharacterEventEntity>> = characterEventDao.observeEvents()
 
     suspend fun getAlarm(alarmId: String): AlarmEntity? = alarmDao.getById(alarmId)
 
@@ -48,10 +53,9 @@ class AlarmRepository(
             .atZone(java.time.ZoneId.systemDefault())
             .toLocalTime()
         requireUniqueTime(localTime.hour, localTime.minute)
-        requireExactAlarmPermission()
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = "테스트 알람",
+            label = context.getString(R.string.rd_test_alarm_label),
             hour = localTime.hour,
             minute = localTime.minute,
             fireAtMillis = fireAtMillis,
@@ -69,6 +73,7 @@ class AlarmRepository(
             rawAudioUri = null,
             voiceSource = VoiceSources.LOCAL_AUDIO,
             voiceProfileId = null,
+            voiceListenerTitle = null,
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,
@@ -102,12 +107,15 @@ class AlarmRepository(
         return alarm
     }
 
-    suspend fun createAlarm(draft: AlarmDraft): AlarmEntity {
+    suspend fun createAlarm(draft: AlarmDraft, replaceExisting: Boolean = false): AlarmEntity {
         validateDraft(draft)
-        requireUniqueTime(draft.hour, draft.minute)
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = null, replaceExisting = replaceExisting)
 
         val now = System.currentTimeMillis()
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
@@ -118,7 +126,7 @@ class AlarmRepository(
         )
         val alarm = AlarmEntity(
             id = UUID.randomUUID().toString(),
-            label = draft.label.trim().ifBlank { "알람" },
+            label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = fireAtMillis,
@@ -136,6 +144,7 @@ class AlarmRepository(
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
+            voiceListenerTitle = draft.voiceListenerTitle,
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
@@ -151,6 +160,9 @@ class AlarmRepository(
             voiceRepeat = draft.voiceRepeat,
             voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
+            bucketId = draft.bucketId,
+            bucketRotationIndex = 0,
+            bucketClipKeysJson = draft.bucketClipKeysJson,
             remoteAlarmId = null,
             lastSyncedAtMillis = null,
             syncState = AlarmSyncStates.LOCAL_ONLY,
@@ -164,19 +176,30 @@ class AlarmRepository(
             updatedAtMillis = now,
         )
 
-        requireExactAlarmPermission()
         alarmScheduler.schedule(alarm)
         alarmDao.upsert(alarm)
+        // 새 알람을 저장한 뒤에 충돌 알람을 삭제해야, 둘이 같은 audioCacheKey 를
+        // 공유할 때 캐시 음성이 보존된다(deleteAlarm 의 참조 카운트가 새 알람을 포함).
+        conflict?.let { deleteAlarm(it.id) }
+        // 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
+        ensureDynamicVoiceRefreshScheduled(alarm)
         Log.i(TAG, "Created local alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
         return alarm
     }
 
-    suspend fun updateAlarm(alarmId: String, draft: AlarmDraft): AlarmEntity {
+    suspend fun updateAlarm(
+        alarmId: String,
+        draft: AlarmDraft,
+        replaceExisting: Boolean = false,
+    ): AlarmEntity {
         validateDraft(draft)
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
-        requireUniqueTime(draft.hour, draft.minute, excludeAlarmId = alarmId)
+        val conflict = findReplaceableConflict(draft.hour, draft.minute, excludeAlarmId = alarmId, replaceExisting = replaceExisting)
         val now = System.currentTimeMillis()
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
             hour = draft.hour,
             minute = draft.minute,
@@ -185,9 +208,8 @@ class AlarmRepository(
             nowMillis = now,
             isHoliday = holidayPredicate,
         )
-        requireExactAlarmPermission()
         val updated = current.copy(
-            label = draft.label.trim().ifBlank { "알람" },
+            label = draft.label.trim().ifBlank { context.getString(R.string.rd_default_alarm_label) },
             hour = draft.hour,
             minute = draft.minute,
             fireAtMillis = nextFireAt,
@@ -205,6 +227,7 @@ class AlarmRepository(
             rawAudioUri = draft.rawAudioUri,
             voiceSource = draft.voiceSource,
             voiceProfileId = draft.voiceProfileId,
+            voiceListenerTitle = draft.voiceListenerTitle,
             voiceText = draft.voiceText,
             voiceCategory = draft.voiceCategory,
             voiceLanguage = draft.voiceLanguage,
@@ -220,6 +243,11 @@ class AlarmRepository(
             voiceRepeat = draft.voiceRepeat,
             voiceVolumePercent = draft.voiceVolumePercent,
             ttsMessageId = draft.ttsMessageId,
+            bucketId = draft.bucketId,
+            // 같은 버킷이면 회전 위치 유지, 버킷이 바뀌었으면(또는 해제) 0 으로 리셋.
+            bucketRotationIndex =
+                if (draft.bucketId != null && draft.bucketId == current.bucketId) current.bucketRotationIndex else 0,
+            bucketClipKeysJson = draft.bucketClipKeysJson,
             syncState = current.nextLocalSyncState(),
             alarmVolumePercent = draft.alarmVolumePercent,
             alarmSoundUri = draft.alarmSoundUri,
@@ -232,6 +260,10 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
         alarmScheduler.schedule(updated)
         alarmDao.upsert(updated)
+        // 갱신본 저장 후 충돌 알람 삭제 — 공유 audioCacheKey 음성 보존.
+        conflict?.let { deleteAlarm(it.id) }
+        // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
+        ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Updated local alarm id=$alarmId enabled=${updated.enabled} fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -239,11 +271,13 @@ class AlarmRepository(
     suspend fun setEnabled(alarmId: String, enabled: Boolean): AlarmEntity {
         val current = requireNotNull(alarmDao.getById(alarmId)) { "Alarm not found." }
         val now = System.currentTimeMillis()
-        if (enabled) requireExactAlarmPermission()
         alarmScheduler.cancel(alarmId)
 
         val updated = if (enabled) {
-            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(
+                countryCode = currentHolidayCountry(),
+                startDate = currentLocalDate(now),
+            )
             current.copy(
                 fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                     hour = current.hour,
@@ -270,6 +304,8 @@ class AlarmRepository(
 
         if (enabled) alarmScheduler.schedule(updated)
         alarmDao.upsert(updated)
+        // 활성화된 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
+        if (enabled) ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")
         return updated
     }
@@ -283,27 +319,35 @@ class AlarmRepository(
         alarmScheduler.cancel(alarmId)
         val cacheKey = current.audioCacheKey
         alarmDao.delete(current)
-        if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
-            alarmAudioStore.deleteCachedAudio(cacheKey)
-        }
+        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         Log.i(TAG, "Deleted alarm id=$alarmId")
     }
 
-    suspend fun deletePaidVoiceAlarms(): Int {
+    /**
+     * 보이스 클론 업로드에 성공한 직후, 더 이상 필요 없는 로컬 녹음 샘플(음성 생체정보)을 즉시 지운다.
+     * 클론 소스 녹음은 알람 재생 오디오가 아니라 업로드 전용이므로, 어떤 알람도 같은 캐시키를
+     * 참조하지 않을 때만(즉 재생용으로 공유되지 않을 때만) 실제 파일을 삭제한다.
+     * 평문 .m4a 가 filesDir 에 오래 남지 않게 해 단말 분실/포렌식 시 노출 위험을 줄인다.
+     */
+    suspend fun deleteVoiceCloneSourceRecording(cacheKey: String?) {
+        if (cacheKey.isNullOrBlank()) return
+        alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
+    }
+
+    suspend fun deletePaidAlarmTalks(): Int {
         val targets = alarmDao.getAllAlarms().filter { alarm ->
-            alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
+            val usesVoice = alarm.playMode != AlarmPlayModes.ALARM_ONLY ||
                 !alarm.localAudioUri.isNullOrBlank() ||
                 !alarm.rawAudioUri.isNullOrBlank() ||
                 !alarm.voiceProfileId.isNullOrBlank() ||
                 !alarm.ttsMessageId.isNullOrBlank()
+            usesVoice && !alarm.usesFreeSystemVoiceAlarm()
         }
         targets.forEach { alarm ->
             alarmScheduler.cancel(alarm.id)
             val cacheKey = alarm.audioCacheKey
             alarmDao.delete(alarm)
-            if (!cacheKey.isNullOrBlank() && alarmDao.countByAudioCacheKey(cacheKey) == 0) {
-                alarmAudioStore.deleteCachedAudio(cacheKey)
-            }
+            alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, cacheKey)
         }
         if (targets.isNotEmpty()) {
             Log.i(TAG, "Deleted paid voice alarms after free-plan downgrade count=${targets.size}")
@@ -316,10 +360,15 @@ class AlarmRepository(
         val now = System.currentTimeMillis()
         val copiedTime = copyTargetTime(current.hour, current.minute)
         requireUniqueTime(copiedTime.hour, copiedTime.minute)
-        val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         val copied = current.copy(
             id = UUID.randomUUID().toString(),
-            label = current.label.takeIf { it.isNotBlank() }?.let { "$it 복사본" } ?: "복사한 알람",
+            label = current.label.takeIf { it.isNotBlank() }
+                ?.let { context.getString(R.string.rd_copied_alarm_label_suffix, it) }
+                ?: context.getString(R.string.rd_copied_alarm_label),
             hour = copiedTime.hour,
             minute = copiedTime.minute,
             fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
@@ -339,7 +388,6 @@ class AlarmRepository(
             createdAtMillis = now,
             updatedAtMillis = now,
         )
-        requireExactAlarmPermission()
         alarmScheduler.schedule(copied)
         alarmDao.upsert(copied)
         Log.i(TAG, "Copied alarm source=$alarmId id=${copied.id} cacheKey=${copied.audioCacheKey}")
@@ -366,7 +414,10 @@ class AlarmRepository(
 
         val now = System.currentTimeMillis()
         if (current.repeatDaysMask != 0) {
-            val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
+            val holidayPredicate = holidayCalendarStore.holidayPredicate(
+                countryCode = currentHolidayCountry(),
+                startDate = currentLocalDate(now),
+            )
             val nextFireAt = AlarmTimeCalculator.nextFireAtMillis(
                 hour = current.hour,
                 minute = current.minute,
@@ -379,6 +430,9 @@ class AlarmRepository(
                 fireAtMillis = nextFireAt,
                 enabled = true,
                 snoozeCount = 0,
+                // 에피소드 종료(dismiss) 시 다음 회전 클립으로 +1. 스누즈는 회전하지 않으므로
+                // 같은 에피소드 내 모든 울림은 동일 클립을 재생한다.
+                bucketRotationIndex = advancedBucketRotationIndex(current),
                 state = AlarmStates.SCHEDULED,
                 updatedAtMillis = now,
             )
@@ -393,11 +447,6 @@ class AlarmRepository(
                 updatedAtMillis = now,
             )
         }
-        characterEvents.queue(
-            event = CharacterEventTypes.ALARM_COMPLETED,
-            sourceAlarmId = alarmId,
-            nowMillis = now,
-        )
         Log.i(TAG, "Alarm dismissed id=$alarmId")
     }
 
@@ -429,27 +478,54 @@ class AlarmRepository(
         )
         alarmDao.upsert(next)
         alarmScheduler.schedule(next)
-        characterEvents.queue(
-            event = CharacterEventTypes.ALARM_SNOOZED,
-            sourceAlarmId = alarmId,
-            nowMillis = now,
-        )
         Log.i(TAG, "Alarm snoozed id=$alarmId minutes=${current.snoozeMinutes} nextFireAt=${next.fireAtMillis}")
         return next
     }
 
-    suspend fun reschedulePendingAlarms(): Int {
+    /**
+     * 버킷 회전 알람의 "현재 회전 클립" 로컬 재생 URI. 미리 캐시한 N개 중 bucketRotationIndex
+     * 위치의 클립을 돌려준다. 해당 클립이 캐시에 없으면 같은 버킷의 다른 클립으로 폴백하고,
+     * 그래도 없으면 null(호출자가 alarm.localAudioUri = 대표 클립으로 폴백).
+     */
+    fun resolveBucketClipLocalUri(alarm: AlarmEntity): String? {
+        val keys = alarm.bucketClipKeys()
+        if (alarm.bucketId == null || keys.isEmpty()) return null
+        val index = ((alarm.bucketRotationIndex % keys.size) + keys.size) % keys.size
+        alarmAudioStore.getCachedAudio(keys[index])?.let { return it.localAudioUri }
+        for (key in keys) {
+            alarmAudioStore.getCachedAudio(key)?.let { return it.localAudioUri }
+        }
+        return null
+    }
+
+    /** dismiss(에피소드 종료) 시 다음 회전 인덱스. 버킷이 아니거나 클립이 1개 이하면 그대로. */
+    private fun advancedBucketRotationIndex(alarm: AlarmEntity): Int {
+        val size = alarm.bucketClipKeys().size
+        if (alarm.bucketId == null || size <= 1) return alarm.bucketRotationIndex
+        return (alarm.bucketRotationIndex + 1) % size
+    }
+
+    suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
         val now = System.currentTimeMillis()
         val enabledAlarms = alarmDao.getEnabledAlarms()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         var scheduled = 0
 
         enabledAlarms.forEach { alarm ->
             runCatching {
-                val alarmToSchedule = if (alarm.fireAtMillis > now) {
-                    alarm
-                } else if (alarm.repeatDaysMask != 0) {
-                    val holidayPredicate = holidayCalendarStore.holidayPredicate(startDate = currentLocalDate(now))
-                    alarm.copy(
+                // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
+                // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
+                // 미래 알람은 그대로 두고 과거(놓친) 알람만 재계산/정리한다.
+                // 스누즈 알람은 enabled=true 이고 fireAtMillis 가 "스누즈 마감(절대시각)"이라
+                // 재계산에서 제외한다 — 그러지 않으면 tz/시각 변경 시 스누즈가 다음 정규 발생으로 밀린다.
+                val isSnoozed = alarm.state == AlarmStates.SNOOZED
+                val needsRecompute = !isSnoozed && (recomputeFireTime || alarm.fireAtMillis <= now)
+                val alarmToSchedule = when {
+                    !needsRecompute -> alarm
+                    alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
                         fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
                             minute = alarm.minute,
@@ -461,13 +537,14 @@ class AlarmRepository(
                         state = AlarmStates.SCHEDULED,
                         updatedAtMillis = now,
                     ).also { alarmDao.upsert(it) }
-                } else {
-                    alarm.copy(
-                        enabled = false,
-                        state = AlarmStates.FAILED,
-                        updatedAtMillis = now,
-                    ).also { alarmDao.upsert(it) }
-                    return@forEach
+                    else -> {
+                        alarm.copy(
+                            enabled = false,
+                            state = AlarmStates.FAILED,
+                            updatedAtMillis = now,
+                        ).also { alarmDao.upsert(it) }
+                        return@forEach
+                    }
                 }
 
                 alarmScheduler.schedule(alarmToSchedule)
@@ -487,32 +564,29 @@ class AlarmRepository(
         return scheduled
     }
 
-    suspend fun syncWithBackend(api: VoiceAlarmApi, token: String): AlarmSyncResult =
+    suspend fun syncWithBackend(api: AlarmTalkApi, token: String): AlarmSyncResult =
         alarmSyncService.syncWithBackend(api, token)
 
     suspend fun pullReceivedAlarms(
-        api: VoiceAlarmApi,
+        api: AlarmTalkApi,
         token: String,
         myUserId: String,
     ): RemoteAlarmPullResult =
         remoteAlarmPullSyncService.pullReceivedAlarms(api, token, myUserId)
 
-    suspend fun syncCharacterEvents(api: VoiceAlarmApi, token: String): CharacterEventSyncResult =
-        characterEventSyncService.sync(api, token)
-
-    suspend fun refreshDueDynamicVoiceAlarms(
-        api: VoiceAlarmApi,
+    suspend fun refreshDueDynamicAlarmTalks(
+        api: AlarmTalkApi,
         token: String,
         nowMillis: Long = System.currentTimeMillis(),
     ): Int {
-        val alarms = alarmDao.getRepeatingDynamicVoiceAlarms()
+        val alarms = alarmDao.getRepeatingDynamicAlarmTalks()
         var refreshed = 0
         alarms.forEach { alarm ->
             if (!shouldRefreshDynamicVoice(alarm, nowMillis)) return@forEach
             val profileId = alarm.voiceProfileId?.takeIf { it.isNotBlank() } ?: return@forEach
             runCatching {
                 val response = api.generateTts(
-                    authorization = VoiceAlarmApiClient.bearer(token),
+                    authorization = AlarmTalkApiClient.bearer(token),
                     request = TtsGenerateRequest(
                         voiceProfileId = profileId,
                         text = "",
@@ -527,6 +601,7 @@ class AlarmRepository(
                         fortuneGender = alarm.voiceFortuneGender.trimmedOrNull(),
                         fortuneBirthDate = alarm.voiceFortuneBirthDate.trimmedOrNull(),
                         fortuneBirthTime = alarm.voiceFortuneBirthTime.trimmedOrNull(),
+                        listenerTitle = alarm.voiceListenerTitle.trimmedOrNull(),
                     ),
                 )
                 val audioBytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
@@ -556,12 +631,9 @@ class AlarmRepository(
                     preparedForFireAtMillis = alarm.fireAtMillis,
                     updatedAtMillis = System.currentTimeMillis(),
                 )
-                if (
-                    !oldCacheKey.isNullOrBlank() &&
-                    oldCacheKey != cachedAudio.cacheKey &&
-                    alarmDao.countByAudioCacheKey(oldCacheKey) == 0
-                ) {
-                    alarmAudioStore.deleteCachedAudio(oldCacheKey)
+                // 랜덤 문구 알람이 새 음성으로 교체됐으면 이전 캐시는 미참조일 때만 정리.
+                if (!oldCacheKey.isNullOrBlank() && oldCacheKey != cachedAudio.cacheKey) {
+                    alarmAudioStore.deleteCachedAudioIfUnreferenced(alarmDao, oldCacheKey)
                 }
                 refreshed += 1
                 Log.i(TAG, "Refreshed dynamic voice alarm id=${alarm.id} fireAt=${alarm.fireAtMillis}")
@@ -570,6 +642,30 @@ class AlarmRepository(
             }
         }
         return refreshed
+    }
+
+    /**
+     * 어떤 알람도 참조하지 않고 30일 넘게 손대지 않은 캐시 음성 파일을 정리한다.
+     * 앱 시작 시 백그라운드에서 1회 호출되는 것을 전제로 한다.
+     */
+    suspend fun sweepStaleAudioCache(): Int {
+        val inUseFileNames = buildSet {
+            alarmDao.getAllAlarms().forEach { alarm ->
+                alarm.audioCacheKey?.takeIf { it.isNotBlank() }?.let { cacheKey ->
+                    add(AlarmAudioStore.safeCacheKey(cacheKey))
+                }
+                // audioCacheKey 없이 localAudioUri 만 가진 구버전 알람의 파일도 보존한다.
+                alarm.localAudioUri?.takeIf { it.isNotBlank() }?.let { uriString ->
+                    val path = runCatching { android.net.Uri.parse(uriString).path }.getOrNull()
+                    if (!path.isNullOrBlank()) add(java.io.File(path).nameWithoutExtension)
+                }
+                // 버킷 회전 알람이 미리 캐시해 둔 N개 클립이 sweep 으로 지워지지 않도록 보존한다.
+                alarm.bucketClipKeys().forEach { key ->
+                    add(AlarmAudioStore.safeCacheKey(key))
+                }
+            }
+        }
+        return alarmAudioStore.sweepStaleCache(inUseFileNames)
     }
 
     private fun validateDraft(draft: AlarmDraft) {
@@ -590,8 +686,35 @@ class AlarmRepository(
 
     private suspend fun requireUniqueTime(hour: Int, minute: Int, excludeAlarmId: String? = null) {
         require(alarmDao.countAtTime(hour, minute, excludeAlarmId) == 0) {
-            "이미 같은 시간에 알람이 있어요. 다른 시간을 선택해 주세요."
+            context.getString(R.string.rd_duplicate_alarm_time_message)
         }
+    }
+
+    /**
+     * "한 시각에는 알람 하나" 정책. 같은 시각의 기존 알람을 찾는다.
+     *  - replaceExisting=false → [DuplicateAlarmTimeException] 을 던져 호출부(UI)가
+     *    교체 여부를 사용자에게 모달로 묻게 한다.
+     *  - replaceExisting=true  → 충돌 알람을 반환한다. 단, 삭제는 호출부가 새 알람을
+     *    저장한 '이후'에 [deleteAlarm] 으로 해야 한다. 새 알람보다 먼저 삭제하면,
+     *    새 알람이 같은 audioCacheKey(음성)를 재사용할 때 그 캐시의 마지막 참조로
+     *    간주돼 음성 파일이 지워지고 → 새 알람이 깨진 경로를 가리키게 된다.
+     */
+    private suspend fun findReplaceableConflict(
+        hour: Int,
+        minute: Int,
+        excludeAlarmId: String?,
+        replaceExisting: Boolean,
+    ): AlarmEntity? {
+        val existing = alarmDao.findAtTime(hour, minute, excludeAlarmId) ?: return null
+        if (!replaceExisting) {
+            throw DuplicateAlarmTimeException(
+                existingAlarmId = existing.id,
+                hour = hour,
+                minute = minute,
+                existingLabel = existing.label,
+            )
+        }
+        return existing
     }
 
     private fun copyTargetTime(hour: Int, minute: Int): java.time.LocalTime =
@@ -601,6 +724,89 @@ class AlarmRepository(
         Instant.ofEpochMilli(nowMillis)
             .atZone(ZoneId.systemDefault())
             .toLocalDate()
+
+    /** 앱 전역 공휴일 달력 국가(알람별 아님). 모든 holidayPredicate 호출이 이를 사용한다. */
+    private suspend fun currentHolidayCountry(): String =
+        holidayCountryPreferenceStore.countryCode.first()
+
+    /**
+     * 비-KR 국가의 공휴일을 서버(/holiday)에서 받아 로컬 캐시에 채운다. 근접 윈도우에 이미
+     * 행이 있으면 네트워크를 건너뛴다. KR 은 온디바이스 엔진이 있어 동기화하지 않는다.
+     * Best-effort — 네트워크 오류는 삼키고 조용히 실패한다(공휴일 표시는 부가 기능).
+     */
+    suspend fun ensureHolidaysSynced(countryCode: String) {
+        val normalized = countryCode.trim().uppercase()
+        if (normalized.isEmpty() || normalized == HolidayCalendarStore.DEFAULT_COUNTRY_CODE) return
+        runCatching {
+            val today = currentLocalDate(System.currentTimeMillis())
+            val existing = holidayCalendarStore.upcomingHolidays(
+                countryCode = normalized,
+                from = today,
+                count = 1,
+            )
+            if (existing.isNotEmpty()) return
+            val from = today
+            val to = today.plusYears(1)
+            // iOS 와 동일하게 기기 UI 언어(ISO-639-1)를 보내 비-KR 공휴일 이름을 같은 로케일로 받는다.
+            val lang = Locale.getDefault().language.lowercase().ifBlank { null }
+            val response = holidayApiProvider().getHolidays(
+                country = normalized,
+                from = from.toString(),
+                to = to.toString(),
+                lang = lang,
+            )
+            val holidays = response.toPublicHolidayDates()
+            if (holidays.isNotEmpty()) {
+                holidayCalendarStore.syncFromRemote(
+                    countryCode = normalized,
+                    holidays = holidays,
+                )
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to sync holidays for country=$countryCode", error)
+        }
+    }
+
+    /** 토글 아래 표시할 다가오는 공휴일 목록(선택 국가 기준, 기본 5개). */
+    suspend fun upcomingHolidays(
+        countryCode: String,
+        from: LocalDate = currentLocalDate(System.currentTimeMillis()),
+        count: Int = 5,
+    ): List<HolidayDate> =
+        holidayCalendarStore.upcomingHolidays(
+            countryCode = countryCode,
+            from = from,
+            count = count,
+        )
+
+    /**
+     * 반복되는 랜덤 문구(동적 음성) 알람인지 판별한다.
+     * AlarmDao.getRepeatingDynamicAlarmTalks 의 조건과 동일하게 맞춘다.
+     */
+    private fun isRepeatingDynamicVoiceAlarm(alarm: AlarmEntity): Boolean =
+        alarm.enabled &&
+            alarm.repeatDaysMask != 0 &&
+            alarm.voiceRandomPrompt &&
+            alarm.playMode != AlarmPlayModes.ALARM_ONLY &&
+            !alarm.voiceProfileId.isNullOrBlank() &&
+            // 무료 버킷 회전 알람은 사전 렌더 정적 클립을 쓰므로 동적 음성 갱신 대상이 아니다.
+            alarm.bucketId == null
+
+    /**
+     * 반복 랜덤 문구 알람은 매번 새 음성으로 갱신돼야 한다. 알람 생성/수정/활성화 시
+     * 이 메서드를 호출해 DynamicVoiceRefreshWorker(WorkManager)를 예약한다.
+     * 이 wiring 이 없으면 반복 동적 알람이 과거에 캐시된 동일 음성만 재생한다.
+     */
+    private fun ensureDynamicVoiceRefreshScheduled(alarm: AlarmEntity) {
+        if (!isRepeatingDynamicVoiceAlarm(alarm)) return
+        runCatching {
+            DynamicVoiceRefreshScheduler.ensurePeriodic(context)
+            DynamicVoiceRefreshScheduler.runOnce(context)
+            Log.i(TAG, "Scheduled dynamic voice refresh for alarm id=${alarm.id}")
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to schedule dynamic voice refresh id=${alarm.id}", error)
+        }
+    }
 
     private fun shouldRefreshDynamicVoice(alarm: AlarmEntity, nowMillis: Long): Boolean {
         if (alarm.dynamicVoicePreparedForFireAtMillis == alarm.fireAtMillis) return false
@@ -621,16 +827,10 @@ class AlarmRepository(
         when (context) {
             "meal" -> "lunch"
             "sleep" -> "night"
-            "exercise" -> "health"
+            "exercise" -> "exercise"
             "love" -> "love"
             else -> "morning"
         }
-
-    private fun requireExactAlarmPermission() {
-        require(alarmScheduler.canScheduleExactAlarms()) {
-            "정확한 알람 권한을 허용한 뒤 다시 시도해 주세요."
-        }
-    }
 
     private fun AlarmEntity.nextLocalSyncState(): String =
         when {
@@ -644,3 +844,14 @@ class AlarmRepository(
         val DynamicVoicePrepareTime: LocalTime = LocalTime.of(22, 0)
     }
 }
+
+/**
+ * 같은 시각에 이미 알람이 있어 생성/수정이 거부될 때 발생. UI는 이를 잡아 사용자에게
+ * 교체 여부를 모달로 물은 뒤, 동의 시 replaceExisting=true 로 재시도한다.
+ */
+class DuplicateAlarmTimeException(
+    val existingAlarmId: String,
+    val hour: Int,
+    val minute: Int,
+    val existingLabel: String?,
+) : Exception("이미 ${"%02d:%02d".format(hour, minute)} 에 알람이 있어요.")

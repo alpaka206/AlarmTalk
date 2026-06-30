@@ -103,10 +103,101 @@ function registerBody(email: string, password = 'superSecret1', name = '김규�
   };
 }
 
+describe('POST /auth/password-reset', () => {
+  it('비밀번호 계정이면 reset 목적의 코드를 발급한다', async () => {
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // classifyExistingAccount → password
+    mockDB.pushResult([]); // recent codes (none → no cooldown/cap)
+    mockDB.pushResult([], 1); // INSERT
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset', { email: 'KIM@Test.COM' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toMatch(/^\d{6}$/);
+    const insertCall = mockDB.calls.find((c) =>
+      c.sql.includes('INSERT INTO email_verification_codes'),
+    );
+    expect(insertCall?.args[1]).toBe('kim@test.com');
+    expect(insertCall?.args[2]).toBe('reset'); // purpose
+  });
+
+  it('미가입/소셜 계정이면 코드를 보내지 않고 동일 성공 응답을 준다(계정 열거 방지)', async () => {
+    mockDB.pushResult([]); // classifyExistingAccount → none
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset', { email: 'nobody@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    expect(
+      mockDB.calls.some((c) => c.sql.includes('INSERT INTO email_verification_codes')),
+    ).toBe(false);
+  });
+});
+
+describe('POST /auth/password-reset/confirm', () => {
+  it('유효한 코드 + 비밀번호 계정이면 비밀번호 교체 + token_epoch 증가', async () => {
+    await pushValidEmailVerification('kim@test.com'); // checkEmailVerificationCode SELECT
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // classify → password
+    mockDB.pushResult([], 1); // UPDATE users
+    mockDB.pushResult([], 1); // consume code
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'kim@test.com',
+        code: EMAIL_CODE,
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).success).toBe(true);
+    const upd = mockDB.calls.find(
+      (c) => c.sql.includes('UPDATE users') && c.sql.includes('token_epoch'),
+    );
+    expect(upd).toBeTruthy();
+    expect(upd?.sql).toContain('password_hash');
+  });
+
+  it('코드가 없거나 틀리면 400 AUTH_EMAIL_CODE_INVALID', async () => {
+    mockDB.pushResult([]); // checkEmailVerificationCode → no row
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/password-reset/confirm', {
+        email: 'kim@test.com',
+        code: '000000',
+        password: 'newSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error_code).toBe('AUTH_EMAIL_CODE_INVALID');
+  });
+});
+
 describe('POST /auth/email-code', () => {
   it('신규 이메일에 6자리 인증 코드를 발급한다', async () => {
-    mockDB.pushResult([]);
-    mockDB.pushResult([], 1);
+    mockDB.pushResult([]); // existing user lookup (none)
+    mockDB.pushResult([]); // recent codes (none → no cooldown/cap)
+    mockDB.pushResult([], 1); // INSERT
 
     const app = buildApp();
     const res = await app.request(
@@ -119,11 +210,12 @@ describe('POST /auth/email-code', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.debug_code).toMatch(/^\d{6}$/);
-    expect(mockDB.calls[1]?.args[1]).toBe('kim@test.com');
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
-  it('이미 가입된 이메일에는 인증 코드를 보내지 않는다', async () => {
-    mockDB.pushResult([{ id: 'u-1' }]);
+  it('이미 가입된 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]);
 
     const app = buildApp();
     const res = await app.request(
@@ -132,9 +224,80 @@ describe('POST /auth/email-code', () => {
       ENV,
     );
 
+    // 중복 이메일이면 회원가입을 막고 로그인으로 안내한다.
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+    // 코드를 발송/삽입하지 않는다.
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('이미 소셜로 가입된 이메일은 409 AUTH_EMAIL_SOCIAL(+provider)로 안내한다', async () => {
+    mockDB.pushResult([{ password_hash: null, apple_id: null }]); // 비번 없음 → google 소셜
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'social@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error_code).toBe('AUTH_EMAIL_SOCIAL');
+    expect(body.provider).toBe('google');
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('쿨다운 내 재요청은 새 코드를 보내지 않고 동일 응답을 반환한다', async () => {
+    mockDB.pushResult([]); // existing user lookup (none)
+    // 최근(쿨다운 내) 미만료 코드가 존재
+    mockDB.pushResult([
+      {
+        created_at: new Date(Date.now() - 5 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + 9 * 60 * 1000).toISOString(),
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'cooldown@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
+  });
+
+  it('일일 발급 상한 초과 시 새 코드를 보내지 않는다', async () => {
+    mockDB.pushResult([]); // existing user lookup (none)
+    // 24시간 내 발급 건수가 상한(10) 이상 — 모두 만료된 오래된 코드라도 카운트
+    const rows = Array.from({ length: 10 }, (_, i) => ({
+      created_at: new Date(Date.now() - (i + 2) * 60 * 1000).toISOString(),
+      expires_at: new Date(Date.now() - (i + 1) * 60 * 1000).toISOString(),
+    }));
+    mockDB.pushResult(rows);
+
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/email-code', { email: 'capped@test.com' }),
+      undefined,
+      ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.debug_code).toBeUndefined();
+    const insertCall = mockDB.calls.find((c) => c.sql.includes('INSERT INTO email_verification_codes'));
+    expect(insertCall).toBeUndefined();
   });
 });
 
@@ -179,10 +342,10 @@ describe('POST /auth/email-code/verify', () => {
 
 describe('POST /auth/register', () => {
   it('신규 가입 성공 → 201 + 토큰 반환', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('kim@test.com');
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
+    mockDB.pushResult([], 1); // 3) INSERT users
+    mockDB.pushResult([], 1); // 4) consume code UPDATE
 
     const app = buildApp();
     const res = await app.request(
@@ -199,8 +362,9 @@ describe('POST /auth/register', () => {
     expect(insertCall?.args[0]).toBe(body.user.id);
   });
 
-  it('중복 이메일 → 409', async () => {
-    mockDB.pushResult([{ id: 'u-1' }]);
+  it('중복 이메일(비밀번호 계정)은 409 AUTH_EMAIL_TAKEN 으로 막는다', async () => {
+    await pushValidEmailVerification('kim@test.com'); // 코드 검증 통과
+    mockDB.pushResult([{ password_hash: 'bcrypt-hash', apple_id: null }]); // 기존 비번 계정
 
     const app = buildApp();
     const res = await app.request(
@@ -208,9 +372,12 @@ describe('POST /auth/register', () => {
       undefined,
       ENV,
     );
+    // 중복 이메일이면 회원가입을 막고 로그인으로 안내한다.
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_EMAIL_TAKEN');
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
+    expect(insertCall).toBeUndefined();
   });
 
   it('약한 비밀번호 → 400', async () => {
@@ -325,7 +492,7 @@ describe('POST /auth/login', () => {
     expect(res.status).toBe(401);
   });
 
-  it('OAuth 전용 계정(비밀번호 없음) → 401 OAUTH_ONLY', async () => {
+  it('OAuth 전용 계정(비밀번호 없음) → 401 generic (가입 방식 비노출)', async () => {
     mockDB.pushResult([
       {
         id: 'u-1',
@@ -344,9 +511,27 @@ describe('POST /auth/login', () => {
       undefined,
       ENV,
     );
+    // 계정 열거 방지: AUTH_OAUTH_ONLY 로 가입 방식을 노출하지 않고 generic 응답.
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error_code).toBe('AUTH_OAUTH_ONLY');
+    expect(body.error_code).toBe('AUTH_INVALID_CREDENTIALS');
+  });
+
+  it('존재하지 않는 사용자도 generic 응답 + 더미 bcrypt 비교 수행', async () => {
+    mockDB.pushResult([]); // 사용자 없음
+    const app = buildApp();
+    const res = await app.request(
+      jsonReq('POST', '/auth/login', {
+        email: 'ghost@test.com',
+        password: 'superSecret1',
+      }),
+      undefined,
+      ENV,
+    );
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    // 존재하지 않는 이메일과 비밀번호 불일치가 동일한 error_code 를 반환한다.
+    expect(body.error_code).toBe('AUTH_INVALID_CREDENTIALS');
   });
 });
 
@@ -358,6 +543,7 @@ describe('POST /auth/google', () => {
       name: 'Google User',
       picture: 'https://lh3.googleusercontent.com/photo.jpg',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: ENV.GOOGLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -400,6 +586,7 @@ describe('POST /auth/google', () => {
       email: 'linked@gmail.com',
       name: 'Linked User',
       iss: 'accounts.google.com',
+      email_verified: true,
       aud: ENV.GOOGLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     };
@@ -474,6 +661,7 @@ describe('POST /auth/apple', () => {
       email: 'user@privaterelay.appleid.com',
       name: 'Apple User',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -516,6 +704,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-2',
       email: 'linked@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -564,6 +753,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-3',
       email: 'bad@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'other.bundle',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -587,6 +777,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-4',
       email: 'tampered@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
@@ -635,6 +826,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-nonce-ok',
       email: 'nonce-ok@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: nonceHash,
@@ -673,6 +865,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-nonce-bad',
       email: 'nonce-bad@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: wrongNonceHash,
@@ -700,6 +893,7 @@ describe('POST /auth/apple', () => {
         sub: 'apple-user-no-nonce',
         email: 'no-nonce@icloud.com',
         iss: 'https://appleid.apple.com',
+      email_verified: true,
         aud: 'com.voicealarm.nativeapp.ios',
         exp: Math.floor(Date.now() / 1000) + 3600,
       });
@@ -738,6 +932,7 @@ describe('POST /auth/apple', () => {
       sub: 'apple-user-token-has-nonce',
       email: 'token-nonce@icloud.com',
       iss: 'https://appleid.apple.com',
+      email_verified: true,
       aud: 'com.voicealarm.nativeapp.ios',
       exp: Math.floor(Date.now() / 1000) + 3600,
       nonce: nonceHash,
@@ -766,8 +961,8 @@ describe('GET /auth/me', () => {
   });
 
   it('가입 후 받은 토큰으로 /auth/me 호출 성공', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('kim@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -821,8 +1016,8 @@ describe('GET /auth/me', () => {
   });
 
   it('삭제된 사용자 토큰 → 404 AUTH_USER_NOT_FOUND', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('ghost@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -850,8 +1045,8 @@ describe('GET /auth/me', () => {
   });
 
   it('/me 응답의 null name/plan → 기본값 매핑', async () => {
-    mockDB.pushResult([]);
     await pushValidEmailVerification('null-test@test.com');
+    mockDB.pushResult([]);
     mockDB.pushResult([], 1);
     mockDB.pushResult([], 1);
 
@@ -886,10 +1081,10 @@ describe('GET /auth/me', () => {
 
 describe('POST /auth/register — 엣지 케이스', () => {
   it('이메일 대소문자 정규화 (KIM@Test.COM → kim@test.com)', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('kim@test.com');
-    mockDB.pushResult([], 1);
-    mockDB.pushResult([], 1);
+    await pushValidEmailVerification('kim@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT
+    mockDB.pushResult([], 1); // 3) INSERT
+    mockDB.pushResult([], 1); // 4) consume
 
     const app = buildApp();
     const res = await app.request(
@@ -901,7 +1096,7 @@ describe('POST /auth/register — 엣지 케이스', () => {
     const body = await res.json();
     expect(body.user.email).toBe('kim@test.com');
 
-    const insertCall = mockDB.calls[2];
+    const insertCall = mockDB.calls.find((call) => call.sql.includes('INSERT INTO users'));
     expect(insertCall?.args[1]).toBe('kim@test.com');
   });
 
@@ -936,14 +1131,15 @@ describe('POST /auth/register — 엣지 케이스', () => {
   });
 
   it('DB INSERT 실패 → 500 AUTH_REGISTER_FAILED', async () => {
-    mockDB.pushResult([]);
-    await pushValidEmailVerification('fail@test.com');
+    await pushValidEmailVerification('fail@test.com'); // 1) 코드 검증 SELECT
+    mockDB.pushResult([]); // 2) 기존 이메일 SELECT (없음)
 
     const originalExecute = mockDB.client.execute;
     let callCount = 0;
     mockDB.client.execute = async (query: { sql: string; args: (string | number | null)[] }) => {
       callCount++;
       if (callCount === 3) {
+        // 3) INSERT INTO users 단계에서 실패
         throw new Error('DB connection lost');
       }
       return originalExecute(query);

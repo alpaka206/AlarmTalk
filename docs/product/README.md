@@ -13,7 +13,6 @@ AlarmTalk replaces beep-style mechanical alarms with a voice the user picked —
 | Real alarm | OS-native alarm engine. Rings on lock screen, Doze, and offline. No push, no server cron, no fetch at ring time. |
 | Voice-first | Four paths to "whose voice wakes you": record, upload, share within a group, AI clone. |
 | Relational | Family / partner groups share voice profiles and create alarms for each other. |
-| Growth feedback | Completing alarms grows an in-app character and accumulates a wake-up streak. |
 
 ## Target Users
 
@@ -34,16 +33,16 @@ AlarmTalk replaces beep-style mechanical alarms with a voice the user picked —
 - Overseas Koreans (US, Japan) connecting with family across time zones
 - Korean language learners using preset Korean phrases
 
-## Plan Tiers (hypothesis — to be confirmed before launch)
+## Plan Tiers
 
-| Plan | Audience | Limits |
-|---|---|---|
-| Free | Individual trial | 1 voice profile, 5 TTS/day |
-| Personal | Individual | 2 voice profiles, 30 TTS/day |
-| Couple | 2 people | Voice sharing, 2 members |
-| Family | Family | Voice sharing, up to 6 members |
+| Plan | Audience | Monthly price | Members |
+|---|---|---:|:---:|
+| Free | Individual trial | ₩0 | 1 |
+| Personal | Individual | ₩3,900 | 1 |
+| Couple | 2 people | ₩6,900 | 2 |
+| Family | Family | ₩14,900 | up to 5 |
 
-Exact pricing will be set after PSM (Price Sensitivity Meter) research with target users. Until then, treat any price number as a placeholder.
+Prices are confirmed. See [`PRICING.md`](../../PRICING.md) for the margin/cost breakdown.
 
 ## Roadmap
 
@@ -54,7 +53,7 @@ Exact pricing will be set after PSM (Price Sensitivity Meter) research with targ
 - **Phase 3**: Android audio & voice (in-app recording, file upload with 30-second trim, TTS caching, airplane-mode playback)
 - **Phase 4**: Backend integration (email/Google/Apple auth, manual alarm metadata sync, deterministic TTS cache)
 - **Phase 5**: Social & sharing (friends, family group with 6-digit invite code, shared voice profiles)
-- **Phase 6**: Character, streak & billing stub (4 stages: egg / chick / chicken / golden chicken; XP, affection, milestones)
+- **Phase 6**: Billing (plan tiers, subscription, voucher codes, expiry/downgrade cron)
 
 ### In progress
 
@@ -73,7 +72,7 @@ Exact pricing will be set after PSM (Price Sensitivity Meter) research with targ
 |---|---|
 | Per-manufacturer Android background restrictions (Samsung One UI, Xiaomi MIUI, etc.) | In-app permission guide screens; deep links to OS settings; battery-optimization exemption flow |
 | iOS AlarmKit may not fully support custom sounds in all scenarios | PoC verification on physical iOS 26+ devices before iOS 1.0; fallback as pre/post in-app voice playback if needed |
-| ElevenLabs pricing volatility | Deterministic TTS caching (same input → same output → same R2 object); daily TTS cap per plan; contractual fallback to Perso when its direct voice-clone TTS API becomes available |
+| Voice-provider pricing volatility | Deterministic TTS caching (same input → same output → same R2 object); daily TTS cap per plan; ElevenLabs spend monitoring |
 | Voice rights disputes | Sharing only inside a user's family/partner group; in-app legal notice during voice registration; account deletion cascades remove voice data |
 
 ## Non-negotiable Rules

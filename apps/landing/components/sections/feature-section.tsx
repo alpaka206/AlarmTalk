@@ -1,5 +1,7 @@
 import { Check } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { Reveal } from "../motion/reveal";
+import { RevealGroup, RevealItem } from "../motion/reveal-group";
 
 type Props = {
   namespace: "voice" | "shared" | "language";
@@ -20,38 +22,49 @@ export function FeatureSection({ namespace, reverse, visual, id }: Props) {
           }`}
         >
           <div className={`${reverse ? "lg:[direction:ltr]" : ""}`}>
-            <span className="inline-flex w-fit whitespace-nowrap rounded-full border border-accent/25 bg-accent-soft px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-[0.12em] text-accent">
-              {t("eyebrow")}
-            </span>
-            <h2 className="mt-5 text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-text sm:text-[44px]">
-              {t("headline1")}
-              <br />
-              <span className="text-text">{t("headline2")}</span>
-            </h2>
-            <p className="mt-6 max-w-xl text-[16px] leading-[1.7] text-text-muted">
-              {t("description")}
-            </p>
-            <ul className="mt-7 space-y-3">
+            <RevealGroup stagger={0.08}>
+              <RevealItem
+                as="h2"
+                className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
+              >
+                {t("headline1")}
+                <br />
+                {t("headline2")}
+              </RevealItem>
+              <RevealItem
+                as="p"
+                className="mt-6 max-w-xl text-[16px] leading-[1.7] text-text-muted"
+              >
+                {t("description")}
+              </RevealItem>
+            </RevealGroup>
+
+            <RevealGroup as="ul" className="mt-7 space-y-3" stagger={0.07}>
               {(["bullet1", "bullet2", "bullet3"] as const).map((key) => (
-                <li key={key} className="flex items-start gap-3">
+                <RevealItem
+                  as="li"
+                  key={key}
+                  className="flex items-start gap-3"
+                >
                   <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
                     <Check className="h-3 w-3" strokeWidth={3} />
                   </span>
                   <span className="text-[14.5px] leading-[1.6] text-text">
                     {t(key)}
                   </span>
-                </li>
+                </RevealItem>
               ))}
-            </ul>
+            </RevealGroup>
           </div>
 
-          <div
+          <Reveal
+            variant="focus"
             className={`flex items-center justify-center ${
               reverse ? "lg:[direction:ltr]" : ""
             }`}
           >
             {visual}
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>

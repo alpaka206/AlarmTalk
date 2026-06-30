@@ -1,19 +1,28 @@
 import { useTranslations } from "next-intl";
+import { Reveal } from "../motion/reveal";
+import { RevealGroup, RevealItem } from "../motion/reveal-group";
 
 export function Faq() {
   const t = useTranslations("faq");
-  const items = [0, 1, 2, 3, 4] as const;
+  const items = (t.raw("items") as unknown[]).map((_, i) => i);
 
   return (
     <section id="faq" className="relative">
       <div className="mx-auto max-w-4xl px-5 py-24 md:px-8 lg:py-32">
-        <h2 className="text-[34px] font-bold leading-[1.12] tracking-[-0.02em] text-text sm:text-[44px]">
+        <Reveal
+          as="h2"
+          className="text-[34px] font-bold leading-[1.1] tracking-tight text-text sm:text-[44px]"
+        >
           {t("headline")}
-        </h2>
+        </Reveal>
 
-        <div className="mt-12 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface">
+        <RevealGroup
+          className="mt-12 divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface"
+          stagger={0.06}
+        >
           {items.map((i) => (
-            <details
+            <RevealItem
+              as="details"
               key={i}
               className="group p-6 transition open:bg-raised md:p-7"
             >
@@ -41,12 +50,12 @@ export function Faq() {
                   </svg>
                 </span>
               </summary>
-              <p className="mt-4 max-w-3xl text-[14.5px] leading-[1.65] text-text-muted">
+              <p className="mt-4 max-w-3xl text-[14.5px] leading-[1.65] text-text-muted group-open:animate-fadeup">
                 {t(`items.${i}.a`)}
               </p>
-            </details>
+            </RevealItem>
           ))}
-        </div>
+        </RevealGroup>
       </div>
     </section>
   );

@@ -17,35 +17,40 @@ import com.alarmtalk.app.network.TtsMessage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
-internal fun amPmLabel(hour: Int): String = if (floorMod(hour, 24) < 12) "오전" else "오후"
+internal fun amPmLabel(context: android.content.Context, hour: Int): String =
+    if (floorMod(hour, 24) < 12) {
+        context.getString(R.string.editor2_am)
+    } else {
+        context.getString(R.string.editor2_pm)
+    }
 
 internal fun hour12(hour: Int): Int = when (val value = floorMod(hour, 12)) {
     0 -> 12
     else -> value
 }
 
-internal fun timeUntilAlarmLabel(fireAtMillis: Long): String {
+internal fun timeUntilAlarmLabel(context: android.content.Context, fireAtMillis: Long): String {
     val millisUntilFire = (fireAtMillis - System.currentTimeMillis()).coerceAtLeast(60_000L)
     val duration = java.time.Duration.ofMillis(millisUntilFire)
     val days = duration.toDays()
     val hours = duration.minusDays(days).toHours()
     val minutes = duration.minusDays(days).minusHours(hours).toMinutes()
     return when {
-        days > 0L && hours == 0L -> "약 ${days}일 뒤에 울려요"
-        days > 0L -> "약 ${days}일 ${hours}시간 뒤에 울려요"
-        hours == 0L -> "${minutes.coerceAtLeast(1)}분 뒤에 울려요"
-        minutes == 0L -> "${hours}시간 뒤에 울려요"
-        else -> "${hours}시간 ${minutes}분 뒤에 울려요"
+        days > 0L && hours == 0L -> context.getString(R.string.r3ed_time_until_days, days)
+        days > 0L -> context.getString(R.string.r3ed_time_until_days_hours, days, hours)
+        hours == 0L -> context.getString(R.string.r3ed_time_until_minutes, minutes.coerceAtLeast(1))
+        minutes == 0L -> context.getString(R.string.r3ed_time_until_hours, hours)
+        else -> context.getString(R.string.r3ed_time_until_hours_minutes, hours, minutes)
     }
 }
 
-internal fun googleSignInErrorMessage(statusCode: Int): String = when (statusCode) {
-    10 -> "Google 로그인 설정이 맞지 않아요. Android OAuth 클라이언트의 패키지 이름과 SHA-1을 확인해 주세요."
-    7 -> "네트워크 연결을 확인한 뒤 다시 시도해 주세요."
-    12500 -> "Google 로그인에 실패했어요."
-    12501 -> "Google 로그인을 취소했어요."
-    12502 -> "Google 로그인이 이미 진행 중이에요."
-    else -> "Google 로그인에 실패했어요. status=$statusCode"
+internal fun googleSignInErrorMessage(context: android.content.Context, statusCode: Int): String = when (statusCode) {
+    10 -> context.getString(R.string.r3ed_google_signin_error_config)
+    7 -> context.getString(R.string.r3ed_google_signin_error_network)
+    12500 -> context.getString(R.string.r3ed_google_signin_error_failed)
+    12501 -> context.getString(R.string.r3ed_google_signin_error_canceled)
+    12502 -> context.getString(R.string.r3ed_google_signin_error_in_progress)
+    else -> context.getString(R.string.r3ed_google_signin_error_failed_status, statusCode)
 }
 
 internal class AlarmEditorState(
@@ -64,6 +69,7 @@ internal class AlarmEditorState(
     rawAudioUri: String?,
     voiceSource: String,
     voiceProfileId: String?,
+    voiceListenerTitle: String?,
     voiceText: String?,
     voiceCategory: String?,
     voiceLanguage: String?,
@@ -82,6 +88,8 @@ internal class AlarmEditorState(
     alarmVolumePercent: Int,
     alarmSoundUri: String?,
     alarmSoundLabel: String?,
+    bucketId: String? = null,
+    bucketClipKeysJson: String? = null,
 ) {
     var label by mutableStateOf(label)
     var hour by mutableIntStateOf(hour)
@@ -98,6 +106,9 @@ internal class AlarmEditorState(
     var rawAudioUri by mutableStateOf(rawAudioUri)
     var voiceSource by mutableStateOf(voiceSource)
     var voiceProfileId by mutableStateOf(voiceProfileId)
+    // 알람별 호칭 덮어쓰기. 비어 있으면 선택한 목소리 프로필의 호칭(listener_title)을 그대로 쓴다.
+    // (DB 저장 없이 편집 세션 동안만 유지 — TTS 생성 요청의 listenerTitle 로만 전달)
+    var voiceListenerTitleOverride by mutableStateOf(voiceListenerTitle ?: "")
     var voiceText by mutableStateOf(voiceText ?: "")
     var voiceCategory by mutableStateOf(normalizedTtsCategory(voiceCategory ?: "morning"))
     var voiceLanguage by mutableStateOf(voiceLanguage ?: "ko")
@@ -117,6 +128,11 @@ internal class AlarmEditorState(
     var alarmVolumePercent by mutableIntStateOf(alarmVolumePercent.coerceIn(0, 100))
     var alarmSoundUri by mutableStateOf(alarmSoundUri)
     var alarmSoundLabel by mutableStateOf(alarmSoundLabel)
+    // 무료 버킷 회전: 선택한 버킷 카테고리, 미리 캐시한 N개 클립의 cacheKey JSON,
+    // 그리고 그 클립이 어떤 보이스로 캐시됐는지(보이스 변경 시 재선택 판단용, 영속 안 함).
+    var selectedBucket by mutableStateOf(bucketId)
+    var bucketClipKeysJson by mutableStateOf(bucketClipKeysJson)
+    var bucketResolvedForProfileId by mutableStateOf(if (bucketId != null) voiceProfileId else null)
     private var generatedTtsKey by mutableStateOf(
         ttsMessageId?.let {
             buildTtsKey(
@@ -124,6 +140,7 @@ internal class AlarmEditorState(
                 text = voiceText.orEmpty(),
                 category = if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom",
                 language = voiceLanguage ?: "ko",
+                listenerTitle = voiceListenerTitle,
             )
         },
     )
@@ -146,6 +163,11 @@ internal class AlarmEditorState(
             rawAudioUri = if (alarmOnly) null else rawAudioUri,
             voiceSource = if (alarmOnly) VoiceSources.LOCAL_AUDIO else voiceSource,
             voiceProfileId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else voiceProfileId,
+            voiceListenerTitle = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) {
+                null
+            } else {
+                voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
+            },
             voiceText = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsTextForSave(),
             voiceCategory = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceCategory(),
             voiceLanguage = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else activeVoiceLanguage(),
@@ -187,6 +209,10 @@ internal class AlarmEditorState(
             voiceRepeat = if (alarmOnly) true else voiceRepeat,
             voiceVolumePercent = if (alarmOnly) 100 else voiceVolumePercent.coerceIn(MinVoiceVolumePercent, 100),
             ttsMessageId = if (alarmOnly || voiceSource == VoiceSources.LOCAL_AUDIO) null else ttsMessageId?.takeIf { it.isNotBlank() },
+            // 실제 버킷 회전 알람일 때만 저장 — 유료가 기존 버킷 알람을 일반/랜덤 TTS 로 바꾸면
+            // 남아 있던 selectedBucket/clipKeys 를 persist 하지 않도록(울림 시 옛 버킷 오디오 방지).
+            bucketId = if (isActiveBucketAlarm()) selectedBucket else null,
+            bucketClipKeysJson = if (isActiveBucketAlarm()) bucketClipKeysJson else null,
             alarmVolumePercent = alarmVolumePercent.coerceIn(0, 100),
             alarmSoundUri = alarmSoundUri,
             alarmSoundLabel = alarmSoundLabel,
@@ -198,6 +224,7 @@ internal class AlarmEditorState(
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
         rawAudioUri = audio.rawAudioUri
+        clearBucketSelection()
         clearTtsMeta()
     }
 
@@ -212,12 +239,54 @@ internal class AlarmEditorState(
         generatedTtsKey = null
     }
 
+    /** 현재 편집 상태가 실제 버킷 회전 알람인지 — 대표 클립이 버킷 클립 목록에 포함될 때만 true. */
+    private fun isActiveBucketAlarm(): Boolean {
+        if (playMode == AlarmPlayModes.ALARM_ONLY || voiceSource == VoiceSources.LOCAL_AUDIO) return false
+        if (selectedBucket == null) return false
+        val keys = com.alarmtalk.app.data.decodeBucketClipKeys(bucketClipKeysJson)
+        return keys.isNotEmpty() && audioCacheKey != null && keys.contains(audioCacheKey)
+    }
+
+    /** 버킷(회전) 메타데이터를 비운다. 일반/생성/녹음 등 비-버킷 경로로 전환할 때 호출. */
+    private fun clearBucketSelection() {
+        selectedBucket = null
+        bucketClipKeysJson = null
+        bucketResolvedForProfileId = null
+    }
+
+    fun selectVoiceProfile(profileId: String?) {
+        if (voiceProfileId != profileId) {
+            voiceListenerTitleOverride = ""
+        }
+        voiceProfileId = profileId
+        clearTtsMeta()
+    }
+
     fun ttsTextForSave(): String = if (voiceRandomPrompt) "" else voiceText.trim()
 
-    fun hasFreshTtsAudio(profileId: String, text: String): Boolean =
-        !localAudioUri.isNullOrBlank() && (
-            generatedTtsKey == buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()) ||
-                audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    fun hasFreshTtsAudio(profileId: String, text: String, listenerTitle: String? = null): Boolean {
+        val listenerTitleForKey = listenerTitle?.trim()?.takeIf { it.isNotBlank() }
+            ?: voiceListenerTitleOverride.trim().takeIf { it.isNotBlank() }
+        return !localAudioUri.isNullOrBlank() && (
+            generatedTtsKey == buildTtsKey(
+                profileId = profileId,
+                text = text,
+                category = activeVoiceCategory(),
+                language = activeVoiceLanguage(),
+                listenerTitle = listenerTitleForKey,
+            ) ||
+                (listenerTitleForKey.isNullOrBlank() && audioCacheKey == AlarmAudioStore.ttsCacheKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage()))
+            )
+    }
+
+    fun hasSelectedStockClipAudio(profileId: String, text: String): Boolean =
+        !localAudioUri.isNullOrBlank() &&
+            audioCacheKey?.startsWith("stock_") == true &&
+            generatedTtsKey == buildTtsKey(
+                profileId = profileId,
+                text = text,
+                category = activeVoiceCategory(),
+                language = activeVoiceLanguage(),
             )
 
     fun setGeneratedTtsAudio(
@@ -226,19 +295,72 @@ internal class AlarmEditorState(
         text: String,
         messageId: String,
         rawAudioUri: String?,
+        listenerTitle: String? = null,
     ) {
         voiceSource = VoiceSources.TTS_PROFILE
         voiceProfileId = profileId
+        // 생성 TTS 로 전환 — 버킷 메타를 비워 activeVoiceLanguage/저장이 옛 버킷에 끌리지 않게.
+        clearBucketSelection()
         voiceText = text
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
         this.rawAudioUri = rawAudioUri ?: audio.rawAudioUri
         ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage(), listenerTitle)
+    }
+
+    fun setStockClipAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        messageId: String,
+        text: String,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceListenerTitleOverride = ""
+        voiceRandomPrompt = false
+        voiceTranslationEnabled = false
+        clearBucketSelection()
+        voiceText = text
+        localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
+        rawAudioUri = audio.rawAudioUri
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
+    }
+
+    /**
+     * 무료 버킷 선택 결과를 상태에 반영한다. 대표(변형0) 클립을 단일 재생 폴백으로 박고,
+     * 회전용 N개 클립의 cacheKey 목록을 저장한다. 랜덤 문구 생성과는 무관(voiceRandomPrompt=false).
+     */
+    fun setBucketAudio(
+        audio: CachedAlarmAudio,
+        profileId: String,
+        messageId: String,
+        text: String,
+        language: String,
+        bucket: String,
+        clipKeys: List<String>,
+    ) {
+        voiceSource = VoiceSources.TTS_PROFILE
+        voiceProfileId = profileId
+        voiceListenerTitleOverride = ""
+        voiceRandomPrompt = false
+        voiceTranslationEnabled = false
+        voiceText = text
+        voiceLanguage = language
+        localAudioUri = audio.localAudioUri
+        audioCacheKey = audio.cacheKey
+        rawAudioUri = audio.rawAudioUri
+        ttsMessageId = messageId.takeIf { it.isNotBlank() }
+        selectedBucket = bucket
+        bucketClipKeysJson = com.alarmtalk.app.data.encodeBucketClipKeys(clipKeys)
+        bucketResolvedForProfileId = profileId
         generatedTtsKey = buildTtsKey(profileId, text, activeVoiceCategory(), activeVoiceLanguage())
     }
 
     fun activeVoiceLanguage(): String =
-        if (voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
+        if (selectedBucket != null || voiceRandomPrompt || voiceTranslationEnabled) voiceLanguage else "ko"
 
     fun activeVoiceCategory(): String =
         if (voiceRandomPrompt) ttsCategoryForRandomContext(voiceRandomContext) else "custom"
@@ -253,6 +375,7 @@ internal class AlarmEditorState(
         voiceText = message.text
         voiceCategory = message.category ?: "custom"
         voiceRandomPrompt = false
+        clearBucketSelection()
         localAudioUri = null
         audioCacheKey = null
         rawAudioUri = message.audioUrl
@@ -272,6 +395,7 @@ internal class AlarmEditorState(
         voiceText = text
         voiceCategory = category ?: "custom"
         voiceRandomPrompt = false
+        clearBucketSelection()
         this.voiceProfileId = voiceProfileId
         localAudioUri = audio.localAudioUri
         audioCacheKey = audio.cacheKey
@@ -301,12 +425,14 @@ internal class AlarmEditorState(
                 rawAudioUri = alarm?.rawAudioUri,
                 voiceSource = alarm?.voiceSource ?: VoiceSources.TTS_PROFILE,
                 voiceProfileId = alarm?.voiceProfileId,
+                voiceListenerTitle = alarm?.voiceListenerTitle,
                 voiceText = alarm?.voiceText,
                 voiceCategory = alarm?.voiceCategory ?: "morning",
                 voiceLanguage = alarm?.voiceLanguage ?: "ko",
+                // 새 알람은 랜덤(기본 문구) ON — 목소리만 고르면 추가 입력 없이 저장 가능.
                 voiceRandomPrompt = alarm?.voiceRandomPrompt ?: alarm?.let {
                     it.voiceSource == VoiceSources.TTS_PROFILE && it.voiceText.isNullOrBlank()
-                } ?: false,
+                } ?: true,
                 voiceRandomContext = alarm?.voiceRandomContext ?: DefaultRandomPromptContext,
                 voiceWeatherCountry = alarm?.voiceWeatherCountry,
                 voiceWeatherCity = alarm?.voiceWeatherCity,
@@ -319,19 +445,27 @@ internal class AlarmEditorState(
                 alarmVolumePercent = alarm?.alarmVolumePercent ?: 100,
                 alarmSoundUri = alarm?.alarmSoundUri,
                 alarmSoundLabel = alarm?.alarmSoundLabel,
+                bucketId = alarm?.bucketId,
+                bucketClipKeysJson = alarm?.bucketClipKeysJson,
             )
         }
     }
 }
 
-internal fun buildTtsKey(profileId: String, text: String, category: String, language: String): String =
-    listOf(profileId, text.trim(), category, language).joinToString("|")
+internal fun buildTtsKey(
+    profileId: String,
+    text: String,
+    category: String,
+    language: String,
+    listenerTitle: String? = null,
+): String =
+    listOf(profileId, text.trim(), category, language, listenerTitle?.trim().orEmpty()).joinToString("|")
 
 internal fun normalizedTtsCategory(category: String): String {
     val legacy = mapOf(
         "afternoon" to "cheer",
         "sleep" to "night",
-        "medicine" to "health",
+        "medicine" to "medication",
     )
     val resolved = legacy[category] ?: category
     return if (TtsCategories.any { (key, _) -> key == resolved }) resolved else DefaultRandomTtsCategory
@@ -348,7 +482,7 @@ internal fun ttsCategoryForRandomContext(context: String?): String =
     when (normalizedRandomPromptContext(context ?: DefaultRandomPromptContext)) {
         "meal" -> "lunch"
         "sleep" -> "night"
-        "exercise" -> "health"
+        "exercise" -> "exercise"
         "love" -> "love"
         else -> "morning"
     }
@@ -360,5 +494,6 @@ internal fun randomContextUsesWeather(context: String?): Boolean =
     }
 
 private const val DefaultRandomTtsCategory = "morning"
-internal const val DefaultRandomPromptContext = "wake_weather"
+// 기본은 추가 입력이 필요 없는 고정 문구(preset) — 목소리만 고르면 바로 저장할 수 있다.
+internal const val DefaultRandomPromptContext = "preset"
 internal const val MinVoiceVolumePercent = 30

@@ -4,10 +4,10 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 
 class DynamicVoiceRefreshWorker(
     appContext: Context,
@@ -17,8 +17,8 @@ class DynamicVoiceRefreshWorker(
         val session = AuthSessionStore(applicationContext).read() ?: return Result.success()
         return runCatching {
             val refreshed = AlarmAppContainer.repository(applicationContext)
-                .refreshDueDynamicVoiceAlarms(
-                    api = VoiceAlarmApiClient.create(),
+                .refreshDueDynamicAlarmTalks(
+                    api = AlarmTalkApiClient.create(),
                     token = session.token,
                 )
             Log.i(TAG, "Dynamic voice refresh worker complete refreshed=$refreshed")

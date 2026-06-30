@@ -1,13 +1,14 @@
 import { Hono, type Context } from 'hono';
 import type { AppEnv } from '../types';
-import type { VoiceStorage } from '@voice-alarm/voice';
+import type { VoiceStorage } from '@alarmtalk/voice';
 import { ElevenLabsClient } from '../lib/elevenlabs';
 import { getDB } from '../lib/db';
 import { typedRow, getFormFile } from '../lib/db-types';
-import { getSharedInMemoryVoiceStorage } from '@voice-alarm/voice';
+import { getSharedInMemoryVoiceStorage } from '@alarmtalk/voice';
 import { R2VoiceStorage } from '../lib/r2-storage';
 import { UUID_RE } from '../lib/validate';
 import { isPaidVoicePlan } from './billing-helpers';
+import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent';
 
 function getStorage(env?: { VOICE_BUCKET?: R2Bucket }): VoiceStorage {
   if (env?.VOICE_BUCKET) return new R2VoiceStorage(env.VOICE_BUCKET);
@@ -44,6 +45,27 @@ function paidVoiceRequired(c: Context<AppEnv>) {
   );
 }
 
+function consentRequired(c: Context<AppEnv>, consent: string) {
+  const error =
+    consent === 'voice_biometric'
+      ? 'Voice biometric consent is required for voice audio processing.'
+      : 'Overseas transfer consent is required for ElevenLabs voice processing.';
+  return c.json({ error, error_code: 'CONSENT_REQUIRED', consent }, 403);
+}
+
+async function requireSensitiveVoiceConsents(
+  c: Context<AppEnv>,
+  db: ReturnType<typeof getDB>,
+  requiredTypes: readonly string[],
+): Promise<Response | null> {
+  const missingConsent = await missingConsentType(
+    db,
+    c.get('userIdPK') || c.get('userId'),
+    requiredTypes,
+  );
+  return missingConsent ? consentRequired(c, missingConsent) : null;
+}
+
 voiceUpload.post('/upload', async (c) => {
   const userId = c.get('userId');
   const db = getDB(c.env);
@@ -72,14 +94,13 @@ voiceUpload.post('/upload', async (c) => {
     );
   }
 
-  const buffer = await audioFile.arrayBuffer();
-  if (buffer.byteLength === 0) {
+  if (audioFile.size === 0) {
     return c.json({ error: 'audio file is empty', error_code: 'AUDIO_FILE_EMPTY' }, 400);
   }
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+  if (audioFile.size > MAX_UPLOAD_BYTES) {
     return c.json(
       {
-        error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${buffer.byteLength})`,
+        error: `audio file exceeds ${MAX_UPLOAD_BYTES} bytes (got ${audioFile.size})`,
         error_code: 'AUDIO_FILE_TOO_LARGE',
       },
       413,
@@ -123,6 +144,10 @@ voiceUpload.post('/upload', async (c) => {
     return paidVoiceRequired(c);
   }
 
+  const consentResponse = await requireSensitiveVoiceConsents(c, db, SENSITIVE_REQUIRED_CONSENTS);
+  if (consentResponse) return consentResponse;
+
+  const buffer = await audioFile.arrayBuffer();
   const originalNameRaw = formData.get('originalName');
   const originalName =
     typeof originalNameRaw === 'string' && originalNameRaw.length > 0
@@ -195,6 +220,9 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     return paidVoiceRequired(c);
   }
 
+  const consentResponse = await requireSensitiveVoiceConsents(c, db, SENSITIVE_REQUIRED_CONSENTS);
+  if (consentResponse) return consentResponse;
+
   const stored = await getStorage(c.env).get(upload.object_key);
   if (!stored) {
     return c.json(
@@ -212,6 +240,7 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     const diarized = await client.diarize(toArrayBuffer(stored.bytes), {
       mimeType: stored.meta.mimeType,
       fileName: stored.meta.originalName ?? upload.object_key,
+      numSpeakers: MAX_SPEAKERS,
     });
     result = {
       provider: 'elevenlabs',
@@ -344,17 +373,21 @@ voiceUpload.post('/diarize', async (c) => {
     return c.json({ error: 'audio file is required', error_code: 'AUDIO_FILE_REQUIRED' }, 400);
   }
 
-  const audioBuffer = await audioFile.arrayBuffer();
-
   if (!(await hasPaidVoiceAccess(c))) {
     return paidVoiceRequired(c);
   }
+
+  const consentResponse = await requireSensitiveVoiceConsents(c, getDB(c.env), SENSITIVE_REQUIRED_CONSENTS);
+  if (consentResponse) return consentResponse;
+
+  const audioBuffer = await audioFile.arrayBuffer();
 
   try {
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
     const result = await client.diarize(audioBuffer, {
       mimeType: audioFile.type,
       fileName: audioFile.name,
+      numSpeakers: MAX_SPEAKERS,
     });
 
     return c.json({

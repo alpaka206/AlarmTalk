@@ -1,3 +1,10 @@
+/**
+ * {@link VoiceProvider} 의 결정론적 가짜 구현.
+ *
+ * 외부 음성 AI(ElevenLabs 등)를 호출하지 않고 입력 해시로 안정적인 결과를
+ * 만들어낸다. 개발 중 로컬 실행과 자동화 테스트에서 사용한다 — 자동화
+ * 테스트가 실제 음성 AI 비용/호출을 발생시키지 않도록 하기 위한 핵심 장치.
+ */
 import {
   EnrollInput,
   EnrollInputSchema,
@@ -11,7 +18,6 @@ import {
   VoiceProvider,
 } from './types.js';
 
-// TODO: real perso.ai integration
 // TODO: real elevenlabs integration
 export class MockVoiceProvider implements VoiceProvider {
   readonly name = 'mock';

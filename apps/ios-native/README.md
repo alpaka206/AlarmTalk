@@ -4,7 +4,7 @@ SwiftUI + AlarmKit scaffold for Phase 7. This is source-ready for Xcode on macOS
 
 ## Scope
 
-- SwiftUI app shell using the same mustard/navy/terracotta brand direction as Android and the legacy app.
+- SwiftUI app shell using the same unified blue (azure) Material 3 brand direction as Android (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`.
 - Native Sign in with Apple using `AuthenticationServices`.
 - Backend `/api/auth/apple` session exchange and app JWT storage in Keychain.
 - AlarmKit authorization request.
@@ -32,7 +32,7 @@ On macOS:
 cd apps/ios-native
 brew install xcodegen
 xcodegen generate
-open VoiceAlarmNative.xcodeproj
+open AlarmTalkNative.xcodeproj
 ```
 
 For a command-line compile check without signing:
@@ -44,13 +44,13 @@ bash scripts/build-debug.sh
 
 In Xcode:
 
-1. Select the `VoiceAlarm` target.
+1. Select the `AlarmTalk` target.
 2. Set a development team.
 3. Confirm the bundle ID matches the backend `APPLE_CLIENT_ID` env value.
 4. Confirm Signing & Capabilities includes **Sign in with Apple**.
 5. Run on a physical iPhone with iOS 26+.
 
-The app reads `VOICE_ALARM_API_BASE_URL` from `VoiceAlarm/Info.plist`. The default is production:
+The app reads `VOICE_ALARM_API_BASE_URL` from `AlarmTalk/Info.plist`. The default is production:
 
 ```text
 https://api.alarm-talk.com/api
@@ -104,23 +104,20 @@ Apple App Store 정책상 디지털 구독은 **반드시 StoreKit2 IAP** 로 �
 
 ### App Store Connect 제품 등록
 
-App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 6개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다.
+App Store Connect → My Apps → AlarmTalk → Features → In-App Purchases 에서 다음 3개 SKU 를 동일한 구독 그룹("AlarmTalk Subscriptions") 아래에 등록한다. (연간 SKU 는 판매하지 않는다.)
 
 | productID | PlanTier | Period | 비고 |
 | --- | --- | --- | --- |
 | `com.voicealarm.nativeapp.ios.personal_monthly` | personal | Monthly (P1M) | |
-| `com.voicealarm.nativeapp.ios.personal_yearly`  | personal | Yearly (P1Y)  | |
 | `com.voicealarm.nativeapp.ios.couple_monthly`   | couple   | Monthly (P1M) | |
-| `com.voicealarm.nativeapp.ios.couple_yearly`    | couple   | Yearly (P1Y)  | |
 | `com.voicealarm.nativeapp.ios.family_monthly`   | family   | Monthly (P1M) | Family Sharing **enabled** |
-| `com.voicealarm.nativeapp.ios.family_yearly`    | family   | Yearly (P1Y)  | Family Sharing **enabled** |
 
 - 모든 SKU 를 단일 구독 그룹에 두면 사용자가 그룹 내에서 자유롭게 업/다운그레이드 할 수 있고, 가족 플랜은 Family Sharing 을 켜서 Apple Family 그룹 멤버에게도 entitlement 가 propagate 된다.
 - 가격은 App Store 의 region 별 price tier 로 설정 — 코드는 `Product.displayPrice` 를 그대로 표시하므로 통화/세금이 자동 반영된다.
 
 ### 시뮬레이터 로컬 테스트
 
-`apps/ios-native/VoiceAlarm/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 6개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
+`apps/ios-native/AlarmTalk/Configuration/StoreKitConfiguration.storekit` 파일이 시뮬레이터용 3개 SKU 정의를 담고 있다. `project.yml` 의 scheme 설정에서 자동 선택되며, 실기기/TestFlight 빌드에서는 무시되고 App Store Connect 가 권위로 사용된다.
 
 xcodegen 후 Xcode 에서:
 
@@ -135,7 +132,7 @@ xcodegen 후 Xcode 에서:
 
 현재 백엔드 라우트는 server-to-server 검증이 구현되기 전까지 fail-closed 로 동작한다. 유효한 SKU 여도 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하며 DB entitlement 를 변경하지 않는다. iOS 클라이언트는 StoreKit `currentEntitlements` 를 로컬 권위로 사용하고, 서버 검증 구현 후 foreground 진입 시 `resyncEntitlements()` 로 catch-up 한다.
 
-**라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`VoiceAlarmApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
+**라우트가 아직 배포되지 않은 경우**: 클라이언트는 graceful degradation 한다. StoreKit `currentEntitlements` 가 권위이므로 `currentTier` 는 정확하게 계산되며, 백엔드 plan/subscription row 만 갱신되지 않을 뿐이다. 백엔드 라우트가 배포된 후 다음 foreground 진입 시 자동 catch-up 된다 (`AlarmTalkApp.swift` 의 `.active` 분기에서 `resyncEntitlements()` 가 호출됨).
 
 요청 페이로드 (`ConfirmAppleSubscriptionRequest`):
 
@@ -143,7 +140,8 @@ xcodegen 후 Xcode 에서:
 {
   "transaction_id": "...",
   "original_transaction_id": "...",
-  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly"
+  "product_id": "com.voicealarm.nativeapp.ios.personal_monthly",
+  "jws_representation": "<StoreKit2 VerificationResult.jwsRepresentation — Apple 서명 raw JWS>"
 }
 ```
 
@@ -151,11 +149,13 @@ xcodegen 후 Xcode 에서:
 
 ```json
 {
-  "subscription_id": "sub_...",
-  "plan": "personal",
-  "expires_at": "2026-06-19T12:34:56Z"
+  "success": true,
+  "plan_key": "personal",
+  "subscription": { "id": "sub_...", "plan_id": "...", "status": "active", "starts_at": "...", "expires_at": "2026-06-19T12:34:56Z" }
 }
 ```
+
+`success: true` 수신 시 클라이언트는 기존 구독 fetch 경로(`GET /api/billing/subscription`)로 서버 구독 상태를 즉시 새로고침한다 (`SubscriptionManager.onServerEntitlementUpdated` → `SocialFeatureViewModel.refreshSubscriptionSilently`). 501/503 응답은 비파괴 처리 — 로컬 StoreKit entitlement 를 유지하고 에러를 노출하지 않는다.
 
 ### Transaction listener race-safety
 

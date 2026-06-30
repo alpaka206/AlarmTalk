@@ -1,5 +1,6 @@
 import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
+import { enqueueUserVoiceArtifacts } from './audio-retention';
 
 const TEXT_ENCODER = new TextEncoder();
 
@@ -29,15 +30,18 @@ export async function pseudonymizeBillingForRetention(
 ): Promise<void> {
   const pseudonym = await pseudonymizeUserId(userPk, salt);
   const retainUntil = new Date(now.getTime() + 5 * 365 * 24 * 60 * 60 * 1000).toISOString();
+  // 결제 금액(plans.price_krw)을 함께 보존해 전자상거래법상 '대금결제 기록'이 완전해지도록 한다.
   const subs = await tx.execute({
-    sql: `SELECT id, plan_id, status, starts_at, expires_at FROM subscriptions WHERE user_id = ?`,
+    sql: `SELECT s.id, s.plan_id, s.status, s.starts_at, s.expires_at, p.price_krw
+          FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+          WHERE s.user_id = ?`,
     args: [userPk],
   });
   for (const row of subs.rows) {
     await tx.execute({
       sql: `INSERT INTO retained_billing_records
-              (id, pseudonym, plan_id, status, starts_at, expires_at, retained_reason, retain_until)
-            VALUES (?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
+              (id, pseudonym, plan_id, status, starts_at, expires_at, amount_krw, retained_reason, retain_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'ecommerce_act_5y', ?)`,
       args: [
         crypto.randomUUID(),
         pseudonym,
@@ -45,6 +49,7 @@ export async function pseudonymizeBillingForRetention(
         (row.status as string | null) ?? null,
         (row.starts_at as string | null) ?? null,
         (row.expires_at as string | null) ?? null,
+        row.price_krw != null ? Number(row.price_krw) : null,
         retainUntil,
       ],
     });
@@ -60,8 +65,25 @@ export async function purgeUserAccount(
   userPk: string | null,
   userId: string,
 ): Promise<void> {
+  // userPk(users.id) 를 해석하지 못한 채 진행하면 PK 로 연결된 자식 PII(클론 음성·
+  // 결제·노트 등)가 고아로 남는다. 사용자 행이 실제로 존재하는데 userPk 만 null 이면
+  // 해석 실패이므로 소리 없이 users 만 지우지 말고 throw 해 호출부에서 롤백되게 한다.
+  if (!userPk) {
+    const orphanGuard = await tx.execute({
+      sql: `SELECT id FROM users WHERE google_id = ? OR apple_id = ? OR id = ? LIMIT 1`,
+      args: [userId, userId, userId],
+    });
+    if (orphanGuard.rows.length > 0) {
+      throw new Error(
+        `purgeUserAccount: userPk unresolved for existing user (userId=${userId}); aborting to avoid orphaning child PII`,
+      );
+    }
+  }
   if (userPk) {
     const userIds = [userPk, userId];
+    // 클론 voice/R2 오디오의 외부 삭제 참조를 행 삭제 *전에* 큐에 적재한다.
+    // 실제 삭제는 cron 의 drainExternalDeletions 가 수행 (GDPR/개인정보보호법 잔존 방지).
+    await enqueueUserVoiceArtifacts(tx, userIds);
     await cancelActiveSubscriptionsForUser(tx, userPk);
 
     await tx.execute({
@@ -109,6 +131,13 @@ export async function purgeUserAccount(
       sql: `DELETE FROM subscriptions WHERE user_id = ?`,
       args: [userPk],
     });
+    // 결제 검증 원본(store_transactions)도 함께 파기한다. user_id(원본 식별자)가 남으면
+    // 가명보존(retained_billing_records) 설계를 우회해 탈퇴자 직접식별자가 잔존한다
+    // (개인정보보호법 제21조). 보존이 필요한 거래 사실은 위 가명보존 레코드가 담는다.
+    await tx.execute({
+      sql: `DELETE FROM store_transactions WHERE user_id IN (?, ?)`,
+      args: [userPk, userId],
+    });
 
     await tx.execute({
       sql: `DELETE FROM notes WHERE sender_id = ? OR receiver_id = ?`,
@@ -119,25 +148,6 @@ export async function purgeUserAccount(
       args: [userPk],
     });
     await tx.execute({
-      sql: `DELETE FROM character_xp_logs
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM character_stats
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM streak_achievements
-            WHERE character_id IN (SELECT id FROM characters WHERE user_id = ?)`,
-      args: [userPk],
-    });
-    await tx.execute({
-      sql: `DELETE FROM characters WHERE user_id = ?`,
-      args: [userPk],
-    });
-    await tx.execute({
       sql: `DELETE FROM voice_speakers
             WHERE upload_id IN (SELECT id FROM voice_uploads WHERE user_id = ?)`,
       args: [userPk],
@@ -145,6 +155,13 @@ export async function purgeUserAccount(
     await tx.execute({
       sql: `DELETE FROM voice_uploads WHERE user_id = ?`,
       args: [userPk],
+    });
+
+    // raw-alarms 업로드 추적 행 정리(R2 오브젝트는 위 enqueueUserVoiceArtifacts 가
+    // 이미 삭제 큐에 적재했다).
+    await tx.execute({
+      sql: `DELETE FROM raw_alarm_uploads WHERE user_id IN (?, ?)`,
+      args: [userPk, userId],
     });
 
     await tx.execute({

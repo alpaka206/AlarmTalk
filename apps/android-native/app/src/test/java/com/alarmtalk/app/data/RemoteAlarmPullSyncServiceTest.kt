@@ -1,12 +1,22 @@
 package com.alarmtalk.app.data
 
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
 import com.alarmtalk.app.network.RemoteAlarm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+// receivedRemoteAlarmLabel 가 Context(앱 리소스)에 의존하므로 Robolectric 으로 실행.
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], qualifiers = "ko")
 class RemoteAlarmPullSyncServiceTest {
+    private val context: Context = ApplicationProvider.getApplicationContext()
+
     @Test
     fun newReceivedRemoteAlarmUsesRemoteActiveState() {
         assertTrue(resolveReceivedRemoteEnabled(existing = null, remoteIsActive = true))
@@ -63,22 +73,22 @@ class RemoteAlarmPullSyncServiceTest {
 
     @Test
     fun receivedRemoteAlarmLabelUsesSenderNameAsSentAlarmCopy() {
-        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원"))
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원"))
     }
 
     @Test
     fun receivedRemoteAlarmLabelDoesNotDuplicateHonorific() {
-        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel("김규원님"))
+        assertEquals("김규원님이 보낸 알람", receivedRemoteAlarmLabel(context, "김규원님"))
     }
 
     @Test
     fun receivedRemoteAlarmLabelFallsBackWhenSenderIsMissing() {
-        assertEquals("상대가 보낸 알람", receivedRemoteAlarmLabel(" "))
+        assertEquals("상대가 보낸 알람", receivedRemoteAlarmLabel(context, " "))
     }
 
     @Test
     fun receivedRemoteAlarmLabelUsesFallbackSenderWhenPrimaryIsBlank() {
-        assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(" ", "sender@example.com"))
+        assertEquals("sender@example.com님이 보낸 알람", receivedRemoteAlarmLabel(context, " ", "sender@example.com"))
     }
 
     private fun alarm(
@@ -105,6 +115,7 @@ class RemoteAlarmPullSyncServiceTest {
             rawAudioUri = null,
             voiceSource = VoiceSources.LOCAL_AUDIO,
             voiceProfileId = null,
+            voiceListenerTitle = null,
             voiceText = null,
             voiceCategory = null,
             voiceLanguage = null,

@@ -79,7 +79,7 @@ function ContactHero() {
             <br />
             <span className="text-accent">{t("headline2")}</span>
           </h1>
-          <p className="mt-7 max-w-[620px] text-[17px] leading-[1.65] text-text-muted">
+          <p className="mt-7 max-w-155 text-[17px] leading-[1.65] text-text-muted">
             {t("description")}
           </p>
         </div>

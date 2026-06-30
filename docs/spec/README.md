@@ -29,7 +29,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-2.1 | Max 2 voice profiles per user | P0 | ✅ |
 | FR-2.2 | In-app voice recording (max 30 seconds, requires mic permission) | P0 | ✅ |
 | FR-2.3 | Audio file upload with automatic 30-second trim on overflow | P0 | ✅ |
-| FR-2.4 | ElevenLabs Instant Voice Clone | P0 | ✅ |
+| FR-2.4 | Instant Voice Clone (ElevenLabs) | P0 | ✅ |
 | FR-2.5 | Voice-profile rename and delete | P0 | ✅ |
 | FR-2.6 | Read-only listing of family-group members' voice profiles | P1 | ✅ |
 | FR-2.7 | Speaker diarization on uploaded files | P2 | ✅ backend / 🚧 UI |
@@ -66,7 +66,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | ID | Requirement | P | Status |
 |---|---|---|---|
 | FR-5.1 | Friend request by email, accept/decline/delete | P1 | ✅ |
-| FR-5.2 | Family / couple group creation, max 6 members | P0 | ✅ |
+| FR-5.2 | Family / couple group creation, max 5 members | P0 | ✅ |
 | FR-5.3 | 6-digit invite code (10-minute TTL, single-use) | P0 | ✅ |
 | FR-5.4 | Code entry → group join / leave / forced removal | P0 | ✅ |
 | FR-5.5 | Ownership transfer (owner-only) | P1 | ✅ |
@@ -74,33 +74,23 @@ Functional and non-functional requirements, user stories, use cases, and feature
 | FR-5.7 | Family alarm (schedule an alarm on another member's device) | P1 | ✅ backend / 🚧 mobile UI |
 | FR-5.8 | Family notes (500-character text, same group only) | P2 | ✅ |
 
-### FR-6. Character, Streak, XP
+### FR-6. Billing & Plan
 
 | ID | Requirement | P | Status |
 |---|---|---|---|
-| FR-6.1 | 4-stage character (egg / chick / chicken / golden chicken) | P1 | ✅ |
-| FR-6.2 | XP daily cap of 200; idempotency by client nonce | P1 | ✅ |
-| FR-6.3 | Event-based XP map (`alarm_completed=5`, `alarm_snoozed=-5`, `alarm_dismissed=-5`, ...) with no XP/level downgrade below floor | P1 | ✅ |
-| FR-6.4 | Wake-up streak with 7 / 30 / 90-day milestones | P1 | ✅ |
-| FR-6.5 | Three stat dimensions (`diligence` / `health` / `consistency`) | P2 | ✅ |
+| FR-6.1 | Four tiers: free / personal / couple / family | P1 | ✅ |
+| FR-6.2 | Checkout stub (mock PG) | P2 | ✅ |
+| FR-6.3 | Cron-driven subscription expiry → auto plan downgrade | P1 | ✅ |
+| FR-6.4 | Real-payment integration (Toss / Apple IAP / Google Play Billing) | P0 before launch | 🚧 |
 
-### FR-7. Billing & Plan
-
-| ID | Requirement | P | Status |
-|---|---|---|---|
-| FR-7.1 | Four tiers: free / personal / couple / family | P1 | ✅ |
-| FR-7.2 | Checkout stub (mock PG) | P2 | ✅ |
-| FR-7.3 | Cron-driven subscription expiry → auto plan downgrade | P1 | ✅ |
-| FR-7.4 | Real-payment integration (Toss / Apple IAP / Google Play Billing) | P0 before launch | 🚧 |
-
-### FR-8. Operations & Observability
+### FR-7. Operations & Observability
 
 | ID | Requirement | P | Status |
 |---|---|---|---|
-| FR-8.1 | Structured logging (method, path, status, duration) | P1 | ✅ |
-| FR-8.2 | Sentry error tracking (no-op when DSN unset) | P1 | ✅ |
-| FR-8.3 | Migration batches (Workers free-plan subrequest limits) | P1 | ✅ |
-| FR-8.4 | `users.last_active_at` auto-update | P2 | ✅ |
+| FR-7.1 | Structured logging (method, path, status, duration) | P1 | ✅ |
+| FR-7.2 | Sentry error tracking (no-op when DSN unset) | P1 | ✅ |
+| FR-7.3 | Migration batches (Workers free-plan subrequest limits) | P1 | ✅ |
+| FR-7.4 | `users.last_active_at` auto-update | P2 | ✅ |
 
 ## 2. Non-Functional Requirements
 
@@ -114,7 +104,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 
 - API p95 < 500 ms on Cloudflare edge.
 - App cold start < 3 s on mid-range Android (Pixel 6 / Galaxy A32 baseline).
-- Deterministic cache hit → no ElevenLabs call for repeat inputs.
+- Deterministic cache hit → no voice-provider call for repeat inputs.
 
 ### Security
 
@@ -150,7 +140,7 @@ Functional and non-functional requirements, user stories, use cases, and feature
 
 - Stay within Cloudflare Workers free-plan daily request budget for non-production traffic.
 - Monitor Turso row-read budget weekly.
-- ElevenLabs spend gated by per-plan daily TTS caps and deterministic caching.
+- Voice-provider spend gated by per-plan daily TTS caps and deterministic caching.
 
 ## 3. User Stories (excerpt)
 
@@ -192,7 +182,7 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 - **Exception flows**
   - No voice profile → redirect to voice-profile creation.
   - `SCHEDULE_EXACT_ALARM` denied → permission gate with deep link.
-  - ElevenLabs failure → user message; alarm save is held.
+  - Voice-provider failure → user message; alarm save is held.
 - **Postconditions**: row inserted in `alarms`, OS alarm registered, next fire time visible in the list.
 
 ## 5. Feature Spec (selected modules)
@@ -215,8 +205,7 @@ A longer list with acceptance criteria belongs in the team's issue tracker. This
 - Source: `packages/backend/src/routes/tts.ts`, `lib/audio-cache.ts`, `lib/voice-provider.ts`
 - Cache key: `sha256(voice_profile_id | text | language | provider)`
 - Cache hit → R2 GET → base64 response.
-- Cache miss → provider chain (Perso direct → ElevenLabs) → mp3 bytes → R2 PUT → `generated_audio` insert → base64 response.
-- Provider chain currently falls through Perso (no direct voice-clone TTS API yet) to ElevenLabs.
+- Cache miss → ElevenLabs → mp3 bytes → R2 PUT → `generated_audio` insert → base64 response.
 
 ### F-06. Family invite code
 

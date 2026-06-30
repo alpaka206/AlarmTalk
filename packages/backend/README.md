@@ -1,4 +1,4 @@
-# VoiceAlarm Backend
+# AlarmTalk Backend
 
 Cloudflare Workers + Hono 기반 API 서버.
 
@@ -27,7 +27,7 @@ Cloudflare Workers + Hono 기반 API 서버.
 `POST /api/billing/apple/confirm` 은 서버가 Apple transaction 을 직접 검증하기 전까지 fail-closed 로 작동한다.
 
 - 라우트 진입에는 authMiddleware (JWT) 가 선행해 호출자 신원을 보장.
-- 알려진 SKU 화이트리스트 (`com.voicealarm.nativeapp.ios.{personal|couple|family}_{monthly|yearly}`) 만 수락.
+- 알려진 SKU 화이트리스트 (`com.voicealarm.nativeapp.ios.{personal|couple|family}_monthly`) 만 수락.
 - `APPLE_SHARED_SECRET` 미설정 시 503 으로 즉시 거부 (운영자 설정 강제).
 - secret 과 SKU 가 유효해도 클라이언트가 보낸 transaction_id/product_id 만으로 entitlement 를 갱신하지 않는다.
 - 현재는 501 `APPLE_TRANSACTION_VERIFICATION_REQUIRED` 를 반환하고 DB 를 변경하지 않는다.
@@ -81,7 +81,6 @@ npm run typecheck # tsc --noEmit
 | `/api/gift/*` | 선물 전송/수신 |
 | `/api/billing/*` | 결제 스텁 + 이용권 코드 |
 | `/api/family/*` | 가족 플랜 그룹 + 초대 + 알람 |
-| `/api/characters/*` | 캐릭터 조회 + XP 지급 |
 | `/api/user/*` | 사용자 프로필 + 설정 |
 
 ## Apple Login

@@ -22,7 +22,8 @@ export async function generateMetadata({
       canonical: localePath(locale, "terms"),
       languages: languageAlternates("terms"),
     },
-    robots: { index: true, follow: true },
+    // 법무 문서 본문은 한국어로만 제공되므로 ko 로케일만 색인한다.
+    robots: { index: locale === "ko", follow: true },
   };
 }
 

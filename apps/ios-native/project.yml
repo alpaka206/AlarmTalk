@@ -1,8 +1,13 @@
-name: VoiceAlarmNative
+name: AlarmTalkNative
 options:
   bundleIdPrefix: com.voicealarm.nativeapp.ios
   deploymentTarget:
     iOS: "26.0"
+  # 소스 문자열은 한국어. SwiftUI `Text("한국어")` 리터럴이 String Catalog 의 키로 쓰이고,
+  # ko=키 자체, en/ja 는 Localizable.xcstrings / InfoPlist.xcstrings 가 제공한다.
+  # (en·ja 를 knownRegions 에 활성화하려면 Mac 에서 Xcode 로 1회 언어 추가 필요 —
+  #  docs/qa/ios-localization.md 참고.)
+  developmentLanguage: ko
 configurations:
   Debug: debug
   Release: release
@@ -25,56 +30,68 @@ settings:
       GCC_OPTIMIZATION_LEVEL: "s"
       ONLY_ACTIVE_ARCH: NO
 targets:
-  VoiceAlarm:
+  AlarmTalk:
     type: application
     platform: iOS
     sources:
-      - VoiceAlarm
+      - AlarmTalk
       - Shared
       # Phase 4-D1: StoreKit Configuration 파일을 build resources 에 포함시켜
       # Xcode 의 scheme 에서 시뮬레이터용 IAP 테스트 환경을 선택할 수 있게 한다.
       # 실기기/TestFlight/AppStore 빌드에서는 자동으로 무시됨 (App Store Connect 가 권위).
-      - path: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
+      - path: AlarmTalk/Configuration/StoreKitConfiguration.storekit
         buildPhase: resources
     dependencies:
-      - target: VoiceAlarmWidget
+      - target: AlarmTalkWidget
         embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios
-        INFOPLIST_FILE: VoiceAlarm/Info.plist
-        CODE_SIGN_ENTITLEMENTS: VoiceAlarm/VoiceAlarm.entitlements
+        INFOPLIST_FILE: AlarmTalk/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AlarmTalk/AlarmTalk.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+      configs:
+        # GROUP 3: Shared/AlarmIntents.swift 는 앱·위젯 양쪽에 컴파일된다.
+        # AlarmAppContext(앱 전용) 부킹 코드는 ALARMTALK_APP 플래그로 앱 타겟에서만 켠다.
+        # 위젯 타겟은 이 플래그가 없어 인텐트 *타입* 심볼만 컴파일한다.
+        # `$(inherited)` 로 프로젝트 레벨 configs(Debug 의 DEBUG)를 보존한다.
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALARMTALK_APP"
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALARMTALK_APP"
     scheme:
       # Xcode 가 시뮬레이터에서 본 .storekit 파일을 자동 선택하도록 scheme run action 에 등록.
       # 실기기 빌드/Release 에서는 무시되고 App Store Connect 가 권위로 사용된다.
-      storeKitConfiguration: VoiceAlarm/Configuration/StoreKitConfiguration.storekit
-  VoiceAlarmWidget:
+      storeKitConfiguration: AlarmTalk/Configuration/StoreKitConfiguration.storekit
+      # `xcodebuild -scheme AlarmTalk test` 가 단위 테스트를 실행하도록 test action 에 포함.
+      testTargets:
+        - AlarmTalkTests
+  AlarmTalkWidget:
     type: app-extension
     platform: iOS
     sources:
-      - VoiceAlarmWidget
+      - AlarmTalkWidget
       - Shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.widget
-        INFOPLIST_FILE: VoiceAlarmWidget/Info.plist
-        CODE_SIGN_ENTITLEMENTS: VoiceAlarmWidget/VoiceAlarmWidget.entitlements
+        INFOPLIST_FILE: AlarmTalkWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AlarmTalkWidget/AlarmTalkWidget.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_NSSupportsLiveActivities: YES
-  VoiceAlarmTests:
+  AlarmTalkTests:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - VoiceAlarmTests
+      - AlarmTalkTests
     dependencies:
-      - target: VoiceAlarm
+      - target: AlarmTalk
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.voicealarm.nativeapp.ios.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/VoiceAlarm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/VoiceAlarm"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AlarmTalk.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/AlarmTalk"

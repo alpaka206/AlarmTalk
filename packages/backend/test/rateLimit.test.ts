@@ -9,9 +9,10 @@ function buildApp() {
   return app;
 }
 
+// 비인증 요청의 키는 위조 불가능한 cf-connecting-ip 로만 정한다(x-forwarded-for 무시).
 function makeReq(ip = '1.2.3.4') {
   return new Request('http://localhost/test', {
-    headers: { 'x-forwarded-for': ip },
+    headers: { 'cf-connecting-ip': ip },
   });
 }
 
@@ -61,5 +62,40 @@ describe('rateLimitMiddleware', () => {
     const rem2 = Number(res2.headers.get('X-RateLimit-Remaining'));
 
     expect(rem2).toBe(rem1 - 1);
+  });
+
+  it('인증된 요청은 userId 를 키로 사용한다', async () => {
+    const app = new Hono();
+    const uid = `user-${Math.floor(performance.now())}-a`;
+    app.use('*', async (c, next) => {
+      c.set('userId', uid);
+      await next();
+    });
+    app.use('*', rateLimitMiddleware);
+    app.get('/test', (c) => c.json({ ok: true }));
+
+    for (let i = 0; i < 60; i++) {
+      await app.request('http://localhost/test');
+    }
+    const res = await app.request('http://localhost/test');
+    expect(res.status).toBe(429);
+  });
+
+  it('위조 가능한 x-forwarded-for 는 키로 쓰지 않는다', async () => {
+    // x-forwarded-for 만 바꿔도 같은 unknown 버킷을 공유 → 헤더 위조로 한도 우회 불가.
+    const app = buildApp();
+    for (let i = 0; i < 60; i++) {
+      await app.request(
+        new Request('http://localhost/test', {
+          headers: { 'x-forwarded-for': `7.7.7.${i}` },
+        }),
+      );
+    }
+    const res = await app.request(
+      new Request('http://localhost/test', {
+        headers: { 'x-forwarded-for': '9.9.9.9' },
+      }),
+    );
+    expect(res.status).toBe(429);
   });
 });

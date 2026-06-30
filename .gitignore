@@ -28,6 +28,7 @@ apps/android-native/*.iml
 *.jks
 *.keystore
 apps/android-native/keystore.properties
+apps/android-native/dev-debug-keystore.properties
 
 # Native iOS local/generated files
 apps/ios-native/DerivedData/
@@ -56,6 +57,12 @@ dumpsys-*.txt
 articles/
 !articles/alarmtalk_pt_onepage.html
 
+# Local audit/QA scratch — screenshots, i18n gen scripts, raw data (not shared)
+.audit-shots/
+
+# Security audit reports (local-only, not tracked)
+docs/security/
+
 # Test audio files (사용자가 로컬에 두는 음성 파일들 - 커밋 금지)
 test/*
 !test/.gitkeep
@@ -69,3 +76,5 @@ test/*
 *.caf
 !packages/**/test/**
 !apps/android-native/**/res/raw/**
+
+handoff

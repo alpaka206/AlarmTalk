@@ -1,14 +1,38 @@
 /* eslint-disable no-console */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockDB } from './helpers';
 
 const mockDB = createMockDB();
 
-import { getTokensForUser, sendPushNotifications, sendAlarmPush } from '../src/lib/fcm';
+import {
+  getTokensForUser,
+  sendPushNotifications,
+  sendAlarmPush,
+  pruneStaleTokens,
+} from '../src/lib/fcm';
+
+/** FCM 미설정 env — MOCK_SEND_UNCONFIGURED 경로. */
+const unconfiguredEnv = {} as Parameters<typeof sendPushNotifications>[1];
+
+/**
+ * 실전송 경로용 가짜 자격. google-oauth 의 토큰 발급과 FCM 전송은
+ * 글로벌 fetch 를 모킹해 검증한다 (실 키 불필요 — 서명 전에 fetch 가 가로챔).
+ */
+const RSA_TEST_ENV = {
+  FIREBASE_PROJECT_ID: 'test-project',
+  FIREBASE_SERVICE_ACCOUNT_JSON: JSON.stringify({
+    client_email: 'svc@test-project.iam.gserviceaccount.com',
+    private_key: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n',
+  }),
+} as Parameters<typeof sendPushNotifications>[1];
 
 beforeEach(() => {
   mockDB.reset();
   vi.restoreAllMocks();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('getTokensForUser', () => {
@@ -37,33 +61,116 @@ describe('getTokensForUser', () => {
   });
 });
 
-describe('sendPushNotifications', () => {
+describe('sendPushNotifications — 미설정(mock) 경로', () => {
   it('빈 배열이면 빈 결과', async () => {
-    const results = await sendPushNotifications([]);
+    const results = await sendPushNotifications([], unconfiguredEnv);
     expect(results).toEqual([]);
   });
 
-  it('모든 메시지에 success=true 반환 (mock)', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const results = await sendPushNotifications([
-      { token: 'tok-1', title: 'Test', body: 'Hello' },
-      { token: 'tok-2', title: 'Test', body: 'World', data: { type: 'alarm' } },
-    ]);
+  it('자격 미설정이면 success=false + FCM_UNCONFIGURED', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const results = await sendPushNotifications(
+      [
+        { token: 'tok-1', title: 'Test', body: 'Hello' },
+        { token: 'tok-2', title: 'Test', body: 'World', data: { type: 'alarm' } },
+      ],
+      unconfiguredEnv,
+    );
     expect(results).toHaveLength(2);
-    expect(results[0]).toEqual({ token: 'tok-1', success: true });
-    expect(results[1]).toEqual({ token: 'tok-2', success: true });
+    expect(results[0]).toEqual({ token: 'tok-1', success: false, error: 'FCM_UNCONFIGURED' });
+    expect(results[1]).toEqual({ token: 'tok-2', success: false, error: 'FCM_UNCONFIGURED' });
   });
 
-  it('console.log으로 구조화된 로그 출력', async () => {
-    const warnSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sendPushNotifications([
-      { token: 'abcdefghijk', title: 'VoiceAlarm', body: '알람' },
-    ]);
+  it('미설정 시 MOCK_SEND_UNCONFIGURED 경고 로그 (토큰 마스킹)', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await sendPushNotifications(
+      [{ token: 'abcdefghijk', title: 'AlarmTalk', body: '알람' }],
+      unconfiguredEnv,
+    );
     expect(warnSpy).toHaveBeenCalledOnce();
     const logged = JSON.parse(warnSpy.mock.calls[0][0] as string);
-    expect(logged.action).toBe('MOCK_SEND');
+    expect(logged.action).toBe('MOCK_SEND_UNCONFIGURED');
     expect(logged.token).toBe('abcdefgh...');
-    expect(logged.title).toBe('VoiceAlarm');
+    expect(logged.title).toBe('AlarmTalk');
+  });
+});
+
+describe('sendPushNotifications — 실전송 경로 (fetch 모킹)', () => {
+  it('OAuth 토큰 발급 후 FCM v1 endpoint 로 메시지를 보낸다', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'at-1', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      expect(href).toBe('https://fcm.googleapis.com/v1/projects/test-project/messages:send');
+      return new Response(JSON.stringify({ name: 'projects/test-project/messages/1' }), {
+        status: 200,
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    // crypto.subtle 서명은 가짜 키로 실패하므로 importKey/sign 을 우회.
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
+    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1, 2, 3]).buffer);
+
+    const results = await sendPushNotifications(
+      [{ token: 'real-tok', title: 'AlarmTalk', body: '07:00 알람이 울립니다' }],
+      RSA_TEST_ENV,
+    );
+    expect(results).toEqual([{ token: 'real-tok', success: true }]);
+
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
+    expect(fcmCall).toBeDefined();
+    const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
+    expect(body.message.token).toBe('real-tok');
+    expect(body.message.notification.title).toBe('AlarmTalk');
+    expect(body.message.android.priority).toBe('HIGH');
+  });
+
+  it('UNREGISTERED 응답이면 success=false + 에러 코드 전달', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'at-1', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            status: 'NOT_FOUND',
+            details: [{ errorCode: 'UNREGISTERED' }],
+          },
+        }),
+        { status: 404 },
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
+    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1]).buffer);
+
+    const results = await sendPushNotifications(
+      [{ token: 'stale-tok', title: 'T', body: 'B' }],
+      RSA_TEST_ENV,
+    );
+    expect(results[0].success).toBe(false);
+    expect(results[0].error).toBe('UNREGISTERED');
+  });
+});
+
+describe('pruneStaleTokens', () => {
+  it('UNREGISTERED 토큰을 push_tokens 에서 삭제한다', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockDB.pushResult([]);
+    await pruneStaleTokens(mockDB.client as never, [
+      { token: 'good', success: true },
+      { token: 'stale', success: false, error: 'UNREGISTERED' },
+      { token: 'transient', success: false, error: 'UNAVAILABLE' },
+    ]);
+    const deletes = mockDB.calls.filter((c) => c.sql.includes('DELETE FROM push_tokens'));
+    expect(deletes).toHaveLength(1);
+    expect(deletes[0].args).toEqual(['stale']);
   });
 });
 
@@ -72,6 +179,7 @@ describe('sendAlarmPush', () => {
     mockDB.pushResult([]);
     const results = await sendAlarmPush(
       mockDB.client as never,
+      unconfiguredEnv,
       'user-1',
       'alarm-id',
       '07:00',
@@ -79,28 +187,30 @@ describe('sendAlarmPush', () => {
     expect(results).toEqual([]);
   });
 
-  it('토큰 있으면 알람 메시지 전송', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('토큰 있으면 토큰별 결과 반환 (미설정 → success=false)', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockDB.pushResult([{ token: 'device-tok' }]);
     const results = await sendAlarmPush(
       mockDB.client as never,
+      unconfiguredEnv,
       'user-1',
       'alarm-123',
       '07:30',
     );
     expect(results).toHaveLength(1);
-    expect(results[0].success).toBe(true);
     expect(results[0].token).toBe('device-tok');
+    expect(results[0].success).toBe(false);
   });
 
-  it('여러 디바이스 토큰에 모두 전송', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('여러 디바이스 토큰에 모두 시도', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockDB.pushResult([
       { token: 'phone-tok' },
       { token: 'tablet-tok' },
     ]);
     const results = await sendAlarmPush(
       mockDB.client as never,
+      unconfiguredEnv,
       'user-1',
       'alarm-456',
       '08:00',
@@ -109,35 +219,59 @@ describe('sendAlarmPush', () => {
     expect(results.map((r) => r.token)).toEqual(['phone-tok', 'tablet-tok']);
   });
 
-  it('영어 로케일 시 영문 body', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('영어 로케일 시 영문 body 로 전송한다', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
+    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1]).buffer);
     mockDB.pushResult([{ token: 'en-tok' }]);
+
     await sendAlarmPush(
       mockDB.client as never,
+      RSA_TEST_ENV,
       'user-en',
       'alarm-en',
       '09:00',
       'en',
     );
-    const logged = JSON.parse(
-      (vi.mocked(console.log).mock.calls[0][0] as string),
-    );
-    expect(logged.body).toBe('Alarm at 09:00');
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
+    const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
+    expect(body.message.notification.body).toBe('Alarm at 09:00');
   });
 
-  it('한국어 로케일 기본 body', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+  it('한국어 로케일 기본 body + data payload 구성', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).includes('oauth2.googleapis.com/token')) {
+        return new Response(JSON.stringify({ access_token: 'at', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response('{}', { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(crypto.subtle, 'importKey').mockResolvedValue({} as CryptoKey);
+    vi.spyOn(crypto.subtle, 'sign').mockResolvedValue(new Uint8Array([1]).buffer);
     mockDB.pushResult([{ token: 'ko-tok' }]);
+
     await sendAlarmPush(
       mockDB.client as never,
+      RSA_TEST_ENV,
       'user-ko',
       'alarm-ko',
       '06:30',
     );
-    const logged = JSON.parse(
-      (vi.mocked(console.log).mock.calls[0][0] as string),
-    );
-    expect(logged.body).toBe('06:30 알람이 울립니다');
+    const fcmCall = fetchMock.mock.calls.find(([u]) => new URL(String(u)).hostname === 'fcm.googleapis.com');
+    const body = JSON.parse(String((fcmCall![1] as RequestInit).body));
+    expect(body.message.notification.body).toBe('06:30 알람이 울립니다');
+    expect(body.message.notification.title).toBe('AlarmTalk');
+    expect(body.message.data).toEqual({ type: 'alarm', alarmId: 'alarm-ko', channelId: 'alarms' });
   });
 });
 
@@ -159,113 +293,27 @@ describe('getTokensForUser — edge cases', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Edge cases — sendPushNotifications                                 */
+/*  Edge cases — 미설정 경로 로깅                                      */
 /* ------------------------------------------------------------------ */
-describe('sendPushNotifications — edge cases', () => {
+describe('sendPushNotifications — 미설정 로깅 edge cases', () => {
   it('8자 미만 토큰도 slice 후 "..." 붙여 로깅', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sendPushNotifications([
-      { token: 'abc', title: 'T', body: 'B' },
-    ]);
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await sendPushNotifications([{ token: 'abc', title: 'T', body: 'B' }], unconfiguredEnv);
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
     expect(logged.token).toBe('abc...');
   });
 
   it('빈 문자열 토큰 → "..." 로깅', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sendPushNotifications([
-      { token: '', title: 'T', body: 'B' },
-    ]);
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await sendPushNotifications([{ token: '', title: 'T', body: 'B' }], unconfiguredEnv);
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
     expect(logged.token).toBe('...');
   });
 
-  it('data 필드가 있어도 결과에는 token+success만', async () => {
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const results = await sendPushNotifications([
-      { token: 'tok-data', title: 'T', body: 'B', data: { key: 'val' } },
-    ]);
-    expect(results[0]).toEqual({ token: 'tok-data', success: true });
-    expect(results[0]).not.toHaveProperty('data');
-  });
-
   it('정확히 8자 토큰 → 전체 + "..."', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await sendPushNotifications([
-      { token: '12345678', title: 'T', body: 'B' },
-    ]);
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await sendPushNotifications([{ token: '12345678', title: 'T', body: 'B' }], unconfiguredEnv);
     const logged = JSON.parse(spy.mock.calls[0][0] as string);
     expect(logged.token).toBe('12345678...');
   });
 });
-
-/* ------------------------------------------------------------------ */
-/*  Edge cases — sendAlarmPush                                         */
-/* ------------------------------------------------------------------ */
-describe('sendAlarmPush — edge cases', () => {
-  it('data payload에 type=alarm, alarmId, channelId=alarms 포함', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'dev-tok' }]);
-    await sendAlarmPush(
-      mockDB.client as never,
-      'user-1',
-      'alarm-xyz',
-      '08:30',
-    );
-    expect(spy).toHaveBeenCalledOnce();
-    const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('VoiceAlarm');
-    expect(logged.body).toBe('08:30 알람이 울립니다');
-  });
-
-  it('title은 항상 VoiceAlarm (로케일 무관)', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'en-dev' }]);
-    await sendAlarmPush(
-      mockDB.client as never,
-      'user-en',
-      'a1',
-      '12:00',
-      'en',
-    );
-    const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.title).toBe('VoiceAlarm');
-  });
-
-  it('alarmTime에 특수 시각 "00:00" 전달', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([{ token: 'midnight-tok' }]);
-    await sendAlarmPush(
-      mockDB.client as never,
-      'user-m',
-      'alarm-mid',
-      '00:00',
-      'ko',
-    );
-    const logged = JSON.parse(spy.mock.calls[0][0] as string);
-    expect(logged.body).toBe('00:00 알람이 울립니다');
-  });
-
-  it('여러 디바이스에 동일 body/title 전송', async () => {
-    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    mockDB.pushResult([
-      { token: 'phone' },
-      { token: 'tablet-xx' },
-      { token: 'watch-xxx' },
-    ]);
-    const results = await sendAlarmPush(
-      mockDB.client as never,
-      'user-multi',
-      'alarm-multi',
-      '06:00',
-      'en',
-    );
-    expect(results).toHaveLength(3);
-    for (const call of spy.mock.calls) {
-      const logged = JSON.parse(call[0] as string);
-      expect(logged.title).toBe('VoiceAlarm');
-      expect(logged.body).toBe('Alarm at 06:00');
-    }
-  });
-});
-

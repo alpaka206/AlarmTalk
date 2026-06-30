@@ -16,6 +16,36 @@ export interface Env {
   RESEND_API_KEY?: string;
   AUTH_EMAIL_FROM?: string;
   AUTH_EMAIL_REPLY_TO?: string;
+  /** FCM HTTP v1 푸시용 Firebase 프로젝트 ID. 미설정 시 푸시는 MOCK 로그만 남긴다. */
+  FIREBASE_PROJECT_ID?: string;
+  /** Firebase 서비스 계정 JSON 전체 (client_email/private_key 포함). */
+  FIREBASE_SERVICE_ACCOUNT_JSON?: string;
+  /** Play Developer API 결제 검증용 서비스 계정 JSON. 미설정 시 Google 결제 503. */
+  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?: string;
+  /** Android 앱 패키지명 (Play 구독 검증 대상). */
+  ANDROID_PACKAGE_NAME?: string;
+  /**
+   * RTDN(실시간 개발자 알림) Pub/Sub push 엔드포인트 검증용 비밀 토큰.
+   * Play Console→Pub/Sub→`POST /api/billing/google/rtdn?token=<이 값>` 으로 들어오며,
+   * 쿼리 token 이 이 값과 일치할 때만 처리한다. 미설정 시 RTDN 503.
+   */
+  GOOGLE_RTDN_VERIFICATION_TOKEN?: string;
+  /** App Store Server API 자격 (Apple IAP 검증). 셋 다 있어야 활성화. */
+  APPLE_ISSUER_ID?: string;
+  APPLE_KEY_ID?: string;
+  APPLE_IAP_PRIVATE_KEY?: string;
+  /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
+  APPLE_BUNDLE_ID?: string;
+  /** PortOne(구 아임포트) V2 API Secret — 국내 PG 결제 검증. */
+  PORTONE_API_SECRET?: string;
+  /**
+   * data.go.kr KASI 특일정보 OpenAPI 서비스키 (getRestDeInfo). KR 공휴일의 대체/임시공휴일
+   * 보정용 오버레이에 쓴다. 미설정 시 KR 오버레이를 생략하고 date-holidays 결과만 제공한다.
+   * 주의: data.go.kr 는 Encoding/Decoding 두 키를 발급한다 — **Decoding(디코딩) 키**를 넣어라.
+   * (URLSearchParams 로 한 번만 인코딩하므로 인코딩 키를 넣으면 이중 인코딩되어
+   *  SERVICE_KEY_IS_NOT_REGISTERED_ERROR 가 난다.)
+   */
+  KASI_SERVICE_KEY?: string;
   JWT_SECRET: string;
   PASSWORD_PEPPER: string;
   ENVIRONMENT: string;

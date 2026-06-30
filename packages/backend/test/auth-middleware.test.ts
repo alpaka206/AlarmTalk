@@ -8,6 +8,13 @@ vi.mock('../src/lib/jwt', () => ({
   APP_JWT_ISSUER: 'voice-alarm',
 }));
 
+// 사용자 해석 쿼리를 모킹한다. 기본은 'active' 계정 1행 반환(정상 흐름).
+// 미들웨어는 해석 실패 시 fail-closed(503) 하므로 테스트도 DB 를 모킹해야 한다.
+const mockDbExecute = vi.fn();
+vi.mock('../src/lib/db', () => ({
+  getDB: () => ({ execute: (...args: unknown[]) => mockDbExecute(...args) }),
+}));
+
 import { authMiddleware } from '../src/middleware/auth';
 
 const ENV: Env = {
@@ -57,48 +64,16 @@ function fakeToken(payload: Record<string, unknown>): string {
   return `${header}.${body}.fakesignature`;
 }
 
-function encodeBytes(bytes: Uint8Array): string {
-  let binary = '';
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-async function signedAppleToken(payload: Record<string, unknown>): Promise<string> {
-  const kid = crypto.randomUUID();
-  const keyPair = (await crypto.subtle.generateKey(
-    {
-      name: 'RSASSA-PKCS1-v1_5',
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
-    },
-    true,
-    ['sign', 'verify'],
-  )) as CryptoKeyPair;
-  const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-  const header = encodeJwtPart({ alg: 'RS256', kid, typ: 'JWT' });
-  const body = encodeJwtPart(payload);
-  const unsigned = `${header}.${body}`;
-  const signature = await crypto.subtle.sign(
-    { name: 'RSASSA-PKCS1-v1_5' },
-    keyPair.privateKey,
-    new TextEncoder().encode(unsigned),
-  );
-
-  globalThis.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ keys: [{ ...publicJwk, kid, alg: 'RS256', use: 'sig' }] }),
-  }) as unknown as typeof fetch;
-
-  return `${unsigned}.${encodeBytes(new Uint8Array(signature))}`;
-}
-
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   mockVerifyAppJwt.mockReset();
+  mockDbExecute.mockReset();
+  // 기본: 'active' 계정 1행을 반환해 사용자 해석이 성공하도록 한다.
+  mockDbExecute.mockResolvedValue({
+    rows: [{ id: 'pk-1', deletion_status: 'active' }],
+    rowsAffected: 0,
+  });
 });
 
 afterEach(() => {
@@ -131,6 +106,8 @@ describe('authMiddleware — Authorization header 검증', () => {
   });
 
   it('토큰이 3파트가 아니면 401 AUTH_MALFORMED_TOKEN', async () => {
+    // 실서버의 verifyAppJwt 는 파트 수가 3 이 아니면 "Invalid token format" 을 던진다.
+    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid token format'));
     const app = buildApp();
     const res = await reqWithEnv(app, req('Bearer not-a-jwt'));
     expect(res.status).toBe(401);
@@ -139,6 +116,7 @@ describe('authMiddleware — Authorization header 검증', () => {
   });
 
   it('토큰이 2파트만 있으면 401 AUTH_MALFORMED_TOKEN', async () => {
+    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid token format'));
     const app = buildApp();
     const res = await reqWithEnv(app, req('Bearer part1.part2'));
     expect(res.status).toBe(401);
@@ -184,6 +162,25 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_VERIFICATION_FAILED');
+  });
+
+  it('사용자 해석 쿼리 실패 시 fail-closed(503) — 탈퇴 유예 우회 차단', async () => {
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'user-1',
+      email: 'test@test.com',
+      name: 'Test',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    // 토큰 검증은 통과하지만 사용자 해석 쿼리가 던지는 상황 → deletion_status 확인 불가.
+    mockDbExecute.mockRejectedValue(new Error('db unreachable'));
+
+    const app = buildApp();
+    const res = await reqWithEnv(app, req(`Bearer ${token}`));
+    expect(res.status).toBe(503);
+    expect((await res.json()).error_code).toBe('ACCOUNT_STATUS_UNVERIFIED');
   });
 
   it('앱 JWT 만료 시 AUTH_TOKEN_EXPIRED', async () => {
@@ -237,228 +234,72 @@ describe('authMiddleware — App JWT (voice-alarm issuer)', () => {
   });
 });
 
-describe('authMiddleware — Google token', () => {
-  it('유효한 Google 토큰 시 context에 사용자 정보 설정', async () => {
-    const payload = {
+// B5: provider(Google/Apple) ID 토큰을 Bearer 로 직접 들고 오는 경로는 제거됐다.
+// 이제 authMiddleware 는 자체 발급 앱 JWT 만 받으며, 모든 토큰은 verifyAppJwt 로만
+// 검증된다. provider 토큰 교환은 /auth/google·/auth/apple 에서만 이뤄진다.
+describe('authMiddleware — provider ID 토큰 직접 수용 거부 (app-JWT-only)', () => {
+  it('Google ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
+    const token = fakeToken({
       sub: 'google-user-123',
-      email: 'user@gmail.com',
-      name: 'Google User',
-      picture: 'https://lh3.googleusercontent.com/photo.jpg',
-      iss: 'accounts.google.com',
-      aud: 'test-google-client-id',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = fakeToken(payload);
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => payload,
-    }) as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.userId).toBe('google-user-123');
-    expect(body.userEmail).toBe('user@gmail.com');
-    expect(body.userName).toBe('Google User');
-    expect(body.userPicture).toBe('https://lh3.googleusercontent.com/photo.jpg');
-  });
-
-  it('Google API가 에러 반환하면 401', async () => {
-    const token = fakeToken({
-      sub: 'g-user',
       iss: 'accounts.google.com',
       aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      json: async () => ({ error: 'Invalid token' }),
-    }) as unknown as typeof fetch;
+    // 앱 JWT 가 아니므로 서명 검증 실패를 흉내낸다(실서버의 verifyAppJwt 와 동일 결과).
+    mockVerifyAppJwt.mockRejectedValue(new Error('Signature verification failed'));
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUTH_VERIFICATION_FAILED');
+    // provider 검증 경로가 사라졌으므로 외부 JWKS fetch 는 호출되지 않는다.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    // 모든 토큰은 앱 JWT 검증으로만 흐른다.
+    expect(mockVerifyAppJwt).toHaveBeenCalledWith(token, ENV.JWT_SECRET);
   });
 
-  it('Google 토큰 audience 불일치 시 AUTH_AUDIENCE_MISMATCH', async () => {
-    const payload = {
-      sub: 'g-user',
-      iss: 'accounts.google.com',
-      aud: 'wrong-client-id',
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = fakeToken(payload);
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => payload,
-    }) as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUTH_AUDIENCE_MISMATCH');
-  });
-
-  it('Google 토큰 만료 시 AUTH_TOKEN_EXPIRED', async () => {
-    const payload = {
-      sub: 'g-user',
-      iss: 'accounts.google.com',
-      aud: 'test-google-client-id',
-      exp: Math.floor(Date.now() / 1000) - 3600,
-    };
-    const token = fakeToken(payload);
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => payload,
-    }) as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUTH_TOKEN_EXPIRED');
-  });
-
-  it('fetch 네트워크 에러 시 401', async () => {
+  it('Apple ID 토큰을 직접 들고 오면 verifyAppJwt 가 거부 → 401', async () => {
     const token = fakeToken({
-      sub: 'g-user',
-      iss: 'accounts.google.com',
-      aud: 'test-google-client-id',
+      sub: 'apple-user-001',
+      iss: 'https://appleid.apple.com',
+      aud: ENV.APPLE_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
-
-    globalThis.fetch = vi
-      .fn()
-      .mockRejectedValue(new Error('Network error')) as unknown as typeof fetch;
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(401);
-  });
-});
-
-describe('authMiddleware — Apple token', () => {
-  it('유효한 Apple 토큰 시 context에 사용자 정보 설정', async () => {
-    const payload = {
-      sub: 'apple-user-001',
-      email: 'user@privaterelay.appleid.com',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = await signedAppleToken(payload);
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.userId).toBe('apple-user-001');
-    expect(body.userEmail).toBe('user@privaterelay.appleid.com');
-    expect(body.userName).toBe('');
-    expect(body.userPicture).toBe('');
-  });
-
-  it('Apple 토큰 만료 시 AUTH_TOKEN_EXPIRED', async () => {
-    const payload = {
-      sub: 'apple-user-001',
-      email: 'user@apple.com',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) - 3600,
-    };
-    const token = await signedAppleToken(payload);
+    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid issuer'));
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error_code).toBe('AUTH_TOKEN_EXPIRED');
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockVerifyAppJwt).toHaveBeenCalled();
   });
 
-  it('Apple 토큰 email 없으면 빈 문자열', async () => {
-    const payload = {
-      sub: 'apple-user-002',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = await signedAppleToken(payload);
-
-    const app = buildApp();
-    const res = await reqWithEnv(app, req(`Bearer ${token}`));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.userId).toBe('apple-user-002');
-    expect(body.userEmail).toBe('');
-  });
-
-  // 회귀: Authorization 헤더로 직접 Apple id_token 을 들고 오는 경로는
-  // nonce 비교가 불가능하므로 (raw nonce 가 없음) 기존 동작이 유지되어야 한다.
-  // 즉 토큰에 nonce 클레임이 있어도 미들웨어는 통과시킨다.
-  it('토큰에 nonce 클레임이 있어도 미들웨어는 nonce 검사 없이 통과한다', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const payload = {
-        sub: 'apple-user-mw-nonce',
-        email: 'mw-nonce@apple.com',
-        iss: 'https://appleid.apple.com',
-        aud: ENV.APPLE_CLIENT_ID,
-        exp: Math.floor(Date.now() / 1000) + 3600,
-        nonce: 'a'.repeat(64),
-      };
-      const token = await signedAppleToken(payload);
-
-      const app = buildApp();
-      const res = await reqWithEnv(app, req(`Bearer ${token}`));
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.userId).toBe('apple-user-mw-nonce');
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-});
-
-describe('authMiddleware — 토큰 발급자 분기', () => {
-  it('알 수 없는 issuer는 거부한다', async () => {
-    const payload = {
+  it('알 수 없는 issuer 토큰도 앱 JWT 검증 실패로 401', async () => {
+    const token = fakeToken({
       sub: 'user-unknown',
       iss: 'https://unknown-issuer.example.com',
-      aud: 'test-google-client-id',
       exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = fakeToken(payload);
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => payload,
-    }) as unknown as typeof fetch;
+    });
+    mockVerifyAppJwt.mockRejectedValue(new Error('Invalid issuer'));
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error_code).toBe('AUTH_INVALID_ISSUER');
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-    expect(mockVerifyAppJwt).not.toHaveBeenCalled();
   });
 
-  it('voice-alarm issuer는 앱 JWT 경로', async () => {
+  it('voice-alarm issuer(앱 JWT)는 정상 통과', async () => {
     const token = fakeToken({ iss: 'voice-alarm', sub: 'u1', email: 'e@t.com' });
     mockVerifyAppJwt.mockResolvedValue({
       sub: 'u1',
       email: 'e@t.com',
       iss: 'voice-alarm',
       aud: 'voice-alarm-clients',
+      epoch: 0,
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
 
@@ -467,21 +308,51 @@ describe('authMiddleware — 토큰 발급자 분기', () => {
     expect(res.status).toBe(200);
     expect(mockVerifyAppJwt).toHaveBeenCalled();
   });
+});
 
-  it('appleid.apple.com issuer는 Apple JWKS 검증 경로', async () => {
-    const payload = {
-      sub: 'apple-u',
-      iss: 'https://appleid.apple.com',
-      aud: ENV.APPLE_CLIENT_ID,
+describe('authMiddleware — 토큰 폐기(token_epoch) 검사 (B5)', () => {
+  it('JWT epoch < users.token_epoch 이면 401 TOKEN_REVOKED', async () => {
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'user-1',
+      email: 'test@test.com',
+      name: 'Test',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      epoch: 0,
       exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-    const token = await signedAppleToken(payload);
+    });
+    // 사용자의 현재 token_epoch 가 토큰의 epoch(0)보다 크다 → 폐기된 토큰.
+    mockDbExecute.mockResolvedValue({
+      rows: [{ id: 'pk-1', deletion_status: 'active', token_epoch: 1 }],
+      rowsAffected: 0,
+    });
+
+    const app = buildApp();
+    const res = await reqWithEnv(app, req(`Bearer ${token}`));
+    expect(res.status).toBe(401);
+    expect((await res.json()).error_code).toBe('TOKEN_REVOKED');
+  });
+
+  it('JWT epoch >= users.token_epoch 이면 통과', async () => {
+    const token = fakeToken({ iss: 'voice-alarm', sub: 'user-1' });
+    mockVerifyAppJwt.mockResolvedValue({
+      sub: 'user-1',
+      email: 'test@test.com',
+      name: 'Test',
+      iss: 'voice-alarm',
+      aud: 'voice-alarm-clients',
+      epoch: 2,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    mockDbExecute.mockResolvedValue({
+      rows: [{ id: 'pk-1', deletion_status: 'active', token_epoch: 2 }],
+      rowsAffected: 0,
+    });
 
     const app = buildApp();
     const res = await reqWithEnv(app, req(`Bearer ${token}`));
     expect(res.status).toBe(200);
-    expect(globalThis.fetch).toHaveBeenCalled();
-    expect(mockVerifyAppJwt).not.toHaveBeenCalled();
   });
 });
 

@@ -73,6 +73,46 @@
 - **비밀번호**는 일방향 해시여야 하며 절대 복호화 가능한 형태로 저장하면 안 된다(현재 준수).
 - 인증코드 등 검증만 필요한 값도 일방향 해시 권장(현재 준수).
 
+### 결제 거래 기록 DB 암호화 의무 검토 (인앱결제 IAP 구조)
+
+질문: 카드번호(PAN)·CVC·계좌번호는 **전혀 저장하지 않고**, Google Play/Apple 인앱결제(IAP)의
+구독 거래 검증 기록만 저장하는 `store_transactions` 테이블(컬럼: `user_id`, `provider`,
+`provider_transaction_id`(구매토큰/주문ID), `product_id`, `plan_key`, `expires_at`,
+`raw_payload`(Google: `latestOrderId` + `subscriptionState`만))을 **법적으로 암호화해야 하는가?**
+
+**결론: 법적 암호화 의무 없음.** 프레임워크별 근거는 다음과 같다.
+
+- **PCI-DSS** — PAN/CVC를 전자적으로 저장·처리·전송하지 않고 카드 처리를 PCI-DSS 준수
+  제3자(Google/Apple)에 전적으로 위탁하는 구조는 최소 범위인 **SAQ A** 조건을 충족하며,
+  카드데이터 취급에 관한 PCI scope에서 사실상 제외된다. SAQ A 원문 요건: *"The merchant does
+  not electronically store, process, or transmit any account data on merchant systems or
+  premises, but relies entirely on a TPSP(s) to handle all these functions."* IAP는 카드
+  가맹점(merchant of record)이 Google/Apple이므로 일반 SAQ A 가맹점보다도 범위 밖일 수 있다.
+- **개인정보의 안전성 확보조치 기준 제7조** — 저장 시 의무 암호화 대상은 고유식별정보·비밀번호·
+  바이오정보·**신용카드번호·계좌번호**다. `provider_transaction_id`(구매토큰/주문ID)·`product_id`·
+  `plan_key`·만료시각·`raw_payload`(주문ID+구독상태)는 **제7조 열거 어디에도 해당하지 않아**
+  법정 암호화 대상이 아니다. 암호화를 트리거하는 카드번호·계좌번호를 **애초에 저장하지 않으므로**
+  의무가 발생하지 않는다.
+- **전자상거래법 시행령 제6조** — 거래기록은 '**보존**' 의무(계약·청약철회 5년, 대금결제·재화공급
+  5년, 소비자불만·분쟁처리 3년, 표시·광고 6개월)일 뿐 '**암호화**' 의무가 아니다. 조문에
+  '암호화/보안/안전성' 문구가 없다. `provider_transaction_id`·만료시각 보관은 이 보존 의무
+  충족용이다(위 3절과 동일 맥락).
+- **신용정보법 / 전자금융거래법** — 이 법들은 PG·금융회사 등 **돈 흐름에 직접 끼는 사업자**를
+  규율한다. 영수증 검증만 하고 정산만 수령하는 앱 사업자에는 (해당 거래기록에 관한 한) 그
+  암호화 의무가 직접 적용되지 않는다. ⚠️ 단, 이 결론을 뒷받침하는 **1차 조항(전자금융거래법
+  제2조 정의·신용정보법 적용범위)의 정확한 인용은 미확정** — 출시 전 법무 검토 시 확인 권장.
+
+#### 본 서비스 결정
+- 결제 거래 기록 DB는 **법적 의무로서의 암호화 대상이 아니다.** 카드·계좌 정보를 절대 저장하지
+  않는 현재 설계를 유지하는 것이 의무 회피의 핵심이다.
+- `raw_payload`는 **민감정보 제외 원칙**을 유지한다(현재 Google 경로는 `latestOrderId` +
+  `subscriptionState`만 저장). 향후 영수증 원본을 통째로 적재하지 않는다.
+- `user_id`가 다른 보유정보와 결합(결합용이성, 법 제2조)해 개인정보로 평가되더라도 그 자체로
+  암호화 의무는 없으나, **접근통제·접근권한 관리·접속기록 보관** 등 일반 안전성 확보조치는
+  암호화와 별개로 적용된다.
+- (모범관행) 인프라 레벨 저장암호화(at-rest)·TLS 전송암호화는 의무가 아니라도 비용 없이 적용
+  가능하면 켜둔다.
+
 ## 5. 위치정보 — GPS 제거 결정
 
 근거: 위치정보의 보호 및 이용 등에 관한 법률(위치정보법).
@@ -93,7 +133,48 @@
 - 가입 화면에 동의 체크박스(필수/선택)와 약관·처리방침 링크 노출.
 - 설정 화면에 서비스 이용약관 / 개인정보 처리방침 / 계정 삭제 안내 링크를 상시 노출.
 
+## 7. 음성 AI 수탁사 정합성(ElevenLabs 기준)
+
+근거: 개인정보보호법 제26조(업무위탁), 제28조의8(국외 이전), 제17조(제3자 제공)·표시광고법(허위·과장 고지 금지 취지).
+
+- 실서비스 음성 클론·TTS 제공자는 **ElevenLabs**다. 처리방침·약관·동의·스토어 고지는 런타임에서 실제로 호출하는 ElevenLabs 기준과 일치해야 한다.
+- **핵심 원칙**: 베일런은 음성을 자사가 직접 운영하는 별도 범용 AI 모델 학습에 사용하지 않는다고 고지한다. ElevenLabs 측 처리, 보관, 품질 개선, 학습 관련 조건은 실제 적용 계약·DPA·보관 설정·하위 처리자 목록에 맞춰 고지한다.
+
+### 본 서비스 결정 (2026-06-29)
+- **ElevenLabs 운영 제공자 기준으로 고지** 채택. 처리방침·약관·동의문구·스토어 고지를 다음과 같이 정정함(반영 완료):
+  - 베일런(처리자 본인)은 음성을 **자사가 직접 운영하는 별도 범용 AI 학습**에 사용하지 않는다(유지).
+  - 음성 수탁사 **ElevenLabs**의 처리 조건은 실제 적용 계약과 정책에 따른다고 고지.
+  - 국외 이전(미국, 유럽연합 등)·하위 처리자는 ElevenLabs 최종 계약/정책 기준으로 출시 전 확인.
+- **정책 버전 상향(반영 완료)**: 정책 버전 상수는 `packages/backend/src/lib/consent.ts`의
+  `CURRENT_POLICY_VERSION`으로 이전되었으며, 본 개정(운영 음성 AI 제공자 정정·수탁사·국외이전·생체정보 분류 등 중요한 변경)에 맞춰
+  `'2' → '3'`으로 상향(2026-06-29)했다. 처리방침·약관의 "정책 버전 3 / 최종 개정일 2026-06-29"와 동기화되어
+  기존 가입자 재동의를 유도한다(동의 게이트 연동).
+- **출시 전 확정**: ElevenLabs 실제 적용 약관, DPA, retention/zero-retention 설정, 하위 처리자 목록, 삭제 API 보장을 확인한다.
+
+## 8. W2/W3: 서버측 동의 강제 · 생체정보 분류 · 삭제 완전성
+
+근거: 개인정보보호법 제15조·제22조(동의), 제23조(민감정보), 제21조(파기), 제28조의8(국외 이전).
+
+- **동의 유형 단일화·서버 강제(W2)**: `packages/backend/src/lib/consent.ts`가 동의 유형의 단일 진실
+  공급원이다. 일반 필수(`GENERAL_REQUIRED_CONSENTS` = `age14`/`terms`/`privacy`)와 민감/추가
+  (`SENSITIVE_REQUIRED_CONSENTS` = `voice_biometric`/`overseas_transfer`)를 구분한다. 동의는
+  (유형, 정책 버전, 동의 여부, 시각)으로 `user_consents`에 누적 기록되고, `needsConsent()`는 유형별
+  최신 1건 + 현재 정책 버전 일치까지 검사한다(버전 불일치 시 재동의 요구).
+- **음성 생체정보 게이트(W2)**: 음성 클론(`POST /voice-profile/clone`)은 `voice_biometric` 미동의 시
+  403(CONSENT_REQUIRED)로 차단된다 → 처리방침/약관/동의문구를 음성=민감정보·생체정보(제23조) 기준으로 정정(W3).
+- **운세 입력·동적 문구 국외 이전(W3)**: 운세 문구는 성별·생년월일·출생 시각을 수집하며
+  (`lib/dynamic-prompt-settings.ts`), 동적 문구/번역 시 알람 문구와 함께 Google Cloud Vertex AI(미국)로
+  전송된다(`routes/tts.ts`, `lib/vertex-translate.ts`). → 처리방침 §1.4·§5에 명시, `overseas_transfer`
+  별도 동의로 고지.
+- **삭제 완전성(W3 확인)**: `lib/account-deletion.ts`는 행 삭제 전 외부 삭제(클론 음성·R2)를 큐에 적재하고,
+  `userPk` 미해석 시 자식 PII 고아화를 막기 위해 throw 한다. 결제 거래기록은 가명처리 분리보관(제3절).
+- **수탁 항목 추가(W3)**: Firebase Cloud Messaging(푸시 토큰), PortOne(아임포트, 국내 PG 결제 검증),
+  Google Cloud Vertex AI(문구 생성/번역)를 처리방침 §5 위탁/국외이전 표에 추가.
+
 ## 출처
+- ElevenLabs 개인정보처리방침: https://elevenlabs.io/privacy
+- ElevenLabs 이용약관: https://elevenlabs.io/terms
+- ElevenLabs 데이터 처리 부속계약 안내: https://elevenlabs.io/dpa
 - 개인정보 보호법 (국가법령정보센터): https://www.law.go.kr/LSW/lsInfoP.do?lsId=011357
 - 개인정보의 수집·이용 (찾기쉬운 생활법령): https://www.easylaw.go.kr/CSP/CnpClsMainBtr.laf?csmSeq=1257&ccfNo=2&cciNo=1&cnpClsNo=1
 - 개인정보의 안전성 확보조치 기준 (행정규칙): https://www.law.go.kr/admRulLsInfoP.do?admRulSeq=2100000229672
@@ -101,3 +182,4 @@
 - 가명정보의 처리 (찾기쉬운 생활법령): https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=1257&ccfNo=2&cciNo=4&cnpClsNo=1
 - 위치정보의 보호 및 이용 등에 관한 법률 (국가법령정보센터): https://law.go.kr/LSW/lsInfoP.do?lsiSeq=125348
 - 전자상거래 등에서의 소비자보호에 관한 법률 시행령: https://law.go.kr/법령/전자상거래등에서의소비자보호에관한법률시행령
+- PCI DSS v4.0 SAQ A (PCI Security Standards Council): https://listings.pcisecuritystandards.org/documents/PCI-DSS-v4-0-SAQ-A.pdf

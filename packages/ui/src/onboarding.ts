@@ -1,3 +1,4 @@
+// 온보딩 화면 정의(3단계)와 진행 헬퍼. 문구는 한국어 카피 그대로 노출된다.
 export interface OnboardingStep {
   emoji: string;
   title: string;
@@ -24,6 +25,8 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   },
 ] as const;
 
+// 온보딩 완료 여부 영속 키. 이미 배포된 클라이언트가 저장한 값과 일치해야
+// 하므로(변경 시 기존 사용자에게 온보딩이 재노출됨) 의도적으로 유지한다.
 export const ONBOARDING_STORAGE_KEY = 'voice_alarm_onboarding_completed';
 
 export function isLastStep(index: number): boolean {

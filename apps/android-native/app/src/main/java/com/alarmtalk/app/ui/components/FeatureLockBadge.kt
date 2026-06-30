@@ -12,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -20,7 +21,7 @@ internal fun FeatureLockBadge(
     modifier: Modifier = Modifier,
     size: Dp = 22.dp,
     iconSize: Dp = 12.dp,
-    contentDescription: String? = "이용권 필요",
+    contentDescription: String? = stringResource(R.string.r3dlg_feature_lock_badge_desc),
 ) {
     Surface(
         modifier = modifier.size(size),

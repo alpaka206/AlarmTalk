@@ -178,6 +178,7 @@ describe('POST /code/register voucher redemption', () => {
     pushVoucher();
     mockDB.pushResult([]); // duplicate redemption lookup
     pushPersonalPlan();
+    mockDB.pushResult([{ other_members: 0 }]); // owned-group guard
     mockDB.pushResult([], 1); // claim voucher use
     mockDB.pushResult([]); // existing active subscription
     mockDB.pushResult([], 1); // insert subscription
@@ -206,6 +207,7 @@ describe('POST /code/register voucher redemption', () => {
     pushVoucher();
     mockDB.pushResult([]);
     pushPersonalPlan();
+    mockDB.pushResult([{ other_members: 0 }]); // owned-group guard
     mockDB.pushResult([], 1); // claim voucher use
     mockDB.pushResult([
       {
@@ -243,6 +245,7 @@ describe('POST /code/register voucher redemption', () => {
     mockDB.pushResult([]);
     pushFamilyPlan();
     mockDB.pushResult([{ max_members: 6, member_count: 2 }]); // capacity precheck
+    mockDB.pushResult([{ other_members: 0 }]); // owned-group guard
     mockDB.pushResult([], 1); // claim voucher use
     mockDB.pushResult([]); // existing active subscription
     mockDB.pushResult([{ id: 'group-1', max_members: 6 }]); // issuer group

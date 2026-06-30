@@ -11,7 +11,8 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.net.toUri
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import java.io.File
 import java.nio.ByteBuffer
 import java.security.MessageDigest
@@ -78,7 +79,7 @@ class AlarmAudioStore(
         startMillis: Long = 0L,
     ): CachedAlarmAudio {
         val durationMillis = readDurationMillis(sourceUri)
-            ?: throw IllegalArgumentException("오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.")
+            ?: throw IllegalArgumentException(context.getString(R.string.rd_audio_duration_unreadable))
         val displayName = readDisplayName(sourceUri) ?: "voice_${System.currentTimeMillis()}"
         val extension = extensionFor(sourceUri, displayName)
         val sourceMimeType = context.contentResolver.getType(sourceUri)
@@ -195,7 +196,7 @@ class AlarmAudioStore(
                 Log.e(TAG, "trimToMaxDuration failed", error)
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
-                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                    context.getString(R.string.rd_audio_trim_failed),
                     error,
                 )
             }.getOrThrow()
@@ -210,13 +211,13 @@ class AlarmAudioStore(
                 )
                 runCatching { trimTarget.delete() }
                 throw IllegalArgumentException(
-                    "선택한 구간을 오디오 파일로 자르지 못했어요. 시작점을 조금 조정하거나 다른 파일로 다시 시도해 주세요.",
+                    context.getString(R.string.rd_audio_trim_failed),
                 )
             }
         } else {
             File(audioDir, "${safeCacheKey(cacheKey)}.$extension").also { file ->
                 context.contentResolver.openInputStream(sourceUri).use { input ->
-                    requireNotNull(input) { "선택한 오디오 파일을 열 수 없어요." }
+                    requireNotNull(input) { context.getString(R.string.rd_audio_open_failed) }
                     file.outputStream().use { output -> input.copyTo(output) }
                 }
             }
@@ -234,7 +235,7 @@ class AlarmAudioStore(
                 "Cached audio empty path=${target.absolutePath} size=${target.length()} duration=$trimmedDuration",
             )
             runCatching { target.delete() }
-            throw IllegalArgumentException("선택한 파일에서 오디오를 추출하지 못했어요. 다른 파일로 시도해 주세요.")
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed))
         }
         val cachedDurationMillis = trimmedDuration
         val normalizedDurationMillis = normalizeDurationWithinLimit(
@@ -321,6 +322,39 @@ class AlarmAudioStore(
                 }
             }
         }
+    }
+
+    /**
+     * 오래 손대지 않은 캐시 음성 파일을 정리한다.
+     * 같은 캐시 파일을 여러 알람이 공유할 수 있으므로, 호출자가 DB 에서 모은
+     * [inUseFileNames](확장자 제외 파일명) 에 포함된 파일은 건너뛴다.
+     * 메타(.meta) 파일은 본 파일과 이름이 같아 함께 정리된다.
+     *
+     * @return 삭제한 파일 수
+     */
+    fun sweepStaleCache(
+        inUseFileNames: Set<String>,
+        maxAgeMillis: Long = STALE_CACHE_MAX_AGE_MILLIS,
+        nowMillis: Long = System.currentTimeMillis(),
+    ): Int {
+        val cutoffMillis = nowMillis - maxAgeMillis
+        var deleted = 0
+        audioDir.listFiles()?.forEach { file ->
+            if (!file.isFile) return@forEach
+            if (file.nameWithoutExtension in inUseFileNames) return@forEach
+            val lastModified = file.lastModified()
+            if (lastModified <= 0L || lastModified >= cutoffMillis) return@forEach
+            if (file.delete()) {
+                deleted += 1
+                Log.i(TAG, "Swept stale alarm audio cache path=${file.absolutePath} lastModified=$lastModified")
+            } else {
+                Log.w(TAG, "Failed to sweep stale alarm audio cache path=${file.absolutePath}")
+            }
+        }
+        if (deleted > 0) {
+            Log.i(TAG, "Stale alarm audio cache sweep complete deleted=$deleted")
+        }
+        return deleted
     }
 
     fun readDurationMillis(uri: Uri): Long? {
@@ -536,7 +570,7 @@ class AlarmAudioStore(
         }.onFailure { error ->
             target.delete()
             Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
-            throw IllegalArgumentException("${maxDurationMillis / 1000}초 초과 파일을 자동으로 자르지 못했어요. m4a/aac/mp4 형식으로 다시 선택해 주세요.", error)
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
 
@@ -585,7 +619,7 @@ class AlarmAudioStore(
         }.onFailure { error ->
             target.delete()
             Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
-            throw IllegalArgumentException("MP3 구간을 저장하지 못했어요. 다른 파일을 선택해 주세요.", error)
+            throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }
 
@@ -729,6 +763,9 @@ class AlarmAudioStore(
     companion object {
         private const val AUDIO_DIR = "alarm-audio"
         private const val META_EXTENSION = "meta"
+
+        /** 이 기간 이상 손대지 않은(미참조) 캐시 파일은 앱 시작 시 백그라운드 sweep 으로 정리한다. */
+        const val STALE_CACHE_MAX_AGE_MILLIS: Long = 30L * 24 * 60 * 60 * 1_000
         private const val DURATION_METADATA_TOLERANCE_MILLIS = 750L
         private const val DECODE_TIMEOUT_US = 10_000L
         private const val MAX_IDLE_OUTPUT_DEQUEUE_COUNT = 20
@@ -797,6 +834,20 @@ class AlarmAudioStore(
             return digest.joinToString("") { "%02x".format(it) }
         }
     }
+}
+
+/**
+ * 캐시 음성 파일을 다른 알람이 더 이상 참조하지 않을 때만 삭제한다.
+ * 같은 cacheKey 파일을 여러 알람이 공유할 수 있으므로(중복 시각 알람 교체, 알람 복사 등)
+ * DB 참조 카운트가 0 일 때만 실제 파일을 지운다.
+ */
+internal suspend fun AlarmAudioStore.deleteCachedAudioIfUnreferenced(
+    alarmDao: AlarmDao,
+    cacheKey: String?,
+) {
+    if (cacheKey.isNullOrBlank()) return
+    if (alarmDao.countByAudioCacheKey(cacheKey) > 0) return
+    deleteCachedAudio(cacheKey)
 }
 
 private data class CachedAudioMetadata(

@@ -3,6 +3,7 @@ package com.alarmtalk.app.network
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.AlarmPlayModes
 import com.alarmtalk.app.data.VoiceSources
+import java.util.TimeZone
 
 object RemoteAlarmMapper {
     fun toWriteRequest(alarm: AlarmEntity): RemoteAlarmWriteRequest {
@@ -27,6 +28,8 @@ object RemoteAlarmMapper {
             rawAudioUrl = rawAudioUrl,
             rawAudioDurationMs = null,
             targetUserId = null,
+            timezone = TimeZone.getDefault().id,
+            bucketId = alarm.bucketId.trimmedOrNull(),
         )
     }
 

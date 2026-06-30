@@ -1,82 +1,79 @@
 package com.alarmtalk.app
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import java.util.Locale
+import androidx.compose.runtime.rememberCoroutineScope
+import com.alarmtalk.app.R
 import com.alarmtalk.app.data.DynamicPromptPreferenceStore
+import com.alarmtalk.app.data.HolidayCountryPreferenceStore
+import com.alarmtalk.app.data.holidayCountryDisplayName
+import com.alarmtalk.app.data.holidayCountryFlagEmoji
 import com.alarmtalk.app.data.toDynamicPromptSettings
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.DynamicPromptSettings
-import com.alarmtalk.app.network.FamilyAlarmQuietWindow
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
     themeMode: ThemeMode,
+    marketingConsentAgreed: Boolean?,
+    marketingConsentBusy: Boolean,
+    marketingConsentLoadFailed: Boolean,
     onBack: () -> Unit,
     onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
+    onLoadMarketingConsent: () -> Unit,
+    onChangeMarketingConsent: (Boolean) -> Unit,
     onLogout: () -> Unit,
     onDeleteAccount: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val promptPreferenceStore = remember(context) { DynamicPromptPreferenceStore(context) }
     var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
+    val holidayCountryStore = remember(context) { HolidayCountryPreferenceStore(context) }
+    var holidayCountryCode by remember(context) { mutableStateOf(holidayCountryStore.read()) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
+    var showHolidayCountryDialog by remember { mutableStateOf(false) }
+
+    // 설정 진입 시(로그인 상태) 현재 마케팅 수신 동의 상태를 서버에서 읽어 토글에 반영한다.
+    LaunchedEffect(authSession?.user?.id) {
+        if (authSession != null) onLoadMarketingConsent()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -93,11 +90,11 @@ internal fun SettingsScreen(
                 IconButton(onClick = onBack) {
                     Icon(
                         Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = "뒤로",
+                        contentDescription = stringResource(R.string.hs_settings_back),
                     )
                 }
                 Text(
-                    text = "설정",
+                    text = stringResource(R.string.hs_settings_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
@@ -105,20 +102,27 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "화면") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
                 SettingsRow(
-                    label = "테마",
-                    value = themeModeLabel(themeMode),
+                    label = stringResource(R.string.hs_settings_theme),
+                    value = themeModeLabel(context, themeMode),
                     onClick = { showThemeDialog = true },
+                )
+                HorizontalDivider()
+                SettingsRow(
+                    label = stringResource(R.string.settings_holiday_country_title),
+                    value = holidayCountryDisplayLabel(holidayCountryCode),
+                    onClick = { showHolidayCountryDialog = true },
                 )
             }
         }
 
         item {
-            SettingsCard(title = "랜덤 문구 정보") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_random_phrase)) {
                 SettingsRow(
-                    label = "날씨 지역",
+                    label = stringResource(R.string.hs_settings_weather_region),
                     value = weatherLocationSettingsLabel(
+                        context,
                         promptPreferences.weatherCountry,
                         promptPreferences.weatherCity,
                     ),
@@ -126,8 +130,9 @@ internal fun SettingsScreen(
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "운세 정보",
+                    label = stringResource(R.string.hs_settings_fortune_info),
                     value = fortuneInfoSettingsLabel(
+                        context,
                         promptPreferences.fortuneGender,
                         promptPreferences.fortuneBirthDate,
                         promptPreferences.fortuneBirthTime,
@@ -138,15 +143,15 @@ internal fun SettingsScreen(
         }
 
         item {
-            SettingsCard(title = "약관 및 정책") {
+            SettingsCard(title = stringResource(R.string.hs_settings_section_terms)) {
                 SettingsRow(
-                    label = "서비스 이용약관",
+                    label = stringResource(R.string.hs_settings_terms_of_service),
                     value = null,
                     onClick = { context.openExternalUrl("https://alarm-talk.com/ko/terms") },
                 )
                 HorizontalDivider()
                 SettingsRow(
-                    label = "개인정보 처리방침",
+                    label = stringResource(R.string.hs_settings_privacy_policy),
                     value = null,
                     onClick = { context.openExternalUrl("https://alarm-talk.com/ko/privacy") },
                 )
@@ -155,15 +160,45 @@ internal fun SettingsScreen(
 
         if (authSession != null) {
             item {
-                SettingsCard(title = "계정") {
+                SettingsCard(title = stringResource(R.string.settings_marketing_section)) {
+                    when {
+                        // 로드 완료(non-null): 정상 토글. 쓰기 진행 중엔 동시/연속 토글로 인한
+                        // opt-out 유실을 막기 위해 비활성화한다.
+                        marketingConsentAgreed != null -> SettingsToggleRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_toggle_desc),
+                            checked = marketingConsentAgreed == true,
+                            onCheckedChange = onChangeMarketingConsent,
+                            enabled = !marketingConsentBusy,
+                        )
+                        // 로드 실패: 'off'로 오인되지 않게 토글 대신 다시 시도 행을 보여준다.
+                        marketingConsentLoadFailed -> SettingsRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_load_failed),
+                            onClick = onLoadMarketingConsent,
+                        )
+                        // 로드 전(null·미실패): 비활성 토글 + '불러오는 중…'으로 미로드 상태를 명확히 한다.
+                        else -> SettingsToggleRow(
+                            label = stringResource(R.string.settings_marketing_toggle_label),
+                            value = stringResource(R.string.settings_marketing_loading),
+                            checked = false,
+                            onCheckedChange = {},
+                            enabled = false,
+                        )
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
                     SettingsRow(
-                        label = "닉네임",
-                        value = authSession.user.name.ifBlank { "이름 없음" },
+                        label = stringResource(R.string.hs_settings_nickname),
+                        value = authSession.user.name.ifBlank { stringResource(R.string.hs_settings_no_name) },
                         onClick = onEditNickname,
                     )
                     HorizontalDivider()
                     SettingsRow(
-                        label = "로그아웃",
+                        label = stringResource(R.string.hs_settings_logout),
                         value = null,
                         onClick = onLogout,
                     )
@@ -173,7 +208,7 @@ internal fun SettingsScreen(
             item {
                 SettingsCard(title = null) {
                     SettingsRow(
-                        label = "회원 탈퇴",
+                        label = stringResource(R.string.hs_settings_delete_account),
                         value = null,
                         labelColor = MaterialTheme.colorScheme.error,
                         onClick = onDeleteAccount,
@@ -213,7 +248,7 @@ internal fun SettingsScreen(
             gender = promptPreferences.fortuneGender,
             birthDate = promptPreferences.fortuneBirthDate,
             birthTime = promptPreferences.fortuneBirthTime,
-            description = "운세가 들어간 문구를 만들 때만 사용해요. 가족이나 연인이 내 알람을 맞춰줄 때도 이 정보를 기준으로 써요.",
+            description = stringResource(R.string.hs_fortune_info_description),
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
                 promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
@@ -224,581 +259,64 @@ internal fun SettingsScreen(
         )
     }
 
-}
-
-@Composable
-private fun SettingsCard(
-    title: String?,
-    content: @Composable () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (title != null) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp),
-            )
-        }
-        OutlinedCard {
-            Column { content() }
-        }
-    }
-}
-
-@Composable
-private fun SettingsRow(
-    label: String,
-    value: String?,
-    labelColor: Color = MaterialTheme.colorScheme.onSurface,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            color = labelColor,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
-        )
-        if (value != null) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 4.dp),
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    if (showHolidayCountryDialog) {
+        HolidayCountryPickerDialog(
+            current = holidayCountryCode,
+            onDismiss = { showHolidayCountryDialog = false },
+            onSelect = { code ->
+                showHolidayCountryDialog = false
+                scope.launch {
+                    holidayCountryStore.setCountry(code)
+                    holidayCountryCode = holidayCountryStore.read()
+                }
+            },
         )
     }
 }
 
-@Composable
-private fun SettingsToggleRow(
-    label: String,
-    value: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        VoiceAlarmSwitch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-        )
-    }
+private fun holidayCountryDisplayLabel(countryCode: String): String {
+    val flag = holidayCountryFlagEmoji(countryCode)
+    val name = holidayCountryDisplayName(countryCode)
+    return listOf(flag, name).filter { it.isNotBlank() }.joinToString(" ")
 }
 
 @Composable
-private fun WeatherLocationPreferenceDialog(
-    country: String,
-    city: String,
+private fun HolidayCountryPickerDialog(
+    current: String,
     onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit,
+    onSelect: (String) -> Unit,
 ) {
-    var draftCountry by remember(country) { mutableStateOf(country) }
-    var draftCity by remember(city) { mutableStateOf(city) }
-    var submitted by remember { mutableStateOf(false) }
-    val countryError = submitted && draftCountry.isBlank()
-    val cityError = submitted && draftCity.isBlank()
-
-    Dialog(
+    AlertDialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .widthIn(max = 430.dp),
-            shape = WakerCardShape,
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 18.dp,
-            border = wakerCardBorder(),
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                ModalDialogTitle("날씨 지역", onDismiss = onDismiss)
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = "랜덤 문구의 기준 지역",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Text(
-                            text = "날씨가 들어간 문구를 만들 때 이 지역을 사용해요.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = draftCountry,
-                        onValueChange = { draftCountry = it.take(30) },
-                        label = { Text("나라") },
-                        placeholder = { Text("예: 대한민국") },
-                        singleLine = true,
-                        isError = countryError,
-                        supportingText = {
-                            if (countryError) Text("꼭 입력해 주세요.")
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = draftCity,
-                        onValueChange = { draftCity = it.take(30) },
-                        label = { Text("도시") },
-                        placeholder = { Text("예: 서울") },
-                        singleLine = true,
-                        isError = cityError,
-                        supportingText = {
-                            if (cityError) Text("꼭 입력해 주세요.")
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Button(
-                    onClick = {
-                        submitted = true
-                        if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
-                            onConfirm(draftCountry.trim(), draftCity.trim())
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = WakerButtonShape,
-                ) {
-                    Text("저장")
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun FamilyAlarmQuietTimeDialog(
-    initialWindows: List<FamilyAlarmQuietWindow>,
-    onDismiss: () -> Unit,
-    onConfirm: (List<FamilyAlarmQuietWindow>) -> Unit,
-) {
-    var drafts by remember(initialWindows) {
-        mutableStateOf(
-            initialWindows
-                .ifEmpty { listOf(FamilyAlarmQuietWindow()) }
-                .map { it.toDraft() },
-        )
-    }
-    var timePickerTarget by remember { mutableStateOf<QuietTimePickerTarget?>(null) }
-    val valid = drafts.isNotEmpty() && drafts.all { it.isValid() }
-
-    fun updateDraft(index: Int, transform: (QuietWindowDraft) -> QuietWindowDraft) {
-        drafts = drafts.mapIndexed { currentIndex, draft ->
-            if (currentIndex == index) transform(draft) else draft
-        }
-    }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            shadowElevation = 18.dp,
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 22.dp, vertical = 22.dp)
-                    .heightIn(max = 620.dp),
-            ) {
-                ModalDialogTitle(
-                    title = "알람 받지 않을 시간",
-                    onDismiss = onDismiss,
-                )
-                Text(
-                    text = "선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp, bottom = 16.dp),
-                )
-                Column(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    drafts.forEachIndexed { draftIndex, draft ->
-                        QuietWindowCard(
-                            index = draftIndex,
-                            draft = draft,
-                            removable = drafts.size > 1,
-                            onToggleDay = { dayIndex ->
-                                updateDraft(draftIndex) {
-                                    val days = if (dayIndex in it.days) it.days - dayIndex else it.days + dayIndex
-                                    it.copy(days = days)
-                                }
-                            },
-                            onPickStart = {
-                                timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = true)
-                            },
-                            onPickEnd = {
-                                timePickerTarget = QuietTimePickerTarget(draftIndex, isStart = false)
-                            },
-                            onRemove = {
-                                drafts = drafts.filterIndexed { index, _ -> index != draftIndex }
-                            },
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            if (drafts.size < 8) {
-                                drafts = drafts + FamilyAlarmQuietWindow(
-                                    days = listOf(1, 2, 3, 4, 5),
-                                    start = "22:00",
-                                    end = "07:00",
-                                ).toDraft()
-                            }
-                        },
-                        enabled = drafts.size < 8,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                        border = wakerCardBorder(),
-                        colors = wakerOutlinedButtonColors(),
-                    ) {
-                        Text("+ 시간 추가")
-                    }
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Button(
-                        onClick = { onConfirm(drafts.map { it.toWindow() }) },
-                        enabled = valid,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = WakerButtonShape,
-                    ) {
-                        Text("저장")
-                    }
-                }
-            }
-        }
-    }
-
-    timePickerTarget?.let { target ->
-        val draft = drafts.getOrNull(target.index) ?: return@let
-        val initialHour = (if (target.isStart) draft.startHour else draft.endHour).toIntOrNull()?.coerceIn(0, 23) ?: 9
-        val initialMinute = (if (target.isStart) draft.startMinute else draft.endMinute).toIntOrNull()?.coerceIn(0, 59) ?: 0
-        val state = rememberTimePickerState(
-            initialHour = initialHour,
-            initialMinute = initialMinute,
-            is24Hour = true,
-        )
-        Dialog(onDismissRequest = { timePickerTarget = null }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp,
-                shadowElevation = 18.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ModalDialogTitle(
-                        title = if (target.isStart) "시작 시간" else "종료 시간",
-                        onDismiss = { timePickerTarget = null },
-                    )
-                    TimePicker(state = state)
+        title = { Text(stringResource(R.string.settings_holiday_country_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                HolidayCountryPreferenceStore.SUPPORTED.forEach { code ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(code) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        TextButton(
-                            onClick = {
-                                val hh = String.format(Locale.US, "%02d", state.hour)
-                                val mm = String.format(Locale.US, "%02d", state.minute)
-                                updateDraft(target.index) {
-                                    if (target.isStart) it.copy(startHour = hh, startMinute = mm)
-                                    else it.copy(endHour = hh, endMinute = mm)
-                                }
-                                timePickerTarget = null
-                            },
-                        ) { Text("확인") }
+                        RadioButton(
+                            selected = code == current,
+                            onClick = { onSelect(code) },
+                        )
+                        Text(
+                            text = holidayCountryDisplayLabel(code),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                     }
                 }
             }
-        }
-    }
-}
-
-private data class QuietTimePickerTarget(val index: Int, val isStart: Boolean)
-
-@Composable
-private fun QuietWindowCard(
-    index: Int,
-    draft: QuietWindowDraft,
-    removable: Boolean,
-    onToggleDay: (Int) -> Unit,
-    onPickStart: () -> Unit,
-    onPickEnd: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = MaterialTheme.colorScheme.primary,
-        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-    )
-    OutlinedCard(
-        shape = WakerCardShape,
-        border = wakerCardBorder(),
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "시간대 ${index + 1}",
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (removable) {
-                    IconButton(onClick = onRemove) {
-                        Icon(Icons.Outlined.Delete, contentDescription = "삭제")
-                    }
-                }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.hs_settings_back))
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                dayLabels().forEachIndexed { dayIndex, label ->
-                    FilterChip(
-                        selected = dayIndex in draft.days,
-                        onClick = { onToggleDay(dayIndex) },
-                        label = {
-                            Box(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(text = label, fontWeight = FontWeight.SemiBold)
-                            }
-                        },
-                        colors = chipColors,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                QuietTimeChip(
-                    label = quietTimeLabel(draft.startHour, draft.startMinute),
-                    onClick = onPickStart,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = "~",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                QuietTimeChip(
-                    label = quietTimeLabel(draft.endHour, draft.endMinute),
-                    onClick = onPickEnd,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuietTimeChip(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-        modifier = modifier,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-    }
-}
-
-private fun quietTimeLabel(hour: String, minute: String): String {
-    val h = hour.toIntOrNull() ?: 0
-    val m = minute.toIntOrNull() ?: 0
-    return String.format(Locale.US, "%d:%02d", h, m)
-}
-
-private data class QuietWindowDraft(
-    val days: Set<Int>,
-    val startHour: String,
-    val startMinute: String,
-    val endHour: String,
-    val endMinute: String,
-)
-
-private fun FamilyAlarmQuietWindow.toDraft(): QuietWindowDraft {
-    val startParts = splitTime(start)
-    val endParts = splitTime(end)
-    return QuietWindowDraft(
-        days = days.filter { it in 0..6 }.toSet().ifEmpty { setOf(1, 2, 3, 4, 5) },
-        startHour = startParts.first,
-        startMinute = startParts.second,
-        endHour = endParts.first,
-        endMinute = endParts.second,
+        },
     )
 }
 
-private fun QuietWindowDraft.toWindow(): FamilyAlarmQuietWindow =
-    FamilyAlarmQuietWindow(
-        days = days.sorted(),
-        start = "${twoDigit(startHour)}:${twoDigit(startMinute)}",
-        end = "${twoDigit(endHour)}:${twoDigit(endMinute)}",
-    )
-
-private fun QuietWindowDraft.isValid(): Boolean =
-    days.isNotEmpty() &&
-        isHourText(startHour) &&
-        isMinuteText(startMinute) &&
-        isHourText(endHour) &&
-        isMinuteText(endMinute)
-
-private fun splitTime(value: String): Pair<String, String> {
-    val parts = value.split(":")
-    return (parts.getOrNull(0)?.takeIf { isHourText(it) } ?: "09") to
-        (parts.getOrNull(1)?.takeIf { isMinuteText(it) } ?: "00")
-}
-
-private fun twoDigit(value: String): String =
-    value.toIntOrNull()?.coerceIn(0, 99)?.toString()?.padStart(2, '0') ?: "00"
-
-internal fun quietScheduleLabel(windows: List<FamilyAlarmQuietWindow>): String {
-    if (windows.isEmpty()) return "없음"
-    val visible = windows.take(2).joinToString(" · ") { quietWindowLabel(it) }
-    val hidden = windows.size - 2
-    return if (hidden > 0) "$visible 외 ${hidden}개" else visible
-}
-
-private fun weatherLocationSettingsLabel(country: String, city: String): String {
-    val value = listOf(country, city)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" ")
-    return value.ifBlank { "미설정" }
-}
-
-private fun fortuneInfoSettingsLabel(gender: String, birthDate: String, birthTime: String): String {
-    val value = listOf(gender, birthDate, birthTime)
-        .map { it.trim() }
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
-    return value.ifBlank { "미설정" }
-}
-
-private fun quietWindowLabel(window: FamilyAlarmQuietWindow): String =
-    "${quietDaysLabel(window.days)} ${formatQuietTime(window.start)} ~ ${formatQuietTime(window.end)}"
-
-private fun formatQuietTime(value: String): String {
-    val parts = value.split(":")
-    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return value
-    val minute = parts.getOrNull(1)?.toIntOrNull() ?: return value
-    return String.format(Locale.US, "%d:%02d", hour, minute)
-}
-
-private fun quietDaysLabel(days: List<Int>): String {
-    val sorted = days.distinct().sorted()
-    return when (sorted) {
-        emptyList<Int>() -> "없음"
-        listOf(1, 2, 3, 4, 5) -> "평일"
-        listOf(0, 6) -> "주말"
-        listOf(0, 1, 2, 3, 4, 5, 6) -> "매일"
-        else -> sorted.joinToString(",") { dayLabels()[it] }
-    }
-}
-
-private fun dayLabels(): List<String> = listOf("일", "월", "화", "수", "목", "금", "토")
-
-private fun Context.openExternalUrl(url: String) {
-    runCatching {
-        startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
-    }
-}
-
-private fun isHourText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..23 } == true
-
-private fun isMinuteText(value: String): Boolean =
-    value.toIntOrNull()?.let { it in 0..59 } == true

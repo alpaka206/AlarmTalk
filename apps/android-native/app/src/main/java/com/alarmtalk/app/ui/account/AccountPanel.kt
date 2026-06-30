@@ -34,7 +34,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import com.alarmtalk.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -67,10 +70,16 @@ internal fun StepperField(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             IconButton(onClick = onDecrease) {
-                Icon(Icons.Outlined.Remove, contentDescription = "$label 줄이기")
+                Icon(
+                    Icons.Outlined.Remove,
+                    contentDescription = stringResource(R.string.common_stepper_decrease, label),
+                )
             }
             IconButton(onClick = onIncrease) {
-                Icon(Icons.Outlined.Add, contentDescription = "$label 올리기")
+                Icon(
+                    Icons.Outlined.Add,
+                    contentDescription = stringResource(R.string.common_stepper_increase, label),
+                )
             }
         }
     }
@@ -102,14 +111,15 @@ internal fun DayRows(
     repeatDaysMask: Int,
     onToggleDay: (Int) -> Unit,
 ) {
+    val context = LocalContext.current
     val days = listOf(
-        0 to "일",
-        1 to "월",
-        2 to "화",
-        3 to "수",
-        4 to "목",
-        5 to "금",
-        6 to "토",
+        0 to stringResource(R.string.common_day_sun),
+        1 to stringResource(R.string.common_day_mon),
+        2 to stringResource(R.string.common_day_tue),
+        3 to stringResource(R.string.common_day_wed),
+        4 to stringResource(R.string.common_day_thu),
+        5 to stringResource(R.string.common_day_fri),
+        6 to stringResource(R.string.common_day_sat),
     )
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -123,7 +133,7 @@ internal fun DayRows(
             }
         }
         Text(
-            text = repeatLabel(repeatDaysMask),
+            text = repeatLabel(context, repeatDaysMask),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -168,6 +178,7 @@ internal fun GoogleSignInButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String = stringResource(R.string.common_google_continue),
 ) {
     val contentAlpha = if (enabled) 1f else 0.38f
     Surface(
@@ -194,7 +205,7 @@ internal fun GoogleSignInButton(
                 alpha = contentAlpha,
             )
             Text(
-                text = "Google로 계속하기",
+                text = label,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .padding(horizontal = 32.dp),

@@ -11,17 +11,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -34,7 +33,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
 import com.alarmtalk.app.network.VoucherItem
@@ -52,11 +51,11 @@ import androidx.compose.runtime.setValue
 
 
 internal fun MainViewModel.showGoogleSetupRequired() {
-    message = "현재 Google 로그인을 사용할 수 없어요. 이메일로 로그인해 주세요."
+    message = getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_unavailable)
 }
 
 internal fun MainViewModel.showGoogleSignInFailed(reason: String? = null) {
-    message = reason ?: "Google 로그인에 실패했어요"
+    message = reason ?: getApplication<android.app.Application>().getString(R.string.r3misc_google_signin_failed)
 }
 
 internal fun MainViewModel.clearMessage() {
@@ -67,7 +66,7 @@ internal fun MainViewModel.refreshAppSession() {
     val session = authSession ?: return
     viewModelScope.launch {
         runCatching {
-            api.me(VoiceAlarmApiClient.bearer(session.token)).user
+            api.me(AlarmTalkApiClient.bearer(session.token)).user
         }.onSuccess { user ->
             val response = AuthTokenResponse(
                 token = session.token,
@@ -90,5 +89,5 @@ internal fun MainViewModel.bearerOrMessage(fallbackMessage: String): String? {
         message = fallbackMessage
         return null
     }
-    return VoiceAlarmApiClient.bearer(session.token)
+    return AlarmTalkApiClient.bearer(session.token)
 }

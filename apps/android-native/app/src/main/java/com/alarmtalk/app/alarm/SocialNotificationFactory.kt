@@ -23,8 +23,8 @@ object SocialNotificationFactory {
         notify(
             context = context,
             notificationId = BASE_MESSAGE_NOTIFICATION_ID + stableOffset(noteId),
-            title = senderName?.takeIf { it.isNotBlank() } ?: "새 메시지",
-            body = text.take(80).ifBlank { "새 메시지가 도착했어요" },
+            title = senderName?.takeIf { it.isNotBlank() } ?: context.getString(R.string.r3misc_notif_new_message_title),
+            body = text.take(80).ifBlank { context.getString(R.string.r3misc_notif_new_message_body) },
             groupId = MESSAGE_GROUP_ID,
         )
     }
@@ -32,12 +32,12 @@ object SocialNotificationFactory {
     fun notifyReceivedAlarm(context: Context, alarmId: String, senderName: String?, time: String) {
         val body = time
             .takeIf { it.isNotBlank() }
-            ?.let { "${it}에 울려요" }
-            ?: "상대가 내 알람을 설정했어요"
+            ?.let { context.getString(R.string.r3misc_notif_received_alarm_time, it) }
+            ?: context.getString(R.string.r3misc_notif_received_alarm_default)
         notify(
             context = context,
             notificationId = BASE_ALARM_NOTIFICATION_ID + stableOffset(alarmId),
-            title = receivedRemoteAlarmLabel(senderName),
+            title = receivedRemoteAlarmLabel(context, senderName),
             body = body,
             groupId = ALARM_GROUP_ID,
         )

@@ -1,4 +1,4 @@
-# Contributing to VoiceAlarm
+# Contributing to AlarmTalk
 
 Thank you for your interest in contributing! This guide will help you get started.
 
@@ -14,7 +14,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 ### Setup
 
 ```bash
-git clone https://github.com/perso-devrel/voice_alarm.git
+git clone https://github.com/alarmtalk/voice_alarm.git
 cd voice_alarm
 npm install
 ```
@@ -39,13 +39,13 @@ cd apps/android-native && ./gradlew.bat :app:assembleDebug
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/perso-devrel/voice_alarm/issues) first
+1. Check existing issues first
 2. Use the **Bug Report** issue template
 3. Include steps to reproduce, expected vs actual behavior
 
 ### Suggesting Features
 
-1. Open a [Feature Request](https://github.com/perso-devrel/voice_alarm/issues/new?template=feature_request.md)
+1. Open a Feature Request issue
 2. Describe the use case and proposed solution
 
 ### Pull Requests

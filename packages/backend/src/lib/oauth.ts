@@ -135,6 +135,15 @@ export async function verifyGoogleIdToken(
   if (Number(payload.exp) < Date.now() / 1000) {
     throw new Error('Token expired');
   }
+  // email_verified 미검증 시 email 클레임을 신뢰하면 안 된다(OAuth 계정 연동 탈취
+  // 방지). 다운스트림이 email 로 기존 계정과 연동하므로, 검증된 이메일만 통과시킨다.
+  if (
+    payload.email !== undefined &&
+    payload.email_verified !== true &&
+    payload.email_verified !== 'true'
+  ) {
+    throw new Error('Google token email not verified');
+  }
 
   return { ...payload, exp: Number(payload.exp) };
 }
@@ -171,6 +180,16 @@ export async function verifyAppleIdToken(
     }
   } else {
     console.warn('[oauth] apple token verified without nonce check');
+  }
+
+  // Apple 도 email_verified 가 명시적으로 false 면 email 을 신뢰하지 않는다.
+  // (private-relay 포함 검증된 이메일은 'true'/true 로 온다.)
+  if (
+    payload.email !== undefined &&
+    payload.email_verified !== true &&
+    payload.email_verified !== 'true'
+  ) {
+    throw new Error('Apple token email not verified');
   }
 
   return { ...payload, exp: Number(payload.exp) };

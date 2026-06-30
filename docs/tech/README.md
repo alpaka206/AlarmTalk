@@ -2,6 +2,8 @@
 
 System architecture, database schema, and HTTP API for AlarmTalk.
 
+> 백엔드 correctness/보안 리뷰에서 나온 결정 필요·권장 항목은 [`backend-findings.ko.md`](backend-findings.ko.md) 참고.
+
 ## 1. System Architecture
 
 ### High-level
@@ -19,15 +21,15 @@ System architecture, database schema, and HTTP API for AlarmTalk.
 │              → cors → auth (for /api/*) → cache                │
 │                                                                 │
 │ Routes: /auth /user /voice /tts /alarm /friend /family         │
-│         /code /billing /character /library /dub /notes /stats  │
-│ Cron:   * * * * *  (subscription expiry, etc.)                 │
+│         /code /billing /library /dub /notes /stats             │
+│ Cron:   */5 * * * *  (subscription expiry, account purge, …)   │
 └──────────┬──────────────────┬─────────────────┬─────────────────┘
            │                  │                 │
            ▼                  ▼                 ▼
    ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
    │ Turso libSQL │  │ Cloudflare R2│  │ External APIs        │
-   │ 22 tables    │  │ voice + tts  │  │ ElevenLabs           │
-   │ 35 migrations│  │ objects      │  │ Google JWKS          │
+   │ 18 tables    │  │ voice + tts  │  │ ElevenLabs           │
+   │ 32 migrations│  │ objects      │  │ Google JWKS          │
    └──────────────┘  └──────────────┘  │ Apple JWKS           │
                                        │ Sentry               │
                                        └──────────────────────┘
@@ -121,7 +123,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 | Cloudflare Workers down | None | Sign-in, sync, TTS generation paused |
 | Turso down | None | API 500, sync paused |
 | R2 down | None (mostly cache-hit locally) | TTS generation fails on miss |
-| ElevenLabs down | None | New TTS generation fails |
+| Voice provider down | None | New TTS generation fails |
 | Device-side Room corruption | Possible partial loss | Recoverable through server sync |
 
 ### Architecture Decision Records (ADR — summarized)
@@ -130,7 +132,7 @@ No network call happens on this path. Pre-launch QA verifies this with `adb shel
 |---|---|---|
 | 2025-12 | Rewrite from React Native/Expo to native | Alarm reliability could not be guaranteed under push/Expo notifications. |
 | 2026-02 | Android first | Only Android physical-device testing was available at that time. |
-| 2026-03 | ElevenLabs as primary voice provider | Perso's public developer surface does not expose a direct voice-clone TTS API. |
+| 2026-03 | ElevenLabs as the active voice provider | Use one proven Instant Voice Clone + TTS provider while keeping deterministic caching to control spend. |
 | 2026-04 | 6-digit family invite code + deep-link hybrid | Works without collecting email; can be shared offline by voice; 10-minute TTL mitigates brute force. |
 | 2026-05 | Deterministic TTS caching | Same profile + text + language always maps to the same R2 object, eliminating duplicate cost. |
 
@@ -168,8 +170,8 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 ## 2. Database
 
 - **DB**: Turso (libSQL / SQLite)
-- **Tables**: 22 + `_migrations`
-- **Migrations**: 35, defined in `packages/backend/src/lib/migrations.ts`
+- **Tables**: 18 + `_migrations`
+- **Migrations**: 32, defined in `packages/backend/src/lib/migrations.ts`
 
 ### Entity overview
 
@@ -189,7 +191,6 @@ Cron: `*/5 * * * *` (5-minute interval) handles subscription expiry and downgrad
 users ── push_tokens   notes (sender/receiver)
 users ── subscriptions ── plans ── voucher_codes
 users ── plan_group_members ── plan_groups ── plan_group_invites
-users ── characters ── character_xp_logs / character_stats / streak_achievements
 users ── dub_jobs
 ```
 
@@ -213,19 +214,14 @@ users ── dub_jobs
 | 14 | `plan_groups` | Family/couple group | `users(owner)` |
 | 15 | `plan_group_members` | Group membership | `plan_groups · users` |
 | 16 | `plan_group_invites` | 6-digit invite codes | `plan_groups · users(issuer/redeemer)` |
-| 17 | `characters` | Character state | `users 1:1` |
-| 18 | `character_xp_logs` | XP history (idempotent) | `characters × client_nonce` |
-| 19 | `character_stats` | Stats | `characters 1:1` |
-| 20 | `streak_achievements` | Streak milestones | `characters × milestone` |
-| 21 | `push_tokens` | FCM / APNs tokens (legacy, ring path does not use them) | `users · platform` |
-| 22 | `notes` | Text notes | `users × users` |
+| 17 | `push_tokens` | FCM / APNs tokens (legacy, ring path does not use them) | `users · platform` |
+| 18 | `notes` | Text notes | `users × users` |
 
 `dub_jobs` also exists for dubbing workflow but is not surfaced in the native app.
 
 ### Key constraints
 
 - `voice_profiles` at most 2 per user — enforced at the route layer with COUNT.
-- `character_xp_logs UNIQUE(character_id, client_nonce)` — guarantees idempotency.
 - `plan_group_invites.code` UNIQUE, 10-minute TTL, lazy `expired` transition on read.
 - Risk-of-rollback flows (subscription, voucher redemption, ownership transfer) use BEGIN/COMMIT through `lib/transactions.ts`.
 
@@ -282,18 +278,6 @@ CREATE TABLE plan_group_invites (
   used_by_user_id TEXT REFERENCES users(id),
   used_at TEXT
 );
-
-CREATE TABLE character_xp_logs (
-  id TEXT PRIMARY KEY,
-  character_id TEXT NOT NULL REFERENCES characters(id),
-  event TEXT NOT NULL,
-  client_nonce TEXT,
-  granted_xp INTEGER NOT NULL DEFAULT 0,
-  affection_delta INTEGER NOT NULL DEFAULT 0,
-  capped INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT (datetime('now')),
-  UNIQUE(character_id, client_nonce)
-);
 ```
 
 ### Migrations
@@ -320,9 +304,6 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | 8 | plan-groups | `plan_groups`, `plan_group_members` |
 | 9 | plan-group-invites | `plan_group_invites` |
 | 10 | user-allow-family-alarms | `users.allow_family_alarms` |
-| 11 | characters | `characters` |
-| 12 | character-xp-logs | `character_xp_logs`, `characters.daily_xp` |
-| 13 | character-streak-stats | `character_stats`, `streak_achievements` |
 | 14 | push-tokens | `push_tokens` |
 | 15 | alarm-vibration-pattern | `alarms.vibration_pattern` |
 | 16 | user-last-active | `users.last_active_at` |
@@ -373,13 +354,12 @@ curl -X POST "https://<host>/api/init-db?fromId=1&toId=10"
 | `/alarm` | Alarm CRUD |
 | `/friend` | Friend |
 | `/family` | Family group, invites, family alarm |
-| `/characters` | Character, XP |
 | `/billing` | Subscription, voucher |
 | `/code` | Unified code register (VA-XXX / 6-digit) |
 | `/library` | Message library |
 | `/notes` | Notes |
 | `/gift` | Gift |
-| `/dub` | Dubbing (Perso) |
+| `/dub` | Speaker separation and derived voice tooling |
 | `/stats` | Stats |
 
 ### Selected endpoints
@@ -423,7 +403,7 @@ The backend verifies the Apple token signature against Apple JWKS, checks issuer
 
 - Body: `audio` (file), `name` (string)
 - 422 on size > limit, `VOICE_LIMIT_REACHED` when user already has 2 profiles.
-- Provider chain: Perso (currently no direct voice-clone TTS → falls through) → ElevenLabs.
+- Provider: ElevenLabs.
 
 #### `POST /tts/generate`
 
@@ -454,20 +434,6 @@ Res: {
 #### `POST /family/invites/:code/accept`
 
 Validates pending status, expiry, capacity, and self-invite block; inserts into `plan_group_members`; marks the invite `used`. All inside a transaction.
-
-#### `POST /characters/xp`
-
-```json
-Req:  { "event": "alarm_completed", "client_nonce": "unique", "local_date": "2026-05-12" }
-Res:  {
-  "character": { ... },
-  "granted":   { "xp": { "grantedXp": 10, "capped": false, "remainingCap": 190 },
-                 "affection": 2,
-                 "event": "alarm_completed" }
-}
-```
-
-Events: `alarm_completed` `alarm_snoozed` `alarm_dismissed` `family_alarm_received` `friend_invited`.
 
 #### `POST /code/register`
 
@@ -500,9 +466,9 @@ the owner of the new shared plan group. These bootstrap codes are single-use.
 
 ### Cron
 
-`* * * * *` — runs `processSubscriptionExpiry(db, now)`: subscriptions with `status='active' AND expires_at < now` are flipped to `expired` and the owner's plan is downgraded to `free`.
+`*/5 * * * *` — the `scheduled` handler runs (in order): `processSubscriptionExpiry(db, now)` (active subscriptions past `expires_at` → `expired`, owner downgraded to `free`), 탈퇴 유예 경과 계정 영구파기, 그리고 `selectFiringAlarms()`로 추린 알람에 대해 `sendAlarmPush()`.
 
-`selectFiringAlarms()` exists but is intentionally a no-op for sending: alarm rings are local to the device.
+> **주의**: 실제 알람 **울림**은 온디바이스(`AlarmManager`/`AlarmKit`)이며 네트워크에 의존하지 않는다. 여기서 보내는 푸시는 가족/대상 알람 알림 등 **보조 경로**다. 단, 현재 정확-분(UTC) 매칭이 5분 주기 cron과 어긋나 일부 알람이 푸시되지 않는 알려진 이슈가 있다 — [`backend-findings.ko.md` F1](backend-findings.ko.md) 참고.
 
 ### Change management
 

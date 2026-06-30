@@ -1,0 +1,75 @@
+{
+  "sourceLanguage" : "ko",
+  "strings" : {
+    "NSAlarmKitUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠금 화면에서도 정확한 시간에 알람을 울리기 위해 알람 권한이 필요해요."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AlarmTalk needs alarm permission to ring at the exact time, even on the lock screen."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面でも正確な時間にアラームを鳴らすため、アラームの権限が必要です。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "날씨가 들어간 깨움말의 지역을 채울 때만 현재 위치를 사용해요."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AlarmTalk uses your current location only to fill in the region for weather-based wake-up messages."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "天気を含む起こし文の地域を補完するときのみ、現在地を使用します。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목소리 알람에 사용할 음성을 녹음하기 위해 마이크 권한이 필요해요."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AlarmTalk needs microphone access to record the voice used for your voice alarms."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ボイスアラームに使う音声を録音するため、マイクの権限が必要です。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

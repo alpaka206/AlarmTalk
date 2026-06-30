@@ -84,6 +84,19 @@ data class EnsureFamilyShareCodeResponse(
     val voucher: VoucherItem,
 )
 
+/** Google Play 구매를 서버에 전달해 검증·acknowledge·구독 반영을 요청하는 페이로드. */
+data class GooglePlayConfirmRequest(
+    @SerializedName("purchase_token") val purchaseToken: String,
+    @SerializedName("product_id") val productId: String,
+    @SerializedName("package_name") val packageName: String,
+)
+
+data class GooglePlayConfirmResponse(
+    val success: Boolean,
+    @SerializedName("plan_key") val planKey: String? = null,
+    val subscription: BillingSubscription? = null,
+)
+
 data class CancelSubscriptionRequest(
     val mode: String, // "immediate" | "at_period_end"
 )
@@ -121,8 +134,21 @@ interface BillingApi {
         @Body request: CheckoutRequest,
     ): CheckoutResponse
 
+    /** Google Play 구매 토큰 서버 검증. 서버가 Play Developer API 로 검증·acknowledge 한다. */
+    @POST("billing/google/confirm")
+    suspend fun confirmGooglePurchase(
+        @Header("Authorization") authorization: String,
+        @Body request: GooglePlayConfirmRequest,
+    ): GooglePlayConfirmResponse
+
     @POST("billing/vouchers/family-share")
     suspend fun ensureFamilyShareCode(
+        @Header("Authorization") authorization: String,
+    ): EnsureFamilyShareCodeResponse
+
+    /** 기존 공유 코드를 무효화하고 새 코드를 발급한다(유출 의심 시 재발급). */
+    @POST("billing/vouchers/family-share/regenerate")
+    suspend fun regenerateFamilyShareCode(
         @Header("Authorization") authorization: String,
     ): EnsureFamilyShareCodeResponse
 

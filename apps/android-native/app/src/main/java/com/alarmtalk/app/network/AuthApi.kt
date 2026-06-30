@@ -93,6 +93,16 @@ data class EmailVerificationConfirmResponse(
     val success: Boolean,
 )
 
+data class PasswordResetRequest(
+    val email: String,
+)
+
+data class PasswordResetConfirmRequest(
+    val email: String,
+    val code: String,
+    val password: String,
+)
+
 data class GoogleLoginRequest(
     @SerializedName("id_token") val idToken: String,
 )
@@ -122,6 +132,10 @@ data class DeleteAccountResponse(
     val success: Boolean,
 )
 
+data class LogoutResponse(
+    val success: Boolean = false,
+)
+
 data class AccountDeletionResponse(
     val success: Boolean = false,
     val status: String = "pending_deletion",
@@ -149,6 +163,17 @@ data class RecordConsentsResponse(
     val recorded: Int = 0,
 )
 
+data class ConsentRecord(
+    @SerializedName("consent_type") val consentType: String = "",
+    @SerializedName("policy_version") val policyVersion: String = "1",
+    val agreed: Boolean = false,
+    @SerializedName("agreed_at") val agreedAt: String? = null,
+)
+
+data class ConsentListResponse(
+    val consents: List<ConsentRecord> = emptyList(),
+)
+
 data class ConsentStatusResponse(
     @SerializedName("needs_consent") val needsConsent: Boolean = false,
     val required: List<String> = emptyList(),
@@ -172,6 +197,14 @@ interface AuthApi {
         @Body request: EmailVerificationConfirmRequest,
     ): EmailVerificationConfirmResponse
 
+    @POST("auth/password-reset")
+    suspend fun requestPasswordReset(@Body request: PasswordResetRequest): EmailVerificationResponse
+
+    @POST("auth/password-reset/confirm")
+    suspend fun confirmPasswordReset(
+        @Body request: PasswordResetConfirmRequest,
+    ): EmailVerificationConfirmResponse
+
     @POST("auth/register")
     suspend fun register(@Body request: RegisterRequest): AuthTokenResponse
 
@@ -180,6 +213,9 @@ interface AuthApi {
 
     @POST("auth/google")
     suspend fun loginGoogle(@Body request: GoogleLoginRequest): AuthTokenResponse
+
+    @POST("auth/logout")
+    suspend fun logout(@Header("Authorization") authorization: String): LogoutResponse
 
     @GET("auth/me")
     suspend fun me(@Header("Authorization") authorization: String): AuthMeResponse
@@ -205,6 +241,9 @@ interface AuthApi {
 
     @GET("user/consents/status")
     suspend fun consentStatus(@Header("Authorization") authorization: String): ConsentStatusResponse
+
+    @GET("user/consents")
+    suspend fun listConsents(@Header("Authorization") authorization: String): ConsentListResponse
 
     @POST("user/consents")
     suspend fun recordConsents(

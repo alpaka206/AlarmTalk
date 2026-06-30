@@ -8,17 +8,13 @@
     "how": "How it works",
     "faq": "FAQ",
     "company": "Company",
-    "contact": "Contact",
-    "cta": "Get early access"
+    "contact": "Contact"
   },
   "hero": {
     "tag": "Voice alarm",
-    "badge": "Voice alarm, made in Korea",
     "headline1": "Wake up to",
     "headline2": "a voice you love.",
-    "description": "Register a voice once, then freely create alarms that read any line you write — all in that voice.",
-    "waitlistHint": "Before launch — join the beta waitlist",
-    "scrollHint": "Scroll",
+    "description": "Register the voice you want, and set your alarms in that voice.",
     "phone": {
       "greetTop": "Good morning,",
       "greetBottom": "whose voice woke you up?",
@@ -28,7 +24,6 @@
       "quickStart": "Quick start",
       "quickVoice": "Voice profiles",
       "quickAlarm": "New alarm",
-      "streak": "7 days streak",
       "tabHome": "Home",
       "tabVoice": "Voice",
       "tabAlarms": "Alarms",
@@ -36,45 +31,42 @@
     }
   },
   "trust": {
-    "headline": "Not a louder alarm. A voice you actually want to hear.",
+    "headline": "Not a louder alarm.\nA voice you actually want to keep hearing.",
     "items": [
       {
-        "metric": "60s",
-        "title": "One setup",
-        "body": "Around a minute of audio is all it takes to build a voice profile. Then create as many alarms as you like in that voice."
+        "metric": "1×",
+        "title": "Voice setup",
+        "body": "Record a clip or upload a voice file to create a voice. Then make alarms in the voice you want."
       },
       {
-        "metric": "TTS",
-        "title": "Any line you write",
-        "body": "Type any sentence and it's read in that voice. Optionally, auto-generate a fresh line daily from contexts like weather or fortune."
+        "metric": "Any",
+        "title": "words you write",
+        "body": "Write the words you want to hear, and that voice says them. Pick weather or a daily fortune, and it wakes you with a fresh line every morning."
       },
       {
         "metric": "0",
-        "title": "Forced missions",
-        "body": "No math problems, no photo missions. We wake your mind, not just your body."
+        "title": "cold missions",
+        "body": "Mornings are hard enough. Skip the cold missions — start the day with a warm word instead."
       }
     ]
   },
   "voice": {
-    "eyebrow": "Voice cloning",
-    "headline1": "One minute of audio,",
+    "headline1": "Set up once,",
     "headline2": "as many alarms as you want.",
-    "description": "Around a minute of audio builds a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like.",
-    "bullet1": "Build a voice profile from ~60s of audio",
+    "description": "Record or upload a voice file once to build a voice profile. From then on, type any sentence and it's read aloud in that voice — across as many alarms as you like.",
+    "bullet1": "Build a voice profile from a recording or a file",
     "bullet2": "Type any sentence, read back in that voice",
     "bullet3": "Reuse one registered voice across many alarms"
   },
   "shared": {
-    "eyebrow": "Family · partner · friends",
-    "headline1": "Nothing ever leaves",
-    "headline2": "your private group.",
-    "description": "Create a private group with an invite code. Voices stay inside — recipients can only play them in their own library, never download or export. Voice cloning carries the weight of trust, and we treat it that way.",
-    "bullet1": "Invite-code groups — no strangers",
-    "bullet2": "Received voices play only in your library, never exported",
-    "bullet3": "Far apart? Wake to a grandchild, child, or partner every morning"
+    "headline1": "Share a voice",
+    "headline2": "with the people you love.",
+    "description": "Share voices with the people on your plan. Wake up to a family member's or partner's voice — and set the morning alarm for someone far away, too.",
+    "bullet1": "Share voices with the people on your plan",
+    "bullet2": "Build your own alarms with the voices you receive",
+    "bullet3": "Set alarms for family or a partner living far away"
   },
   "language": {
-    "eyebrow": "Auto-generate (optional)",
     "headline1": "Too busy to type?",
     "headline2": "Let it write itself.",
     "description": "Don't feel like writing a line every time? Pick a context like weather or fortune, and a fresh greeting is generated daily in that voice. It's an optional mode you turn on when you want it.",
@@ -108,29 +100,6 @@
       }
     ]
   },
-  "quotes": {
-    "eyebrow": "Why AlarmTalk",
-    "headline": "Not a louder alarm. One you want to keep hearing.",
-    "description": "Short notes on the category AlarmTalk is trying to create.",
-    "items": [
-      {
-        "body": "A forced alarm wakes the body but breaks the mind. We wanted ‘emotional waking’ to be a real category — a third path next to mission-based alarms.",
-        "author": "Team",
-        "role": "Product"
-      },
-      {
-        "body": "Voices never leave the group. Voice cloning shares roots with voice phishing — if trust breaks, it's over. So we treat that weight as the heaviest constraint.",
-        "author": "Team",
-        "role": "Security"
-      },
-      {
-        "body": "Fans and seniors looked opposite. But they share one thing: there's a specific voice they want to hear every morning. That insight is the center of the product.",
-        "author": "Team",
-        "role": "Insight"
-      }
-    ],
-    "disclaimer": "These quotes are placeholders until launch. Real user quotes and ratings will replace them after we ship."
-  },
   "faq": {
     "headline": "Frequently asked",
     "items": [
@@ -152,24 +121,13 @@
       },
       {
         "q": "Is it free?",
-        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, auto-generated contexts (weather, fortune, etc.), and the character system are part of paid plans."
+        "a": "Basic voice alarms with a single voice profile are free. Family/partner sharing, multiple voice profiles, and auto-generated contexts (weather, fortune, etc.) are part of paid plans."
       },
       {
         "q": "Which devices are supported?",
         "a": "Android native first. iOS follows once we've validated AlarmKit separately."
       }
     ]
-  },
-  "waitlist": {
-    "headline1": "Want early access?",
-    "headline2": "We'll tell you first.",
-    "description": "Before launch, we'll email you a beta invite. No marketing emails — just the invite.",
-    "placeholder": "you@example.com",
-    "cta": "Join waitlist",
-    "ctaSuccess": "You're in",
-    "messageSuccess": "Thanks. You'll hear from us as soon as the beta opens.",
-    "messageError": "That doesn't look like an email.",
-    "agreement": "By submitting, you agree to our privacy policy."
   },
   "footer": {
     "tagline": "Wake up to a voice you love. Register once, then any line you write is read in that voice.",
@@ -200,12 +158,11 @@
     "panelLabel": "Site menu"
   },
   "store": {
-    "appStoreEyebrow": "Download on",
-    "appStoreLabel": "App Store",
-    "appStoreAria": "Get AlarmTalk on the App Store",
     "googlePlayEyebrow": "GET IT ON",
     "googlePlayLabel": "Google Play",
-    "googlePlayAria": "Get AlarmTalk on Google Play"
+    "googlePlayAria": "Get AlarmTalk on Google Play",
+    "comingSoonEyebrow": "COMING SOON",
+    "comingSoonAria": "Google Play release coming soon"
   },
   "contact": {
     "meta": {
@@ -315,8 +272,7 @@
     },
     "cta": {
       "headline": "Want to make this dawn with us?",
-      "body": "Join the beta first, or reach out via contact.",
-      "primary": "Join the beta",
+      "body": "Get notified when the app launches, or reach out via contact.",
       "secondary": "Contact us"
     }
   }

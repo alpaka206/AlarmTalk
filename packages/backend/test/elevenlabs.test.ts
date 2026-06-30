@@ -53,7 +53,7 @@ describe('ElevenLabsClient', () => {
   });
 
   describe('textToSpeech', () => {
-    it('올바른 요청 바디 구성', async () => {
+    it('옵션 미지정 시 v3 디폴트 voice_settings를 전송한다', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('voice-123', '안녕하세요');
@@ -64,10 +64,17 @@ describe('ElevenLabsClient', () => {
       const body = JSON.parse(opts.body);
       expect(body.text).toBe('안녕하세요');
       expect(body.model_id).toBe('eleven_v3');
-      expect(body.voice_settings).toBeUndefined();
+      // 검증된 버그 수정: v3에도 항상 voice_settings를 전송한다(이전엔 역조건으로 미전송).
+      expect(body.voice_settings).toEqual({
+        stability: 0.5,
+        similarity_boost: 0.8,
+        style: 0.4,
+        speed: 1.0,
+        use_speaker_boost: true,
+      });
     });
 
-    it('v3는 커스텀 voice settings 옵션을 전송하지 않는다', async () => {
+    it('v3도 커스텀 voice settings 옵션을 전송한다(버그 수정)', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('v1', 'hello', {
@@ -82,10 +89,14 @@ describe('ElevenLabsClient', () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.model_id).toBe('eleven_v3');
       expect(body.language_code).toBe('ko');
-      expect(body.voice_settings).toBeUndefined();
+      expect(body.voice_settings.stability).toBe(0.8);
+      expect(body.voice_settings.similarity_boost).toBe(0.9);
+      expect(body.voice_settings.style).toBe(0.3);
+      expect(body.voice_settings.speed).toBe(0.7);
+      expect(body.voice_settings.use_speaker_boost).toBe(true);
     });
 
-    it('비-v3 모델은 커스텀 옵션을 반영', async () => {
+    it('비-v3 모델도 커스텀 옵션을 반영(미지정 항목은 디폴트)', async () => {
       mockFetch.mockResolvedValueOnce(okArrayBuffer());
 
       await client.textToSpeech('v1', 'hello', {
@@ -102,7 +113,8 @@ describe('ElevenLabsClient', () => {
       expect(body.voice_settings.stability).toBe(0.8);
       expect(body.voice_settings.similarity_boost).toBe(0.9);
       expect(body.voice_settings.style).toBe(0.3);
-      expect(body.voice_settings.speed).toBe(0.96);
+      expect(body.voice_settings.speed).toBe(1.0);
+      expect(body.voice_settings.use_speaker_boost).toBe(true);
     });
 
     it('ArrayBuffer 반환', async () => {

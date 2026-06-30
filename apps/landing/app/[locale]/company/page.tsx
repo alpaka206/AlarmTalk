@@ -7,6 +7,7 @@ import { hasLocale } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/sections/site-footer";
+import { StoreBadges } from "@/components/store-badges";
 import { SITE_NAME, localeUrl, localePath, languageAlternates } from "@/lib/site";
 
 export function generateStaticParams() {
@@ -83,7 +84,7 @@ function CompanyHero() {
             <br />
             <span className="text-accent">{t("headline2")}</span>
           </h1>
-          <p className="mt-7 max-w-[640px] text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
+          <p className="mt-7 max-w-160 text-[17px] leading-[1.65] text-text-muted sm:text-[18px]">
             {t("description")}
           </p>
         </div>
@@ -154,7 +155,7 @@ function Products() {
         <div className="mt-12 grid gap-6 lg:grid-cols-2">
           <article className="card-raised p-8 lg:p-10">
             <span className="eyebrow">{alarm.tag}</span>
-            <h3 className="mt-5 text-[26px] font-semibold leading-[1.25] tracking-[-0.01em] text-text">
+            <h3 className="mt-5 text-[26px] font-semibold leading-tight tracking-[-0.01em] text-text">
               {alarm.title}
             </h3>
             <p className="mt-4 max-w-[44ch] text-[15.5px] leading-[1.7] text-text-muted">
@@ -228,9 +229,7 @@ function CompanyCta() {
             {t("body")}
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link href="/#waitlist" className="btn btn-primary">
-              {t("primary")}
-            </Link>
+            <StoreBadges />
             <Link href="/contact" className="btn btn-secondary">
               {t("secondary")}
             </Link>

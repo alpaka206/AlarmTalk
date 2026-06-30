@@ -749,6 +749,95 @@ describe('PATCH /alarms/:id', () => {
     expect(updateCall!.args).toContain('sound-only');
   });
 
+  it('IDOR: 타인/미존재 message_id 로 수정 시 404 MESSAGE_NOT_FOUND', async () => {
+    const foreignMsg = '10000000-0000-4000-8000-0000000000aa';
+    // existing alarm → 존재 (소유자 본인)
+    mockDB.pushResult([{
+      id: ID.alarm,
+      message_id: ID.message,
+      mode: 'tts',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      raw_audio_url: null,
+      user_plan: 'personal',
+    }]);
+    // messageBelongsToCaller → 소유/프리셋 아님 (0 rows)
+    mockDB.pushResult([]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { message_id: foreignMsg }),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('MESSAGE_NOT_FOUND');
+    // 소유권 미통과 시 UPDATE 가 실행되면 안 됨
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(false);
+  });
+
+  it('IDOR: 본인 소유 message_id 로 수정은 허용', async () => {
+    mockDB.pushResult([{
+      id: ID.alarm,
+      message_id: null,
+      mode: 'tts',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      raw_audio_url: null,
+      user_plan: 'personal',
+    }]);
+    // messageBelongsToCaller → 소유 확인 (1 row)
+    mockDB.pushResult([{ '1': 1 }]);
+    // UPDATE
+    mockDB.pushResult([], 1);
+    // SELECT updated
+    mockDB.pushResult([{
+      id: ID.alarm,
+      user_id: 'user-1',
+      target_user_id: null,
+      message_id: ID.message,
+      time: '07:30',
+      repeat_days: '[]',
+      is_active: 1,
+      snooze_minutes: 5,
+      mode: 'tts',
+      vibration_pattern: 'default',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      created_at: '2026-01-01',
+      updated_at: '2026-01-02',
+    }]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { message_id: ID.message }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(true);
+  });
+
+  it('IDOR: 타인/미존재 voice_profile_id 로 수정 시 404 VOICE_PROFILE_NOT_FOUND', async () => {
+    const foreignVp = '50000000-0000-4000-8000-0000000000aa';
+    mockDB.pushResult([{
+      id: ID.alarm,
+      message_id: ID.message,
+      mode: 'tts',
+      wake_mode: 'sound_then_voice',
+      voice_profile_id: null,
+      speaker_id: null,
+      raw_audio_url: null,
+      user_plan: 'personal',
+    }]);
+    // voiceProfileBelongsToCaller → 0 rows
+    mockDB.pushResult([]);
+
+    const res = await buildApp().request(
+      jsonReq('PATCH', `/alarms/${ID.alarm}`, { voice_profile_id: foreignVp }),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
+    expect(mockDB.calls.some((c) => c.sql.includes('UPDATE alarms'))).toBe(false);
+  });
+
   it('voice_profile_id null 로 해제', async () => {
     mockDB.pushResult([{ id: ID.alarm }]);
     mockDB.pushResult([], 1);

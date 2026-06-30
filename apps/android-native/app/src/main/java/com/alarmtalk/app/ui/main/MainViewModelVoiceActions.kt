@@ -11,19 +11,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.alarmtalk.app.core.VoiceAlarmLog.TAG
+import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
-import com.alarmtalk.app.data.CharacterEventEntity
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.AuthSessionStore
 import com.alarmtalk.app.network.BillingSubscriptionResponse
-import com.alarmtalk.app.network.CharacterResponse
 import com.alarmtalk.app.network.CheckoutRequest
 import com.alarmtalk.app.network.CodeRegisterRequest
 import com.alarmtalk.app.network.FamilyGroupCurrentResponse
@@ -36,7 +36,7 @@ import com.alarmtalk.app.network.TtsGenerateRequest
 import com.alarmtalk.app.network.TtsGenerateResponse
 import com.alarmtalk.app.network.TtsMessage
 import com.alarmtalk.app.network.TtsMessageAudioResponse
-import com.alarmtalk.app.network.VoiceAlarmApiClient
+import com.alarmtalk.app.network.AlarmTalkApiClient
 import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceProfileRelationshipUpdateRequest
 import com.alarmtalk.app.network.VoiceProfileUpdateRequest
@@ -61,28 +61,38 @@ internal fun MainViewModel.loadVoiceProfiles() {
 }
 
 internal fun MainViewModel.preloadVoiceProfiles() {
-    if (authSession == null || voiceProfileBusy || voiceProfiles.isNotEmpty()) return
+    if (authSession == null || voiceProfileBusy) return
+    val cachedSystemOnly = voiceProfiles.isNotEmpty() && voiceProfiles.all { it.isSystem == true }
+    if (voiceProfiles.isNotEmpty() && !(cachedSystemOnly && hasPaidVoiceAccess(subscriptionResponse))) {
+        voiceProfileLoadFinished = true
+        return
+    }
     fetchVoiceProfiles(showMessage = false)
 }
 
 internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
     val session = authSession
     if (session == null) {
-        if (showMessage) message = "음성을 불러오려면 먼저 로그인해 주세요"
+        if (showMessage) message = getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_login_required)
         return
     }
     viewModelScope.launch {
         if (voiceProfileBusy) return@launch
+        voiceProfileLoadFinished = false
         voiceProfileBusy = true
-        runCatching {
-            api.listVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
-        }.onSuccess { profiles ->
-            voiceProfiles = profiles
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to load voice profiles", error)
-            if (showMessage) message = userFacingError(error, "목소리를 불러오지 못했어요")
+        try {
+            runCatching {
+                api.listVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
+            }.onSuccess { profiles ->
+                voiceProfiles = profiles
+            }.onFailure { error ->
+                Log.e(TAG, "Failed to load voice profiles", error)
+                if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
+            }
+        } finally {
+            voiceProfileBusy = false
+            voiceProfileLoadFinished = true
         }
-        voiceProfileBusy = false
     }
 }
 
@@ -92,6 +102,8 @@ internal fun MainViewModel.createVoiceProfile(
     shared: Boolean,
     relationshipLabel: String,
     listenerTitle: String,
+    voiceGender: String,
+    speechFormality: String,
 ) {
     createVoiceProfiles(
         listOf(
@@ -101,6 +113,8 @@ internal fun MainViewModel.createVoiceProfile(
                 shared = shared,
                 relationshipLabel = relationshipLabel,
                 listenerTitle = listenerTitle,
+                voiceGender = voiceGender,
+                speechFormality = speechFormality,
             ),
         ),
     )
@@ -109,11 +123,11 @@ internal fun MainViewModel.createVoiceProfile(
 internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationDraft>) {
     val session = authSession
     if (session == null) {
-        message = "목소리를 만들려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_create_login_required)
         return
     }
     if (!hasPaidVoiceAccess(subscriptionResponse)) {
-        message = "유료 이용권에서 사용할 수 있어요."
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
         return
     }
     val drafts = items.map {
@@ -124,19 +138,20 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
         )
     }
     if (drafts.isEmpty() || drafts.any { it.name.isBlank() }) {
-        message = "목소리 이름을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return
     }
     if (drafts.any { it.relationshipLabel.isBlank() }) {
-        message = "나와의 관계를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
         return
     }
     if (drafts.any { it.listenerTitle.isBlank() }) {
-        message = "이 목소리가 나를 부를 이름을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
         return
     }
-    if (voiceProfiles.size + drafts.size > MAX_VOICE_PROFILES) {
-        message = "목소리는 최대 ${MAX_VOICE_PROFILES}개까지 만들 수 있어요"
+    // 시스템 스톡 보이스는 개수 제한에서 제외 — 내가 만든 목소리만 센다.
+    if (voiceProfiles.count { it.isSystem != true } + drafts.size > MAX_VOICE_PROFILES) {
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_max_profiles_reached, MAX_VOICE_PROFILES)
         return
     }
 
@@ -159,7 +174,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             withContext(Dispatchers.IO) {
                 drafts.map { draft ->
                     api.createVoiceClone(
-                        authorization = VoiceAlarmApiClient.bearer(session.token),
+                        authorization = AlarmTalkApiClient.bearer(session.token),
                         audio = voiceUploadPart(draft.audio),
                         name = draft.name.toRequestBody("text/plain".toMediaType()),
                         isShared = draft.shared.toString().toRequestBody("text/plain".toMediaType()),
@@ -167,27 +182,37 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
                         listenerTitle = draft.listenerTitle.toRequestBody("text/plain".toMediaType()),
                         durationMs = (draft.audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
                         isDraft = false.toString().toRequestBody("text/plain".toMediaType()),
+                        voiceGender = draft.voiceGender.toRequestBody("text/plain".toMediaType()),
+                        speechFormality = draft.speechFormality.toRequestBody("text/plain".toMediaType()),
                     ).profile
                 }
             }
         }.onSuccess { profiles ->
             val newIds = profiles.map { it.id }.toSet()
             voiceProfiles = profiles + voiceProfiles.filterNot { it.id in pendingIds || it.id in newIds }
+            // 클론 성공 직후 로컬 녹음 샘플(음성 생체정보 평문 .m4a)을 즉시 정리한다.
+            withContext(Dispatchers.IO) {
+                drafts.forEach { draft ->
+                    runCatching { repository.deleteVoiceCloneSourceRecording(draft.audio.cacheKey) }
+                        .onFailure { Log.w(TAG, "Failed to delete voice clone source recording", it) }
+                }
+            }
             message = if (profiles.size == 1) {
-                "'${profiles.first().name}' 목소리를 만들었어요"
+                getApplication<android.app.Application>().getString(R.string.msg_voice_created_single, profiles.first().name)
             } else {
-                "목소리 ${profiles.size}개를 만들었어요"
+                getApplication<android.app.Application>().getString(R.string.msg_voice_created_multiple, profiles.size)
             }
         }.onFailure { error ->
             voiceProfiles = voiceProfiles.filterNot { it.id in pendingIds }
             Log.e(TAG, "Failed to create voice profile", error)
+            val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {
-                "VOICE_CLONE_AUDIO_TOO_SHORT" -> "목소리를 만들 음성은 1분 이상이어야 해요."
-                "VOICE_CLONE_AUDIO_TOO_LONG" -> "목소리를 만들 음성은 2분 이하로 준비해 주세요."
-                "INVALID_DURATION" -> "음성 길이를 확인하지 못했어요. 파일을 다시 선택해 주세요."
-                "VOICE_SLOT_EXHAUSTED" -> "지금은 목소리 생성 요청이 많아요. 잠시 후 다시 시도해 주세요."
-                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> "유료 이용권에서 사용할 수 있어요."
-                else -> userFacingError(error, "목소리를 만들지 못했어요")
+                "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
+                "VOICE_CLONE_AUDIO_TOO_LONG" -> app.getString(R.string.msg_voice_clone_audio_too_long)
+                "INVALID_DURATION" -> app.getString(R.string.msg_voice_invalid_duration)
+                "VOICE_SLOT_EXHAUSTED" -> app.getString(R.string.msg_voice_slot_exhausted)
+                "VOICE_FEATURE_REQUIRES_PAID_PLAN" -> app.getString(R.string.msg_voice_paid_plan_required)
+                else -> userFacingError(error, app.getString(R.string.msg_voice_create_failed))
             }
         }
         voiceProfileBusy = false
@@ -195,19 +220,19 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
 }
 
 internal suspend fun MainViewModel.separateVoiceSpeakers(audio: CachedAlarmAudio): List<VoiceSpeakerSegment> {
-    val session = authSession ?: throw IllegalStateException("목소리를 나누려면 먼저 로그인해 주세요")
+    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_separate_login_required))
     check(hasPaidVoiceAccess(subscriptionResponse)) {
-        "유료 이용권에서 사용할 수 있어요."
+        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
     }
     return withContext(Dispatchers.IO) {
         val upload = api.uploadVoiceAudio(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             audio = voiceUploadPart(audio),
             durationMs = (audio.durationMillis ?: 0L).toString().toRequestBody("text/plain".toMediaType()),
             originalName = audio.displayName.toRequestBody("text/plain".toMediaType()),
         ).upload
         api.separateVoiceUpload(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             uploadId = upload.id,
         ).speakers
     }
@@ -221,13 +246,13 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
     name: String,
     audio: CachedAlarmAudio,
 ): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException("목소리 미리듣기를 하려면 먼저 로그인해 주세요")
+    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_preview_login_required))
     check(hasPaidVoiceAccess(subscriptionResponse)) {
-        "유료 이용권에서 사용할 수 있어요."
+        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
     }
     return withContext(Dispatchers.IO) {
         api.createVoiceClone(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             audio = voiceUploadPart(audio),
             name = name.toRequestBody("text/plain".toMediaType()),
             isShared = false.toString().toRequestBody("text/plain".toMediaType()),
@@ -235,6 +260,8 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
             listenerTitle = "".toRequestBody("text/plain".toMediaType()),
             durationMs = (audio.durationMillis?.toString() ?: "").toRequestBody("text/plain".toMediaType()),
             isDraft = true.toString().toRequestBody("text/plain".toMediaType()),
+            voiceGender = "neutral".toRequestBody("text/plain".toMediaType()),
+            speechFormality = "auto".toRequestBody("text/plain".toMediaType()),
         ).profile
     }
 }
@@ -244,10 +271,10 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
  * 사용자의 기존 non-draft 음성이 있으면 서버가 409 VOICE_LIMIT_REACHED 를 반환한다.
  */
 internal suspend fun MainViewModel.promoteDraftVoice(profileId: String): VoiceProfile {
-    val session = authSession ?: throw IllegalStateException("음성을 등록하려면 먼저 로그인해 주세요")
+    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_promote_login_required))
     return withContext(Dispatchers.IO) {
         api.updateVoiceProfile(
-            authorization = VoiceAlarmApiClient.bearer(session.token),
+            authorization = AlarmTalkApiClient.bearer(session.token),
             id = profileId,
             request = VoiceProfileUpdateRequest(isDraft = false),
         ).profile
@@ -260,7 +287,7 @@ internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
     withContext(Dispatchers.IO) {
         runCatching {
             api.deleteVoiceProfile(
-                authorization = VoiceAlarmApiClient.bearer(session.token),
+                authorization = AlarmTalkApiClient.bearer(session.token),
                 id = profileId,
                 force = true,
             )
@@ -278,22 +305,22 @@ internal fun MainViewModel.renameVoiceProfile(
 ) {
     val session = authSession
     if (session == null) {
-        message = "목소리를 수정하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_edit_login_required)
         return
     }
     val trimmedName = name.trim()
     val trimmedRelationship = relationshipLabel.trim()
     val trimmedListener = listenerTitle.trim()
     if (trimmedName.isBlank()) {
-        message = "목소리 이름을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_name_required)
         return
     }
     if (trimmedRelationship.isBlank()) {
-        message = "나와의 관계를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
         return
     }
     if (trimmedListener.isBlank()) {
-        message = "이 목소리가 나를 부를 이름을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
         return
     }
 
@@ -303,7 +330,7 @@ internal fun MainViewModel.renameVoiceProfile(
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileUpdateRequest(
                         name = trimmedName,
@@ -325,10 +352,10 @@ internal fun MainViewModel.renameVoiceProfile(
                     it
                 }
             }
-            message = "정보를 수정했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_voice_info_updated)
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
-            message = userFacingError(error, "정보 수정에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
         }
         voiceProfileBusy = false
     }
@@ -342,17 +369,17 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
 ) {
     val session = authSession
     if (session == null) {
-        message = "공유받은 목소리를 설정하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_setup_login_required)
         return
     }
     val trimmedRelationship = relationshipLabel.trim()
     val trimmedListener = listenerTitle.trim()
     if (trimmedRelationship.isBlank()) {
-        message = "나와의 관계를 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_relationship_required)
         return
     }
     if (trimmedListener.isBlank()) {
-        message = "이 목소리가 나를 부를 이름을 입력해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_listener_title_required)
         return
     }
 
@@ -362,7 +389,7 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfileRelationship(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileRelationshipUpdateRequest(
                         relationshipLabel = trimmedRelationship,
@@ -381,11 +408,11 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
                     it
                 }
             }
-            message = "공유받은 목소리 정보를 저장했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_saved)
             onSuccess()
         }.onFailure { error ->
             Log.e(TAG, "Failed to update shared voice viewer info id=$profileId", error)
-            message = userFacingError(error, "공유받은 목소리 정보 저장에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_save_failed))
         }
         voiceProfileBusy = false
     }
@@ -394,11 +421,11 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
 internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Boolean) {
     val session = authSession
     if (session == null) {
-        message = "목소리를 공유하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_login_required)
         return
     }
     if (!hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup)) {
-        message = "음성 공유는 커플/가족 이용권에서 사용할 수 있어요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_share_couple_family_required)
         return
     }
 
@@ -408,7 +435,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
         runCatching {
             withContext(Dispatchers.IO) {
                 api.updateVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     request = VoiceProfileUpdateRequest(isShared = shared),
                 ).profile
@@ -418,14 +445,15 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
                 if (it.id == profile.id) it.copy(isShared = profile.isShared ?: shared) else it
             }
             runCatching {
-                api.listFamilyVoiceProfiles(VoiceAlarmApiClient.bearer(session.token)).profiles
+                api.listFamilyVoiceProfiles(AlarmTalkApiClient.bearer(session.token)).profiles
             }.onSuccess { profiles ->
                 familyVoices = profiles
             }
-            message = if (shared) "목소리를 공유했어요" else "목소리 공유를 껐어요"
+            val app = getApplication<android.app.Application>()
+            message = if (shared) app.getString(R.string.msg_voice_shared_on) else app.getString(R.string.msg_voice_shared_off)
         }.onFailure { error ->
             Log.e(TAG, "Failed to update voice profile sharing id=$profileId shared=$shared", error)
-            message = userFacingError(error, "목소리 공유 설정에 실패했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
         }
         voiceProfileBusy = false
     }
@@ -434,7 +462,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
 internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
     val session = authSession
     if (session == null) {
-        message = "목소리를 삭제하려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_delete_login_required)
         return
     }
 
@@ -450,19 +478,19 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
         runCatching {
             withContext(Dispatchers.IO) {
                 api.deleteVoiceProfile(
-                    authorization = VoiceAlarmApiClient.bearer(session.token),
+                    authorization = AlarmTalkApiClient.bearer(session.token),
                     id = profileId,
                     force = true,
                 )
             }
         }.onSuccess {
             voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-            message = "목소리를 삭제했어요"
+            message = getApplication<android.app.Application>().getString(R.string.msg_voice_deleted)
             refreshNotesSilently()
         }.onFailure { error ->
             if (error is retrofit2.HttpException && error.code() == 404) {
                 voiceProfiles = voiceProfiles.filterNot { it.id == profileId }
-                message = "이미 삭제된 목소리예요"
+                message = getApplication<android.app.Application>().getString(R.string.msg_voice_already_deleted)
                 refreshNotesSilently()
             } else {
                 if (originalProfile != null) {
@@ -471,7 +499,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
                     }
                 }
                 Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
-                message = userFacingError(error, "목소리 삭제에 실패했어요")
+                message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
             }
         }
         voiceProfileBusy = false
@@ -479,38 +507,60 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
 }
 
 internal suspend fun MainViewModel.generateTtsAudio(request: TtsGenerateRequest): TtsGenerateResponse {
-    check(hasPaidVoiceAccess(subscriptionResponse)) {
-        "유료 이용권에서 사용할 수 있어요."
+    check(hasPaidVoiceAccess(subscriptionResponse) || request.isFreeSystemPresetRequest()) {
+        getApplication<android.app.Application>().getString(R.string.msg_voice_paid_plan_required)
     }
-    val session = authSession ?: throw IllegalStateException("음성 오디오를 만들려면 먼저 로그인해 주세요")
+    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_generate_login_required))
     return withContext(Dispatchers.IO) {
-        api.generateTts(VoiceAlarmApiClient.bearer(session.token), request)
+        api.generateTts(AlarmTalkApiClient.bearer(session.token), request)
     }
 }
+
+internal fun TtsGenerateRequest.isFreeSystemPresetRequest(): Boolean =
+    isSystemVoiceId(voiceProfileId) &&
+        random &&
+        randomContext == "preset" &&
+        !translate &&
+        language == "ko" &&
+        text.isBlank()
 
 internal fun MainViewModel.loadTtsMessages() {
     val session = authSession
     if (session == null) {
-        message = "저장된 음성을 불러오려면 먼저 로그인해 주세요"
+        message = getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_login_required)
         return
     }
     viewModelScope.launch {
         ttsMessageBusy = true
         runCatching {
-            api.listTtsMessages(VoiceAlarmApiClient.bearer(session.token)).messages
+            api.listTtsMessages(AlarmTalkApiClient.bearer(session.token)).messages
         }.onSuccess { messages ->
             ttsMessages = messages
         }.onFailure { error ->
             Log.e(TAG, "Failed to load saved TTS messages", error)
-            message = userFacingError(error, "저장된 음성을 불러오지 못했어요")
+            message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_failed))
         }
         ttsMessageBusy = false
     }
 }
 
 internal suspend fun MainViewModel.downloadTtsMessageAudio(messageId: String): TtsMessageAudioResponse {
-    val session = authSession ?: throw IllegalStateException("저장된 음성 오디오를 불러오려면 먼저 로그인해 주세요")
+    val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_tts_audio_load_login_required))
     return withContext(Dispatchers.IO) {
-        api.getTtsMessageAudio(VoiceAlarmApiClient.bearer(session.token), messageId)
+        api.getTtsMessageAudio(AlarmTalkApiClient.bearer(session.token), messageId)
+    }
+}
+
+internal fun MainViewModel.loadStockClips() {
+    val session = authSession ?: return
+    if (stockClips.isNotEmpty()) return
+    viewModelScope.launch {
+        runCatching {
+            api.getStockClips(AlarmTalkApiClient.bearer(session.token)).clips
+        }.onSuccess { clips ->
+            stockClips = clips
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to load stock clips", error)
+        }
     }
 }

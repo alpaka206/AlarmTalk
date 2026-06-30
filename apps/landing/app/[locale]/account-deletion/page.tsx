@@ -33,7 +33,7 @@ const CONTENT = {
       "계정 식별 정보와 로그인 연결 정보",
       "서버에 동기화된 알람 설정",
       "음성 프로필, 업로드 음성, 생성 음성 및 관련 메타데이터",
-      "가족/파트너 연결, 메시지, 캐릭터와 이용 기록",
+      "가족/파트너 연결, 메시지와 이용 기록",
     ],
     retainedTitle: "일부 보관될 수 있는 데이터",
     retainedBody:
@@ -65,7 +65,7 @@ const CONTENT = {
       "Account identifiers and sign-in connection data",
       "Alarm settings synchronized to the server",
       "Voice profiles, uploaded voices, generated voices, and related metadata",
-      "Family or partner connections, messages, character data, and usage records",
+      "Family or partner connections, messages, and usage records",
     ],
     retainedTitle: "Data that may be retained",
     retainedBody:
@@ -97,7 +97,7 @@ const CONTENT = {
       "アカウント識別情報とログイン連携情報",
       "サーバーに同期されたアラーム設定",
       "音声プロフィール、アップロード音声、生成音声と関連メタデータ",
-      "家族・パートナー連携、メッセージ、キャラクター情報、利用記録",
+      "家族・パートナー連携、メッセージ、利用記録",
     ],
     retainedTitle: "一部保持される可能性があるデータ",
     retainedBody:
@@ -188,7 +188,7 @@ export default async function AccountDeletionPage({
             <h1 className="mt-6 text-[40px] font-bold leading-[1.08] text-text sm:text-[56px] lg:text-[64px]">
               {copy.headline}
             </h1>
-            <p className="mt-7 max-w-[680px] text-[17px] leading-[1.7] text-text-muted">
+            <p className="mt-7 max-w-170 text-[17px] leading-[1.7] text-text-muted">
               {copy.intro}
             </p>
           </div>

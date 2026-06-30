@@ -37,10 +37,11 @@ interface AlarmDao {
           AND voiceRandomPrompt = 1
           AND playMode != 'alarm_only'
           AND voiceProfileId IS NOT NULL
+          AND bucketId IS NULL
         ORDER BY fireAtMillis ASC
         """,
     )
-    suspend fun getRepeatingDynamicVoiceAlarms(): List<AlarmEntity>
+    suspend fun getRepeatingDynamicAlarmTalks(): List<AlarmEntity>
 
     @Query(
         """
@@ -51,6 +52,18 @@ interface AlarmDao {
         """,
     )
     suspend fun countAtTime(hour: Int, minute: Int, excludeId: String? = null): Int
+
+    /** 같은 시각(HH:mm)의 기존 알람 1건. 중복 시각 교체 흐름에서 충돌 대상을 찾는 데 쓴다. */
+    @Query(
+        """
+        SELECT * FROM alarms
+        WHERE hour = :hour
+          AND minute = :minute
+          AND (:excludeId IS NULL OR id != :excludeId)
+        LIMIT 1
+        """,
+    )
+    suspend fun findAtTime(hour: Int, minute: Int, excludeId: String? = null): AlarmEntity?
 
     @Query("SELECT COUNT(*) FROM alarms WHERE audioCacheKey = :cacheKey")
     suspend fun countByAudioCacheKey(cacheKey: String): Int
@@ -134,4 +147,14 @@ interface AlarmDao {
         preparedForFireAtMillis: Long,
         updatedAtMillis: Long,
     )
+
+    /** 무료 버킷 회전 인덱스를 다음 값으로 영속화한다(알람이 울린 직후 호출). */
+    @Query(
+        """
+        UPDATE alarms
+        SET bucketRotationIndex = :index, updatedAtMillis = :updatedAtMillis
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateBucketRotationIndex(id: String, index: Int, updatedAtMillis: Long)
 }

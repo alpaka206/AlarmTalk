@@ -1,5 +1,5 @@
 {
-  "name": "@voice-alarm/ui",
+  "name": "@alarmtalk/ui",
   "version": "0.1.0",
   "description": "Shared design tokens for voice_alarm monorepo (colors, typography, spacing)",
   "type": "module",
@@ -11,7 +11,7 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   },
   "private": true
 }

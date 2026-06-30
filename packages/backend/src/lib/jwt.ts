@@ -2,6 +2,10 @@ export interface AppJwtPayload {
   sub: string;
   email: string;
   name?: string;
+  // 토큰 세대(epoch). 발급 시 users.token_epoch 를 박아 넣고, authMiddleware 가
+  // 현재 users.token_epoch 와 비교해 더 낮으면 폐기(TOKEN_REVOKED)된 것으로 본다.
+  // 클레임이 없는 토큰(레거시)은 0 으로 간주한다.
+  epoch?: number;
   iss: string;
   aud: string;
   iat: number;
@@ -44,7 +48,7 @@ async function getKey(secret: string, usage: 'sign' | 'verify'): Promise<CryptoK
 }
 
 export async function signAppJwt(
-  payload: { sub: string; email: string; name?: string },
+  payload: { sub: string; email: string; name?: string; epoch?: number },
   secret: string,
   ttlSeconds: number = DEFAULT_TTL_SECONDS,
 ): Promise<string> {
@@ -55,6 +59,7 @@ export async function signAppJwt(
     sub: payload.sub,
     email: payload.email,
     name: payload.name,
+    epoch: payload.epoch ?? 0,
     iss: ISSUER,
     aud: AUDIENCE,
     iat: now,
@@ -96,6 +101,9 @@ export async function verifyAppJwt(token: string, secret: string): Promise<AppJw
   if (payload.iss !== ISSUER) throw new Error('Invalid issuer');
   if (payload.aud !== AUDIENCE) throw new Error('Token audience mismatch');
   if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('Token expired');
+
+  // epoch 클레임이 없는(레거시) 토큰은 0 으로 정규화해 호출자가 항상 숫자를 받게 한다.
+  payload.epoch = typeof payload.epoch === 'number' ? payload.epoch : 0;
 
   return payload;
 }

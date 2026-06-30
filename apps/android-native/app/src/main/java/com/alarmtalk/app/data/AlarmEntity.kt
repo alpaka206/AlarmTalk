@@ -2,7 +2,6 @@ package com.alarmtalk.app.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import java.time.LocalDate
 
 @Entity(tableName = "alarms")
 data class AlarmEntity(
@@ -25,6 +24,7 @@ data class AlarmEntity(
     val rawAudioUri: String?,
     val voiceSource: String,
     val voiceProfileId: String?,
+    val voiceListenerTitle: String?,
     val voiceText: String?,
     val voiceCategory: String?,
     val voiceLanguage: String?,
@@ -39,6 +39,13 @@ data class AlarmEntity(
     val voiceRepeat: Boolean,
     val voiceVolumePercent: Int,
     val ttsMessageId: String?,
+    // 무료 버킷 회전 알람: 가리키는 버킷 카테고리(예: 'morning'·'medication')와, 매 울림마다
+    // +1 되는 순차 회전 인덱스. bucketId 가 null 이면 기존 단일 클립 알람.
+    // bucketClipKeysJson: 해당 버킷·보이스·설정언어로 미리 캐시해 둔 N개 클립의 audioCacheKey
+    // 목록(JSON 배열, variant 순). RingingService 가 이 목록에서 index 로 골라 오프라인 재생한다.
+    val bucketId: String? = null,
+    val bucketRotationIndex: Int = 0,
+    val bucketClipKeysJson: String? = null,
     val remoteAlarmId: String?,
     val lastSyncedAtMillis: Long?,
     val syncState: String,
@@ -51,137 +58,6 @@ data class AlarmEntity(
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
 )
-
-object AlarmStates {
-    const val SCHEDULED = "scheduled"
-    const val RINGING = "ringing"
-    const val SNOOZED = "snoozed"
-    const val DISMISSED = "dismissed"
-    const val DISABLED = "disabled"
-    const val FAILED = "failed"
-}
-
-object AlarmSyncStates {
-    const val LOCAL_ONLY = "local_only"
-    const val SYNCED = "synced"
-    const val DIRTY = "dirty"
-    const val FAILED = "sync_failed"
-}
-
-object AlarmOrigins {
-    const val LOCAL_OWNED = "local_owned"
-    const val RECEIVED_REMOTE = "received_remote"
-
-    val all = listOf(LOCAL_OWNED, RECEIVED_REMOTE)
-}
-
-object VibrationPatterns {
-    const val DEFAULT = "default"
-    const val STRONG = "strong"
-    const val SHORT = "short"
-    const val MEDIUM = "medium"
-    const val HEARTBEAT = "heartbeat"
-    const val TICKTOCK = "ticktock"
-    const val WALTZ = "waltz"
-    const val ZIGZAG = "zigzag"
-    const val OFF_BEAT = "off_beat"
-    const val RIPPLE = "ripple"
-    const val SIREN = "siren"
-    const val NONE = "none"
-
-    val all = listOf(
-        DEFAULT,
-        STRONG,
-        SHORT,
-        MEDIUM,
-        HEARTBEAT,
-        TICKTOCK,
-        WALTZ,
-        ZIGZAG,
-        OFF_BEAT,
-        RIPPLE,
-        SIREN,
-        NONE,
-    )
-}
-
-object VibrationPatternLibrary {
-    fun waveform(patternName: String): LongArray =
-        when (patternName) {
-            VibrationPatterns.STRONG -> longArrayOf(0L, 1_000L, 240L, 1_000L, 240L)
-            VibrationPatterns.SHORT -> longArrayOf(0L, 260L, 520L)
-            VibrationPatterns.MEDIUM -> longArrayOf(0L, 560L, 420L)
-            VibrationPatterns.HEARTBEAT -> longArrayOf(0L, 120L, 120L, 240L, 580L)
-            VibrationPatterns.TICKTOCK -> longArrayOf(0L, 90L, 210L, 90L, 620L)
-            VibrationPatterns.WALTZ -> longArrayOf(0L, 280L, 140L, 150L, 140L, 150L, 620L)
-            VibrationPatterns.ZIGZAG -> longArrayOf(0L, 110L, 100L, 180L, 100L, 280L, 520L)
-            VibrationPatterns.OFF_BEAT -> longArrayOf(0L, 80L, 260L, 240L, 150L, 110L, 560L)
-            VibrationPatterns.RIPPLE -> longArrayOf(0L, 90L, 110L, 160L, 130L, 260L, 620L)
-            VibrationPatterns.SIREN -> longArrayOf(0L, 240L, 110L, 240L, 110L, 520L, 360L)
-            else -> longArrayOf(0L, 700L, 350L, 900L)
-        }
-}
-
-object HolidaySeedData {
-    fun holidays(countryCode: String, year: Int): List<HolidayDate> =
-        when (countryCode.uppercase()) {
-            "KR" -> koreanHolidaysByYear[year].orEmpty()
-            else -> emptyList()
-        }
-
-    private val koreanHolidaysByYear = mapOf(
-        2026 to listOf(
-            HolidayDate(LocalDate.of(2026, 1, 1), "신정"),
-            HolidayDate(LocalDate.of(2026, 2, 16), "설날 연휴"),
-            HolidayDate(LocalDate.of(2026, 2, 17), "설날"),
-            HolidayDate(LocalDate.of(2026, 2, 18), "설날 연휴"),
-            HolidayDate(LocalDate.of(2026, 3, 1), "삼일절"),
-            HolidayDate(LocalDate.of(2026, 3, 2), "대체공휴일"),
-            HolidayDate(LocalDate.of(2026, 5, 5), "어린이날"),
-            HolidayDate(LocalDate.of(2026, 5, 24), "부처님오신날"),
-            HolidayDate(LocalDate.of(2026, 5, 25), "대체공휴일"),
-            HolidayDate(LocalDate.of(2026, 6, 3), "전국동시지방선거"),
-            HolidayDate(LocalDate.of(2026, 6, 6), "현충일"),
-            HolidayDate(LocalDate.of(2026, 8, 15), "광복절"),
-            HolidayDate(LocalDate.of(2026, 8, 17), "대체공휴일"),
-            HolidayDate(LocalDate.of(2026, 9, 24), "추석 연휴"),
-            HolidayDate(LocalDate.of(2026, 9, 25), "추석"),
-            HolidayDate(LocalDate.of(2026, 9, 26), "추석 연휴"),
-            HolidayDate(LocalDate.of(2026, 10, 3), "개천절"),
-            HolidayDate(LocalDate.of(2026, 10, 5), "대체공휴일"),
-            HolidayDate(LocalDate.of(2026, 10, 9), "한글날"),
-            HolidayDate(LocalDate.of(2026, 12, 25), "기독탄신일"),
-        ),
-    )
-}
-
-object AlarmPlayModes {
-    const val ALARM_ONLY = "alarm_only"
-    const val VOICE_ONLY = "voice_only"
-    const val ALARM_VOICE = "alarm_voice"
-
-    val all = listOf(ALARM_ONLY, VOICE_ONLY, ALARM_VOICE)
-}
-
-object SnoozeRepeatLimits {
-    const val THREE = 3
-    const val FIVE = 5
-    const val FOREVER = 0
-
-    val all = listOf(THREE, FIVE, FOREVER)
-}
-
-object VoiceSources {
-    const val LOCAL_AUDIO = "local_audio"
-    const val TTS_PROFILE = "tts_profile"
-    const val SERVER_TTS = "server_tts"
-
-    val all = listOf(LOCAL_AUDIO, TTS_PROFILE, SERVER_TTS)
-}
-
-object DefaultAlarmSounds {
-    const val BUNDLED_DEFAULT = "bundled_default"
-}
 
 data class AlarmDraft(
     val label: String,
@@ -202,6 +78,7 @@ data class AlarmDraft(
     val rawAudioUri: String? = null,
     val voiceSource: String = VoiceSources.LOCAL_AUDIO,
     val voiceProfileId: String? = null,
+    val voiceListenerTitle: String? = null,
     val voiceText: String? = null,
     val voiceCategory: String? = null,
     val voiceLanguage: String? = null,
@@ -216,7 +93,26 @@ data class AlarmDraft(
     val voiceRepeat: Boolean = true,
     val voiceVolumePercent: Int = 100,
     val ttsMessageId: String? = null,
+    val bucketId: String? = null,
+    val bucketClipKeysJson: String? = null,
     val alarmVolumePercent: Int = 100,
     val alarmSoundUri: String? = null,
     val alarmSoundLabel: String? = null,
 )
+
+/** bucketClipKeysJson(JSON 문자열 배열) ↔ List<String> 변환 유틸. */
+fun encodeBucketClipKeys(keys: List<String>): String? =
+    if (keys.isEmpty()) null else org.json.JSONArray(keys).toString()
+
+fun decodeBucketClipKeys(json: String?): List<String> =
+    if (json.isNullOrBlank()) {
+        emptyList()
+    } else {
+        runCatching {
+            val array = org.json.JSONArray(json)
+            buildList { for (i in 0 until array.length()) add(array.getString(i)) }
+        }.getOrDefault(emptyList())
+    }
+
+/** 이 알람이 버킷 회전에 쓸, 미리 캐시된 N개 클립의 audioCacheKey 목록(variant 순). */
+fun AlarmEntity.bucketClipKeys(): List<String> = decodeBucketClipKeys(bucketClipKeysJson)

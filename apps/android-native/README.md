@@ -1,6 +1,6 @@
 # Voice Alarm Android Native PoC
 
-Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, social sharing, and post-alarm growth sync:
+Phase 1-6 Android native alarm PoC. This project is intentionally scoped to local alarm reliability, local alarm app behavior, local alarm audio, user-triggered backend sync, and social sharing:
 
 - Kotlin + Jetpack Compose + Material 3
 - Room-backed local alarms
@@ -11,14 +11,13 @@ Phase 1-6 Android native alarm PoC. This project is intentionally scoped to loca
 - reusable local audio cache keys for generated TTS, recordings, and selected files
 - copy alarm action that reuses the cached local audio file
 - `alarm_only`, `voice_only`, and `alarm_voice` playback modes
-- app theme matched to the legacy mobile mustard/navy/terracotta tokens
-- email/password auth against the deployed VoiceAlarm API
+- app theme using the unified blue (azure) Material 3 tokens (light primary `#175FB0`, dark primary `#A6D2FF`); see `docs/design/README.md`
+- email/password auth against the deployed AlarmTalk API
 - Google ID-token auth support
-- manual alarm metadata sync to the deployed VoiceAlarm API
+- manual alarm metadata sync to the deployed AlarmTalk API
 - friend list, pending friend requests, and friend request creation
 - family group, invite code creation/accept/revoke, and shared voice profile lookup
-- post-alarm character XP event queue with manual sync
-- character, streak, subscription, voucher, and unified code status surfaces
+- subscription, voucher, and unified code status surfaces
 - `AlarmManager.setAlarmClock`
 - full-screen ringing activity through a high-importance alarm foreground-service notification carrier
 - bundled local alarm tone generated into the APK at build time
@@ -57,9 +56,8 @@ Provider-costing endpoints are only called from explicit user actions such as sa
 ### Voice Provider Status
 
 - ElevenLabs is the active direct voice provider. The backend uses its Instant Voice Clone flow and `POST /v1/text-to-speech/:voice_id` TTS flow.
-- Perso remains first in the product strategy, but the currently public Perso developer surface is video dubbing, lip sync, media, editing, STT, audio separation, and language APIs. Direct `voice_id` cloning/TTS is treated as unavailable until that API contract is confirmed.
-- The backend provider layer keeps Perso first in the attempt chain, but the current Perso direct clone/TTS attempt exits locally as unsupported and falls through to ElevenLabs without making an uncertain paid Perso call.
-- References: ElevenLabs TTS `https://elevenlabs.io/docs/api-reference/text-to-speech/convert`, ElevenLabs Instant Voice Clone `https://elevenlabs.io/docs/eleven-api/guides/how-to/voices/instant-voice-cloning`, Perso developers `https://developers.perso.ai/overview`.
+- There is no secondary voice-provider attempt chain in the current product direction. Keep provider-costing calls behind explicit user actions and deterministic cache misses.
+- References: ElevenLabs TTS `https://elevenlabs.io/docs/api-reference/text-to-speech/convert`, ElevenLabs Instant Voice Clone `https://elevenlabs.io/docs/eleven-api/guides/how-to/voices/instant-voice-cloning`.
 
 ### Google Sign-In Config
 
@@ -68,8 +66,8 @@ Google sign-in needs a Web OAuth client ID for `requestIdToken()`. Android OAuth
 ```text
 Dev applicationId: com.alarmtalk.app.dev
 Prod applicationId: com.alarmtalk.app
-Dev Web client ID: set with voiceAlarmDevGoogleWebClientId
-Prod Web client ID: set with voiceAlarmProdGoogleWebClientId
+Dev Web client ID: set with alarmTalkDevGoogleWebClientId
+Prod Web client ID: set with alarmTalkProdGoogleWebClientId
 ```
 
 Register Android OAuth clients in Google Cloud Console for each package name and signing certificate SHA-1. The app does not read Android client IDs at runtime.
@@ -77,7 +75,7 @@ Register Android OAuth clients in Google Cloud Console for each package name and
 Keep real OAuth client IDs in Gradle property sources, CI secrets, or local ignored files. Do not duplicate them in README files. Override the Web client ID with a Gradle property when needed:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
+.\gradlew.bat -PalarmTalkDevGoogleWebClientId="YOUR_WEB_CLIENT_ID.apps.googleusercontent.com" :app:installDevDebug
 ```
 
 ### Sentry Error Reporting
@@ -85,7 +83,7 @@ Keep real OAuth client IDs in Gradle property sources, CI secrets, or local igno
 Android crash and ANR reporting is disabled by default. Set a flavor-specific DSN only when the target Sentry project is ready:
 
 ```powershell
-.\gradlew.bat -PvoiceAlarmProdSentryDsn="<SENTRY_DSN>" :app:bundleProdRelease
+.\gradlew.bat -PalarmTalkProdSentryDsn="<SENTRY_DSN>" :app:bundleProdRelease
 ```
 
 When the DSN is blank, the app does not initialize the Sentry SDK. Release bundles include native debug symbol metadata where available.
@@ -112,7 +110,7 @@ Use a real Android device. Keep logcat open in a separate terminal:
 
 ```powershell
 adb logcat -c
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Grant or open required permissions:
@@ -145,7 +143,7 @@ Current verified device:
 adb shell dumpsys alarm | findstr com.alarmtalk.app
 ```
 
-Expected: `VoiceAlarm` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
+Expected: `AlarmTalk` logs show `Scheduled alarm clock`, then `Alarm received`, `Ringing started`. Ringing screen opens, sound loops, vibration repeats until Dismiss.
 
 For locked-device or CI-style debug verification where UI tapping is not available, debug builds include an adb-only test receiver. It is declared under `src/debug`, so it is not packaged in release builds:
 
@@ -153,7 +151,7 @@ For locked-device or CI-style debug verification where UI tapping is not availab
 adb logcat -c
 adb shell input keyevent KEYCODE_SLEEP
 adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_CREATE_TEST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver --ei delay_minutes 1
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 adb shell am broadcast -a com.alarmtalk.app.action.DEBUG_DISMISS_LAST_ALARM -n com.alarmtalk.app.dev/com.alarmtalk.app.debug.DebugAlarmReceiver
 ```
 
@@ -212,7 +210,7 @@ adb shell dumpsys alarm | findstr com.alarmtalk.app
 7. Enable it again and confirm a new OS alarm is registered.
 8. Delete it and confirm it disappears from the list and `dumpsys alarm`.
 
-Expected: `VoiceAlarm` logs show create, update, enabled changed, deleted, and scheduled/cancelled events. No network calls are required.
+Expected: `AlarmTalk` logs show create, update, enabled changed, deleted, and scheduled/cancelled events. No network calls are required.
 
 Opening the alarm list also performs a startup sync from Room to `AlarmManager`, so future enabled alarms are restored and expired one-shot alarms are marked inactive.
 
@@ -239,14 +237,14 @@ To verify file selection:
 
 1. Tap Pick and choose an `audio/*` file.
 2. Files longer than 30 seconds should be trimmed to the first 30 seconds when the Android media stack can mux the selected format. If duration cannot be read or trimming fails, retry with m4a/aac/mp4.
-3. Save and confirm `VoiceAlarm` logs show local audio caching.
+3. Save and confirm `AlarmTalk` logs show local audio caching.
 
 Airplane-mode check:
 
 ```powershell
 adb shell cmd connectivity airplane-mode enable
 adb logcat -c
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Expected: `alarm_only` loops bundled audio, `voice_only` loops the cached voice file, and `alarm_voice` loops bundled alarm audio until Dismiss, then plays the cached voice once. No fetch is allowed at ring time.
@@ -271,12 +269,12 @@ This path calls paid providers only when the user taps Save for a voice-profile 
 Expected:
 
 - Android calls `POST /api/tts/generate`.
-- The backend checks the deterministic generated-audio cache first. On a cache hit, it returns existing audio without calling Perso or ElevenLabs.
-- On a cache miss, the backend tries the provider chain. Perso direct voice TTS is currently treated as unsupported until its direct API contract is proven, then ElevenLabs is used.
+- The backend checks the deterministic generated-audio cache first. On a cache hit, it returns existing audio without calling ElevenLabs.
+- On a cache miss, the backend calls ElevenLabs.
 - The backend stores generated mp3 bytes in Cloudflare R2 under a deterministic key when `VOICE_BUCKET` is bound and returns base64 audio plus `message_id`, `cache_key`, and object metadata.
 - Android decodes the response, caches it under app-private storage with a stable local cache key, and stores only local audio for the ring path.
 - Editing only the alarm time, copying an alarm, or recreating the same profile/text/category/language on the same device reuses the local cached audio and does not call the provider again.
-- At ring time, no ElevenLabs, Perso, R2, push, cron, or network fetch is used.
+- At ring time, no ElevenLabs, R2, push, cron, or network fetch is used.
 
 Cache reuse QA without provider spend:
 
@@ -285,7 +283,7 @@ Cache reuse QA without provider spend:
 3. Copy the alarm from the alarm list.
 4. Create another alarm with the same voice profile, text, category, and language on the same device.
 
-Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call Perso or ElevenLabs.
+Expected: steps 2-4 reuse the app-private cached file. Android should not call `/api/tts/generate`; the backend should not call ElevenLabs.
 
 ### Backend Auth / Manual Sync
 
@@ -298,7 +296,7 @@ Network is only used when the user signs in or taps Sync now.
 5. Watch logs:
 
 ```powershell
-adb logcat | findstr VoiceAlarm
+adb logcat | findstr AlarmTalk
 ```
 
 Expected:
@@ -329,25 +327,15 @@ Expected:
 - Shared voices use `GET /api/voice/family`.
 - Shared-voice TTS generation is not called.
 
-### Character / Billing
+### Billing
 
-Dismiss and snooze enqueue local character events in Room:
+Subscription and code surfaces load only on user-triggered refresh:
 
-- Dismiss queues `alarm_completed`.
-- Snooze queues `alarm_snoozed`.
-- Duplicate event nonces are ignored locally.
-- The app automatically syncs queued XP events to `POST /api/characters/xp` after sign-in/network is available.
-- The Growth refresh icon is a manual fallback for reloading server state.
-
-Verification flow:
-
-1. Let an alarm ring and tap Dismiss.
-2. Open the app and sign in if needed.
-3. Confirm Growth reflects the event automatically; use the refresh icon only as a fallback.
+1. Sign in.
+2. Open the billing/subscription surface.
 
 Expected:
 
-- Character/streak/XP refreshes from `/api/characters/me`; pending local events sync without requiring manual refresh.
 - Subscription loads from `/api/billing/subscription`.
 - Issued vouchers load from `/api/billing/vouchers`.
 - Coupon or invite code entry uses `/api/code/register`.

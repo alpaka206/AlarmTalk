@@ -10,12 +10,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- 정식 알람/시계 앱: USE_EXACT_ALARM 은 자동 부여·사용자 회수 불가라 정확 알람을
+         안정적으로 보장한다(SCHEDULE_EXACT_ALARM 회수 시 비정확 폴백으로 떨어지는 것 방지). -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:name=".VoiceAlarmApplication"
+        android:name=".AlarmTalkApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -24,7 +27,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VoiceAlarm"
+        android:theme="@style/Theme.AlarmTalk"
         android:usesCleartextTraffic="false">
 
         <meta-data
@@ -42,7 +45,7 @@
             android:showWhenLocked="true"
             android:taskAffinity="com.alarmtalk.app.ringing"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.VoiceAlarm.Ringing" />
+            android:theme="@style/Theme.AlarmTalk.Ringing" />
 
         <activity
             android:name=".MainActivity"
@@ -71,6 +74,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <!-- 시간대(여행)·시스템 시각/DST 변경 시 알람 재예약을 위해 수신 -->
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="com.alarmtalk.app.action.DEBUG_RESTORE_ALARMS" />
             </intent-filter>
         </receiver>

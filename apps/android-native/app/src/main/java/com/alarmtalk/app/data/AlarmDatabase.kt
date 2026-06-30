@@ -8,13 +8,12 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [AlarmEntity::class, CharacterEventEntity::class, HolidayEntity::class],
-    version = 14,
+    entities = [AlarmEntity::class, HolidayEntity::class],
+    version = 17,
     exportSchema = false,
 )
 abstract class AlarmDatabase : RoomDatabase() {
     abstract fun alarmDao(): AlarmDao
-    abstract fun characterEventDao(): CharacterEventDao
     abstract fun holidayDao(): HolidayDao
 
     companion object {
@@ -41,7 +40,14 @@ abstract class AlarmDatabase : RoomDatabase() {
                     MIGRATION_11_12,
                     MIGRATION_12_13,
                     MIGRATION_13_14,
-                ).build()
+                    MIGRATION_14_15,
+                    MIGRATION_15_16,
+                    MIGRATION_16_17,
+                )
+                    // 캐릭터/성장 기능 제거에 따른 스키마 변경. 개발 중 미정의 마이그레이션은
+                    // 파괴적 재생성으로 처리한다(출시 전이라 보존할 데이터 없음).
+                    .fallbackToDestructiveMigration()
+                    .build()
                     .also { instance = it }
             }
 
@@ -66,24 +72,11 @@ abstract class AlarmDatabase : RoomDatabase() {
             }
         }
 
+        // 과거 버전에서 character_events 테이블을 만들던 마이그레이션. 캐릭터/성장 기능
+        // 제거 후 이 테이블은 더 이상 스키마에 없으며, 잔존 테이블은 MIGRATION_14_15 에서 정리한다.
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS character_events (
-                        id TEXT NOT NULL PRIMARY KEY,
-                        event TEXT NOT NULL,
-                        clientNonce TEXT NOT NULL,
-                        localDate TEXT NOT NULL,
-                        sourceAlarmId TEXT,
-                        state TEXT NOT NULL,
-                        createdAtMillis INTEGER NOT NULL,
-                        syncedAtMillis INTEGER,
-                        lastError TEXT
-                    )
-                    """.trimIndent(),
-                )
-                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_character_events_clientNonce ON character_events(clientNonce)")
+                // no-op: character_events 테이블은 제거됨
             }
         }
 
@@ -173,6 +166,28 @@ abstract class AlarmDatabase : RoomDatabase() {
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE alarms ADD COLUMN voiceVolumePercent INTEGER NOT NULL DEFAULT 100")
+            }
+        }
+
+        // 캐릭터/성장 기능 제거 — 잔존하는 character_events 테이블을 정리한다.
+        private val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS character_events")
+            }
+        }
+
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN voiceListenerTitle TEXT")
+            }
+        }
+
+        // 무료 버킷 회전: 알람이 가리키는 버킷과 매 울림 순차 회전 인덱스.
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketId TEXT")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketRotationIndex INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE alarms ADD COLUMN bucketClipKeysJson TEXT")
             }
         }
     }

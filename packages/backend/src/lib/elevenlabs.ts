@@ -2,6 +2,14 @@ const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io';
 const DEFAULT_TTS_MODEL_ID = 'eleven_v3';
 const DIARIZATION_MERGE_GAP_SECONDS = 0.35;
 const DEFAULT_AUDIO_MIME_TYPE = 'audio/wav';
+// 가족/연인 녹음은 보통 1~3명이다. 앱의 화자 처리 상한과 동일하게 맞춰 과분할을 막는다.
+const DEFAULT_MAX_DIARIZATION_SPEAKERS = 3;
+const SCRIBE_MAX_SPEAKERS = 32;
+
+function clampSpeakerCount(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_MAX_DIARIZATION_SPEAKERS;
+  return Math.max(1, Math.min(SCRIBE_MAX_SPEAKERS, Math.round(value)));
+}
 
 type TranscriptWord = {
   start?: number;
@@ -108,18 +116,19 @@ export class ElevenLabsClient {
       body.language_code = options.language_code;
     }
 
-    if (modelId !== DEFAULT_TTS_MODEL_ID) {
-      const voiceSettings: Record<string, number | boolean> = {
-        stability: options?.stability ?? 0.5,
-        similarity_boost: options?.similarity_boost ?? 0.82,
-        style: options?.style ?? 0.25,
-        speed: options?.speed ?? 0.96,
-      };
-      if (options?.use_speaker_boost !== undefined) {
-        voiceSettings.use_speaker_boost = options.use_speaker_boost;
-      }
-      body.voice_settings = voiceSettings;
-    }
+    // v3(eleven_v3)는 우리의 유일한 운영 모델이다. 과거에는 `modelId !== DEFAULT_TTS_MODEL_ID`
+    // 라는 역조건 때문에 v3에는 voice_settings를 아예 보내지 않아 서버 디폴트가 적용됐고,
+    // 그 결과 delivery 태그가 약하게 실현됐다(검증된 버그). 이제 모델과 무관하게 항상 전송한다.
+    // 기본값: stability 0.5(Natural), similarity_boost 0.8, style 0.4, speed 1.0(sleep 0.95),
+    // use_speaker_boost true. Robust(0.7+) 안정도는 태그를 억제하므로 쓰지 않는다.
+    const voiceSettings: Record<string, number | boolean> = {
+      stability: options?.stability ?? 0.5,
+      similarity_boost: options?.similarity_boost ?? 0.8,
+      style: options?.style ?? 0.4,
+      speed: options?.speed ?? 1.0,
+      use_speaker_boost: options?.use_speaker_boost ?? true,
+    };
+    body.voice_settings = voiceSettings;
 
     const res = await this.request(`/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
@@ -136,7 +145,7 @@ export class ElevenLabsClient {
   /** Speaker Diarization - 화자 분리 */
   async diarize(
     audioData: ArrayBuffer,
-    options?: AudioUploadOptions,
+    options?: AudioUploadOptions & { numSpeakers?: number; languageCode?: string | null },
   ): Promise<{
     speakers: DiarizedSpeaker[];
   }> {
@@ -151,6 +160,16 @@ export class ElevenLabsClient {
     formData.append('diarize', 'true');
     formData.append('timestamps_granularity', 'word');
     formData.append('tag_audio_events', 'false');
+    // num_speakers 를 지정하지 않으면 scribe 가 화자 수를 모델 최대치로 가정해
+    // 한두 명짜리 녹음을 여러 '유령 화자'로 과분할한다 → 분리 결과가 애매해진다.
+    // 앱이 실제로 지원하는 화자 수 상한으로 고정해 과분할을 억제한다(정확도 개선).
+    const numSpeakers = clampSpeakerCount(options?.numSpeakers ?? DEFAULT_MAX_DIARIZATION_SPEAKERS);
+    formData.append('num_speakers', String(numSpeakers));
+    // 언어를 알면 전사 정확도가 올라가 단어 타임스탬프(화자 분리의 입력)도 좋아진다.
+    // 모르면 생략해 자동 감지에 맡긴다(다국어 녹음 회귀 방지).
+    if (options?.languageCode) {
+      formData.append('language_code', options.languageCode);
+    }
 
     const res = await fetch(`${ELEVENLABS_BASE_URL}/v1/speech-to-text`, {
       method: 'POST',

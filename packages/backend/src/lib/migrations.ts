@@ -25,6 +25,31 @@ const TTS_PRESET_SEED_STATEMENTS = PRESETS.map((preset, index) => {
     )`;
 });
 
+// 이미 시드된 DB(INSERT OR IGNORE 라 갱신 안 됨)에 특정 카테고리의 멘트/라벨을 강제로
+// 덮어쓰거나 신규 카테고리를 추가할 때 쓰는 upsert. PRESETS 가 단일 진실 공급원.
+function ttsPresetUpsert(category: string): string {
+  const index = PRESETS.findIndex((p) => p.category === category);
+  const preset = PRESETS[index];
+  if (!preset) throw new Error(`ttsPresetUpsert: unknown preset category "${category}"`);
+  const messagesJson = JSON.stringify(preset.messages);
+  return `INSERT INTO tts_presets
+    (category, label, emoji, messages_json, sort_order, enabled)
+    VALUES (
+      ${sqlLiteral(preset.category)},
+      ${sqlLiteral(preset.label)},
+      ${sqlLiteral(preset.emoji)},
+      ${sqlLiteral(messagesJson)},
+      ${index},
+      1
+    )
+    ON CONFLICT(category) DO UPDATE SET
+      label = excluded.label,
+      emoji = excluded.emoji,
+      messages_json = excluded.messages_json,
+      enabled = excluded.enabled,
+      updated_at = datetime('now')`;
+}
+
 export const migrations: Migration[] = [
   {
     id: 1,
@@ -46,7 +71,6 @@ export const migrations: Migration[] = [
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id),
         name TEXT NOT NULL,
-        perso_voice_id TEXT,
         elevenlabs_voice_id TEXT,
         avatar_url TEXT,
         status TEXT DEFAULT 'processing' CHECK(status IN ('processing','ready','failed')),
@@ -105,9 +129,6 @@ export const migrations: Migration[] = [
         source_language TEXT NOT NULL,
         target_language TEXT NOT NULL,
         status TEXT DEFAULT 'uploading' CHECK(status IN ('uploading','processing','ready','failed')),
-        perso_space_seq INTEGER,
-        perso_project_seq INTEGER,
-        perso_media_seq INTEGER,
         result_message_id TEXT,
         progress INTEGER DEFAULT 0,
         error_message TEXT,
@@ -335,85 +356,6 @@ export const migrations: Migration[] = [
     statements: [
       // 가족이 내게 알람을 추가할 수 있는지 여부 — 기본 false(0) 로 opt-in 설계
       `ALTER TABLE users ADD COLUMN allow_family_alarms INTEGER NOT NULL DEFAULT 0`,
-    ],
-  },
-  {
-    id: 11,
-    name: 'characters',
-    statements: [
-      // 1 사용자 = 1 캐릭터. 알람을 정상 종료하면 XP 획득 → level/stage 성장.
-      // stage: 'seed'(씨앗) → 'sprout'(새싹) → 'tree'(나무) → 'bloom'(꽃)
-      `CREATE TABLE IF NOT EXISTS characters (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
-        name TEXT NOT NULL DEFAULT '내 캐릭터',
-        level INTEGER NOT NULL DEFAULT 1,
-        xp INTEGER NOT NULL DEFAULT 0,
-        affection INTEGER NOT NULL DEFAULT 0,
-        stage TEXT NOT NULL DEFAULT 'seed' CHECK(stage IN ('seed','sprout','tree','bloom')),
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_user ON characters(user_id)',
-    ],
-  },
-  {
-    id: 12,
-    name: 'character-xp-logs',
-    statements: [
-      // 일일 XP 캡 관리: 지급 시점 날짜(YYYY-MM-DD) 와 달라지면 daily_xp 리셋.
-      `ALTER TABLE characters ADD COLUMN daily_xp INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN daily_xp_reset_at TEXT`,
-      // 지급 이력 + 멱등성 로그. client_nonce 가 있으면 (character_id, client_nonce) 유니크.
-      `CREATE TABLE IF NOT EXISTS character_xp_logs (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL REFERENCES characters(id),
-        event TEXT NOT NULL,
-        client_nonce TEXT,
-        granted_xp INTEGER NOT NULL DEFAULT 0,
-        affection_delta INTEGER NOT NULL DEFAULT 0,
-        capped INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_character_xp_logs_character ON character_xp_logs(character_id)',
-      'CREATE INDEX IF NOT EXISTS idx_character_xp_logs_created ON character_xp_logs(created_at)',
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_character_xp_logs_nonce
-        ON character_xp_logs(character_id, client_nonce)
-        WHERE client_nonce IS NOT NULL`,
-    ],
-  },
-  {
-    id: 13,
-    name: 'character-streak-stats',
-    statements: [
-      // 연속 기상 스트릭 — 클라이언트가 local_date(YYYY-MM-DD)를 전송, 서버가 streak 갱신.
-      `ALTER TABLE characters ADD COLUMN current_streak INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN longest_streak INTEGER NOT NULL DEFAULT 0`,
-      `ALTER TABLE characters ADD COLUMN last_wakeup_date TEXT`,
-
-      // 능력치: 나무 테마 (뿌리깊이=diligence, 줄기튼튼함=health, 잎무성함=consistency)
-      // 1 캐릭터 = 1 stats 행. 값은 누적 카운트 기반으로 계산.
-      `CREATE TABLE IF NOT EXISTS character_stats (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL UNIQUE REFERENCES characters(id),
-        diligence INTEGER NOT NULL DEFAULT 0,
-        health INTEGER NOT NULL DEFAULT 0,
-        consistency INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_character_stats_character ON character_stats(character_id)',
-
-      // 마일스톤 달성 기록: 7일(100XP), 30일(500XP), 90일(2000XP)
-      `CREATE TABLE IF NOT EXISTS streak_achievements (
-        id TEXT PRIMARY KEY,
-        character_id TEXT NOT NULL REFERENCES characters(id),
-        milestone INTEGER NOT NULL,
-        bonus_xp INTEGER NOT NULL,
-        achieved_at TEXT DEFAULT (datetime('now'))
-      )`,
-      'CREATE INDEX IF NOT EXISTS idx_streak_achievements_character ON streak_achievements(character_id)',
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_streak_achievements_unique
-        ON streak_achievements(character_id, milestone)`,
     ],
   },
   {
@@ -885,6 +827,358 @@ export const migrations: Migration[] = [
         ON retained_billing_records(retain_until)`,
     ],
   },
+  {
+    // 음성 수명주기 + 스케줄러 시간대 + 스토어 결제 기록.
+    //  - pending_external_deletions: 트랜잭션 안에서 DB 행을 지우기 전에 ElevenLabs
+    //    voice / R2 오브젝트 참조를 적재해 두고, cron 이 외부 API 로 실제 삭제 후
+    //    큐에서 제거한다 (탈퇴·다운그레이드 시 클로닝/오디오 잔존 방지).
+    //  - alarms.timezone: 클라이언트 IANA 시간대 (예: 'Asia/Seoul'). 푸시 스케줄러가
+    //    알람 HH:mm 을 이 시간대 기준으로 판정한다. NULL 이면 Asia/Seoul 폴백.
+    //  - store_transactions: Apple/Google/PortOne 결제 검증 기록 (중복 처리 방지 +
+    //    전자상거래법 보존 원본). provider_transaction_id 는 provider 별 고유.
+    id: 42,
+    name: 'voice-lifecycle-and-store-billing',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS pending_external_deletions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('elevenlabs_voice','r2_object')),
+        ref TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_external_deletions_ref
+        ON pending_external_deletions(kind, ref)`,
+      `ALTER TABLE alarms ADD COLUMN timezone TEXT`,
+      `CREATE TABLE IF NOT EXISTS store_transactions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL CHECK(provider IN ('apple','google','portone')),
+        provider_transaction_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        plan_key TEXT NOT NULL,
+        subscription_id TEXT,
+        expires_at TEXT,
+        raw_payload TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_store_transactions_provider_tx
+        ON store_transactions(provider, provider_transaction_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_store_transactions_user
+        ON store_transactions(user_id, created_at DESC)`,
+    ],
+  },
+  {
+    // 무료 플랜용 시스템 제공(스톡) 보이스.
+    //  - voice_profiles.is_system=1 행은 모든 사용자의 목소리 목록에 노출되고,
+    //    무료 플랜도 이 보이스로는 TTS(프리셋 문구 한정)를 쓸 수 있다.
+    //  - 소유자는 'system:voice-library' 시스템 유저 (로그인 불가, 발급 전용).
+    //  - elevenlabs_voice_id 는 ElevenLabs premade 보이스 (상업적 이용 허용 셋).
+    //    Adam 은 릴스/숏폼에서 유행한 그 목소리.
+    id: 43,
+    name: 'system-stock-voices',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0`,
+      // 주의: users.email 에 unique 인덱스가 있어 이메일은 다른 시스템 계정과
+      // 절대 겹치면 안 된다 (겹치면 INSERT OR IGNORE 가 조용히 무시되고
+      // 이어지는 voice_profiles 시드가 FK 로 실패).
+      `INSERT OR IGNORE INTO users (id, google_id, email, name, plan)
+        VALUES ('70000000-0000-4000-9000-000000000001', 'system:voice-library',
+                'voice-library@alarm-talk.com', 'AlarmTalk 기본 목소리', 'free')`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000101', '70000000-0000-4000-9000-000000000001',
+                '아담', 'pNInz6obpgDQGcFmaJgB', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000102', '70000000-0000-4000-9000-000000000001',
+                '레이첼', '21m00Tcm4TlvDq8ikWAM', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000103', '70000000-0000-4000-9000-000000000001',
+                '브라이언', 'nPczCjzI2devNBz1zQrb', 'ready', 1, 0, 0)`,
+      `INSERT OR IGNORE INTO voice_profiles
+        (id, user_id, name, elevenlabs_voice_id, status, is_system, is_shared, is_draft)
+        VALUES ('70000000-0000-4000-9000-000000000104', '70000000-0000-4000-9000-000000000001',
+                '제시카', 'cgSgspJ2msm6clMCkdW9', 'ready', 1, 0, 0)`,
+    ],
+  },
+  {
+    // 무료 플랜용 "스톡 알람 클립" — 시스템 보이스로 서버에서 미리 합성해 둔 고정 음성.
+    //  - messages.is_preset=1 + voice_profile_id(시스템 보이스) + category + language 조합으로 식별.
+    //  - 무료 플랜은 랜덤 생성 없이 이 클립을 그대로 받아 알람에 붙여 쓴다 (생성 비용 0).
+    //  - 실제 클립은 POST /api/admin/seed-stock-clips (dev 전용) 로 생성한다.
+    id: 44,
+    name: 'messages-language-for-stock-clips',
+    statements: [
+      `ALTER TABLE messages ADD COLUMN language TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_stock
+        ON messages(is_preset, voice_profile_id, category, language)`,
+    ],
+  },
+  {
+    // 시스템 스톡 보이스 이름/음성 재배치 (#43 시드 이후 변경분).
+    //  - 레이첼·브라이언을 네이티브 한국어 보이스(Mina·Mr.K)로 교체하고 한글 이름(미나·하준) 부여.
+    //  - 제시카→소은 은 음성 유지, 이름만 변경. 아담(101)은 이름·음성 모두 유지.
+    //  - 음성이 바뀐 102·103, 인사말(greeting)이 바뀐 101·104 의 기존 스톡 클립은
+    //    옛 음성/문구로 남아 새 프로필 이름 아래 그대로 노출되므로 아래에서 무효화한다.
+    //    findMissingStockTargets 가 (voice_profile_id|category|language) 로만 존재 여부를
+    //    보기 때문에, 행을 지워야 다음 seed 때 새 음성/문구로 재생성된다.
+    //  - 배포 후 POST /api/admin/seed-stock-clips 로 재생성한다 (reset 불필요 — 여기서 무효화됨).
+    //  - R2 오브젝트는 만료 정리에 맡기고, 이 클립을 참조하던 알람은 sound-only 로 떼어낸다.
+    id: 45,
+    name: 'rename-reassign-stock-voices',
+    statements: [
+      `UPDATE voice_profiles SET name = '미나', elevenlabs_voice_id = 'aiUUgjHa4mpHf6UenZuf'
+        WHERE id = '70000000-0000-4000-9000-000000000102'`,
+      `UPDATE voice_profiles SET name = '하준', elevenlabs_voice_id = 'LKOcTG4J4tYTPR9DnLeM'
+        WHERE id = '70000000-0000-4000-9000-000000000103'`,
+      `UPDATE voice_profiles SET name = '소은'
+        WHERE id = '70000000-0000-4000-9000-000000000104'`,
+      // 무효화 대상: 102·103 의 모든 프리셋 클립 + 101·104 의 greeting 프리셋 클립.
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (
+          SELECT id FROM messages
+          WHERE COALESCE(is_preset, 0) = 1 AND (
+            voice_profile_id IN (
+              '70000000-0000-4000-9000-000000000102',
+              '70000000-0000-4000-9000-000000000103'
+            )
+            OR (category = 'greeting' AND voice_profile_id IN (
+              '70000000-0000-4000-9000-000000000101',
+              '70000000-0000-4000-9000-000000000104'
+            ))
+          ))`,
+      `DELETE FROM message_library WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        ))`,
+      `DELETE FROM generated_audio_assets WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        ))`,
+      `DELETE FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND (
+          voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000102',
+            '70000000-0000-4000-9000-000000000103'
+          )
+          OR (category = 'greeting' AND voice_profile_id IN (
+            '70000000-0000-4000-9000-000000000101',
+            '70000000-0000-4000-9000-000000000104'
+          ))
+        )`,
+    ],
+  },
+  {
+    // 관리자 편의용 KST 조회 뷰. 저장은 UTC 그대로 두고(만료·보존·빌링·JWT 등
+    // 모든 시간 비교 로직의 정합성 유지), 타임스탬프 컬럼이 있는 테이블마다
+    // `<table>_kst` 읽기전용 뷰를 만든다. 뷰는 `SELECT *` 로 원본 컬럼을 그대로
+    // 노출하면서 각 `_at` 컬럼의 KST(+9h) 버전을 `_at_kst` 로 덧붙인다.
+    //   예) SELECT email, created_at, created_at_kst FROM users_kst;
+    // 새 _at 컬럼이 추가되면 이 뷰는 자동 반영되지 않으므로 그때 뷰를 다시 만든다.
+    id: 46,
+    name: 'kst-readonly-views',
+    statements: [
+      `CREATE VIEW IF NOT EXISTS "alarms_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "alarms"`,
+      `CREATE VIEW IF NOT EXISTS "dub_jobs_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "dub_jobs"`,
+      `CREATE VIEW IF NOT EXISTS "email_verification_codes_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("consumed_at",'+9 hours') AS consumed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "email_verification_codes"`,
+      `CREATE VIEW IF NOT EXISTS "friendships_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "friendships"`,
+      `CREATE VIEW IF NOT EXISTS "generated_audio_assets_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "generated_audio_assets"`,
+      `CREATE VIEW IF NOT EXISTS "gifts_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "gifts"`,
+      `CREATE VIEW IF NOT EXISTS "message_library_kst" AS SELECT *, datetime("received_at",'+9 hours') AS received_at_kst FROM "message_library"`,
+      `CREATE VIEW IF NOT EXISTS "messages_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "messages"`,
+      `CREATE VIEW IF NOT EXISTS "notes_kst" AS SELECT *, datetime("read_at",'+9 hours') AS read_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "notes"`,
+      `CREATE VIEW IF NOT EXISTS "pending_external_deletions_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "pending_external_deletions"`,
+      `CREATE VIEW IF NOT EXISTS "plan_group_invites_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("used_at",'+9 hours') AS used_at_kst FROM "plan_group_invites"`,
+      `CREATE VIEW IF NOT EXISTS "plan_group_members_kst" AS SELECT *, datetime("joined_at",'+9 hours') AS joined_at_kst FROM "plan_group_members"`,
+      `CREATE VIEW IF NOT EXISTS "plan_groups_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "plan_groups"`,
+      `CREATE VIEW IF NOT EXISTS "plans_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "plans"`,
+      `CREATE VIEW IF NOT EXISTS "push_tokens_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "push_tokens"`,
+      `CREATE VIEW IF NOT EXISTS "retained_billing_records_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "retained_billing_records"`,
+      `CREATE VIEW IF NOT EXISTS "store_transactions_kst" AS SELECT *, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "store_transactions"`,
+      `CREATE VIEW IF NOT EXISTS "subscriptions_kst" AS SELECT *, datetime("starts_at",'+9 hours') AS starts_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("canceled_at",'+9 hours') AS canceled_at_kst FROM "subscriptions"`,
+      `CREATE VIEW IF NOT EXISTS "tts_presets_kst" AS SELECT *, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "tts_presets"`,
+      `CREATE VIEW IF NOT EXISTS "user_consents_kst" AS SELECT *, datetime("agreed_at",'+9 hours') AS agreed_at_kst, datetime("created_at",'+9 hours') AS created_at_kst FROM "user_consents"`,
+      `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("daily_tts_reset_at",'+9 hours') AS daily_tts_reset_at_kst, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
+      `CREATE VIEW IF NOT EXISTS "voice_profile_relationships_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst FROM "voice_profile_relationships"`,
+      `CREATE VIEW IF NOT EXISTS "voice_profiles_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("deleted_at",'+9 hours') AS deleted_at_kst FROM "voice_profiles"`,
+      `CREATE VIEW IF NOT EXISTS "voice_speakers_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "voice_speakers"`,
+      `CREATE VIEW IF NOT EXISTS "voice_uploads_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst FROM "voice_uploads"`,
+      `CREATE VIEW IF NOT EXISTS "voucher_codes_kst" AS SELECT *, datetime("issued_at",'+9 hours') AS issued_at_kst, datetime("used_at",'+9 hours') AS used_at_kst, datetime("expires_at",'+9 hours') AS expires_at_kst FROM "voucher_codes"`,
+      `CREATE VIEW IF NOT EXISTS "voucher_redemptions_kst" AS SELECT *, datetime("redeemed_at",'+9 hours') AS redeemed_at_kst FROM "voucher_redemptions"`,
+    ],
+  },
+  {
+    // 아담(101) 인사말(greeting) 문구 교체 — 옛 "샤갈!" 멘트를 무효화한다.
+    //  - VOICE_GREETING_OVERRIDES 의 아담 문구를 바꿨으므로, 옛 문구로 합성돼 있던
+    //    greeting 스톡 클립을 지워 다음 seed 때 새 문구로 재생성되게 한다 (#45 와 동일 패턴).
+    //  - findMissingStockTargets 가 (voice_profile_id|category|language) 로만 존재 여부를
+    //    보기 때문에, 행을 지워야 새 문구로 다시 만들어진다.
+    //  - 배포 후 POST /api/admin/seed-stock-clips 로 재생성한다 (reset 불필요 — 여기서 무효화됨).
+    //  - 이 greeting 을 참조하던 알람은 sound-only 로 떼어낸다.
+    id: 47,
+    name: 'refresh-adam-greeting-clip',
+    statements: [
+      `UPDATE alarms
+        SET mode = 'sound-only', wake_mode = 'sound_then_voice',
+            message_id = NULL, voice_profile_id = NULL, speaker_id = NULL,
+            raw_audio_url = NULL, raw_audio_duration_ms = NULL
+        WHERE message_id IN (
+          SELECT id FROM messages
+          WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+            AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+        )`,
+      `DELETE FROM message_library WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+      )`,
+      `DELETE FROM generated_audio_assets WHERE message_id IN (
+        SELECT id FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'
+      )`,
+      `DELETE FROM messages
+        WHERE COALESCE(is_preset, 0) = 1 AND category = 'greeting'
+          AND voice_profile_id = '70000000-0000-4000-9000-000000000101'`,
+    ],
+  },
+  {
+    // raw-alarms 업로드 추적: POST /alarm/source 로 올린 직접 재생용 클립은 지금까지
+    // DB 에 기록되지 않아, 사용자가 알람에 연결하지 않고 흐름을 이탈하면 R2 에서
+    // 영구 고아로 남았다(TTL/GC 없음 + 계정 삭제로도 정리 안 됨). 업로드 시점에
+    // 행을 남겨, 일정 시간 뒤에도 어떤 알람에서도 참조되지 않으면 정리(삭제 큐 적재)한다.
+    id: 48,
+    name: 'track-raw-alarm-uploads',
+    statements: [
+      `CREATE TABLE IF NOT EXISTS raw_alarm_uploads (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        object_key TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_alarm_uploads_key
+        ON raw_alarm_uploads(object_key)`,
+      `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_created
+        ON raw_alarm_uploads(created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_raw_alarm_uploads_user
+        ON raw_alarm_uploads(user_id)`,
+    ],
+  },
+  {
+    // 무료 프리셋 멘트 개편(#478 흡수) + 신규 카테고리(약·운동) 추가. tts_presets 초기 시드는
+    // INSERT OR IGNORE 라 기존 DB 에 반영되지 않으므로 여기서 upsert 로 강제 갱신/추가한다.
+    // 기상·밤 멘트 교체, 약 멘트는 건강에서 분리, 약·운동 신규. (PRESETS 가 단일 진실 공급원)
+    id: 49,
+    name: 'tts-preset-refresh-and-add-medication-exercise',
+    statements: [
+      ttsPresetUpsert('morning'),
+      ttsPresetUpsert('night'),
+      ttsPresetUpsert('health'),
+      ttsPresetUpsert('medication'),
+      ttsPresetUpsert('exercise'),
+    ],
+  },
+  {
+    // 일일 TTS 생성 횟수 제한(하루 N회) 폐지. daily_tts_count / daily_tts_reset_at
+    // 컬럼을 더 이상 읽거나 쓰지 않으므로 물리적으로 제거한다. 무료 플랜의 보이스/
+    // 프리셋 게이팅(VOICE_FEATURE_REQUIRES_PAID_PLAN / FREE_PLAN_PRESET_ONLY)은
+    // 이 컬럼과 무관하게 그대로 유지된다.
+    //  - users_kst 뷰가 daily_tts_reset_at 를 참조하므로 먼저 떨군 뒤 DROP COLUMN.
+    //    (libSQL/SQLite ≥ 3.35 의 ALTER TABLE DROP COLUMN 사용)
+    //  - 컬럼이 이미 없는 DB(컬럼을 만든 적 없는 신규 분기 등)에서 재실행돼도
+    //    'no such column'/'no such view' 는 idempotent 로 무시된다.
+    //  - 뷰는 daily_tts_reset_at_kst 없이 재생성한다(나머지 _kst 컬럼은 #46 과 동일).
+    id: 50,
+    name: 'drop-daily-tts-limit-columns',
+    statements: [
+      `DROP VIEW IF EXISTS "users_kst"`,
+      `ALTER TABLE users DROP COLUMN daily_tts_count`,
+      `ALTER TABLE users DROP COLUMN daily_tts_reset_at`,
+      `CREATE VIEW IF NOT EXISTS "users_kst" AS SELECT *, datetime("created_at",'+9 hours') AS created_at_kst, datetime("updated_at",'+9 hours') AS updated_at_kst, datetime("last_active_at",'+9 hours') AS last_active_at_kst, datetime("deletion_requested_at",'+9 hours') AS deletion_requested_at_kst, datetime("deletion_purge_at",'+9 hours') AS deletion_purge_at_kst FROM "users"`,
+    ],
+  },
+  {
+    // 토큰 폐기(revocation) / 전 기기 로그아웃 지원 (B5).
+    //  - users.token_epoch: 발급된 앱 JWT 의 유효 세대(epoch). 로그아웃(POST /auth/logout)
+    //    이나 향후 비밀번호 재설정 시 이 값을 +1 한다. authMiddleware 는 JWT 의 epoch
+    //    클레임(기본 0)이 users.token_epoch 보다 작으면 TOKEN_REVOKED(401)로 거부한다.
+    //    이로써 탈취·유출된 기존 토큰을 만료 전에도 즉시 무효화할 수 있다.
+    id: 51,
+    name: 'user-token-epoch',
+    statements: [
+      `ALTER TABLE users ADD COLUMN token_epoch INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    // 가격정책 + 가족 정원 6→5인. (근거: 루트 PRICING.md)
+    //  - personal ₩3,900 / couple ₩6,900 / family ₩14,900 (저가 전환형, 사용량 과금 전제)
+    //  - family.max_members 6→5: 신규 가족 그룹부터 5인 정원 (store-billing/billing-mutation 이
+    //    plan_groups 생성 시 plan.max_members 를 복사). plan_groups 는 생성 시점 스냅샷이라 이미 만들어진
+    //    그룹은 값이 유지되지만, 출시 전 prod DB 초기화 예정이므로 6인 그룹은 실제로 존재하지 않음
+    //    (= grandfather 대상 없음). 따라서 /billing/subscription 이 plans.max_members(=5)를 그대로 노출해도
+    //    그룹 정원과 어긋나지 않음.
+    //  - 가족 초대 바우처 maxUses 는 plannedMaxUses = max(1, max_members-1) 이라 자동 4로 조정.
+    id: 52,
+    name: 'plan-prices-and-family-5',
+    statements: [
+      `UPDATE plans SET price_krw = 3900 WHERE key = 'personal'`,
+      `UPDATE plans SET price_krw = 6900 WHERE key = 'couple'`,
+      `UPDATE plans SET price_krw = 14900, max_members = 5 WHERE key = 'family'`,
+    ],
+  },
+  {
+    // 음성 프로필에 화자 성별·어체 격식 신호 추가(동적 알람 문구의 일본어 1인칭/정중 격상용).
+    //  - voice_gender TEXT NULL ∈ {'male','female','neutral'}: 일본어 1인칭(僕/俺/私) 등 톤 보정.
+    //  - speech_formality TEXT NULL ∈ {'auto','polite'}(null=auto): 'polite'면 캐주얼 관계여도
+    //    ja=です·ます, ko=해요체로 격상.
+    // additive nullable. 출시 전 prod DB 초기화 예정이라 back-compat 부담 없음.
+    id: 53,
+    name: 'voice-profile-gender-and-formality',
+    statements: [
+      `ALTER TABLE voice_profiles ADD COLUMN voice_gender TEXT`,
+      `ALTER TABLE voice_profiles ADD COLUMN speech_formality TEXT`,
+    ],
+  },
+  {
+    // 무료 버킷 회전(기상/약): 스톡 클립을 카테고리당 여러 'variant' 로 사전 합성해
+    // 앱이 전부 캐시한 뒤 알람마다 순차 회전한다. (옵션 B — 완전 오프라인)
+    //  - messages.variant: 같은 (보이스·카테고리·언어) 안에서 문구를 구분/정렬하는 인덱스.
+    //    idx_messages_stock 은 애초에 UNIQUE 가 아니므로(일반 인덱스) variant 를 더해
+    //    카테고리당 N행 조회·정렬만 빠르게 한다. 기존 프리셋 행은 variant=0 으로 백필된다.
+    //  - alarms.bucket_id: 무료 알람이 가리키는 버킷(예: 'morning'·'medication'). message_id 는
+    //    대표(변형0) 클립을 그대로 유지해, 회전을 모르는 경로/구버전에선 단일 재생 폴백이 된다.
+    id: 54,
+    name: 'stock-clip-variants-and-alarm-bucket',
+    statements: [
+      `ALTER TABLE messages ADD COLUMN variant INTEGER NOT NULL DEFAULT 0`,
+      `DROP INDEX IF EXISTS idx_messages_stock`,
+      `CREATE INDEX IF NOT EXISTS idx_messages_stock
+        ON messages(is_preset, voice_profile_id, category, language, variant)`,
+      `ALTER TABLE alarms ADD COLUMN bucket_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_alarms_bucket ON alarms(bucket_id)`,
+    ],
+  },
 ];
 
 // Errors that mean the statement was already applied — safe to ignore so
@@ -895,7 +1189,10 @@ function isIdempotentDDLError(message: string): boolean {
   return (
     lower.includes('duplicate column name') ||
     lower.includes('already exists') ||
-    lower.includes('no such index')
+    lower.includes('no such index') ||
+    // DROP COLUMN/VIEW 재실행 시(이미 제거된 컬럼/뷰) — 마이그레이션 #50.
+    lower.includes('no such column') ||
+    lower.includes('no such view')
   );
 }
 
