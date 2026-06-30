@@ -95,6 +95,7 @@ class RingingActivity : ComponentActivity() {
         configureLockScreen()
         blockBackNavigation()
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        ensureRingingServiceStarted()
 
         setContent {
             var uiState by remember { mutableStateOf(RingingUiState()) }
@@ -127,6 +128,19 @@ class RingingActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         alarmId = intent.getStringExtra(EXTRA_ALARM_ID)
+        ensureRingingServiceStarted()
+    }
+
+    /**
+     * FGS 시작이 막혀(Android 12+) 풀스크린 알림 폴백으로 이 화면이 떴을 때, 울림 서비스(소리·진동)가
+     * 아직 안 돌고 있으면 여기서 시작한다. 가시 액티비티에서의 FGS 시작은 허용된다. 이미 같은 알람을
+     * 울리는 중이면 건너뛰어 중복 시작과 서비스→액티비티 재오픈 루프를 막는다.
+     */
+    private fun ensureRingingServiceStarted() {
+        val id = alarmId ?: return
+        if (RingingService.activeRingingAlarmId != id) {
+            RingingService.start(this, id)
+        }
     }
 
     override fun onResume() {

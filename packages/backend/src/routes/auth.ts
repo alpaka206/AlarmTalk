@@ -773,6 +773,8 @@ auth.post('/apple', async (c) => {
     // (재로그인) 경우 공격자가 피해자 이메일을 주입해 기존 계정에 연동·탈취할 수
     // 있다. 토큰에 email 이 없으면 충돌하지 않는 placeholder 로 둔다.
     const email = (apple.email || `${appleId}@apple.local`).toLowerCase().trim();
+    // 토큰에 실제 email 클레임이 있었는지 — 없으면(재로그인) 기존 검증 이메일을 보존한다.
+    const hasVerifiedEmail = Boolean(apple.email);
     const name = parsed.data.name ?? apple.name ?? '';
 
     const existing = await db.execute({
@@ -814,11 +816,12 @@ auth.post('/apple', async (c) => {
         sql: `UPDATE users
               SET apple_id = ?,
                   google_id = COALESCE(google_id, ?),
-                  email = ?,
+                  email = COALESCE(NULLIF(?, ''), email),
                   name = COALESCE(NULLIF(?, ''), name),
                   updated_at = datetime('now')
               WHERE id = ?`,
-        args: [appleId, appleId, email, name, userId],
+        // Apple 재로그인 시 email 클레임이 없으면 placeholder 대신 기존 email 유지.
+        args: [appleId, appleId, hasVerifiedEmail ? email : '', name, userId],
       });
     } else {
       userId = appleId;

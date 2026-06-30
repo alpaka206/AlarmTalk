@@ -128,6 +128,7 @@ class RingingService : Service() {
             stopMediaAndVibration()
         }
         ringingAlarmId = alarmId
+        activeRingingAlarmId = alarmId
 
         serviceScope.launch {
             val repository = AlarmAppContainer.repository(applicationContext)
@@ -540,6 +541,7 @@ class RingingService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
         ringingAlarmId = null
+        activeRingingAlarmId = null
         currentAlarm = null
         voiceAfterAlarmStarted = false
         voiceHasPlayedThisRing = false
@@ -605,6 +607,14 @@ class RingingService : Service() {
     }
 
     companion object {
+        /**
+         * 현재 울림 세션의 알람 id(없으면 null). RingingActivity 가 FGS 차단 폴백으로 진입했을 때
+         * 서비스가 이미 울리고 있는지 확인해, 중복 시작과 "서비스→액티비티 재오픈" 루프를 막는다.
+         */
+        @Volatile
+        var activeRingingAlarmId: String? = null
+            private set
+
         private const val RINGING_NOTIFICATION_ID = 1001
         private const val VOICE_REPEAT_GAP_MS = 900L
         private const val VOICE_REPEAT_LOUDNESS_GAIN_MB = 600

@@ -75,6 +75,17 @@ function plannedMaxUses(planType: string, maxMembers: number): number {
   return 1;
 }
 
+async function currentSubscriptionPlanId(
+  tx: DbExecutor,
+  subscriptionId: string,
+): Promise<string | null> {
+  const res = await tx.execute({
+    sql: `SELECT plan_id FROM subscriptions WHERE id = ?`,
+    args: [subscriptionId],
+  });
+  return res.rows.length > 0 ? String(res.rows[0]!.plan_id) : null;
+}
+
 /** 트랜잭션 안에서 호출해야 한다 (withWriteTransaction). */
 export async function applyStoreEntitlement(
   tx: DbExecutor,
@@ -96,7 +107,14 @@ export async function applyStoreEntitlement(
     }
     // 같은 사용자의 재전송(갱신 포함) — 기존 구독 만료를 스토어 기준으로 갱신.
     const subscriptionId = (row.subscription_id as string | null) ?? null;
-    if (subscriptionId) {
+    // plan 이 동일한 재전송/갱신만 "갱신"으로 처리한다. plan 이 바뀐 동일 트랜잭션
+    // (예: Apple 동일 originalTransactionId 로 업/다운그레이드)은 아래 신규 구독 경로로
+    // 폴백해 구독·plan_group·바우처를 새 plan 으로 교체한다(personal→family 시 그룹/초대 생성,
+    // store_transactions 는 (provider, provider_transaction_id) UNIQUE 로 새 구독에 재연결).
+    const currentPlanId = subscriptionId
+      ? await currentSubscriptionPlanId(tx, subscriptionId)
+      : null;
+    if (subscriptionId && currentPlanId === input.plan.id) {
       await tx.execute({
         sql: `UPDATE subscriptions
               SET expires_at = ?, status = 'active', cancel_at_period_end = 0,

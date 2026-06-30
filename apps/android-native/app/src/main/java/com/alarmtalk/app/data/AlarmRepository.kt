@@ -505,21 +505,24 @@ class AlarmRepository(
         return (alarm.bucketRotationIndex + 1) % size
     }
 
-    suspend fun reschedulePendingAlarms(): Int {
+    suspend fun reschedulePendingAlarms(recomputeFireTime: Boolean = false): Int {
         val now = System.currentTimeMillis()
         val enabledAlarms = alarmDao.getEnabledAlarms()
+        val holidayPredicate = holidayCalendarStore.holidayPredicate(
+            countryCode = currentHolidayCountry(),
+            startDate = currentLocalDate(now),
+        )
         var scheduled = 0
 
         enabledAlarms.forEach { alarm ->
             runCatching {
-                val alarmToSchedule = if (alarm.fireAtMillis > now) {
-                    alarm
-                } else if (alarm.repeatDaysMask != 0) {
-                    val holidayPredicate = holidayCalendarStore.holidayPredicate(
-                        countryCode = currentHolidayCountry(),
-                        startDate = currentLocalDate(now),
-                    )
-                    alarm.copy(
+                // recomputeFireTime: 시간대/시스템 시각 변경 시, 저장된 fireAtMillis(과거 기준 절대시각)를
+                // hour/minute 으로 다시 계산해 새 벽시계 시각에 울리게 한다(여행/DST). 그 외(부팅 등)에는
+                // 미래 알람은 그대로 두고 과거(놓친) 알람만 재계산/정리한다.
+                val needsRecompute = recomputeFireTime || alarm.fireAtMillis <= now
+                val alarmToSchedule = when {
+                    !needsRecompute -> alarm
+                    alarm.repeatDaysMask != 0 || recomputeFireTime -> alarm.copy(
                         fireAtMillis = AlarmTimeCalculator.nextFireAtMillis(
                             hour = alarm.hour,
                             minute = alarm.minute,
@@ -531,13 +534,14 @@ class AlarmRepository(
                         state = AlarmStates.SCHEDULED,
                         updatedAtMillis = now,
                     ).also { alarmDao.upsert(it) }
-                } else {
-                    alarm.copy(
-                        enabled = false,
-                        state = AlarmStates.FAILED,
-                        updatedAtMillis = now,
-                    ).also { alarmDao.upsert(it) }
-                    return@forEach
+                    else -> {
+                        alarm.copy(
+                            enabled = false,
+                            state = AlarmStates.FAILED,
+                            updatedAtMillis = now,
+                        ).also { alarmDao.upsert(it) }
+                        return@forEach
+                    }
                 }
 
                 alarmScheduler.schedule(alarmToSchedule)
