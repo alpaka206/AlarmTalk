@@ -1072,6 +1072,8 @@
     <string name="r3app_update_required_body">원활하고 안전한 이용을 위해
 최신 버전으로 업데이트해 주세요.</string>
     <string name="r3app_update_required_button">업데이트하기</string>
+    <string name="r3app_update_downloaded">업데이트가 다운로드되었어요. 앱을 재시작해 적용하세요.</string>
+    <string name="r3app_update_restart">재시작</string>
     <string name="r3app_permission_gate_title">알람 권한을 허용해 주세요</string>
     <string name="r3app_permission_gate_body">정확한 시간에 알람을 울리고 잠금 화면에서도 바로 보이려면 아래 권한이 필요해요.</string>
     <string name="r3app_google_signin_failed">Google 로그인에 실패했어요</string>

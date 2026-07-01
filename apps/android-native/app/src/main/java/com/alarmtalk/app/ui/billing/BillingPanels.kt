@@ -194,7 +194,10 @@ internal fun SubscriptionPanel(
                     busy = billingBusy || shareBusy,
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
-                    onGift = { testCodeTarget = option },
+                    // 선물하기: 정식 선물-구매 플로우(CheckoutSelection gift=true)가 아직 미완이라,
+                    // 릴리스에서 개발용 테스트코드 다이얼로그가 노출되지 않도록 DEBUG 로만 스텁을 연다.
+                    // (선물 플로우 확정 시 onGift = { checkoutTarget = option } 로 배선)
+                    onGift = { if (BuildConfig.DEBUG) testCodeTarget = option },
                     onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )

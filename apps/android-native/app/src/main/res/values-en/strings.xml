@@ -1072,6 +1072,8 @@
     <string name="r3app_update_required_body">Please update to the latest version
 for a smooth and secure experience.</string>
     <string name="r3app_update_required_button">Update</string>
+    <string name="r3app_update_downloaded">An update has been downloaded. Restart the app to apply it.</string>
+    <string name="r3app_update_restart">Restart</string>
     <string name="r3app_permission_gate_title">Please allow alarm permissions</string>
     <string name="r3app_permission_gate_body">To ring alarms at the exact time and show them right on your lock screen, the permissions below are needed.</string>
     <string name="r3app_google_signin_failed">Google sign-in failed</string>

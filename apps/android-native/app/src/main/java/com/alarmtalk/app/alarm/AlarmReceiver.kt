@@ -61,7 +61,9 @@ class AlarmReceiver : BroadcastReceiver() {
     private fun postRingingNotificationFallback(context: Context, alarmId: String) {
         runCatching {
             NotificationChannels.ensure(context)
-            val notification = RingingNotificationFactory(context).build(alarmId)
+            // 폴백 전용 채널(IMPORTANCE_HIGH, 알람음+진동)로 게시해, 기기가 잠금 해제(사용 중)라
+            // 전체화면 인텐트가 헤즈업으로만 떠도 소리·진동이 나도록 한다. 정상 FGS 경로는 무음 채널 유지.
+            val notification = RingingNotificationFactory(context).build(alarmId, fallback = true)
             NotificationManagerCompat.from(context).notify(RINGING_FALLBACK_NOTIFICATION_ID, notification)
         }.onFailure { error ->
             Log.e(TAG, "Failed to post ringing notification fallback id=$alarmId", error)

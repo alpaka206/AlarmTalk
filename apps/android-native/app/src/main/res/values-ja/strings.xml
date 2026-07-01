@@ -1072,6 +1072,8 @@
     <string name="r3app_update_required_body">快適で安全にご利用いただくため
 最新バージョンにアップデートしてください。</string>
     <string name="r3app_update_required_button">アップデートする</string>
+    <string name="r3app_update_downloaded">アップデートをダウンロードしました。アプリを再起動して適用してください。</string>
+    <string name="r3app_update_restart">再起動</string>
     <string name="r3app_permission_gate_title">アラームの権限を許可してください</string>
     <string name="r3app_permission_gate_body">正確な時刻にアラームを鳴らし、ロック画面にもすぐ表示するには、以下の権限が必要です。</string>
     <string name="r3app_google_signin_failed">Googleログインに失敗しました</string>

@@ -536,10 +536,14 @@ internal fun MainViewModel.checkAppVersion() {
             api.appVersion("android")
         }.onSuccess { policy ->
             updateStoreUrl = policy.storeUrl
+            // 강제(min_supported 미달) → IMMEDIATE + 폴백 차단 화면. 권장(latest 미달) → FLEXIBLE.
+            // 이 판정 결과를 InAppUpdateManager 가 그대로 소비한다(버전 비교 중복 구현 금지).
             updateRequired = appVersionCode in 1 until policy.minSupportedVersion
+            updateRecommended = appVersionCode in 1 until policy.latestVersion
         }.onFailure { error ->
             Log.w(TAG, "Failed to check app version", error)
             updateRequired = false
+            updateRecommended = false
         }
     }
 }

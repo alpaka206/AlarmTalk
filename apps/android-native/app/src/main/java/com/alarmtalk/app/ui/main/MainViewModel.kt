@@ -285,9 +285,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         internal set
 
     // 설치 버전이 백엔드 최소지원버전 미만이면 true → 로그인 전부터 업데이트 차단 화면을 띄운다.
+    // (In-App Update IMMEDIATE 트리거 조건이자, 그 취소/미가용 시의 최종 폴백 게이트)
     var updateRequired by mutableStateOf(false)
         internal set
+    // 설치 버전이 백엔드 최신버전 미만이면 true → 권장(FLEXIBLE) In-App Update 대상.
+    // 강제(updateRequired)와 달리 앱 사용은 막지 않는다.
+    var updateRecommended by mutableStateOf(false)
+        internal set
     var updateStoreUrl by mutableStateOf("")
+        internal set
+    // FLEXIBLE In-App Update 다운로드가 끝나면 InAppUpdateManager 가 true 로 세팅 →
+    // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
+    var flexibleUpdateDownloaded by mutableStateOf(false)
         internal set
 
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)

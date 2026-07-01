@@ -262,6 +262,10 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.android.billingclient:billing-ktx:7.1.1")
+    // Google Play In-App Updates(신 Play SDK). Play 설치본에서만 실제 트리거되고
+    // debug/사이드로드에선 no-op(콜백에서 예외 방어). 구 com.google.android.play:core 미사용.
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.3.0")
     implementation("io.sentry:sentry-android-core:8.43.0")

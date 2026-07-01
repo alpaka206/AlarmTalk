@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -38,7 +40,13 @@ import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.common.api.ApiException
 
 @Composable
-internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
+internal fun AlarmTalkApp(
+    viewModel: MainViewModel = viewModel(),
+    // Play In-App Update 훅. 프리뷰/테스트에선 no-op 기본값. 실제 트리거는 MainActivity 가
+    // InAppUpdateManager 에 연결한다.
+    onCheckInAppUpdate: () -> Unit = {},
+    onCompleteInAppUpdate: () -> Unit = {},
+) {
     val context = LocalContext.current
     val alarms by viewModel.alarms.collectAsStateWithLifecycle()
     val message = viewModel.message
@@ -195,6 +203,27 @@ internal fun AlarmTalkApp(viewModel: MainViewModel = viewModel()) {
 
     LaunchedEffect(Unit) {
         viewModel.checkAppVersion()
+    }
+
+    // 서버 정책(강제/권장) 확정 후 In-App Update 를 조회·시작한다. 콜드스타트에서 onResume
+    // 시점엔 아직 정책이 로드 전일 수 있어, 플래그가 확정될 때 한 번 더 트리거한다(중복은 무해).
+    LaunchedEffect(viewModel.updateRequired, viewModel.updateRecommended) {
+        if (viewModel.updateRequired || viewModel.updateRecommended) {
+            onCheckInAppUpdate()
+        }
+    }
+
+    // FLEXIBLE 업데이트 다운로드 완료 → 재시작 안내 스낵바. 액션 시 completeUpdate() 로 설치 마무리.
+    LaunchedEffect(viewModel.flexibleUpdateDownloaded) {
+        if (!viewModel.flexibleUpdateDownloaded) return@LaunchedEffect
+        val result = snackbarHostState.showSnackbar(
+            message = context.getString(R.string.r3app_update_downloaded),
+            actionLabel = context.getString(R.string.r3app_update_restart),
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            onCompleteInAppUpdate()
+        }
     }
 
     LaunchedEffect(message) {
