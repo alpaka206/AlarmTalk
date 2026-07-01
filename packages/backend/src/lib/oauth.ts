@@ -129,7 +129,13 @@ export async function verifyGoogleIdToken(
   if (payload.iss !== 'accounts.google.com' && payload.iss !== 'https://accounts.google.com') {
     throw new Error('Invalid Google token issuer');
   }
-  if (expectedClientId && payload.aud !== expectedClientId) {
+  // fail-closed: client ID 미설정 시 aud 검증을 건너뛰지 않고 명시 실패시킨다.
+  // (aud 검증이 스킵되면 다른 OAuth 클라이언트용으로 발급된 유효 토큰도 수용돼
+  //  이메일 기준 계정 생성/연동 사칭이 가능해진다.)
+  if (!expectedClientId) {
+    throw new Error('Google client ID is not configured');
+  }
+  if (payload.aud !== expectedClientId) {
     throw new Error('Token audience mismatch');
   }
   if (Number(payload.exp) < Date.now() / 1000) {

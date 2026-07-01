@@ -13,6 +13,10 @@ import { missingConsentType, SENSITIVE_REQUIRED_CONSENTS } from '../lib/consent'
 
 const voiceProfile = new Hono<AppEnv>();
 const MAX_VOICE_PROFILES = 1;
+// draft(미승격) 보이스 상한. draft 도 생성 즉시 실제 ElevenLabs 보이스를 만들므로
+// (유한·계정 공유 슬롯) 무제한 생성 시 전역 슬롯이 고갈된다. 재시도 여유를 두되
+// 사용자당 개수를 제한해 전역 DoS 를 막는다.
+const MAX_DRAFT_VOICE_PROFILES = 3;
 const MIN_CLONE_DURATION_MS = 60_000;
 const MAX_CLONE_DURATION_MS = 120_000;
 const CLONE_DURATION_TOLERANCE_MS = 5_000;
@@ -707,20 +711,26 @@ voiceProfile.post('/clone', async (c) => {
         ? null
         : normalizeSpeechFormality(speechFormalityForm);
 
-    // draft 가 아닐 때만 한도(MAX_VOICE_PROFILES) 검사. draft 는 카운트에서 제외.
-    if (!isDraft) {
+    // 한도 검사: non-draft 는 MAX_VOICE_PROFILES, draft 는 MAX_DRAFT_VOICE_PROFILES.
+    // draft 도 즉시 실제 ElevenLabs 보이스를 생성하므로 반드시 상한을 둬야 무제한
+    // draft 생성으로 인한 전역 슬롯 고갈(DoS)을 막는다.
+    {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');
+      const draftClause = isDraft ? 'COALESCE(is_draft, 0) = 1' : 'COALESCE(is_draft, 0) = 0';
+      const limit = isDraft ? MAX_DRAFT_VOICE_PROFILES : MAX_VOICE_PROFILES;
       const profileCount = await db.execute({
         sql: `SELECT COUNT(*) as count FROM voice_profiles
-              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND COALESCE(is_draft, 0) = 0`,
+              WHERE user_id IN (${phCount}) AND deleted_at IS NULL AND ${draftClause}`,
         args: ids,
       });
       const count = Number(profileCount.rows[0]!.count);
-      if (count >= MAX_VOICE_PROFILES) {
+      if (count >= limit) {
         return c.json(
           {
-            error: `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
+            error: isDraft
+              ? `임시 보이스는 최대 ${MAX_DRAFT_VOICE_PROFILES}개까지 만들 수 있습니다`
+              : `최대 ${MAX_VOICE_PROFILES}개까지 등록 가능합니다`,
             error_code: 'VOICE_LIMIT_REACHED',
           },
           403,

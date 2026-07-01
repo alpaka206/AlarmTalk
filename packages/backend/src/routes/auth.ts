@@ -607,6 +607,11 @@ auth.post('/google', async (c) => {
   const db = getDB(c.env);
 
   try {
+    // /auth/apple 과 대칭인 구성 가드. GOOGLE_CLIENT_ID 미설정 시 aud 검증이 무력화되면
+    // 안 되므로(oauth.ts 는 fail-closed) 명시적으로 500 을 반환한다.
+    if (!c.env.GOOGLE_CLIENT_ID) {
+      return c.json(jsonError('AUTH_GOOGLE_CONFIG_MISSING', 'Google client ID is not configured'), 500);
+    }
     const google = await verifyGoogleIdToken(parsed.data.id_token, c.env.GOOGLE_CLIENT_ID);
     const googleId = google.sub;
     const email = (google.email || `${googleId}@google.local`).toLowerCase().trim();

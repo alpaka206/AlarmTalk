@@ -59,7 +59,7 @@ familyInvite.post('/invites', async (c) => {
             (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = ?) AS member_count,
             (SELECT COUNT(*) FROM plan_group_invites
               WHERE plan_group_id = ? AND status = 'pending'
-                AND expires_at > datetime('now')) AS pending_count`,
+                AND datetime(expires_at) > datetime('now')) AS pending_count`,
     args: [planGroupId, planGroupId],
   });
   const memberCount = Number(countRes.rows[0]!.member_count) || 0;
@@ -203,9 +203,22 @@ familyInvite.post('/invites/:code/accept', async (c) => {
     return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
   }
 
+  // 초대를 먼저 원자적으로 소비한다(일회용 보장). SQLite/libSQL 단일 라이터에서
+  // pending→used 전환은 동시 수락 중 한 요청만 성공하므로, 유출/공유된 일회용 코드
+  // 하나로 여러 명이 가입되는 TOCTOU 를 막는다. 소비 성공자만 좌석 삽입을 진행한다.
+  const consumeRes = await db.execute({
+    sql: `UPDATE plan_group_invites
+          SET status = 'used', used_by_user_id = ?, used_at = ?
+          WHERE id = ? AND status = 'pending'`,
+    args: [userPk, now.toISOString(), inviteId],
+  });
+  if ((consumeRes.rowsAffected ?? 0) === 0) {
+    return c.json({ error: '이미 사용된 초대 코드입니다', error_code: 'CODE_ALREADY_USED' }, 409);
+  }
+
   // 좌석을 원자적으로 삽입한다: 정원 미만일 때만 INSERT 되도록 한 문장으로 처리해
-  // 동시 수락 두 건이 모두 count<max 를 읽고 함께 들어가 정원을 넘기는 TOCTOU 를
-  // 막는다. rowsAffected=0 이면 그 사이 정원이 찼다는 뜻이므로 GROUP_FULL.
+  // 동시 수락이 정원을 넘기는 TOCTOU 를 막는다. rowsAffected=0 이면 그 사이 정원이
+  // 찼다는 뜻이므로 방금 소비한 초대를 pending 으로 되돌리고 GROUP_FULL 을 반환한다.
   const memberId = crypto.randomUUID();
   const insertRes = await db.execute({
     sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
@@ -214,15 +227,14 @@ familyInvite.post('/invites/:code/accept', async (c) => {
     args: [memberId, planGroupId, userPk, planGroupId, maxMembers],
   });
   if ((insertRes.rowsAffected ?? 0) === 0) {
+    await db.execute({
+      sql: `UPDATE plan_group_invites
+            SET status = 'pending', used_by_user_id = NULL, used_at = NULL
+            WHERE id = ?`,
+      args: [inviteId],
+    });
     return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
   }
-
-  await db.execute({
-    sql: `UPDATE plan_group_invites
-          SET status = 'used', used_by_user_id = ?, used_at = ?
-          WHERE id = ? AND status = 'pending'`,
-    args: [userPk, now.toISOString(), inviteId],
-  });
 
   return c.json({
     success: true,

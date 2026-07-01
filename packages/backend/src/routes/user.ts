@@ -41,14 +41,20 @@ user.get('/me', async (c) => {
     }
 
     const u = result.rows[0]!;
+    // 계정 연동으로 JWT sub(userId) 와 users.id(userPk) 가 다를 수 있으므로, 목록
+    // API(alarm-query viewerIds/voice-profile ownerIds)와 동일하게 두 식별자 집합으로
+    // 카운트한다. sub≠users.id 계정에서 통계가 0 으로 과소집계되는 문제를 막는다.
+    const userPk = c.get('userIdPK') || userId;
+    const idSet = Array.from(new Set([userPk, userId]));
+    const idPh = idSet.map(() => '?').join(',');
     const [profileCount, alarmCount] = await Promise.all([
       db.execute({
-        sql: 'SELECT COUNT(*) as count FROM voice_profiles WHERE user_id = ? AND deleted_at IS NULL',
-        args: [userId],
+        sql: `SELECT COUNT(*) as count FROM voice_profiles WHERE user_id IN (${idPh}) AND deleted_at IS NULL`,
+        args: idSet,
       }),
       db.execute({
-        sql: 'SELECT COUNT(*) as count FROM alarms WHERE user_id = ?',
-        args: [userId],
+        sql: `SELECT COUNT(*) as count FROM alarms WHERE user_id IN (${idPh})`,
+        args: idSet,
       }),
       db.execute({
         sql: "UPDATE users SET last_active_at = datetime('now') WHERE google_id = ?",

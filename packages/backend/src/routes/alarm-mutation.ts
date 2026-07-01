@@ -321,6 +321,16 @@ alarmMutation.post('/', async (c) => {
     }
   }
 
+  // PATCH(voiceProfileBelongsToCaller)와 동일하게 POST 도 voice_profile_id 소유권을
+  // 검증한다. 타인 소유 비공개 보이스 프로필 id 가 알람 행에 기록되는 것을 막는다
+  // (생성 시점 불변식: alarm.voice_profile_id ∈ {호출자 소유, 시스템}).
+  if (
+    body.voice_profile_id != null &&
+    !(await voiceProfileBelongsToCaller(db, body.voice_profile_id, ownerIds))
+  ) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
+
   const alarmId = crypto.randomUUID();
   const mode: AlarmMode = (body.mode as AlarmMode | undefined) ?? (
     creatorHasPaidVoice ? 'tts' : 'sound-only'
