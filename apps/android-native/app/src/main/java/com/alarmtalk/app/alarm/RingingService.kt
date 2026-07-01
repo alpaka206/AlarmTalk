@@ -45,6 +45,9 @@ import kotlinx.coroutines.launch
 
 class RingingService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // 서비스가 파괴됐는지 표시. 준비(prepare) 도중 파괴되면 좀비 플레이어가 start() 되지 않게 막는다.
+    @Volatile
+    private var destroyed = false
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var audioManager: AudioManager? = null
@@ -101,6 +104,7 @@ class RingingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        destroyed = true
         stopRingingOutputs()
         serviceScope.cancel()
         super.onDestroy()
@@ -206,7 +210,14 @@ class RingingService : Service() {
         cancelVoiceRepeatJob()
         cancelVoiceFadeJob()
         mediaPlayer?.release()
-        mediaPlayer = createAlarmTonePlayer(alarm, looping = true)?.apply {
+        val player = createAlarmTonePlayer(alarm, looping = true)
+        // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
+        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
+            player?.release()
+            mediaPlayer = null
+            return
+        }
+        mediaPlayer = player?.apply {
             applyAlarmVolume(alarm)
             isLooping = true
             start()
@@ -226,7 +237,14 @@ class RingingService : Service() {
         mediaPlayer?.release()
         val repeatVoice = alarm?.voiceRepeat != false
         val shouldFadeIn = fadeIn && !voiceHasPlayedThisRing
-        mediaPlayer = createVoicePlayer(voiceUri)?.apply {
+        val player = createVoicePlayer(voiceUri)
+        // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 루프 플레이어를 남기지 않는다.
+        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
+            player?.release()
+            mediaPlayer = null
+            return
+        }
+        mediaPlayer = player?.apply {
             voiceHasPlayedThisRing = true
             applyVoiceVolume(this, alarm, fadeIn = shouldFadeIn)
             isLooping = false
@@ -330,6 +348,13 @@ class RingingService : Service() {
         if (nextPlayer == null) {
             Log.e(TAG, "Failed to create sequence MediaPlayer; falling back to bundled alarm")
             startAlarmToneLoop(alarm)
+            return
+        }
+
+        // 준비 도중 dismiss/snooze/파괴로 현재 알람이 바뀌었으면 좀비 플레이어를 남기지 않는다.
+        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
+            nextPlayer.release()
+            mediaPlayer = null
             return
         }
 
@@ -487,6 +512,15 @@ class RingingService : Service() {
         val player = createVoicePlayer(voiceUri)
         if (player == null) {
             Log.e(TAG, "Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
+            serviceScope.launch {
+                finishDismiss(alarmId, startId)
+            }
+            return
+        }
+        // 준비 도중 파괴/알람 교체 시 좀비 플레이어를 남기지 않고, 파괴가 아니면 dismiss 는 마무리한다.
+        if (destroyed || (alarm != null && ringingAlarmId != alarm.id)) {
+            player.release()
+            mediaPlayer = null
             serviceScope.launch {
                 finishDismiss(alarmId, startId)
             }

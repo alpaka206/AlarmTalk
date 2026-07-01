@@ -150,7 +150,7 @@ private suspend fun MainViewModel.createFamilyTargetAlarm(draft: AlarmDraft, onD
                     authorization = AlarmTalkApiClient.bearer(session.token),
                     request = FamilyAlarmTalkRequest(
                         recipientUserId = requireNotNull(draft.targetUserId.trimmedOrNull()),
-                        wakeAt = "%02d:%02d".format(draft.hour, draft.minute),
+                        wakeAt = String.format(java.util.Locale.US, "%02d:%02d", draft.hour, draft.minute),
                         voiceUploadId = upload.id,
                         label = draft.label.trimmedOrNull()
                             ?: getApplication<Application>().getString(R.string.msg_family_voice_default_label),
@@ -202,7 +202,7 @@ private fun AlarmDraft.toRemoteAlarmWriteRequest(): RemoteAlarmWriteRequest {
         ?.takeUnless { ttsMessageId != null }
     val hasRemoteVoice = ttsMessageId != null || rawAudioUrl != null
     return RemoteAlarmWriteRequest(
-        time = "%02d:%02d".format(hour, minute),
+        time = String.format(java.util.Locale.US, "%02d:%02d", hour, minute),
         repeatDays = RemoteAlarmMapper.repeatMaskToDays(repeatDaysMask),
         snoozeMinutes = snoozeMinutes,
         mode = if (hasRemoteVoice) "tts" else "sound-only",

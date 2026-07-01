@@ -195,7 +195,7 @@ internal fun SubscriptionPanel(
                     vouchers = vouchersForPlan,
                     onPurchase = { purchaseTarget = option },
                     onGift = { testCodeTarget = option },
-                    onChange = { testCodeTarget = option },
+                    onChange = { changeTarget = option },
                     onShareVouchers = { refreshAndOpenVoucherShare(option.key) },
                 )
             }

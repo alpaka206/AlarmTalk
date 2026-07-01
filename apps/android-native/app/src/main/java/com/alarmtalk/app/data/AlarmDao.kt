@@ -124,6 +124,31 @@ interface AlarmDao {
         updatedAtMillis: Long,
     )
 
+    /**
+     * 동시 편집 방어용 조건부 SYNCED 전환. 스냅샷 시점 updatedAtMillis(:expectedUpdatedAtMillis)와
+     * 현재 행의 updatedAtMillis 가 일치할 때만 SYNCED 로 덮는다. 네트워크 sync 구간에 사용자가
+     * 같은 알람을 편집해 updatedAtMillis 가 바뀌었으면 매칭되지 않아 반환값이 0 이 되고, 이때
+     * 호출부가 DIRTY 를 보존해 다음 sync 에서 재전송하도록 한다. 반환값은 갱신된 행 수.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET remoteAlarmId = :remoteAlarmId,
+            lastSyncedAtMillis = :lastSyncedAtMillis,
+            syncState = :syncState,
+            updatedAtMillis = :newUpdatedAtMillis
+        WHERE id = :id AND updatedAtMillis = :expectedUpdatedAtMillis
+        """,
+    )
+    suspend fun setSyncStateIfUnchanged(
+        id: String,
+        remoteAlarmId: String?,
+        lastSyncedAtMillis: Long?,
+        syncState: String,
+        newUpdatedAtMillis: Long,
+        expectedUpdatedAtMillis: Long,
+    ): Int
+
     @Query(
         """
         UPDATE alarms

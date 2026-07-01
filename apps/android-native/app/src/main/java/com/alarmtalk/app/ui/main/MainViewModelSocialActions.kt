@@ -66,6 +66,8 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_left_group)
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키기 위해 먼저 busy 를 내린다(자체 busy 관리).
+            socialBusy = false
             refreshSocial()
             refreshBilling()
             refreshAppSession()
@@ -87,6 +89,8 @@ internal fun MainViewModel.removeFamilyMember(groupId: String, userId: String) {
             api.removeFamilyMember(authorization, groupId, userId)
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_member_removed)
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키기 위해 먼저 busy 를 내린다(자체 busy 관리).
+            socialBusy = false
             refreshSocial()
             refreshBilling()
         }.onFailure { error ->
