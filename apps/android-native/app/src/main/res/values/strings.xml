@@ -486,6 +486,8 @@
     <string name="msg_gb_code_input_required_period">코드를 입력해 주세요.</string>
     <string name="msg_gb_code_register_failed">코드 등록에 실패했어요</string>
     <string name="msg_gb_code_registered">코드를 등록했어요</string>
+    <string name="msg_gb_promo_redeemed">프로모 코드를 적용했어요</string>
+    <string name="msg_gb_promo_redeem_failed">프로모 코드를 적용하지 못했어요</string>
     <string name="msg_gb_free_plan_voice_alarms_deleted">무료 이용권으로 전환되어 목소리 알람을 삭제했어요.</string>
     <string name="msg_gb_gift_failed">선물하기에 실패했어요</string>
     <string name="msg_gb_google_play_start_failed">Google Play 결제를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
@@ -1002,6 +1004,11 @@
     <string name="msg2_code_fail_invalid_plan_type">코드와 이용권 종류가 맞지 않아요</string>
     <string name="msg2_code_fail_plan_not_found">코드의 이용권 정보를 찾지 못했어요</string>
     <string name="msg2_code_fail_user_not_found">로그인 정보를 다시 확인해 주세요</string>
+    <string name="msg2_promo_fail_code_inactive">지금은 사용할 수 없는 프로모 코드예요</string>
+    <string name="msg2_promo_fail_not_in_window">아직 사용 기간이 아니거나 종료된 프로모 코드예요</string>
+    <string name="msg2_promo_fail_code_exhausted">사용 가능 횟수가 모두 소진된 프로모 코드예요</string>
+    <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
+    <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
     <string name="misc2_onboarding_voice_title">좋아하는 목소리로 깨어나요</string>
     <string name="misc2_onboarding_voice_desc">녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.</string>
     <string name="misc2_onboarding_together_title">소중한 사람들과 함께</string>

@@ -484,6 +484,8 @@
     <string name="msg_gb_code_input_required_period">コードを入力してください。</string>
     <string name="msg_gb_code_register_failed">コードの登録に失敗しました。</string>
     <string name="msg_gb_code_registered">コードを登録しました</string>
+    <string name="msg_gb_promo_redeemed">プロモコードを適用しました</string>
+    <string name="msg_gb_promo_redeem_failed">プロモコードを適用できませんでした。</string>
     <string name="msg_gb_free_plan_voice_alarms_deleted">無料プランに切り替わったため、声のアラームを削除しました。</string>
     <string name="msg_gb_gift_failed">プレゼントの送信に失敗しました。</string>
     <string name="msg_gb_google_play_start_failed">Google Play決済を開始できませんでした。しばらくしてからもう一度お試しください。</string>
@@ -1002,6 +1004,11 @@
     <string name="msg2_code_fail_invalid_plan_type">コードと利用券の種類が一致しません</string>
     <string name="msg2_code_fail_plan_not_found">コードの利用券情報が見つかりませんでした</string>
     <string name="msg2_code_fail_user_not_found">ログイン情報をもう一度ご確認ください</string>
+    <string name="msg2_promo_fail_code_inactive">現在は使用できないプロモコードです</string>
+    <string name="msg2_promo_fail_not_in_window">まだ利用期間ではないか、終了したプロモコードです</string>
+    <string name="msg2_promo_fail_code_exhausted">利用回数の上限に達したプロモコードです</string>
+    <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
+    <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
     <string name="misc2_onboarding_voice_title">大好きな声で目覚めましょう</string>
     <string name="misc2_onboarding_voice_desc">録音したり作ったりした声で、自分のアラームを鳴らせます。</string>
     <string name="misc2_onboarding_together_title">大切な人と一緒に</string>

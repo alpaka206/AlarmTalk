@@ -352,7 +352,6 @@ internal fun MainViewModel.renameVoiceProfile(
                     it
                 }
             }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_info_updated)
         }.onFailure { error ->
             Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
@@ -408,7 +407,6 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
                     it
                 }
             }
-            message = getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_saved)
             onSuccess()
         }.onFailure { error ->
             Log.e(TAG, "Failed to update shared voice viewer info id=$profileId", error)

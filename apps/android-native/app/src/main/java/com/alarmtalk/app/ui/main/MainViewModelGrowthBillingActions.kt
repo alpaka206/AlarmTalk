@@ -31,6 +31,7 @@ import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.GooglePlayConfirmRequest
 import com.alarmtalk.app.network.LoginRequest
 import com.alarmtalk.app.network.NoteAudioResponse
+import com.alarmtalk.app.network.PromoRedeemRequest
 import com.alarmtalk.app.network.ReceivedNote
 import com.alarmtalk.app.network.RegisterRequest
 import com.alarmtalk.app.network.SendNoteRequest
@@ -188,6 +189,22 @@ private fun codeRegistrationFailureMessage(context: android.content.Context, err
         else -> fallback
     }
 
+private fun promoRedeemFailureMessage(context: android.content.Context, errorCode: String?, fallback: String): String =
+    when (errorCode) {
+        // 바우처도 프로모도 아닌 코드 → 기존 "등록할 수 없는 코드" 문구 재사용.
+        "CODE_NOT_FOUND" -> context.getString(R.string.msg2_code_fail_code_not_found)
+        "CODE_INACTIVE" -> context.getString(R.string.msg2_promo_fail_code_inactive)
+        "CODE_NOT_IN_WINDOW" -> context.getString(R.string.msg2_promo_fail_not_in_window)
+        "CODE_ALREADY_REDEEMED_BY_YOU" -> context.getString(R.string.msg2_code_fail_code_already_redeemed_by_you)
+        "CODE_EXHAUSTED" -> context.getString(R.string.msg2_promo_fail_code_exhausted)
+        "OWNS_ACTIVE_GROUP" -> context.getString(R.string.msg2_promo_fail_owns_active_group)
+        "PROMO_REDEEM_FAILED" -> context.getString(R.string.msg2_promo_fail_generic)
+        else -> fallback
+    }
+
+private fun com.alarmtalk.app.network.BillingPlanSummary?.isSharedPassPlan(): Boolean =
+    this != null && (key in setOf("couple", "family") || planType in setOf("couple", "family"))
+
 internal fun MainViewModel.registerCode(code: String) {
     val authorization = bearerOrMessage(getApplication<android.app.Application>().getString(R.string.msg_gb_login_required_register_code)) ?: return
     val trimmedCode = code.trim()
@@ -210,14 +227,50 @@ internal fun MainViewModel.registerCode(code: String) {
                 navigateHomeTick++
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to register code", error)
-            message = codeRegistrationFailureMessage(
-                getApplication<android.app.Application>(),
-                apiErrorCode(error),
-                userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
-            )
+            // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
+            val errorCode = apiErrorCode(error)
+            if (errorCode == "CODE_NOT_FOUND") {
+                // 바우처가 아니면(존재하지 않는 바우처 코드) 공용 프로모 코드로 폴백 시도.
+                // CODE_NOT_FOUND 이외의 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
+                redeemPromoCode(authorization, trimmedCode)
+            } else {
+                Log.e(TAG, "Failed to register code", error)
+                message = codeRegistrationFailureMessage(
+                    getApplication<android.app.Application>(),
+                    errorCode,
+                    userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_code_register_failed)),
+                )
+            }
         }
         billingBusy = false
+    }
+}
+
+/**
+ * 공용 프로모 코드 사용. [registerCode] 의 바우처 등록이 CODE_NOT_FOUND 로 실패했을 때만
+ * 폴백 호출된다(같은 코루틴·billingBusy 유지). 성공 시 바우처 성공과 동일하게 서버 기준으로
+ * 구독/플랜을 재조회하고 홈(또는 공유패스)으로 이동한다.
+ */
+private suspend fun MainViewModel.redeemPromoCode(authorization: String, code: String) {
+    runCatching {
+        api.redeemPromoCode(authorization, PromoRedeemRequest(code))
+    }.onSuccess { response ->
+        message = getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeemed)
+        refreshBillingAfterMutation(authorization, "promo redeem")
+        refreshSocial()
+        refreshAppSession()
+        if (response.plan.isSharedPassPlan()) {
+            navigateSharedPassTick++
+        } else {
+            navigateHomeTick++
+        }
+    }.onFailure { error ->
+        Log.e(TAG, "Failed to redeem promo code", error)
+        message = promoRedeemFailureMessage(
+            getApplication<android.app.Application>(),
+            apiErrorCode(error),
+            userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_gb_promo_redeem_failed)),
+        )
     }
 }
 

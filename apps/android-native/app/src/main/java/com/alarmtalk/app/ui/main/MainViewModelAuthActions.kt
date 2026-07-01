@@ -73,7 +73,6 @@ internal fun MainViewModel.login(email: String, password: String) {
             restoreAccessSnapshotForCurrentUser()
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
-            message = getApplication<android.app.Application>().getString(R.string.msg_login_success, response.user.email)
         }.onFailure { error ->
             Log.e(TAG, "Email login failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
@@ -305,7 +304,6 @@ internal fun MainViewModel.logout(signOutGoogle: suspend () -> Unit = {}) {
         authSessionStore.clear()
         clearUserScopedRemoteState() // 동의/탈퇴 게이트 상태(needsConsent·consentChecked·pendingDeletion)도 여기서 초기화된다
         authSession = null
-        message = getApplication<android.app.Application>().getString(R.string.msg_logout_success)
         authBusy = false
     }
 }
@@ -402,7 +400,6 @@ internal fun MainViewModel.updateNickname(name: String) {
             val updated = session.copy(user = session.user.copy(name = trimmed))
             authSession = authSessionStore.save(updated)
             dismissEditNickname()
-            message = getApplication<android.app.Application>().getString(R.string.msg_nickname_changed)
         }.onFailure { error ->
             Log.e(TAG, "Failed to update nickname", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
@@ -620,7 +617,6 @@ internal fun MainViewModel.submitConsents(
             // 방금 서버에 보낸 그 버전으로 로컬 캐시도 기록해 서버·클라 상태를 일치시킨다.
             // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
             policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
-            message = getApplication<android.app.Application>().getString(R.string.msg_consent_completed)
         }.onFailure { error ->
             Log.e(TAG, "Failed to record consents", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))

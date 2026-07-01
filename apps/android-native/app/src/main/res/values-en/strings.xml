@@ -484,6 +484,8 @@
     <string name="msg_gb_code_input_required_period">Please enter a code.</string>
     <string name="msg_gb_code_register_failed">Couldn\'t register the code.</string>
     <string name="msg_gb_code_registered">Code registered</string>
+    <string name="msg_gb_promo_redeemed">Promo code applied</string>
+    <string name="msg_gb_promo_redeem_failed">Couldn\'t apply the promo code.</string>
     <string name="msg_gb_free_plan_voice_alarms_deleted">You\'ve switched to the free plan, so your voice alarms were deleted.</string>
     <string name="msg_gb_gift_failed">Couldn\'t send the gift.</string>
     <string name="msg_gb_google_play_start_failed">Couldn\'t start the Google Play payment. Please try again in a moment.</string>
@@ -1002,6 +1004,11 @@
     <string name="msg2_code_fail_invalid_plan_type">The code and pass type don\'t match</string>
     <string name="msg2_code_fail_plan_not_found">We couldn\'t find the pass info for this code</string>
     <string name="msg2_code_fail_user_not_found">Please check your login info again</string>
+    <string name="msg2_promo_fail_code_inactive">This promo code isn\'t available right now</string>
+    <string name="msg2_promo_fail_not_in_window">This promo code isn\'t active yet or has ended</string>
+    <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
+    <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
+    <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
     <string name="misc2_onboarding_voice_title">Wake up to a voice you love</string>
     <string name="misc2_onboarding_voice_desc">Set your alarm to a voice you record or create.</string>
     <string name="misc2_onboarding_together_title">Together with the people you love</string>
