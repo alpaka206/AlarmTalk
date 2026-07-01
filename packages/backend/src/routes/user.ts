@@ -285,6 +285,18 @@ user.patch('/plan', async (c) => {
     if (!['free', 'plus', 'family'].includes(body.plan)) {
       return c.json({ error: 'Invalid plan', error_code: 'INVALID_PLAN' }, 400);
     }
+    // 보안: 유료 승격(plus/family)은 반드시 결제 검증(store-billing) 또는 바우처
+    // 사용(voucher redemption) 경로로만 이뤄져야 한다. 이 self-service 엔드포인트는
+    // 본인 강등(free)만 허용하고, 무결제 플랜 승격(페이월 우회)을 차단한다.
+    if (body.plan !== 'free') {
+      return c.json(
+        {
+          error: 'Plan upgrades require a verified purchase or voucher',
+          error_code: 'PLAN_UPGRADE_NOT_ALLOWED',
+        },
+        403,
+      );
+    }
 
     const result = await withWriteTransaction(db, async (tx) => {
       const update = await tx.execute({

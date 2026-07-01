@@ -78,6 +78,47 @@ billingPortone.post('/portone/complete', async (c) => {
     return c.json({ error: 'Plan is not billable', error_code: 'FREE_NOT_BILLABLE' }, 400);
   }
 
+  // 리플레이 방지: PortOne V1 단건결제는 payment_id 를 1회만 소비한다. 만료를 서버가
+  // 로컬 계산(now + period_days)하므로, 이미 처리된 payment_id 를 재전송하면 결제 없이
+  // 만료가 매번 연장된다(무결제 무한 연장). store_transactions 에 동일
+  // (portone, payment_id) 가 이미 있으면 만료를 재계산/연장하지 않고 멱등 처리한다.
+  // 갱신 결제는 반드시 새 payment_id 로만 허용된다.
+  const priorTxn = await db.execute({
+    sql: `SELECT st.user_id AS txn_user_id, st.subscription_id,
+                 s.plan_id, s.status, s.starts_at, s.expires_at
+          FROM store_transactions st
+          LEFT JOIN subscriptions s ON s.id = st.subscription_id
+          WHERE st.provider = 'portone' AND st.provider_transaction_id = ?`,
+    args: [parsed.payment_id],
+  });
+  if (priorTxn.rows.length > 0) {
+    const row = priorTxn.rows[0]!;
+    if (String(row.txn_user_id) !== userPk) {
+      return c.json(
+        {
+          error: 'Payment belongs to another account',
+          error_code: 'TRANSACTION_OWNED_BY_OTHER_USER',
+        },
+        409,
+      );
+    }
+    return c.json({
+      success: true,
+      plan_key: plan.key,
+      already_processed: true,
+      subscription: row.subscription_id
+        ? {
+            id: String(row.subscription_id),
+            plan_id: row.plan_id ? String(row.plan_id) : plan.id,
+            plan_key: plan.key,
+            status: row.status ? String(row.status) : 'active',
+            starts_at: row.starts_at ? String(row.starts_at) : null,
+            expires_at: row.expires_at ? String(row.expires_at) : null,
+          }
+        : null,
+    });
+  }
+
   // PortOne 결제 조회 (클라이언트 주장 무시).
   let payment: PortOnePayment;
   try {

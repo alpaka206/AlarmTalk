@@ -577,6 +577,8 @@ alarmMutation.patch('/:id', async (c) => {
 
 alarmMutation.delete('/:id', async (c) => {
   const userId = c.get('userId');
+  const userPk = c.get('userIdPK') || userId;
+  const ownerIds = [userPk, userId] as [string, string];
   const db = getDB(c.env);
   const id = c.req.param('id');
 
@@ -622,10 +624,13 @@ alarmMutation.delete('/:id', async (c) => {
     });
     const cnt = Number(typedRow<{ cnt: number }>(refRes.rows[0]!).cnt ?? 0);
     if (cnt === 0) {
+      // 소유권 스코프(user_id IN ownerIds)를 걸어 호출자 소유 에셋만 정리한다.
+      // SYSTEM_VOICE_LIBRARY_USER_ID 소유의 공유 스톡 클립 에셋/R2 오브젝트를
+      // 전역 삭제하는 cross-tenant 파괴를 막는다(tts.ts:1284-1298 과 동일 패턴).
       const assetsRes = await db.execute({
         sql: `SELECT audio_object_key FROM generated_audio_assets
-              WHERE message_id = ? AND audio_object_key IS NOT NULL`,
-        args: [messageId],
+              WHERE message_id = ? AND user_id IN (?, ?) AND audio_object_key IS NOT NULL`,
+        args: [messageId, ...ownerIds],
       });
       const bucket = c.env?.VOICE_BUCKET;
       if (bucket && assetsRes.rows.length > 0) {
@@ -641,8 +646,8 @@ alarmMutation.delete('/:id', async (c) => {
         }
       }
       await db.execute({
-        sql: 'DELETE FROM generated_audio_assets WHERE message_id = ?',
-        args: [messageId],
+        sql: 'DELETE FROM generated_audio_assets WHERE message_id = ? AND user_id IN (?, ?)',
+        args: [messageId, ...ownerIds],
       });
     }
   }
