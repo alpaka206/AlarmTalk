@@ -70,7 +70,6 @@ crons = ["*/5 * * * *"]
 # ANDROID_PACKAGE_NAME            (com.alarmtalk.app)
 # GOOGLE_RTDN_VERIFICATION_TOKEN  (RTDN Pub/Sub push 검증 토큰 — Play Console RTDN 토픽의
 #                                  push 구독 URL `/api/billing/google/rtdn?token=<이 값>` 에 박는다)
-# PORTONE_API_SECRET              (PortOne V2 API Secret — 국내 PG)
 #
 # 공휴일(KR 보정) — 미설정 시 KR 오버레이 생략, date-holidays 결과만 제공:
 # KASI_SERVICE_KEY                (data.go.kr 특일정보 getRestDeInfo, **Decoding(디코딩)** 키.

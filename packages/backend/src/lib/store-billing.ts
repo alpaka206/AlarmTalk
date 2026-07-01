@@ -1,5 +1,5 @@
 /**
- * 스토어 결제(Apple/Google/PortOne) 공통 entitlement 적용.
+ * 스토어 결제(Apple/Google) 공통 entitlement 적용.
  *
  * 각 provider 라우트가 결제를 외부 API 로 검증한 뒤 이 모듈로 구독을 반영한다.
  *  - store_transactions (provider, provider_transaction_id) 유니크로 중복 처리 방지.
@@ -12,7 +12,7 @@ import type { DbExecutor } from './transactions';
 import { cancelActiveSubscriptionsForUser } from './billing-cancel';
 import { planTypeToUserPlan } from '../routes/billing-helpers';
 
-export type StoreProvider = 'apple' | 'google' | 'portone';
+export type StoreProvider = 'apple' | 'google';
 
 export interface StorePlan {
   id: string;
@@ -27,7 +27,7 @@ export interface StorePlan {
 export interface StoreEntitlementInput {
   userPk: string;
   provider: StoreProvider;
-  /** provider 별 고유 트랜잭션 식별자 (Apple originalTransactionId / Google purchaseToken / PortOne paymentId). */
+  /** provider 별 고유 트랜잭션 식별자 (Apple originalTransactionId / Google purchaseToken). */
   providerTransactionId: string;
   productId: string;
   plan: StorePlan;

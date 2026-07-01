@@ -24,7 +24,7 @@ const WORKER_SECRET_KEYS = [
   'INIT_DB_SECRET',
   'SENTRY_DSN',
   'FIREBASE_PROJECT_ID',
-  // 푸시(FCM) 서비스계정 + 결제(Google Play/Apple/PortOne) + 공휴일(KR).
+  // 푸시(FCM) 서비스계정 + 결제(Google Play/Apple) + 공휴일(KR).
   // 백엔드가 읽는데 sync 목록에서 빠져 있어 추가. 빈 값은 위 루프(115행)에서 자동 skip.
   'FIREBASE_SERVICE_ACCOUNT_JSON',
   'GOOGLE_PLAY_SERVICE_ACCOUNT_JSON',
@@ -34,7 +34,6 @@ const WORKER_SECRET_KEYS = [
   'APPLE_KEY_ID',
   'APPLE_IAP_PRIVATE_KEY',
   'APPLE_BUNDLE_ID',
-  'PORTONE_API_SECRET',
   'KASI_SERVICE_KEY',
 ] as const;
 
