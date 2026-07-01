@@ -149,6 +149,27 @@ interface AlarmDao {
         expectedUpdatedAtMillis: Long,
     ): Int
 
+    /**
+     * 신규 생성 커밋 중 동시 편집이 감지됐을 때(create 응답 커밋과 사용자 편집 경합) 쓰는 폴백.
+     * 서버가 발급한 remoteAlarmId 는 반드시 저장해 다음 sync 가 '중복 create' 가 아니라 update 로
+     * 재전송하도록 하되, syncState 는 DIRTY 로 두고 updatedAtMillis 는 건드리지 않아 사용자의 편집
+     * (updatedAtMillis/페이로드)이 SYNCED 로 덮여 유실되지 않게 보존한다.
+     */
+    @Query(
+        """
+        UPDATE alarms
+        SET remoteAlarmId = :remoteAlarmId,
+            lastSyncedAtMillis = :lastSyncedAtMillis,
+            syncState = 'dirty'
+        WHERE id = :id
+        """,
+    )
+    suspend fun markRemoteIdKeepDirty(
+        id: String,
+        remoteAlarmId: String?,
+        lastSyncedAtMillis: Long?,
+    )
+
     @Query(
         """
         UPDATE alarms

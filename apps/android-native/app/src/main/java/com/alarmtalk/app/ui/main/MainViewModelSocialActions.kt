@@ -66,7 +66,9 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
             api.leaveFamilyGroup(authorization, groupId, emptyMap())
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_left_group)
-            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키기 위해 먼저 busy 를 내린다(자체 busy 관리).
+            // 성공 시엔 refreshSocial 이 busy 소유권을 이어받는다. 여기서 먼저 내려
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키고, 이후 무조건적인
+            // `socialBusy = false` 로 진행 중인 refresh 의 true 를 덮어쓰지 않는다(가드 무력화 회귀 방지).
             socialBusy = false
             refreshSocial()
             refreshBilling()
@@ -74,8 +76,9 @@ internal fun MainViewModel.leaveFamilyGroup(groupId: String) {
         }.onFailure { error ->
             Log.e(TAG, "Failed to leave family group id=$groupId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_leave_group_failed))
+            // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
+            socialBusy = false
         }
-        socialBusy = false
     }
 }
 
@@ -89,14 +92,17 @@ internal fun MainViewModel.removeFamilyMember(groupId: String, userId: String) {
             api.removeFamilyMember(authorization, groupId, userId)
         }.onSuccess {
             message = getApplication<android.app.Application>().getString(R.string.msg_member_removed)
-            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키기 위해 먼저 busy 를 내린다(자체 busy 관리).
+            // 성공 시엔 refreshSocial 이 busy 소유권을 이어받는다. 여기서 먼저 내려
+            // refreshSocialData 의 `if (socialBusy) return` 가드를 통과시키고, 이후 무조건적인
+            // `socialBusy = false` 로 진행 중인 refresh 의 true 를 덮어쓰지 않는다(가드 무력화 회귀 방지).
             socialBusy = false
             refreshSocial()
             refreshBilling()
         }.onFailure { error ->
             Log.e(TAG, "Failed to remove family member group=$groupId user=$userId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_remove_member_failed))
+            // 실패 시에만 여기서 busy 를 리셋(성공 시엔 refreshSocial 이 소유).
+            socialBusy = false
         }
-        socialBusy = false
     }
 }

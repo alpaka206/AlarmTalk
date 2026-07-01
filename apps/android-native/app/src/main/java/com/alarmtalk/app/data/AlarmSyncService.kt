@@ -45,13 +45,29 @@ internal class AlarmSyncService(
                     val remoteAlarm = api.createAlarm(authorization, request).alarm
                     created += 1
                     withContext(NonCancellable) {
-                        alarmDao.setSyncState(
+                        // 동시 편집 방어(lost update): createAlarm 네트워크 왕복 중 사용자가 같은 알람을
+                        // 편집하면 updatedAtMillis 가 바뀌고 syncState 가 DIRTY 로 돌아간다. 스냅샷 시점
+                        // updatedAtMillis 와 일치할 때만 SYNCED 로 전환하고, 불일치(rowcount==0)면 편집을
+                        // SYNCED 로 덮지 않는다.
+                        val applied = alarmDao.setSyncStateIfUnchanged(
                             id = alarm.id,
                             remoteAlarmId = remoteAlarm.id,
                             lastSyncedAtMillis = now,
                             syncState = AlarmSyncStates.SYNCED,
-                            updatedAtMillis = now,
+                            newUpdatedAtMillis = now,
+                            expectedUpdatedAtMillis = alarm.updatedAtMillis,
                         )
+                        if (applied == 0) {
+                            // 동시 편집 발생: remoteAlarmId 는 반드시 커밋(다음 sync 가 중복 create 대신
+                            // update 로 재전송)하되 syncState 는 DIRTY, updatedAtMillis 는 건드리지 않아
+                            // 사용자의 편집(페이로드/updatedAtMillis)을 보존한다.
+                            alarmDao.markRemoteIdKeepDirty(
+                                id = alarm.id,
+                                remoteAlarmId = remoteAlarm.id,
+                                lastSyncedAtMillis = now,
+                            )
+                            Log.i(TAG, "Concurrent edit during create; keeping DIRTY with remoteId id=${alarm.id}")
+                        }
                     }
                 } else {
                     val remoteAlarm = api.updateAlarm(authorization, alarm.remoteAlarmId, request).alarm
