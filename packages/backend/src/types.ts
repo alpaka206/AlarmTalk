@@ -36,6 +36,8 @@ export interface Env {
   APPLE_IAP_PRIVATE_KEY?: string;
   /** iOS 번들 ID — App Store 트랜잭션의 bundleId 검증에 사용. */
   APPLE_BUNDLE_ID?: string;
+  /** 관리자 콘솔(/admin) 보호용 시크릿(HTTP Basic 비밀번호). 미설정 시 /admin 은 503. */
+  ADMIN_SECRET?: string;
   /**
    * data.go.kr KASI 특일정보 OpenAPI 서비스키 (getRestDeInfo). KR 공휴일의 대체/임시공휴일
    * 보정용 오버레이에 쓴다. 미설정 시 KR 오버레이를 생략하고 date-holidays 결과만 제공한다.

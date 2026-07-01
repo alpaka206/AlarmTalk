@@ -271,7 +271,7 @@ export async function schedulePlanChangeAtPeriodEnd(
   });
 }
 
-async function createNewSubscriptionForPlan(
+export async function createNewSubscriptionForPlan(
   db: DbExecutor,
   params: {
     userPk: string;
@@ -281,7 +281,7 @@ async function createNewSubscriptionForPlan(
     maxMembers: number;
     now: Date;
   },
-): Promise<void> {
+): Promise<string> {
   const startsAt = params.now;
   const expiresAt = new Date(startsAt.getTime() + params.periodDays * 24 * 60 * 60 * 1000);
   const subscriptionId = crypto.randomUUID();
@@ -330,6 +330,8 @@ async function createNewSubscriptionForPlan(
       maxUses: plannedMaxUses(params.planType, params.maxMembers),
     });
   }
+
+  return subscriptionId;
 }
 
 export async function processSubscriptionExpiry(db: Client, now: Date = new Date()): Promise<void> {
