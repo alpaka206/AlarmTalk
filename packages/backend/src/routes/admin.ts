@@ -149,12 +149,14 @@ ${renderMsg(c)}
   <label>총 사용 상한(빈칸=무제한)
     <input name="max_redemptions" type="number" min="1" placeholder="예: 100">
   </label>
-  <label>등록 가능 시작(빈칸=제한없음)
-    <input name="valid_from" type="datetime-local">
+  <label>등록 가능 시작(내 로컬 시각 · 빈칸=제한없음)
+    <input name="valid_from_local" type="datetime-local">
   </label>
-  <label>등록 가능 종료(빈칸=제한없음)
-    <input name="valid_until" type="datetime-local">
+  <label>등록 가능 종료(내 로컬 시각 · 빈칸=제한없음)
+    <input name="valid_until_local" type="datetime-local">
   </label>
+  <input type="hidden" name="valid_from">
+  <input type="hidden" name="valid_until">
   <label class="full">메모(관리용)
     <input name="note" placeholder="예: 6월 런칭 프로모" maxlength="200">
   </label>
@@ -165,6 +167,21 @@ ${renderMsg(c)}
   <thead><tr><th>코드</th><th>플랜</th><th>기간</th><th>사용/상한</th><th>유효창</th><th>활성</th><th>메모</th><th></th></tr></thead>
   <tbody>${rows || '<tr><td colspan="8" class="muted">아직 발급된 코드가 없습니다.</td></tr>'}</tbody>
 </table>
+<script>
+(function () {
+  var form = document.querySelector('form.create');
+  if (!form) return;
+  // datetime-local 은 타임존 없는 로컬 벽시계값이라, 서버(datetime('now'), UTC)와 비교가
+  // 어긋난다. 제출 직전 로컬값을 UTC ISO 로 변환해 hidden 필드에 실어 보낸다.
+  form.addEventListener('submit', function () {
+    [['valid_from_local', 'valid_from'], ['valid_until_local', 'valid_until']].forEach(function (p) {
+      var src = form.elements[p[0]];
+      var dst = form.elements[p[1]];
+      dst.value = src && src.value ? new Date(src.value).toISOString() : '';
+    });
+  });
+})();
+</script>
 </body></html>`;
 
   return c.html(html);
