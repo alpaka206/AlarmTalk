@@ -259,7 +259,10 @@ class AlarmRepository(
 
         alarmScheduler.cancel(alarmId)
         alarmScheduler.schedule(updated)
-        alarmDao.upsert(updated)
+        // 전체행 upsert 대신 서버 발급 필드(remoteAlarmId/lastSyncedAtMillis) 보존 커밋을 쓴다.
+        // getById 스냅샷(remoteAlarmId=null)을 여러 suspend 지점 뒤에 그대로 되쓰면, 그 사이
+        // sync 가 방금 커밋한 remoteAlarmId 를 stale null 로 덮어 → 다음 sync 가 중복 create 로 재진입.
+        alarmDao.upsertPreservingServerSyncFields(updated)
         // 갱신본 저장 후 충돌 알람 삭제 — 공유 audioCacheKey 음성 보존.
         conflict?.let { deleteAlarm(it.id) }
         // 수정으로 반복 랜덤 문구 알람이 됐을 수 있으니 동적 음성 갱신 워커를 재예약한다.
@@ -303,7 +306,9 @@ class AlarmRepository(
         }
 
         if (enabled) alarmScheduler.schedule(updated)
-        alarmDao.upsert(updated)
+        // updateAlarm 과 동일: sync 왕복 중 토글이 겹칠 때 remoteAlarmId 를 stale null 로 덮지 않도록
+        // 서버 발급 필드 보존 커밋을 쓴다(전체행 upsert 금지).
+        alarmDao.upsertPreservingServerSyncFields(updated)
         // 활성화된 반복 랜덤 문구 알람이면 동적 음성 갱신 워커를 예약한다.
         if (enabled) ensureDynamicVoiceRefreshScheduled(updated)
         Log.i(TAG, "Alarm enabled changed id=$alarmId enabled=$enabled fireAt=${updated.fireAtMillis}")

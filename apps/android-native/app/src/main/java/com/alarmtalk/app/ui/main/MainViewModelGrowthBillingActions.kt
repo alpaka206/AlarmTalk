@@ -229,9 +229,11 @@ internal fun MainViewModel.registerCode(code: String) {
         }.onFailure { error ->
             // errorBody 는 한 번만 읽히므로 error_code 를 먼저 한 번만 추출해 재사용한다.
             val errorCode = apiErrorCode(error)
-            if (errorCode == "CODE_NOT_FOUND") {
-                // 바우처가 아니면(존재하지 않는 바우처 코드) 공용 프로모 코드로 폴백 시도.
-                // CODE_NOT_FOUND 이외의 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
+            if (errorCode == "CODE_NOT_FOUND" || errorCode == "INVALID_FORMAT") {
+                // 바우처 코드가 아니면 공용 프로모 코드로 폴백 시도한다. 바우처는 hash 조회
+                // '전에' 형식(INV-/GIFT-...)을 먼저 검사하므로, WELCOME_ALARMTALK 같은 프로모
+                // 코드는 CODE_NOT_FOUND 가 아니라 INVALID_FORMAT 으로 떨어진다(둘 다 폴백 대상).
+                // 그 외 에러(이미 사용 등)는 그대로 노출하고 폴백하지 않는다.
                 redeemPromoCode(authorization, trimmedCode)
             } else {
                 Log.e(TAG, "Failed to register code", error)
