@@ -58,6 +58,14 @@ export interface Env {
 
 export interface SentryClient {
   captureException(exception: unknown): string;
+  /**
+   * toucan-js 의 Toucan 은 @sentry/core 의 Scope 를 상속해 setTag/setTags 를 제공한다.
+   * 관리자가 Sentry 대시보드에서 에러를 필터·식별할 수 있도록 route/method/uid 같은
+   * 위치 태그를 붙일 때 쓴다. 테스트 목 등 일부 구현체는 captureException 만 가지므로
+   * optional 로 두고, 호출부(logger.ts)에서 옵셔널 체이닝으로 안전하게 호출한다.
+   */
+  setTag?(key: string, value: string | number | boolean | null | undefined): void;
+  setTags?(tags: Record<string, string | number | boolean | null | undefined>): void;
 }
 
 export type AuthVariables = {
