@@ -883,8 +883,11 @@ tts.post('/generate', async (c) => {
       synthesisLanguage = requestedLanguage;
     } else {
       const inferred = inferSynthesisLanguage(synthesisText, sourceLanguage);
-      synthesisLanguage =
-        inferred === 'en' && requestedLanguage !== 'en' ? requestedLanguage : inferred;
+      // 라틴 스크립트라 en 으로 오추론되는 지원언어(fr/it)만 요청 언어로 보정한다.
+      // 기본 ko/ja 보이스에 영어 텍스트를 넣은 경우(inferred='en')는 그대로 en 으로
+      // 합성해 정상 발음을 유지한다(과교정 방지).
+      const latinOverride = requestedLanguage === 'fr' || requestedLanguage === 'it';
+      synthesisLanguage = inferred === 'en' && latinOverride ? requestedLanguage : inferred;
     }
 
     if (synthesisText.length > 200) {

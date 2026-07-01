@@ -231,7 +231,9 @@ describe('GET /stats — 대시보드 통계', () => {
     expect(body.trends.gifts).toEqual({ thisWeek: 2, lastWeek: 8 });
   });
 
-  it('트렌드 쿼리 args에 ISO 날짜 문자열 바인딩', async () => {
+  it('트렌드 쿼리 args에 SQLite datetime 포맷(공백 구분) 날짜 바인딩', async () => {
+    // created_at 은 DEFAULT datetime('now') 로 'YYYY-MM-DD HH:MM:SS'(공백 구분)로 저장되므로
+    // 트렌드 임계값도 같은 포맷으로 바인딩해야 문자열 비교가 경계일에 뒤집히지 않는다.
     pushAllStatsResults();
     const app = buildApp('u-trend');
     await app.request(new Request('http://localhost/stats'));
@@ -239,9 +241,10 @@ describe('GET /stats — 대시보드 통계', () => {
     const trendCall = mockDB.calls[6];
     expect(trendCall.args).toHaveLength(5);
     expect(typeof trendCall.args[0]).toBe('string');
-    expect((trendCall.args[0] as string)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect((trendCall.args[1] as string)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect((trendCall.args[2] as string)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const dateFmt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+    expect((trendCall.args[0] as string)).toMatch(dateFmt);
+    expect((trendCall.args[1] as string)).toMatch(dateFmt);
+    expect((trendCall.args[2] as string)).toMatch(dateFmt);
     expect(trendCall.args[3]).toBe('u-trend');
     expect(trendCall.args[4]).toBe('u-trend');
   });

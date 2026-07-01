@@ -238,15 +238,6 @@ export async function prepareAlarmTextWithVertex(
   if (shouldTag && !shouldTranslate) {
     preparedText =
       normalizeSameLanguageTaggedText(preparedText, trimmed, parsed.tags) ?? fallbackText;
-  } else if (shouldTag && shouldTranslate) {
-    // 번역 경로도 태그 allowlist 를 강제한다. 번역문이라 원문 대조는 불가하므로 텍스트의
-    // 모든 브래킷을 제거한 뒤 승인 태그(APPROVED_TAGS) 하나만 앞에 재조립한다. 미승인/
-    // 비allowlist 태그가 합성 텍스트·delivery_tags 로 새어 낭독되거나 잘못된 딜리버리가
-    // 되는 것을 막는다(동적/동일언어 경로와 동일한 정제 규약).
-    const approvedTag = pickApprovedTag([...extractTags(preparedText), ...parsed.tags]);
-    const bare = normalizeAlarmTextWithoutTags(preparedText);
-    const tagged = approvedTag ? `[${approvedTag}] ${bare}` : bare;
-    preparedText = tagged.length <= 200 ? tagged : bare;
   }
 
   const tags = extractTags(preparedText);
@@ -1258,15 +1249,10 @@ function hasRelationshipLabelLeak(
   const sourcePhrase = new RegExp(`${escapedLabel}\\s*(?:목소리|voice)`, 'i');
   if (sourcePhrase.test(text)) return true;
 
-  // elder→younger 관계(엄마/아빠 등 화자=손윗사람)에서는 화자가 자신을 3인칭 주어로
-  // 지칭하는 한국어 표준 화법("엄마가 아침 차려놨어")이 정상이므로 주어형 조사
-  // (가/이/는/은/도)를 누출 판정에서 제외한다. 메타 누출("엄마 목소리로")은 위
-  // sourcePhrase 가 이미 잡고, 청자 오호칭은 아래 directAddress 가 방어한다.
-  const isElderToYounger = ELDER_TO_YOUNGER_RELATIONSHIPS.some((k) => label.includes(k));
-  const selfRefParticles = isElderToYounger
-    ? '의|로|으로|에게|한테|처럼|입장에서|대신'
-    : '가|이|는|은|도|의|로|으로|에게|한테|처럼|입장에서|대신';
-  const koreanSelfReference = new RegExp(`${escapedLabel}\\s*(?:${selfRefParticles})`, 'i');
+  const koreanSelfReference = new RegExp(
+    `${escapedLabel}\\s*(?:가|이|는|은|도|의|로|으로|에게|한테|처럼|입장에서|대신)`,
+    'i',
+  );
   if (koreanSelfReference.test(text)) return true;
 
   const allowedAddress =
