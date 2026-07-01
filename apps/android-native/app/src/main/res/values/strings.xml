@@ -35,7 +35,6 @@
     <string name="auth_reset_send_code">인증 코드 받기</string>
     <string name="auth_reset_code_sent">코드를 보냈어요</string>
     <string name="auth_reset_new_password">새 비밀번호</string>
-    <string name="auth_reset_password_hint">8자 이상, 영문·숫자 포함</string>
     <string name="auth_reset_submit">비밀번호 변경</string>
     <string name="msg_password_reset_code_sent">인증 코드를 보냈어요. 메일을 확인해 주세요.</string>
     <string name="msg_password_reset_done">비밀번호를 변경했어요. 새 비밀번호로 로그인해 주세요.</string>
@@ -51,8 +50,7 @@
     <string name="auth_landing_preview_pause">미리듣기 일시정지</string>
     <string name="auth_landing_preview_play">목소리 미리듣기</string>
     <string name="auth_landing_tomorrow_morning">내일 아침</string>
-    <string name="auth_landing_sample_message">민지야, 좋은 아침이야 ☀️\n오늘도 좋은 하루 보내자!</string>
-    <string name="auth_landing_sample_voice">· 엄마 목소리</string>
+    <string name="auth_landing_sample_message">민지야, 좋은 아침이야\n오늘도 좋은 하루 보내자!</string>
     <string name="auth_onboarding_next">다음</string>
     <string name="auth_onboarding_skip">건너뛰기</string>
     <string name="auth_onboarding_start">시작하기</string>

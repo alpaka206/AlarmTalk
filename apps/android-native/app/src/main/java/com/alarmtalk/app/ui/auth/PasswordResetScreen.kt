@@ -61,8 +61,10 @@ internal fun PasswordResetScreen(
     val emailLooksValid = Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches()
     val codeSent = codeSentTo != null && codeSentTo == normalizedEmail
     // 서버 정책(@alarmtalk/shared PasswordSchema)과 일치: 8~128자 + 영문·숫자 각 1자 이상.
-    val passwordPolicyValid =
-        password.length in 8..128 && password.any { it.isLetter() } && password.any { it.isDigit() }
+    val passwordAtLeastMin = password.length >= 8
+    val passwordUnderMax = password.length <= 128
+    val passwordHasLetterAndDigit = password.any { it.isLetter() } && password.any { it.isDigit() }
+    val passwordPolicyValid = passwordAtLeastMin && passwordUnderMax && passwordHasLetterAndDigit
     val canConfirm = codeSent && code.length == 6 && passwordPolicyValid
 
     Column(
@@ -180,11 +182,16 @@ internal fun PasswordResetScreen(
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                text = stringResource(R.string.auth_reset_password_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PasswordRuleRow(
+                    text = stringResource(R.string.auth_password_rule_min),
+                    satisfied = passwordAtLeastMin,
+                )
+                PasswordRuleRow(
+                    text = stringResource(R.string.auth_password_rule_alnum),
+                    satisfied = passwordHasLetterAndDigit,
+                )
+            }
 
             Button(
                 onClick = { onConfirm(email, code, password) },

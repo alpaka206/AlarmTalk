@@ -264,12 +264,6 @@ private fun AlarmIdentityPreview(colors: LandingPalette) {
                 progress = playbackProgress,
                 isPlaying = isPlaying,
             )
-            Text(
-                text = stringResource(R.string.auth_landing_sample_voice),
-                style = MaterialTheme.typography.labelMedium,
-                color = colors.muted,
-                modifier = Modifier.align(Alignment.End),
-            )
         }
     }
 }

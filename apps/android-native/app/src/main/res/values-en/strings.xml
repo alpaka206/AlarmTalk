@@ -32,7 +32,6 @@
     <string name="auth_reset_send_code">Send code</string>
     <string name="auth_reset_code_sent">Code sent</string>
     <string name="auth_reset_new_password">New password</string>
-    <string name="auth_reset_password_hint">8+ characters, with letters and numbers</string>
     <string name="auth_reset_submit">Reset password</string>
     <string name="msg_password_reset_code_sent">We sent a code. Check your email.</string>
     <string name="msg_password_reset_done">Password changed. Sign in with your new password.</string>
@@ -48,8 +47,7 @@
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
     <string name="auth_landing_tomorrow_morning">Tomorrow morning</string>
-    <string name="auth_landing_sample_message">Morning, Minji ☀️\nHave a wonderful day!</string>
-    <string name="auth_landing_sample_voice">· Mom\'s voice</string>
+    <string name="auth_landing_sample_message">Morning, Minji\nHave a wonderful day!</string>
     <string name="auth_onboarding_next">Next</string>
     <string name="auth_onboarding_skip">Skip</string>
     <string name="auth_onboarding_start">Get started</string>

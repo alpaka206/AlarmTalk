@@ -392,7 +392,7 @@ private fun PasswordRules(
 }
 
 @Composable
-private fun PasswordRuleRow(text: String, satisfied: Boolean) {
+internal fun PasswordRuleRow(text: String, satisfied: Boolean) {
     val color = if (satisfied) {
         MaterialTheme.colorScheme.primary
     } else {
