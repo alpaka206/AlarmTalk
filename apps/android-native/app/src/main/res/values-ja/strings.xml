@@ -32,7 +32,6 @@
     <string name="auth_reset_send_code">認証コードを受け取る</string>
     <string name="auth_reset_code_sent">コードを送信しました</string>
     <string name="auth_reset_new_password">新しいパスワード</string>
-    <string name="auth_reset_password_hint">8文字以上、英字と数字を含む</string>
     <string name="auth_reset_submit">パスワードを変更</string>
     <string name="msg_password_reset_code_sent">認証コードを送りました。メールをご確認ください。</string>
     <string name="msg_password_reset_done">パスワードを変更しました。新しいパスワードでログインしてください。</string>
@@ -48,8 +47,7 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_tomorrow_morning">明日の朝</string>
-    <string name="auth_landing_sample_message">みんじ、おはよう ☀️\n今日も素敵な一日を！</string>
-    <string name="auth_landing_sample_voice">· ママの声</string>
+    <string name="auth_landing_sample_message">みんじ、おはよう\n今日も素敵な一日を！</string>
     <string name="auth_onboarding_next">次へ</string>
     <string name="auth_onboarding_skip">スキップ</string>
     <string name="auth_onboarding_start">始める</string>
