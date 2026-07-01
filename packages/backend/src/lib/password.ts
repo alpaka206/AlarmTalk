@@ -40,5 +40,13 @@ export async function verifyPassword(
   pepper: string,
 ): Promise<boolean> {
   if (!hash) return false;
-  return bcrypt.compare(await prehashPassword(password, pepper), hash);
+  // 신 스킴: bcrypt(SHA-256(password::pepper)).
+  if (await bcrypt.compare(await prehashPassword(password, pepper), hash)) {
+    return true;
+  }
+  // 레거시 폴백: pre-hash 도입 이전에 저장된 해시는 bcrypt(password::pepper) 였다.
+  // 기존 사용자가 잠기지 않도록 옛 스킴으로도 검증한다(출시 전 DB 초기화 시 자연 소멸).
+  // 틀린 비밀번호·부재 사용자(DUMMY_BCRYPT_HASH)는 두 스킴 모두 실패해 항상 2회
+  // 비교하므로, 로그인 실패 경로의 타이밍 균일성(계정 열거 방어)은 유지된다.
+  return bcrypt.compare(applyPepper(password, pepper), hash);
 }
