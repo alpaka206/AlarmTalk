@@ -9,6 +9,7 @@ import { bodyLimitMiddleware } from './middleware/bodyLimit';
 import { privateCache, noStore, publicCache } from './middleware/cache';
 import { securityHeadersMiddleware } from './middleware/securityHeaders';
 import { sentryMiddleware } from './middleware/sentry';
+import { Toucan } from 'toucan-js';
 import { getDB, initDB } from './lib/db';
 import { selectFiringAlarms, type ScheduledAlarm } from './lib/scheduler';
 import { sendAlarmPush } from './lib/fcm';
@@ -257,9 +258,24 @@ app.onError((err, c) => {
 
 // Cloudflare Workers Cron Trigger 진입점 — wrangler.toml [triggers] crons = ["*/5 * * * *"] (5분 주기).
 // 주기를 바꾸면 lib/scheduler.ts 의 CRON_WINDOW_MINUTES 도 함께 바꿔야 한다.
-async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
+async function scheduled(
+  event: ScheduledEvent,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void> {
   const db = getDB(env);
   const now = new Date(event.scheduledTime);
+
+  // cron 은 HTTP 미들웨어(sentryMiddleware)를 타지 않으므로 Sentry 클라이언트를 직접
+  // 만든다(DSN 미설정 시 no-op). captureCron 은 구조화 로그 + Sentry 캡처를 함께 해
+  // 정상 복구되지 않는 cron 오류를 관리자가 즉시 인지하게 한다.
+  const sentry = env.SENTRY_DSN
+    ? new Toucan({ dsn: env.SENTRY_DSN, context: ctx, environment: env.ENVIRONMENT || 'production' })
+    : null;
+  const captureCron = (at: string, err: unknown): void => {
+    logStructured('error', { at, error: String(err) });
+    sentry?.captureException(err);
+  };
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
@@ -267,7 +283,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     await cleanupExpiredAudio(db, now);
     await drainExternalDeletions(db, env);
   } catch (err) {
-    logStructured('error', { at: 'scheduled.audio_retention', error: String(err) });
+    captureCron('scheduled.audio_retention', err);
   }
 
   // 만료된 이메일 인증코드(PII) 정리 — 무한 보존 방지. expires_at 은 ISO 문자열로 기록되므로
@@ -279,7 +295,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
       args: [pruneBefore],
     });
   } catch (err) {
-    logStructured('error', { at: 'scheduled.email_code_prune', error: String(err) });
+    captureCron('scheduled.email_code_prune', err);
   }
 
   // 구독 만료 / 결제일 도달 정리. 알람 푸시보다 먼저 처리해 plan 다운그레이드를 반영.
@@ -287,7 +303,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     const { processSubscriptionExpiry } = await import('./lib/billing-cancel');
     await processSubscriptionExpiry(db, now);
   } catch (err) {
-    logStructured('error', { at: 'scheduled.subscription_expiry', error: String(err) });
+    captureCron('scheduled.subscription_expiry', err);
   }
 
   // 탈퇴 유예(30일) 경과 계정 영구파기 (개인정보보호법 제21조). 파기 전 결제·구독 기록은
@@ -317,7 +333,7 @@ async function scheduled(event: ScheduledEvent, env: Env): Promise<void> {
       logStructured('info', { at: 'scheduled.account_purge', purged: due.rows.length });
     }
   } catch (err) {
-    logStructured('error', { at: 'scheduled.account_purge', error: String(err) });
+    captureCron('scheduled.account_purge', err);
   }
 
   const result = await db.execute(
