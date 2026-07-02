@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -172,8 +173,8 @@ private val BrandCtaStart = Color(0xFF3D74FF)
 private val BrandCtaEnd = Color(0xFF45B4F5)
 private val GlassFill = Color(0x21FFFFFF)
 private val GlassBorder = Color(0x2EFFFFFF)
-private val TextOnScene = Color(0xFFF8FAFF)
-private val TextOnSceneDim = Color(0xC8E8EEFA)
+internal val TextOnScene = Color(0xFFF8FAFF)
+internal val TextOnSceneDim = Color(0xC8E8EEFA)
 
 /** 랜딩 장면 — 온보딩 3(황금 아침)과 같은 화풍, 태양만 살짝 작게.
  *  태양은 오른쪽으로 미러링: 왼쪽에 두면 윤슬이 좌하단 헤드라인 글자를 지나간다. */
@@ -182,7 +183,7 @@ private val LandingScene = GoldScene.copy(sunRadiusFrac = 0.105f, sunXFrac = 0.6
 /** 랜딩 강조(키워드·플레이버튼·파형)용 브랜드 포인트 — 다크 테마 brand primary 와 동일.
  *  장면이 항상 어두운 고정 일러스트라 colorScheme 분기 없이 고정값 사용(라이트 테마
  *  primary #175FB0 은 어두운 바다 위에서 대비가 안 나온다). */
-private val BrandAccentOnScene = Color(0xFFA6D2FF)
+internal val BrandAccentOnScene = Color(0xFFA6D2FF)
 
 /**
  * 첫 진입 랜딩 — 가치 제안(일출 장면 + 목소리 미리듣기)만 보여주고, 단일 "시작하기" 로
@@ -815,14 +816,16 @@ private fun MiniWaveform(progress: Float, accent: Color) {
     }
 }
 
-/** 블루 그라데이션 CTA(랜딩 브랜드 비주얼 예외). */
+/** 블루 그라데이션 CTA(랜딩 브랜드 비주얼 예외). 랜딩·온보딩·로그인 공용. */
 @Composable
-private fun GradientCta(text: String, onClick: () -> Unit) {
+internal fun GradientCta(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .height(56.dp)
+            .alpha(if (enabled) 1f else 0.45f),
         shape = WakerButtonShape,
         color = Color.Transparent,
     ) {

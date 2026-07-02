@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -69,85 +70,89 @@ internal fun ConsentScreen(
         marketing = value
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding)
-            .padding(horizontal = 24.dp),
-    ) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = stringResource(R.string.auth_consent_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.auth_consent_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
+    AuthBackdrop {
         Column(
             modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = 24.dp),
         ) {
             Spacer(Modifier.height(24.dp))
-            ConsentRow(
-                checked = allChecked,
-                onCheckedChange = ::setAll,
-                label = stringResource(R.string.auth_consent_agree_all),
-                emphasized = true,
+            Text(
+                text = stringResource(R.string.auth_consent_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = TextOnScene,
             )
-            Spacer(Modifier.height(4.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(4.dp))
-            ConsentRow(
-                checked = age14,
-                onCheckedChange = { age14 = it },
-                label = stringResource(R.string.auth_consent_age14),
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.auth_consent_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextOnSceneDim,
             )
-            ConsentRow(
-                checked = terms,
-                onCheckedChange = { terms = it },
-                label = stringResource(R.string.auth_consent_terms),
-                onOpenDetail = onOpenTerms,
-            )
-            ConsentRow(
-                checked = privacy,
-                onCheckedChange = { privacy = it },
-                label = stringResource(R.string.auth_consent_privacy),
-                onOpenDetail = onOpenPrivacy,
-            )
-            ConsentRow(
-                checked = voiceBiometric,
-                onCheckedChange = { voiceBiometric = it },
-                label = stringResource(R.string.auth_consent_voice_biometric),
-                description = stringResource(R.string.auth_consent_voice_biometric_desc),
-            )
-            ConsentRow(
-                checked = overseasTransfer,
-                onCheckedChange = { overseasTransfer = it },
-                label = stringResource(R.string.auth_consent_overseas_transfer),
-                description = stringResource(R.string.auth_consent_overseas_transfer_desc),
-            )
-            ConsentRow(
-                checked = marketing,
-                onCheckedChange = { marketing = it },
-                label = stringResource(R.string.auth_consent_marketing),
-            )
-        }
 
-        Button(
-            onClick = { onAgree(marketing, voiceBiometric, overseasTransfer) },
-            enabled = allRequiredChecked && !busy,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp)
-                .height(50.dp),
-        ) {
-            Text(if (busy) stringResource(R.string.auth_consent_processing) else stringResource(R.string.auth_consent_agree_and_start))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Spacer(Modifier.height(24.dp))
+                ConsentRow(
+                    checked = allChecked,
+                    onCheckedChange = ::setAll,
+                    label = stringResource(R.string.auth_consent_agree_all),
+                    emphasized = true,
+                )
+                Spacer(Modifier.height(4.dp))
+                HorizontalDivider(color = AuthLineSoft)
+                Spacer(Modifier.height(4.dp))
+                ConsentRow(
+                    checked = age14,
+                    onCheckedChange = { age14 = it },
+                    label = stringResource(R.string.auth_consent_age14),
+                )
+                ConsentRow(
+                    checked = terms,
+                    onCheckedChange = { terms = it },
+                    label = stringResource(R.string.auth_consent_terms),
+                    onOpenDetail = onOpenTerms,
+                )
+                ConsentRow(
+                    checked = privacy,
+                    onCheckedChange = { privacy = it },
+                    label = stringResource(R.string.auth_consent_privacy),
+                    onOpenDetail = onOpenPrivacy,
+                )
+                ConsentRow(
+                    checked = voiceBiometric,
+                    onCheckedChange = { voiceBiometric = it },
+                    label = stringResource(R.string.auth_consent_voice_biometric),
+                    description = stringResource(R.string.auth_consent_voice_biometric_desc),
+                )
+                ConsentRow(
+                    checked = overseasTransfer,
+                    onCheckedChange = { overseasTransfer = it },
+                    label = stringResource(R.string.auth_consent_overseas_transfer),
+                    description = stringResource(R.string.auth_consent_overseas_transfer_desc),
+                )
+                ConsentRow(
+                    checked = marketing,
+                    onCheckedChange = { marketing = it },
+                    label = stringResource(R.string.auth_consent_marketing),
+                )
+            }
+
+            Box(Modifier.padding(vertical = 16.dp)) {
+                GradientCta(
+                    text = if (busy) {
+                        stringResource(R.string.auth_consent_processing)
+                    } else {
+                        stringResource(R.string.auth_consent_agree_and_start)
+                    },
+                    onClick = { onAgree(marketing, voiceBiometric, overseasTransfer) },
+                    enabled = allRequiredChecked && !busy,
+                )
+            }
         }
     }
 }
@@ -159,13 +164,15 @@ internal fun ConsentScreen(
  */
 @Composable
 internal fun ConsentCheckLoadingScreen(contentPadding: PaddingValues) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-        contentAlignment = Alignment.Center,
-    ) {
-        CircularProgressIndicator()
+    AuthBackdrop {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = BrandAccentOnScene)
+        }
     }
 }
 
@@ -185,7 +192,15 @@ private fun ConsentRow(
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = CheckboxDefaults.colors(
+                checkedColor = BrandAccentOnScene,
+                checkmarkColor = Color(0xFF0A1428),
+                uncheckedColor = AuthLine,
+            ),
+        )
         Spacer(Modifier.height(0.dp))
         Column(
             modifier = Modifier.weight(1f),
@@ -194,18 +209,21 @@ private fun ConsentRow(
                 text = label,
                 style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
                 fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
+                color = TextOnScene,
             )
             if (description != null) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = AuthTextMuted,
                 )
             }
         }
         if (onOpenDetail != null) {
-            TextButton(onClick = onOpenDetail) { Text(stringResource(R.string.auth_consent_view)) }
+            TextButton(onClick = onOpenDetail, colors = authTextButtonColors()) {
+                Text(stringResource(R.string.auth_consent_view))
+            }
         }
     }
 }
