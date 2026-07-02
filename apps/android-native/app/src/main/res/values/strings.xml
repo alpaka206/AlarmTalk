@@ -45,11 +45,13 @@
     <string name="auth_landing_first_time">처음 사용하시나요?</string>
     <string name="auth_landing_get_started">시작하기</string>
     <string name="auth_landing_get_started_desc">로그인하면 목소리 알람을 만들 수 있어요.</string>
-    <string name="auth_landing_headline">좋아하는 목소리로\n깨어나는 알람</string>
+    <string name="auth_landing_headline_pre">"좋아하는 "</string>
+    <string name="auth_landing_headline_keyword">목소리</string>
+    <string name="auth_landing_headline_post">로\n깨어나는 아침</string>
+    <string name="auth_landing_subcopy">매일 아침, 그 목소리가 새로운 한마디로 깨워드려요.</string>
     <string name="auth_landing_login_with_email">이메일로 로그인</string>
     <string name="auth_landing_preview_pause">미리듣기 일시정지</string>
     <string name="auth_landing_preview_play">목소리 미리듣기</string>
-    <string name="auth_landing_tomorrow_morning">내일 아침</string>
     <string name="auth_landing_sample_message">민지야, 좋은 아침이야\n오늘도 좋은 하루 보내자!</string>
     <string name="auth_onboarding_next">다음</string>
     <string name="auth_onboarding_skip">건너뛰기</string>

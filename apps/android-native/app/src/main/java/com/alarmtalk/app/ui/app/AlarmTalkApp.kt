@@ -513,8 +513,7 @@ internal fun AlarmTalkApp(
           when (val route = authRoute) {
               AuthRoute.Landing -> LandingScreen(
                   contentPadding = padding,
-                  onLogin = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
-                  onRegister = { authNavigate(AuthRoute.Auth(AuthMode.Register)) },
+                  onStart = { authNavigate(AuthRoute.Auth(AuthMode.Login)) },
               )
               AuthRoute.ResetPassword -> PasswordResetScreen(
                   contentPadding = padding,

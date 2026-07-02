@@ -42,11 +42,13 @@
     <string name="auth_landing_first_time">はじめてのご利用ですか？</string>
     <string name="auth_landing_get_started">始める</string>
     <string name="auth_landing_get_started_desc">ログインすると声のアラームを作成できます。</string>
-    <string name="auth_landing_headline">大好きな声で\n目覚めるアラーム</string>
+    <string name="auth_landing_headline_pre">大好きな</string>
+    <string name="auth_landing_headline_keyword">声</string>
+    <string name="auth_landing_headline_post">で\n目覚める朝</string>
+    <string name="auth_landing_subcopy">毎朝、その声が新しいひとことで起こしてくれます。</string>
     <string name="auth_landing_login_with_email">メールでログイン</string>
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
-    <string name="auth_landing_tomorrow_morning">明日の朝</string>
     <string name="auth_landing_sample_message">みんじ、おはよう\n今日も素敵な一日を！</string>
     <string name="auth_onboarding_next">次へ</string>
     <string name="auth_onboarding_skip">スキップ</string>
