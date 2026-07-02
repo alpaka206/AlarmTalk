@@ -53,9 +53,6 @@
     <string name="auth_landing_preview_pause">미리듣기 일시정지</string>
     <string name="auth_landing_preview_play">목소리 미리듣기</string>
     <string name="auth_landing_sample_message">민지야, 좋은 아침이야\n오늘도 좋은 하루 보내자!</string>
-    <string name="auth_onboarding_next">다음</string>
-    <string name="auth_onboarding_skip">건너뛰기</string>
-    <string name="auth_onboarding_start">시작하기</string>
     <string name="auth_password_hide">비밀번호 숨기기</string>
     <string name="auth_password_mismatch">비밀번호가 일치하지 않아요.</string>
     <string name="auth_password_rule_alnum">영문·숫자 포함</string>
@@ -1011,10 +1008,6 @@
     <string name="msg2_promo_fail_code_exhausted">사용 가능 횟수가 모두 소진된 프로모 코드예요</string>
     <string name="msg2_promo_fail_owns_active_group">이미 이용 중인 그룹 이용권이 있어 프로모 코드를 적용할 수 없어요</string>
     <string name="msg2_promo_fail_generic">프로모 코드를 적용하지 못했어요. 잠시 후 다시 시도해 주세요</string>
-    <string name="misc2_onboarding_voice_title">좋아하는 목소리로 깨어나요</string>
-    <string name="misc2_onboarding_voice_desc">녹음하거나 만든 목소리로 내 알람을 울릴 수 있어요.</string>
-    <string name="misc2_onboarding_together_title">소중한 사람들과 함께</string>
-    <string name="misc2_onboarding_together_desc">목소리와 메시지를 주고받고 서로의 아침을 챙길 수 있어요.</string>
     <string name="onb_voice_title">기본 목소리를 골라보세요</string>
     <string name="onb_voice_subtitle">마음에 드는 하나면 충분해요.\n나중에 언제든 바꿀 수 있어요.</string>
     <string name="onb_voice_loading">목소리를 불러오는 중이에요…</string>

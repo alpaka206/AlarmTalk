@@ -249,7 +249,7 @@ internal fun AlarmTalkApp(
     LoginPermissionGate(
         authSession = authSession,
         enabled = authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-            !viewModel.showOnboarding && !viewModel.showVoiceSetup,
+            !viewModel.showVoiceSetup,
         permissions = permissions,
         onRequestPermission = ::requestPermission,
         onRequestAllPermissions = ::requestAllMissingPermissions,
@@ -272,7 +272,7 @@ internal fun AlarmTalkApp(
 
     LaunchedEffect(authSession?.token) {
         if (authSession != null) {
-            viewModel.checkOnboardingFor(authSession.user.id)
+            viewModel.checkVoiceSetupFor(authSession.user.id)
             viewModel.checkAccountStatus()
             viewModel.checkConsentStatus()
             viewModel.preloadVoiceProfiles()
@@ -483,7 +483,7 @@ internal fun AlarmTalkApp(
     Scaffold(
         bottomBar = {
             if (authSession != null && viewModel.consentChecked && !viewModel.needsConsent &&
-                !viewModel.showOnboarding && !viewModel.updateRequired &&
+                !viewModel.updateRequired &&
                 !viewModel.pendingDeletion && currentTab != null
             ) {
                 AlarmTalkBottomBar(
@@ -573,14 +573,7 @@ internal fun AlarmTalkApp(
           )
           return@Scaffold
       }
-      if (viewModel.showOnboarding) {
-          OnboardingScreen(
-              contentPadding = padding,
-              onComplete = viewModel::completeOnboarding,
-          )
-          return@Scaffold
-      }
-      // 온보딩 직후 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
+      // 첫 로그인 "목소리 고르기" — 기본 목소리 4개를 다 펼치는 대신 1개를 미리듣고 고른다.
       if (viewModel.showVoiceSetup) {
           // 시스템 음성이 비어 있으면(무료 플랜 lock 등으로) 다시 받아와 빈 로딩 화면에 갇히지 않게 한다.
           LaunchedEffect(Unit) { viewModel.preloadVoiceProfiles() }
@@ -595,6 +588,13 @@ internal fun AlarmTalkApp(
               onSkip = viewModel::skipVoiceSetup,
           )
           return@Scaffold
+      }
+      // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 연다 — 별도 온보딩 화면 대신
+      // 진짜 설정 화면(+첫 방문 코치마크)에서 직접 첫 알람을 맞춰보게 한다.
+      LaunchedEffect(viewModel.navigateFirstAlarmEditorTick) {
+          if (viewModel.navigateFirstAlarmEditorTick > 0) {
+              navController.navigate(AppRoute.alarmCreate(familyTargetMode = false))
+          }
       }
       Box(modifier = Modifier.fillMaxSize()) {
           NavHost(

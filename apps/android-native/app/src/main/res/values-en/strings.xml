@@ -50,9 +50,6 @@
     <string name="auth_landing_preview_pause">Pause preview</string>
     <string name="auth_landing_preview_play">Preview voice</string>
     <string name="auth_landing_sample_message">Morning, Minji\nHave a wonderful day!</string>
-    <string name="auth_onboarding_next">Next</string>
-    <string name="auth_onboarding_skip">Skip</string>
-    <string name="auth_onboarding_start">Get started</string>
     <string name="auth_password_hide">Hide password</string>
     <string name="auth_password_mismatch">Passwords don\'t match.</string>
     <string name="auth_password_rule_alnum">Letters and numbers</string>
@@ -1011,10 +1008,6 @@
     <string name="msg2_promo_fail_code_exhausted">This promo code has reached its usage limit</string>
     <string name="msg2_promo_fail_owns_active_group">You already have an active group plan, so this promo code can\'t be applied</string>
     <string name="msg2_promo_fail_generic">Couldn\'t apply the promo code. Please try again in a moment</string>
-    <string name="misc2_onboarding_voice_title">Wake up to a voice you love</string>
-    <string name="misc2_onboarding_voice_desc">Set your alarm to a voice you record or create.</string>
-    <string name="misc2_onboarding_together_title">Together with the people you love</string>
-    <string name="misc2_onboarding_together_desc">Share voices and messages, and look after each other\'s mornings.</string>
     <string name="onb_voice_title">Pick your default voice</string>
     <string name="onb_voice_subtitle">Just one you like is enough.\nYou can change it anytime later.</string>
     <string name="onb_voice_loading">Loading voices…</string>

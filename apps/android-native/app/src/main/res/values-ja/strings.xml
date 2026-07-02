@@ -50,9 +50,6 @@
     <string name="auth_landing_preview_pause">プレビューを一時停止</string>
     <string name="auth_landing_preview_play">声をプレビュー</string>
     <string name="auth_landing_sample_message">みんじ、おはよう\n今日も素敵な一日を！</string>
-    <string name="auth_onboarding_next">次へ</string>
-    <string name="auth_onboarding_skip">スキップ</string>
-    <string name="auth_onboarding_start">始める</string>
     <string name="auth_password_hide">パスワードを隠す</string>
     <string name="auth_password_mismatch">パスワードが一致しません。</string>
     <string name="auth_password_rule_alnum">英字と数字を含む</string>
@@ -1011,10 +1008,6 @@
     <string name="msg2_promo_fail_code_exhausted">利用回数の上限に達したプロモコードです</string>
     <string name="msg2_promo_fail_owns_active_group">すでに利用中のグループプランがあるため、プロモコードを適用できません</string>
     <string name="msg2_promo_fail_generic">プロモコードを適用できませんでした。しばらくしてからもう一度お試しください</string>
-    <string name="misc2_onboarding_voice_title">大好きな声で目覚めましょう</string>
-    <string name="misc2_onboarding_voice_desc">録音したり作ったりした声で、自分のアラームを鳴らせます。</string>
-    <string name="misc2_onboarding_together_title">大切な人と一緒に</string>
-    <string name="misc2_onboarding_together_desc">声やメッセージを送り合って、お互いの朝を見守れます。</string>
     <string name="onb_voice_title">基本の声を選んでください</string>
     <string name="onb_voice_subtitle">お気に入りの1つだけでOKです。\nあとからいつでも変更できます。</string>
     <string name="onb_voice_loading">声を読み込んでいます…</string>

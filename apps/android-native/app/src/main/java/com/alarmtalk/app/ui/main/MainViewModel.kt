@@ -233,13 +233,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var deleteAccountConfirmOpen by mutableStateOf(false)
         internal set
 
-    private val onboardingPrefs = application.getSharedPreferences("voice_alarm_onboarding", android.content.Context.MODE_PRIVATE)
     private val defaultVoiceStore = com.alarmtalk.app.data.DefaultVoicePreferenceStore(application)
-    var showOnboarding by mutableStateOf(false)
+
+    // 첫 로그인 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
+    var showVoiceSetup by mutableStateOf(false)
         internal set
 
-    // 온보딩 직후 "목소리 고르기" 스텝 표시 여부. 기본 목소리를 아직 안 고른 사용자에게만 1회.
-    var showVoiceSetup by mutableStateOf(false)
+    // 목소리 선택 직후 실제 알람 에디터를 1회 자동으로 열기 위한 one-shot 틱.
+    // (별도 온보딩 화면 대신, 진짜 설정 화면 + 첫 방문 코치마크로 첫 알람을 만들게 한다)
+    var navigateFirstAlarmEditorTick by mutableStateOf(0)
         internal set
 
     // 사용자가 고른 기본 목소리 id(시스템 보이스). 새 알람 에디터 미리선택 + 목소리 탭 표시에 사용.
@@ -324,26 +326,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         duplicateAlarmPrompt = null
     }
 
-    fun checkOnboardingFor(userId: String) {
+    fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
-        val seen = onboardingPrefs.getStringSet("seen_users", emptySet()) ?: emptySet()
-        val shouldShowOnboarding = userId !in seen
-        showOnboarding = shouldShowOnboarding
         defaultVoiceId = defaultVoiceStore.read(userId)
         defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
-        showVoiceSetup = !shouldShowOnboarding && !defaultVoiceStore.hasCompletedSetup(userId)
-    }
-
-    fun completeOnboarding() {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        if (userId != null) {
-            val seen = onboardingPrefs.getStringSet("seen_users", emptySet())?.toMutableSet() ?: mutableSetOf()
-            seen += userId
-            onboardingPrefs.edit().putStringSet("seen_users", seen).apply()
-        }
-        showOnboarding = false
-        // 온보딩 직후, 기본 목소리를 아직 안 골랐으면 "목소리 고르기" 스텝을 띄운다.
-        showVoiceSetup = userId != null && !defaultVoiceStore.hasCompletedSetup(userId)
+        showVoiceSetup = !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
     /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
@@ -351,6 +338,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         setDefaultVoice(voiceId)
         setDefaultListenerTitle(listenerTitle)
         showVoiceSetup = false
+        // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
+        navigateFirstAlarmEditorTick++
     }
 
     /** 목소리 스텝을 건너뛸 때(저장 없이 닫기). 나중에 목소리 탭에서 고를 수 있다. */
