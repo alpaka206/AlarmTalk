@@ -9,7 +9,6 @@ struct SettingsView: View {
     @EnvironmentObject private var socialFeatures: SocialFeatureViewModel
     @EnvironmentObject private var holidayStore: HolidayStore
     @AppStorage(AlarmTalkThemeMode.storageKey) private var themeModeRaw = AlarmTalkThemeMode.system.rawValue
-    @Environment(\.openURL) private var openURL
 
     @State private var nicknameDraft: String = ""
     @State private var themeDialogOpen: Bool = false
@@ -75,32 +74,35 @@ struct SettingsView: View {
                 }
                 .settingsCard(title: "랜덤 문구 정보")
 
-                // Android `SettingsScreen.kt:145-159` 의 '약관 및 정책' 카드 — 로그인 여부와 무관하게 노출.
-                VStack(alignment: .leading, spacing: 0) {
-                    SettingsValueButton(
-                        label: "서비스 이용약관",
-                        action: { openURL(Self.termsURL) }
-                    )
-                    Divider()
-                    SettingsValueButton(
-                        label: "개인정보 처리방침",
-                        action: { openURL(Self.privacyURL) }
-                    )
-                }
-                .settingsCard(title: "약관 및 정책")
-
                 if let user = auth.session?.user {
-                    // Android `SettingsScreen.kt:161-190` 의 '마케팅 수신' 카드 — 로그인 상태에서만.
-                    MarketingConsentSection()
-
                     AccountPanel(
                         nicknameDraft: $nicknameDraft,
                         user: user,
                         onSignOut: onClose
                     )
 
+                    MarketingConsentSection()
+                }
+
+                if auth.session?.user != nil {
                     DeleteAccountPanel(onDeleted: onClose)
                 }
+
+                HStack(spacing: 6) {
+                    Link("서비스 이용약관", destination: Self.termsURL)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+
+                    Text("·")
+                        .font(.footnote)
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+
+                    Link("개인정보 처리방침", destination: Self.privacyURL)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(AlarmTalkTheme.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 4)
             }
             .padding(20)
         }
@@ -445,7 +447,6 @@ private struct WeatherLocationPreferenceSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSheetHeader(
                 title: "날씨 지역",
-                subtitle: "날씨가 들어간 랜덤 깨움말에 사용할 지역이에요.",
                 onDismiss: onDismiss
             )
             WeatherLocationInputFields(

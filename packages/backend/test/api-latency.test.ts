@@ -231,13 +231,14 @@ describe('API latency baselines', () => {
   });
 
   describe('POST /code/register', () => {
-    it('rejects invalid code format within threshold', async () => {
+    it('resolves an unknown code (invite/promo fallback) within threshold', async () => {
       mockDB.pushResult([{ id: 'pk-1' }]); // user lookup
       const app = buildApp('/code', codeRoutes);
       const { res, ms } = await measureLatency(() =>
         app.request(jsonReq('POST', '/code/register', { code: 'INVALID' })),
       );
-      expect(res.status).toBe(400);
+      // 통합 디스패치: voucher/초대 포맷이 아닌 코드는 프로모 조회까지 간 뒤 404 로 끝난다.
+      expect(res.status).toBe(404);
       expect(ms).toBeLessThan(LATENCY_THRESHOLD_MS);
     });
   });

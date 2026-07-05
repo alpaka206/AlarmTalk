@@ -110,11 +110,13 @@ describe('POST /code/register common validation', () => {
     expect((await res.json()).error_code).toBe('USER_NOT_FOUND');
   });
 
-  it('rejects legacy numeric invite codes because code registration is voucher_codes only', async () => {
+  it('falls through group-invite and promo lookup for legacy numeric codes and returns CODE_NOT_FOUND', async () => {
+    // 통합 디스패치: 레거시 숫자 코드는 voucher 포맷이 아니므로 가족그룹 초대 조회
+    // (plan_group_invites, 빈 결과) → 프로모 조회(빈 결과) 순으로 폴백 후 404 로 끝난다.
     pushUser();
     const res = await buildApp().request(jsonReq('POST', '/code/register', { code: '123456' }));
-    expect(res.status).toBe(400);
-    expect((await res.json()).error_code).toBe('INVALID_FORMAT');
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
   });
 });
 

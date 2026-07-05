@@ -2228,23 +2228,6 @@
         }
       }
     },
-    "날씨가 들어간 랜덤 깨움말에 사용할 지역이에요.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The region used for weather-based random wake-up phrases."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "天気を含むランダムなお目覚めメッセージに使う地域です。"
-          }
-        }
-      }
-    },
     "날씨가 들어간 문구를 쓰려면 지역을 입력해 주세요.": {
       "extractionState": "manual",
       "localizations": {

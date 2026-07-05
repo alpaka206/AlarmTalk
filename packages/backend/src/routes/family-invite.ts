@@ -10,6 +10,7 @@ import {
   buildInviteWebUrl,
 } from '../lib/invites';
 import { resolveUserPk } from '../lib/family-helpers';
+import { acceptFamilyInvite, FamilyInviteAcceptError } from '../lib/family-invite-accept';
 
 const familyInvite = new Hono<AppEnv>();
 
@@ -140,112 +141,18 @@ familyInvite.post('/invites/:code/accept', async (c) => {
   const userPk = await resolveUserPk(db, userId);
   if (!userPk) return c.json({ error: '사용자를 찾을 수 없습니다', error_code: 'USER_NOT_FOUND' }, 404);
 
-  const inviteRes = await db.execute({
-    sql: `SELECT id, plan_group_id, inviter_user_id, status, expires_at
-          FROM plan_group_invites WHERE code = ?`,
-    args: [code],
-  });
-  if (inviteRes.rows.length === 0) {
-    return c.json({ error: '해당 초대 코드를 찾을 수 없습니다', error_code: 'INVITE_NOT_FOUND' }, 404);
+  try {
+    const result = await acceptFamilyInvite(db, { userPk, code });
+    return c.json({ success: true, ...result });
+  } catch (error) {
+    if (error instanceof FamilyInviteAcceptError) {
+      return c.json(
+        { error: error.message, error_code: error.errorCode },
+        error.status as 400 | 404 | 409,
+      );
+    }
+    throw error;
   }
-  const invite = inviteRes.rows[0]!;
-  const inviteId = String(invite.id);
-  const planGroupId = String(invite.plan_group_id);
-  const inviterUserId = String(invite.inviter_user_id);
-  const status = String(invite.status);
-
-  if (status === 'used') {
-    return c.json({ error: '이미 사용된 초대 코드입니다', error_code: 'CODE_ALREADY_USED' }, 409);
-  }
-  if (status === 'revoked') {
-    return c.json({ error: '취소된 초대 코드입니다', error_code: 'CODE_REVOKED' }, 409);
-  }
-  if (status === 'expired') {
-    return c.json({ error: '만료된 초대 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
-  }
-
-  const now = new Date();
-  const expiresAt = new Date(String(invite.expires_at));
-  if (Number.isFinite(expiresAt.getTime()) && expiresAt.getTime() <= now.getTime()) {
-    await db.execute({
-      sql: `UPDATE plan_group_invites SET status = 'expired' WHERE id = ?`,
-      args: [inviteId],
-    });
-    return c.json({ error: '만료된 초대 코드입니다', error_code: 'CODE_EXPIRED' }, 409);
-  }
-
-  if (inviterUserId === userPk) {
-    return c.json({ error: '본인이 발급한 초대는 수락할 수 없습니다', error_code: 'SELF_ACCEPT' }, 400);
-  }
-
-  const memberRes = await db.execute({
-    sql: `SELECT id FROM plan_group_members WHERE plan_group_id = ? AND user_id = ?`,
-    args: [planGroupId, userPk],
-  });
-  if (memberRes.rows.length > 0) {
-    return c.json({ error: '이미 해당 그룹 멤버입니다', error_code: 'ALREADY_MEMBER' }, 409);
-  }
-
-  const groupRes = await db.execute({
-    sql: `SELECT max_members FROM plan_groups WHERE id = ?`,
-    args: [planGroupId],
-  });
-  if (groupRes.rows.length === 0) {
-    return c.json({ error: '존재하지 않는 그룹입니다', error_code: 'GROUP_NOT_FOUND' }, 404);
-  }
-  const maxMembers = Number(groupRes.rows[0]!.max_members) || 6;
-  const countRes = await db.execute({
-    sql: `SELECT COUNT(*) AS c FROM plan_group_members WHERE plan_group_id = ?`,
-    args: [planGroupId],
-  });
-  const memberCount = Number(countRes.rows[0]!.c) || 0;
-  if (memberCount >= maxMembers) {
-    return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
-  }
-
-  // 초대를 먼저 원자적으로 소비한다(일회용 보장). SQLite/libSQL 단일 라이터에서
-  // pending→used 전환은 동시 수락 중 한 요청만 성공하므로, 유출/공유된 일회용 코드
-  // 하나로 여러 명이 가입되는 TOCTOU 를 막는다. 소비 성공자만 좌석 삽입을 진행한다.
-  const consumeRes = await db.execute({
-    sql: `UPDATE plan_group_invites
-          SET status = 'used', used_by_user_id = ?, used_at = ?
-          WHERE id = ? AND status = 'pending'`,
-    args: [userPk, now.toISOString(), inviteId],
-  });
-  if ((consumeRes.rowsAffected ?? 0) === 0) {
-    return c.json({ error: '이미 사용된 초대 코드입니다', error_code: 'CODE_ALREADY_USED' }, 409);
-  }
-
-  // 좌석을 원자적으로 삽입한다: 정원 미만일 때만 INSERT 되도록 한 문장으로 처리해
-  // 동시 수락이 정원을 넘기는 TOCTOU 를 막는다. rowsAffected=0 이면 그 사이 정원이
-  // 찼다는 뜻이므로 방금 소비한 초대를 pending 으로 되돌리고 GROUP_FULL 을 반환한다.
-  const memberId = crypto.randomUUID();
-  const insertRes = await db.execute({
-    sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-          SELECT ?, ?, ?, 'member'
-          WHERE (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = ?) < ?`,
-    args: [memberId, planGroupId, userPk, planGroupId, maxMembers],
-  });
-  if ((insertRes.rowsAffected ?? 0) === 0) {
-    await db.execute({
-      sql: `UPDATE plan_group_invites
-            SET status = 'pending', used_by_user_id = NULL, used_at = NULL
-            WHERE id = ?`,
-      args: [inviteId],
-    });
-    return c.json({ error: `정원 초과 (최대 ${maxMembers}명)`, error_code: 'GROUP_FULL' }, 409);
-  }
-
-  return c.json({
-    success: true,
-    membership: {
-      id: memberId,
-      plan_group_id: planGroupId,
-      user_id: userPk,
-      role: 'member',
-    },
-    invite: { id: inviteId, status: 'used' },
-  });
 });
 
 familyInvite.post('/invites/:code/revoke', async (c) => {
