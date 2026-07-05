@@ -1,6 +1,7 @@
 package com.alarmtalk.app.data
 
 import android.util.Log
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarmMapper
 import com.alarmtalk.app.network.AlarmTalkApi
@@ -8,6 +9,7 @@ import com.alarmtalk.app.network.AlarmTalkApiClient
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 data class AlarmSyncResult(
     val total: Int,
@@ -70,22 +72,42 @@ internal class AlarmSyncService(
                         }
                     }
                 } else {
-                    val remoteAlarm = api.updateAlarm(authorization, alarm.remoteAlarmId, request).alarm
-                    updated += 1
+                    // 서버에 원본이 없으면(404: dev DB 초기화·다른 경로 삭제) update 를 create 로
+                    // 폴백해 이 기기의 알람을 되살린다. 그대로 두면 매 sync 마다 404 → FAILED 가
+                    // 반복돼 사용자에게 영구 경고로 남는다.
+                    val (remoteAlarm, recreated) = try {
+                        api.updateAlarm(authorization, alarm.remoteAlarmId, request).alarm to false
+                    } catch (error: HttpException) {
+                        if (error.code() != 404) throw error
+                        Log.i(TAG, "Remote alarm missing; re-creating id=${alarm.id}")
+                        api.createAlarm(authorization, request).alarm to true
+                    }
+                    if (recreated) created += 1 else updated += 1
                     // 동시 편집 방어(lost update): 네트워크 구간에 사용자가 같은 알람을 편집하면
                     // updatedAtMillis 가 바뀌고 syncState 가 다시 DIRTY 가 된다. 스냅샷 시점
                     // updatedAtMillis 와 일치할 때만 SYNCED 로 전환하고, 불일치(rowcount==0)면 그 편집을
                     // 덮어쓰지 않고 DIRTY 를 그대로 보존해 다음 sync 에서 재전송되게 한다.
-                    val applied = alarmDao.setSyncStateIfUnchanged(
-                        id = alarm.id,
-                        remoteAlarmId = remoteAlarm.id,
-                        lastSyncedAtMillis = now,
-                        syncState = AlarmSyncStates.SYNCED,
-                        newUpdatedAtMillis = now,
-                        expectedUpdatedAtMillis = alarm.updatedAtMillis,
-                    )
-                    if (applied == 0) {
-                        Log.i(TAG, "Concurrent edit during sync; keeping DIRTY id=${alarm.id}")
+                    // 재생성(recreated)이면 새 remoteAlarmId 커밋이 유실되지 않게 NonCancellable 로 감싼다
+                    // (유실 시 다음 sync 가 옛 id 로 update → 404 → 또 create 돼 서버에 중복이 쌓인다).
+                    withContext(NonCancellable) {
+                        val applied = alarmDao.setSyncStateIfUnchanged(
+                            id = alarm.id,
+                            remoteAlarmId = remoteAlarm.id,
+                            lastSyncedAtMillis = now,
+                            syncState = AlarmSyncStates.SYNCED,
+                            newUpdatedAtMillis = now,
+                            expectedUpdatedAtMillis = alarm.updatedAtMillis,
+                        )
+                        if (applied == 0) {
+                            if (recreated) {
+                                alarmDao.markRemoteIdKeepDirty(
+                                    id = alarm.id,
+                                    remoteAlarmId = remoteAlarm.id,
+                                    lastSyncedAtMillis = now,
+                                )
+                            }
+                            Log.i(TAG, "Concurrent edit during sync; keeping DIRTY id=${alarm.id}")
+                        }
                     }
                 }
                 if (alarm.localAudioUri != null && alarm.rawAudioUri?.startsWith("http", ignoreCase = true) != true) {
@@ -96,7 +118,7 @@ internal class AlarmSyncService(
                 // 삼키면 create 응답 유실 시 FAILED(remoteAlarmId=null) 로 오마킹돼 재-create → 중복이 된다.
                 if (error is CancellationException) throw error
                 failed += 1
-                Log.e(TAG, "Failed to sync alarm id=${alarm.id}", error)
+                AlarmTalkLog.reportError("Failed to sync alarm id=${alarm.id}", error)
                 alarmDao.setSyncState(
                     id = alarm.id,
                     remoteAlarmId = alarm.remoteAlarmId,

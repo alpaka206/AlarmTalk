@@ -3,6 +3,7 @@ package com.alarmtalk.app
 import android.app.Application
 import android.util.Log
 import com.alarmtalk.app.alarm.NotificationChannels
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.network.AuthSessionStore
@@ -23,20 +24,20 @@ class AlarmTalkApplication : Application() {
         // (release 빌드에서 Sentry/WorkManager 등 초기화가 던지면 첫 화면 전에
         //  프로세스가 즉시 종료되던 문제를 방지. 실패는 로그로만 남기고 계속 진행.)
         runCatching { initializeSentry() }
-            .onFailure { Log.e(TAG, "Sentry init failed", it) }
+            .onFailure { AlarmTalkLog.reportError("Sentry init failed", it) }
         runCatching { NotificationChannels.ensure(this) }
-            .onFailure { Log.e(TAG, "NotificationChannels init failed", it) }
+            .onFailure { AlarmTalkLog.reportError("NotificationChannels init failed", it) }
         runCatching { RemoteAlarmSyncScheduler.ensurePeriodic(this) }
-            .onFailure { Log.e(TAG, "RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
+            .onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.ensurePeriodic failed", it) }
         runCatching {
             if (AuthSessionStore(this).read() != null) {
                 RemoteAlarmSyncScheduler.runOnce(this)
             }
-        }.onFailure { Log.e(TAG, "RemoteAlarmSyncScheduler.runOnce failed", it) }
+        }.onFailure { AlarmTalkLog.reportError("RemoteAlarmSyncScheduler.runOnce failed", it) }
         // 30일 이상 미참조 음성 캐시를 백그라운드에서 정리. 실패해도 앱 진입에 영향 없음.
         applicationScope.launch {
             runCatching { AlarmAppContainer.repository(this@AlarmTalkApplication).sweepStaleAudioCache() }
-                .onFailure { Log.e(TAG, "Stale audio cache sweep failed", it) }
+                .onFailure { AlarmTalkLog.reportError("Stale audio cache sweep failed", it) }
         }
         Log.i(TAG, "Voice Alarm native application started")
     }

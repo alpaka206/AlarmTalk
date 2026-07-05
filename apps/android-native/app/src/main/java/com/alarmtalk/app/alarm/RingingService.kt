@@ -28,6 +28,7 @@ import com.alarmtalk.app.alarm.AlarmContract.ACTION_DISMISS
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_SNOOZE
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_START_RINGING
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmEntity
@@ -224,7 +225,7 @@ class RingingService : Service() {
         }
 
         if (mediaPlayer == null) {
-            Log.e(TAG, "Failed to create alarm tone MediaPlayer")
+            AlarmTalkLog.reportError("Failed to create alarm tone MediaPlayer")
         }
     }
 
@@ -267,7 +268,7 @@ class RingingService : Service() {
             start()
         }
         if (mediaPlayer == null) {
-            Log.e(TAG, "Failed to create voice MediaPlayer; falling back to bundled alarm")
+            AlarmTalkLog.reportError("Failed to create voice MediaPlayer; falling back to bundled alarm")
             startAlarmToneLoop(alarm)
         }
     }
@@ -288,7 +289,7 @@ class RingingService : Service() {
                 player.seekTo(0)
                 player.start()
             }.onFailure { error ->
-                Log.e(TAG, "Failed to repeat voice playback on existing player", error)
+                AlarmTalkLog.reportError("Failed to repeat voice playback on existing player", error)
                 stopMediaOnly()
                 startRingingAudio(alarm)
             }
@@ -346,7 +347,7 @@ class RingingService : Service() {
         }
 
         if (nextPlayer == null) {
-            Log.e(TAG, "Failed to create sequence MediaPlayer; falling back to bundled alarm")
+            AlarmTalkLog.reportError("Failed to create sequence MediaPlayer; falling back to bundled alarm")
             startAlarmToneLoop(alarm)
             return
         }
@@ -422,7 +423,7 @@ class RingingService : Service() {
                 prepare()
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to prepare voice audio uri=$voiceUri", error)
+            AlarmTalkLog.reportError("Failed to prepare voice audio uri=$voiceUri", error)
         }.getOrNull()
 
     private fun MediaPlayer.applyAlarmVolume(alarm: AlarmEntity?) {
@@ -500,7 +501,7 @@ class RingingService : Service() {
             runCatching {
                 AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to dismiss alarm id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to dismiss alarm id=$alarmId", error)
             }
             stopSelf(startId)
         }
@@ -511,7 +512,7 @@ class RingingService : Service() {
         stopMediaAndVibration()
         val player = createVoicePlayer(voiceUri)
         if (player == null) {
-            Log.e(TAG, "Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
+            AlarmTalkLog.reportError("Failed to play voice after alarm dismissal; dismissing alarm id=$alarmId")
             serviceScope.launch {
                 finishDismiss(alarmId, startId)
             }
@@ -551,7 +552,7 @@ class RingingService : Service() {
         runCatching {
             AlarmAppContainer.repository(applicationContext).dismiss(alarmId)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to dismiss alarm id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to dismiss alarm id=$alarmId", error)
         }
         stopSelf(startId)
     }
@@ -562,7 +563,7 @@ class RingingService : Service() {
             runCatching {
                 AlarmAppContainer.repository(applicationContext).snooze(alarmId)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to snooze alarm id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to snooze alarm id=$alarmId", error)
             }
             stopSelf(startId)
         }

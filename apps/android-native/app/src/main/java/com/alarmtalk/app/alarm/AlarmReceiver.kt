@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.alarmtalk.app.alarm.AlarmContract.ACTION_ALARM_TRIGGER
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import kotlinx.coroutines.CoroutineScope
@@ -34,7 +35,7 @@ class AlarmReceiver : BroadcastReceiver() {
             runCatching {
                 AlarmAppContainer.repository(context).markRinging(alarmId)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to mark alarm ringing id=$alarmId", error)
+                AlarmTalkLog.reportError("Failed to mark alarm ringing id=$alarmId", error)
             }
             pendingResult.finish()
         }
@@ -66,7 +67,7 @@ class AlarmReceiver : BroadcastReceiver() {
             val notification = RingingNotificationFactory(context).build(alarmId, fallback = true)
             NotificationManagerCompat.from(context).notify(RINGING_FALLBACK_NOTIFICATION_ID, notification)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to post ringing notification fallback id=$alarmId", error)
+            AlarmTalkLog.reportError("Failed to post ringing notification fallback id=$alarmId", error)
         }
     }
 

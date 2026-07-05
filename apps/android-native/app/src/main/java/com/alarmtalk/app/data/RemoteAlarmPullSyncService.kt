@@ -4,6 +4,7 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.alarm.AlarmScheduler
 import com.alarmtalk.app.alarm.SocialNotificationFactory
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.network.RemoteAlarm
 import com.alarmtalk.app.network.AlarmTalkApi
@@ -93,7 +94,7 @@ internal class RemoteAlarmPullSyncService(
                 }
             }.onFailure { error ->
                 failed += 1
-                Log.e(TAG, "Failed to pull received alarm remoteId=${remote.id}", error)
+                AlarmTalkLog.reportError("Failed to pull received alarm remoteId=${remote.id}", error)
             }
         }
 

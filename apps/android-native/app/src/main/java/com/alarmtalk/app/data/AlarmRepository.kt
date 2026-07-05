@@ -5,6 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.alarmtalk.app.R
 import com.alarmtalk.app.alarm.AlarmScheduler
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.sync.DynamicVoiceRefreshScheduler
 import com.alarmtalk.app.network.TtsGenerateRequest
@@ -555,7 +556,7 @@ class AlarmRepository(
                 alarmScheduler.schedule(alarmToSchedule)
                 scheduled += 1
             }.onFailure { error ->
-                Log.e(TAG, "Failed to restore alarm id=${alarm.id}", error)
+                AlarmTalkLog.reportError("Failed to restore alarm id=${alarm.id}", error)
                 alarmDao.setState(
                     id = alarm.id,
                     state = AlarmStates.FAILED,
