@@ -144,6 +144,7 @@ internal fun LandingScreen(
         ) {
             Text(
                 text = "AlarmTalk",
+                modifier = Modifier.padding(top = 18.dp),
                 style = MaterialTheme.typography.titleLarge,
                 color = TextOnScene.copy(alpha = 0.94f),
                 fontWeight = FontWeight.Bold,

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Message
@@ -45,9 +46,8 @@ import com.alarmtalk.app.network.VoiceProfile
 import com.alarmtalk.app.network.VoiceSpeakerSegment
 import com.alarmtalk.app.network.VoucherItem
 
-// 홈 첫 방문 안내 — 다음 알람 히어로 / 빠른 시작 타일에 스포트라이트.
+// 홈 첫 방문 안내 — 다음 알람 히어로에 스포트라이트.
 private const val GUIDE_TARGET_HOME_HERO = "home_next_alarm"
-private const val GUIDE_TARGET_HOME_QUICK = "home_quick_start"
 
 // 목소리 등록 첫 방문 안내 — 내 목소리 만들기 버튼에 스포트라이트.
 private const val GUIDE_TARGET_VOICE_CREATE = "voice_register_create"
@@ -86,8 +86,6 @@ internal fun AlarmListScreen(
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
-    defaultListenerTitle: String? = null,
-    onSetListenerTitle: (String?) -> Unit = {},
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
     onRenameVoiceProfile: (String, String, String, String) -> Unit,
     onShareVoiceProfile: (String, Boolean) -> Unit,
@@ -109,13 +107,17 @@ internal fun AlarmListScreen(
     onRefreshShareCodeData: suspend () -> List<VoucherItem>,
     permissions: PermissionSnapshot,
     onCreateAlarm: () -> Unit,
-    onCreateFamilyAlarm: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenMemberManagement: () -> Unit,
+    onOpenConsentHistory: () -> Unit,
+    onDeleteAccount: () -> Unit,
+    themeMode: ThemeMode,
+    onChangeTheme: (ThemeMode) -> Unit,
     onToggleEnabled: (String, Boolean) -> Unit,
     onEditAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onRequestPermissionGate: (PermissionTarget) -> Unit,
     onRequestAllPermissions: () -> Unit,
-    profileMenu: (@Composable () -> Unit)? = null,
 ) {
     val sortedAlarms = remember(alarms) {
         alarms.sortedWith(
@@ -127,13 +129,6 @@ internal fun AlarmListScreen(
     val nextAlarm = remember(alarms) {
         alarms.filter { it.enabled }.minByOrNull { it.fireAtMillis }
     }
-    val canCreateFamilyAlarm = authSession != null &&
-        hasCoupleOrFamilyAccess(subscriptionResponse, familyGroup) &&
-        familyAlarmRecipients(familyGroup, authSession).isNotEmpty()
-    // 시스템 스톡 보이스 도입으로 음성 기능은 로그인만 하면 열린다 (무료는 스톡 보이스 한정).
-    val voicePlanLocked = authSession == null
-    val voiceLocked = voicePlanLocked || !permissions.recordAudio
-    val alarmLocked = !permissions.alarmReady
 
     val appContext = LocalContext.current.applicationContext
     val usageGuideStore = remember(appContext) { UsageGuideStore(appContext) }
@@ -145,11 +140,6 @@ internal fun AlarmListScreen(
             targetKey = GUIDE_TARGET_HOME_HERO,
             title = stringResource(R.string.misc2_coach_home_hero_title),
             body = stringResource(R.string.misc2_coach_home_hero_body),
-        ),
-        CoachMarkStep(
-            targetKey = GUIDE_TARGET_HOME_QUICK,
-            title = stringResource(R.string.misc2_coach_home_quick_title),
-            body = stringResource(R.string.misc2_coach_home_quick_body),
         ),
     )
     val voiceRegisterCoachSteps = listOf(
@@ -165,7 +155,7 @@ internal fun AlarmListScreen(
     var homeGuideVisible by remember { mutableStateOf(false) }
     var voiceGuideVisible by remember { mutableStateOf(false) }
     LaunchedEffect(selectedTab, authSession) {
-        if (selectedTab == NativeTab.Home && authSession != null &&
+        if (selectedTab == NativeTab.Alarms && authSession != null &&
             !usageGuideStore.hasSeen(UsageGuideStore.GUIDE_HOME)
         ) {
             delay(700)
@@ -191,42 +181,6 @@ internal fun AlarmListScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         when (selectedTab) {
-            NativeTab.Home -> {
-                item { HomeHeader() }
-                item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
-                        NextAlarmHeroCard(
-                            nextAlarm = nextAlarm,
-                            onClick = {
-                                if (nextAlarm == null) {
-                                    onCreateAlarm()
-                                } else {
-                                    onEditAlarm(nextAlarm)
-                                }
-                            },
-                        )
-                    }
-                }
-                item {
-                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_QUICK)) {
-                    QuickStartGrid(
-                        onRecordVoice = {
-                            when {
-                                voicePlanLocked -> onSelectTab(NativeTab.Voices)
-                                !permissions.recordAudio -> onRequestPermissionGate(PermissionTarget.RecordAudio)
-                                else -> onSelectTab(NativeTab.Voices)
-                            }
-                        },
-                        onAddAlarm = onCreateAlarm,
-                        canCreateFamilyAlarm = canCreateFamilyAlarm,
-                        onAddFamilyAlarm = onCreateFamilyAlarm,
-                        voiceLocked = voiceLocked,
-                        alarmLocked = alarmLocked,
-                    )
-                    }
-                }
-            }
-
             NativeTab.Voices -> {
                 item {
                     ScreenHeader(title = stringResource(R.string.common_tab_voices))
@@ -256,15 +210,27 @@ internal fun AlarmListScreen(
                         onOpenBilling = { onSelectTab(NativeTab.Billing) },
                         defaultVoiceId = defaultVoiceId,
                         onSetDefaultVoice = onSetDefaultVoice,
-                        defaultListenerTitle = defaultListenerTitle,
-                        onSetListenerTitle = onSetListenerTitle,
                     )
                     }
                 }
             }
 
             NativeTab.Alarms -> {
-                item { AlarmsHeader(onCreateAlarm = onCreateAlarm, profileMenu = profileMenu) }
+                item { HomeHeader() }
+                item {
+                    Box(modifier = Modifier.coachMarkTarget(coachMarkRegistry, GUIDE_TARGET_HOME_HERO, targetRadius = 24.dp)) {
+                        NextAlarmHeroCard(
+                            nextAlarm = nextAlarm,
+                            onClick = {
+                                if (nextAlarm == null) {
+                                    onCreateAlarm()
+                                } else {
+                                    onEditAlarm(nextAlarm)
+                                }
+                            },
+                        )
+                    }
+                }
                 if (!permissions.alarmReady) {
                     item {
                         PermissionPanel(
@@ -274,17 +240,14 @@ internal fun AlarmListScreen(
                         )
                     }
                 }
-                if (sortedAlarms.isEmpty()) {
-                    item { EmptyAlarmCard(onCreateAlarm = onCreateAlarm) }
-                } else {
-                    items(sortedAlarms, key = { it.id }) { alarm ->
-                        AlarmRow(
-                            alarm = alarm,
-                            onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
-                            onEditAlarm = { onEditAlarm(alarm) },
-                            onDeleteAlarm = { onDeleteAlarm(alarm.id) },
-                        )
-                    }
+                // 알람이 없을 땐 히어로 카드가 생성 CTA를 겸한다. 생성 버튼은 하단바 중앙 ➕.
+                items(sortedAlarms, key = { it.id }) { alarm ->
+                    AlarmRow(
+                        alarm = alarm,
+                        onToggleEnabled = { enabled -> onToggleEnabled(alarm.id, enabled) },
+                        onEditAlarm = { onEditAlarm(alarm) },
+                        onDeleteAlarm = { onDeleteAlarm(alarm.id) },
+                    )
                 }
             }
 
@@ -334,6 +297,26 @@ internal fun AlarmListScreen(
                 }
             }
 
+            NativeTab.Menu -> {
+                item {
+                    ScreenHeader(title = stringResource(R.string.r3app_bottom_tab_menu))
+                }
+                item {
+                    MenuTabPanel(
+                        authSession = authSession,
+                        hasSharedPass = familyGroup?.group != null,
+                        themeMode = themeMode,
+                        onChangeTheme = onChangeTheme,
+                        onOpenPeople = { onSelectTab(NativeTab.People) },
+                        onOpenBilling = { onSelectTab(NativeTab.Billing) },
+                        onOpenMemberManagement = onOpenMemberManagement,
+                        onOpenSettings = onOpenSettings,
+                        onOpenConsentHistory = onOpenConsentHistory,
+                        onDeleteAccount = onDeleteAccount,
+                    )
+                }
+            }
+
             NativeTab.Billing -> {
                 item {
                     ScreenHeader(title = stringResource(R.string.common_tab_billing))
@@ -357,7 +340,7 @@ internal fun AlarmListScreen(
         }
     }
 
-        if (homeGuideVisible && selectedTab == NativeTab.Home) {
+        if (homeGuideVisible && selectedTab == NativeTab.Alarms) {
             CoachMarkOverlay(
                 steps = homeCoachSteps,
                 registry = coachMarkRegistry,

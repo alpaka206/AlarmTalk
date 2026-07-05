@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -86,7 +87,7 @@ internal fun MainViewModel.fetchVoiceProfiles(showMessage: Boolean) {
             }.onSuccess { profiles ->
                 voiceProfiles = profiles
             }.onFailure { error ->
-                Log.e(TAG, "Failed to load voice profiles", error)
+                AlarmTalkLog.reportError("Failed to load voice profiles", error)
                 if (showMessage) message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_fetch_failed))
             }
         } finally {
@@ -204,7 +205,7 @@ internal fun MainViewModel.createVoiceProfiles(items: List<VoiceProfileCreationD
             }
         }.onFailure { error ->
             voiceProfiles = voiceProfiles.filterNot { it.id in pendingIds }
-            Log.e(TAG, "Failed to create voice profile", error)
+            AlarmTalkLog.reportError("Failed to create voice profile", error)
             val app = getApplication<android.app.Application>()
             message = when (apiErrorCode(error)) {
                 "VOICE_CLONE_AUDIO_TOO_SHORT" -> app.getString(R.string.msg_voice_clone_audio_too_short)
@@ -353,7 +354,7 @@ internal fun MainViewModel.renameVoiceProfile(
                 }
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to rename voice profile id=$profileId", error)
+            AlarmTalkLog.reportError("Failed to rename voice profile id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_info_update_failed))
         }
         voiceProfileBusy = false
@@ -409,7 +410,7 @@ internal fun MainViewModel.updateSharedVoiceViewerInfo(
             }
             onSuccess()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update shared voice viewer info id=$profileId", error)
+            AlarmTalkLog.reportError("Failed to update shared voice viewer info id=$profileId", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_shared_info_save_failed))
         }
         voiceProfileBusy = false
@@ -450,7 +451,7 @@ internal fun MainViewModel.setVoiceProfileShared(profileId: String, shared: Bool
             val app = getApplication<android.app.Application>()
             message = if (shared) app.getString(R.string.msg_voice_shared_on) else app.getString(R.string.msg_voice_shared_off)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update voice profile sharing id=$profileId shared=$shared", error)
+            AlarmTalkLog.reportError("Failed to update voice profile sharing id=$profileId shared=$shared", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_share_setting_failed))
         }
         voiceProfileBusy = false
@@ -496,7 +497,7 @@ internal fun MainViewModel.deleteVoiceProfile(profileId: String) {
                         if (it.id == profileId) originalProfile else it
                     }
                 }
-                Log.e(TAG, "Failed to delete voice profile id=$profileId", error)
+                AlarmTalkLog.reportError("Failed to delete voice profile id=$profileId", error)
                 message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_delete_failed))
             }
         }
@@ -535,7 +536,7 @@ internal fun MainViewModel.loadTtsMessages() {
         }.onSuccess { messages ->
             ttsMessages = messages
         }.onFailure { error ->
-            Log.e(TAG, "Failed to load saved TTS messages", error)
+            AlarmTalkLog.reportError("Failed to load saved TTS messages", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_voice_tts_load_failed))
         }
         ttsMessageBusy = false
@@ -558,7 +559,7 @@ internal fun MainViewModel.loadStockClips() {
         }.onSuccess { clips ->
             stockClips = clips
         }.onFailure { error ->
-            Log.e(TAG, "Failed to load stock clips", error)
+            AlarmTalkLog.reportError("Failed to load stock clips", error)
         }
     }
 }

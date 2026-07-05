@@ -1,5 +1,6 @@
 package com.alarmtalk.app
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,14 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,9 +26,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.rememberCoroutineScope
 import com.alarmtalk.app.R
@@ -46,18 +48,15 @@ import kotlinx.coroutines.launch
 internal fun SettingsScreen(
     contentPadding: PaddingValues,
     authSession: AuthSession?,
-    themeMode: ThemeMode,
     marketingConsentAgreed: Boolean?,
     marketingConsentBusy: Boolean,
     marketingConsentLoadFailed: Boolean,
     onBack: () -> Unit,
-    onChangeTheme: (ThemeMode) -> Unit,
     onEditNickname: () -> Unit,
     onUpdateDynamicPromptSettings: (DynamicPromptSettings) -> Unit,
     onLoadMarketingConsent: () -> Unit,
     onChangeMarketingConsent: (Boolean) -> Unit,
     onLogout: () -> Unit,
-    onDeleteAccount: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -65,10 +64,10 @@ internal fun SettingsScreen(
     var promptPreferences by remember(context) { mutableStateOf(promptPreferenceStore.read()) }
     val holidayCountryStore = remember(context) { HolidayCountryPreferenceStore(context) }
     var holidayCountryCode by remember(context) { mutableStateOf(holidayCountryStore.read()) }
-    var showThemeDialog by remember { mutableStateOf(false) }
     var showWeatherLocationDialog by remember { mutableStateOf(false) }
     var showFortuneInfoDialog by remember { mutableStateOf(false) }
     var showHolidayCountryDialog by remember { mutableStateOf(false) }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
 
     // 설정 진입 시(로그인 상태) 현재 마케팅 수신 동의 상태를 서버에서 읽어 토글에 반영한다.
     LaunchedEffect(authSession?.user?.id) {
@@ -102,13 +101,8 @@ internal fun SettingsScreen(
         }
 
         item {
+            // 테마·앱 언어는 전체 탭에서 관리한다(토스 패턴). 여기엔 알람 동작에 걸리는 설정만 남긴다.
             SettingsCard(title = stringResource(R.string.hs_settings_section_display)) {
-                SettingsRow(
-                    label = stringResource(R.string.hs_settings_theme),
-                    value = themeModeLabel(context, themeMode),
-                    onClick = { showThemeDialog = true },
-                )
-                HorizontalDivider()
                 SettingsRow(
                     label = stringResource(R.string.settings_holiday_country_title),
                     value = holidayCountryDisplayLabel(holidayCountryCode),
@@ -142,23 +136,23 @@ internal fun SettingsScreen(
             }
         }
 
-        item {
-            SettingsCard(title = stringResource(R.string.hs_settings_section_terms)) {
-                SettingsRow(
-                    label = stringResource(R.string.hs_settings_terms_of_service),
-                    value = null,
-                    onClick = { context.openExternalUrl("https://alarm-talk.com/ko/terms") },
-                )
-                HorizontalDivider()
-                SettingsRow(
-                    label = stringResource(R.string.hs_settings_privacy_policy),
-                    value = null,
-                    onClick = { context.openExternalUrl("https://alarm-talk.com/ko/privacy") },
-                )
-            }
-        }
-
         if (authSession != null) {
+            item {
+                SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
+                    SettingsRow(
+                        label = stringResource(R.string.hs_settings_nickname),
+                        value = authSession.user.name.ifBlank { stringResource(R.string.hs_settings_no_name) },
+                        onClick = onEditNickname,
+                    )
+                    HorizontalDivider()
+                    SettingsRow(
+                        label = stringResource(R.string.hs_settings_logout),
+                        value = null,
+                        onClick = { showLogoutConfirm = true },
+                    )
+                }
+            }
+
             item {
                 SettingsCard(title = stringResource(R.string.settings_marketing_section)) {
                     when {
@@ -166,7 +160,7 @@ internal fun SettingsScreen(
                         // opt-out 유실을 막기 위해 비활성화한다.
                         marketingConsentAgreed != null -> SettingsToggleRow(
                             label = stringResource(R.string.settings_marketing_toggle_label),
-                            value = stringResource(R.string.settings_marketing_toggle_desc),
+                            value = null,
                             checked = marketingConsentAgreed == true,
                             onCheckedChange = onChangeMarketingConsent,
                             enabled = !marketingConsentBusy,
@@ -188,44 +182,30 @@ internal fun SettingsScreen(
                     }
                 }
             }
-
-            item {
-                SettingsCard(title = stringResource(R.string.hs_settings_section_account)) {
-                    SettingsRow(
-                        label = stringResource(R.string.hs_settings_nickname),
-                        value = authSession.user.name.ifBlank { stringResource(R.string.hs_settings_no_name) },
-                        onClick = onEditNickname,
-                    )
-                    HorizontalDivider()
-                    SettingsRow(
-                        label = stringResource(R.string.hs_settings_logout),
-                        value = null,
-                        onClick = onLogout,
-                    )
-                }
-            }
-
-            item {
-                SettingsCard(title = null) {
-                    SettingsRow(
-                        label = stringResource(R.string.hs_settings_delete_account),
-                        value = null,
-                        labelColor = MaterialTheme.colorScheme.error,
-                        onClick = onDeleteAccount,
-                    )
-                }
-            }
         }
+
+        // 약관·개인정보 링크와 회원탈퇴는 전체 탭(법적 정보 섹션·탈퇴하기 카드)으로 이동했다.
     }
 
-    if (showThemeDialog) {
-        ThemeModePickerDialog(
-            current = themeMode,
-            onDismiss = { showThemeDialog = false },
-            onSelect = { mode ->
-                showThemeDialog = false
-                onChangeTheme(mode)
-            },
+    if (showLogoutConfirm) {
+        IosAlertDialog(
+            title = stringResource(R.string.settings_logout_confirm_title),
+            message = null,
+            onDismiss = { showLogoutConfirm = false },
+            actions = listOf(
+                IosAlertAction(
+                    label = stringResource(R.string.social_cancel_button),
+                    onClick = { showLogoutConfirm = false },
+                ),
+                IosAlertAction(
+                    label = stringResource(R.string.hs_settings_logout),
+                    emphasized = true,
+                    onClick = {
+                        showLogoutConfirm = false
+                        onLogout()
+                    },
+                ),
+            ),
         )
     }
 
@@ -248,7 +228,6 @@ internal fun SettingsScreen(
             gender = promptPreferences.fortuneGender,
             birthDate = promptPreferences.fortuneBirthDate,
             birthTime = promptPreferences.fortuneBirthTime,
-            description = stringResource(R.string.hs_fortune_info_description),
             onDismissWithoutSave = { showFortuneInfoDialog = false },
             onConfirm = { gender, birthDate, birthTime ->
                 promptPreferenceStore.saveFortuneInfo(gender, birthDate, birthTime)
@@ -264,7 +243,6 @@ internal fun SettingsScreen(
             current = holidayCountryCode,
             onDismiss = { showHolidayCountryDialog = false },
             onSelect = { code ->
-                showHolidayCountryDialog = false
                 scope.launch {
                     holidayCountryStore.setCountry(code)
                     holidayCountryCode = holidayCountryStore.read()
@@ -286,37 +264,22 @@ private fun HolidayCountryPickerDialog(
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.settings_holiday_country_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                HolidayCountryPreferenceStore.SUPPORTED.forEach { code ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(code) }
-                            .padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        RadioButton(
-                            selected = code == current,
-                            onClick = { onSelect(code) },
-                        )
-                        Text(
-                            text = holidayCountryDisplayLabel(code),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
+    WakerSelectionSheet(
+        title = stringResource(R.string.settings_holiday_country_title),
+        onDismiss = onDismiss,
+    ) { dismiss ->
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            HolidayCountryPreferenceStore.SUPPORTED.forEach { code ->
+                WakerSheetOptionRow(
+                    title = holidayCountryDisplayLabel(code),
+                    selected = code == current,
+                    onClick = {
+                        onSelect(code)
+                        dismiss()
+                    },
+                )
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.hs_settings_back))
-            }
-        },
-    )
+        }
+    }
 }
 

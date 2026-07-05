@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -74,7 +75,7 @@ internal fun MainViewModel.login(email: String, password: String) {
             RemoteAlarmSyncScheduler.ensurePeriodic(getApplication())
             RemoteAlarmSyncScheduler.runOnce(getApplication())
         }.onFailure { error ->
-            Log.e(TAG, "Email login failed", error)
+            AlarmTalkLog.reportError("Email login failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_login_failed))
         }
         authBusy = false
@@ -99,7 +100,7 @@ internal fun MainViewModel.requestEmailVerification(email: String) {
                 ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
                 ?: getApplication<android.app.Application>().getString(R.string.msg_verification_code_sent)
         }.onFailure { error ->
-            Log.e(TAG, "Email verification request failed", error)
+            AlarmTalkLog.reportError("Email verification request failed", error)
             message = duplicateEmailMessage(error)
                 ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
         }
@@ -145,7 +146,7 @@ internal fun MainViewModel.confirmEmailVerification(email: String, code: String)
             registerEmailVerified = normalizedEmail
             message = getApplication<android.app.Application>().getString(R.string.msg_email_verification_completed)
         }.onFailure { error ->
-            Log.e(TAG, "Email verification confirm failed", error)
+            AlarmTalkLog.reportError("Email verification confirm failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_mismatch))
         }
         authBusy = false
@@ -189,7 +190,7 @@ internal fun MainViewModel.register(
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = getApplication<android.app.Application>().getString(R.string.msg_register_success, response.user.email)
         }.onFailure { error ->
-            Log.e(TAG, "Email registration failed", error)
+            AlarmTalkLog.reportError("Email registration failed", error)
             message = duplicateEmailMessage(error)
                 ?: userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_register_failed))
         }
@@ -216,7 +217,7 @@ internal fun MainViewModel.requestPasswordReset(email: String) {
                 ?.let { getApplication<android.app.Application>().getString(R.string.msg_verification_code_debug, it) }
                 ?: getApplication<android.app.Application>().getString(R.string.msg_password_reset_code_sent)
         }.onFailure { error ->
-            Log.e(TAG, "Password reset request failed", error)
+            AlarmTalkLog.reportError("Password reset request failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_verification_code_send_failed))
         }
         authBusy = false
@@ -250,7 +251,7 @@ internal fun MainViewModel.confirmPasswordReset(
             message = getApplication<android.app.Application>().getString(R.string.msg_password_reset_done)
             onSuccess()
         }.onFailure { error ->
-            Log.e(TAG, "Password reset confirm failed", error)
+            AlarmTalkLog.reportError("Password reset confirm failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_password_reset_failed))
         }
         authBusy = false
@@ -273,7 +274,7 @@ internal fun MainViewModel.finishGoogleLogin(idToken: String) {
             RemoteAlarmSyncScheduler.runOnce(getApplication())
             message = null
         }.onFailure { error ->
-            Log.e(TAG, "Google token exchange failed", error)
+            AlarmTalkLog.reportError("Google token exchange failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_google_login_failed))
         }
         authBusy = false
@@ -333,7 +334,7 @@ internal fun MainViewModel.requestAccountDeletion(signOutGoogle: suspend () -> U
             dismissDeleteAccount()
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_requested)
         } catch (error: Throwable) {
-            Log.e(TAG, "Failed to request account deletion", error)
+            AlarmTalkLog.reportError("Failed to request account deletion", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_request_failed))
         } finally {
             authBusy = false
@@ -373,7 +374,7 @@ internal fun MainViewModel.cancelAccountDeletion() {
             pendingDeletion = false
             message = getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancelled)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to cancel account deletion", error)
+            AlarmTalkLog.reportError("Failed to cancel account deletion", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_deletion_cancel_failed))
         }
         authBusy = false
@@ -401,7 +402,7 @@ internal fun MainViewModel.updateNickname(name: String) {
             authSession = authSessionStore.save(updated)
             dismissEditNickname()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update nickname", error)
+            AlarmTalkLog.reportError("Failed to update nickname", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_nickname_change_failed))
         }
         authBusy = false
@@ -455,7 +456,7 @@ internal fun MainViewModel.updateFamilyAlarmSettings(
             refreshSocial()
             message = getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_saved)
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update family alarm settings", error)
+            AlarmTalkLog.reportError("Failed to update family alarm settings", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_family_alarm_settings_save_failed))
         }
         authBusy = false
@@ -479,7 +480,7 @@ internal fun MainViewModel.updateDynamicPromptSettings(settings: DynamicPromptSe
             authSession = authSessionStore.save(updated)
             refreshSocial()
         }.onFailure { error ->
-            Log.e(TAG, "Failed to update dynamic prompt settings", error)
+            AlarmTalkLog.reportError("Failed to update dynamic prompt settings", error)
         }
     }
 }
@@ -519,7 +520,7 @@ internal fun MainViewModel.deleteAccount(revokeGoogleAccess: suspend () -> Unit 
                 getApplication<android.app.Application>().getString(R.string.msg_account_deleted_google_unlink_failed)
             }
         } catch (error: Throwable) {
-            Log.e(TAG, "Failed to delete account", error)
+            AlarmTalkLog.reportError("Failed to delete account", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_account_delete_failed))
         } finally {
             authBusy = false
@@ -622,11 +623,18 @@ internal fun MainViewModel.submitConsents(
             // 모르면(직전 status 실패) 다음 콜드스타트에서 서버로 재확인하므로 캐시하지 않는다.
             policyVersion?.let { rememberConsentDone(session.user.id, true, it) }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to record consents", error)
+            AlarmTalkLog.reportError("Failed to record consents", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_consent_record_failed))
         }
         authBusy = false
     }
+}
+
+// 전체 > 약관 및 개인정보 처리 동의 화면 — 유형별 최신 동의 기록(agreed_at 포함)을 읽는다.
+internal suspend fun MainViewModel.loadConsentRecords(): List<com.alarmtalk.app.network.ConsentRecord> {
+    val session = authSession ?: return emptyList()
+    val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    return api.listConsents(authorization).consents
 }
 
 // 설정 화면 진입 시 현재 마케팅(광고성 정보 수신) 동의 상태를 서버에서 읽어 토글에 반영한다.
@@ -696,7 +704,7 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
             )
         }
         result.exceptionOrNull()?.let { error ->
-            Log.e(TAG, "Failed to update marketing consent", error)
+            AlarmTalkLog.reportError("Failed to update marketing consent", error)
         }
         // 완료 사이 계정 전환/더 새로운 토글로 사용자나 generation 이 바뀌었으면 이 결과는 폐기한다
         // (상태·잠금 모두 건드리지 않음 — 현재 소유자가 따로 관리).
@@ -735,7 +743,7 @@ internal fun MainViewModel.syncNow() {
                 message = alarmSyncFailureMessage(pushFailed = push.failed, pullFailed = pull.failed)
             }
         }.onFailure { error ->
-            Log.e(TAG, "Backend sync failed", error)
+            AlarmTalkLog.reportError("Backend sync failed", error)
             message = userFacingError(error, getApplication<android.app.Application>().getString(R.string.msg_sync_failed))
         }
         syncBusy = false

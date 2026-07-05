@@ -27,12 +27,12 @@ internal data class SubscriptionPlanOption(
 )
 
 internal enum class NativeTab {
-    Home,
     Voices,
     Alarms,
     People,
     Messages,
     Billing,
+    Menu,
 }
 
 internal const val MAX_VOICE_PROFILES = 1

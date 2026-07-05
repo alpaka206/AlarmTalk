@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
@@ -133,17 +134,14 @@ private fun voiceProfileFileDurationError(context: android.content.Context, dura
 @Composable
 private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
     UsageGuideStep(
-        icon = Icons.Outlined.Mic,
         title = stringResource(R.string.voices2_guide_record_title),
         body = stringResource(R.string.voices2_guide_record_body),
     ),
     UsageGuideStep(
-        icon = Icons.Outlined.Badge,
         title = stringResource(R.string.voices2_guide_identity_title),
         body = stringResource(R.string.voices2_guide_identity_body),
     ),
     UsageGuideStep(
-        icon = Icons.Outlined.AutoAwesome,
         title = stringResource(R.string.voices2_guide_register_title),
         body = stringResource(R.string.voices2_guide_register_body),
     ),
@@ -330,8 +328,6 @@ internal fun VoiceProfileManagementPanel(
     onOpenBilling: () -> Unit,
     defaultVoiceId: String? = null,
     onSetDefaultVoice: (String) -> Unit = {},
-    defaultListenerTitle: String? = null,
-    onSetListenerTitle: (String?) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -458,7 +454,7 @@ internal fun VoiceProfileManagementPanel(
                     start()
                 }
             }.onFailure { error ->
-                Log.e(TAG, "Failed to play greeting preview", error)
+                AlarmTalkLog.reportError("Failed to play greeting preview", error)
                 if (greetingPreviewRequestId == requestId) {
                     if (playingGreetingVoiceId == profile.id) playingGreetingVoiceId = null
                     localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
@@ -491,7 +487,7 @@ internal fun VoiceProfileManagementPanel(
                 localMessage = voiceProfileFileDurationError(context, durationMillis)
             }
                 .onFailure { error ->
-                    Log.e(TAG, "Failed to cache voice profile audio", error)
+                    AlarmTalkLog.reportError("Failed to cache voice profile audio", error)
                     localMessage = userFacingError(error, context.getString(R.string.voices_selected_audio_unusable))
                 }
         }
@@ -512,7 +508,7 @@ internal fun VoiceProfileManagementPanel(
                 }
             }.onFailure { error ->
                 isRecording = false
-                Log.e(TAG, "Failed to stop voice profile recording", error)
+                AlarmTalkLog.reportError("Failed to stop voice profile recording", error)
                 localMessage = userFacingError(error, context.getString(R.string.voices_recording_stop_failed))
             }
         }
@@ -526,7 +522,7 @@ internal fun VoiceProfileManagementPanel(
             isRecording = true
             localMessage = null
         }.onFailure { error ->
-            Log.e(TAG, "Failed to start voice profile recording", error)
+            AlarmTalkLog.reportError("Failed to start voice profile recording", error)
             localMessage = userFacingError(error, context.getString(R.string.voices_recording_start_failed))
         }
     }
@@ -705,7 +701,7 @@ internal fun VoiceProfileManagementPanel(
                 )
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to prepare speaker draft id=${speaker.id}", error)
+            AlarmTalkLog.reportError("Failed to prepare speaker draft id=${speaker.id}", error)
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
                     status = SpeakerDraftStatus.Failed,
@@ -765,7 +761,7 @@ internal fun VoiceProfileManagementPanel(
                     speakerDraftJobs[speaker.id] = job
                 }
             }.onFailure { error ->
-                Log.e(TAG, "Failed to separate speakers", error)
+                AlarmTalkLog.reportError("Failed to separate speakers", error)
                 val code = apiErrorCode(error)
                 localMessage = when (code) {
                     "AUDIO_DURATION_TOO_SHORT" -> context.getString(R.string.voices_separate_segment_too_short)
@@ -820,7 +816,7 @@ internal fun VoiceProfileManagementPanel(
             }
             activePlayingSpeakerId = speaker.id
         }.onFailure { error ->
-            Log.e(TAG, "Failed to play speaker draft preview", error)
+            AlarmTalkLog.reportError("Failed to play speaker draft preview", error)
             localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
@@ -861,7 +857,7 @@ internal fun VoiceProfileManagementPanel(
                 start()
             }
         }.onFailure { error ->
-            Log.e(TAG, "Failed to preview shared voice", error)
+            AlarmTalkLog.reportError("Failed to preview shared voice", error)
             localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
         }
     }
@@ -895,7 +891,7 @@ internal fun VoiceProfileManagementPanel(
                 closeCreateDialog()
                 localMessage = context.getString(R.string.voices_registered_success)
             }.onFailure { error ->
-                Log.e(TAG, "Failed to promote draft voice id=$selectedDraftId", error)
+                AlarmTalkLog.reportError("Failed to promote draft voice id=$selectedDraftId", error)
                 localMessage = userFacingError(error, context.getString(R.string.voices_register_failed))
             }
             promotingBusy = false
@@ -935,7 +931,7 @@ internal fun VoiceProfileManagementPanel(
                 filePreviewPreparing = false
                 filePreviewPlaying = true
             }.onFailure { error ->
-                Log.e(TAG, "Failed to play cropped voice preview", error)
+                AlarmTalkLog.reportError("Failed to play cropped voice preview", error)
                 filePreviewPreparing = false
                 filePreviewPlaying = false
                 localMessage = userFacingError(error, context.getString(R.string.voices_preview_play_failed))
@@ -1009,7 +1005,7 @@ internal fun VoiceProfileManagementPanel(
                     closeCreateDialog()
                 }
             }.onFailure { error ->
-                Log.e(TAG, "Failed to prepare selected voice file", error)
+                AlarmTalkLog.reportError("Failed to prepare selected voice file", error)
                 localMessage = userFacingError(error, context.getString(R.string.voices_prepare_selected_failed))
             }
             createPreparing = false
@@ -1126,26 +1122,8 @@ internal fun VoiceProfileManagementPanel(
                     )
                 }
             }
-            // 기본(시스템) 목소리가 정해졌으면 호칭을 여기서 수정(펼치지 않아도 보임).
-            if (defaultVoiceId != null) {
-                Spacer(Modifier.height(8.dp))
-                var nicknameDraft by remember(defaultVoiceId) {
-                    mutableStateOf(defaultListenerTitle.orEmpty())
-                }
-                OutlinedTextField(
-                    value = nicknameDraft,
-                    onValueChange = {
-                        val v = it.take(30)
-                        nicknameDraft = v
-                        onSetListenerTitle(v)
-                    },
-                    label = { Text(stringResource(R.string.voices_default_nickname_label)) },
-                    placeholder = { Text(stringResource(R.string.voices_default_nickname_placeholder)) },
-                    singleLine = true,
-                    shape = WakerInputShape,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // 기본(시스템) 목소리는 별도 호칭 없이 계정 닉네임으로 부른다
+            // (AlarmEditorScreen.resolvedVoiceListenerTitle). 관계·호칭은 내/공유 목소리에만 있다.
         }
 
         if (canShareVoice && familyVoices.isNotEmpty()) {
@@ -1165,6 +1143,7 @@ internal fun VoiceProfileManagementPanel(
 
     if (voicePlanGateOpen) {
         PlanGateDialog(
+            title = stringResource(R.string.voices_create_paid_title),
             message = stringResource(R.string.voices_create_paid_notice),
             onConfirm = {
                 voicePlanGateOpen = false

@@ -57,7 +57,12 @@ internal fun buildGoogleSignInOptions(requestIdToken: Boolean = false): GoogleSi
 
 internal object AppRoute {
     const val Settings = "settings"
+    const val ConsentHistory = "consents"
+    const val LegalDocTypeArg = "legalDocType"
+    const val LegalDoc = "legal/{$LegalDocTypeArg}"
     const val MemberManagement = "members"
+
+    fun legalDoc(type: String): String = "legal/$type"
     const val FamilyTargetModeArg = "familyTargetMode"
     const val AlarmCreate = "alarm/create/{$FamilyTargetModeArg}"
     const val AlarmIdArg = "alarmId"
@@ -69,12 +74,12 @@ internal object AppRoute {
 
 internal val NativeTab.route: String
     get() = when (this) {
-        NativeTab.Home -> "home"
         NativeTab.Voices -> "voices"
         NativeTab.Alarms -> "alarms"
         NativeTab.People -> "people"
         NativeTab.Messages -> "messages"
         NativeTab.Billing -> "billing"
+        NativeTab.Menu -> "menu"
     }
 
 internal fun String?.toNativeTab(): NativeTab? =
@@ -89,7 +94,7 @@ internal fun alarmPermissionRequiredMessage(context: Context, target: Permission
 
 internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     navigate(tab.route) {
-        popUpTo(NativeTab.Home.route) {
+        popUpTo(NativeTab.Alarms.route) {
             saveState = true
         }
         launchSingleTop = true
@@ -97,10 +102,11 @@ internal fun NavHostController.navigateTopLevelTab(tab: NativeTab) {
     }
 }
 
+// 알람 탭이 곧 홈이다(홈 탭 병합).
 internal fun NavHostController.navigateHomeClearingStack() {
     if (currentDestination == null) return
-    navigate(NativeTab.Home.route) {
-        popUpTo(NativeTab.Home.route)
+    navigate(NativeTab.Alarms.route) {
+        popUpTo(NativeTab.Alarms.route)
         launchSingleTop = true
     }
 }

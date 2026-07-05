@@ -91,8 +91,6 @@ internal fun FamilyConnectionPanel(
     onRegisterCode: (String) -> Unit,
     onEnsureFamilyShareCode: () -> Unit,
 ) {
-    var inviteCode by remember { mutableStateOf("") }
-    var voucherCode by remember { mutableStateOf("") }
     val currentGroup = familyGroup?.group
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -169,59 +167,13 @@ internal fun FamilyConnectionPanel(
                 if (hasActivePlan) {
                     MutedText(stringResource(R.string.social_register_will_change_plan, activePlanName))
                 }
-                Text(stringResource(R.string.social_invite_code_label), fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = inviteCode,
-                        onValueChange = { value ->
-                            inviteCode = value
-                                .uppercase()
-                                .filter { it.isLetterOrDigit() || it == '-' }
-                                .take(18)
-                        },
-                        placeholder = { Text("INV-XXXX-XXXX-XXXX") },
-                        singleLine = true,
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(
-                        onClick = { pendingRegisterCode = inviteCode },
-                        enabled = inviteCode.isNotBlank() && !socialBusy,
-                    ) {
-                        Text(stringResource(R.string.social_join_button))
-                    }
-                }
-
-                Text(stringResource(R.string.social_voucher_code_label), fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = voucherCode,
-                        onValueChange = { value ->
-                            voucherCode = value
-                                .uppercase()
-                                .filter { it.isLetterOrDigit() || it == '-' }
-                                .take(19)
-                        },
-                        placeholder = { Text("GIFT-XXXX-XXXX-XXXX") },
-                        singleLine = true,
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.weight(1f),
-                    )
-                    Button(
-                        onClick = { pendingRegisterCode = voucherCode },
-                        enabled = voucherCode.isNotBlank() && !socialBusy,
-                    ) {
-                        Text(stringResource(R.string.social_register_button))
-                    }
-                }
+                // 통합 입력: 초대·이용권 선물·프로모션 코드를 한 필드로 받고 서버가 판별한다.
+                Text(stringResource(R.string.social_code_input_label), fontWeight = FontWeight.SemiBold)
+                MutedText(stringResource(R.string.social_code_input_hint))
+                CodeRedeemField(
+                    busy = socialBusy || billingBusy,
+                    onSubmit = { pendingRegisterCode = it },
+                )
             }
         }
     }
@@ -277,8 +229,6 @@ internal fun FamilyConnectionPanel(
                 TextButton(
                     onClick = {
                         onRegisterCode(code)
-                        inviteCode = ""
-                        voucherCode = ""
                         pendingRegisterCode = null
                     },
                 ) {

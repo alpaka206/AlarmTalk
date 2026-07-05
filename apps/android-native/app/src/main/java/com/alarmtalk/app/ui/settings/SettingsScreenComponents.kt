@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -16,12 +17,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -112,7 +119,7 @@ internal fun SettingsRow(
 @Composable
 internal fun SettingsToggleRow(
     label: String,
-    value: String,
+    value: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     enabled: Boolean = true,
@@ -128,11 +135,13 @@ internal fun SettingsToggleRow(
                 text = label,
                 fontWeight = FontWeight.Medium,
             )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (!value.isNullOrBlank()) {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         AlarmTalkSwitch(
             checked = checked,
@@ -149,10 +158,9 @@ internal fun WeatherLocationPreferenceDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    var draftCountry by remember(country) { mutableStateOf(country) }
+    // 나라는 받지 않는다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
-    val countryError = submitted && draftCountry.isBlank()
     val cityError = submitted && draftCity.isBlank()
 
     Dialog(
@@ -172,75 +180,121 @@ internal fun WeatherLocationPreferenceDialog(
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 ModalDialogTitle(stringResource(R.string.hs_weather_dialog_title), onDismiss = onDismiss)
-                Surface(
-                    shape = WakerPanelShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.34f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.hs_weather_base_region_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Text(
-                            text = stringResource(R.string.hs_weather_base_region_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = draftCountry,
-                        onValueChange = { draftCountry = it.take(30) },
-                        label = { Text(stringResource(R.string.hs_weather_country_label)) },
-                        placeholder = { Text(stringResource(R.string.hs_weather_country_placeholder)) },
-                        singleLine = true,
-                        isError = countryError,
-                        supportingText = {
-                            if (countryError) Text(stringResource(R.string.hs_weather_field_required))
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = draftCity,
-                        onValueChange = { draftCity = it.take(30) },
-                        label = { Text(stringResource(R.string.hs_weather_city_label)) },
-                        placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
-                        singleLine = true,
-                        isError = cityError,
-                        supportingText = {
-                            if (cityError) Text(stringResource(R.string.hs_weather_field_required))
-                        },
-                        shape = WakerInputShape,
-                        colors = wakerOutlinedTextFieldColors(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Spacer(Modifier.height(20.dp))
+                WeatherCityPickerField(
+                    city = draftCity,
+                    cityError = cityError,
+                    onCityChange = { draftCity = it },
+                )
+                Spacer(Modifier.height(6.dp))
                 Button(
                     onClick = {
                         submitted = true
-                        if (draftCountry.isNotBlank() && draftCity.isNotBlank()) {
-                            onConfirm(draftCountry.trim(), draftCity.trim())
+                        if (draftCity.isNotBlank()) {
+                            onConfirm("", draftCity.trim())
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = WakerButtonShape,
                 ) {
+                    Icon(Icons.Outlined.Save, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.hs_save))
                 }
             }
+        }
+    }
+}
+
+// 도시 선택 필드 — 로케일별 프리셋을 드롭다운으로 고르고, 맨 위 '직접 입력'을 고르면
+// 자유 입력 필드가 열린다. 프리셋이 없는 로케일(예: 영어)은 자유 입력만 보여준다.
+// 나라 입력은 없다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun WeatherCityPickerField(
+    city: String,
+    cityError: Boolean,
+    onCityChange: (String) -> Unit,
+) {
+    val presetCities = stringArrayResource(R.array.hs_weather_preset_cities).toList()
+
+    @Composable
+    fun manualField(showError: Boolean) {
+        OutlinedTextField(
+            value = city,
+            onValueChange = { onCityChange(it.take(30)) },
+            label = { Text(stringResource(R.string.hs_weather_city_label)) },
+            placeholder = { Text(stringResource(R.string.hs_weather_city_placeholder)) },
+            singleLine = true,
+            isError = showError,
+            supportingText = {
+                if (showError) Text(stringResource(R.string.hs_weather_field_required))
+            },
+            shape = WakerInputShape,
+            colors = wakerOutlinedTextFieldColors(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
+    if (presetCities.isEmpty()) {
+        manualField(showError = cityError)
+        return
+    }
+
+    val customLabel = stringResource(R.string.hs_weather_city_custom)
+    var customMode by remember { mutableStateOf(city.isNotBlank() && city !in presetCities) }
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+        ) {
+            OutlinedTextField(
+                value = if (customMode) customLabel else city,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.hs_weather_city_label)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                singleLine = true,
+                isError = cityError && !customMode,
+                supportingText = {
+                    if (cityError && !customMode) Text(stringResource(R.string.hs_weather_field_required))
+                },
+                shape = WakerInputShape,
+                colors = wakerOutlinedTextFieldColors(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                DropdownMenuItem(
+                    text = { Text(customLabel) },
+                    onClick = {
+                        customMode = true
+                        onCityChange("")
+                        expanded = false
+                    },
+                )
+                presetCities.forEach { preset ->
+                    DropdownMenuItem(
+                        text = { Text(preset) },
+                        onClick = {
+                            customMode = false
+                            onCityChange(preset)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+        if (customMode) {
+            manualField(showError = cityError)
         }
     }
 }

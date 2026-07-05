@@ -33,12 +33,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
 import androidx.compose.material.icons.outlined.GraphicEq
-import androidx.compose.material.icons.outlined.Snooze
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -70,7 +68,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.graphics.graphicsLayer
 import com.alarmtalk.app.AlarmTalkDarkColorScheme
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerCardShape
 import com.alarmtalk.app.WakerDialogShape
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.alarm.AlarmContract.EXTRA_ALARM_ID
@@ -244,8 +241,11 @@ private fun RingingRoute(
             Spacer(Modifier.height(6.dp))
             RingingClock(ampm = uiState.ampm, time = uiState.timeText)
 
-            Spacer(Modifier.height(30.dp))
-            RingingVoiceCard(uiState)
+            // 풀스크린+소리 자체가 '울리는 중'이므로 상태 문구 없이 라벨·멘트만 보여준다.
+            if (uiState.label != null || uiState.voiceText != null) {
+                Spacer(Modifier.height(30.dp))
+                RingingVoiceCard(uiState)
+            }
 
             Spacer(Modifier.weight(1f))
 
@@ -298,59 +298,26 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
         Column(modifier = Modifier.padding(22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(46.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        val initial = uiState.avatarLabel
-                        if (initial != null) {
-                            Text(
-                                text = initial,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Outlined.Alarm,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.width(13.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = uiState.title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = uiState.subtitle,
-                        color = Color(0xFFA6BDDA),
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            uiState.label?.let { label ->
+                Text(
+                    text = label,
+                    color = Color(0xFFA6BDDA),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(14.dp))
             }
-            Spacer(Modifier.height(16.dp))
             RingingVoiceWaveform()
             uiState.voiceText?.let { voiceText ->
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = stringResource(R.string.rd_voice_text_quoted, voiceText),
                     color = Color(0xFFDBE7F6),
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 4,
+                    fontSize = 18.sp,
+                    lineHeight = 27.sp,
+                    maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -360,12 +327,13 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
 
 @Composable
 private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
+    // 끄기 슬라이더(76dp)와 높이·라운딩을 맞춰 두 컨트롤이 한 쌍으로 읽히게 한다.
     Surface(
         onClick = onSnooze,
         modifier = Modifier
             .fillMaxWidth()
-            .height(62.dp),
-        shape = WakerCardShape,
+            .height(76.dp),
+        shape = RoundedCornerShape(26.dp),
         color = Color.White.copy(alpha = 0.07f),
         border = BorderStroke(1.dp, Color(0x24FFFFFF)),
     ) {
@@ -374,13 +342,6 @@ private fun RingingSnoozeButton(minutes: Int, onSnooze: () -> Unit) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Snooze,
-                contentDescription = null,
-                tint = Color(0xFFCFDDEE),
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(9.dp))
             Text(
                 text = stringResource(R.string.rd_snooze_button_minutes, minutes),
                 color = Color(0xFFCFDDEE),
@@ -556,24 +517,20 @@ private fun RingingVoiceWaveform() {
 }
 
 private data class RingingUiState(
-    val title: String = "",
-    val subtitle: String = "",
+    /** 사용자가 지은 알람 이름 — 없으면 카드에 라벨 줄을 그리지 않는다. */
+    val label: String? = null,
     val voiceText: String? = null,
     val snoozeEnabled: Boolean = true,
     val snoozeMinutes: Int = 5,
     val dateText: String = "",
     val ampm: String = "",
     val timeText: String = "",
-    /** 보이스 카드 아바타에 표시할 라벨 첫 글자 — null 이면 알람 아이콘. */
-    val avatarLabel: String? = null,
 )
 
 /** 알람을 아직 불러오지 못했을 때(빈 상태) 표시할 기본 UI 상태. */
 private fun defaultRingingUiState(context: android.content.Context): RingingUiState {
     val now = java.time.LocalTime.now()
     return RingingUiState(
-        title = context.getString(R.string.rd2_ringing_title_default),
-        subtitle = context.getString(R.string.rd2_ringing_subtitle_now),
         dateText = todayDateLabel(context),
         ampm = if (now.hour < 12) {
             context.getString(R.string.rd2_am)
@@ -597,12 +554,7 @@ private fun AlarmEntity.toRingingUiState(context: android.content.Context): Ring
             )
 
     return RingingUiState(
-        title = customTitle ?: context.getString(R.string.rd2_ringing_title_default),
-        subtitle = if (customTitle != null) {
-            ringingModeLabel(context, playMode, voiceMessage != null)
-        } else {
-            context.getString(R.string.rd2_ringing_subtitle_now)
-        },
+        label = customTitle,
         voiceText = voiceMessage,
         snoozeEnabled = snoozeAvailable,
         snoozeMinutes = snoozeMinutes,
@@ -613,7 +565,6 @@ private fun AlarmEntity.toRingingUiState(context: android.content.Context): Ring
             context.getString(R.string.rd2_pm)
         },
         timeText = alarmClockLabel(hour, minute),
-        avatarLabel = customTitle?.take(1),
     )
 }
 
@@ -635,13 +586,3 @@ private fun alarmClockLabel(hour: Int, minute: Int): String {
     return "$displayHour:${"%02d".format(minute)}"
 }
 
-private fun ringingModeLabel(
-    context: android.content.Context,
-    playMode: String,
-    hasVoiceText: Boolean,
-): String = when {
-    hasVoiceText -> context.getString(R.string.rd2_ringing_mode_voice_alarm)
-    playMode == AlarmPlayModes.VOICE_ONLY -> context.getString(R.string.rd2_ringing_mode_voice_only)
-    playMode == AlarmPlayModes.ALARM_VOICE -> context.getString(R.string.rd2_ringing_mode_alarm_voice)
-    else -> context.getString(R.string.rd2_ringing_title_default)
-}

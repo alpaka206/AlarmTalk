@@ -607,22 +607,11 @@ internal fun SystemVoiceProfileRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Mic,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
+            // 모든 행이 같은 마이크 배지를 반복해 정보가 없었음 — 이름만 보여준다.
             Text(
                 text = profile.name,
                 fontWeight = FontWeight.SemiBold,

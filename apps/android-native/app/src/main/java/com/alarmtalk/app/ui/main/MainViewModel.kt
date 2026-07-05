@@ -13,6 +13,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.alarmtalk.app.R
 import com.alarmtalk.app.billing.PlayBillingManager
+import com.alarmtalk.app.core.AlarmTalkLog
 import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAppContainer
 import com.alarmtalk.app.data.AlarmDraft
@@ -248,10 +249,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var defaultVoiceId by mutableStateOf<String?>(null)
         internal set
 
-    // 기본(시스템) 목소리가 사용자를 부를 호칭. 시스템 음성 알람 TTS 의 listenerTitle 로 사용.
-    var defaultListenerTitle by mutableStateOf<String?>(null)
-        internal set
-
     private val consentPrefs = application.getSharedPreferences("voice_alarm_consent", android.content.Context.MODE_PRIVATE)
 
     // 필수 개인정보/약관 동의가 아직 안 된 경우 true → 로그인 후 동의 화면을 띄운다.
@@ -329,14 +326,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun checkVoiceSetupFor(userId: String) {
         if (userId.isBlank()) return
         defaultVoiceId = defaultVoiceStore.read(userId)
-        defaultListenerTitle = defaultVoiceStore.readListenerTitle(userId)
         showVoiceSetup = !defaultVoiceStore.hasCompletedSetup(userId)
     }
 
-    /** 온보딩 목소리 스텝에서 기본 목소리 + 호칭을 정했을 때. 기기 설정에 저장하고 스텝을 닫는다. */
-    fun completeVoiceSetup(voiceId: String, listenerTitle: String?) {
+    /** 온보딩 목소리 스텝에서 기본 목소리를 정했을 때. 기기 설정에 저장하고 스텝을 닫는다.
+     *  (호칭은 따로 받지 않는다 — 시스템 음성 TTS 는 계정 닉네임으로 부른다.) */
+    fun completeVoiceSetup(voiceId: String) {
         setDefaultVoice(voiceId)
-        setDefaultListenerTitle(listenerTitle)
         showVoiceSetup = false
         // 목소리를 고른 흐름에서만 첫 알람 만들기(에디터 자동 진입)로 이어간다(건너뛰기 시엔 홈).
         navigateFirstAlarmEditorTick++
@@ -353,13 +349,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
         defaultVoiceStore.set(userId, voiceId)
         defaultVoiceId = voiceId
-    }
-
-    /** 기본(시스템) 목소리 호칭을 설정/변경한다(온보딩·목소리 탭 공용). */
-    fun setDefaultListenerTitle(title: String?) {
-        val userId = authSession?.user?.id?.takeIf { it.isNotBlank() }
-        defaultVoiceStore.setListenerTitle(userId, title)
-        defaultListenerTitle = title?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     // 이 기기에서 "현재 정책 버전" 기준으로 필수 동의를 마친 사용자 캐시.
@@ -437,7 +426,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         voiceProfileLoadFinished = false
         showVoiceSetup = false
         defaultVoiceId = null
-        defaultListenerTitle = null
         ttsMessages = emptyList()
         familyGroup = null
         familyVoices = emptyList()
@@ -515,7 +503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }.onSuccess { scheduled ->
                 Log.i(TAG, "Startup alarm sync complete scheduled=$scheduled")
             }.onFailure { error ->
-                Log.e(TAG, "Startup alarm sync failed", error)
+                AlarmTalkLog.reportError("Startup alarm sync failed", error)
             }
         }
         // 결제 직후 앱 종료 등으로 서버 검증이 누락된 Play 구매를 앱 시작 시 재전송.
