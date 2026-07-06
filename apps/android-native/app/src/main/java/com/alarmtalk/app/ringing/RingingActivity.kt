@@ -241,7 +241,7 @@ private fun RingingRoute(
             Spacer(Modifier.height(6.dp))
             RingingClock(ampm = uiState.ampm, time = uiState.timeText)
 
-            // 풀스크린+소리 자체가 '울리는 중'이므로 상태 문구 없이 라벨·멘트만 보여준다.
+            // 풀스크린+소리 자체가 '울리는 중'이므로 상태 문구 없이 라벨·파형만 보여준다(멘트 문구는 음성으로만).
             if (uiState.label != null || uiState.voiceText != null) {
                 Spacer(Modifier.height(30.dp))
                 RingingVoiceCard(uiState)
@@ -309,18 +309,8 @@ private fun RingingVoiceCard(uiState: RingingUiState) {
                 )
                 Spacer(Modifier.height(14.dp))
             }
+            // 멘트 문구는 화면에 표시하지 않는다(음성으로만 재생). 파형이 '음성 재생 중'을 나타낸다.
             RingingVoiceWaveform()
-            uiState.voiceText?.let { voiceText ->
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = stringResource(R.string.rd_voice_text_quoted, voiceText),
-                    color = Color(0xFFDBE7F6),
-                    fontSize = 18.sp,
-                    lineHeight = 27.sp,
-                    maxLines = 5,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
         }
     }
 }

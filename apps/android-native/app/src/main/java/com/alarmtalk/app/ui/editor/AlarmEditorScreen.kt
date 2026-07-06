@@ -1104,8 +1104,6 @@ internal fun AlarmEditorScreen(
                             minute = editor.minute,
                             repeatDaysMask = editor.repeatDaysMask,
                             holidayOff = editor.holidayOff,
-                            label = editor.label,
-                            onLabelChange = { editor.label = it },
                             onToggleDay = { dayIndex ->
                                 val nextMask = editor.repeatDaysMask xor (1 shl dayIndex)
                                 editor.repeatDaysMask = nextMask

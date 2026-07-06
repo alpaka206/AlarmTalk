@@ -114,9 +114,6 @@
     <string name="billing_price_monthly">月額%1$s円</string>
     <string name="billing_price_zero">無料</string>
     <string name="billing_register_code_button">コードを登録</string>
-    <string name="billing_redeem_code_button">コードを登録する</string>
-    <string name="billing_redeem_code_description">プレゼントされた利用券コード、プロモコード、招待コードはすべてここで登録できます。</string>
-    <string name="billing_redeem_code_title">コード登録</string>
     <string name="code_redeem_placeholder">招待・ギフト・プロモコード</string>
     <string name="code_redeem_submit">登録</string>
     <string name="billing_select_button">購読を始める</string>
@@ -227,7 +224,6 @@
     <string name="editor_holiday_show_title">今後の祝日</string>
     <string name="editor_holiday_cold_cache">読み込み中…</string>
     <string name="editor_in_use">使用中</string>
-    <string name="editor_label_alarm_name">アラーム名</string>
     <string name="editor_language">言語</string>
     <string name="editor_listener_title_label">この声が私を呼ぶ名前</string>
     <string name="editor_listener_title_placeholder">例：ママ、あなた、キムさん</string>
@@ -239,7 +235,6 @@
     <string name="editor_not_in_use">使わない</string>
     <string name="editor_off">オフ</string>
     <string name="editor_pattern">パターン</string>
-    <string name="editor_placeholder_alarm_name">例：出勤の準備</string>
     <string name="editor_plan_gate_login_title">ログインが必要です</string>
     <string name="editor_plan_gate_login_required">ログインすると音声アラームを作成できます。</string>
     <string name="editor_plan_gate_paid_features">プランに加入すると、自分で作った声・録音・自由入力の文でアラームを作れます。</string>
@@ -398,7 +393,7 @@
     <string name="hs_profile_menu_invite_code">招待コードを登録</string>
     <string name="hs_profile_menu_pass">利用券</string>
     <string name="hs_profile_menu_settings">設定</string>
-    <string name="hs_profile_menu_shared_pass">共有利用券</string>
+    <string name="hs_profile_menu_shared_pass">招待・メンバー管理</string>
     <string name="hs_quiet_time_add">+ 時間を追加</string>
     <string name="hs_quiet_time_confirm">確認</string>
     <string name="hs_quiet_time_dialog_desc">選んだ時間帯は、ほかの人が私のアラームを設定できません。</string>
@@ -426,11 +421,7 @@
     <string name="hs_settings_title">設定</string>
     <string name="hs_settings_weather_region">天気の地域</string>
     <string name="settings_holiday_country_title">祝日カレンダー</string>
-    <string name="settings_marketing_section">マーケティング受信</string>
-    <string name="settings_marketing_toggle_label">広告性情報の受信</string>
     <string name="settings_logout_confirm_title">ログアウトしますか？</string>
-    <string name="settings_marketing_toggle_desc">特典・イベントのお知らせを受け取ります。いつでもオフにできます。</string>
-    <string name="settings_marketing_loading">読み込み中…</string>
     <string name="settings_marketing_load_failed">読み込めませんでした · タップで再試行</string>
     <string name="hs_start_now">さっそく始めましょう。</string>
     <string name="hs_theme_dark_desc">夜に見やすい暗い画面です。</string>
@@ -632,7 +623,6 @@
     <string name="rd_slide_to_dismiss">スライドして停止</string>
     <string name="rd_snooze_button_minutes">%1$d分後に再通知</string>
     <string name="rd_test_alarm_label">テストアラーム</string>
-    <string name="rd_voice_text_quoted">「%1$s」</string>
     <string name="ringing_notification_text">起きる時間ですよ</string>
     <string name="ringing_notification_title">アラームが鳴っています</string>
     <string name="social_active_plan_in_use">%1$sプランを利用中です。登録はプランの終了後に可能です。</string>
@@ -663,22 +653,18 @@
     <string name="social_message_requires_plan">メッセージは、カップル・家族プランでご利用いただけます。</string>
     <string name="social_new_message_title">新しいメッセージ</string>
     <string name="social_no_available_voices">利用できる声がありません。</string>
-    <string name="social_no_connected_partner">連携している相手がいません。</string>
-    <string name="social_no_received_messages">受信メッセージはありません。</string>
     <string name="social_no_share_code_yet">共有コードはまだありません。%1$sのメンバーを招待する招待コードを作成してください。</string>
     <string name="social_no_shared_plan">現在、一緒に使っているプランはありません。</string>
     <string name="social_plan_label_couple">カップル</string>
     <string name="social_plan_label_family">家族</string>
     <string name="social_plan_label_shared">共有</string>
-    <string name="social_plan_member_count">%1$sプラン・現在%2$d/%3$d人</string>
     <string name="social_play_cd">再生</string>
     <string name="social_quiet_time_label">アラームを受け取らない時間</string>
     <string name="social_received_messages_title">受信メッセージ</string>
     <string name="social_refresh_cd">更新</string>
-    <string name="social_regenerate_share_code">コードを再発行</string>
+    <string name="social_regenerate_share_code">再発行</string>
     <string name="social_regenerate_share_code_dialog_message">再発行すると現在のコードは使えなくなります。すでに共有した相手には新しいコードを送り直してください。</string>
     <string name="social_regenerate_share_code_dialog_title">共有コードの再発行</string>
-    <string name="social_regenerate_share_code_hint">コードが外部に漏れた場合は再発行して既存のコードを無効にできます。</string>
     <string name="social_register_button">登録</string>
     <string name="social_register_dialog_message">このコードを登録しますか？</string>
     <string name="social_register_dialog_message_active">登録可能なコードの場合、現在の%1$sプランは終了し、新しいプランに切り替わります。登録しますか？</string>
@@ -699,7 +685,7 @@
     <string name="social_share_code_chooser_title">コードを共有</string>
     <string name="social_share_code_section_title">共有コード</string>
     <string name="social_share_unavailable">共有できません</string>
-    <string name="social_shared_plan_title">共有プラン</string>
+    <string name="social_shared_plan_title">招待・メンバー管理</string>
     <string name="social_stop_cd">停止</string>
     <string name="social_view_plan_button">プランを見る</string>
     <string name="social_voucher_code_label">プランコード</string>
@@ -798,7 +784,6 @@
     <string name="voicesr_file_speaker_multiple">2人以上</string>
     <string name="voicesr_file_speaker_section_title">ファイル内の声</string>
     <string name="voicesr_file_speaker_single">1人</string>
-    <string name="voicesr_listen">聞いてみる</string>
     <string name="voicesr_listener_preview_heading">この声はこう呼んでくれます</string>
     <string name="voicesr_listener_preview_quote">「%1$s、起きる時間ですよ」</string>
     <string name="voicesr_listener_preview_relationship">関係 · %1$s</string>
@@ -828,7 +813,6 @@
     <string name="voicesr_speaker_draft_index">声 %1$d</string>
     <string name="voicesr_status_creating">作成中</string>
     <string name="voicesr_status_deleting">削除中</string>
-    <string name="voicesr_stop">停止</string>
     <string name="voicesr_voice_name_label">声の名前</string>
     <string name="label_audio_file">音声ファイル</string>
     <string name="label_repeat_none">繰り返しなし</string>
@@ -1066,6 +1050,7 @@
     <string name="menu_language_label">アプリの言語</string>
     <string name="menu_language_system">システムのまま</string>
     <string name="menu_section_legal">法的情報</string>
+    <string name="menu_open_source_licenses">オープンソースライセンス</string>
     <string name="menu_app_version">アプリバージョン %1$s</string>
     <string name="consent_screen_title">規約と個人情報の同意</string>
     <string name="consent_section_required">必須の同意内容</string>
@@ -1099,8 +1084,7 @@
     <string name="r3dlg_usage_guide_skip">スキップ</string>
     <string name="r3dlg_usage_guide_start">はじめる</string>
     <string name="r3dlg_usage_guide_next">次へ</string>
-    <string name="r3dlg_duplicate_alarm_message_named">%1$sにはすでに\'%2$s\'のアラームがあります。\n既存のアラームを新しいアラームに置き換えますか？</string>
-    <string name="r3dlg_duplicate_alarm_message">%1$sにはすでにアラームがあります。\n既存のアラームを新しいアラームに置き換えますか？</string>
+    <string name="r3dlg_duplicate_alarm_message">%1$sのアラームを新しいアラームに置き換えますか？</string>
     <string name="r3dlg_duplicate_alarm_title">同じ時刻にアラームがあります</string>
     <string name="r3dlg_duplicate_alarm_replace">置き換える</string>
     <string name="r3dlg_duplicate_alarm_cancel">キャンセル</string>

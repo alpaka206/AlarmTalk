@@ -1,6 +1,11 @@
 package com.alarmtalk.app
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -591,9 +596,12 @@ internal fun SystemVoiceProfileRow(
     selected: Boolean = false,
     onSelect: () -> Unit = {},
 ) {
-    // 카드 본문 탭 = 기본 목소리로 선택, ▶ 버튼 = 인사말 미리듣기. 선택된 건 강조 + 라디오 체크.
+    // 행 전체 탭 = 기본 목소리로 선택 + 인사말 자동 재생(재탭 시 정지). 별도 ▶ 버튼 없음.
     OutlinedCard(
-        onClick = onSelect,
+        onClick = {
+            onSelect()
+            onPlay()
+        },
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(
@@ -607,8 +615,8 @@ internal fun SystemVoiceProfileRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // 모든 행이 같은 마이크 배지를 반복해 정보가 없었음 — 이름만 보여준다.
@@ -622,14 +630,40 @@ internal fun SystemVoiceProfileRow(
                 },
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onPlay) {
-                Icon(
-                    imageVector = if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                    contentDescription = if (playing) stringResource(R.string.voicesr_stop) else stringResource(R.string.voicesr_listen),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+            // 재생 중이면 이퀄라이저로 '재생 중'을 알린다(정지는 행 재탭).
+            if (playing) {
+                PlayingEqualizer()
             }
-            RadioButton(selected = selected, onClick = onSelect)
+            RadioButton(selected = selected, onClick = null)
+        }
+    }
+}
+
+/** 인사말 미리듣기 재생 중임을 나타내는 작은 이퀄라이저 애니메이션. */
+@Composable
+private fun PlayingEqualizer() {
+    val transition = rememberInfiniteTransition(label = "voicePlaying")
+    val barColor = MaterialTheme.colorScheme.primary
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(0, 160, 320, 120).forEachIndexed { index, delayMillis ->
+            val scale by transition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 520, delayMillis = delayMillis),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "bar$index",
+            )
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height((6 + scale * 14).dp)
+                    .background(barColor, WakerPillShape),
+            )
         }
     }
 }

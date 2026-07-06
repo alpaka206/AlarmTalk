@@ -117,9 +117,6 @@
     <string name="billing_price_monthly">월 %1$s원</string>
     <string name="billing_price_zero">0원</string>
     <string name="billing_register_code_button">코드 등록</string>
-    <string name="billing_redeem_code_button">코드 등록하기</string>
-    <string name="billing_redeem_code_description">선물 받은 이용권 코드, 프로모션 코드, 초대 코드 모두 여기에 입력하면 돼요.</string>
-    <string name="billing_redeem_code_title">코드 등록</string>
     <string name="code_redeem_placeholder">초대·선물·프로모션 코드</string>
     <string name="code_redeem_submit">등록</string>
     <string name="billing_select_button">구독 시작하기</string>
@@ -230,7 +227,6 @@
     <string name="editor_holiday_show_title">다가오는 공휴일</string>
     <string name="editor_holiday_cold_cache">불러오는 중…</string>
     <string name="editor_in_use">사용 중</string>
-    <string name="editor_label_alarm_name">알람 이름</string>
     <string name="editor_language">언어</string>
     <string name="editor_listener_title_label">이 목소리가 나를 부를 이름</string>
     <string name="editor_listener_title_placeholder">예: 엄마, 자기, 김팀장</string>
@@ -242,7 +238,6 @@
     <string name="editor_not_in_use">사용 안 함</string>
     <string name="editor_off">꺼짐</string>
     <string name="editor_pattern">패턴</string>
-    <string name="editor_placeholder_alarm_name">예: 출근 준비</string>
     <string name="editor_plan_gate_login_title">로그인이 필요해요</string>
     <string name="editor_plan_gate_login_required">로그인하면 목소리 알람을 만들 수 있어요.</string>
     <string name="editor_plan_gate_paid_features">이용권을 연결하면 직접 만든 목소리·녹음·직접 입력 문구로 알람을 만들 수 있어요.</string>
@@ -400,7 +395,7 @@
     <string name="hs_profile_menu_invite_code">초대 코드 등록</string>
     <string name="hs_profile_menu_pass">이용권</string>
     <string name="hs_profile_menu_settings">설정</string>
-    <string name="hs_profile_menu_shared_pass">공유 이용권</string>
+    <string name="hs_profile_menu_shared_pass">초대 및 구성원 관리</string>
     <string name="hs_quiet_time_add">+ 시간 추가</string>
     <string name="hs_quiet_time_confirm">확인</string>
     <string name="hs_quiet_time_dialog_desc">선택한 시간대에는 다른 사람이 내 알람을 맞출 수 없어요.</string>
@@ -428,11 +423,7 @@
     <string name="hs_settings_title">설정</string>
     <string name="hs_settings_weather_region">날씨 지역</string>
     <string name="settings_holiday_country_title">공휴일 달력</string>
-    <string name="settings_marketing_section">마케팅 수신</string>
-    <string name="settings_marketing_toggle_label">광고성 정보 수신</string>
     <string name="settings_logout_confirm_title">로그아웃할까요?</string>
-    <string name="settings_marketing_toggle_desc">혜택·이벤트 소식을 받아요. 언제든 끌 수 있어요.</string>
-    <string name="settings_marketing_loading">불러오는 중…</string>
     <string name="settings_marketing_load_failed">불러오지 못했어요 · 다시 시도</string>
     <string name="hs_start_now">바로 시작해봐요.</string>
     <string name="hs_theme_dark_desc">밤에 보기 편한 어두운 화면이에요.</string>
@@ -635,7 +626,6 @@
     <string name="rd_slide_to_dismiss">밀어서 끄기</string>
     <string name="rd_snooze_button_minutes">%1$d분 뒤 다시 알림</string>
     <string name="rd_test_alarm_label">테스트 알람</string>
-    <string name="rd_voice_text_quoted">“%1$s”</string>
     <string name="social_active_plan_in_use">%1$s 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.</string>
     <string name="social_allow_partner_alarm">상대 알람 허용</string>
     <string name="social_allow_partner_alarm_desc">함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.</string>
@@ -664,22 +654,18 @@
     <string name="social_message_requires_plan">메시지는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="social_new_message_title">새 메시지</string>
     <string name="social_no_available_voices">사용 가능한 목소리가 없어요.</string>
-    <string name="social_no_connected_partner">연결된 상대가 없어요.</string>
-    <string name="social_no_received_messages">받은 메시지가 없어요.</string>
     <string name="social_no_share_code_yet">공유 코드가 아직 없어요. %1$s 구성원을 초대할 초대 코드를 만들어 주세요.</string>
     <string name="social_no_shared_plan">현재 함께 쓰는 이용권이 없어요.</string>
     <string name="social_plan_label_couple">커플</string>
     <string name="social_plan_label_family">가족</string>
     <string name="social_plan_label_shared">공유</string>
-    <string name="social_plan_member_count">%1$s 이용권 · 현재 %2$d/%3$d명</string>
     <string name="social_play_cd">재생</string>
     <string name="social_quiet_time_label">알람 받지 않을 시간</string>
     <string name="social_received_messages_title">받은 메시지</string>
     <string name="social_refresh_cd">새로고침</string>
-    <string name="social_regenerate_share_code">코드 재발급</string>
+    <string name="social_regenerate_share_code">재발급</string>
     <string name="social_regenerate_share_code_dialog_message">재발급하면 지금 코드는 더 이상 쓸 수 없어요. 이미 코드를 보낸 사람에게는 새 코드를 다시 보내야 해요.</string>
     <string name="social_regenerate_share_code_dialog_title">공유 코드 재발급</string>
-    <string name="social_regenerate_share_code_hint">코드가 외부에 노출됐다면 재발급해서 기존 코드를 막을 수 있어요.</string>
     <string name="social_register_button">등록</string>
     <string name="social_register_dialog_message">이 코드를 등록할까요?</string>
     <string name="social_register_dialog_message_active">등록 가능한 코드라면 현재 %1$s 이용권은 종료되고 새 이용권으로 바뀌어요. 등록할까요?</string>
@@ -700,7 +686,7 @@
     <string name="social_share_code_chooser_title">코드 공유</string>
     <string name="social_share_code_section_title">공유 코드</string>
     <string name="social_share_unavailable">공유 불가</string>
-    <string name="social_shared_plan_title">공유 이용권</string>
+    <string name="social_shared_plan_title">초대 및 구성원 관리</string>
     <string name="social_stop_cd">정지</string>
     <string name="social_view_plan_button">이용권 보기</string>
     <string name="social_voucher_code_label">이용권 코드</string>
@@ -799,7 +785,6 @@
     <string name="voicesr_file_speaker_multiple">2명 이상</string>
     <string name="voicesr_file_speaker_section_title">파일 속 목소리</string>
     <string name="voicesr_file_speaker_single">1명</string>
-    <string name="voicesr_listen">들어보기</string>
     <string name="voicesr_listener_preview_heading">이 목소리는 이렇게 불러줘요</string>
     <string name="voicesr_listener_preview_quote">\"%1$s, 일어날 시간이에요\"</string>
     <string name="voicesr_listener_preview_relationship">관계 · %1$s</string>
@@ -829,7 +814,6 @@
     <string name="voicesr_speaker_draft_index">목소리 %1$d</string>
     <string name="voicesr_status_creating">생성 중</string>
     <string name="voicesr_status_deleting">삭제 중</string>
-    <string name="voicesr_stop">정지</string>
     <string name="voicesr_voice_name_label">목소리 이름</string>
     <string name="label_audio_file">음성 파일</string>
     <string name="label_repeat_none">반복 없음</string>
@@ -1067,6 +1051,7 @@
     <string name="menu_language_label">앱 언어</string>
     <string name="menu_language_system">시스템 기본</string>
     <string name="menu_section_legal">법적 정보</string>
+    <string name="menu_open_source_licenses">오픈소스 라이선스</string>
     <string name="menu_app_version">앱 버전 %1$s</string>
     <string name="consent_screen_title">약관 및 개인정보 처리 동의</string>
     <string name="consent_section_required">필수 동의 내용</string>
@@ -1100,8 +1085,7 @@
     <string name="r3dlg_usage_guide_skip">건너뛰기</string>
     <string name="r3dlg_usage_guide_start">시작하기</string>
     <string name="r3dlg_usage_guide_next">다음</string>
-    <string name="r3dlg_duplicate_alarm_message_named">%1$s에 이미 \'%2$s\' 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?</string>
-    <string name="r3dlg_duplicate_alarm_message">%1$s에 이미 알람이 있어요.\n기존 알람을 새 알람으로 교체할까요?</string>
+    <string name="r3dlg_duplicate_alarm_message">%1$s 알람을 새 알람으로 교체할까요?</string>
     <string name="r3dlg_duplicate_alarm_title">같은 시각 알람이 있어요</string>
     <string name="r3dlg_duplicate_alarm_replace">교체하기</string>
     <string name="r3dlg_duplicate_alarm_cancel">취소</string>

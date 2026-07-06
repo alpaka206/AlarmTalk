@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -169,10 +168,9 @@ internal fun AlarmSettingRow(
 
 @Composable
 internal fun AlarmSettingDivider() {
-    // 아이콘 배지(38dp) + 간격(12dp)만큼 들여써서 텍스트 시작선에 맞춘다.
+    // 행에 아이콘 배지가 없어 제목 텍스트가 카드 안쪽 left에서 시작 → 구분선도 들여쓰기 없이 텍스트 시작선에 맞춘다.
     Box(
         modifier = Modifier
-            .padding(start = 50.dp)
             .fillMaxWidth()
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant),
@@ -439,8 +437,6 @@ internal fun EditorActionButtons(
         modifier = Modifier.fillMaxWidth(),
         shape = WakerButtonShape,
     ) {
-        Icon(Icons.Outlined.Save, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
         Text(
             when {
                 isSaving -> stringResource(R.string.editor_saving)

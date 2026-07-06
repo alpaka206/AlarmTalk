@@ -117,8 +117,7 @@ internal fun NextAlarmHeroCard(
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
-                        text = nextAlarm?.label?.takeIf { it.isNotBlank() }
-                            ?: stringResource(R.string.hs_reserve_alarm_with_voice),
+                        text = stringResource(R.string.hs_reserve_alarm_with_voice),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold,

@@ -47,8 +47,6 @@ internal fun ScheduleDetailsCard(
     minute: Int,
     repeatDaysMask: Int,
     holidayOff: Boolean,
-    label: String,
-    onLabelChange: (String) -> Unit,
     onToggleDay: (Int) -> Unit,
     onHolidayOffChange: (Boolean) -> Unit,
     holidayCountryCode: String,
@@ -75,16 +73,6 @@ internal fun ScheduleDetailsCard(
                 holidayCountryCode = holidayCountryCode,
                 upcomingHolidays = upcomingHolidays,
                 onHolidayColdCache = onHolidayColdCache,
-            )
-            OutlinedTextField(
-                value = label,
-                onValueChange = onLabelChange,
-                label = { Text(stringResource(R.string.editor_label_alarm_name)) },
-                placeholder = { Text(stringResource(R.string.editor_placeholder_alarm_name)) },
-                singleLine = true,
-                shape = WakerInputShape,
-                colors = wakerOutlinedTextFieldColors(),
-                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

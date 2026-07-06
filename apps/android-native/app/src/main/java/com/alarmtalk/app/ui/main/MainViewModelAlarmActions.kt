@@ -260,7 +260,6 @@ private fun MainViewModel.promptReplaceDuplicateAlarm(
     duplicateAlarmPrompt = DuplicateAlarmPrompt(
         hour = error.hour,
         minute = error.minute,
-        existingLabel = error.existingLabel,
         onConfirmReplace = {
             dismissDuplicateAlarmPrompt()
             onReplace()
@@ -272,7 +271,6 @@ private fun MainViewModel.promptReplaceDuplicateAlarm(
 data class DuplicateAlarmPrompt(
     val hour: Int,
     val minute: Int,
-    val existingLabel: String?,
     val onConfirmReplace: () -> Unit,
 )
 
