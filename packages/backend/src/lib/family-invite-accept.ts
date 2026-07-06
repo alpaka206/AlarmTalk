@@ -113,22 +113,35 @@ export async function acceptFamilyInvite(
   }
 
   // 좌석을 원자적으로 삽입한다: 정원 미만일 때만 INSERT 되도록 한 문장으로 처리해
-  // 동시 수락이 정원을 넘기는 TOCTOU 를 막는다. rowsAffected=0 이면 그 사이 정원이
-  // 찼다는 뜻이므로 방금 소비한 초대를 pending 으로 되돌리고 GROUP_FULL 을 던진다.
-  const memberId = crypto.randomUUID();
-  const insertRes = await db.execute({
-    sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
-          SELECT ?, ?, ?, 'member'
-          WHERE (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = ?) < ?`,
-    args: [memberId, planGroupId, userPk, planGroupId, maxMembers],
-  });
-  if ((insertRes.rowsAffected ?? 0) === 0) {
-    await db.execute({
+  // 동시 수락이 정원을 넘기는 TOCTOU 를 막는다. 삽입이 rowsAffected=0(정원 초과) 이거나
+  // 예외(예: 동시 수락으로 UNIQUE(plan_group_id, user_id) 충돌)로 실패하면, 방금 소비한
+  // 초대가 헛되이 버려지지 않도록 pending 으로 되돌린 뒤 적절한 오류를 던진다.
+  const revertConsumedInvite = () =>
+    db.execute({
       sql: `UPDATE plan_group_invites
             SET status = 'pending', used_by_user_id = NULL, used_at = NULL
             WHERE id = ?`,
       args: [inviteId],
     });
+
+  const memberId = crypto.randomUUID();
+  let insertRes;
+  try {
+    insertRes = await db.execute({
+      sql: `INSERT INTO plan_group_members (id, plan_group_id, user_id, role)
+            SELECT ?, ?, ?, 'member'
+            WHERE (SELECT COUNT(*) FROM plan_group_members WHERE plan_group_id = ?) < ?`,
+      args: [memberId, planGroupId, userPk, planGroupId, maxMembers],
+    });
+  } catch (err) {
+    await revertConsumedInvite().catch(() => {});
+    if (err instanceof Error && /unique constraint/i.test(err.message)) {
+      throw new FamilyInviteAcceptError(409, 'ALREADY_MEMBER', '이미 해당 그룹 멤버입니다');
+    }
+    throw err;
+  }
+  if ((insertRes.rowsAffected ?? 0) === 0) {
+    await revertConsumedInvite();
     throw new FamilyInviteAcceptError(409, 'GROUP_FULL', `정원 초과 (최대 ${maxMembers}명)`);
   }
 

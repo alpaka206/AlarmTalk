@@ -25,7 +25,7 @@ familyGroup.get('/groups/current', async (c) => {
     sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                  m.role AS my_role,
                  (SELECT s.expires_at FROM subscriptions s
-                  WHERE s.user_id = pg.owner_user_id AND s.status = 'active' AND s.expires_at > datetime('now')
+                  WHERE s.plan_group_id = pg.id AND s.status = 'active' AND s.expires_at > datetime('now')
                   ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
           FROM plan_group_members m
           JOIN plan_groups pg ON pg.id = m.plan_group_id
@@ -42,7 +42,7 @@ familyGroup.get('/groups/current', async (c) => {
           sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                        m.role AS my_role,
                        (SELECT s.expires_at FROM subscriptions s
-                        WHERE s.user_id = pg.owner_user_id AND s.status = 'active' AND s.expires_at > datetime('now')
+                        WHERE s.plan_group_id = pg.id AND s.status = 'active' AND s.expires_at > datetime('now')
                         ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
                 FROM plan_group_members m
                 JOIN plan_groups pg ON pg.id = m.plan_group_id
@@ -81,7 +81,8 @@ familyGroup.get('/groups/current', async (c) => {
       plan_id: String(g.plan_id),
       max_members: Number(g.max_members),
       created_at: String(g.created_at),
-      // 참여자에겐 본인 구독이 없으므로, 오너의 활성 구독 만료일을 실어 '~까지 사용' 안내에 쓴다.
+      // 참여자에겐 본인 구독이 없으므로, 그룹에 연결된(plan_group_id) 활성 구독 만료일을 실어
+      // '~까지 사용' 안내에 쓴다. 소유권 이전으로 owner_user_id 가 바뀌어도 구독은 그룹에 남으므로 안전.
       expires_at: (g.owner_expires_at as string | null) ?? null,
     },
     role: String(g.my_role),
