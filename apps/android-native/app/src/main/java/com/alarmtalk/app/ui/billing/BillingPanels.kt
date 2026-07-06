@@ -171,7 +171,10 @@ internal fun SubscriptionPanel(
         // 별도 '현재 이용권' 요약 카드 대신, 플랜 리스트의 현재 플랜 카드에 만료일 상태를 인라인으로 보여준다.
         val statusContext = LocalContext.current
         val currentExpiresAt = formatPassDate(subscription?.expiresAt)
+        val sharedMemberExpiresAt = formatPassDate(familyGroup?.group?.expiresAt)
         val currentStatusText = when {
+            isSharedMember && sharedMemberExpiresAt != null ->
+                stringResource(R.string.billing_status_shared_member_until, sharedMemberExpiresAt)
             isSharedMember -> stringResource(R.string.billing_status_shared_member)
             cancelScheduled && nextPlan != null -> {
                 val nextName = passPlanName(statusContext, nextPlan.key, nextPlan.name)
