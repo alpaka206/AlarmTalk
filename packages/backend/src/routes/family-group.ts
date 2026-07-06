@@ -25,7 +25,7 @@ familyGroup.get('/groups/current', async (c) => {
     sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                  m.role AS my_role,
                  (SELECT s.expires_at FROM subscriptions s
-                  WHERE s.plan_group_id = pg.id AND s.status = 'active' AND s.expires_at > datetime('now')
+                  WHERE s.plan_group_id = pg.id AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
                   ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
           FROM plan_group_members m
           JOIN plan_groups pg ON pg.id = m.plan_group_id
@@ -42,7 +42,7 @@ familyGroup.get('/groups/current', async (c) => {
           sql: `SELECT pg.id, pg.owner_user_id, pg.plan_id, pg.max_members, pg.created_at,
                        m.role AS my_role,
                        (SELECT s.expires_at FROM subscriptions s
-                        WHERE s.plan_group_id = pg.id AND s.status = 'active' AND s.expires_at > datetime('now')
+                        WHERE s.plan_group_id = pg.id AND s.status = 'active' AND datetime(s.expires_at) > datetime('now')
                         ORDER BY s.starts_at DESC LIMIT 1) AS owner_expires_at
                 FROM plan_group_members m
                 JOIN plan_groups pg ON pg.id = m.plan_group_id
