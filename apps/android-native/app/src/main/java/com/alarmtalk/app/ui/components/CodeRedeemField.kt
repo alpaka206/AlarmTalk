@@ -42,7 +42,8 @@ internal fun CodeRedeemField(
                 code = value
                     .uppercase()
                     .filter { it.isLetterOrDigit() || it == '-' || it == '_' }
-                    .take(32)
+                    // 프로모 코드 최대 64자(admin 발급 폼 maxlength=64)와 맞춘다 — 32자 잘림으로 긴 코드가 실패하던 문제.
+                    .take(64)
             },
             placeholder = {
                 Text(

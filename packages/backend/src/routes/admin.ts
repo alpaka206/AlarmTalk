@@ -29,6 +29,15 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+function refererOrigin(referer: string | undefined): string | null {
+  if (!referer) return null;
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
+}
+
 // Basic 인증. 아이디는 무시하고 비밀번호 == ADMIN_SECRET 만 검증한다.
 admin.use('*', async (c, next) => {
   const secret = c.env.ADMIN_SECRET;
@@ -54,6 +63,20 @@ admin.use('*', async (c, next) => {
         'content-type': 'text/plain; charset=utf-8',
       },
     });
+  }
+  return next();
+});
+
+// CSRF 방어: Basic 인증은 브라우저가 자격증명을 자동 첨부하므로, 악성 사이트의 cross-site
+// 폼 POST 로 관리자 몰래 상태(프로모 발급/토글)를 바꾸는 걸 막는다. 상태 변경(POST)은
+// Origin(없으면 Referer)이 이 콘솔 호스트와 정확히 일치할 때만 허용한다.
+admin.use('*', async (c, next) => {
+  if (c.req.method === 'POST') {
+    const expected = new URL(c.req.url).origin;
+    const source = c.req.header('Origin') ?? refererOrigin(c.req.header('Referer'));
+    if (source !== expected) {
+      return c.text('CSRF check failed', 403);
+    }
   }
   return next();
 });
