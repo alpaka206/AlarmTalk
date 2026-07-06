@@ -643,6 +643,11 @@ internal fun MainViewModel.loadMarketingConsent() {
     val session = authSession ?: return
     val userId = session.user.id
     val authorization = com.alarmtalk.app.network.AlarmTalkApiClient.bearer(session.token)
+    // 캐시된 직전 서버 확인값으로 토글을 즉시 채운다 → GET 응답 전 '로딩'으로 늦게 뜨지 않게(낙관적 표시).
+    // 계정별 키라 다른 계정/미확인이면 null → 안전하게 로딩 상태 유지(잘못된 off 표시 방지).
+    if (marketingConsentAgreed == null) {
+        marketingConsentAgreed = com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>()).read(userId)
+    }
     // 이 로드가 시작된 시점의 generation 을 캡처해 둔다. 응답이 늦게 도착하는 사이 사용자가
     // 토글을 바꾸거나 계정이 바뀌면 generation 이 올라가, 낡은 스냅샷을 폐기한다.
     val generation = marketingConsentLoadGeneration
@@ -654,7 +659,10 @@ internal fun MainViewModel.loadMarketingConsent() {
         }.onSuccess { response ->
             if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
             marketingConsentLoadFailed = false
-            marketingConsentAgreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
+            val agreed = response.consents.firstOrNull { it.consentType == "marketing" }?.agreed ?: false
+            marketingConsentAgreed = agreed
+            // 서버 확인값을 캐시에 저장 → 다음 진입 때 즉시 seed.
+            com.alarmtalk.app.data.MarketingConsentCache(getApplication<android.app.Application>()).write(userId, agreed)
         }.onFailure { error ->
             Log.w(TAG, "Failed to load marketing consent", error)
             // 이 로드가 아직 최신이고 같은 사용자일 때만 실패로 표시(레이스/계정전환 무시).
@@ -711,6 +719,8 @@ internal fun MainViewModel.updateMarketingConsent(agreed: Boolean) {
         if (authSession?.user?.id != userId || generation != marketingConsentLoadGeneration) return@launch
         result.onSuccess {
             val app = getApplication<android.app.Application>()
+            // 확정된 값을 캐시에 저장 → 다음 진입 때 즉시 seed(낙관적 표시).
+            com.alarmtalk.app.data.MarketingConsentCache(app).write(userId, agreed)
             message = if (agreed) {
                 app.getString(R.string.msg_marketing_consent_on)
             } else {

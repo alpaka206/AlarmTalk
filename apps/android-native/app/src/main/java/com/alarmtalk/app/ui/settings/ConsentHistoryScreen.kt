@@ -45,6 +45,11 @@ internal fun ConsentHistoryScreen(
     onLoadConsents: suspend () -> List<ConsentRecord>,
     onOpenTerms: () -> Unit,
     onOpenPrivacy: () -> Unit,
+    marketingConsentAgreed: Boolean?,
+    marketingConsentBusy: Boolean,
+    marketingConsentLoadFailed: Boolean,
+    onLoadMarketingConsent: () -> Unit,
+    onChangeMarketingConsent: (Boolean) -> Unit,
 ) {
     var records by remember { mutableStateOf<Map<String, ConsentRecord>>(emptyMap()) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -58,6 +63,9 @@ internal fun ConsentHistoryScreen(
             }
             .onFailure { loadFailed = true }
     }
+
+    // 선택 동의(마케팅) 토글은 서버 최신값을 별도로 읽어 두 방향 반영한다(쓰기 시 낙관·롤백은 뷰모델이 관리).
+    LaunchedEffect(Unit) { onLoadMarketingConsent() }
 
     LazyColumn(
         modifier = Modifier
@@ -135,12 +143,60 @@ internal fun ConsentHistoryScreen(
 
         item {
             ConsentSectionCard(title = stringResource(R.string.consent_section_optional)) {
-                ConsentRow(
+                // 읽기전용 이력이 아니라 실제 켜고 끄는 토글 — 설정에 있던 마케팅 카드를 이 법적 정보 화면으로 통합했다.
+                ConsentToggleRow(
                     label = stringResource(R.string.consent_type_marketing),
-                    record = records["marketing"],
-                    onOpen = null,
+                    agreed = marketingConsentAgreed,
+                    busy = marketingConsentBusy,
+                    loadFailed = marketingConsentLoadFailed,
+                    onRetry = onLoadMarketingConsent,
+                    onChange = onChangeMarketingConsent,
                 )
             }
+        }
+    }
+}
+
+// 동의 이력 행과 같은 레이아웃이되, 우측이 날짜·화살표 대신 스위치다(선택 동의 켜고 끄기).
+@Composable
+private fun ConsentToggleRow(
+    label: String,
+    agreed: Boolean?,
+    busy: Boolean,
+    loadFailed: Boolean,
+    onRetry: () -> Unit,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        // 로드 실패(값 미확보)면 'off'로 오인되지 않게 스위치 대신 다시 시도 행을 보여준다.
+        if (loadFailed && agreed == null) {
+            Text(
+                text = stringResource(R.string.settings_marketing_load_failed),
+                modifier = Modifier.clickable(onClick = onRetry),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            // 로드 전(null)엔 비활성, 쓰기 진행 중(busy)엔 연속 토글로 인한 opt-out 유실 방지로 비활성.
+            AlarmTalkSwitch(
+                checked = agreed == true,
+                onCheckedChange = onChange,
+                enabled = agreed != null && !busy,
+            )
         }
     }
 }

@@ -62,7 +62,6 @@ internal fun SubscriptionPanel(
     subscriptionResponse: BillingSubscriptionResponse?,
     familyGroup: FamilyGroupCurrentResponse?,
     vouchers: List<VoucherItem>,
-    onRegisterCode: (String) -> Unit,
     onCheckoutPlan: (String, Boolean) -> Unit,
     onPurchasePlay: (Activity, String) -> Unit,
     onCancelSubscription: (Boolean) -> Unit,
@@ -72,7 +71,6 @@ internal fun SubscriptionPanel(
 ) {
     var purchaseTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
     var changeTarget by remember { mutableStateOf<SubscriptionPlanOption?>(null) }
-    var showCodeDialog by remember { mutableStateOf(false) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var shareTarget by remember { mutableStateOf<List<VoucherItem>>(emptyList()) }
@@ -214,17 +212,7 @@ internal fun SubscriptionPanel(
             }
         }
 
-        // 선물 받은 이용권·프로모션·초대 코드 등록 — 종류 판별은 서버가 한다.
-        OutlinedButton(
-            onClick = { showCodeDialog = true },
-            enabled = !billingBusy,
-            modifier = Modifier.fillMaxWidth(),
-            shape = WakerButtonShape,
-            border = wakerCardBorder(),
-            colors = wakerOutlinedButtonColors(),
-        ) {
-            Text(stringResource(R.string.billing_redeem_code_button))
-        }
+        // 코드 등록(선물 이용권·프로모션·초대)은 '전체' 탭 통합 입력에서만 받는다 — 이용권 화면 중복 제거.
 
         if (hasActive) {
             OutlinedButton(
@@ -246,22 +234,6 @@ internal fun SubscriptionPanel(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
-        }
-    }
-
-    if (showCodeDialog) {
-        BillingActionDialog(
-            title = stringResource(R.string.billing_redeem_code_title),
-            description = stringResource(R.string.billing_redeem_code_description),
-            onDismiss = { showCodeDialog = false },
-        ) {
-            CodeRedeemField(
-                busy = billingBusy,
-                onSubmit = { code ->
-                    showCodeDialog = false
-                    onRegisterCode(code)
-                },
-            )
         }
     }
 

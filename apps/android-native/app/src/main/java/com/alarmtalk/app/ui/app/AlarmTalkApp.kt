@@ -508,7 +508,6 @@ internal fun AlarmTalkApp(
     viewModel.duplicateAlarmPrompt?.let { prompt ->
         DuplicateAlarmDialog(
             timeLabel = "%02d:%02d".format(prompt.hour, prompt.minute),
-            existingLabel = prompt.existingLabel,
             onConfirm = prompt.onConfirmReplace,
             onDismiss = viewModel::dismissDuplicateAlarmPrompt,
         )
@@ -829,14 +828,9 @@ internal fun AlarmTalkApp(
                   SettingsScreen(
                       contentPadding = padding,
                       authSession = authSession,
-                      marketingConsentAgreed = viewModel.marketingConsentAgreed,
-                      marketingConsentBusy = viewModel.marketingConsentWriteInFlight,
-                      marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
                       onBack = ::goBackInApp,
                       onEditNickname = viewModel::requestEditNickname,
                       onUpdateDynamicPromptSettings = viewModel::updateDynamicPromptSettings,
-                      onLoadMarketingConsent = viewModel::loadMarketingConsent,
-                      onChangeMarketingConsent = viewModel::updateMarketingConsent,
                       onLogout = ::logout,
                   )
               }
@@ -847,6 +841,11 @@ internal fun AlarmTalkApp(
                       onLoadConsents = { viewModel.loadConsentRecords() },
                       onOpenTerms = { navController.navigate(AppRoute.legalDoc("terms")) },
                       onOpenPrivacy = { navController.navigate(AppRoute.legalDoc("privacy")) },
+                      marketingConsentAgreed = viewModel.marketingConsentAgreed,
+                      marketingConsentBusy = viewModel.marketingConsentWriteInFlight,
+                      marketingConsentLoadFailed = viewModel.marketingConsentLoadFailed,
+                      onLoadMarketingConsent = viewModel::loadMarketingConsent,
+                      onChangeMarketingConsent = viewModel::updateMarketingConsent,
                   )
               }
               composable(AppRoute.LegalDoc) { entry ->

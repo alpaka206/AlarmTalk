@@ -327,7 +327,6 @@ internal fun AlarmListScreen(
                         subscriptionResponse = subscriptionResponse,
                         familyGroup = familyGroup,
                         vouchers = vouchers,
-                        onRegisterCode = onRegisterCode,
                         onCheckoutPlan = onCheckoutPlan,
                         onPurchasePlay = onPurchasePlay,
                         onCancelSubscription = onCancelSubscription,
