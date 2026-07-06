@@ -129,6 +129,7 @@
     <string name="billing_status_free_basic">基本のアラームは無料でご利用いただけます。</string>
     <string name="billing_status_in_use">ご利用中の利用券です。</string>
     <string name="billing_status_shared_member">共有利用券に参加中です。</string>
+    <string name="billing_status_shared_member_until">共有利用券で%1$sまで利用できます。</string>
     <string name="billing_voucher_share_chooser_title">利用券コードを共有</string>
     <string name="billing_voucher_unregistered">未登録</string>
     <string name="billing_voucher_unregistered_with_date">未登録 · 発行日 %1$s</string>
@@ -626,8 +627,8 @@
     <string name="ringing_notification_text">起きる時間ですよ</string>
     <string name="ringing_notification_title">アラームが鳴っています</string>
     <string name="social_active_plan_in_use">%1$sプランを利用中です。登録はプランの終了後に可能です。</string>
-    <string name="social_allow_partner_alarm">相手のアラームを許可</string>
-    <string name="social_allow_partner_alarm_desc">一緒に使っている人が私のアラームを設定できるようにします。</string>
+    <string name="social_allow_partner_alarm">家族が私のアラームを設定するのを許可</string>
+    <string name="social_allow_partner_alarm_couple">パートナーが私のアラームを設定するのを許可</string>
     <string name="social_back_cd">戻る</string>
     <string name="social_capacity_full_no_share">定員に達したため、これ以上共有できません。</string>
     <string name="social_compose_button">作成</string>

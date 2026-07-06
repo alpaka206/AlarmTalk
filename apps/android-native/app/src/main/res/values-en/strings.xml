@@ -129,6 +129,7 @@
     <string name="billing_status_free_basic">The basic alarm is free to use.</string>
     <string name="billing_status_in_use">This is your active pass.</string>
     <string name="billing_status_shared_member">You\'re part of a shared pass.</string>
+    <string name="billing_status_shared_member_until">On a shared pass until %1$s.</string>
     <string name="billing_voucher_share_chooser_title">Share pass code</string>
     <string name="billing_voucher_unregistered">Unregistered</string>
     <string name="billing_voucher_unregistered_with_date">Unregistered · Issued %1$s</string>
@@ -617,8 +618,8 @@
     <string name="ringing_notification_text">Time to wake up</string>
     <string name="ringing_notification_title">Your alarm is going off</string>
     <string name="social_active_plan_in_use">Your %1$s plan is active. You can register a new code once it ends.</string>
-    <string name="social_allow_partner_alarm">Allow partner alarms</string>
-    <string name="social_allow_partner_alarm_desc">Let people you share with set alarms for you.</string>
+    <string name="social_allow_partner_alarm">Let family set my alarms</string>
+    <string name="social_allow_partner_alarm_couple">Let your partner set my alarms</string>
     <string name="social_back_cd">Back</string>
     <string name="social_capacity_full_no_share">The plan is full, so you can\'t share any more.</string>
     <string name="social_compose_button">Compose</string>

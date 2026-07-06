@@ -243,6 +243,11 @@ internal fun MemberManagementScreen(
         if (authSession != null) {
             item {
                 FamilyAlarmPermissionCard(
+                    title = if (activePlanKey == "couple") {
+                        stringResource(R.string.social_allow_partner_alarm_couple)
+                    } else {
+                        stringResource(R.string.social_allow_partner_alarm)
+                    },
                     allowFamilyAlarms = authSession.user.allowFamilyAlarms,
                     quietWindows = authSession.user.familyAlarmQuietWindows,
                     onToggle = {
@@ -364,6 +369,7 @@ internal fun MemberManagementScreen(
 
 @Composable
 private fun FamilyAlarmPermissionCard(
+    title: String,
     allowFamilyAlarms: Boolean,
     quietWindows: List<FamilyAlarmQuietWindow>,
     onToggle: (Boolean) -> Unit,
@@ -389,14 +395,9 @@ private fun FamilyAlarmPermissionCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.social_allow_partner_alarm),
+                        text = title,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.social_allow_partner_alarm_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 AlarmTalkSwitch(

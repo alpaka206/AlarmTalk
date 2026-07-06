@@ -132,6 +132,7 @@
     <string name="billing_status_free_basic">기본 알람은 무료로 사용할 수 있어요.</string>
     <string name="billing_status_in_use">사용 중인 이용권이에요.</string>
     <string name="billing_status_shared_member">공유 이용권에 참여 중이에요.</string>
+    <string name="billing_status_shared_member_until">공유 이용권으로 %1$s까지 사용할 수 있어요.</string>
     <string name="billing_voucher_share_chooser_title">이용권 코드 공유</string>
     <string name="billing_voucher_unregistered">미등록</string>
     <string name="billing_voucher_unregistered_with_date">미등록 · 발급일 %1$s</string>
@@ -627,8 +628,8 @@
     <string name="rd_snooze_button_minutes">%1$d분 뒤 다시 알림</string>
     <string name="rd_test_alarm_label">테스트 알람</string>
     <string name="social_active_plan_in_use">%1$s 이용권 사용 중이에요. 등록은 이용권이 종료된 다음 가능해요.</string>
-    <string name="social_allow_partner_alarm">상대 알람 허용</string>
-    <string name="social_allow_partner_alarm_desc">함께 쓰는 사람이 내 알람을 맞출 수 있게 해요.</string>
+    <string name="social_allow_partner_alarm">가족이 내 알람 맞추기 허용</string>
+    <string name="social_allow_partner_alarm_couple">커플이 내 알람 맞추기 허용</string>
     <string name="social_back_cd">뒤로</string>
     <string name="social_capacity_full_no_share">정원이 가득 차서 더 이상 공유할 수 없어요.</string>
     <string name="social_compose_button">작성</string>

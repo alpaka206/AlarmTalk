@@ -332,8 +332,9 @@ internal fun FamilyAlarmQuietTimeDialog(
                 .padding(horizontal = 12.dp),
             shape = WakerDialogShape,
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
+            tonalElevation = 0.dp,
             shadowElevation = 18.dp,
+            border = wakerCardBorder(),
         ) {
             Column(
                 modifier = Modifier
@@ -429,8 +430,9 @@ internal fun FamilyAlarmQuietTimeDialog(
             Surface(
                 shape = WakerHeroShape,
                 color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp,
+                tonalElevation = 0.dp,
                 shadowElevation = 18.dp,
+                border = wakerCardBorder(),
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),
@@ -488,16 +490,17 @@ internal fun QuietWindowCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.hs_quiet_window_index, index + 1),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                if (removable) {
+            // 여러 구간일 때만 '구간 N' 헤더+삭제를 보여준다(단일 구간은 헤더 없이 깔끔하게).
+            if (removable) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.hs_quiet_window_index, index + 1),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
                     IconButton(onClick = onRemove) {
                         Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.hs_quiet_window_delete))
                     }
