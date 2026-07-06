@@ -20,8 +20,9 @@ import androidx.compose.ui.unit.dp
 /**
  * 통합 코드 입력 필드 — 초대(INV-)·이용권 선물(GIFT-)·프로모션(자유 문자열) 코드를
  * 전부 이 한 필드로 받는다. 종류 판별은 서버(POST /code/register)가 하므로 클라는
- * 형식을 가리지 않는다. 프로모 코드에 밑줄이 올 수 있어 `_` 를 허용하고,
- * 대소문자 변환도 하지 않는다(서버가 각 체계에 맞게 정규화).
+ * 형식을 가리지 않는다. 프로모 코드에 밑줄이 올 수 있어 `_` 를 허용한다.
+ * 입력은 대문자로 자동 변환한다 — 서버가 바우처/초대는 대문자화, 프로모는 COLLATE NOCASE 로
+ * 처리하므로 어떤 체계도 깨지지 않고, 사용자 입력 편의만 올라간다.
  */
 @Composable
 internal fun CodeRedeemField(
@@ -39,6 +40,7 @@ internal fun CodeRedeemField(
             value = code,
             onValueChange = { value ->
                 code = value
+                    .uppercase()
                     .filter { it.isLetterOrDigit() || it == '-' || it == '_' }
                     .take(32)
             },
