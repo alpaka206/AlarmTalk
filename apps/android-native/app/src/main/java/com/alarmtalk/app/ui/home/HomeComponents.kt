@@ -236,6 +236,25 @@ internal fun MenuTabPanel(
                     label = stringResource(R.string.consent_screen_title),
                     onClick = onOpenConsentHistory,
                 )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+                // 오픈소스 라이선스 — 목록/본문은 oss-licenses-plugin 이 생성한 데이터로 라이브러리 화면이 렌더.
+                val ossLicensesTitle = stringResource(R.string.menu_open_source_licenses)
+                MenuTabRow(
+                    label = ossLicensesTitle,
+                    onClick = {
+                        com.google.android.gms.oss.licenses.OssLicensesMenuActivity
+                            .setActivityTitle(ossLicensesTitle)
+                        context.startActivity(
+                            android.content.Intent(
+                                context,
+                                com.google.android.gms.oss.licenses.OssLicensesMenuActivity::class.java,
+                            ),
+                        )
+                    },
+                )
             }
         }
         // 탈퇴하기 — 토스처럼 독립 카드 행. 확인 다이얼로그는 앱 레벨에서 뜬다.

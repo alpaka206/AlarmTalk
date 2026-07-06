@@ -432,12 +432,7 @@ internal fun VoiceMessagePanel(
                     }
                 }
             }
-            if (recipients.isEmpty()) {
-                MutedText(stringResource(R.string.social_no_connected_partner))
-            }
-            if (receivedNotes.isEmpty()) {
-                MutedText(stringResource(R.string.social_no_received_messages))
-            } else {
+            if (receivedNotes.isNotEmpty()) {
                 receivedNotes.take(8).forEach { note ->
                     NoteRow(
                         note = note,
