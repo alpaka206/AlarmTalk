@@ -48,6 +48,7 @@ describe('GET /family/groups/current', () => {
         max_members: 6,
         created_at: '2026-01-01T00:00:00Z',
         my_role: 'owner',
+        owner_expires_at: '2026-08-06T00:00:00Z',
       },
     ]);
     mockDB.pushResult([
@@ -86,6 +87,7 @@ describe('GET /family/groups/current', () => {
       plan_id: PLAN_ID,
       max_members: 6,
       created_at: '2026-01-01T00:00:00Z',
+      expires_at: '2026-08-06T00:00:00Z',
     });
     expect(data.role).toBe('owner');
     expect(data.members).toHaveLength(2);
