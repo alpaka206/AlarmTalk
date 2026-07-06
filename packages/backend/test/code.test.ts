@@ -132,6 +132,22 @@ describe('POST /code/register voucher redemption', () => {
     expect(mockDB.calls[1]!.args[0]).toBe(`hash:${GIFT_CODE}`);
   });
 
+  it('falls through to promo lookup for a GIFT-format code missing as a voucher', async () => {
+    // GIFT- 포맷이지만 voucher 에 없는(CODE_NOT_FOUND) 코드는 프로모(3단계)까지 폴백해야 한다.
+    // 통합 /code/register 계약: GIFT- 형식과 겹치는 프로모 코드도 등록 가능해야 함.
+    pushUser();
+    mockDB.pushResult([]); // voucher hash 조회 → 없음
+    // 이후 프로모 조회도 비워 최종 CODE_NOT_FOUND 로 끝나되, 프로모 조회 자체는 발생해야 한다.
+
+    const res = await buildApp().request(jsonReq('POST', '/code/register', { code: GIFT_CODE }));
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('CODE_NOT_FOUND');
+    // 수정 전에는 GIFT- 가 promo 조회 없이 종료됐다 — promo_codes 조회 도달을 검증해 회귀를 잠근다.
+    const sqls = mockDB.calls.map((call) => call.sql).join('\n');
+    expect(sqls).toMatch(/promo_codes/i);
+  });
+
   it('returns CODE_ALREADY_USED when voucher has no remaining uses', async () => {
     pushUser();
     pushVoucher({ status: 'used' });
