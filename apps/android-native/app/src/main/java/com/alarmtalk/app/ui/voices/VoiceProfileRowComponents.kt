@@ -52,7 +52,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alarmtalk.app.R
-import com.alarmtalk.app.WakerPanelShape
 import com.alarmtalk.app.WakerPillShape
 import com.alarmtalk.app.network.FamilyVoiceProfile
 import com.alarmtalk.app.network.VoiceProfile
@@ -72,15 +71,27 @@ internal fun MixedVoicesSeparateRow(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = WakerPanelShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-        border = wakerCardBorder(0.7f),
+        shape = WakerCardShape,
+        color = MaterialTheme.colorScheme.surface,
+        border = wakerCardBorder(),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(MaterialTheme.colorScheme.secondaryContainer, WakerTileShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(3.dp),
@@ -351,20 +362,49 @@ internal fun SpeakerDraftRow(
 ) {
     val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
     val context = LocalContext.current
-    OutlinedCard {
+    val durationLabel = audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
+    OutlinedCard(
+        shape = WakerCardShape,
+        border = wakerCardBorder(if (ready) 1f else 0.58f),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(
+                        if (ready) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        WakerTileShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = null,
+                    tint = if (ready) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText(draftStatusLabel(context, state.status, state.errorMessage))
+                MutedText("${draftStatusLabel(context, state.status, state.errorMessage)} · $durationLabel")
             }
             IconButton(
                 onClick = onTogglePlay,
