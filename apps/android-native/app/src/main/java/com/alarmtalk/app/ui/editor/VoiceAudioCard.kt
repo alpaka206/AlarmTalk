@@ -80,7 +80,7 @@ internal fun VoiceAudioCard(
     localInputMode: VoiceCaptureMode,
     isRecording: Boolean,
     recordingElapsedMillis: Long,
-    recordingLevels: List<Float>,
+    recordingLevel: Float,
     selectedFileDurationMillis: Long?,
     cropStartMillis: Long,
     cropEndMillis: Long,
@@ -326,10 +326,15 @@ internal fun VoiceAudioCard(
                         isRecording = isRecording,
                         elapsedMillis = recordingElapsedMillis,
                         maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS,
-                        levels = recordingLevels,
+                        level = recordingLevel,
                         enabled = true,
                         notice = stringResource(R.string.editor_audio_max_duration, AlarmAudioLimits.MAX_DURATION_MILLIS / 1000),
                         onRecordClick = onRecord,
+                        // 녹음 직후 "눌러서 녹음 시작"으로 되돌아가지 않게 완료 상태를 알린다.
+                        // 미리듣기/삭제는 아래 공용 행이 담당하므로 여기서는 상태 표시만.
+                        recordedDurationMillis = recordingElapsedMillis.takeIf {
+                            it > 0 && editor.localAudioUri != null && selectedFileDurationMillis == null
+                        },
                     )
                 } else {
                     VoiceFileControls(

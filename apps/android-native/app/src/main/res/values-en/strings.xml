@@ -171,7 +171,10 @@
     <string name="common_tab_voices">Voices</string>
     <string name="common_voice_capture_mode_file">File</string>
     <string name="common_voice_capture_mode_record">Record</string>
+    <string name="common_voice_record_again_hint">Tap the mic to record again</string>
     <string name="common_voice_record_start">Record</string>
+    <string name="common_voice_record_status_idle">Tap to start recording</string>
+    <string name="common_voice_record_status_recording">Recording</string>
     <string name="common_voice_record_stop">Stop recording</string>
     <string name="editor_alarm_sound_title">Alarm sound</string>
     <string name="editor_apply">Apply</string>
@@ -687,7 +690,6 @@
     <string name="voices_add">Add</string>
     <string name="voices_audio_file_empty">The selected voice file is empty.</string>
     <string name="voices_close">Close</string>
-    <string name="voices_collapse">Collapse</string>
     <string name="voices_create_dialog_title">Create a voice</string>
     <string name="voices_create_paid_title">Creating your voice is a paid feature</string>
     <string name="voices_create_paid_notice">Default voices stay free to use.</string>
@@ -695,7 +697,6 @@
     <string name="voices_crop_section_title">Segment to use</string>
     <string name="voices_edit_info_desc">Set the name shown in alarms and how this voice calls you.</string>
     <string name="voices_edit_info_title">Edit info</string>
-    <string name="voices_expand">Expand</string>
     <string name="voices_file_duration_unknown">Files whose audio length can\'t be confirmed can\'t be used.</string>
     <string name="voices_file_selected">File selected</string>
     <string name="voices_file_single_speaker_notice">You\'ll get the best results when the clip has just one voice.</string>
@@ -731,6 +732,7 @@
     <string name="voices_previous">Back</string>
     <string name="voices_record_done_duration">Recorded · %1$s</string>
     <string name="voices_record_duration_notice">Please record between 1 and 2 minutes.</string>
+    <string name="voices_record_script_title">Read this script aloud</string>
     <string name="voices_recording_start_failed">Couldn\'t start recording.</string>
     <string name="voices_recording_stop_failed">Recording failed.</string>
     <string name="voices_register">Register</string>
@@ -758,10 +760,8 @@
     <string name="voices_sharing_shared_desc_disabled">Sharing is available with a Couple or Family plan.</string>
     <string name="voices_sharing_shared_desc_enabled">After registering, you can create a share code from the list and send it.</string>
     <string name="voices_sharing_shared_title">Share with family or partner</string>
-    <string name="voices_show_recommended_script">View suggested lines</string>
     <string name="voices_speaker_preview_prepare_failed">Couldn\'t prepare the preview. Please try again in a moment.</string>
     <string name="voices_step_identity">Whose voice is it?</string>
-    <string name="voices_step_indicator">%1$d / 3 · %2$s</string>
     <string name="voices_step_sharing">Sharing settings</string>
     <string name="voices_step_source">Prepare audio</string>
     <string name="voices_default_voice_choose">Choose</string>

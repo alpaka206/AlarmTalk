@@ -171,7 +171,10 @@
     <string name="common_tab_voices">声</string>
     <string name="common_voice_capture_mode_file">ファイル</string>
     <string name="common_voice_capture_mode_record">録音</string>
+    <string name="common_voice_record_again_hint">マイクをタップすると録音し直せます</string>
     <string name="common_voice_record_start">録音</string>
+    <string name="common_voice_record_status_idle">タップして録音開始</string>
+    <string name="common_voice_record_status_recording">録音中</string>
     <string name="common_voice_record_stop">録音を終了</string>
     <string name="editor_alarm_sound_title">アラーム音</string>
     <string name="editor_apply">適用</string>
@@ -696,7 +699,6 @@
     <string name="voices_add">追加</string>
     <string name="voices_audio_file_empty">選択した音声ファイルが空です。</string>
     <string name="voices_close">閉じる</string>
-    <string name="voices_collapse">閉じる</string>
     <string name="voices_create_dialog_title">声を作成</string>
     <string name="voices_create_paid_title">マイボイスの作成は有料機能です</string>
     <string name="voices_create_paid_notice">基本の声は引き続き無料で使えます。</string>
@@ -704,7 +706,6 @@
     <string name="voices_crop_section_title">使用する区間</string>
     <string name="voices_edit_info_desc">アラームで表示される名前と、この声があなたを呼ぶ呼び方を決めます。</string>
     <string name="voices_edit_info_title">情報を編集</string>
-    <string name="voices_expand">開く</string>
     <string name="voices_file_duration_unknown">音声の長さを確認できないファイルは使用できません。</string>
     <string name="voices_file_selected">ファイル選択済み</string>
     <string name="voices_file_single_speaker_notice">一人の声だけの区間がいちばんきれいに仕上がります。</string>
@@ -740,6 +741,7 @@
     <string name="voices_previous">戻る</string>
     <string name="voices_record_done_duration">録音完了 · %1$s</string>
     <string name="voices_record_duration_notice">1分以上2分以内で録音してください。</string>
+    <string name="voices_record_script_title">この台本を読み上げてください</string>
     <string name="voices_recording_start_failed">録音を開始できませんでした。</string>
     <string name="voices_recording_stop_failed">録音に失敗しました。</string>
     <string name="voices_register">登録</string>
@@ -767,10 +769,8 @@
     <string name="voices_sharing_shared_desc_disabled">共有はカップル/ファミリープランでご利用いただけます。</string>
     <string name="voices_sharing_shared_desc_enabled">登録後、一覧から共有コードを作成して渡せます。</string>
     <string name="voices_sharing_shared_title">家族・恋人と共有</string>
-    <string name="voices_show_recommended_script">おすすめのセリフを見る</string>
     <string name="voices_speaker_preview_prepare_failed">プレビューを準備できませんでした。しばらくしてからもう一度お試しください。</string>
     <string name="voices_step_identity">誰の声ですか</string>
-    <string name="voices_step_indicator">%1$d / 3 · %2$s</string>
     <string name="voices_step_sharing">共有設定</string>
     <string name="voices_step_source">音声の準備</string>
     <string name="voices_default_voice_choose">選ぶ</string>

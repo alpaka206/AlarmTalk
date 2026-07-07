@@ -193,7 +193,8 @@ internal fun AlarmEditorScreen(
     var generationJob by remember { mutableStateOf<Job?>(null) }
     var localInputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
-    var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
+    // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
+    var recordingLevel by remember { mutableStateOf(0f) }
     var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
     var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
     var cropStartMillis by remember { mutableStateOf(0L) }
@@ -558,6 +559,7 @@ internal fun AlarmEditorScreen(
                 applyCachedAudio(audio)
             }.onFailure { error ->
                 isRecording = false
+                recordingElapsedMillis = 0L
                 AlarmTalkLog.reportError("Failed to stop recording", error)
                 audioMessage = userFacingError(error, context.getString(R.string.editor_error_recording_failed))
             }
@@ -570,7 +572,7 @@ internal fun AlarmEditorScreen(
             recorder.start(maxDurationMillis = AlarmAudioLimits.MAX_DURATION_MILLIS)
             isRecording = true
             recordingElapsedMillis = 0L
-            recordingLevels = List(18) { 0.08f }
+            recordingLevel = 0f
             audioMessage = context.getString(R.string.editor_recording_in_progress)
         }.onFailure { error ->
             AlarmTalkLog.reportError("Failed to start recording", error)
@@ -843,8 +845,7 @@ internal fun AlarmEditorScreen(
             while (isRecording) {
                 recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
                     .coerceAtMost(AlarmAudioLimits.MAX_DURATION_MILLIS)
-                val level = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0.06f, 1f)
-                recordingLevels = recordingLevels.drop(1) + level
+                recordingLevel = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0f, 1f)
                 if (recordingElapsedMillis >= AlarmAudioLimits.MAX_DURATION_MILLIS) {
                     stopRecording()
                     break
@@ -1187,7 +1188,7 @@ internal fun AlarmEditorScreen(
                                 localInputMode = localInputMode,
                                 isRecording = isRecording,
                                 recordingElapsedMillis = recordingElapsedMillis,
-                                recordingLevels = recordingLevels,
+                                recordingLevel = recordingLevel,
                                 selectedFileDurationMillis = selectedFileDurationMillis,
                                 cropStartMillis = cropStartMillis,
                                 cropEndMillis = cropEndMillis,

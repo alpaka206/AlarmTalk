@@ -109,7 +109,10 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
     }
 
     /// Polls the recorder's metering and appends a normalized level to the sliding
-    /// 18-bar window, mirroring Android (recordingLevels.drop(1) + level, clamped 0.06...1).
+    /// 18-bar window.
+    /// NOTE(패리티): Android 는 2026-07-07 녹음 UI 개편으로 18-bar 파형을 없애고
+    /// 단일 진폭(recordingLevel: Float) 기반 미니 레벨 바만 남겼다 — iOS 녹음 화면을
+    /// 개편할 때 이 슬라이딩 윈도우도 단일 레벨로 축소할 것.
     private func sampleLevel() {
         guard let recorder else { return }
         recorder.updateMeters()

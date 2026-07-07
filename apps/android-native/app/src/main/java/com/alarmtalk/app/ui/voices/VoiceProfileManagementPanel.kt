@@ -14,12 +14,14 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,8 +34,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
@@ -60,6 +60,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -161,7 +163,6 @@ private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
 
 @Composable
 private fun VoiceRecordScriptCard() {
-    var expanded by remember { mutableStateOf(false) }
     OutlinedCard(
         shape = WakerCardShape,
         border = wakerCardBorder(),
@@ -169,48 +170,26 @@ private fun VoiceRecordScriptCard() {
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         ),
     ) {
-        Column {
-            Row(
-                // 확장/축소 토글 — 눌림 리플(indication) 없이 조용히 동작.
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.voices_record_script_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // 녹음하며 읽는 본문이라 항상 펼쳐 두고, 길면 카드 안에서만 스크롤 —
+            // 펼침 토글이 아래 녹음 카드를 밀어내던 구조를 대체한다.
+            Text(
+                text = stringResource(R.string.voices2_record_script),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { expanded = !expanded }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.voices_show_recommended_script),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                )
-                Icon(
-                    imageVector = if (expanded) {
-                        Icons.Outlined.KeyboardArrowUp
-                    } else {
-                        Icons.Outlined.KeyboardArrowDown
-                    },
-                    contentDescription = if (expanded) {
-                        stringResource(R.string.voices_collapse)
-                    } else {
-                        stringResource(R.string.voices_expand)
-                    },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (expanded) {
-                Text(
-                    text = stringResource(R.string.voices2_record_script),
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState()),
+                style = MaterialTheme.typography.bodyMedium,
+                lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
@@ -359,7 +338,8 @@ internal fun VoiceProfileManagementPanel(
     var inputMode by remember { mutableStateOf(VoiceCaptureMode.Record) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingElapsedMillis by remember { mutableStateOf(0L) }
-    var recordingLevels by remember { mutableStateOf(List(18) { 0.08f }) }
+    // 실제 마이크 입력 진폭(0~1) — 녹음 카드의 미니 레벨 바가 소비한다.
+    var recordingLevel by remember { mutableStateOf(0f) }
     var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
     var selectedFileDurationMillis by remember { mutableStateOf<Long?>(null) }
     var cropStartMillis by remember { mutableStateOf(0L) }
@@ -540,15 +520,11 @@ internal fun VoiceProfileManagementPanel(
                 if (error == null) {
                     applySelectedAudio(audio)
                 } else {
+                    // 짧아서 버려진 녹음은 타이머도 0으로 되돌리고 이유를 알려준다 —
+                    // "눌러서 녹음 시작" 상태 옆에 지난 시간이 남아 있으면 저장된 것처럼 보인다.
                     selectedAudio = null
-                    localMessage = if (
-                        audio.durationMillis != null &&
-                        audio.durationMillis < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
-                    ) {
-                        null
-                    } else {
-                        error
-                    }
+                    recordingElapsedMillis = 0L
+                    localMessage = error
                 }
             }.onFailure { error ->
                 isRecording = false
@@ -565,7 +541,7 @@ internal fun VoiceProfileManagementPanel(
         runCatching {
             recorder.start(maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
             recordingElapsedMillis = 0L
-            recordingLevels = List(18) { 0.08f }
+            recordingLevel = 0f
             isRecording = true
             localMessage = null
         }.onFailure { error ->
@@ -603,7 +579,7 @@ internal fun VoiceProfileManagementPanel(
         if (recorder.isRecording) recorder.cancel()
         isRecording = false
         recordingElapsedMillis = 0L
-        recordingLevels = List(18) { 0.08f }
+        recordingLevel = 0f
         stopMediaPreview()
         selectedFileUri = null
         selectedFileDurationMillis = null
@@ -652,8 +628,7 @@ internal fun VoiceProfileManagementPanel(
             while (isRecording) {
                 recordingElapsedMillis = (System.currentTimeMillis() - startedAt)
                     .coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
-                val level = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0.06f, 1f)
-                recordingLevels = (recordingLevels.drop(1) + level)
+                recordingLevel = (recorder.maxAmplitude().toFloat() / 32767f).coerceIn(0f, 1f)
                 if (recordingElapsedMillis >= VoiceProfileAudioLimits.MAX_DURATION_MILLIS) {
                     stopRecording()
                     break
@@ -1333,13 +1308,41 @@ internal fun VoiceProfileManagementPanel(
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
-                            val stepIndex = currentStep.ordinal + 1
                             val stepTitle = when (currentStep) {
                                 VoiceRegistrationStep.Source -> stringResource(R.string.voices_step_source)
                                 VoiceRegistrationStep.Identity -> stringResource(R.string.voices_step_identity)
                                 VoiceRegistrationStep.Sharing -> stringResource(R.string.voices_step_sharing)
                             }
-                            MutedText(stringResource(R.string.voices_step_indicator, stepIndex, stepTitle))
+                            // "1 / 3" 텍스트 대신 세그먼트 진행 표시 + 단계 이름.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                val stepPosition =
+                                    "${currentStep.ordinal + 1} / ${VoiceRegistrationStep.entries.size}"
+                                Row(
+                                    // 시각적으로만 존재하는 세그먼트라 스크린리더용 위치 정보를 단다.
+                                    modifier = Modifier.semantics { contentDescription = stepPosition },
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    VoiceRegistrationStep.entries.forEach { step ->
+                                        Box(
+                                            modifier = Modifier
+                                                .width(16.dp)
+                                                .height(4.dp)
+                                                .background(
+                                                    color = if (step.ordinal <= currentStep.ordinal) {
+                                                        MaterialTheme.colorScheme.primary
+                                                    } else {
+                                                        MaterialTheme.colorScheme.outlineVariant
+                                                    },
+                                                    shape = WakerPillShape,
+                                                ),
+                                        )
+                                    }
+                                }
+                                MutedText(stepTitle)
+                            }
                         }
                         IconButton(
                             onClick = { voiceGuideVisible = true },
@@ -1382,12 +1385,12 @@ internal fun VoiceProfileManagementPanel(
                                 )
 
                                 if (inputMode == VoiceCaptureMode.Record) {
-                                    VoiceRecordScriptCard()
+                                    // 녹음 카드를 위에 — 대사를 읽는 동안에도 시간/버튼이 보인다.
                                     VoiceRecordControls(
                                         isRecording = isRecording,
                                         elapsedMillis = recordingElapsedMillis,
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-                                        levels = recordingLevels,
+                                        level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
                                         notice = stringResource(R.string.voices_record_duration_notice),
                                         onRecordClick = {
@@ -1405,6 +1408,7 @@ internal fun VoiceProfileManagementPanel(
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
                                     )
+                                    VoiceRecordScriptCard()
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         VoiceFileControls(

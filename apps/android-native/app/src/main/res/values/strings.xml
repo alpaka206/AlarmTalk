@@ -174,7 +174,10 @@
     <string name="common_tab_voices">목소리</string>
     <string name="common_voice_capture_mode_file">파일</string>
     <string name="common_voice_capture_mode_record">녹음</string>
+    <string name="common_voice_record_again_hint">마이크를 누르면 다시 녹음해요</string>
     <string name="common_voice_record_start">녹음</string>
+    <string name="common_voice_record_status_idle">눌러서 녹음 시작</string>
+    <string name="common_voice_record_status_recording">녹음 중</string>
     <string name="common_voice_record_stop">녹음 종료</string>
     <string name="editor_alarm_sound_title">알람음</string>
     <string name="editor_apply">적용</string>
@@ -697,7 +700,6 @@
     <string name="voices_add">추가</string>
     <string name="voices_audio_file_empty">선택한 음성 파일이 비어 있어요.</string>
     <string name="voices_close">닫기</string>
-    <string name="voices_collapse">접기</string>
     <string name="voices_create_dialog_title">목소리 만들기</string>
     <string name="voices_create_paid_title">내 목소리 만들기는 유료 기능이에요</string>
     <string name="voices_create_paid_notice">기본 목소리는 계속 무료로 쓸 수 있어요.</string>
@@ -705,7 +707,6 @@
     <string name="voices_crop_section_title">사용할 구간</string>
     <string name="voices_edit_info_desc">알람에서 보일 이름과 이 목소리가 나를 부르는 방식을 정해요.</string>
     <string name="voices_edit_info_title">정보 수정</string>
-    <string name="voices_expand">펼치기</string>
     <string name="voices_file_duration_unknown">오디오 길이를 확인할 수 없는 파일은 사용할 수 없어요.</string>
     <string name="voices_file_selected">파일 선택됨</string>
     <string name="voices_file_single_speaker_notice">한 사람 목소리만 담긴 구간일 때 결과가 가장 좋아요.</string>
@@ -741,6 +742,7 @@
     <string name="voices_previous">이전</string>
     <string name="voices_record_done_duration">녹음 완료 · %1$s</string>
     <string name="voices_record_duration_notice">1분 이상 2분 이하로 녹음해 주세요.</string>
+    <string name="voices_record_script_title">아래 대사를 따라 읽어 주세요</string>
     <string name="voices_recording_start_failed">녹음을 시작할 수 없어요.</string>
     <string name="voices_recording_stop_failed">녹음에 실패했어요.</string>
     <string name="voices_register">등록</string>
@@ -768,10 +770,8 @@
     <string name="voices_sharing_shared_desc_disabled">공유는 커플/가족 이용권에서 사용할 수 있어요.</string>
     <string name="voices_sharing_shared_desc_enabled">등록 후 목록에서 공유 코드를 만들어 전달할 수 있어요.</string>
     <string name="voices_sharing_shared_title">가족·연인과 공유</string>
-    <string name="voices_show_recommended_script">추천 대사 보기</string>
     <string name="voices_speaker_preview_prepare_failed">미리듣기를 준비하지 못했어요. 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_step_identity">누구의 목소리인가요</string>
-    <string name="voices_step_indicator">%1$d / 3 · %2$s</string>
     <string name="voices_step_sharing">공유 설정</string>
     <string name="voices_step_source">음성 준비</string>
     <string name="voices_default_voice_choose">선택하기</string>
