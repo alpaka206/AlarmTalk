@@ -889,7 +889,13 @@ internal fun AlarmTalkApp(
                   .align(Alignment.TopCenter)
                   .padding(top = padding.calculateTopPadding() + 8.dp),
           ) { data ->
-              PrettySnackbar(message = data.visuals.message)
+              // actionLabel 을 함께 렌더링해야 FLEXIBLE 업데이트 '재시작' 등
+              // 액션 대기(showSnackbar → ActionPerformed) 스낵바가 동작한다.
+              PrettySnackbar(
+                  message = data.visuals.message,
+                  actionLabel = data.visuals.actionLabel,
+                  onAction = { data.performAction() },
+              )
           }
       }
     }

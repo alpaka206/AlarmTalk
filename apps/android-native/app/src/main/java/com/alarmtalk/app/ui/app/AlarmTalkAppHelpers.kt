@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -171,7 +172,11 @@ internal fun messageSeverity(text: String): MessageSeverity = when {
 }
 
 @Composable
-internal fun PrettySnackbar(message: String) {
+internal fun PrettySnackbar(
+    message: String,
+    actionLabel: String? = null,
+    onAction: () -> Unit = {},
+) {
     val severity = messageSeverity(message)
     val scheme = MaterialTheme.colorScheme
     val containerColor = when (severity) {
@@ -208,7 +213,19 @@ internal fun PrettySnackbar(message: String) {
             Text(
                 text = message,
                 fontWeight = FontWeight.Medium,
+                // 액션이 있으면 남은 폭을 메시지가 차지해 버튼이 끝에 붙는다.
+                modifier = if (actionLabel != null) Modifier.weight(1f) else Modifier,
             )
+            if (actionLabel != null) {
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onAction) {
+                    Text(
+                        text = actionLabel,
+                        color = contentColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
     }
 }

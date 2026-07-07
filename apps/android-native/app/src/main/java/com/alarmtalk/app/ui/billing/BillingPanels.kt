@@ -585,7 +585,11 @@ internal fun SubscriptionPlanCard(
                     PlanFeatureRow(feature)
                 }
             }
-            if (option.key != "free" && !isCurrent) {
+            // 이용권 변경(/billing/change-plan)은 스텁 결제 전용이라 dev 에서만 노출한다.
+            // 운영 Play 결제에서는 CHECKOUT_DISABLED 로 항상 실패하므로, Play 구독 교체
+            // (업/다운그레이드) 플로우가 붙기 전까지 변경 버튼을 숨긴다.
+            val changePlanSupported = BuildConfig.FLAVOR == "dev"
+            if (option.key != "free" && !isCurrent && (!hasActiveSubscription || changePlanSupported)) {
                 Button(
                     onClick = if (hasActiveSubscription) onChange else onPurchase,
                     enabled = !busy,
