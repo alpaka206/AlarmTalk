@@ -31,6 +31,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,13 +71,16 @@ internal fun MixedVoicesSeparateRow(
     onSeparate: () -> Unit,
 ) {
     Surface(
+        onClick = onSeparate,
+        enabled = enabled && !busy,
         modifier = Modifier.fillMaxWidth(),
         shape = WakerCardShape,
         color = MaterialTheme.colorScheme.surface,
         border = wakerCardBorder(),
     ) {
         Row(
-            // 선행 아이콘 배지 없이 [제목/설명 … 버튼] — 리스트 행 미니멀 규칙.
+            // 행 전체가 탭 대상 + 우측 액션 텍스트(토스식 "변경" 패턴) — 넓은 버튼 대신
+            // 짧은 텍스트를 둬서 제목/설명이 한 줄에 들어갈 폭을 확보한다.
             modifier = Modifier.padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -92,21 +96,20 @@ internal fun MixedVoicesSeparateRow(
                 )
                 MutedText(stringResource(R.string.voices_mixed_voices_desc))
             }
-            OutlinedButton(
-                onClick = onSeparate,
-                enabled = enabled && !busy,
-                shape = WakerPillShape,
-                border = wakerCardBorder(),
-                colors = wakerOutlinedButtonColors(),
-            ) {
-                Text(
-                    if (busy) {
-                        stringResource(R.string.voices_separating)
-                    } else {
-                        stringResource(R.string.voices_separate_voices)
-                    },
-                )
-            }
+            Text(
+                text = if (busy) {
+                    stringResource(R.string.voices_separating)
+                } else {
+                    stringResource(R.string.voices_separate_action)
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (busy) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.primary
+                },
+            )
         }
     }
 }
@@ -147,7 +150,7 @@ internal fun RelationshipDropdownField(
                 colors = wakerOutlinedTextFieldColors(),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(),
+                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
             )
             ExposedDropdownMenu(
                 expanded = expanded,
@@ -351,7 +354,6 @@ internal fun SpeakerDraftRow(
 ) {
     val ready = state.status == SpeakerDraftStatus.Ready && state.previewUri != null
     val context = LocalContext.current
-    val durationLabel = audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
     OutlinedCard(
         shape = WakerCardShape,
         border = wakerCardBorder(if (ready) 1f else 0.58f),
@@ -370,7 +372,7 @@ internal fun SpeakerDraftRow(
                     text = stringResource(R.string.voicesr_speaker_draft_index, index + 1),
                     fontWeight = FontWeight.SemiBold,
                 )
-                MutedText("${draftStatusLabel(context, state.status, state.errorMessage)} · $durationLabel")
+                MutedText(draftStatusLabel(context, state.status, state.errorMessage))
             }
             IconButton(
                 onClick = onTogglePlay,

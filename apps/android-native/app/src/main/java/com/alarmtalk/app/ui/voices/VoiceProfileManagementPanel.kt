@@ -5,7 +5,6 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Build
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -31,10 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -55,8 +51,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -70,7 +66,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.alarmtalk.app.R
 import com.alarmtalk.app.core.AlarmTalkLog
-import com.alarmtalk.app.core.AlarmTalkLog.TAG
 import com.alarmtalk.app.data.AlarmAudioStore
 import com.alarmtalk.app.data.STOCK_GREETING_CATEGORY
 import com.alarmtalk.app.data.AlarmVoiceRecorder
@@ -161,9 +156,18 @@ private fun rememberVoiceCreateGuideSteps(): List<UsageGuideStep> = listOf(
     ),
 )
 
+/**
+ * 추천 대사 카드. [fillHeight] 가 true 면 호출부(스크롤 없는 Column)의 weight 와 짝을 이뤄
+ * 남은 화면 높이만큼 펼치고 넘칠 때만 내부 스크롤, false(짧은 창 폴백)면 페이지가
+ * 스크롤되므로 기존처럼 240dp 캡 + 내부 스크롤을 쓴다.
+ */
 @Composable
-private fun VoiceRecordScriptCard() {
+private fun VoiceRecordScriptCard(
+    fillHeight: Boolean,
+    modifier: Modifier = Modifier,
+) {
     OutlinedCard(
+        modifier = modifier,
         shape = WakerCardShape,
         border = wakerCardBorder(),
         colors = CardDefaults.outlinedCardColors(
@@ -179,12 +183,17 @@ private fun VoiceRecordScriptCard() {
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
             )
-            // 녹음하며 읽는 본문이라 항상 펼쳐 두고, 길면 카드 안에서만 스크롤 —
-            // 펼침 토글이 아래 녹음 카드를 밀어내던 구조를 대체한다.
+            // 녹음하며 읽는 본문이라 항상 펼쳐 둔다(토글로 접으면 녹음 도중 다시 펼쳐야 한다).
             Text(
                 text = stringResource(R.string.voices2_record_script),
                 modifier = Modifier
-                    .heightIn(max = 240.dp)
+                    .then(
+                        if (fillHeight) {
+                            Modifier.weight(1f, fill = false)
+                        } else {
+                            Modifier.heightIn(max = 240.dp)
+                        },
+                    )
                     .verticalScroll(rememberScrollState()),
                 style = MaterialTheme.typography.bodyMedium,
                 lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
@@ -516,15 +525,19 @@ internal fun VoiceProfileManagementPanel(
                 withContext(Dispatchers.IO) { recorder.stop() }
             }.onSuccess { audio ->
                 isRecording = false
-                val error = voiceProfileDurationError(context, audio.durationMillis)
+                val duration = audio.durationMillis
+                val error = voiceProfileDurationError(context, duration)
                 if (error == null) {
                     applySelectedAudio(audio)
                 } else {
-                    // 짧아서 버려진 녹음은 타이머도 0으로 되돌리고 이유를 알려준다 —
-                    // "눌러서 녹음 시작" 상태 옆에 지난 시간이 남아 있으면 저장된 것처럼 보인다.
+                    // 짧아서 버려진 녹음은 타이머도 0으로 되돌린다 — 지난 시간이 남아 있으면
+                    // 저장된 것처럼 보인다.
                     selectedAudio = null
                     recordingElapsedMillis = 0L
-                    localMessage = error
+                    // 1분 미만 안내는 마이크 카드의 대기 문구("1분 이상 녹음해 주세요")와
+                    // 중복이라 대사 밑에 또 띄우지 않는다. 길이 확인 실패 등 다른 원인만 알린다.
+                    val tooShort = duration != null && duration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS
+                    localMessage = if (tooShort) null else error
                 }
             }.onFailure { error ->
                 isRecording = false
@@ -1313,35 +1326,30 @@ internal fun VoiceProfileManagementPanel(
                                 VoiceRegistrationStep.Identity -> stringResource(R.string.voices_step_identity)
                                 VoiceRegistrationStep.Sharing -> stringResource(R.string.voices_step_sharing)
                             }
-                            // "1 / 3" 텍스트 대신 세그먼트 진행 표시 + 단계 이름.
+                            val stepPosition =
+                                "${currentStep.ordinal + 1} / ${VoiceRegistrationStep.entries.size}"
+                            // 세그먼트 진행 표시만 노출 — 단계 이름·위치는 스크린리더로만 전달한다.
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.semantics {
+                                    contentDescription = "$stepTitle · $stepPosition"
+                                },
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                val stepPosition =
-                                    "${currentStep.ordinal + 1} / ${VoiceRegistrationStep.entries.size}"
-                                Row(
-                                    // 시각적으로만 존재하는 세그먼트라 스크린리더용 위치 정보를 단다.
-                                    modifier = Modifier.semantics { contentDescription = stepPosition },
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    VoiceRegistrationStep.entries.forEach { step ->
-                                        Box(
-                                            modifier = Modifier
-                                                .width(16.dp)
-                                                .height(4.dp)
-                                                .background(
-                                                    color = if (step.ordinal <= currentStep.ordinal) {
-                                                        MaterialTheme.colorScheme.primary
-                                                    } else {
-                                                        MaterialTheme.colorScheme.outlineVariant
-                                                    },
-                                                    shape = WakerPillShape,
-                                                ),
-                                        )
-                                    }
+                                VoiceRegistrationStep.entries.forEach { step ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(16.dp)
+                                            .height(4.dp)
+                                            .background(
+                                                color = if (step.ordinal <= currentStep.ordinal) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.outlineVariant
+                                                },
+                                                shape = WakerPillShape,
+                                            ),
+                                    )
                                 }
-                                MutedText(stepTitle)
                             }
                         }
                         IconButton(
@@ -1363,10 +1371,25 @@ internal fun VoiceProfileManagementPanel(
                         }
                     }
 
+                    // 녹음 모드(첫 스텝)는 대사 카드가 남은 화면 높이를 채우고 카드 안에서만
+                    // 스크롤하므로 페이지 스크롤을 끈다. 파일 모드·다른 스텝은 콘텐츠가
+                    // 길어질 수 있어 기존 페이지 스크롤을 유지한다.
+                    // 분할 화면·팝업 뷰처럼 창이 짧으면 잔여 높이가 대사 카드를 못 담아
+                    // 슬리버가 되므로, 그 경우도 페이지 스크롤 + 카드 높이 캡으로 폴백한다.
+                    val scriptFillsRemainingHeight = currentStep == VoiceRegistrationStep.Source &&
+                        inputMode == VoiceCaptureMode.Record &&
+                        LocalConfiguration.current.screenHeightDp >= 560
+                    val contentScrollState = rememberScrollState()
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .verticalScroll(rememberScrollState())
+                            .then(
+                                if (scriptFillsRemainingHeight) {
+                                    Modifier
+                                } else {
+                                    Modifier.verticalScroll(contentScrollState)
+                                },
+                            )
                             .padding(horizontal = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -1392,7 +1415,9 @@ internal fun VoiceProfileManagementPanel(
                                         maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                                         level = recordingLevel,
                                         enabled = !voiceProfileBusy && !createPreparing,
-                                        notice = stringResource(R.string.voices_record_duration_notice),
+                                        // 마이크 버튼이 행동을 설명하므로 "눌러서 녹음 시작" 대신
+                                        // 이 흐름의 핵심 제약(최소 1분)을 대기 상태 문구로 쓴다.
+                                        idleStatusText = stringResource(R.string.voices_record_status_min_duration),
                                         onRecordClick = {
                                             if (isRecording) {
                                                 stopRecording()
@@ -1408,7 +1433,16 @@ internal fun VoiceProfileManagementPanel(
                                         isRecordedPreviewActive = recordPreviewPlaying,
                                         onPreviewRecording = ::playRecordedPreview,
                                     )
-                                    VoiceRecordScriptCard()
+                                    // 남은 화면 높이를 대사 카드가 채운다(내용이 짧으면 그만큼만).
+                                    // 짧은 창 폴백에선 페이지가 스크롤되므로 weight 대신 높이 캡.
+                                    VoiceRecordScriptCard(
+                                        fillHeight = scriptFillsRemainingHeight,
+                                        modifier = if (scriptFillsRemainingHeight) {
+                                            Modifier.weight(1f, fill = false)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
                                 } else {
                                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         VoiceFileControls(
@@ -1438,7 +1472,6 @@ internal fun VoiceProfileManagementPanel(
                                         // 화자 수를 미리 고르게 하지 않는다 — 기본은 선택 구간을
                                         // 그대로 등록(한 사람 목소리일 때 결과가 가장 좋음)하고,
                                         // 여러 명이 섞인 파일만 목소리 나누기를 거쳐 한 명을 고른다.
-                                        MutedText(stringResource(R.string.voices_file_single_speaker_notice))
                                         if (selectedFileDurationMillis != null && !hasSeparatedSpeakers) {
                                             MixedVoicesSeparateRow(
                                                 busy = separatingBusy,
@@ -1459,7 +1492,6 @@ internal fun VoiceProfileManagementPanel(
                                                     onSelect = { selectSpeakerDraft(speaker) },
                                                 )
                                             }
-                                            MutedText(stringResource(R.string.voices_select_to_register_hint))
                                             OutlinedButton(
                                                 onClick = { resetSpeakers() },
                                                 enabled = !promotingBusy && !createPreparing,
@@ -1563,99 +1595,105 @@ internal fun VoiceProfileManagementPanel(
                     val identityComplete = profileName.trim().isNotBlank() &&
                         relationshipSelection.isComplete &&
                         profileListenerTitle.trim().isNotBlank()
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(
-                                start = 16.dp,
-                                top = 10.dp,
-                                end = 16.dp,
-                                bottom = actionBottomPadding,
-                            ),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (currentStep != VoiceRegistrationStep.Source) {
-                            OutlinedButton(
-                                onClick = {
-                                    currentStep = when (currentStep) {
-                                        VoiceRegistrationStep.Sharing -> VoiceRegistrationStep.Identity
-                                        VoiceRegistrationStep.Identity -> VoiceRegistrationStep.Source
-                                        VoiceRegistrationStep.Source -> VoiceRegistrationStep.Source
-                                    }
-                                    createSubmitAttempted = false
-                                    localMessage = null
-                                },
-                                enabled = !voiceProfileBusy && !createPreparing && !promotingBusy,
-                                modifier = Modifier.weight(1f),
-                                shape = WakerButtonShape,
-                                border = wakerCardBorder(),
-                                colors = wakerOutlinedButtonColors(),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(stringResource(R.string.voices_previous))
-                            }
-                        }
-                        when (currentStep) {
-                            VoiceRegistrationStep.Source -> {
-                                Button(
+                    // 화자 분리 결과가 떠 있으면 각 draft 행의 '선택'이 다음 단계로 넘겨주므로
+                    // 하단 '다음' 버튼은 중복 — 이 경우 액션바를 숨긴다(이 단계엔 이전 버튼도 없음).
+                    val hideSourceActionBar =
+                        currentStep == VoiceRegistrationStep.Source && hasSeparatedSpeakers
+                    if (!hideSourceActionBar) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    start = 16.dp,
+                                    top = 10.dp,
+                                    end = 16.dp,
+                                    bottom = actionBottomPadding,
+                                ),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (currentStep != VoiceRegistrationStep.Source) {
+                                OutlinedButton(
                                     onClick = {
-                                        localMessage = null
-                                        currentStep = VoiceRegistrationStep.Identity
-                                    },
-                                    enabled = canAdvanceFromSource,
-                                    modifier = Modifier.weight(1f),
-                                    shape = WakerButtonShape,
-                                ) {
-                                    Text(
-                                        if (createPreparing) {
-                                            stringResource(R.string.voices_preparing)
-                                        } else {
-                                            stringResource(R.string.voices_next)
-                                        },
-                                    )
-                                }
-                            }
-
-                            VoiceRegistrationStep.Identity -> {
-                                Button(
-                                    onClick = {
-                                        createSubmitAttempted = true
-                                        if (identityComplete) {
-                                            localMessage = null
-                                            createSubmitAttempted = false
-                                            currentStep = VoiceRegistrationStep.Sharing
+                                        currentStep = when (currentStep) {
+                                            VoiceRegistrationStep.Sharing -> VoiceRegistrationStep.Identity
+                                            VoiceRegistrationStep.Identity -> VoiceRegistrationStep.Source
+                                            VoiceRegistrationStep.Source -> VoiceRegistrationStep.Source
                                         }
+                                        createSubmitAttempted = false
+                                        localMessage = null
                                     },
                                     enabled = !voiceProfileBusy && !createPreparing && !promotingBusy,
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
+                                    border = wakerCardBorder(),
+                                    colors = wakerOutlinedButtonColors(),
                                 ) {
-                                    Text(stringResource(R.string.voices_next))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(stringResource(R.string.voices_previous))
                                 }
                             }
-
-                            VoiceRegistrationStep.Sharing -> {
-                                Button(
-                                    onClick = { submitCreateProfile(resolvedProfileName) },
-                                    enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
-                                        !promotingBusy &&
-                                        (canSubmitRecord || canSubmitSingleFile || canSubmitSeparatedDraft),
-                                    modifier = Modifier.weight(1f),
-                                    shape = WakerButtonShape,
-                                ) {
-                                    Text(
-                                        if (createPreparing) {
-                                            stringResource(R.string.voices_preparing)
-                                        } else {
-                                            stringResource(R.string.voices_register)
+                            when (currentStep) {
+                                VoiceRegistrationStep.Source -> {
+                                    Button(
+                                        onClick = {
+                                            localMessage = null
+                                            currentStep = VoiceRegistrationStep.Identity
                                         },
-                                    )
+                                        enabled = canAdvanceFromSource,
+                                        modifier = Modifier.weight(1f),
+                                        shape = WakerButtonShape,
+                                    ) {
+                                        Text(
+                                            if (createPreparing) {
+                                                stringResource(R.string.voices_preparing)
+                                            } else {
+                                                stringResource(R.string.voices_next)
+                                            },
+                                        )
+                                    }
+                                }
+
+                                VoiceRegistrationStep.Identity -> {
+                                    Button(
+                                        onClick = {
+                                            createSubmitAttempted = true
+                                            if (identityComplete) {
+                                                localMessage = null
+                                                createSubmitAttempted = false
+                                                currentStep = VoiceRegistrationStep.Sharing
+                                            }
+                                        },
+                                        enabled = !voiceProfileBusy && !createPreparing && !promotingBusy,
+                                        modifier = Modifier.weight(1f),
+                                        shape = WakerButtonShape,
+                                    ) {
+                                        Text(stringResource(R.string.voices_next))
+                                    }
+                                }
+
+                                VoiceRegistrationStep.Sharing -> {
+                                    Button(
+                                        onClick = { submitCreateProfile(resolvedProfileName) },
+                                        enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
+                                            !promotingBusy &&
+                                            (canSubmitRecord || canSubmitSingleFile || canSubmitSeparatedDraft),
+                                        modifier = Modifier.weight(1f),
+                                        shape = WakerButtonShape,
+                                    ) {
+                                        Text(
+                                            if (createPreparing) {
+                                                stringResource(R.string.voices_preparing)
+                                            } else {
+                                                stringResource(R.string.voices_register)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
