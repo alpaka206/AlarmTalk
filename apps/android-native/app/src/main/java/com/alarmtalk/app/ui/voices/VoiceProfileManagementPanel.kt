@@ -423,15 +423,47 @@ internal fun VoiceProfileManagementPanel(
         playingGreetingVoiceId = null
     }
 
+    fun greetingClipFor(profile: VoiceProfile) = stockClips.firstOrNull {
+        it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
+    } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+
+    // greeting 클립을 캐시에서 찾고, 없으면 내려받아 캐시한다(탭 재생·시트 프리페치 공용).
+    suspend fun ensureGreetingCached(clip: com.alarmtalk.app.network.StockClip): CachedAlarmAudio {
+        val cacheKey = "greeting_${clip.messageId}"
+        withContext(Dispatchers.IO) { audioStore.getCachedAudio(cacheKey) }?.let { return it }
+        val response = onDownloadStockAudio(clip.messageId)
+        return withContext(Dispatchers.IO) {
+            // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
+            val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
+            audioStore.cacheGeneratedAudio(
+                bytes = bytes,
+                format = response.audioFormat,
+                rawAudioUri = response.audioUrl,
+                displayName = cacheKey,
+                cacheKey = cacheKey,
+                messageId = clip.messageId,
+            )
+        }
+    }
+
+    // 기본 목소리 시트를 여는 순간 인사말 클립을 미리 받아 둔다 — 행 탭 시 지연 없이 재생되게.
+    // 실패는 조용히 넘긴다(탭 시 재시도 경로가 그대로 있음).
+    fun prefetchGreetingPreviews() {
+        scope.launch {
+            systemVoices.forEach { profile ->
+                val clip = greetingClipFor(profile) ?: return@forEach
+                runCatching { ensureGreetingCached(clip) }
+            }
+        }
+    }
+
     // 기본 목소리 행을 누르면 그 목소리의 인사말 샘플(greeting 스톡 클립)을 들려준다.
     fun playGreeting(profile: VoiceProfile) {
         if (playingGreetingVoiceId == profile.id) {
             stopMediaPreview()
             return
         }
-        val clip = stockClips.firstOrNull {
-            it.voiceProfileId == profile.id && it.category == STOCK_GREETING_CATEGORY
-        } ?: stockClips.firstOrNull { it.voiceProfileId == profile.id }
+        val clip = greetingClipFor(profile)
         if (clip == null) {
             localMessage = context.getString(R.string.voices_greeting_preview_preparing)
             return
@@ -442,19 +474,7 @@ internal fun VoiceProfileManagementPanel(
             stopMediaPreview(invalidateGreetingPreview = false)
             playingGreetingVoiceId = profile.id
             runCatching {
-                val response = onDownloadStockAudio(clip.messageId)
-                val cached = withContext(Dispatchers.IO) {
-                    // base64 디코딩도 메인 스레드가 아닌 IO 디스패처에서 수행한다.
-                    val bytes = Base64.decode(response.audioBase64, Base64.DEFAULT)
-                    audioStore.cacheGeneratedAudio(
-                        bytes = bytes,
-                        format = response.audioFormat,
-                        rawAudioUri = response.audioUrl,
-                        displayName = "greeting_${clip.messageId}",
-                        cacheKey = "greeting_${clip.messageId}",
-                        messageId = clip.messageId,
-                    )
-                }
+                val cached = ensureGreetingCached(clip)
                 val player = MediaPlayer.create(context, Uri.parse(cached.localAudioUri))
                     ?: error("Failed to create greeting preview player.")
                 if (greetingPreviewRequestId != requestId) {
@@ -1145,6 +1165,7 @@ internal fun VoiceProfileManagementPanel(
                     ) {
                         // 이전 화면 흐름의 안내가 시트 안에 엉뚱하게 보이지 않게 비우고 연다.
                         localMessage = null
+                        prefetchGreetingPreviews()
                         defaultVoiceSheetOpen = true
                     }
                     .padding(vertical = 4.dp),
@@ -1218,7 +1239,6 @@ internal fun VoiceProfileManagementPanel(
         // 여러 목소리를 이어 들어보며 고르는 흐름. 닫기는 드래그/스크림.
         WakerSelectionSheet(
             title = stringResource(R.string.voices_default_voice_row_title),
-            subtitle = stringResource(R.string.voices_default_voice_sheet_subtitle),
             onDismiss = {
                 stopMediaPreview()
                 defaultVoiceSheetOpen = false

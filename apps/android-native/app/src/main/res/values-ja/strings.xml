@@ -775,7 +775,6 @@
     <string name="voices_step_source">音声の準備</string>
     <string name="voices_default_voice_choose">選ぶ</string>
     <string name="voices_default_voice_row_title">基本の声</string>
-    <string name="voices_default_voice_sheet_subtitle">声をタップすると挨拶を試聴できます。</string>
     <string name="voices_unsupported_audio_format">対応していない音声形式です。</string>
     <string name="voices_upload_change_hint">タップして別のファイルを選べます。</string>
     <string name="voices_upload_file_or_video">ファイルまたは動画をアップロード</string>

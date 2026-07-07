@@ -387,13 +387,8 @@ private struct DefaultVoiceSelectionSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("기본 목소리")
-                        .font(.title3.weight(.bold))
-                    Text("목소리를 누르면 인사말을 미리 들을 수 있어요.")
-                        .font(.footnote)
-                        .foregroundStyle(AlarmTalkTheme.textSecondary)
-                }
+                Text("기본 목소리")
+                    .font(.title3.weight(.bold))
                 ForEach(voices) { profile in
                     let selected = profile.id == selectedVoiceId
                     Button {
