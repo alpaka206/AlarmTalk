@@ -297,6 +297,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // AlarmTalkApp 이 '재시작' 스낵바를 띄우고, 액션 시 completeUpdate() 를 호출한다.
     var flexibleUpdateDownloaded by mutableStateOf(false)
         internal set
+    // 권장(FLEXIBLE) 업데이트를 사용자가 취소하면 true → 이 세션(프로세스)에서는 onResume
+    // 재조회가 FLEXIBLE 플로우를 다시 띄우지 않는다(취소 무시하고 매번 되묻는 루프 방지).
+    // 강제(IMMEDIATE)는 영향 없음. ViewModel 에 두는 이유: 화면 회전 등 액티비티 재생성에도 유지.
+    var flexibleUpdateDeclined by mutableStateOf(false)
+        internal set
+    // 마지막으로 시작한 In-App Update 플로우가 FLEXIBLE 인지. 런처 결과 콜백은 플로우 타입을
+    // 알려주지 않으므로 취소가 FLEXIBLE 거절인지 판별하는 근거 — Play 다이얼로그 표시 중
+    // 액티비티가 재생성(다크모드 전환 등)돼도 유지되도록 매니저 필드가 아닌 여기에 둔다.
+    var flexibleUpdateFlowLaunched by mutableStateOf(false)
+        internal set
 
     var permissionGateRequest by mutableStateOf<PermissionTarget?>(null)
         internal set

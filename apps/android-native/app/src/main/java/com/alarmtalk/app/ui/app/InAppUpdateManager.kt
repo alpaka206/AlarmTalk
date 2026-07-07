@@ -39,14 +39,22 @@ class InAppUpdateManager(
 
     private val appUpdateManager: AppUpdateManager = AppUpdateManagerFactory.create(activity)
 
-    // 업데이트 플로우 결과(취소/실패 로깅용). registerForActivityResult 는 activity 가 STARTED
-    // 되기 전(=생성자 호출이 일어나는 onCreate 시점)에 등록해야 하므로 필드 초기화에서 등록한다.
+    // 업데이트 플로우 결과 처리. FLEXIBLE 이 수락되지 않고 닫히면(취소/실패) 세션 스누즈를
+    // 기록해 onResume 재조회가 같은 플로우를 곧바로 다시 띄우지 않게 한다. IMMEDIATE 는
+    // 강제 게이트라 재시도 대상. registerForActivityResult 는 activity 가 STARTED 되기 전
+    // (=생성자 호출이 일어나는 onCreate 시점)에 등록해야 하므로 필드 초기화에서 등록한다.
     private val updateLauncher: ActivityResultLauncher<IntentSenderRequest> =
         activity.registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             when (result.resultCode) {
                 Activity.RESULT_OK -> Log.i(TAG, "In-app update flow accepted")
-                Activity.RESULT_CANCELED -> Log.i(TAG, "In-app update flow canceled by user")
-                else -> Log.w(TAG, "In-app update flow failed resultCode=${result.resultCode}")
+                Activity.RESULT_CANCELED -> {
+                    Log.i(TAG, "In-app update flow canceled by user")
+                    declineFlexibleIfRequested()
+                }
+                else -> {
+                    Log.w(TAG, "In-app update flow failed resultCode=${result.resultCode}")
+                    declineFlexibleIfRequested()
+                }
             }
         }
 
@@ -58,8 +66,12 @@ class InAppUpdateManager(
         runCatching {
             when (state.installStatus()) {
                 InstallStatus.DOWNLOADED -> viewModel.flexibleUpdateDownloaded = true
+                // 다운로드 단계 취소도 사용자 거절 — 세션 스누즈 없이는 다음 resume 에 재요청된다.
+                InstallStatus.CANCELED -> {
+                    viewModel.flexibleUpdateDeclined = true
+                    unregisterFlexibleListener()
+                }
                 InstallStatus.INSTALLED,
-                InstallStatus.CANCELED,
                 InstallStatus.FAILED,
                 -> unregisterFlexibleListener()
                 else -> {}
@@ -114,7 +126,8 @@ class InAppUpdateManager(
                     when {
                         forceUpdate && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE) ->
                             startFlow(info, AppUpdateType.IMMEDIATE)
-                        recommendUpdate && info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) ->
+                        recommendUpdate && !viewModel.flexibleUpdateDeclined &&
+                            info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) ->
                             startFlow(info, AppUpdateType.FLEXIBLE)
                         else -> {}
                     }
@@ -127,12 +140,19 @@ class InAppUpdateManager(
     private fun startFlow(info: AppUpdateInfo, type: Int) {
         runCatching {
             if (type == AppUpdateType.FLEXIBLE) registerFlexibleListener()
+            viewModel.flexibleUpdateFlowLaunched = type == AppUpdateType.FLEXIBLE
             appUpdateManager.startUpdateFlowForResult(
                 info,
                 updateLauncher,
                 AppUpdateOptions.newBuilder(type).build(),
             )
         }.onFailure { Log.w(TAG, "Failed to start in-app update flow type=$type", it) }
+    }
+
+    private fun declineFlexibleIfRequested() {
+        if (viewModel.flexibleUpdateFlowLaunched) {
+            viewModel.flexibleUpdateDeclined = true
+        }
     }
 
     /** FLEXIBLE 다운로드 완료 스낵바의 '재시작' 액션에서 호출 — 설치를 마무리(앱 재시작)한다. */

@@ -566,7 +566,10 @@ class AlarmAudioStore(
             }
         }.onFailure { error ->
             target.delete()
-            AlarmTalkLog.reportError("Failed to trim selected voice audio uri=$sourceUri", error)
+            // 사용자가 고른 미디어 URI(content://…)는 파일명·로컬 식별자가 담겨 PII 소지 —
+            // 전체 URI 는 Logcat 에만 남기고 Sentry 로 가는 메시지에는 scheme 만 포함한다.
+            Log.e(TAG, "Failed to trim selected voice audio uri=$sourceUri", error)
+            AlarmTalkLog.reportError("Failed to trim selected voice audio scheme=${sourceUri.scheme}", error)
             throw IllegalArgumentException(context.getString(R.string.rd_audio_over_limit_trim_failed, maxDurationMillis / 1000), error)
         }.getOrThrow()
     }
@@ -615,7 +618,9 @@ class AlarmAudioStore(
             }
         }.onFailure { error ->
             target.delete()
-            AlarmTalkLog.reportError("Failed to trim selected mp3 voice audio uri=$sourceUri", error)
+            // 위 trimMp4 와 동일 — 전체 URI 는 Logcat 전용, Sentry 메시지는 scheme 만.
+            Log.e(TAG, "Failed to trim selected mp3 voice audio uri=$sourceUri", error)
+            AlarmTalkLog.reportError("Failed to trim selected mp3 voice audio scheme=${sourceUri.scheme}", error)
             throw IllegalArgumentException(context.getString(R.string.rd_audio_mp3_trim_failed), error)
         }.getOrThrow()
     }
