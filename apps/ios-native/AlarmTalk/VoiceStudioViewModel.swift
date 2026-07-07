@@ -184,6 +184,14 @@ final class VoiceStudioViewModel: ObservableObject {
         }
     }
 
+    /// 인사말 미리듣기만 정지한다 — 기본 목소리 선택 시트가 닫힐 때 호출.
+    /// Android VoiceProfileManagementPanel.stopMediaPreview 의 greeting 부분 미러.
+    func stopGreetingPreview() {
+        greetingPreviewRequestId += 1
+        previewPlayer.stop()
+        previewingGreetingVoiceId = nil
+    }
+
     var selectedListenerTitle: String? {
         if let listener = selectedProfile?.listenerTitle, let trimmed = (listener).nilIfBlank {
             return trimmed

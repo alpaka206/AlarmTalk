@@ -774,8 +774,9 @@
     <string name="voices_step_indicator">%1$d / 3 · %2$s</string>
     <string name="voices_step_sharing">공유 설정</string>
     <string name="voices_step_source">음성 준비</string>
-    <string name="voices_system_voices_count">기본 목소리 %1$d종</string>
-    <string name="voices_default_voice_header">기본 목소리 · %1$s</string>
+    <string name="voices_default_voice_choose">선택하기</string>
+    <string name="voices_default_voice_row_title">기본 목소리</string>
+    <string name="voices_default_voice_sheet_subtitle">목소리를 누르면 인사말을 미리 들을 수 있어요.</string>
     <string name="voices_unsupported_audio_format">지원하지 않는 오디오 형식이에요.</string>
     <string name="voices_upload_change_hint">다른 파일을 선택하려면 탭하세요.</string>
     <string name="voices_upload_file_or_video">파일 또는 영상 업로드</string>
