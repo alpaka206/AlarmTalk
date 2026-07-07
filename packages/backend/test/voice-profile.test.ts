@@ -243,7 +243,18 @@ describe('PATCH /:id — 이름 변경 (voice-profile)', () => {
     expect(body.profile.name).toBe('새 이름');
     const updateCall = mockDB.calls[1]!;
     expect(updateCall.sql).toContain('updated_at');
+    expect(updateCall.sql).toContain('deleted_at IS NULL');
     expect(updateCall.args).toContain('새 이름');
+  });
+
+  it('존재 확인과 UPDATE 사이에 소프트 삭제되면(고아 draft 스윕 레이스) 404', async () => {
+    // 존재 확인은 통과하지만 UPDATE 가 deleted_at IS NULL 가드로 0행 매칭 → 404.
+    // 200 을 돌려주면 클론 파기 큐에 적재된 draft 를 promote 한 것처럼 보이게 된다.
+    mockDB.pushResult([{ id: V1 }]);
+    mockDB.pushResult([], 0);
+    const res = await req(buildApp(), jsonReq('PATCH', `/vp/${V1}`, { name: '새이름' }));
+    expect(res.status).toBe(404);
+    expect((await res.json()).error_code).toBe('VOICE_PROFILE_NOT_FOUND');
   });
 });
 

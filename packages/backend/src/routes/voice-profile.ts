@@ -531,10 +531,16 @@ voiceProfile.patch('/:id', async (c) => {
   updates.push("updated_at = datetime('now')");
   args.push(id);
 
-  await db.execute({
-    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ?`,
+  // deleted_at IS NULL 재확인: 위 존재 확인과 이 UPDATE 사이에 cron 의 고아 draft
+  // 스윕(cleanupStaleDraftVoices)이 행을 소프트 삭제했을 수 있다. 가드 없이 쓰면
+  // 삭제된(클론 파기 큐 적재까지 끝난) 행을 promote 한 것처럼 200 을 돌려주게 된다.
+  const updateRes = await db.execute({
+    sql: `UPDATE voice_profiles SET ${updates.join(', ')} WHERE id = ? AND deleted_at IS NULL`,
     args,
   });
+  if ((updateRes.rowsAffected ?? 0) === 0) {
+    return c.json({ error: 'Voice profile not found', error_code: 'VOICE_PROFILE_NOT_FOUND' }, 404);
+  }
 
   return c.json({
     profile: {
@@ -718,6 +724,8 @@ voiceProfile.post('/clone', async (c) => {
     // failed 행은 제외: 클론 실패 잔여물은 프로바이더 슬롯을 점유하지 않고(voice_id 없이
     // 실패), 특히 draft 는 리스트에 노출되지 않아 클라가 지울 수도 없으므로 카운트하면
     // 일시 장애 몇 번에 한도가 영구 잠식된다.
+    // 클라 정리를 못 거친 고아 draft(앱 강제종료 등)는 cron 의 cleanupStaleDraftVoices 가
+    // DRAFT_VOICE_TTL_HOURS 경과 시 소프트 삭제하므로 이 한도가 영구히 잠기지 않는다.
     {
       const ids = ownerIds(c);
       const phCount = ids.map(() => '?').join(',');

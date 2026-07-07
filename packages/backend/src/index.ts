@@ -279,8 +279,13 @@ async function scheduled(
 
   // 외부 자원(ElevenLabs 클론 / R2 오디오) 지연 삭제 큐 드레인 + TTL 정리.
   try {
-    const { drainExternalDeletions, cleanupExpiredAudio } = await import('./lib/audio-retention');
+    const { drainExternalDeletions, cleanupExpiredAudio, cleanupStaleDraftVoices } = await import(
+      './lib/audio-retention'
+    );
     await cleanupExpiredAudio(db, now);
+    // 앱 강제종료 등으로 클라이언트 정리를 못 거친 고아 draft 보이스 회수
+    // (draft 쿼터·ElevenLabs 슬롯 영구 점유 방지).
+    await cleanupStaleDraftVoices(db, now);
     await drainExternalDeletions(db, env);
   } catch (err) {
     captureCron('scheduled.audio_retention', err);
