@@ -83,7 +83,8 @@ function diarizationResult(count = 3) {
   return {
     speakers: Array.from({ length: count }, (_, index) => ({
       speaker_id: `speaker-${index + 1}`,
-      segments: [{ start: index, end: index + 0.75 }],
+      // 각 화자 20초 발화 → MIN_SPEAKER_SPEECH_MS(15s) 필터를 통과하도록.
+      segments: [{ start: index * 25, end: index * 25 + 20 }],
     })),
   };
 }

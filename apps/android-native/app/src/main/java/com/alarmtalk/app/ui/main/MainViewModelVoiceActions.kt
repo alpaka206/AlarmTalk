@@ -294,6 +294,15 @@ internal suspend fun MainViewModel.promoteDraftVoice(
     }
 }
 
+/**
+ * 미선택 draft 보이스를 화면(패널) 수명과 무관하게 확실히 삭제한다.
+ * 패널의 rememberCoroutineScope 는 탭 이탈 시 취소되어 삭제가 중간에 끊길 수 있으므로,
+ * 삭제만큼은 viewModelScope 로 fire-and-forget 해 끝까지 진행되게 한다.
+ */
+internal fun MainViewModel.deleteDraftVoiceInBackground(profileId: String) {
+    viewModelScope.launch { deleteDraftVoice(profileId) }
+}
+
 /** draft 보이스 정리용. 기존 deleteVoiceProfile 과 동일하게 force=true 로 삭제. */
 internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
     val session = authSession ?: return

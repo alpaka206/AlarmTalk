@@ -21,6 +21,9 @@ const MIN_UPLOAD_DURATION_MS = 60_000;
 const MAX_UPLOAD_DURATION_MS = 120_000;
 const UPLOAD_DURATION_TOLERANCE_MS = 5_000;
 const MAX_SPEAKERS = 3;
+// 화자별 "순수 발화" 총합이 이 값 미만이면 클론 소스로 의미가 없어(예: 5초 한마디)
+// 분리 결과에서 제외한다. 2분 클립을 여러 명이 나눠 가질 수 있음을 고려한 하한.
+const MIN_SPEAKER_SPEECH_MS = 15_000;
 
 async function hasPaidVoiceAccess(c: Context<AppEnv>): Promise<boolean> {
   const userId = c.get('userId');
@@ -233,7 +236,12 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
 
   let result: {
     provider: string;
-    speakers: Array<{ startMs: number; endMs: number; confidence: number }>;
+    speakers: Array<{
+      segments: Array<{ startMs: number; endMs: number }>;
+      startMs: number;
+      endMs: number;
+      durationMs: number;
+    }>;
   };
   try {
     const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);
@@ -244,9 +252,11 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     });
     result = {
       provider: 'elevenlabs',
+      // 각 화자의 실제 발화 세그먼트를 그대로 내려준다(예전처럼 [min,max] 봉투로 뭉개지 않는다).
+      // 클라이언트가 이 세그먼트들만 이어붙여 그 화자 음성만으로 클론을 만든다.
       speakers: diarized.speakers
-        .map(toSpeakerSpan)
-        .filter((speaker) => speaker.endMs > speaker.startMs)
+        .map(toSpeakerSegments)
+        .filter((speaker) => speaker.durationMs >= MIN_SPEAKER_SPEECH_MS)
         .slice(0, MAX_SPEAKERS),
     };
   } catch (err) {
@@ -269,16 +279,20 @@ voiceUpload.post('/uploads/:uploadId/separate', async (c) => {
     id: crypto.randomUUID(),
     uploadId,
     label: `화자 ${idx + 1}`,
+    segments: s.segments,
     startMs: s.startMs,
     endMs: s.endMs,
-    confidence: s.confidence,
+    durationMs: s.durationMs,
   }));
 
+  // voice_speakers 에는 인덱스/조회용 봉투(start_ms/end_ms)만 남긴다. 실제 세그먼트는
+  // 응답으로만 내려가 클라가 즉시 소비하며(현재 GET /speakers 는 클라 미사용), DB에는
+  // 재현 불필요한 세그먼트 JSON을 쌓지 않는다.
   for (const sp of speakers) {
     await db.execute({
       sql: `INSERT INTO voice_speakers (id, upload_id, label, start_ms, end_ms, confidence)
             VALUES (?, ?, ?, ?, ?, ?)`,
-      args: [sp.id, sp.uploadId, sp.label, sp.startMs, sp.endMs, sp.confidence],
+      args: [sp.id, sp.uploadId, sp.label, sp.startMs, sp.endMs, 1.0],
     });
   }
 
@@ -410,18 +424,26 @@ voiceUpload.post('/diarize', async (c) => {
   }
 });
 
-function toSpeakerSpan(speaker: { segments: Array<{ start: number; end: number }> }): {
+// 한 화자의 발화 세그먼트들을 ms 단위로 변환해 그대로 돌려준다. startMs/endMs 는
+// 표시·정렬용 봉투(전체 범위), durationMs 는 실제 발화 총합(= 클론에 쓰일 순수 길이).
+function toSpeakerSegments(speaker: { segments: Array<{ start: number; end: number }> }): {
+  segments: Array<{ startMs: number; endMs: number }>;
   startMs: number;
   endMs: number;
-  confidence: number;
+  durationMs: number;
 } {
-  const segments = speaker.segments.filter((segment) => segment.end > segment.start);
-  if (segments.length === 0) return { startMs: 0, endMs: 0, confidence: 0 };
-  return {
-    startMs: Math.floor(Math.min(...segments.map((segment) => segment.start)) * 1000),
-    endMs: Math.ceil(Math.max(...segments.map((segment) => segment.end)) * 1000),
-    confidence: 0.9,
-  };
+  const segments = speaker.segments
+    .filter((segment) => segment.end > segment.start)
+    .map((segment) => ({
+      startMs: Math.floor(segment.start * 1000),
+      endMs: Math.ceil(segment.end * 1000),
+    }))
+    .sort((a, b) => a.startMs - b.startMs);
+  if (segments.length === 0) return { segments: [], startMs: 0, endMs: 0, durationMs: 0 };
+  const startMs = Math.min(...segments.map((segment) => segment.startMs));
+  const endMs = Math.max(...segments.map((segment) => segment.endMs));
+  const durationMs = segments.reduce((total, segment) => total + (segment.endMs - segment.startMs), 0);
+  return { segments, startMs, endMs, durationMs };
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {

@@ -697,7 +697,7 @@ internal fun AlarmTalkApp(
                               viewModel.promoteDraftVoice(profileId, draft)
                               viewModel.loadVoiceProfiles()
                           },
-                          onDeleteDraftVoice = viewModel::deleteDraftVoice,
+                          onDeleteDraftVoice = viewModel::deleteDraftVoiceInBackground,
                           onGenerateTts = viewModel::generateTtsAudio,
                           stockClips = viewModel.stockClips,
                           onDownloadStockAudio = { messageId -> viewModel.downloadTtsMessageAudio(messageId) },

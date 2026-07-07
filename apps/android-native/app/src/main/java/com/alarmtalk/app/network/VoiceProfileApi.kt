@@ -41,13 +41,21 @@ data class VoiceSpeakerListResponse(
     val provider: String? = null,
 )
 
+data class VoiceSpeakerSpan(
+    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long,
+    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long,
+)
+
 data class VoiceSpeakerSegment(
     val id: String,
     @SerializedName(value = "uploadId", alternate = ["upload_id"]) val uploadId: String? = null,
     val label: String,
-    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long,
-    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long,
-    val confidence: Double? = null,
+    // 이 화자의 실제 발화 구간들(업로드된 크롭 클립 기준 ms). 이 구간만 이어붙여 클론 소스로 쓴다.
+    val segments: List<VoiceSpeakerSpan> = emptyList(),
+    // 표시·정렬용 봉투(전체 범위)와 순수 발화 총합(ms).
+    @SerializedName(value = "startMs", alternate = ["start_ms"]) val startMs: Long = 0L,
+    @SerializedName(value = "endMs", alternate = ["end_ms"]) val endMs: Long = 0L,
+    @SerializedName(value = "durationMs", alternate = ["duration_ms"]) val durationMs: Long = 0L,
 )
 
 data class VoiceProfileUpdateRequest(

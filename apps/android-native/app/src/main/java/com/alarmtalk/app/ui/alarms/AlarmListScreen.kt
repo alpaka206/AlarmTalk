@@ -82,7 +82,7 @@ internal fun AlarmListScreen(
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
     onPromoteDraftVoice: suspend (String, VoiceProfilePromotionDraft) -> Unit,
-    onDeleteDraftVoice: suspend (String) -> Unit,
+    onDeleteDraftVoice: (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     defaultVoiceId: String? = null,

@@ -86,8 +86,10 @@ import com.alarmtalk.app.ui.guide.UsageGuideDialog
 import com.alarmtalk.app.ui.guide.UsageGuideStep
 import com.alarmtalk.app.ui.guide.UsageGuideStore
 import android.util.Base64
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -317,7 +319,7 @@ internal fun VoiceProfileManagementPanel(
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
     onPromoteDraftVoice: suspend (String, VoiceProfilePromotionDraft) -> Unit,
-    onDeleteDraftVoice: suspend (String) -> Unit,
+    onDeleteDraftVoice: (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
     onDownloadStockAudio: suspend (String) -> com.alarmtalk.app.network.TtsMessageAudioResponse,
@@ -565,13 +567,9 @@ internal fun VoiceProfileManagementPanel(
 
     fun cleanupDraftsAsync(draftIds: Collection<String>) {
         if (draftIds.isEmpty()) return
-        // viewModelScope 가 아닌 dialog scope 라 다이얼로그가 사라져도 작업이 끝까지 가도록
-        // application context coroutine 으로 분리하지는 않는다. 짧은 시간 내에 완료된다고 가정.
-        draftIds.forEach { draftId ->
-            scope.launch {
-                runCatching { onDeleteDraftVoice(draftId) }
-            }
-        }
+        // onDeleteDraftVoice 는 viewModelScope 에서 fire-and-forget 로 삭제하므로(패널 수명과
+        // 무관), 패널이 사라져도 미선택 draft 삭제가 끝까지 진행된다.
+        draftIds.forEach { draftId -> onDeleteDraftVoice(draftId) }
     }
 
     /**
@@ -665,6 +663,12 @@ internal fun VoiceProfileManagementPanel(
         onDispose {
             if (recorder.isRecording) recorder.cancel()
             stopMediaPreview()
+            // 패널이 사라질 때(탭 이탈 등) 선택되지 않은 채 남은 draft 는 서버에서도 삭제한다.
+            // 단, 등록(promote) 진행 중에는 곧 승격될 보이스를 지우지 않도록 건드리지 않는다.
+            if (!promotingBusy) {
+                cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
+                cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
+            }
         }
     }
 
@@ -684,28 +688,31 @@ internal fun VoiceProfileManagementPanel(
     suspend fun prepareSpeakerDraft(
         speaker: VoiceSpeakerSegment,
         baseName: String,
-        uri: Uri,
+        croppedUri: Uri,
     ) {
-        val duration = (speaker.endMs - speaker.startMs)
-            .coerceIn(
-                VoiceProfileAudioLimits.MIN_DURATION_MILLIS,
-                VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
-            )
-        runCatching {
+        // 이 화자의 발화 구간만(diarize 대상인 크롭 클립 기준 0시작) 이어붙여, 그 화자
+        // 목소리만으로 클론 소스를 만든다 — 구간 사이의 다른 화자/침묵은 버린다.
+        val segments = speaker.segments
+            .map { it.startMs to it.endMs }
+            .filter { (start, end) -> end > start }
+        try {
             val audio = withContext(Dispatchers.IO) {
-                audioStore.cacheFromUri(
-                    sourceUri = uri,
-                    maxDurationMillis = duration,
-                    startMillis = cropStartMillis + speaker.startMs,
+                audioStore.cacheFromUriSegments(
+                    sourceUri = croppedUri,
+                    segments = segments,
+                    maxDurationMillis = VoiceProfileAudioLimits.MAX_DURATION_MILLIS,
                 )
             }
             val draftName = baseName.ifBlank { voiceProfilePlaceholder(context) }
             val profile = onCloneSpeakerDraft(draftName, audio)
-            speakerDraftStates = speakerDraftStates.toMutableMap().also {
-                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
-                    profileId = profile.id,
-                    status = SpeakerDraftStatus.Synthesizing,
-                )
+            // 서버 draft 를 만든 직후 취소되어도 id 를 반드시 기록해, 이후 정리에서 삭제되게 한다.
+            withContext(NonCancellable) {
+                speakerDraftStates = speakerDraftStates.toMutableMap().also {
+                    it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+                        profileId = profile.id,
+                        status = SpeakerDraftStatus.Synthesizing,
+                    )
+                }
             }
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
@@ -735,7 +742,10 @@ internal fun VoiceProfileManagementPanel(
                     status = SpeakerDraftStatus.Ready,
                 )
             }
-        }.onFailure { error ->
+        } catch (cancel: CancellationException) {
+            // 취소(다른 화자 선택/리셋/닫기)는 '실패'로 기록하지 않고 그대로 전파한다.
+            throw cancel
+        } catch (error: Throwable) {
             AlarmTalkLog.reportError("Failed to prepare speaker draft id=${speaker.id}", error)
             speakerDraftStates = speakerDraftStates.toMutableMap().also {
                 it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
@@ -751,7 +761,7 @@ internal fun VoiceProfileManagementPanel(
             localMessage = paidVoiceRequiredMessage
             return
         }
-        val uri = selectedFileUri ?: return
+        if (selectedFileUri == null) return
         val cropDuration = cropEndMillis - cropStartMillis
         if (cropDuration < VoiceProfileAudioLimits.MIN_DURATION_MILLIS) {
             localMessage = context.getString(R.string.voices_separate_segment_too_short_hint)
@@ -771,10 +781,13 @@ internal fun VoiceProfileManagementPanel(
             selectedSpeakerDraftId = null
             activePlayingSpeakerId = null
             runCatching {
-                val audio = croppedFileAudio()
-                onSeparateVoiceSpeakers(audio)
-            }.onSuccess { speakers ->
-                val visible = speakers.filter { it.endMs > it.startMs }.take(3)
+                val cropped = croppedFileAudio()
+                cropped to onSeparateVoiceSpeakers(cropped)
+            }.onSuccess { (cropped, speakers) ->
+                // 화자 세그먼트는 업로드된 '크롭 클립' 기준(0시작)이므로, 잘라 붙일 때도 원본이
+                // 아니라 그 크롭 클립에서 잘라야 좌표가 정확히 맞는다(스냅 드리프트 없음).
+                val croppedUri = Uri.parse(cropped.localAudioUri)
+                val visible = speakers.filter { it.segments.isNotEmpty() }.take(3)
                 detectedSpeakers = visible
                 speakerDraftStates = visible.associate { s ->
                     s.id to SpeakerDraftState(status = SpeakerDraftStatus.Cloning)
@@ -786,7 +799,7 @@ internal fun VoiceProfileManagementPanel(
                 visible.forEach { speaker ->
                     val job = scope.launch {
                         try {
-                            prepareSpeakerDraft(speaker, baseName, uri)
+                            prepareSpeakerDraft(speaker, baseName, croppedUri)
                         } finally {
                             // 자신이 등록한 Job 만 정리.
                             if (speakerDraftJobs[speaker.id] === coroutineContext[Job]) {
