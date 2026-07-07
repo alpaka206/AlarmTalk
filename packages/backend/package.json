@@ -20,11 +20,11 @@
   },
   "type": "module",
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260629.1",
+    "@cloudflare/workers-types": "^5.20260707.1",
     "@types/bcryptjs": "^3.0.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
-    "wrangler": "^4.105.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.107.0"
   },
   "dependencies": {
     "@alarmtalk/shared": "*",
@@ -32,7 +32,7 @@
     "@libsql/client": "^0.17.4",
     "bcryptjs": "^3.0.3",
     "date-holidays": "^3.32.0",
-    "hono": "^4.12.27",
+    "hono": "^4.12.28",
     "toucan-js": "^4.1.1"
   }
 }
