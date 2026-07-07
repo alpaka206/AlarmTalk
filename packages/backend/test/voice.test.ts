@@ -615,6 +615,32 @@ describe('DELETE /voice/:id — 음성 프로필 삭제', () => {
     expect(body.deleted).toBe(true);
   });
 
+  it('draftOnly=true인데 이미 등록된(is_draft=0) 보이스면 삭제하지 않는다(팬텀 성공 보호)', async () => {
+    mockDB.pushResult([
+      { id: V1, name: 'Voice A', elevenlabs_voice_id: 'el-1', is_draft: 0 },
+    ]);
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', `/voice/${V1}?draftOnly=true`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.skipped).toBe('not_a_draft');
+    // 등록 보이스이므로 ElevenLabs 클론 삭제도 호출되지 않아야 한다.
+    expect(mockDeleteVoice).not.toHaveBeenCalled();
+  });
+
+  it('draftOnly=true여도 실제 draft(is_draft=1)면 정상 삭제한다', async () => {
+    mockDB.pushResult([
+      { id: V1, name: 'Voice A', elevenlabs_voice_id: null, is_draft: 1 },
+    ]);
+    mockDB.pushResult([], 1);
+    const app = buildApp();
+    const res = await app.request(jsonReq('DELETE', `/voice/${V1}?draftOnly=true`));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.deleted).toBe(true);
+  });
+
   it('연관 메시지가 없어도 소프트 삭제', async () => {
     mockDB.pushResult([
       { id: V1, name: 'Voice A', elevenlabs_voice_id: null },

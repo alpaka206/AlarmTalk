@@ -89,13 +89,9 @@ import android.util.Base64
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private fun speakerDurationLabel(speaker: VoiceSpeakerSegment): String =
-    audioTimeLabel((speaker.endMs - speaker.startMs).coerceAtLeast(0L))
 
 private fun voiceProfilePlaceholder(context: android.content.Context): String =
     context.getString(R.string.voices2_default_profile_name)
@@ -685,6 +681,13 @@ internal fun VoiceProfileManagementPanel(
         }
     }
 
+    // 화자 draft 상태는 '그 화자가 아직 유효 대상일 때'만 갱신한다 — select/reset 이 맵을 이미
+    // 단일 항목으로 줄였는데 취소·실패한 형제 job 이 뒤늦게 재개해 자기 항목을 되살리는 것을 막는다.
+    fun updateSpeakerDraftIfPresent(speakerId: String, transform: (SpeakerDraftState) -> SpeakerDraftState) {
+        val current = speakerDraftStates[speakerId] ?: return
+        speakerDraftStates = speakerDraftStates.toMutableMap().also { it[speakerId] = transform(current) }
+    }
+
     suspend fun prepareSpeakerDraft(
         speaker: VoiceSpeakerSegment,
         baseName: String,
@@ -695,6 +698,8 @@ internal fun VoiceProfileManagementPanel(
         val segments = speaker.segments
             .map { it.startMs to it.endMs }
             .filter { (start, end) -> end > start }
+        // 서버에 실제로 만든 draft id — 취소되면 이 draft 를 스스로 삭제해 고아를 남기지 않는다.
+        var createdProfileId: String? = null
         try {
             val audio = withContext(Dispatchers.IO) {
                 audioStore.cacheFromUriSegments(
@@ -705,14 +710,9 @@ internal fun VoiceProfileManagementPanel(
             }
             val draftName = baseName.ifBlank { voiceProfilePlaceholder(context) }
             val profile = onCloneSpeakerDraft(draftName, audio)
-            // 서버 draft 를 만든 직후 취소되어도 id 를 반드시 기록해, 이후 정리에서 삭제되게 한다.
-            withContext(NonCancellable) {
-                speakerDraftStates = speakerDraftStates.toMutableMap().also {
-                    it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
-                        profileId = profile.id,
-                        status = SpeakerDraftStatus.Synthesizing,
-                    )
-                }
+            createdProfileId = profile.id
+            updateSpeakerDraftIfPresent(speaker.id) {
+                it.copy(profileId = profile.id, status = SpeakerDraftStatus.Synthesizing)
             }
             val ttsResponse = onGenerateTts(
                 TtsGenerateRequest(
@@ -735,20 +735,23 @@ internal fun VoiceProfileManagementPanel(
                     messageId = ttsResponse.messageId,
                 )
             }
-            speakerDraftStates = speakerDraftStates.toMutableMap().also {
-                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+            updateSpeakerDraftIfPresent(speaker.id) {
+                it.copy(
                     profileId = profile.id,
                     previewUri = cached.localAudioUri,
                     status = SpeakerDraftStatus.Ready,
                 )
             }
         } catch (cancel: CancellationException) {
-            // 취소(다른 화자 선택/리셋/닫기)는 '실패'로 기록하지 않고 그대로 전파한다.
+            // 취소(다른 화자 선택/리셋/닫기)는 '실패'로 기록하지 않는다. 다만 이미 서버 draft 를
+            // 만든 뒤라면 그 draft 를 스스로 삭제해 추적 불가 고아로 남지 않게 한다(삭제는
+            // viewModelScope 라 취소와 무관하게 끝까지 진행). 그 뒤 취소를 그대로 전파한다.
+            createdProfileId?.let { onDeleteDraftVoice(it) }
             throw cancel
         } catch (error: Throwable) {
             AlarmTalkLog.reportError("Failed to prepare speaker draft id=${speaker.id}", error)
-            speakerDraftStates = speakerDraftStates.toMutableMap().also {
-                it[speaker.id] = (it[speaker.id] ?: SpeakerDraftState()).copy(
+            updateSpeakerDraftIfPresent(speaker.id) {
+                it.copy(
                     status = SpeakerDraftStatus.Failed,
                     errorMessage = context.getString(R.string.voices_speaker_preview_prepare_failed),
                 )

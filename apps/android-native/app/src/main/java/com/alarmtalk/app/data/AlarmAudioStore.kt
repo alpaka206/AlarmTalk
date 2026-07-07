@@ -301,7 +301,9 @@ class AlarmAudioStore(
                         localAudioUri = cached.toUri().toString(),
                         rawAudioUri = sourceUri.toString(),
                         displayName = displayName,
-                        durationMillis = cachedDuration,
+                        // 헤더 없는 MP3 concat 은 MediaMetadataRetriever 가 길이를 오판할 수 있어,
+                        // 실제 잘라 담은 세그먼트 합(accMillis)을 길이로 쓴다(클론 게이트 정합).
+                        durationMillis = accMillis,
                         cacheKey = cacheKey,
                         messageId = null,
                     )
@@ -324,6 +326,8 @@ class AlarmAudioStore(
                     throw IllegalArgumentException(context.getString(R.string.rd_audio_extract_failed), error)
                 }.getOrThrow()
 
+                // 파일이 실제로 만들어졌는지(빈 출력 아님)만 검증하고, 신고 길이는 세그먼트 합을 쓴다.
+                // 헤더 없는 MP3 는 추출기 길이 추정이 어긋날 수 있어 accMillis 가 더 정확하다.
                 val outDuration = if (target.exists()) readDurationMillis(target.toUri()) else null
                 if (outDuration == null || outDuration <= 0L || target.length() < 4 * 1024) {
                     runCatching { target.delete() }
@@ -333,7 +337,7 @@ class AlarmAudioStore(
                     localAudioUri = target.toUri().toString(),
                     rawAudioUri = sourceUri.toString(),
                     displayName = displayName,
-                    durationMillis = outDuration,
+                    durationMillis = accMillis,
                     cacheKey = cacheKey,
                     messageId = null,
                 )
@@ -357,7 +361,11 @@ class AlarmAudioStore(
         }
     }
 
-    /** MP3: 프레임은 독립적이라 구간별 프레임 바이트를 그대로 이어 쓰면 유효한 MP3 가 된다. */
+    /**
+     * MP3: 구간별 프레임 바이트를 그대로 이어 쓴다(재인코딩 없음). MP3 프레임은 대체로 독립적이나
+     * bit reservoir 로 앞 프레임을 참조할 수 있어 경계 프레임에 미세 글리치가 남을 수 있다 —
+     * 클론 소스(음색 추출)로는 무시할 수준이라 그대로 둔다.
+     */
     private fun concatSegmentsMp3(sourceUri: Uri, target: File, segments: List<Pair<Long, Long>>) {
         val extractor = MediaExtractor()
         try {
@@ -377,11 +385,18 @@ class AlarmAudioStore(
             val buffer = ByteBuffer.allocate(maxInputSize)
             target.outputStream().use { output ->
                 for ((startMs, endMs) in segments) {
+                    val startUs = startMs * 1_000
                     val endUs = endMs * 1_000
-                    extractor.seekTo(startMs * 1_000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                     while (true) {
                         val sampleTimeUs = extractor.sampleTime
                         if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
+                        // closest-sync 가 구간 시작보다 앞 프레임에 착지하면 그 선행(=다른 화자/침묵)
+                        // 프레임은 버려 경계 혼입을 줄인다.
+                        if (sampleTimeUs < startUs) {
+                            extractor.advance()
+                            continue
+                        }
                         buffer.clear()
                         val sampleSize = extractor.readSampleData(buffer, 0)
                         if (sampleSize < 0) break
@@ -420,10 +435,14 @@ class AlarmAudioStore(
             // 이어붙일 출력 타임라인의 현재 위치. 각 구간을 이 위치부터 다시 0 기준으로 얹는다.
             var outputBaseUs = 0L
             for ((startMs, endMs) in segments) {
+                val startUs = startMs * 1_000
                 val endUs = endMs * 1_000
-                extractor.seekTo(startMs * 1_000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                val segAnchorUs = extractor.sampleTime.takeIf { it >= 0L } ?: (startMs * 1_000)
+                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                // closest-sync 가 구간 시작보다 앞이면 선행(=다른 화자/침묵) 프레임을 버려 경계 혼입을 줄인다.
+                while (extractor.sampleTime in 0 until startUs) extractor.advance()
+                val segAnchorUs = extractor.sampleTime.takeIf { it >= 0L } ?: startUs
                 var lastRelUs = 0L
+                var wroteAny = false
                 while (true) {
                     val sampleTimeUs = extractor.sampleTime
                     if (sampleTimeUs < 0 || sampleTimeUs >= endUs) break
@@ -434,10 +453,11 @@ class AlarmAudioStore(
                     bufferInfo.set(0, sampleSize, outputBaseUs + relUs, codecBufferFlags(extractor.sampleFlags))
                     muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
                     lastRelUs = relUs
+                    wroteAny = true
                     extractor.advance()
                 }
                 // 다음 구간 첫 샘플 PTS 가 이전 구간 마지막과 같아지지 않도록 한 프레임(~23ms)만큼 벌린다.
-                outputBaseUs += lastRelUs + 23_000L
+                if (wroteAny) outputBaseUs += lastRelUs + 23_000L
             }
         } finally {
             runCatching { muxer.stop() }

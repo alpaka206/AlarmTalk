@@ -1047,6 +1047,14 @@ voiceProfile.delete('/:id', async (c) => {
 
   const profile = result.rows[0]!;
 
+  // draft 정리 전용 삭제(draftOnly=true): 클라가 '미선택 draft'로 알고 지우려 해도, 그 사이
+  // promote 로 is_draft=0(정식 등록)이 됐다면(응답 유실 등 '팬텀 성공') 절대 지우지 않는다.
+  // 방금 등록된 보이스와 그 외부 클론이 하드 삭제되는 데이터 손실을 막는 게이트.
+  const draftOnly = c.req.query('draftOnly') === 'true';
+  if (draftOnly && Number(profile.is_draft ?? 0) !== 1) {
+    return c.json({ success: true, skipped: 'not_a_draft', voice_profile_id: id });
+  }
+
   try {
     if (profile.elevenlabs_voice_id) {
       const client = new ElevenLabsClient(c.env.ELEVENLABS_API_KEY);

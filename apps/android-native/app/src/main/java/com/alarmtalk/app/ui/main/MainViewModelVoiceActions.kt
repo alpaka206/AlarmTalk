@@ -312,9 +312,14 @@ internal suspend fun MainViewModel.deleteDraftVoice(profileId: String) {
                 authorization = AlarmTalkApiClient.bearer(session.token),
                 id = profileId,
                 force = true,
+                // 그 사이 promote 로 정식 등록됐다면 서버가 삭제를 거부한다(등록 보이스 보호).
+                draftOnly = true,
             )
         }.onFailure { error ->
-            Log.w(TAG, "Failed to delete draft voice id=$profileId", error)
+            // 이미 삭제된(404) 경우는 성공으로 간주해 소음을 줄이고, 그 외 실패는 리포트해 추적한다
+            // (조용히 삼키면 미선택 draft 가 서버에 남는 누수를 놓친다).
+            if (apiErrorCode(error) == "VOICE_PROFILE_NOT_FOUND") return@onFailure
+            AlarmTalkLog.reportError("Failed to delete draft voice", error)
         }
     }
 }

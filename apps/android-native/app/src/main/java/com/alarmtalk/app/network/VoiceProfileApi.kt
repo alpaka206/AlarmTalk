@@ -162,6 +162,8 @@ interface VoiceProfileApi {
         @Header("Authorization") authorization: String,
         @Path("id") id: String,
         @Query("force") force: Boolean? = null,
+        // draft 정리 전용 삭제 — 서버는 아직 is_draft=1 인 경우에만 실제 삭제한다(등록된 보이스 보호).
+        @Query("draftOnly") draftOnly: Boolean? = null,
     )
 
     @GET("voice/family")
