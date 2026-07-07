@@ -693,8 +693,8 @@ internal fun AlarmTalkApp(
                           onCreateVoiceProfiles = viewModel::createVoiceProfiles,
                           onSeparateVoiceSpeakers = viewModel::separateVoiceSpeakers,
                           onCloneSpeakerDraft = viewModel::cloneSpeakerDraft,
-                          onPromoteDraftVoice = { profileId ->
-                              viewModel.promoteDraftVoice(profileId)
+                          onPromoteDraftVoice = { profileId, draft ->
+                              viewModel.promoteDraftVoice(profileId, draft)
                               viewModel.loadVoiceProfiles()
                           },
                           onDeleteDraftVoice = viewModel::deleteDraftVoice,

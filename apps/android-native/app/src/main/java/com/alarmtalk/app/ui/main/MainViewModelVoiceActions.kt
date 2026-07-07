@@ -19,6 +19,7 @@ import com.alarmtalk.app.data.AlarmDraft
 import com.alarmtalk.app.data.AlarmEntity
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.data.isSystemVoiceId
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthTokenResponse
@@ -271,13 +272,24 @@ internal suspend fun MainViewModel.cloneSpeakerDraft(
  * draft=true 프로파일을 promote 해 정식 보이스로 등록한다.
  * 사용자의 기존 non-draft 음성이 있으면 서버가 409 VOICE_LIMIT_REACHED 를 반환한다.
  */
-internal suspend fun MainViewModel.promoteDraftVoice(profileId: String): VoiceProfile {
+internal suspend fun MainViewModel.promoteDraftVoice(
+    profileId: String,
+    draft: VoiceProfilePromotionDraft,
+): VoiceProfile {
     val session = authSession ?: throw IllegalStateException(getApplication<android.app.Application>().getString(R.string.msg_voice_promote_login_required))
     return withContext(Dispatchers.IO) {
         api.updateVoiceProfile(
             authorization = AlarmTalkApiClient.bearer(session.token),
             id = profileId,
-            request = VoiceProfileUpdateRequest(isDraft = false),
+            request = VoiceProfileUpdateRequest(
+                name = draft.name,
+                isShared = draft.shared,
+                isDraft = false,
+                relationshipLabel = draft.relationshipLabel,
+                listenerTitle = draft.listenerTitle,
+                voiceGender = draft.voiceGender,
+                speechFormality = draft.speechFormality,
+            ),
         ).profile
     }
 }

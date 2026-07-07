@@ -158,7 +158,7 @@ internal fun WeatherLocationPreferenceDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    // 나라는 받지 않는다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
+    val draftCountry = remember(country) { country }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
     val cityError = submitted && draftCity.isBlank()
@@ -193,7 +193,7 @@ internal fun WeatherLocationPreferenceDialog(
                     onClick = {
                         submitted = true
                         if (draftCity.isNotBlank()) {
-                            onConfirm("", draftCity.trim())
+                            onConfirm(draftCountry.trim(), draftCity.trim())
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),

@@ -75,6 +75,7 @@ import com.alarmtalk.app.data.AlarmVoiceRecorder
 import com.alarmtalk.app.data.CachedAlarmAudio
 import com.alarmtalk.app.data.VoiceProfileAudioLimits
 import com.alarmtalk.app.data.VoiceProfileCreationDraft
+import com.alarmtalk.app.data.VoiceProfilePromotionDraft
 import com.alarmtalk.app.network.apiErrorCode
 import com.alarmtalk.app.network.AuthSession
 import com.alarmtalk.app.network.BillingSubscriptionResponse
@@ -327,7 +328,7 @@ internal fun VoiceProfileManagementPanel(
     onCreateVoiceProfiles: (List<VoiceProfileCreationDraft>) -> Unit,
     onSeparateVoiceSpeakers: suspend (CachedAlarmAudio) -> List<VoiceSpeakerSegment>,
     onCloneSpeakerDraft: suspend (String, CachedAlarmAudio) -> VoiceProfile,
-    onPromoteDraftVoice: suspend (String) -> Unit,
+    onPromoteDraftVoice: suspend (String, VoiceProfilePromotionDraft) -> Unit,
     onDeleteDraftVoice: suspend (String) -> Unit,
     onGenerateTts: suspend (TtsGenerateRequest) -> TtsGenerateResponse,
     stockClips: List<com.alarmtalk.app.network.StockClip>,
@@ -365,6 +366,7 @@ internal fun VoiceProfileManagementPanel(
     var cropEndMillis by remember { mutableStateOf(VoiceProfileAudioLimits.MAX_DURATION_MILLIS) }
     var detectedSpeakers by remember { mutableStateOf<List<VoiceSpeakerSegment>>(emptyList()) }
     var speakerDraftStates by remember { mutableStateOf<Map<String, SpeakerDraftState>>(emptyMap()) }
+    var selectedSpeakerDraftId by remember { mutableStateOf<String?>(null) }
     // 진행 중인 prepareSpeakerDraft 코루틴을 화자 id 별로 추적해
     // 선택/정리 시 다른 draft 작업이 cleanup 과 동시에 진행되지 않도록 한다.
     val speakerDraftJobs = remember { mutableMapOf<String, Job>() }
@@ -496,6 +498,7 @@ internal fun VoiceProfileManagementPanel(
                 cropEndMillis = durationMillis.coerceAtMost(VoiceProfileAudioLimits.MAX_DURATION_MILLIS)
                 detectedSpeakers = emptyList()
                 speakerDraftStates = emptyMap()
+                selectedSpeakerDraftId = null
                 activePlayingSpeakerId = null
                 localMessage = voiceProfileFileDurationError(context, durationMillis)
             }
@@ -584,6 +587,7 @@ internal fun VoiceProfileManagementPanel(
         cancelOtherSpeakerDraftJobs(keepSpeakerId = null)
         cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
         speakerDraftStates = emptyMap()
+        selectedSpeakerDraftId = null
         activePlayingSpeakerId = null
         separatingBusy = false
         promotingBusy = false
@@ -748,6 +752,7 @@ internal fun VoiceProfileManagementPanel(
             // 기존에 만들어둔 draft 가 있으면 먼저 정리.
             cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
             speakerDraftStates = emptyMap()
+            selectedSpeakerDraftId = null
             activePlayingSpeakerId = null
             runCatching {
                 val audio = croppedFileAudio()
@@ -798,6 +803,7 @@ internal fun VoiceProfileManagementPanel(
         cleanupDraftsAsync(speakerDraftStates.values.mapNotNull { it.profileId })
         detectedSpeakers = emptyList()
         speakerDraftStates = emptyMap()
+        selectedSpeakerDraftId = null
         activePlayingSpeakerId = null
         stopMediaPreview()
         localMessage = null
@@ -874,29 +880,36 @@ internal fun VoiceProfileManagementPanel(
     fun selectSpeakerDraft(speaker: VoiceSpeakerSegment) {
         val state = speakerDraftStates[speaker.id] ?: return
         val selectedDraftId = state.profileId ?: return
-        // 아직 ready 가 아닌 draft 는 promote 대상이 아니다.
-        // (prepareSpeakerDraft 가 진행 중에 사용자가 빠르게 탭하는 경우 가드)
         if (state.status != SpeakerDraftStatus.Ready) return
-        // 선택한 화자를 제외한 다른 draft 의 prepare Job 을 cancel 해 cleanup 과 동시에 진행되지 않게 한다.
         cancelOtherSpeakerDraftJobs(keepSpeakerId = speaker.id)
+        stopMediaPreview()
+        activePlayingSpeakerId = null
+        val otherDraftIds = speakerDraftStates
+            .filterKeys { it != speaker.id }
+            .values
+            .mapNotNull { it.profileId }
+        cleanupDraftsAsync(otherDraftIds)
+        speakerDraftStates = mapOf(speaker.id to state)
+        detectedSpeakers = listOf(speaker)
+        selectedSpeakerDraftId = selectedDraftId
+        localMessage = null
+        createSubmitAttempted = false
+        currentStep = VoiceRegistrationStep.Identity
+    }
+
+    fun promoteSelectedSpeakerDraft(
+        selectedDraftId: String,
+        metadata: VoiceProfilePromotionDraft,
+    ) {
         scope.launch {
             promotingBusy = true
-            stopMediaPreview()
-            activePlayingSpeakerId = null
+            localMessage = null
             runCatching {
-                onPromoteDraftVoice(selectedDraftId)
-                speakerDraftStates
-                    .filterKeys { it != speaker.id }
-                    .values
-                    .mapNotNull { it.profileId }
-                    .forEach { otherId ->
-                        runCatching { onDeleteDraftVoice(otherId) }
-                    }
+                onPromoteDraftVoice(selectedDraftId, metadata)
             }.onSuccess {
-                // draft 정리 완료. 다이얼로그 닫을 때 잔여 draft 가 또 cleanupDrafts 로 가지 않도록
-                // state 비우기.
                 speakerDraftStates = emptyMap()
                 detectedSpeakers = emptyList()
+                selectedSpeakerDraftId = null
                 closeCreateDialog()
                 localMessage = context.getString(R.string.voices_registered_success)
             }.onFailure { error ->
@@ -1015,6 +1028,21 @@ internal fun VoiceProfileManagementPanel(
                 if (japanesePolite) "polite" else "auto",
             )
             closeCreateDialog()
+            return
+        }
+        val selectedDraftId = selectedSpeakerDraftId
+        if (selectedDraftId != null) {
+            promoteSelectedSpeakerDraft(
+                selectedDraftId = selectedDraftId,
+                metadata = VoiceProfilePromotionDraft(
+                    name = trimmedName,
+                    shared = shareVoice,
+                    relationshipLabel = trimmedRelationship,
+                    listenerTitle = trimmedListener,
+                    voiceGender = voiceGender,
+                    speechFormality = if (japanesePolite) "polite" else "auto",
+                ),
+            )
             return
         }
         // 목소리 나누기를 실행한 상태에서는 나눈 목소리 중 하나를 선택해 등록한다.
@@ -1223,6 +1251,8 @@ internal fun VoiceProfileManagementPanel(
             selectedFileUri != null &&
             !hasSeparatedSpeakers && !separatingBusy &&
             (cropEndMillis - cropStartMillis) >= VoiceProfileAudioLimits.MIN_DURATION_MILLIS
+        val canSubmitSeparatedDraft = inputMode == VoiceCaptureMode.File &&
+            selectedSpeakerDraftId != null
         Dialog(
             onDismissRequest = {
                 if (!voiceProfileBusy && !separatingBusy) closeCreateDialog()
@@ -1481,7 +1511,7 @@ internal fun VoiceProfileManagementPanel(
                     }
 
                     val canAdvanceFromSource = !voiceProfileBusy && !isRecording && !createPreparing &&
-                        !promotingBusy && (canSubmitRecord || canSubmitSingleFile)
+                        !promotingBusy && (canSubmitRecord || canSubmitSingleFile || canSubmitSeparatedDraft)
                     val identityComplete = profileName.trim().isNotBlank() &&
                         relationshipSelection.isComplete &&
                         profileListenerTitle.trim().isNotBlank()
@@ -1566,7 +1596,8 @@ internal fun VoiceProfileManagementPanel(
                                 Button(
                                     onClick = { submitCreateProfile(resolvedProfileName) },
                                     enabled = !voiceProfileBusy && !isRecording && !createPreparing &&
-                                        !promotingBusy && (canSubmitRecord || canSubmitSingleFile),
+                                        !promotingBusy &&
+                                        (canSubmitRecord || canSubmitSingleFile || canSubmitSeparatedDraft),
                                     modifier = Modifier.weight(1f),
                                     shape = WakerButtonShape,
                                 ) {

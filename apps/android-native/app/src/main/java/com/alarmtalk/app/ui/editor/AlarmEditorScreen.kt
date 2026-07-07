@@ -219,8 +219,7 @@ internal fun AlarmEditorScreen(
     val savedWeatherConfigured = if (familyAlarmMode) {
         selectedFamilyRecipientValue?.dynamicPromptSettingsState?.weatherReady == true
     } else {
-        activeDynamicPromptPreferences.weatherCountry.isNotBlank() &&
-            activeDynamicPromptPreferences.weatherCity.isNotBlank()
+        activeDynamicPromptPreferences.weatherCity.isNotBlank()
     }
     val savedFortuneConfigured = if (familyAlarmMode) {
         selectedFamilyRecipientValue?.dynamicPromptSettingsState?.fortuneReady == true
@@ -671,7 +670,7 @@ internal fun AlarmEditorScreen(
         if (
             editor.voiceRandomPrompt &&
             randomContextUsesWeather(editor.voiceRandomContext) &&
-            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+            editor.voiceWeatherCity.isBlank()
         ) {
             audioMessage = context.getString(R.string.editor_error_weather_location_required)
             return
@@ -916,7 +915,7 @@ internal fun AlarmEditorScreen(
         val context = normalizedRandomPromptContext(editor.voiceRandomContext)
         if (
             randomContextUsesWeather(context) &&
-            (editor.voiceWeatherCountry.isBlank() || editor.voiceWeatherCity.isBlank())
+            editor.voiceWeatherCity.isBlank()
         ) {
             return false
         }
@@ -988,7 +987,6 @@ internal fun AlarmEditorScreen(
         if (
             !familyAlarmMode &&
             randomContextUsesWeather(result.randomContext) &&
-            result.weatherCountry.isNotBlank() &&
             result.weatherCity.isNotBlank()
         ) {
             dynamicPromptPreferenceStore.saveWeatherLocation(result.weatherCountry, result.weatherCity)

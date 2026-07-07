@@ -212,7 +212,7 @@
     <string name="editor_error_voice_alarm_login_required">音声アラームはログイン後にご利用いただけます。</string>
     <string name="editor_error_voice_generation_failed">音声の生成に失敗しました。</string>
     <string name="editor_error_voice_message_login_required">音声メッセージはログイン後にご利用いただけます。</string>
-    <string name="editor_error_weather_location_required">天気を含む文には、国と都市を入力してください。</string>
+    <string name="editor_error_weather_location_required">天気を含む文には、都市を入力してください。</string>
     <string name="editor_existing_voice_cache_used">既存の音声キャッシュを使用しました。</string>
     <string name="editor_expand">広げる</string>
     <string name="editor_family_alarm_set">相手のアラームを設定しました。</string>
@@ -344,7 +344,7 @@
     <string name="editorp_random_language_section">言語</string>
     <string name="editorp_random_save_button">保存</string>
     <string name="editorp_random_title">ランダム文設定</string>
-    <string name="editorp_random_weather_region_required">天気を使った文を作るには、国と都市が必要です。</string>
+    <string name="editorp_random_weather_region_required">天気を使った文を作るには、都市が必要です。</string>
     <string name="editorp_random_weather_region_saved">相手が保存した天気の地域を使います。</string>
     <string name="editorp_random_weather_region_title">天気の地域</string>
     <string name="editorp_random_weather_region_value">%1$sの天気を使います。</string>
@@ -751,7 +751,7 @@
     <string name="voices_reset">リセット</string>
     <string name="voices_select_file_first">ファイルを選択してください。</string>
     <string name="voices_select_separated_voice">分けた声の中から使う声を選んでください。</string>
-    <string name="voices_select_to_register_hint">声を選ぶとすぐに登録されます。名前・関係・呼び名は登録後に変更できます。</string>
+    <string name="voices_select_to_register_hint">声を選んだあと、名前・関係・呼び名を入力して登録してください。</string>
     <string name="voices_selected_audio_unusable">選択した音声は使用できません。</string>
     <string name="voices_separate_failed">声を分けられませんでした。別の区間を選ぶか、しばらくしてからもう一度お試しください。</string>
     <string name="voices_separate_requires_paid">有料プランで声の分割をご利用いただけます。</string>
@@ -946,7 +946,7 @@
     <string name="editor2_quiet_days_everyday">毎日</string>
     <string name="editor2_fortune_time_unknown">時間不明</string>
     <string name="editor2_birthdate_display">%1$s年%2$s月%3$s日</string>
-    <string name="editor2_weather_location_prompt">国と都市を入力してください。</string>
+    <string name="editor2_weather_location_prompt">都市を入力してください。</string>
     <string name="editor2_fortune_info_prompt">性別、生年月日、生まれた時間を入力してください。</string>
     <string name="voices2_default_profile_name">声</string>
     <string name="voices2_audio_duration_unknown">音声の長さを確認できませんでした。</string>

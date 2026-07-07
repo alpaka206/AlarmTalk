@@ -212,7 +212,7 @@
     <string name="editor_error_voice_alarm_login_required">Voice alarms are available after you sign in.</string>
     <string name="editor_error_voice_generation_failed">Voice generation failed.</string>
     <string name="editor_error_voice_message_login_required">Voice messages are available after you sign in.</string>
-    <string name="editor_error_weather_location_required">For phrases with weather, please enter a country and city.</string>
+    <string name="editor_error_weather_location_required">For phrases with weather, please enter a city.</string>
     <string name="editor_existing_voice_cache_used">An existing voice cache was used.</string>
     <string name="editor_expand">Expand</string>
     <string name="editor_family_alarm_set">The alarm for the other person is set.</string>
@@ -344,7 +344,7 @@
     <string name="editorp_random_language_section">Language</string>
     <string name="editorp_random_save_button">Save</string>
     <string name="editorp_random_title">Random message settings</string>
-    <string name="editorp_random_weather_region_required">To use weather-based messages, a country and city are required.</string>
+    <string name="editorp_random_weather_region_required">To use weather-based messages, a city is required.</string>
     <string name="editorp_random_weather_region_saved">Using the weather region your partner saved.</string>
     <string name="editorp_random_weather_region_title">Weather region</string>
     <string name="editorp_random_weather_region_value">Using the weather for %1$s.</string>
@@ -742,7 +742,7 @@
     <string name="voices_reset">Reset</string>
     <string name="voices_select_file_first">Please select a file.</string>
     <string name="voices_select_separated_voice">Please choose which separated voice to use.</string>
-    <string name="voices_select_to_register_hint">Selecting a voice registers it right away. You can edit the name, relationship, and call name after registering.</string>
+    <string name="voices_select_to_register_hint">Choose a voice, then enter its name, relationship, and call name before registering.</string>
     <string name="voices_selected_audio_unusable">The selected audio can\'t be used.</string>
     <string name="voices_separate_failed">Couldn\'t separate the voices. Please pick a different segment or try again in a moment.</string>
     <string name="voices_separate_requires_paid">Voice splitting is available on a paid plan.</string>
@@ -937,7 +937,7 @@
     <string name="editor2_quiet_days_everyday">Every day</string>
     <string name="editor2_fortune_time_unknown">Unknown</string>
     <string name="editor2_birthdate_display">%1$s-%2$s-%3$s</string>
-    <string name="editor2_weather_location_prompt">Please enter your country and city.</string>
+    <string name="editor2_weather_location_prompt">Please enter your city.</string>
     <string name="editor2_fortune_info_prompt">Please enter your gender, date of birth, and time of birth.</string>
     <string name="voices2_default_profile_name">Voice</string>
     <string name="voices2_audio_duration_unknown">We couldn\'t check the audio length.</string>

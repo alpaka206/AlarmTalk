@@ -215,7 +215,7 @@
     <string name="editor_error_voice_alarm_login_required">음성 알람은 로그인 후 사용할 수 있어요.</string>
     <string name="editor_error_voice_generation_failed">음성 생성에 실패했어요.</string>
     <string name="editor_error_voice_message_login_required">음성 메시지는 로그인 후 사용할 수 있어요.</string>
-    <string name="editor_error_weather_location_required">날씨가 들어간 문구는 나라와 도시를 입력해 주세요.</string>
+    <string name="editor_error_weather_location_required">날씨가 들어간 문구는 도시를 입력해 주세요.</string>
     <string name="editor_existing_voice_cache_used">기존 음성 캐시를 사용했어요.</string>
     <string name="editor_expand">펼치기</string>
     <string name="editor_family_alarm_set">상대 알람을 설정했어요.</string>
@@ -346,7 +346,7 @@
     <string name="editorp_random_language_section">언어</string>
     <string name="editorp_random_save_button">저장</string>
     <string name="editorp_random_title">랜덤 문구 설정</string>
-    <string name="editorp_random_weather_region_required">날씨가 들어간 문구를 쓰려면 나라와 도시가 필요해요.</string>
+    <string name="editorp_random_weather_region_required">날씨가 들어간 문구를 쓰려면 도시가 필요해요.</string>
     <string name="editorp_random_weather_region_saved">상대가 저장한 날씨 지역을 사용해요.</string>
     <string name="editorp_random_weather_region_title">날씨 지역</string>
     <string name="editorp_random_weather_region_value">%1$s 날씨를 사용해요.</string>
@@ -752,7 +752,7 @@
     <string name="voices_reset">초기화</string>
     <string name="voices_select_file_first">파일을 선택해 주세요.</string>
     <string name="voices_select_separated_voice">나눈 목소리 중 사용할 목소리를 선택해 주세요.</string>
-    <string name="voices_select_to_register_hint">목소리를 선택하면 바로 등록돼요. 이름, 관계, 호칭은 등록한 뒤 수정할 수 있어요.</string>
+    <string name="voices_select_to_register_hint">목소리를 선택한 뒤 이름, 관계, 호칭을 입력해 등록해 주세요.</string>
     <string name="voices_selected_audio_unusable">선택한 오디오를 사용할 수 없어요.</string>
     <string name="voices_separate_failed">목소리를 나누지 못했어요. 다른 구간을 선택하거나 잠시 후 다시 시도해 주세요.</string>
     <string name="voices_separate_requires_paid">유료 이용권에서 목소리 나누기를 사용할 수 있어요.</string>
@@ -947,7 +947,7 @@
     <string name="editor2_quiet_days_everyday">매일</string>
     <string name="editor2_fortune_time_unknown">시간 모름</string>
     <string name="editor2_birthdate_display">%1$s년 %2$s월 %3$s일</string>
-    <string name="editor2_weather_location_prompt">나라와 도시를 입력해 주세요.</string>
+    <string name="editor2_weather_location_prompt">도시를 입력해 주세요.</string>
     <string name="editor2_fortune_info_prompt">성별, 생년월일, 태어난 시간을 입력해 주세요.</string>
     <string name="voices2_default_profile_name">목소리</string>
     <string name="voices2_audio_duration_unknown">오디오 길이를 확인할 수 없어요.</string>

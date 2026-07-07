@@ -84,7 +84,7 @@ export function dynamicPromptSettingsState(
   settings: DynamicPromptSettings,
 ): DynamicPromptSettingsState {
   return {
-    weather_ready: Boolean(settings.weather.country && settings.weather.city),
+    weather_ready: Boolean(settings.weather.city),
     fortune_ready: Boolean(
       settings.fortune.gender &&
         settings.fortune.birth_date &&

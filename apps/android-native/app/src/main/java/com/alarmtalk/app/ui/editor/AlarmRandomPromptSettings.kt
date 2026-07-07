@@ -100,7 +100,7 @@ internal fun RandomPromptSettingsPane(
     var fortuneDialogOpen by remember { mutableStateOf(false) }
     val normalizedContext = normalizedRandomPromptContext(draftContext)
     fun hasWeatherInfo(): Boolean =
-        (draftWeatherCountry.isNotBlank() && draftWeatherCity.isNotBlank()) || savedWeatherConfigured
+        draftWeatherCity.isNotBlank() || savedWeatherConfigured
     fun hasFortuneInfo(): Boolean =
         (
             draftFortuneGender.isNotBlank() &&
@@ -354,7 +354,7 @@ internal fun WeatherLocationDialog(
     onDismissWithoutSave: () -> Unit,
     onConfirm: (String, String) -> Unit,
 ) {
-    // 나라는 받지 않는다 — 도시명만으로 백엔드(Gemini)가 지역을 판별한다.
+    var draftCountry by remember(country) { mutableStateOf(country) }
     var draftCity by remember(city) { mutableStateOf(city) }
     var submitted by remember { mutableStateOf(false) }
     var locationBusy by remember { mutableStateOf(false) }
@@ -375,6 +375,7 @@ internal fun WeatherLocationDialog(
             if (fix == null) {
                 locationStatus = context.getString(R.string.editorp_weather_location_failed)
             } else {
+                draftCountry = fix.country.ifBlank { draftCountry }
                 // 도시가 비면 나라라도 채운다(도서 지역 등 지오코딩이 도시를 못 줄 때).
                 draftCity = fix.city.ifBlank { fix.country }.ifBlank { draftCity }
                 locationStatus = if (fix.country.isBlank() && fix.city.isBlank()) {
@@ -504,7 +505,7 @@ internal fun WeatherLocationDialog(
                     onClick = {
                         submitted = true
                         if (draftCity.isNotBlank()) {
-                            onConfirm("", draftCity.trim())
+                            onConfirm(draftCountry.trim(), draftCity.trim())
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
